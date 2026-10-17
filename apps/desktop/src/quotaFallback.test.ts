@@ -53,6 +53,7 @@ it("keeps the last reading when Claude Code's token awaits renewal, without aski
   expect(expired.quota?.collectedAtUnixMs).toBe(1_000);
   const installation = { installationId: "ins_claude", providerId: "claude-code", status: "ready", version: "2.1.0" } as never;
   const status = welcomeStatus({ installation, view: expired });
-  expect(status.label).toBe("凭证已过期");
+  expect(status.label).toBe("令牌待续期");
   expect(status.detail).toContain("自动续期");
+  expect(status.detail).toContain("无需重新登录");
 });

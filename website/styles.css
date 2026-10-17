@@ -53,7 +53,6 @@ section { position: relative; background: var(--bg); color: var(--fg); }
 /* ---------- Hero ---------- */
 .hero { padding: 150px 0 110px; overflow: hidden; isolation: isolate; }
 .hero::before { content: ""; position: absolute; inset: 0; z-index: -2; background-image: linear-gradient(#141414 1px, transparent 1px), linear-gradient(90deg, #141414 1px, transparent 1px); background-size: 64px 64px; mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, #000 30%, transparent 75%); }
-.hero::after { content: ""; position: absolute; z-index: -1; width: 900px; height: 600px; left: 50%; top: 280px; translate: -50% 0; background: radial-gradient(closest-side, rgba(183, 243, 76, .18), transparent); filter: blur(40px); }
 .hero-copy { text-align: center; max-width: 900px; margin: 0 auto; }
 .eyebrow { display: inline-flex; align-items: center; gap: 10px; padding: 6px 14px 6px 8px; border: 1px solid #262626; border-radius: 999px; font-size: 13px; color: #c9c9c4; background: rgba(255, 255, 255, .03); }
 .eyebrow b { padding: 2px 8px; border-radius: 999px; background: var(--lime); color: #0a0f02; font-size: 11px; font-weight: 700; letter-spacing: .02em; }
@@ -143,8 +142,8 @@ section { position: relative; background: var(--bg); color: var(--fg); }
 
 /* ---------- Hero background: drifting agent cards ---------- */
 .hero-bg { position: absolute; z-index: -1; left: -8%; right: -8%; top: 110px; height: 600px; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; transform: rotate(-4deg); opacity: .6;
-  -webkit-mask-image: radial-gradient(ellipse 46% 58% at 50% 50%, transparent 0, transparent 62%, #000 100%), linear-gradient(transparent, #000 15%, #000 85%, transparent);
-  -webkit-mask-composite: source-in; mask-image: radial-gradient(ellipse 46% 58% at 50% 50%, transparent 0, transparent 62%, #000 100%), linear-gradient(transparent, #000 15%, #000 85%, transparent); mask-composite: intersect; }
+  -webkit-mask-image: radial-gradient(ellipse 46% 58% at 50% 50%, transparent 0, transparent 62%, #000 100%), linear-gradient(#000 85%, transparent);
+  -webkit-mask-composite: source-in; mask-image: radial-gradient(ellipse 46% 58% at 50% 50%, transparent 0, transparent 62%, #000 100%), linear-gradient(#000 85%, transparent); mask-composite: intersect; }
 .bg-row { overflow: hidden; }
 .bg-track { display: flex; gap: 64px; width: max-content; animation: marquee var(--dur) linear infinite var(--dir); }
 .bg-tile { display: grid; place-items: center; flex: none; width: 56px; height: 56px; border-radius: 15px; border: 1px solid #1c1c1c; }

@@ -66,6 +66,8 @@ fn cli_command(executable: &Path, args: &[&str]) -> Result<String, String> {
         .join(" "))
 }
 
+// Linux spawns its terminal directly and never waits on a launcher.
+#[cfg(any(target_os = "macos", windows))]
 async fn launch(mut command: tokio::process::Command) -> Result<(), String> {
     command.kill_on_drop(true);
     let status = tokio::time::timeout(std::time::Duration::from_secs(15), command.status())
@@ -127,6 +129,8 @@ async fn open_target(target: LoginTarget) -> Result<(), String> {
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
+// Same async signature as the macOS and Windows variants the caller awaits.
+#[allow(clippy::unused_async)]
 async fn open_target(target: LoginTarget) -> Result<(), String> {
     let LoginTarget::Cli(executable, args) = target else {
         return Err("此客户端需要在 macOS 中打开".into());

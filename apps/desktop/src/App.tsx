@@ -1358,7 +1358,7 @@ export function quotaDiagnostic(code?: string | null): string {
     case "claude_quota_login_required": return "未找到可用的 Claude 订阅授权，或授权已失效/缺少额度权限。请在 Claude Code 中使用订阅账号登录后重试；API Key 不提供此订阅额度。";
     case "claude_quota_transport_unavailable": return "额度查询需要本机 curl，目前无法启动。";
     case "claude_quota_rate_limited": return "Claude 额度接口请求受限，稍后自动重试。";
-    case "claude_quota_token_expired": return "Claude Code 登录凭证已过期。运行一次 Claude Code，或在这里用 Claude Code 发起一轮对话，凭证会自动续期。";
+    case "claude_quota_token_expired": return "Claude Code 的短期访问令牌已到期，登录状态仍有效，无需重新登录。下次在终端或这里用 Claude Code 对话时会自动续期。";
     case "claude_quota_network_error":
     case "claude_quota_timeout": return "Claude 额度查询连接失败或超时，请检查网络和系统代理。";
     case "claude_quota_invalid_response":

@@ -38,7 +38,7 @@ export function welcomeStatus(reading?: Reading): { label: string; tone: string;
   if (view?.diagnostic === "quota_exhausted")
     return { label: "额度已用尽", tone: "warning", detail: "原生服务报告额度已用尽，请等待额度重置或检查套餐后重新检测。" };
   if (view?.diagnostic === "claude_quota_token_expired")
-    return { label: "凭证已过期", tone: "warning", detail: "Claude Code 登录凭证已过期。运行一次 Claude Code，或在工作台用它发起一轮对话，凭证会自动续期。" };
+    return { label: "令牌待续期", tone: "warning", detail: "Claude Code 的短期访问令牌已到期，登录状态仍有效，无需重新登录。下次在终端或工作台用 Claude Code 对话时会自动续期。" };
   if (quotaShowsLastReading(view?.diagnostic))
     return { label: "额度查询受限", tone: "warning", detail: view?.quota?.windows.length
       ? `原生额度服务暂时限制请求，显示的是 ${new Date(view.quota.collectedAtUnixMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} 的读数，稍后自动重试。`

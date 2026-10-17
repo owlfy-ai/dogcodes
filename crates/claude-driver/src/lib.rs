@@ -2013,6 +2013,7 @@ mod tests {
     }
 
     use super::*;
+    #[cfg(unix)]
     use driver_api::ContextDeliveryKind;
 
     fn test_driver(executable: PathBuf) -> ClaudeDriver {

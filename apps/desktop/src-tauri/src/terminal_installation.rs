@@ -71,6 +71,8 @@ async fn shell_commands(context: &DiscoveryContext) -> Option<Commands> {
     result
 }
 
+// Only the macOS directory lookup awaits; other platforms rely on SHELL.
+#[cfg_attr(not(target_os = "macos"), allow(clippy::unused_async))]
 pub(crate) async fn user_shell(context: &DiscoveryContext) -> Option<PathBuf> {
     if let Some(shell) = std::env::var_os("SHELL")
         .map(PathBuf::from)

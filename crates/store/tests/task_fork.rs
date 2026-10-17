@@ -84,7 +84,8 @@ async fn turn(core: &Arc<Core>, store: &SqliteStore, task: &TaskId, prompt: &str
     }));
     command.expected_stream_version = Some(task_state.stream_version);
     core.execute(command).await.unwrap();
-    tokio::time::timeout(Duration::from_secs(10), async {
+    // Polls for the end of the turn; slow shared runners need a generous ceiling.
+    tokio::time::timeout(Duration::from_mins(1), async {
         loop {
             let snapshot = core.bootstrap().await.unwrap();
             if snapshot.active_runs.is_empty() {

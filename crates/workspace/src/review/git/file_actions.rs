@@ -103,7 +103,7 @@ impl GitReview {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 fn append_ignore(path: &Path, rule: &str) -> ReviewResult<()> {
     append_ignore_rules(path, &[rule])
 }

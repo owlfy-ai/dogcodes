@@ -1,4 +1,4 @@
-// dogcodes website — interactive demos and EN/中文 copy. No build step, no dependencies.
+// dog.codes website — interactive demos and EN/中文 copy. No build step, no dependencies.
 // Set these once the public repository exists.
 const SITE = {
   github: 'https://github.com/dogcodes/dogcodes',
@@ -34,14 +34,14 @@ const ZH = {
   'agents.title': '<span class="nb">支持你已经在用的</span> <span class="nb">Coding Agent。</span>',
   'agents.sub': '已接入 12 种 Coding Agent，通过官方命令行工具和你现有的登录使用。可用模型、审批与用量数据因 Agent 而异。', 'agents.note': '更多 Agent 陆续接入中。',
   'handoff.title': '<span class="nb">换 Agent，</span><span class="nb">不换对话。</span>',
-  'handoff.sub': '随时更换执行当前对话的 Agent，dogcodes 自动交接上下文——不用复制粘贴，也不用重新解释。',
+  'handoff.sub': '随时更换执行当前对话的 Agent，dog.codes 自动交接上下文——不用复制粘贴，也不用重新解释。',
   'handoff.p1': '把每项工作交给最适合的 Agent：一个负责设计，另一个补全细节。',
   'handoff.p2': '额度用完了？换另一个 Agent 接着做，无需重新说明需求。',
   'handoff.p3': '接手的 Agent 还能通过内置历史工具查阅之前的对话，是真正接着做。',
   'handoff.try': '试试看——选择下一个 Agent：',
   'quota.title': '<span class="nb">每份额度、</span><span class="nb">每次重置，</span><span class="nb">一眼看清。</span>',
   'quota.sub': '12 种 Agent 的剩余额度、重置时间与版本集中呈现。据此安排工作，把每一份 token 用足，任何 Agent 都能一键升级。',
-  'acc.t1': '沿用你现有的订阅', 'acc.p1': 'dogcodes 调用你已登录的官方命令行工具——Claude Code、Codex、Cursor 等。无需额外账号，也没有额外的 API 账单。',
+  'acc.t1': '沿用你现有的订阅', 'acc.p1': 'dog.codes 调用你已登录的官方命令行工具——Claude Code、Codex、Cursor 等。无需额外账号，也没有额外的 API 账单。',
   'acc.t2': '自动发现', 'acc.p2': '启动时自动检测已安装的 Agent 及登录状态，未安装的提供官方安装入口。',
   'acc.t3': '本地优先', 'acc.p3': '数据留在你的电脑上，不经过中转服务器。Agent 启动时只拿到必要的环境变量，你的其他密钥不会外泄。',
   'review.title': '<span class="nb">让一个 Agent</span> <span class="nb">审查另一个。</span>',
@@ -59,17 +59,17 @@ const ZH = {
   'git.sub': '高度贴近 VS Code 的侧边栏：暂存、取消暂存、丢弃、忽略、提交、提交并推送——树状或列表视图随意切换。',
   'git.p1': '指定任一 Agent 一键生成提交说明，并可选择语言。', 'git.ph': '提交说明……', 'git.gen': '用 Kimi 生成',
   'run.title': '<span class="nb">再也不用</span><span class="nb">记启动命令。</span>',
-  'run.sub': 'dogcodes 分析每个项目的运行与调试方式，把命令和脚本变成可点击的启动项。',
+  'run.sub': 'dog.codes 分析每个项目的运行与调试方式，把命令和脚本变成可点击的启动项。',
   'run.p1': '不用再找终端——点一下启动，随时查看输出，用完就停。', 'run.p2': '常用项可以置顶，重新分析也会保留。', 'run.idle': '点击任意启动项的 ▶',
   'more.title': '<span class="nb">值得天天用的</span><span class="nb">每一处细节。</span>',
   'more.t1': '多目录项目', 'more.p1': '前端、后端、文档分散在不同目录？一个会话全部交给 Agent——即便 Agent 本身不支持多目录。', 'more.tree': '三个目录，同一个会话',
-  'more.t2': '关掉窗口，任务照跑。', 'more.p2': 'Agent、终端、项目命令都在后台服务中运行。重新打开即自动接上——程序崩溃后也不会重复提交或推送。', 'more.daemon': '仍在后台运行',
+  'more.t2': '关掉窗口，任务照跑。', 'more.p2': 'Agent、终端、项目命令都在后台服务中运行。重新打开即回到原处，进度分毫不差，每次提交和推送都只执行一次。', 'more.daemon': '仍在后台运行',
   'more.t3': '每一轮的用量明细', 'more.p3': '每一轮的 token 用量、上下文占用、缓存命中与缓存用量——清楚知道 token 花在了哪里。',
   'more.lin': '输入', 'more.lcache': '缓存命中', 'more.lout': '输出',
-  'more.t4': '属于你，而不是我们', 'more.p4': 'Apache-2.0 开源。无需 dogcodes 账号。', 'more.k1': '数据留在你的电脑', 'more.k2': '沿用你现有的登录', 'more.k3': '每一行源码都可查看',
+  'more.t4': '属于你，而不是我们', 'more.p4': 'Apache-2.0 开源。无需 dog.codes 账号。', 'more.k1': '数据留在你的电脑', 'more.k2': '沿用你现有的登录', 'more.k3': '每一行源码都可查看',
   'cta.title': '<span class="nb">把你的 Agent</span> <span class="nb">召集起来。</span>', 'cta.sub': '免费、开源、本地优先。带上你已有的 Agent 和订阅。', 'cta.copy': '复制',
   'cta.small': '也可以从源码构建——参见 <a data-link="github" href="#">README</a>。Agent 对话使用所选 Agent 的账号与额度。',
-  'foot.fine': '© dogcodes contributors · Apache-2.0。文中产品名称、标志与商标归其各自所有者，仅用于标识兼容的工具，不代表任何背书。',
+  'foot.fine': '© dog.codes contributors · Apache-2.0。文中产品名称、标志与商标归其各自所有者，仅用于标识兼容的工具，不代表任何背书。',
 };
 const DYN = {
   en: {
@@ -81,12 +81,10 @@ const DYN = {
     sent: (n, a) => `<b>→ Sent to Claude Code:</b> fix ${n} finding${n > 1 ? 's' : ''} from the Codex review. ${a}<br/>Review report attached.`,
     handTo: (name, turns) => `Handed off to ${name} · ${turns} turns of context`,
     start: ['Refactor the payment module into smaller services.', 'Split into three services — billing, refunds, ledger. Interfaces drafted in docs/payment.md.'],
-    lines: [
-      'Read the earlier plan. Implementing the billing service first, keeping the drafted interfaces.',
-      'Billing is done. Moving refunds next, reusing the ledger client from the previous turn.',
-      'Checked turn 2 via history: refunds must stay idempotent. Added a request-id guard.',
-      'Ledger extracted. All 3 services compile; wiring them into the gateway.',
-      'Ran the suite after the handoff — 118 passed. Ready for review.',
+    rounds: [
+      ['Implement the billing service from that plan.', 'Read the plan from turn 2. Billing service implemented against the drafted interfaces — 14 tests added.'],
+      ['Now extract refunds. They must stay idempotent.', 'Reused the ledger client from the last turn. Refunds extracted with a request-id guard.'],
+      ['Wire all three into the gateway and run the suite.', 'Ledger extracted, all 3 services wired into the gateway. 118 tests passed — ready for review.'],
     ],
     reset: 'resets in', resetOn: 'resets', upgrade: 'Upgrade', upgraded: 'Updated', week: 'weekly', h5: '5-hour', month: 'monthly',
   },
@@ -99,12 +97,10 @@ const DYN = {
     sent: (n, a) => `<b>→ 已发送给 Claude Code：</b>修复 Codex 审查发现的 ${n} 个问题。${a}<br/>已附审查报告。`,
     handTo: (name, turns) => `已交给 ${name} · 附 ${turns} 轮上下文`,
     start: ['把支付模块拆分成更小的服务。', '拆成三个服务——计费、退款、账本。接口草案已写在 docs/payment.md。'],
-    lines: [
-      '已读取前面的方案。先实现计费服务，沿用起草好的接口。',
-      '计费完成。接着处理退款，复用上一轮的账本客户端。',
-      '通过历史工具查看了第 2 轮：退款必须保持幂等，已加上请求 ID 校验。',
-      '账本已拆出。3 个服务都能编译，正在接入网关。',
-      '交接后跑了完整测试——118 项通过，可以进入审查。',
+    rounds: [
+      ['按这个方案先实现计费服务。', '已读取第 2 轮的方案。计费服务已按起草的接口实现，新增 14 个测试。'],
+      ['接着拆出退款服务，必须保持幂等。', '复用了上一轮的账本客户端。退款服务已拆出，并加上请求 ID 校验。'],
+      ['把三个服务接入网关，跑一遍完整测试。', '账本已拆出，3 个服务都已接入网关。118 项测试通过，可以进入审查。'],
     ],
     reset: '后重置', resetOn: '重置', upgrade: '升级', upgraded: '已更新', week: '每周', h5: '5 小时', month: '每月',
   },
@@ -213,8 +209,8 @@ async function heroLoop() {
 }
 
 /* ---------------- Handoff demo ---------------- */
-const HANDOFF = ['Claude Code', 'Codex', 'Kimi Code', 'Cursor', 'Grok Build'];
-let current = 'Claude Code', step = 0, turns = 2;
+const HANDOFF = ['Claude Code', 'Codex', 'Grok Build', 'Antigravity'];
+let current = 'Claude Code', step = 0, turns = 2, handing = false, pausedUntil = 0;
 function resetHandoff() {
   const d = D();
   current = 'Claude Code'; step = 0; turns = 2;
@@ -225,15 +221,32 @@ function renderSwitch() {
   $('#handoff-switch').innerHTML = HANDOFF.map(n => `<button type="button" data-a="${n}" aria-pressed="${n === current}">${mini(n)}${n}</button>`).join('');
 }
 async function handOff(name) {
-  if (name === current) return;
+  if (name === current || handing) return;
+  handing = true;
   const d = D(), feed = $('#handoff-feed');
-  current = name; turns += 1; renderSwitch();
+  current = name; renderSwitch();
+  // Each round: switch the agent, then send the next prompt in the same conversation.
+  const [prompt, reply] = d.rounds[step % d.rounds.length];
   feed.insertAdjacentHTML('beforeend', divider(d.handTo(name, turns)));
-  await sleep(350);
+  await sleep(450);
+  feed.insertAdjacentHTML('beforeend', userMessage(prompt));
+  await sleep(700);
   feed.insertAdjacentHTML('beforeend', message(name, ''));
-  await typeInto(feed.lastElementChild.querySelector('.text'), d.lines[step % d.lines.length], 10);
-  step += 1;
-  while (feed.children.length > 9) feed.firstElementChild.remove();
+  await typeInto(feed.lastElementChild.querySelector('.text'), reply, 10);
+  step += 1; turns += 2;
+  while (feed.children.length > 12) feed.firstElementChild.remove();
+  handing = false;
+}
+// Plays the handoff on its own while the demo is on screen; a click takes over for a while.
+async function autoHandoff() {
+  let visible = false;
+  new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { threshold: 0.35 }).observe($('#handoff-feed'));
+  for (;;) {
+    await sleep(3200);
+    if (!visible || handing || Date.now() < pausedUntil) continue;
+    if (step >= D().rounds.length) { await sleep(1500); resetHandoff(); continue; }
+    await handOff(HANDOFF[(HANDOFF.indexOf(current) + 1) % HANDOFF.length]);
+  }
 }
 
 /* ---------------- Quota grid ---------------- */
@@ -396,7 +409,7 @@ const syncNav = () => nav.classList.toggle('scrolled', scrollY > 20);
 addEventListener('scroll', syncNav, { passive: true });
 syncNav(); // a restored scroll position must not leave the nav transparent
 document.querySelectorAll('.lang button').forEach(b => b.addEventListener('click', () => applyLanguage(b.dataset.lang)));
-$('#handoff-switch').addEventListener('click', e => { const b = e.target.closest('button'); if (b) handOff(b.dataset.a); });
+$('#handoff-switch').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { pausedUntil = Date.now() + 12000; handOff(b.dataset.a); } });
 $('#quota-grid').addEventListener('click', e => {
   const b = e.target.closest('[data-up]'); if (!b || b.classList.contains('done')) return;
   const q = QUOTA[b.dataset.up]; b.textContent = '…';
@@ -417,6 +430,7 @@ $('#copy-cmd').addEventListener('click', async e => {
 });
 
 heroLoop();
+if (!reduced) autoHandoff();
 // Show the run demo working without a click.
 new IntersectionObserver((es, o) => { if (es[0].isIntersecting) { runEntry(0); o.disconnect(); } }, { threshold: .4 }).observe($('#run-list'));
 new IntersectionObserver((es, o) => { if (es[0].isIntersecting) { generateCommit(); o.disconnect(); } }, { threshold: .5 }).observe($('#commit-box'));

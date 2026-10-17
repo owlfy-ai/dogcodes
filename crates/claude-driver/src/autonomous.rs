@@ -35,6 +35,7 @@ pub(super) fn is_root_output(raw: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use crate::*;
     use serde_json::json;
     #[test]
