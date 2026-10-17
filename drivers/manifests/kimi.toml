@@ -1,0 +1,41 @@
+schema_version = 1
+id = "kimi"
+display_name = "Kimi Code"
+homepage = "https://www.kimi.com/"
+runtime_kind = "external_process"
+
+[discovery]
+candidate_executables = ["kimi"]
+version_args = ["--version"]
+# `kimi --version` prints a bare semver, so product identity comes from the
+# ACP server help surface instead.
+identity_args = ["acp", "--help"]
+version_output_markers = ["kimi-code as an agent client protocol"]
+env_allowlist = ["PATH"]
+timeout_millis = 3000
+output_limit_bytes = 65536
+launch_args = ["acp"]
+
+[discovery.platform_paths]
+macos = []
+windows = []
+linux = []
+
+[discovery.user_paths]
+macos = [".kimi-code/bin/kimi"]
+windows = []
+linux = [".kimi-code/bin/kimi"]
+
+[supported_versions]
+denylist = []
+
+[protocol]
+kind = "acp"
+version = "stable_v1_beta"
+framing = "json_rpc_stdio"
+
+[capability_expectations]
+streaming_text = "native_via_acp_beta"
+session_resume = "acp_load_session_advertised_runtime_probe_pending"
+approvals = "safe_decline_until_pending_interaction"
+cancellation = "acp_session_cancel"

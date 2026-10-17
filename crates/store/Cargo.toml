@@ -1,0 +1,34 @@
+[package]
+name = "agent-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+driver-api = { path = "../driver-api" }
+async-trait.workspace = true
+chrono.workspace = true
+agent-core = { path = "../core" }
+agent-domain = { path = "../domain" }
+agent-protocol = { path = "../protocol" }
+hex.workspace = true
+rusqlite = { workspace = true, features = ["hooks"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+pi-driver = { path = "../pi-driver" }
+claude-driver = { path = "../claude-driver" }
+antigravity-driver = { path = "../antigravity-driver" }
+zcode-driver = { path = "../zcode-driver" }
+agent-workspace = { path = "../workspace" }
+codex-driver = { path = "../codex-driver" }
+acp-driver = { path = "../acp-driver" }
+tempfile = "3.27.0"
+futures.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

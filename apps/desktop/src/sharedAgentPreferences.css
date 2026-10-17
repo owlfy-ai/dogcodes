@@ -1,0 +1,18 @@
+.shared-settings-notice {
+  position: fixed;
+  z-index: 1500;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(720px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: inherit;
+  background: var(--panel-raised);
+  box-shadow: 0 4px 18px #0002;
+}
+.shared-settings-notice button { flex-shrink: 0; }

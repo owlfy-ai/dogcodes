@@ -1,0 +1,3 @@
+.git-operation-recovery { margin: 8px 12px; padding: 10px 12px; border: 1px solid #8885; border-radius: 8px; font-size: calc(12px * var(--ui-scale, 1)); }
+.git-operation-recovery p { margin: 4px 0; overflow-wrap: anywhere; }
+.git-operation-recovery-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }

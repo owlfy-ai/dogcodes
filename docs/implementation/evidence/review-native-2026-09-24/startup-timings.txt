@@ -1,0 +1,22 @@
+acp timing stage=initialize elapsed_ms=385
+acp timing stage=probe_session elapsed_ms=14188
+antigravity timing stage=spawn_lock elapsed_ms=0
+antigravity timing stage=hook_verification cache=miss elapsed_ms=12843
+antigravity timing stage=process_spawn elapsed_ms=0
+antigravity timing stage=native_init elapsed_ms=15180
+antigravity timing stage=first_text_since_spawn elapsed_ms=89678
+antigravity timing stage=spawn_lock elapsed_ms=2178
+antigravity timing stage=hook_verification cache=miss elapsed_ms=9159
+antigravity timing stage=process_spawn elapsed_ms=2
+antigravity timing stage=native_init elapsed_ms=13484
+antigravity timing stage=first_text_since_spawn elapsed_ms=22951
+antigravity timing stage=spawn_lock elapsed_ms=1258
+antigravity timing stage=hook_verification cache=miss elapsed_ms=8899
+antigravity timing stage=process_spawn elapsed_ms=0
+antigravity timing stage=native_init elapsed_ms=8937
+antigravity timing stage=first_text_since_spawn elapsed_ms=27362
+antigravity timing stage=spawn_lock elapsed_ms=1165
+antigravity timing stage=hook_verification cache=miss elapsed_ms=8171
+antigravity timing stage=process_spawn elapsed_ms=1
+antigravity timing stage=native_init elapsed_ms=9229
+antigravity timing stage=first_text_since_spawn elapsed_ms=19073

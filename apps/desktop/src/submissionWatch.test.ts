@@ -1,0 +1,44 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import { TauriCoreClient } from "./tauriClient";
+const channels = vi.hoisted(() => [] as { onmessage: (message: unknown) => void }[]);
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), Channel: class { onmessage = (_: unknown) => {}; constructor() { channels.push(this); } } }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
+const stops: (() => void)[] = [];
+beforeEach(() => { vi.useFakeTimers(); vi.mocked(invoke).mockReset().mockResolvedValue(undefined); channels.length = 0; });
+afterEach(() => { stops.splice(0).forEach(stop => stop()); vi.useRealTimers(); });
+it("shares one global read-only stream and refreshes on publication and reconnect", async () => {
+  const first = vi.fn(), second = vi.fn();
+  const a = new TauriCoreClient().subscribeSubmissionIntents(first);
+  const b = new TauriCoreClient().subscribeSubmissionIntents(second);
+  stops.push(a, b); await Promise.resolve();
+  expect(vi.mocked(invoke).mock.calls.filter(([name]) => name === "core_submission_watch")).toHaveLength(1);
+  const args = vi.mocked(invoke).mock.calls[0][1];
+  expect(Object.keys(args!)).toEqual(["id", "changes"]);
+  first.mockClear(); second.mockClear();
+  channels[0].onmessage({ kind: "heartbeat" });
+  expect(first).not.toHaveBeenCalled();
+  channels[0].onmessage({ kind: "invalidated" });
+  expect(first).toHaveBeenCalledOnce(); expect(second).toHaveBeenCalledOnce();
+  channels[0].onmessage({ kind: "error", message: "disconnected" });
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(channels).toHaveLength(2);
+  first.mockClear(); second.mockClear();
+  channels[0].onmessage({ kind: "invalidated" });
+  expect(first).not.toHaveBeenCalled();
+  a(); channels[1].onmessage({ kind: "invalidated" });
+  expect(first).not.toHaveBeenCalled(); expect(second).toHaveBeenCalledOnce();
+  b(); await vi.advanceTimersByTimeAsync(30000);
+  expect(channels).toHaveLength(2);
+  expect(vi.mocked(invoke).mock.calls.every(([name]) => name === "core_submission_watch" || name === "core_submission_unwatch")).toBe(true);
+});
+it("releases a pending connection without reviving it after unmount", async () => {
+  let ready!: () => void;
+  vi.mocked(invoke).mockImplementation(name => name === "core_submission_watch" ? new Promise<void>(done => { ready = done; }) : Promise.resolve());
+  const refresh = vi.fn(); const stop = new TauriCoreClient().subscribeSubmissionIntents(refresh); stops.push(stop);
+  stop(); ready(); await Promise.resolve();
+  channels[0].onmessage({ kind: "invalidated" });
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(refresh).not.toHaveBeenCalled(); expect(channels).toHaveLength(1);
+});

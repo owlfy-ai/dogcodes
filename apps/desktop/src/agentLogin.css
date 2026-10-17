@@ -1,0 +1,13 @@
+.agent-login { display: inline-flex; align-items: center; flex: none; margin-left: 3px; }
+.agent-login-button {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: 0; border-radius: 2px; background: transparent;
+  color: inherit; font: inherit; font-weight: 500; line-height: inherit;
+  white-space: nowrap; cursor: pointer; text-underline-offset: 3px;
+}
+.agent-login-button:hover:not(:disabled) { text-decoration: underline; }
+.agent-login-button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.agent-login-button:disabled { cursor: wait; opacity: .65; }
+.agent-login-button .loading-status { padding: 0; gap: 4px; color: inherit; font: inherit; animation: none; }
+.agent-login-feedback { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.agent-card-identity > .agent-card-login-status { display: flex; align-items: center; gap: 8px; color: var(--w-warning, #b0741b); }

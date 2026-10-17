@@ -1,0 +1,175 @@
+{
+  "passed": true,
+  "database": "[LOCAL_TEMP]/dogcodes-review-acceptance-izw10p/app-v5.db",
+  "originalProjectReview": "example-run-04",
+  "repairTurn": "example-trn-03",
+  "newVersionReview": "example-run-05",
+  "oldInputSha256": "cf4de6b81fc6b2ce62da1da57f1e6e9ebb5e87781a9282d7a35280dfae441968",
+  "newInputSha256": "1f074043758217a5fedcdb576b726f7083c06a2f78f1ebbf139352eb39c829c0",
+  "selectedIndices": [
+    0
+  ],
+  "newVersionFile": "reports/last.py",
+  "newVersionStructured": true,
+  "newVersionFindings": 0,
+  "originalSnapshotRetries": 2,
+  "laterLiveEditExcluded": true,
+  "runs": [
+    {
+      "id": "example-run-06",
+      "request": {
+        "taskId": "example-tsk-02",
+        "turnId": "example-trn-04",
+        "runId": "example-run-06",
+        "executor": {
+          "providerId": "codex",
+          "installationId": "example-ins-01"
+        },
+        "kind": "code",
+        "retryOf": null
+      },
+      "status": "cancelled",
+      "inputSha256": "0a096035892333f85da6d2dfadb28825426d79c3eae8c9360141a8d868957aa2",
+      "groups": [
+        {
+          "id": "group-1",
+          "status": "cancelled",
+          "sessions": [
+            "example-session-08"
+          ]
+        },
+        {
+          "id": "group-2",
+          "status": "cancelled",
+          "sessions": []
+        }
+      ]
+    },
+    {
+      "id": "example-run-04",
+      "request": {
+        "taskId": "example-tsk-02",
+        "turnId": null,
+        "sourceSnapshot": "example-art-01",
+        "runId": "example-run-04",
+        "executor": {
+          "providerId": "kimi",
+          "installationId": "example-ins-02"
+        },
+        "kind": "code",
+        "retryOf": null
+      },
+      "status": "completed",
+      "inputSha256": "cf4de6b81fc6b2ce62da1da57f1e6e9ebb5e87781a9282d7a35280dfae441968",
+      "groups": [
+        {
+          "id": "group-1",
+          "status": "completed",
+          "sessions": [
+            "example-session-09"
+          ]
+        },
+        {
+          "id": "group-2",
+          "status": "completed",
+          "sessions": [
+            "example-session-10",
+            "example-session-11"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "example-run-07",
+      "request": {
+        "taskId": "example-tsk-02",
+        "turnId": "example-trn-04",
+        "runId": "example-run-07",
+        "executor": {
+          "providerId": "codex",
+          "installationId": "example-ins-01"
+        },
+        "kind": "code",
+        "retryOf": "example-run-06"
+      },
+      "status": "completed",
+      "inputSha256": "0a096035892333f85da6d2dfadb28825426d79c3eae8c9360141a8d868957aa2",
+      "groups": [
+        {
+          "id": "group-1",
+          "status": "completed",
+          "sessions": [
+            "example-session-12",
+            "example-session-13"
+          ]
+        },
+        {
+          "id": "group-2",
+          "status": "completed",
+          "sessions": [
+            "example-session-14",
+            "example-session-15"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "example-run-08",
+      "request": {
+        "recheckOf": {
+          "runId": "example-run-04",
+          "repairTurnId": "example-trn-03"
+        },
+        "taskId": "example-tsk-02",
+        "turnId": "example-trn-03",
+        "runId": "example-run-08",
+        "executor": {
+          "providerId": "kimi",
+          "installationId": "example-ins-02"
+        },
+        "kind": "code",
+        "retryOf": null
+      },
+      "status": "failed",
+      "inputSha256": "1f074043758217a5fedcdb576b726f7083c06a2f78f1ebbf139352eb39c829c0",
+      "groups": [
+        {
+          "id": "group-1",
+          "status": "partial",
+          "sessions": [
+            "example-session-16"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "example-run-05",
+      "request": {
+        "recheckOf": {
+          "runId": "example-run-04",
+          "repairTurnId": "example-trn-03"
+        },
+        "taskId": "example-tsk-02",
+        "turnId": "example-trn-03",
+        "runId": "example-run-05",
+        "executor": {
+          "providerId": "kimi",
+          "installationId": "example-ins-02"
+        },
+        "kind": "code",
+        "retryOf": "example-run-08"
+      },
+      "status": "completed",
+      "inputSha256": "1f074043758217a5fedcdb576b726f7083c06a2f78f1ebbf139352eb39c829c0",
+      "groups": [
+        {
+          "id": "group-1",
+          "status": "completed",
+          "sessions": [
+            "example-session-17"
+          ]
+        }
+      ]
+    }
+  ]
+}

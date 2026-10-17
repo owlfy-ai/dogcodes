@@ -1,0 +1,57 @@
+{
+  "provider": "codebuddy",
+  "nativeVersion": "2.156.0",
+  "kind": "code",
+  "status": "failed",
+  "error": "二次复核格式或覆盖不完整；保留初审问题",
+  "structured": true,
+  "groups": 2,
+  "completedGroups": 1,
+  "contextRequests": 9,
+  "independentVerificationSessions": 2,
+  "findings": [
+    {
+      "path": "payments/withdraw.py",
+      "title": "移除余额充足性校验，导致透支返回负余额且不再抛出 ValueError",
+      "locationVerified": true,
+      "verification": {
+        "verdict": "uncertain",
+        "reason": "复核未返回唯一有效结论，保留初审问题。",
+        "citations": []
+      }
+    },
+    {
+      "path": "reports/last.py",
+      "title": "末元素索引越界，所有非空输入均抛 IndexError",
+      "locationVerified": true,
+      "verification": {
+        "verdict": "confirmed",
+        "reason": "冻结材料中 before 为 `return values[-1]`，after 为 `return values[len(values)]`（第 3 行）。Python 序列下标从 0 开始，合法下标区间为 0..len(values)-1，len(values) 恒为越界下标。第 2 行 `if not values: return None` 已拦截空输入，因此非空路径必然执行 `values[len(values)]`：last_value([1,2,3]) 取 values[3] 抛 IndexError；last_value('ab') 同理。唯一的反例尝试是传入 `not values` 为真之外的对象：若传入 dict，before 的 values[-1] 与 after 的 values[len(values)] 都会 KeyError（行为均已错，但初审已说明核心缺陷为越界，未据此新增结论）；若传入一次性迭代器，两版都会在 `if not values`（生成器永为真值）之后的索引处 TypeError，不影响本次结论。改动前 values[-1] 对 list/tuple/str 等任意非空序列返回末元素且无异常，故该 IndexError 回归确由本次改动引入，severity high 成立。",
+        "citations": [
+          {
+            "sourceId": "file-2",
+            "side": "after",
+            "startLine": 2,
+            "endLine": 3,
+            "evidence": "    if not values: return None\n    return values[len(values)]",
+            "path": "reports/last.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          },
+          {
+            "sourceId": "file-2",
+            "side": "before",
+            "startLine": 3,
+            "endLine": 3,
+            "evidence": "    return values[-1]",
+            "path": "reports/last.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          }
+        ]
+      }
+    }
+  ],
+  "reportedFiles": 2,
+  "totalFiles": 2,
+  "restored": true,
+  "fixtureUnchanged": true
+}

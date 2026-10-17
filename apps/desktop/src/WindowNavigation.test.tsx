@@ -1,0 +1,73 @@
+// @vitest-environment jsdom
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { App } from "./App";
+import { DemoCoreClient } from "./demoClient";
+let root: Root, host: HTMLDivElement;
+const control = (name: string) => host.querySelector<HTMLButtonElement>(`[aria-label="${name}"]`)!;
+const click = async (node: HTMLElement) => act(async () => node.click());
+const title = () => host.querySelector('.task-heading h1')?.textContent;
+beforeEach(async () => {
+  localStorage.clear();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => setTimeout(() => cb(0), 0));
+  vi.stubGlobal("cancelAnimationFrame", clearTimeout);
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  const client = new DemoCoreClient();
+  const snapshot = await client.bootstrap();
+  snapshot.tasks = ['Alpha', 'Beta', 'Gamma'].map((title, index) => ({ ...snapshot.tasks[0], taskId: `tsk_nav${index}`, title }));
+  vi.spyOn(client, 'bootstrap').mockResolvedValue(snapshot);
+  vi.spyOn(client, 'timeline').mockResolvedValue([]);
+  vi.spyOn(client, 'subscribe').mockResolvedValue(() => {});
+  host = document.createElement('div'); document.body.append(host); root = createRoot(host);
+  await act(async () => root.render(<App client={client} />));
+});
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+it('navigates opened conversations and disables arrows at either end', async () => {
+  expect(title()).toBe('Alpha'); expect(control('上一个会话').disabled).toBe(true);
+  await click(host.querySelector<HTMLButtonElement>('.task[data-tooltip="Gamma"]')!);
+  await click(host.querySelector<HTMLButtonElement>('.task[data-tooltip="Beta"]')!);
+  await click(control('上一个会话')); expect(title()).toBe('Gamma');
+  await click(control('上一个会话')); expect(title()).toBe('Alpha'); expect(control('上一个会话').disabled).toBe(true);
+  await click(control('下一个会话')); expect(title()).toBe('Gamma');
+  await click(host.querySelector<HTMLButtonElement>('.task[data-tooltip="Alpha"]')!);
+  expect(control('下一个会话').disabled).toBe(true);
+});
+it('keeps navigation and the restore control available after collapsing', async () => {
+  await click(host.querySelector<HTMLButtonElement>('.task[data-tooltip="Beta"]')!);
+  await click(control('收起侧边栏'));
+  expect(host.querySelector<HTMLElement>('#app-sidebar')!.hidden).toBe(true);
+  expect(host.querySelector('.task-header [aria-label="展开侧边栏"]')).not.toBeNull();
+  expect(localStorage.getItem('dogcodes.sidebar.collapsed')).toBe('true');
+  await click(control('上一个会话')); expect(title()).toBe('Alpha');
+  await click(control('展开侧边栏'));
+  expect(host.querySelector<HTMLElement>('#app-sidebar')!.hidden).toBe(false);
+  expect(host.querySelector('.sidebar-titlebar [aria-label="收起侧边栏"]')).not.toBeNull();
+  expect(localStorage.getItem('dogcodes.sidebar.collapsed')).toBe('false');
+});
+it('keeps the resized left sidebar width when opening the right dock and restoring the sidebar', async () => {
+  const shell = host.querySelector<HTMLElement>('.app-shell')!;
+  const handle = control('调整左侧栏宽度');
+  const initial = Number(handle.getAttribute('aria-valuenow'));
+  handle.setPointerCapture = vi.fn(); handle.releasePointerCapture = vi.fn();
+  const pointer = (type: string, x: number) => {
+    const event = new MouseEvent(type, { bubbles: true, clientX: x, button: 0 });
+    Object.defineProperty(event, 'pointerId', { value: 1 }); handle.dispatchEvent(event);
+  };
+  await act(async () => { pointer('pointerdown', initial); pointer('pointermove', initial + 60); pointer('pointerup', initial + 60); });
+  expect(shell.style.getPropertyValue('--sidebar-width')).toBe(`${initial + 60}px`);
+  expect(localStorage.getItem('dogcodes.sidebar.width')).toBe(String(initial + 60));
+  await click(control('显示右侧边栏'));
+  expect(shell.classList.contains('review-expanded')).toBe(true);
+  expect(shell.style.getPropertyValue('--sidebar-width')).toBe(`${initial + 60}px`);
+  expect(Number(control('调整右侧栏宽度').getAttribute('aria-valuemax'))).toBe(Math.max(260, Math.min(900, innerWidth - initial - 60 - 320)));
+  await click(control('收起侧边栏'));
+  expect(control('调整左侧栏宽度')).toBeNull();
+  await click(control('展开侧边栏'));
+  expect(shell.style.getPropertyValue('--sidebar-width')).toBe(`${initial + 60}px`);
+  await act(async () => control('调整左侧栏宽度').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+  expect(shell.style.getPropertyValue('--sidebar-width')).toBe(`${initial}px`);
+});

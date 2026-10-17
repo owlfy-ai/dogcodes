@@ -1,0 +1,41 @@
+import { expect, it, vi } from "vitest";
+import { terminalInput } from "./terminalInput";
+const encode = (text: string) => new TextEncoder().encode(text);
+it("buffers startup input and preserves fast typing, Unicode and control keys under backpressure", async () => {
+  let finish!: () => void;
+  const write = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+  const queue = terminalInput(write, vi.fn());
+  queue.push(encode("echo "));
+  await Promise.resolve();
+  expect(write).not.toHaveBeenCalled();
+  queue.ready("pty");
+  await Promise.resolve();
+  for (const letter of "中文abcdef\r\x03") queue.push(encode(letter));
+  expect(write).toHaveBeenCalledTimes(1);
+  finish(); await Promise.resolve();
+  expect(write).toHaveBeenCalledTimes(2);
+  finish(); await Promise.resolve();
+  expect(new TextDecoder().decode(Uint8Array.from(write.mock.calls.flatMap(call => (call as unknown as [string, number[]])[1])))).toBe("echo 中文abcdef\r\x03");
+});
+it("coalesces bursts and splits long pastes without losing bytes", async () => {
+  const write = vi.fn(async (_id: string, _bytes: number[]) => {});
+  const queue = terminalInput(write, vi.fn());
+  queue.ready("pty");
+  const text = "中文abc".repeat(6000);
+  for (const letter of text) queue.push(encode(letter));
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(write.mock.calls.length).toBeLessThan(10);
+  expect(write.mock.calls.every(call => call[1].length <= 8192)).toBe(true);
+  expect(new TextDecoder().decode(Uint8Array.from(write.mock.calls.flatMap(call => call[1])))).toBe(text);
+});
+it("stops after failed writes and discards input belonging to closed terminals", async () => {
+  const failed = vi.fn(), write = vi.fn(async () => { throw new Error("closed"); });
+  const queue = terminalInput(write, failed);
+  queue.ready("pty"); queue.push(encode("a"));
+  await Promise.resolve(); await Promise.resolve();
+  queue.push(encode("b")); await Promise.resolve();
+  expect(write).toHaveBeenCalledTimes(1); expect(failed).toHaveBeenCalledTimes(1);
+  const other = terminalInput(write, failed);
+  other.push(encode("old")); other.dispose(); other.ready("new");
+  await Promise.resolve(); expect(write).toHaveBeenCalledTimes(1);
+});

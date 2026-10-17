@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "providerB": "codex",
+  "sameProject": true,
+  "overlap": true,
+  "cancelledA": false,
+  "approvals": 2,
+  "independentSessions": true,
+  "evidenceDirectory": "[LOCAL_TEMP]/dogcodes-live-shared-3pK0aL"
+}

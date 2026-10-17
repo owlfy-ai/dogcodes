@@ -1,0 +1,17 @@
+{
+  "provider": "claude-code",
+  "nativeVersion": "2.1.278",
+  "kind": "security",
+  "status": "failed",
+  "error": "审查未正常完成",
+  "structured": true,
+  "groups": 1,
+  "completedGroups": 0,
+  "contextRequests": 0,
+  "independentVerificationSessions": 0,
+  "findings": [],
+  "reportedFiles": 0,
+  "totalFiles": 1,
+  "restored": true,
+  "fixtureUnchanged": true
+}

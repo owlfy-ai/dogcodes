@@ -1,0 +1,65 @@
+{
+  "provider": "codex",
+  "nativeVersion": "0.155.0-alpha.2.6",
+  "kind": "security",
+  "status": "completed",
+  "error": null,
+  "structured": true,
+  "groups": 1,
+  "completedGroups": 1,
+  "contextRequests": 4,
+  "independentVerificationSessions": 1,
+  "findings": [
+    {
+      "path": "documents/download.py",
+      "title": "删除所有权校验导致文档越权读取",
+      "locationVerified": true,
+      "verification": {
+        "verdict": "confirmed",
+        "reason": "确认本次改动移除了函数内的所有权保护：对于 load_document 能成功返回且 user.id != doc.owner_id 的文档，旧版会抛出 PermissionError，新版直接返回正文。load_document 的实现仅调用 db.get_document，未显式校验用户。上游授权或数据库访问限制可能阻止外部攻击，但冻结材料未提供这些实现，因此确认的是初审所述条件下的授权回退，不代表已证实外部攻击路径可达。",
+        "citations": [
+          {
+            "sourceId": "file-1",
+            "side": "before",
+            "startLine": 2,
+            "endLine": 5,
+            "evidence": "def download(user, doc_id):\n    doc = load_document(doc_id)\n    ensure_owner(user, doc)\n    return doc.body",
+            "path": "documents/download.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          },
+          {
+            "sourceId": "file-1",
+            "side": "after",
+            "startLine": 2,
+            "endLine": 4,
+            "evidence": "def download(user, doc_id):\n    doc = load_document(doc_id)\n    return doc.body",
+            "path": "documents/download.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          },
+          {
+            "sourceId": "context-file-2",
+            "side": "after",
+            "startLine": 6,
+            "endLine": 7,
+            "evidence": "def ensure_owner(user, doc):\n    if user.id != doc.owner_id: raise PermissionError('not owner')",
+            "path": "policy.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          },
+          {
+            "sourceId": "context-file-2",
+            "side": "after",
+            "startLine": 9,
+            "endLine": 11,
+            "evidence": "def load_document(doc_id):\n    # No authorization is performed here; the caller must check ownership.\n    return db.get_document(doc_id)",
+            "path": "policy.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          }
+        ]
+      }
+    }
+  ],
+  "reportedFiles": 1,
+  "totalFiles": 1,
+  "restored": true,
+  "fixtureUnchanged": true
+}

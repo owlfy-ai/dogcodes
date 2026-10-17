@@ -1,0 +1,39 @@
+.project-group > .project-hover-anchor { position: relative; padding: 0; border-radius: 7px; }
+.project-heading-trigger { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 30px; padding: 4px 7px; border: 0; border-radius: 7px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.project-hover-anchor:hover, .project-hover-anchor[data-info-open] { background: color-mix(in srgb, var(--muted) 12%, transparent); }
+.project-list-chevron { width: 12px; height: 12px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.project-conversations[hidden] { display: none; }
+/* Only clear transient backgrounds; the selected conversation stays highlighted. */
+.conversation-list:has(.project-hover-anchor:hover) .history-row:not(.active),
+.conversation-list:has(.project-hover-anchor:hover) .history-row:not(.active) > .task { background: transparent; }
+.project-hover-card { width: calc(320px * var(--ui-scale, 1)); padding: 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-raised); color: inherit; box-shadow: 0 8px 28px #0002; font-size: calc(13px * var(--ui-scale, 1)); }
+.project-hover-title, .project-hover-count, .project-hover-directories li, .project-hover-edit { display: flex; align-items: center; gap: 8px; padding: 5px 3px; }
+.project-hover-title strong { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.project-hover-card svg { width: 16px; height: 16px; flex: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+.project-hover-count { color: var(--muted); }
+.project-hover-directories { list-style: none; margin: 4px 0; padding: 5px 0; border-block: 1px solid color-mix(in srgb, var(--muted) 18%, transparent); }
+.project-hover-directories li { align-items: flex-start; }
+.project-hover-directories li > span { min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
+.project-hover-directories svg { margin-top: 2px; color: var(--muted); }
+.project-hover-directories small { margin-left: auto; flex: none; color: var(--muted); font-size: 11px; }
+.project-hover-edit { width: 100%; padding: 7px 4px; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; text-align: left; }
+.project-hover-edit:hover { background: color-mix(in srgb, var(--muted) 12%, transparent); }
+
+.project-heading-trigger { flex: 1; width: auto; }
+.project-actions-anchor { flex: none; }
+.project-actions { display: flex; gap: 2px; }
+.project-action { display: grid; place-items: center; width: 25px; height: 25px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; font-size: 18px; cursor: pointer; opacity: 0; }
+.project-hover-anchor:hover .project-action, .project-hover-anchor:focus-within .project-action, .project-action[aria-expanded="true"] { opacity: 1; }
+.project-action:hover, .project-action:focus-visible { background: color-mix(in srgb, var(--muted) 14%, transparent); }
+.project-action:disabled { cursor: default; opacity: .35; }
+.project-action-menu { width: calc(232px * var(--ui-scale, 1)); padding: 7px; border: 1px solid var(--line); border-radius: 13px; background: var(--panel-raised); color: inherit; box-shadow: 0 8px 28px #0002; }
+.project-action-menu > button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 0; border-radius: 7px; background: transparent; color: inherit; text-align: left; font: inherit; font-size: calc(13px * var(--ui-scale, 1)); cursor: pointer; }
+.project-action-menu > button:hover, .project-action-menu > button:focus-visible { background: color-mix(in srgb, var(--muted) 14%, transparent); }
+.project-action-menu svg { width: 18px; height: 18px; flex: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.project-action-menu hr { margin: 5px 8px; border: 0; border-top: 1px solid var(--line); }
+.project-action-menu small { display: block; padding: 0 10px 6px; font-size: 11px; color: var(--muted); }
+.project-action-menu [role="alert"] { font-size: 12px; padding: 4px 10px; color: #d93025; }
+.project-pin-mark { width: 13px; height: 13px; flex: none; color: var(--muted); stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.removed-projects { margin: 8px 7px; color: var(--muted); font-size: 12px; }
+.removed-projects button { display: block; width: 100%; padding: 6px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+@media (hover: none) { .project-action { opacity: 1; } }

@@ -1,0 +1,35 @@
+/* Appears only after 300ms, so fast reads never flash; see useLoadingVisibility for surfaces that also hold. */
+.loading-status { box-sizing: border-box; color: var(--review-muted, var(--muted, #888)); font-size: calc(12px * var(--ui-scale, 1)); font-weight: 400; line-height: 1.6; animation: loading-status-reveal .2s ease-out .3s both; }
+.loading-status--inline { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 4px 0; vertical-align: middle; }
+.loading-status--panel { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 14px; width: 100%; min-height: calc(120px * var(--ui-scale, 1)); flex: 1; padding: 18px 16px; }
+.loading-status-label { min-width: 0; overflow-wrap: anywhere; }
+
+/* Text shimmer: a soft highlight sweeps across the label. */
+.loading-status-label {
+  --dim: color-mix(in srgb, currentColor 55%, transparent);
+  background: linear-gradient(90deg, var(--dim) 0%, var(--dim) 38%, currentColor 50%, var(--dim) 62%, var(--dim) 100%) 0 0 / 250% 100%;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: loading-status-shimmer 1.8s linear infinite;
+}
+.loading-status--panel > .loading-status-label { text-align: center; }
+
+.loading-dots { display: inline-flex; align-items: center; gap: 3px; flex: none; height: 1em; }
+.loading-dots i { width: calc(4px * var(--ui-scale, 1)); aspect-ratio: 1; border-radius: 50%; background: currentColor; animation: loading-dot 1s ease-in-out infinite; }
+.loading-dots i:nth-child(2) { animation-delay: .15s; }
+.loading-dots i:nth-child(3) { animation-delay: .3s; }
+
+.loading-skeleton { display: grid; gap: 10px; }
+.loading-skeleton i { display: block; height: calc(8px * var(--ui-scale, 1)); border-radius: 5px; background: currentColor; opacity: .14; animation: loading-skeleton-breathe 1.6s ease-in-out infinite; }
+.loading-skeleton i:nth-child(1) { width: 72%; }
+.loading-skeleton i:nth-child(2) { width: 54%; animation-delay: .12s; }
+.loading-skeleton i:nth-child(3) { width: 80%; animation-delay: .24s; }
+.loading-skeleton i:nth-child(4) { width: 40%; animation-delay: .36s; }
+
+@keyframes loading-status-reveal { from { opacity: 0; } to { opacity: 1; } }
+@keyframes loading-status-shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+@keyframes loading-dot { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-3px); opacity: 1; } }
+@keyframes loading-skeleton-breathe { 0%, 100% { opacity: .1; } 50% { opacity: .2; } }
+@media (prefers-reduced-motion: reduce) {
+  .loading-status, .loading-status-label, .loading-dots i, .loading-skeleton i { animation: none; }
+  .loading-status-label { -webkit-text-fill-color: currentColor; background: none; }
+}

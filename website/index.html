@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>dogcodes — Herd every coding agent into one workspace</title>
+<meta name="description" content="dogcodes is an open-source desktop workspace for Claude Code, Codex, Cursor and 9 more coding agents: hand off work between agents, track every quota, cross-review code, and run projects in one click." />
+<meta property="og:title" content="dogcodes — Herd every coding agent into one workspace" />
+<meta property="og:description" content="Hand off work between agents, track every quota, cross-review code, and run projects in one click. Open source, free, for macOS, Windows and Linux." />
+<meta property="og:image" content="assets/logo.png" />
+<meta name="theme-color" content="#000000" />
+<link rel="icon" href="assets/logo.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<header class="nav dark" id="nav">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="assets/logo.png" alt="" />dogcodes</a>
+    <div class="nav-actions">
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="en" aria-pressed="true">EN</button>
+        <button type="button" data-lang="zh" aria-pressed="false">中文</button>
+      </div>
+      <a class="gh" data-link="github" href="#"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg><span>GitHub</span></a>
+      <a class="btn btn-lime btn-sm" href="#download" data-i18n="nav.get">Download</a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ================= HERO ================= -->
+<section class="hero dark">
+  <div class="hero-bg" id="hero-bg" aria-hidden="true"></div>
+  <div class="wrap hero-copy">
+    <span class="eyebrow reveal"><b data-i18n="hero.badge">OPEN SOURCE</b><span data-i18n="hero.eyebrow">12 coding agents · one desktop workspace</span></span>
+    <h1 class="reveal d1"><span data-i18n="hero.title1">Herd every</span> <span class="nowrap"><span class="bracket">&lt;</span><span class="accent" data-i18n="hero.title2">coding agent</span><span class="bracket">&gt;</span></span><br /><span data-i18n="hero.title3">into one workspace.</span></h1>
+    <p class="lede reveal d2" data-i18n="hero.lede">Hand the same conversation from Claude Code to Codex mid-task. Watch every quota. Let one agent review another. Run any project in one click — with the subscriptions you already pay for.</p>
+    <div class="hero-cta reveal d3">
+      <a class="btn btn-lime" href="#download" id="hero-download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg><span data-i18n="hero.download">Download for macOS</span></a>
+      <a class="btn btn-ghost" data-link="github" href="#"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 .2a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.49c-2.23.48-2.7-.95-2.7-.95-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.65-.89-3.65-3.96 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.22 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.08-1.87 3.76-3.66 3.96.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 8 .2Z"/></svg><span data-i18n="hero.star">Star on GitHub</span></a>
+    </div>
+    <div class="hero-meta reveal d3"><span data-i18n="hero.meta1">Free &amp; Apache-2.0</span><span>macOS · Windows · Linux</span><span data-i18n="hero.meta3">Local-first</span></div>
+  </div>
+
+  <div class="wrap">
+    <div class="stage" id="stage">
+      <div class="window">
+        <div class="titlebar"><div class="dots"><i></i><i></i><i></i></div><div class="title">dogcodes — checkout-service</div></div>
+        <div class="app">
+          <aside class="side">
+            <div class="new"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v6M5 8h6"/></svg><span data-i18n="app.new">New conversation</span></div>
+            <h6 data-i18n="app.projects">Projects</h6>
+            <div class="item on"><img src="assets/agents/claude-code.svg" alt="" /><span data-i18n="app.t1">Add rate limiting</span></div>
+            <div class="item"><img src="assets/agents/chatgpt.svg" alt="" /><span data-i18n="app.t2">Fix flaky payment test</span></div>
+            <div class="item"><img src="assets/agents/kimi.svg" alt="" /><span data-i18n="app.t3">Migrate to Postgres 17</span></div>
+            <div class="item"><img src="assets/agents/cursor.svg" alt="" /><span data-i18n="app.t4">Review auth middleware</span></div>
+          </aside>
+          <div class="chat">
+            <div class="msgs" id="hero-msgs"></div>
+            <div class="composer">
+              <div class="ph" data-i18n="app.ph">Ask a coding agent to…</div>
+              <div class="row"><span class="chip">⌘ default</span><span class="chip" id="hero-agent"><span class="mini on-light"><img src="assets/agents/claude-code.svg" alt="" /></span>Claude Code <i class="ring-sm" style="--v:8"></i></span><span class="send">↑</span></div>
+            </div>
+          </div>
+          <aside class="panel">
+            <h6 data-i18n="app.quota">Quota</h6>
+            <div class="quota" id="q-claude"><img src="assets/agents/claude-code.svg" alt="" /><div class="n">Claude Code<small data-i18n="app.reset1">resets in 2h 14m</small><div class="bar"><i style="--w:8%"></i></div></div><span class="pct">8%</span></div>
+            <div class="quota" id="q-codex"><img src="assets/agents/chatgpt.svg" alt="" /><div class="n">Codex<small data-i18n="app.reset2">resets Mon 09:00</small><div class="bar"><i style="--w:76%"></i></div></div><span class="pct">76%</span></div>
+            <div class="quota"><img src="assets/agents/kimi.svg" alt="" /><div class="n">Kimi Code<small data-i18n="app.reset3">resets in 4h 02m</small><div class="bar"><i style="--w:91%"></i></div></div><span class="pct">91%</span></div>
+            <div class="quota"><img src="assets/agents/cursor.svg" alt="" /><div class="n">Cursor<small data-i18n="app.reset4">resets Nov 4</small><div class="bar"><i style="--w:64%"></i></div></div><span class="pct">64%</span></div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ================= AGENTS ================= -->
+<section class="sec dark agents-sec" id="agents">
+  <div class="wrap">
+    <div class="sec-head center reveal">
+      <span class="kicker">supported agents</span>
+      <h2 data-i18n="agents.title">Works with the agents you already use.</h2>
+      <p class="sub" data-i18n="agents.sub">12 coding agents, connected through their official CLIs and your existing sign-ins. Available models, approvals and usage data vary by agent.</p>
+    </div>
+    <div class="agent-grid" id="agent-grid"></div>
+    <p class="agents-note reveal" data-i18n="agents.note">More agents on the way.</p>
+  </div>
+</section>
+
+<!-- ================= HANDOFF ================= -->
+<section class="sec light" id="handoff">
+  <div class="wrap split">
+    <div class="sec-head reveal">
+      <span class="kicker">seamless handoff</span>
+      <h2 data-i18n="handoff.title">Switch agents. Keep the conversation.</h2>
+      <p class="sub" data-i18n="handoff.sub">Change the agent running a conversation at any moment. dogcodes hands over the context automatically — no copy-paste, no re-explaining.</p>
+      <ul class="points">
+        <li data-i18n="handoff.p1">Give each task to the agent best suited for it — one designs, another fills in the details.</li>
+        <li data-i18n="handoff.p2">Out of quota? Another agent picks up the work without restating the requirements.</li>
+        <li data-i18n="handoff.p3">The new agent can look up earlier turns through built-in history tools. It truly continues.</li>
+      </ul>
+    </div>
+    <div class="card demo spot reveal d1">
+      <div class="demo-bar"><span data-i18n="handoff.try">Try it — pick the next agent:</span>
+        <div class="agent-switch" id="handoff-switch"></div>
+      </div>
+      <div class="demo-feed" id="handoff-feed"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= QUOTA ================= -->
+<section class="sec dark" id="quota">
+  <div class="wrap">
+    <div class="sec-head center reveal">
+      <span class="kicker">quota &amp; usage</span>
+      <h2 data-i18n="quota.title">Every quota, every reset. One glance.</h2>
+      <p class="sub" data-i18n="quota.sub">Remaining quota, reset times and versions for all 12 agents in one place. Plan your work around them and make every token count — then upgrade any agent in one click.</p>
+    </div>
+    <div class="quota-grid" id="quota-grid"></div>
+
+    <div class="trio">
+      <div class="card spot reveal">
+        <div class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h4"/></svg></div>
+        <h3 data-i18n="acc.t1">Use the plans you already have</h3>
+        <p data-i18n="acc.p1">dogcodes drives the official CLIs you're signed in to — Claude Code, Codex, Cursor and more. No separate account, no extra API bill.</p>
+      </div>
+      <div class="card spot reveal d1">
+        <div class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg></div>
+        <h3 data-i18n="acc.t2">Found automatically</h3>
+        <p data-i18n="acc.p2">Installed agents and their sign-in status are detected on launch, with official install links for the rest.</p>
+      </div>
+      <div class="card spot reveal d2">
+        <div class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 4.5 3.4 8.2 8 9 4.6-.8 8-4.5 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg></div>
+        <h3 data-i18n="acc.t3">Local-first by design</h3>
+        <p data-i18n="acc.p3">Your data stays on your machine — no relay server. Agents start with only the environment they need, so your other secrets stay yours.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= REVIEW ================= -->
+<section class="sec light" id="review">
+  <div class="wrap split flip">
+    <div class="sec-head reveal">
+      <span class="kicker">cross-agent review</span>
+      <h2 data-i18n="review.title">Let one agent review another.</h2>
+      <p class="sub" data-i18n="review.sub">Ask a different agent — a different model — to review what was just changed. Fresh context, no shared blind spots. Security and performance passes included.</p>
+      <ul class="points">
+        <li data-i18n="review.p1">Findings ranked high, medium and low.</li>
+        <li data-i18n="review.p2">Pick what matters, then start the fix in one click.</li>
+        <li data-i18n="review.p3">The fix goes back to the main agent with the report attached — context stays intact.</li>
+      </ul>
+    </div>
+    <div class="card review spot reveal d1">
+      <div class="review-head"><span class="chip"><span class="mini on-light"><img src="assets/agents/chatgpt.svg" alt="" /></span>Codex</span><span data-i18n="review.reviewing">reviewing changes by</span><span class="chip"><span class="mini on-light"><img src="assets/agents/claude-code.svg" alt="" /></span>Claude Code</span><span class="state" id="review-state">3 findings</span></div>
+      <label class="finding"><input type="checkbox" checked /><span class="sev h">HIGH</span><p><span data-i18n="review.f1">Rate limiter key ignores X-Forwarded-For, so all proxied clients share one bucket.</span><small>middleware/ratelimit.ts:42</small></p></label>
+      <label class="finding"><input type="checkbox" checked /><span class="sev m">MED</span><p><span data-i18n="review.f2">Redis call has no timeout; a slow node stalls every request.</span><small>lib/redis.ts:18</small></p></label>
+      <label class="finding"><input type="checkbox" /><span class="sev l">LOW</span><p><span data-i18n="review.f3">Magic number 60 should be a named constant.</span><small>config/limits.ts:7</small></p></label>
+      <div class="fix-bubble" id="fix-bubble"></div>
+      <div class="review-foot"><span id="review-count">2 selected</span><button class="btn btn-lime btn-sm" type="button" id="start-fix" data-i18n="review.fix">Start fix →</button></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FORK ================= -->
+<section class="sec dark" id="fork">
+  <div class="wrap split">
+    <div class="sec-head reveal">
+      <span class="kicker">fork across agents</span>
+      <h2 data-i18n="fork.title">Branch the idea. Race the agents.</h2>
+      <p class="sub" data-i18n="fork.sub">Fork a new conversation from any turn and hand it to a different agent. The original stays untouched; worktrees keep each approach's code isolated.</p>
+      <ul class="points">
+        <li data-i18n="fork.p1">Let several agents attempt the same task.</li>
+        <li data-i18n="fork.p2">Compare the results side by side, keep the best.</li>
+      </ul>
+    </div>
+    <div class="card fork reveal d1" id="fork-card">
+      <svg viewBox="0 0 520 300" role="img" aria-label="Conversation forked into two agents">
+        <path class="path" d="M30 150 H200" style="--len:170" />
+        <path class="path lime b1" d="M200 150 C 250 150, 250 70, 300 70 H470" style="--len:300" />
+        <path class="path b2" d="M200 150 C 250 150, 250 230, 300 230 H470" style="--len:300" />
+        <circle class="node" cx="30" cy="150" r="7" /><circle class="node" cx="110" cy="150" r="7" /><circle class="node" cx="200" cy="150" r="9" />
+        <circle class="node lime" cx="380" cy="70" r="7" /><circle class="node" cx="380" cy="230" r="7" />
+        <g class="label"><text x="20" y="130" class="dim" data-i18n="fork.l1">turn 1</text><text x="96" y="130" class="dim" data-i18n="fork.l2">turn 2</text><text x="178" y="185" data-i18n="fork.l3">fork here</text>
+          <text x="300" y="52">Claude Code · <tspan class="dim" data-i18n="fork.a">approach A</tspan></text><text x="300" y="262">Codex · <tspan class="dim" data-i18n="fork.b">approach B</tspan></text></g>
+        <g class="pick"><rect x="420" y="56" rx="13" width="96" height="28" fill="#b7f34c" /><text x="436" y="75" style="fill:#0a0f02;font-size:12px" data-i18n="fork.keep">✓ Keep this</text></g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ================= GIT + RUN ================= -->
+<section class="sec light" id="loop">
+  <div class="wrap">
+    <div class="split">
+      <div class="sec-head reveal">
+        <span class="kicker">familiar git</span>
+        <h2 data-i18n="git.title">Git, the way you already use it.</h2>
+        <p class="sub" data-i18n="git.sub">A sidebar modeled closely on VS Code: stage, unstage, discard, ignore, commit, commit &amp; push — in tree or list view.</p>
+        <ul class="points">
+          <li data-i18n="git.p1">Have any agent write the commit message in one click — in the language you choose.</li>
+        </ul>
+      </div>
+      <div class="card git spot reveal d1">
+        <div class="git-top"><span class="branch">⎇ feature/rate-limit</span><span class="stat"><span class="add">+128</span> <span class="del">−14</span></span></div>
+        <div id="git-files"></div>
+        <div class="commit">
+          <div class="commit-box" id="commit-box"><span class="ph" data-i18n="git.ph">Commit message…</span></div>
+          <div class="commit-row">
+            <button class="gen" type="button" id="gen-msg"><img src="assets/agents/kimi.svg" alt="" /><span data-i18n="git.gen">Generate with Kimi</span></button>
+            <div class="seg" id="msg-lang"><button type="button" data-l="en" aria-pressed="true">EN</button><button type="button" data-l="zh" aria-pressed="false">中文</button><button type="button" data-l="ja" aria-pressed="false">日本語</button></div>
+          </div>
+          <div class="commit-btns"><span>Commit</span><span class="go">Commit &amp; Push</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="split flip" style="margin-top:140px">
+      <div class="sec-head reveal">
+        <span class="kicker">one-click run</span>
+        <h2 data-i18n="run.title">Never memorize a start command again.</h2>
+        <p class="sub" data-i18n="run.sub">dogcodes analyzes how each project is run and debugged, then turns those commands and scripts into clickable launch entries.</p>
+        <ul class="points">
+          <li data-i18n="run.p1">No terminal hunting — click once to start, follow the output, stop when done.</li>
+          <li data-i18n="run.p2">Pin your favorites; they survive the next analysis.</li>
+        </ul>
+      </div>
+      <div class="card run spot reveal d1">
+        <div class="run-list" id="run-list"></div>
+        <div class="term" id="term"><div class="dim" data-i18n="run.idle">Press ▶ on any entry</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= BENTO ================= -->
+<section class="sec dark" id="more">
+  <div class="wrap">
+    <div class="sec-head center reveal">
+      <span class="kicker">built for real projects</span>
+      <h2 data-i18n="more.title">The details that make it a daily driver.</h2>
+    </div>
+    <div class="bento">
+      <div class="card tile w3 spot reveal">
+        <h3 data-i18n="more.t1">Multi-folder projects</h3>
+        <p data-i18n="more.p1">Frontend, backend and docs in separate folders? Hand them all to one conversation — even agents without native multi-folder support.</p>
+        <div class="viz tree">
+          <div><span class="f">▾ ▣</span> checkout-service <span class="agent">Codex</span></div>
+          <div class="in1">▸ web/ <span class="dim">React</span></div>
+          <div class="in1">▸ api/ <span class="dim">Go</span></div>
+          <div class="in1">▸ docs/</div>
+          <div class="in2">↳ <span data-i18n="more.tree">all three folders, one conversation</span></div>
+        </div>
+      </div>
+      <div class="card tile w3 spot reveal d1">
+        <h3 data-i18n="more.t2">Close the window. The work keeps going.</h3>
+        <p data-i18n="more.p2">Agents, terminals and project commands run in a background service. Reopen and you're reattached — and nothing gets committed or pushed twice after a crash.</p>
+        <div class="viz bg-viz">
+          <div class="bg-win"><div class="bar2"><i></i><i></i><i></i></div><pre><b>▶ pnpm dev</b>
+  ✓ ready in 412 ms
+  ➜ Local: http://localhost:5173/
+  <b>● agent:</b> applying patch 3/5…</pre></div>
+          <div class="bg-daemon"><i></i><span data-i18n="more.daemon">still running in background</span></div>
+        </div>
+      </div>
+      <div class="card tile w4 spot reveal">
+        <h3 data-i18n="more.t3">Per-turn usage, crystal clear</h3>
+        <p data-i18n="more.p3">Token usage, context occupancy, cache hits and cache usage for every single turn — know exactly where your tokens went.</p>
+        <div class="viz">
+          <div class="turns" id="turns"></div>
+          <div class="legend"><span><i style="background:#f4f4f2"></i><span data-i18n="more.lin">input</span></span><span><i style="background:#b7f34c"></i><span data-i18n="more.lcache">cache hit</span></span><span><i style="background:#5f5f5a"></i><span data-i18n="more.lout">output</span></span></div>
+        </div>
+      </div>
+      <div class="card tile w2 spot reveal d1">
+        <h3 data-i18n="more.t4">Yours, not ours</h3>
+        <p data-i18n="more.p4">Open source under Apache-2.0. No dogcodes account, no telemetry wall.</p>
+        <div class="viz priv">
+          <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span data-i18n="more.k1">Data stays on your machine</span></div>
+          <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span data-i18n="more.k2">Your existing logins</span></div>
+          <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 9-4 3 4 3m8-6 4 3-4 3M13 6l-2 12"/></svg><span data-i18n="more.k3">Read every line of source</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CTA ================= -->
+<section class="cta dark" id="download">
+  <div class="wrap">
+    <img class="logo-big reveal" src="assets/logo.png" alt="dogcodes" />
+    <h2 class="reveal d1" data-i18n="cta.title">Round up your agents.</h2>
+    <p class="reveal d2" data-i18n="cta.sub">Free, open source and local-first. Bring the agents and subscriptions you already have.</p>
+    <div class="dl reveal d3">
+      <a href="#" data-link="release" data-os="mac"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.37 12.7c-.03-2.6 2.12-3.85 2.22-3.91-1.21-1.77-3.09-2.01-3.76-2.04-1.6-.16-3.12.94-3.93.94-.81 0-2.06-.92-3.39-.89-1.74.03-3.35 1.01-4.25 2.57-1.81 3.14-.46 7.79 1.3 10.34.86 1.25 1.89 2.65 3.24 2.6 1.3-.05 1.79-.84 3.36-.84 1.57 0 2.01.84 3.38.81 1.4-.02 2.29-1.27 3.14-2.53.99-1.45 1.4-2.86 1.42-2.93-.03-.01-2.72-1.04-2.73-4.12ZM13.78 5.06c.72-.87 1.2-2.07 1.07-3.27-1.03.04-2.28.69-3.02 1.55-.66.77-1.24 1.99-1.09 3.17 1.15.09 2.32-.58 3.04-1.45Z"/></svg><b>macOS</b><small>Apple Silicon · Intel</small></a>
+      <a href="#" data-link="release" data-os="win"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.4 10.4 4.4v7.1H3V5.4Zm0 13.2 7.4 1v-7H3v6Zm8.3 1.1L21 21V12.6h-9.7v7.1Zm0-15.4v7.2H21V3l-9.7 1.3Z"/></svg><b>Windows</b><small>x64 · installer</small></a>
+      <a href="#" data-link="release" data-os="linux"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c-2.2 0-3.6 1.9-3.6 4.6 0 1.5.4 2.6.2 3.6-.3 1.4-2.3 3.1-3 5-.6 1.5-.3 2.9.8 3.6-.3.6-.4 1.3.2 1.8.9.8 2.6.2 4 .5 1 .2 1.6.9 2.6.9h.6c1 0 1.6-.7 2.6-.9 1.4-.3 3.1.3 4-.5.6-.5.5-1.2.2-1.8 1.1-.7 1.4-2.1.8-3.6-.7-1.9-2.7-3.6-3-5-.2-1 .2-2.1.2-3.6C15.6 3.9 14.2 2 12 2Zm-1.6 4.3c.5 0 .8.6.8 1.2s-.3 1.1-.8 1.1-.8-.5-.8-1.1.3-1.2.8-1.2Zm3.2 0c.5 0 .8.6.8 1.2s-.3 1.1-.8 1.1-.8-.5-.8-1.1.3-1.2.8-1.2ZM12 9.6c.9 0 2 .6 2 1.1 0 .5-1.1 1.2-2 1.2s-2-.7-2-1.2c0-.5 1.1-1.1 2-1.1Z"/></svg><b>Linux</b><small>.deb · AppImage</small></a>
+    </div>
+    <div class="cmd reveal"><span>pnpm install &amp;&amp; pnpm desktop:dev</span><button type="button" id="copy-cmd" data-i18n="cta.copy">Copy</button></div>
+    <p class="small reveal" data-i18n-html="cta.small">Or build from source — see the <a data-link="github" href="#">README</a>. Agent conversations use your chosen agent's account and quota.</p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="assets/logo.png" alt="" />dogcodes</a>
+    <nav><a href="#handoff" data-i18n="nav.features">Features</a><a href="#download" data-i18n="nav.download">Download</a><a data-link="github" href="#">GitHub</a></nav>
+    <p class="fine" data-i18n="foot.fine">© dogcodes contributors · Apache-2.0. Product names, logos and marks belong to their respective owners; their use here identifies compatible tools and implies no endorsement.</p>
+  </div>
+</footer>
+
+<script src="main.js"></script>
+</body>
+</html>

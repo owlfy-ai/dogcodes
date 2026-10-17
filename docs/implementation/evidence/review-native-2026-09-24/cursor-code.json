@@ -1,0 +1,76 @@
+{
+  "provider": "cursor",
+  "nativeVersion": "2026.09.18-9a7762b",
+  "kind": "code",
+  "status": "completed",
+  "error": null,
+  "structured": true,
+  "groups": 2,
+  "completedGroups": 2,
+  "contextRequests": 0,
+  "independentVerificationSessions": 2,
+  "findings": [
+    {
+      "path": "reports/last.py",
+      "title": "非空输入使用 len(values) 作为索引导致 IndexError",
+      "locationVerified": true,
+      "verification": {
+        "verdict": "confirmed",
+        "reason": "冻结 after 版本在第 3 行使用 values[len(values)] 作为索引。对任意非空序列，若长度为 n，则 len(values) 等于 n，而 Python 序列合法下标范围为 0 至 n-1，因此访问下标 n 必然抛出 IndexError。空序列路径仍由第 2 行 if not values: return None 处理，不受影响；该缺陷仅出现在非空输入的核心返回路径。before 版本使用 values[-1] 可正确返回末元素，本次改动在所有非空输入上破坏了函数预期行为。",
+        "citations": [
+          {
+            "sourceId": "file-2",
+            "side": "after",
+            "startLine": 2,
+            "endLine": 3,
+            "evidence": "    if not values: return None\n    return values[len(values)]",
+            "path": "reports/last.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          },
+          {
+            "sourceId": "file-2",
+            "side": "before",
+            "startLine": 3,
+            "endLine": 3,
+            "evidence": "    return values[-1]",
+            "path": "reports/last.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          }
+        ]
+      }
+    },
+    {
+      "path": "payments/withdraw.py",
+      "title": "移除余额不足校验导致可超额提款",
+      "locationVerified": true,
+      "verification": {
+        "verdict": "confirmed",
+        "reason": "冻结 before 版本在第 4 行存在 `amount > balance` 时抛出 `ValueError('insufficient balance')` 的显式拒绝；after 版本删除了该行，并在 normalize 后直接 `return balance - amount`。当 `normalize_amount(raw)` 的结果大于 `balance` 时，函数不再抛异常而会返回负值（例如 balance=10、amount=15 时返回 -5），破坏余额状态一致性。`normalize_amount` 调用仅传入 `raw`，无法访问 `balance` 参数，因此不能替代针对当前余额的业务校验；该缺陷由本次 diff 移除校验逻辑而直接引入。",
+        "citations": [
+          {
+            "sourceId": "file-1",
+            "side": "before",
+            "startLine": 4,
+            "endLine": 4,
+            "evidence": "    if amount > balance: raise ValueError('insufficient balance')",
+            "path": "payments/withdraw.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          },
+          {
+            "sourceId": "file-1",
+            "side": "after",
+            "startLine": 2,
+            "endLine": 4,
+            "evidence": "def withdraw(balance, raw):\n    amount = normalize_amount(raw)\n    return balance - amount",
+            "path": "payments/withdraw.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          }
+        ]
+      }
+    }
+  ],
+  "reportedFiles": 2,
+  "totalFiles": 2,
+  "restored": true,
+  "fixtureUnchanged": true
+}

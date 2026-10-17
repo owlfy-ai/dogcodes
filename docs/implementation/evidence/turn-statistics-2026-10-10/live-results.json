@@ -1,0 +1,516 @@
+{
+  "date": "2026-10-10",
+  "method": "Production drivers; two no-tools turns in isolated workspaces per provider. Codex durable session and ZCode session/debug event-stream supplemental probes. Native identities and local paths omitted. Buffered ACP output windows excluded from accepted results.",
+  "providers": [
+    {
+      "provider": "codebuddy",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 6065,
+          "nativeModel": "hy4-preview-f",
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "model": "hy4-preview-f",
+              "source": "codebuddy.jsonl",
+              "inputTokens": 27398,
+              "outputTokens": 99,
+              "cacheReadTokens": 1344,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 92,
+              "credits": 0.0
+            }
+          ],
+          "repeatedReadStable": true
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 4121,
+          "nativeModel": "hy4-preview-f",
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "model": "hy4-preview-f",
+              "source": "codebuddy.jsonl",
+              "inputTokens": 27543,
+              "outputTokens": 7,
+              "cacheReadTokens": 27328,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "credits": 0.0
+            }
+          ],
+          "repeatedReadStable": true
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "cursor",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 4041,
+          "nativeModel": "grok-4.7[context=256k,reasoning_effort=high,fast=true]",
+          "nativeSummaryIdPresent": false,
+          "requestCount": 0,
+          "requests": [],
+          "repeatedReadStable": true
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 3969,
+          "nativeModel": "grok-4.7[context=256k,reasoning_effort=high,fast=true]",
+          "nativeSummaryIdPresent": false,
+          "requestCount": 0,
+          "requests": [],
+          "repeatedReadStable": true
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "kimi",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 6402,
+          "nativeModel": "kimi-code/k3",
+          "nativeSummaryIdPresent": true,
+          "requestCount": 0,
+          "requests": [],
+          "repeatedReadStable": true,
+          "nativeTurnTokens": {
+            "inputTokens": 3947,
+            "outputTokens": 27,
+            "cacheReadTokens": 18944,
+            "cacheWriteTokens": 0
+          }
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 4120,
+          "nativeModel": "kimi-code/k3",
+          "nativeSummaryIdPresent": true,
+          "requestCount": 0,
+          "requests": [],
+          "repeatedReadStable": true,
+          "nativeTurnTokens": {
+            "inputTokens": 182,
+            "outputTokens": 33,
+            "cacheReadTokens": 22784,
+            "cacheWriteTokens": 0
+          }
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "codex",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 7488,
+          "nativeModel": "gpt-6-astra",
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "model": "gpt-6-astra",
+              "source": "codex.verified_counter_delta",
+              "inputTokens": 20522,
+              "outputTokens": 9,
+              "cacheReadTokens": 0,
+              "reasoningTokens": 0
+            }
+          ],
+          "repeatedReadStable": true
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 2144,
+          "nativeModel": "gpt-6-astra",
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "model": "gpt-6-astra",
+              "source": "codex.verified_counter_delta",
+              "inputTokens": 26259,
+              "outputTokens": 9,
+              "cacheReadTokens": 20352,
+              "reasoningTokens": 0
+            }
+          ],
+          "repeatedReadStable": true
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "grok",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 6777,
+          "nativeModel": "grok-4.7",
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "model": "grok-4.7",
+              "source": "grok.single_model_call",
+              "inputTokens": 19325,
+              "outputTokens": 53,
+              "cacheReadTokens": 1152,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 48,
+              "costUsd": 0.03724
+            }
+          ],
+          "repeatedReadStable": true
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 1463,
+          "nativeModel": "grok-4.7",
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "model": "grok-4.7",
+              "source": "grok.single_model_call",
+              "inputTokens": 19429,
+              "outputTokens": 43,
+              "cacheReadTokens": 19200,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 38,
+              "costUsd": 0.010316
+            }
+          ],
+          "repeatedReadStable": true
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "deepseek-harness",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 974,
+          "nativeModel": "[\"deepseek-official\",\"deepseek-v4-flash\"]",
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "model": "deepseek-v4-flash",
+              "source": "dsh.journal.v4",
+              "inputTokens": 8673,
+              "outputTokens": 43,
+              "cacheReadTokens": 384,
+              "cacheWriteTokens": 0
+            }
+          ],
+          "repeatedReadStable": true
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 817,
+          "nativeModel": "[\"deepseek-official\",\"deepseek-v4-flash\"]",
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "model": "deepseek-v4-flash",
+              "source": "dsh.journal.v4",
+              "inputTokens": 8751,
+              "outputTokens": 6,
+              "cacheReadTokens": 8576,
+              "cacheWriteTokens": 0
+            }
+          ],
+          "repeatedReadStable": true
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "kiro",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 4764,
+          "nativeModel": "auto",
+          "nativeSummaryIdPresent": false,
+          "requestCount": 0,
+          "requests": [],
+          "repeatedReadStable": true,
+          "sessionCredits": 0.0735346223880597
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 4718,
+          "nativeModel": "auto",
+          "nativeSummaryIdPresent": false,
+          "requestCount": 0,
+          "requests": [],
+          "repeatedReadStable": true,
+          "sessionCredits": 0.11504138407960199
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "opencode",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 4767,
+          "nativeModel": "opencode/big-pickle",
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "model": "big-pickle",
+              "source": "opencode.database",
+              "inputTokens": 11475,
+              "outputTokens": 35,
+              "cacheReadTokens": 256,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 29,
+              "costUsd": 0.0
+            }
+          ],
+          "repeatedReadStable": true
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 2262,
+          "nativeModel": "opencode/big-pickle",
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "model": "big-pickle",
+              "source": "opencode.database",
+              "inputTokens": 11545,
+              "outputTokens": 6,
+              "cacheReadTokens": 11392,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": 0.0
+            }
+          ],
+          "repeatedReadStable": true
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "antigravity",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 20129,
+          "nativeModel": null,
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "source": "antigravity.step",
+              "inputTokens": 14019,
+              "outputTokens": 1584,
+              "cacheReadTokens": 0,
+              "reasoningTokens": 1579
+            }
+          ],
+          "repeatedReadStable": true
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 2449,
+          "nativeModel": null,
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "source": "antigravity.step",
+              "inputTokens": 16038,
+              "outputTokens": 72,
+              "cacheReadTokens": 0,
+              "reasoningTokens": 67
+            }
+          ],
+          "repeatedReadStable": true
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "zcode",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 9617,
+          "nativeModel": null,
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "generationMs": 811,
+              "model": "GLM-5.3-Flash",
+              "source": "zcode.session.debug",
+              "inputTokens": 18202,
+              "outputTokens": 49,
+              "cacheReadTokens": 12800,
+              "cacheWriteTokens": 0
+            }
+          ],
+          "repeatedReadStable": true
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 2249,
+          "nativeModel": null,
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "generationMs": 562,
+              "model": "GLM-5.3-Flash",
+              "source": "zcode.session.debug",
+              "inputTokens": 18283,
+              "outputTokens": 23,
+              "cacheReadTokens": 18176,
+              "cacheWriteTokens": 0
+            }
+          ],
+          "repeatedReadStable": true
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "claude-code",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 7220,
+          "nativeModel": null,
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "generationMs": 1654,
+              "model": "kimi-for-coding",
+              "source": "claude.stream",
+              "inputTokens": 24869,
+              "outputTokens": 56,
+              "cacheReadTokens": 1792,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 37
+            }
+          ],
+          "repeatedReadStable": true
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 3308,
+          "nativeModel": null,
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "generationMs": 928,
+              "model": "kimi-for-coding",
+              "source": "claude.stream",
+              "inputTokens": 24973,
+              "outputTokens": 50,
+              "cacheReadTokens": 24832,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 31
+            }
+          ],
+          "repeatedReadStable": true
+        }
+      ],
+      "cleanup": "Ok(Err(Disconnected(\"Claude process shutdown remains unconfirmed\")))"
+    },
+    {
+      "provider": "pi",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 6448,
+          "nativeModel": null,
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "generationMs": 1102,
+              "model": "kimi-for-coding",
+              "source": "pi.message_end",
+              "inputTokens": 5463,
+              "outputTokens": 50,
+              "cacheReadTokens": 5376,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 31,
+              "costUsd": 0.00130409
+            }
+          ],
+          "repeatedReadStable": true
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 1876,
+          "nativeModel": null,
+          "nativeSummaryIdPresent": false,
+          "requestCount": 1,
+          "requests": [
+            {
+              "generationMs": 413,
+              "model": "kimi-for-coding",
+              "source": "pi.message_end",
+              "inputTokens": 5561,
+              "outputTokens": 23,
+              "cacheReadTokens": 5376,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 4,
+              "costUsd": 0.00128919
+            }
+          ],
+          "repeatedReadStable": true
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    }
+  ]
+}

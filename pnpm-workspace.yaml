@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - packages/*
+allowBuilds:
+  esbuild: true
+overrides:
+  # Keep unified's Processor/Plugin types identical throughout the Markdown stack.
+  unified: 11.0.5

@@ -1,0 +1,83 @@
+{
+  "taskId": "example-tsk-02",
+  "fixture": "dogcodes-review-acceptance-izw10p",
+  "databaseAssertionsPassed": true,
+  "renames": [
+    {
+      "sequence": 429,
+      "title": "桌面验收 · 审查与并行"
+    },
+    {
+      "sequence": 430,
+      "title": "置顶审查验收"
+    },
+    {
+      "sequence": 431,
+      "title": "桌面验收 · 名称固定"
+    }
+  ],
+  "completedPrimaryTurns": [
+    "example-trn-01",
+    "example-trn-02"
+  ],
+  "approvalResolutions": 2,
+  "sampleRestored": true,
+  "reviews": [
+    {
+      "runId": "example-run-01",
+      "kind": "code",
+      "provider": "kimi",
+      "status": "completed",
+      "createdAt": "2026-09-24T12:55:17.902584Z",
+      "finishedAt": "2026-09-24T12:58:00.235154Z",
+      "completedGroups": 2,
+      "totalGroups": 2
+    },
+    {
+      "runId": "example-run-02",
+      "kind": "security",
+      "provider": "kimi",
+      "status": "failed",
+      "createdAt": "2026-09-24T12:59:02.029355Z",
+      "finishedAt": "2026-09-24T13:00:30.181594Z",
+      "completedGroups": 1,
+      "totalGroups": 2
+    },
+    {
+      "runId": "example-run-03",
+      "kind": "performance",
+      "provider": "kimi",
+      "status": "cancelled",
+      "createdAt": "2026-09-24T12:59:07.714330Z",
+      "finishedAt": "2026-09-24T13:00:02.804313Z",
+      "completedGroups": 0,
+      "totalGroups": 2
+    }
+  ],
+  "failureInjection": {
+    "target": "isolated Kimi review child",
+    "pid": 68169,
+    "verifiedParentPid": 62580,
+    "signal": "SIGTERM",
+    "purpose": "verify failure display and primary approval isolation"
+  },
+  "manualNativeUiChecks": [
+    "ordinary/pinned/archived rename",
+    "Escape cancels rename",
+    "rename does not navigate",
+    "title unchanged after messages and app restart",
+    "review-only progress with Kimi logo",
+    "completed review 2/2 after restart",
+    "two reviews plus primary approval",
+    "island approval executes primary patch",
+    "cancelled and failed review labels remain distinct",
+    "expired outcomes return to idle",
+    "island card returns to matching task"
+  ],
+  "limits": [
+    "single macOS display",
+    "isolated in-process Core; not a new daemon IPC acceptance",
+    "main Agent Codex; reviewer Kimi",
+    "screenshots observed in tool transcript; no saved screenshot files"
+  ]
+}

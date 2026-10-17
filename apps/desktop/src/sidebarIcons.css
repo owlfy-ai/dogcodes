@@ -1,0 +1,52 @@
+/* Share icon feedback across the sidebar, including its collapsed controls. */
+:root { --sidebar-icon-rest: #858580; --sidebar-icon-hover: #e8e8e6; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) { --sidebar-icon-rest: #92928d; --sidebar-icon-hover: #292927; }
+}
+:root[data-theme="light"] { --sidebar-icon-rest: #92928d; --sidebar-icon-hover: #292927; }
+
+/* These are icon-only controls; row and menu-item backgrounds remain independent. */
+:root .app-shell :is(.sidebar, .collapsed-sidebar-controls) :is(
+  .sidebar-window-controls button, .project-action, .history-section-action,
+  .history-row-actions > button, .history-rename button, .preferences-trigger
+) {
+  background: transparent;
+  color: var(--sidebar-icon-rest);
+  transition: color .12s;
+}
+:root .app-shell :is(.sidebar, .collapsed-sidebar-controls) :is(
+  .sidebar-window-controls button, .project-action, .history-section-action,
+  .history-row-actions > button, .history-rename button, .preferences-trigger
+):is(:hover, :focus-visible):not(:disabled) {
+  background: transparent;
+  color: var(--sidebar-icon-hover);
+}
+:root .app-shell :is(.sidebar, .collapsed-sidebar-controls) :is(
+  .sidebar-window-controls button, .project-action, .history-section-action,
+  .history-row-actions > button, .history-rename button, .preferences-trigger
+):focus-visible {
+  outline: 2px solid var(--sidebar-icon-hover);
+  outline-offset: -2px;
+}
+
+:root .app-shell .sidebar :is(
+  .sidebar-nav-icon, .project-heading-trigger > svg, .history-section-chevron
+) {
+  color: var(--sidebar-icon-rest);
+  transition: color .12s;
+}
+:root .app-shell .sidebar :is(
+  .primary-nav button, .project-heading-trigger, .history-section-toggle
+):is(:hover, :focus-visible):not(:disabled) > svg {
+  color: var(--sidebar-icon-hover);
+}
+
+/* Image marks retain their own colors, with the same change in emphasis. */
+:root .app-shell .sidebar :is(.history-agent, .preferences-trigger .brand-mark) {
+  opacity: .65;
+  transition: opacity .12s;
+}
+:root .app-shell .sidebar :is(.history-row, .history-archived-row):is(:hover, :focus-within) .history-agent,
+:root .app-shell .sidebar .preferences-trigger:is(:hover, :focus-visible) .brand-mark {
+  opacity: 1;
+}

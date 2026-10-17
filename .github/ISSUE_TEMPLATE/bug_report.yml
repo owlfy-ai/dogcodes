@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in dogcodes does not work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Remove tokens, private code and personal data from everything you paste.
+        Security problems: use private vulnerability reporting instead (see SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: dogcodes version or commit
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and CPU architecture
+      placeholder: macOS 26.1 arm64 / Windows 11 x64 / Ubuntu 24.04 x64
+    validations:
+      required: true
+  - type: input
+    id: agent
+    attributes:
+      label: Agent and version involved (if any)
+      placeholder: Codex 0.x / Claude Code 2.x / ...
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Error text, or the relevant part of an exported diagnostics file (review it first).
+      render: text

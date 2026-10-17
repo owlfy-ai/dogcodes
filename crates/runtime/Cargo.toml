@@ -1,0 +1,20 @@
+[package]
+name = "agent-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+proxy-watch = { version = "0.1.0", default-features = false, features = ["linux-gnome", "linux-kde"] }
+serde.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util", "process"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.9"
+plist = "1.10"
+system-configuration = "0.7"
+
+[lints]
+workspace = true

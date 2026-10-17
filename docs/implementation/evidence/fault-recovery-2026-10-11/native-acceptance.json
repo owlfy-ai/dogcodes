@@ -1,0 +1,111 @@
+{
+  "date": "2026-10-11",
+  "referenceHead": "e61d25c7",
+  "cases": [
+    {
+      "provider": "codex",
+      "scenario": "first turn, shutdown, native resume, second turn",
+      "cleanup": "Ok(Ok(()))",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 9017,
+          "ledgerRequests": 1,
+          "newRequests": 1,
+          "distinctRequests": true,
+          "repeatedReadStable": true,
+          "requests": [
+            {
+              "generationMs": 134,
+              "model": "gpt-6-astra",
+              "inputTokens": 20474,
+              "outputTokens": 9,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null
+            }
+          ]
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 12454,
+          "ledgerRequests": 2,
+          "newRequests": 1,
+          "distinctRequests": true,
+          "repeatedReadStable": true,
+          "requests": [
+            {
+              "model": "gpt-6-astra",
+              "inputTokens": 20519,
+              "outputTokens": 9,
+              "cacheReadTokens": 20352,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "provider": "claude-code",
+      "scenario": "first turn, shutdown, native resume, second turn",
+      "cleanup": "Ok(Ok(()))",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 10155,
+          "ledgerRequests": 1,
+          "newRequests": 1,
+          "distinctRequests": true,
+          "repeatedReadStable": true,
+          "requests": [
+            {
+              "generationMs": 3458,
+              "model": "kimi-for-coding",
+              "inputTokens": 32737,
+              "outputTokens": 158,
+              "cacheReadTokens": 24064,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 139,
+              "costUsd": null
+            }
+          ]
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 1744,
+          "ledgerRequests": 2,
+          "newRequests": 1,
+          "distinctRequests": true,
+          "repeatedReadStable": true,
+          "requests": [
+            {
+              "generationMs": 1176,
+              "model": "kimi-for-coding",
+              "inputTokens": 32805,
+              "outputTokens": 45,
+              "cacheReadTokens": 32512,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 26,
+              "costUsd": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "claudeControlOnlyShutdown": {
+    "status": "passed",
+    "createShutdownCycles": 3
+  },
+  "initialClaudeProbe": {
+    "completedTurns": 1,
+    "shutdown": "unconfirmed; fixed by retrying transient macOS EPERM within the existing deadline"
+  }
+}

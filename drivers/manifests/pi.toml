@@ -1,0 +1,40 @@
+schema_version = 1
+id = "pi"
+display_name = "Pi"
+homepage = "https://pi.dev/"
+runtime_kind = "external_process"
+
+[discovery]
+candidate_executables = ["pi"]
+version_args = ["--version"]
+identity_args = ["--help"]
+version_output_markers = ["pi"]
+env_allowlist = ["PATH", "HOME"]
+timeout_millis = 5000
+output_limit_bytes = 65536
+launch_args = ["--mode", "rpc"]
+
+[discovery.platform_paths]
+macos = []
+windows = []
+linux = []
+
+[discovery.user_paths]
+macos = [".local/bin/pi", ".pi/agent/bin/pi", ".npm-global/bin/pi"]
+windows = ["AppData/Roaming/npm/pi.cmd"]
+linux = [".local/bin/pi", ".pi/agent/bin/pi", ".npm-global/bin/pi"]
+
+[supported_versions]
+min = "0.87.0"
+denylist = []
+
+[protocol]
+kind = "pi_rpc"
+version = "rpc_0.87"
+framing = "jsonl_stdio"
+
+[capability_expectations]
+streaming_text = "native"
+session_resume = "native_session_file"
+approvals = "extension_dialogs_no_builtin_gate"
+cancellation = "native_abort"

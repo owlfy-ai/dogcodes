@@ -1,0 +1,89 @@
+{
+  "observedAt": "2026-09-02",
+  "experimentalApi": false,
+  "installations": [
+    {
+      "codexVersion": "0.150.0-alpha.12.2",
+      "source": "chatgpt_macos_resource",
+      "initialize": {
+        "responseReceived": true,
+        "notificationSent": true
+      },
+      "platformFamily": "unix",
+      "platformOs": "macos",
+      "observations": {
+        "codexHomePresent": true,
+        "stderrPresent": false,
+        "stderrTruncated": false
+      },
+      "threadStart": {
+        "responseReceived": true,
+        "threadIdPresent": true,
+        "ephemeral": true,
+        "pathPresent": false,
+        "status": "idle",
+        "interleavedMethods": ["remoteControl/status/changed"]
+      },
+      "threadResume": {
+        "responseReceived": true,
+        "accepted": false,
+        "errorCode": "-32600",
+        "errorKind": "not_found",
+        "threadIdPresent": null,
+        "identityMatched": null,
+        "status": null,
+        "turnCount": null,
+        "interleavedMethods": [
+          "thread/started",
+          "mcpServer/startupStatus/updated",
+          "mcpServer/startupStatus/updated"
+        ]
+      }
+    },
+    {
+      "codexVersion": "0.144.5",
+      "source": "existing_user_node_installation",
+      "initialize": {
+        "responseReceived": true,
+        "notificationSent": true
+      },
+      "platformFamily": "unix",
+      "platformOs": "macos",
+      "observations": {
+        "codexHomePresent": true,
+        "stderrPresent": true,
+        "stderrTruncated": false
+      },
+      "threadStart": {
+        "responseReceived": true,
+        "threadIdPresent": true,
+        "ephemeral": true,
+        "pathPresent": false,
+        "status": "idle",
+        "interleavedMethods": ["remoteControl/status/changed"]
+      },
+      "threadResume": {
+        "responseReceived": true,
+        "accepted": false,
+        "errorCode": "-32600",
+        "errorKind": "not_found",
+        "threadIdPresent": null,
+        "identityMatched": null,
+        "status": null,
+        "turnCount": null,
+        "interleavedMethods": [
+          "thread/started",
+          "mcpServer/startupStatus/updated",
+          "mcpServer/startupStatus/updated"
+        ]
+      }
+    }
+  ],
+  "redactions": [
+    "codexHome.value",
+    "userAgent.machineDetails",
+    "stderr.value",
+    "thread.id",
+    "threadResume.error.message"
+  ]
+}

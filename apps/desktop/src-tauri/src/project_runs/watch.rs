@@ -1,0 +1,56 @@
+//! Project catalog and execution changes use the shared bounded invalidation bus.
+use crate::{
+    DesktopState, review_window::require_task_window,
+    workspace_browser::bridges::WorkspaceWatchers, workspace_service::watch::WatchMessage,
+};
+#[tauri::command]
+pub async fn core_project_runs_watch(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, DesktopState>,
+    watchers: tauri::State<'_, WorkspaceWatchers>,
+    task_id: String,
+    id: String,
+    changes: tauri::ipc::Channel<WatchMessage>,
+) -> Result<(), String> {
+    require_task_window(window.label(), &task_id)?;
+    uuid::Uuid::parse_str(&id).map_err(|_| "无效的状态订阅标识")?;
+    let core = state.core.clone();
+    let (ready, accepted) = tokio::sync::oneshot::channel();
+    watchers.start(
+        (window.label().into(), format!("project-runs:{id}")),
+        async move {
+            let mut stream = match core.project_runs_watch(task_id).await {
+                Ok(stream) => stream,
+                Err(error) => {
+                    let _ = ready.send(Err(error));
+                    return;
+                }
+            };
+            if ready.send(Ok(())).is_err() {
+                return;
+            }
+            loop {
+                let message = stream
+                    .next()
+                    .await
+                    .unwrap_or_else(|message| WatchMessage::Error {
+                        code: "disconnected".into(),
+                        message,
+                    });
+                let ended = matches!(message, WatchMessage::Error { .. });
+                if changes.send(message).is_err() || ended {
+                    return;
+                }
+            }
+        },
+    )?;
+    accepted.await.map_err(|_| "状态订阅已取消")?
+}
+#[tauri::command]
+pub fn core_project_runs_unwatch(
+    window: tauri::WebviewWindow,
+    watchers: tauri::State<'_, WorkspaceWatchers>,
+    id: String,
+) -> Result<(), String> {
+    watchers.stop((window.label().into(), format!("project-runs:{id}")))
+}

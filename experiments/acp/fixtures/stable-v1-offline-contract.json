@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "source": "official-rust-sdk-in-memory",
+  "runtimeObserved": false,
+  "protocolVersion": 1,
+  "sdk": {
+    "package": "agent-client-protocol",
+    "version": "2.0.0",
+    "defaultFeatures": false,
+    "schemaPackageVersion": "1.5.0"
+  },
+  "contracts": {
+    "initialize": "passed",
+    "sessionNew": "passed",
+    "sessionPrompt": "passed",
+    "sessionUpdate": "passed",
+    "sessionRequestPermission": "passed-cancelled-with-option-ids-preserved",
+    "sessionCancel": "passed"
+  },
+  "unknownExtension": {
+    "wireMethod": "_vendor/update",
+    "typedV1ParsedMethod": "vendor/update",
+    "rawEnvelopePreservesMethodAndParams": true,
+    "driverRequirement": "intercept-before-typed-dispatch"
+  },
+  "safety": {
+    "modelUsed": false,
+    "credentialsRead": false,
+    "permissionAutoApproved": false,
+    "workspaceWritten": false
+  }
+}

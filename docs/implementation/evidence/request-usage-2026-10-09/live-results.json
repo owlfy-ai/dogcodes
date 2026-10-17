@@ -1,0 +1,670 @@
+{
+  "date": "2026-10-09",
+  "scope": "two minimal real turns through production drivers; observed requests only; Codex uses isolated hub-analysis session",
+  "agents": [
+    {
+      "provider": "antigravity",
+      "version": "1.3.2",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "requestCount": 1,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "example-session-05:1",
+              "model": null,
+              "source": "antigravity.step",
+              "inputTokens": 13998,
+              "outputTokens": 1543,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": null,
+              "reasoningTokens": 1538,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": 13998,
+          "nativeOutputTokens": 1543,
+          "nativeCredits": null,
+          "nativeScope": "session"
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "requestCount": 2,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "example-session-05:1",
+              "model": null,
+              "source": "antigravity.step",
+              "inputTokens": 13998,
+              "outputTokens": 1543,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": null,
+              "reasoningTokens": 1538,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "requestId": "example-session-05:3",
+              "model": null,
+              "source": "antigravity.step",
+              "inputTokens": 16052,
+              "outputTokens": 57,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": null,
+              "reasoningTokens": 52,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": 30050,
+          "nativeOutputTokens": 1600,
+          "nativeCredits": null,
+          "nativeScope": "session"
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "claude-code",
+      "version": "2.1.289 (Claude Code)",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "requestCount": 1,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "msg_iG7ZvlwrkZDvYxVGZevf8IRS",
+              "model": "kimi-for-coding",
+              "source": "claude.stream",
+              "inputTokens": 24865,
+              "outputTokens": 49,
+              "cacheReadTokens": 17920,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 30,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": 6945,
+          "nativeOutputTokens": 49,
+          "nativeCredits": null,
+          "nativeScope": "turn"
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "requestCount": 2,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "msg_iG7ZvlwrkZDvYxVGZevf8IRS",
+              "model": "kimi-for-coding",
+              "source": "claude.stream",
+              "inputTokens": 24865,
+              "outputTokens": 49,
+              "cacheReadTokens": 17920,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 30,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "requestId": "msg_8fvcOuhoDCqlYtyuYGNw68XV",
+              "model": "kimi-for-coding",
+              "source": "claude.stream",
+              "inputTokens": 24962,
+              "outputTokens": 26,
+              "cacheReadTokens": 24832,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 7,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": 130,
+          "nativeOutputTokens": 26,
+          "nativeCredits": null,
+          "nativeScope": "turn"
+        }
+      ],
+      "cleanup": "Ok(Err(Disconnected(\"Claude process shutdown remains unconfirmed\")))"
+    },
+    {
+      "provider": "codebuddy",
+      "version": "2.161.2",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "requestCount": 1,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "01a11f66249f76268e7d866cdff0c991",
+              "model": "hy4-preview-f",
+              "source": "codebuddy.jsonl",
+              "inputTokens": 27382,
+              "outputTokens": 148,
+              "cacheReadTokens": 9664,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 141,
+              "costUsd": null,
+              "credits": 0.0
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": 27382,
+          "nativeOutputTokens": 148,
+          "nativeCredits": 0.0,
+          "nativeScope": "branch"
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "requestCount": 2,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "01a11f66249f76268e7d866cdff0c991",
+              "model": "hy4-preview-f",
+              "source": "codebuddy.jsonl",
+              "inputTokens": 27382,
+              "outputTokens": 148,
+              "cacheReadTokens": 9664,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 141,
+              "costUsd": null,
+              "credits": 0.0
+            },
+            {
+              "requestId": "01a11f6652b47f60a1e19097e5f3fe51",
+              "model": "hy4-preview-f",
+              "source": "codebuddy.jsonl",
+              "inputTokens": 27575,
+              "outputTokens": 7,
+              "cacheReadTokens": 27264,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": 0.0
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": 54957,
+          "nativeOutputTokens": 155,
+          "nativeCredits": 0.0,
+          "nativeScope": "branch"
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "codex",
+      "version": "codex-cli 0.160.0",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "requestCount": 1,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "checkpoint:example-session-06:17328:9",
+              "model": null,
+              "source": "codex.verified_counter_delta",
+              "inputTokens": 17328,
+              "outputTokens": 9,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": null,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": 17328,
+          "nativeOutputTokens": 9,
+          "nativeCredits": null,
+          "nativeScope": "session"
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "requestCount": 2,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "checkpoint:example-session-06:17328:9",
+              "model": null,
+              "source": "codex.verified_counter_delta",
+              "inputTokens": 17328,
+              "outputTokens": 9,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": null,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "requestId": "checkpoint:example-session-07:40387:18",
+              "model": null,
+              "source": "codex.verified_counter_delta",
+              "inputTokens": 23059,
+              "outputTokens": 9,
+              "cacheReadTokens": 17152,
+              "cacheWriteTokens": null,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": 40387,
+          "nativeOutputTokens": 18,
+          "nativeCredits": null,
+          "nativeScope": "session"
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "cursor",
+      "version": "2026.10.01-e373342",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "requestCount": 0,
+          "stableRepeatedRead": true,
+          "requests": [],
+          "unavailableReason": "原生 ACP 未提供逐请求用量",
+          "nativeInputTokens": null,
+          "nativeOutputTokens": null,
+          "nativeCredits": null,
+          "nativeScope": null
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "requestCount": 0,
+          "stableRepeatedRead": true,
+          "requests": [],
+          "unavailableReason": "原生 ACP 未提供逐请求用量",
+          "nativeInputTokens": null,
+          "nativeOutputTokens": null,
+          "nativeCredits": null,
+          "nativeScope": null
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "deepseek-harness",
+      "version": "0.2.0-rc.2",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "requestCount": 1,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "example-session-01",
+              "model": "deepseek-v4-flash",
+              "source": "dsh.journal.v4",
+              "inputTokens": 8667,
+              "outputTokens": 6,
+              "cacheReadTokens": 384,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": null,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": null,
+          "nativeOutputTokens": null,
+          "nativeCredits": null,
+          "nativeScope": "native"
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "requestCount": 2,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "example-session-01",
+              "model": "deepseek-v4-flash",
+              "source": "dsh.journal.v4",
+              "inputTokens": 8667,
+              "outputTokens": 6,
+              "cacheReadTokens": 384,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": null,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "requestId": "example-session-02",
+              "model": "deepseek-v4-flash",
+              "source": "dsh.journal.v4",
+              "inputTokens": 8708,
+              "outputTokens": 6,
+              "cacheReadTokens": 8448,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": null,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": null,
+          "nativeOutputTokens": null,
+          "nativeCredits": null,
+          "nativeScope": "native"
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "grok",
+      "version": "grok 1.0.50 (c58f321264ba)",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "requestCount": 1,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "example-session-03:grok-4.7-build",
+              "model": "grok-4.7-build",
+              "source": "grok.single_model_call",
+              "inputTokens": 20902,
+              "outputTokens": 54,
+              "cacheReadTokens": 6784,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 49,
+              "costUsd": 0.01086368,
+              "credits": null
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": 20902,
+          "nativeOutputTokens": 54,
+          "nativeCredits": null,
+          "nativeScope": "turn"
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "requestCount": 2,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "example-session-03:grok-4.7-build",
+              "model": "grok-4.7-build",
+              "source": "grok.single_model_call",
+              "inputTokens": 20902,
+              "outputTokens": 54,
+              "cacheReadTokens": 6784,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 49,
+              "costUsd": 0.01086368,
+              "credits": null
+            },
+            {
+              "requestId": "example-session-04:grok-4.7-build",
+              "model": "grok-4.7-build",
+              "source": "grok.single_model_call",
+              "inputTokens": 21007,
+              "outputTokens": 30,
+              "cacheReadTokens": 10240,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 25,
+              "costUsd": 0.00912356,
+              "credits": null
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": 21007,
+          "nativeOutputTokens": 30,
+          "nativeCredits": null,
+          "nativeScope": "turn"
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "kimi",
+      "version": "2.1.1",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "requestCount": 0,
+          "stableRepeatedRead": true,
+          "requests": [],
+          "unavailableReason": "Kimi 提供本轮摘要，未提供可确认的逐请求身份",
+          "nativeInputTokens": 3945,
+          "nativeOutputTokens": 54,
+          "nativeCredits": null,
+          "nativeScope": "turn"
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "requestCount": 0,
+          "stableRepeatedRead": true,
+          "requests": [],
+          "unavailableReason": "Kimi 提供本轮摘要，未提供可确认的逐请求身份",
+          "nativeInputTokens": 210,
+          "nativeOutputTokens": 25,
+          "nativeCredits": null,
+          "nativeScope": "turn"
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "kiro",
+      "version": "kiro-cli 2.28.0",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "requestCount": 0,
+          "stableRepeatedRead": true,
+          "requests": [],
+          "unavailableReason": "原生仅提供 Credits 摘要，未确认逐请求 token",
+          "nativeInputTokens": null,
+          "nativeOutputTokens": null,
+          "nativeCredits": 0.06132739336650083,
+          "nativeScope": "observed"
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "requestCount": 0,
+          "stableRepeatedRead": true,
+          "requests": [],
+          "unavailableReason": "原生仅提供 Credits 摘要，未确认逐请求 token",
+          "nativeInputTokens": null,
+          "nativeOutputTokens": null,
+          "nativeCredits": 0.12300453797678276,
+          "nativeScope": "observed"
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "opencode",
+      "version": "1.15.10",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "failed: OpenCode 未返回任何内容或工具活动，无法确认任务完成。请在原生客户端检查运行状态和日志后重试。",
+          "requestCount": 0,
+          "stableRepeatedRead": true,
+          "requests": [],
+          "unavailableReason": null,
+          "nativeInputTokens": null,
+          "nativeOutputTokens": null,
+          "nativeCredits": null,
+          "nativeScope": null
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "pi",
+      "version": "1.0.2",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "requestCount": 1,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "msg_02TjjRGgUOQP356FRxm2bK9C",
+              "model": "kimi-for-coding",
+              "source": "pi.message_end",
+              "inputTokens": 5461,
+              "outputTokens": 57,
+              "cacheReadTokens": 5376,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 38,
+              "costUsd": 0.00133019,
+              "credits": null
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": 85,
+          "nativeOutputTokens": 57,
+          "nativeCredits": null,
+          "nativeScope": "session"
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "requestCount": 2,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "msg_02TjjRGgUOQP356FRxm2bK9C",
+              "model": "kimi-for-coding",
+              "source": "pi.message_end",
+              "inputTokens": 5461,
+              "outputTokens": 57,
+              "cacheReadTokens": 5376,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 38,
+              "costUsd": 0.00133019,
+              "credits": null
+            },
+            {
+              "requestId": "msg_0MFU9ZPlzr7pHEbmTuFmYJD2",
+              "model": "kimi-for-coding",
+              "source": "pi.message_end",
+              "inputTokens": 5566,
+              "outputTokens": 46,
+              "cacheReadTokens": 5376,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 27,
+              "costUsd": 0.00138594,
+              "credits": null
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": 275,
+          "nativeOutputTokens": 103,
+          "nativeCredits": null,
+          "nativeScope": "session"
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "provider": "zcode",
+      "version": "3.14.4",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "requestCount": 1,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "msg_mv0llw1d_41a6d554-0953-4469-b03f-7c8a02977ca0",
+              "model": "GLM-5.3-Flash",
+              "source": "zcode.session.messages",
+              "inputTokens": 18199,
+              "outputTokens": 25,
+              "cacheReadTokens": 1536,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": null,
+          "nativeOutputTokens": null,
+          "nativeCredits": null,
+          "nativeScope": null
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "requestCount": 2,
+          "stableRepeatedRead": true,
+          "requests": [
+            {
+              "requestId": "msg_mv0llw1d_41a6d554-0953-4469-b03f-7c8a02977ca0",
+              "model": "GLM-5.3-Flash",
+              "source": "zcode.session.messages",
+              "inputTokens": 18199,
+              "outputTokens": 25,
+              "cacheReadTokens": 1536,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "requestId": "msg_mv0lm3ja_f0ba22c1-b2fe-44d5-95d0-2de5a3cfa04d",
+              "model": "GLM-5.3-Flash",
+              "source": "zcode.session.messages",
+              "inputTokens": 18256,
+              "outputTokens": 6,
+              "cacheReadTokens": 18176,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "unavailableReason": null,
+          "nativeInputTokens": null,
+          "nativeOutputTokens": null,
+          "nativeCredits": null,
+          "nativeScope": null
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+schema_version = 1
+id = "fake"
+display_name = "Fake Driver"
+homepage = "https://github.com/"
+runtime_kind = "in_process"
+
+[discovery]
+candidate_executables = []
+version_args = []
+env_allowlist = []
+timeout_millis = 1000
+output_limit_bytes = 4096
+
+[supported_versions]
+denylist = []
+
+[protocol]
+kind = "in_process_fixture"
+version = "1"
+framing = "rust_stream"
+
+[capability_expectations]
+streaming_text = "native"
+

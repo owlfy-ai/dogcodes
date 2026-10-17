@@ -1,0 +1,63 @@
+[package]
+name = "desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+review-acceptance = ["agent-workspace/review-acceptance"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+sha2.workspace = true
+base64 = "0.22"
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "json"] }
+semver.workspace = true
+plist = "1.10"
+quick-xml = { version = "0.41", features = ["serialize"] }
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+agent-runtime = { path = "../../../crates/runtime" }
+notify = "8.2"
+globset = "0.4"
+agent-registry = { path = "../../../crates/agent-registry" }
+agent-core = { path = "../../../crates/core" }
+codex-driver = { path = "../../../crates/codex-driver" }
+acp-driver = { path = "../../../crates/acp-driver" }
+pi-driver = { path = "../../../crates/pi-driver" }
+claude-driver = { path = "../../../crates/claude-driver" }
+antigravity-driver = { path = "../../../crates/antigravity-driver" }
+zcode-driver = { path = "../../../crates/zcode-driver" }
+redaction = { path = "../../../crates/redaction" }
+agent-domain = { path = "../../../crates/domain" }
+driver-api = { path = "../../../crates/driver-api" }
+agent-protocol = { path = "../../../crates/protocol" }
+agent-store = { path = "../../../crates/store" }
+agent-workspace = { path = "../../../crates/workspace" }
+open-with = { path = "../../../crates/open-with" }
+uuid.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2.11.5", features = [] }
+tauri-plugin-dialog = "2"
+tempfile = "3.27.0"
+tokio.workspace = true
+portable-pty = "0.9.0"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+rusqlite.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.28", features = ["process", "signal"] }

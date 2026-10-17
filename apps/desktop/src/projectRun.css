@@ -1,0 +1,50 @@
+.project-run-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; font-size: calc(13px * var(--ui-scale, 1)); }
+.project-run-controls { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px solid var(--review-border); }
+.project-run-label { flex: 1; min-width: 0; color: var(--review-muted); font-size: calc(12px * var(--ui-scale, 1)); }
+.project-run-agent { position: relative; display: flex; align-items: center; flex: none; }
+.project-run-refresh { width: calc(28px * var(--ui-scale, 1)); flex: none; }
+.project-run-controls > button > svg, .project-run-command > svg { width: calc(16px * var(--ui-scale, 1)); height: calc(16px * var(--ui-scale, 1)); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.project-run-directories { overflow: auto; min-height: 70px; flex: 1; padding: 8px 10px; }
+.project-run-directory { margin-bottom: 14px; }
+.project-run-directory > h3 { margin: 8px 4px 6px; font-size: inherit; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.review-panel .project-run-command { width: 100%; display: flex; align-items: center; gap: 9px; padding: 9px 10px; border: 0; border-radius: 7px; text-align: left; }
+.project-run-command > span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.project-run-command small { color: var(--review-muted); font-size: calc(11px * var(--ui-scale, 1)); }
+.project-run-directory > p { margin: 8px 4px; color: var(--review-muted); line-height: 1.6; }
+.project-run-panel > p[role] { margin: 8px 14px; }
+.project-run-analyzing { display: flex; align-items: center; gap: 8px; color: var(--review-muted); }
+.project-run-output { --terminal-bg: var(--review-bg); --terminal-fg: var(--text, currentColor); display: flex; flex-direction: column; min-height: 180px; height: 45%; border-top: 1px solid var(--review-border); }
+.project-run-output-tabs { display: flex; gap: 4px; overflow-x: auto; padding: 6px; flex: none; }
+.project-run-output-tab { display: flex; align-items: center; flex: none; min-width: 0; max-width: calc(220px * var(--ui-scale, 1)); border: 1px solid var(--review-border); border-radius: 7px; }
+.project-run-output-tab[data-selected="true"] { background: var(--review-selected); }
+.review-panel .project-run-output-tab > [role="tab"], .review-panel .project-run-output-tab > [role="tab"]:hover { min-width: 0; padding: 5px 4px 5px 8px; border: 0; background: transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.review-panel .project-run-tab-close { display: grid; place-items: center; flex: none; width: calc(22px * var(--ui-scale, 1)); height: calc(22px * var(--ui-scale, 1)); margin: 0 3px 0 0; padding: 0; border: 0; border-radius: 5px; color: var(--review-muted); line-height: 1; }
+.project-run-tab-close svg { display: block; width: calc(12px * var(--ui-scale, 1)); height: calc(12px * var(--ui-scale, 1)); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.project-run-console { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.project-run-console[hidden] { display: none; }
+.project-run-console-bar { display: flex; align-items: center; gap: 6px; padding: 4px 8px; }
+.project-run-console-bar code { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--review-muted); font-size: calc(11px * var(--ui-scale, 1)); }
+.project-run-console-bar button { flex: none; }
+.review-panel .project-run-stop { display: grid; place-items: center; width: calc(28px * var(--ui-scale, 1)); height: calc(28px * var(--ui-scale, 1)); padding: 0; border: 0; color: var(--review-muted); }
+.project-run-stop svg { display: block; width: calc(18px * var(--ui-scale, 1)); height: calc(18px * var(--ui-scale, 1)); fill: currentColor; }
+.project-run-row { display: flex; align-items: center; min-width: 0; border-radius: 7px; }
+.project-run-row:hover, .project-run-row:focus-within { background: var(--review-hover); }
+.review-panel .project-run-row > .project-run-command { flex: 1; width: 0; min-width: 0; background: transparent; }
+/* The row owns its hover background; the main button must not add a second layer. */
+.review-panel .project-run-row > .project-run-command:hover { background: transparent; }
+.project-run-item-actions { display: flex; flex: none; align-items: center; padding-right: 4px; }
+.review-panel .project-run-item-actions button, .review-panel .project-run-rename button { display: grid; place-items: center; width: calc(26px * var(--ui-scale, 1)); height: calc(28px * var(--ui-scale, 1)); padding: 5px; border: 0; color: var(--review-muted); }
+.project-run-item-actions button { opacity: 0; }
+.project-run-row:hover .project-run-item-actions button, .project-run-row:focus-within .project-run-item-actions button, .project-run-item-actions .is-pinned { opacity: 1; }
+.project-run-item-actions svg, .project-run-rename svg { width: calc(15px * var(--ui-scale, 1)); height: calc(15px * var(--ui-scale, 1)); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.project-run-item-actions .is-pinned { color: inherit; background: var(--review-selected); }
+.project-run-rename { display: flex; flex: 1; min-width: 0; align-items: center; gap: 3px; padding: 3px 4px; }
+.project-run-rename input { width: 0; flex: 1; min-width: 0; }
+.project-run-confirm { width: min(420px, 90vw); padding: 22px; border: 1px solid var(--review-border); border-radius: 12px; color: inherit; background: var(--review-bg); box-shadow: 0 16px 60px #0003; }
+.project-run-confirm::backdrop { background: #0005; }
+.project-run-confirm h3 { margin: 0 0 12px; font-size: calc(16px * var(--ui-scale, 1)); }
+.project-run-confirm p { line-height: 1.7; color: var(--review-muted); }
+.project-run-confirm footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+@media (hover: none) { .project-run-item-actions button { opacity: 1; } }
+
+.project-run-directories--empty { display: flex; min-height: 0; padding: 0; }

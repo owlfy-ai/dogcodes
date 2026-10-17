@@ -1,0 +1,57 @@
+# GitHub 说明页维护
+
+## 命名约定
+
+产品名称统一写为 `dogcodes`，官网域名为 `dog.codes`。crate 目录、源码文件和文档文件按职责命名，不包含产品名；引用路径与 Cargo 命令使用实际目录和包名，例如 `crates/core`、`cargo test -p agent-core`。
+
+软件尚未发布，命名调整直接更新代码、配置、环境变量、协议标识、设置存储键、实验记录和文档，不保留旧名称别名，也不添加旧名称兼容或数据迁移逻辑。环境变量使用 `DOGCODES_` 前缀，内部 npm 包使用 `@dogcodes/` 作用域，桌面应用标识为 `codes.dog.desktop`。
+
+## 语言页面
+
+默认页为根目录的 [README.md](../README.md)。其他语言放在 `docs/i18n/`，每页顶部均可切换到全部 9 个语言版本：英文、简体中文、繁体中文、日语、韩语、西班牙语、法语、德语、巴西葡萄牙语。
+
+修改功能范围时同步各语言版本。产品说明按已实现能力编写；灵动岛暂不列入发布功能。当前首页标注开发预览并提供源码运行方式，安装包实际就绪后再更新下载入口和适用平台。
+
+页面使用 GitHub 支持的 Markdown 和基础 HTML，不依赖自定义 CSS、JavaScript、外部徽章服务或固定仓库地址。
+
+## 替换截图
+
+2026-10-17 起各语言首页按最终卖点改为 1 张总览加 10 个功能截图位。截图暂由用户补充：页面里每个位置先以 HTML 注释留空（不渲染破图），注释写明建议文件名；放入 PNG 后，把对应注释替换为 `![标题](路径)` 即可，九个语言页面需同步。截图使用隔离演示数据，不作为真实供应商或原生三平台验收证据。`docs/images/readme/` 中旧的 7 张演示图暂保留，可复用或替换。
+
+启动 `pnpm dev`，使用已安装的 Playwright 和 Chrome 执行：
+
+```bash
+node scripts/capture-readme.mjs
+```
+
+Playwright 不在项目运行依赖中；也可通过 `--playwright-module /absolute/path/to/playwright/index.mjs` 指定已有安装。`--base-url` 指定本机 Vite 地址，`--browser` 指定 Playwright Chromium channel，`--output` 可先输出到本机审阅目录。默认输出是正式文档图片目录，因此生成前应保留需要对比的旧截图。
+
+生成器使用独立浏览器上下文、合成项目/会话、只读命令白名单及外部请求阻断，直接渲染 App、ReviewPanel、ProjectRunPanel 和终端等现有组件。它检查页面错误、业务错误提示和各场景关键元素后截图；完成后还需逐张检查可读性和遮挡。`readme-fixture.html` 仅供开发文档截图，不被生产入口导入，且拒绝在已有桌面连接的页面运行。
+
+当前以 1600 × 1000 视口、1.5 倍像素密度输出 2400 × 1500 PNG，保持正文和代码可读。可按实际界面调整比例，页面会随图片自然缩放。
+
+| 文件 | 截图建议 |
+| --- | --- |
+| `overview.png` | 主界面全景：项目侧栏、完整对话及右侧工作区 |
+| `switch-agent.png` | 同一对话中切换 Agent 继续工作，Agent/模型选择菜单 |
+| `usage.png` | Agent 管理页：各 Agent 额度、重置时间、版本与升级入口 |
+| `accounts.png` | 欢迎页：自动发现本机 Agent 及登录状态 |
+| `review-fix.png` | 审查问题按高/中/低分级、选择问题并交回主 Agent 修复 |
+| `fork.png` | 从某一轮分叉出新对话并交给另一个 Agent |
+| `git-changes.png` | 侧边栏 Diff、暂存/提交，以及 Agent 生成提交说明（可选语言） |
+| `run-project.png` | 自动分析出的运行项列表与正在输出的运行面板 |
+| `multi-folder.png` | 含多个目录的项目及其会话 |
+| `background.png` | 关闭面板后重新打开，终端/运行输出自动接续 |
+| `turn-usage.png` | 某一轮的 token、上下文、缓存命中与缓存用量明细 |
+
+每张图下面的说明由对应语言页面提供；共用截图可以选择一套界面语言。若以后需要逐语言截图，可另建语言子目录并更新各页图片路径。
+
+## Agent 图标标签
+
+`docs/images/readme/agents/` 包含 12 个本地 PNG 标签。图标来自 `apps/desktop/src/assets/`，标签外框与文字为本项目说明页制作；源图标的声明见[素材来源](../apps/desktop/src/assets/licenses/README.md)。首页的应用图标引用现有 Tauri 图标。
+
+新增或移除 Agent 时，同步全部语言页的标签、数量和能力说明；以实际驱动接入为依据。各标签指向对应 Agent 的主页，链接取自本仓库 `drivers/manifests/`。
+
+## 本次检查范围
+
+此次仅编写说明页、翻译和图片资源，不修改应用功能，不创建 GitHub 仓库或上传发布。页面布局参考 [codex-host](https://github.com/BytePioneer-AI/codex-host)，正文按 dogcodes 的实际能力独立编写。

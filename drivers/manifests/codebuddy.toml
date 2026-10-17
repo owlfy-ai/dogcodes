@@ -1,0 +1,39 @@
+schema_version = 1
+id = "codebuddy"
+display_name = "CodeBuddy"
+homepage = "https://www.codebuddy.ai/"
+runtime_kind = "external_process"
+
+[discovery]
+candidate_executables = ["codebuddy"]
+version_args = ["--version"]
+identity_args = ["--help"]
+version_output_markers = ["codebuddy"]
+env_allowlist = ["PATH"]
+timeout_millis = 5000
+output_limit_bytes = 65536
+launch_args = ["--acp"]
+
+[discovery.platform_paths]
+macos = []
+windows = []
+linux = []
+
+[discovery.user_paths]
+macos = [".local/bin/codebuddy", ".npm-global/bin/codebuddy"]
+windows = ["AppData/Roaming/npm/codebuddy.cmd"]
+linux = [".local/bin/codebuddy", ".npm-global/bin/codebuddy"]
+
+[supported_versions]
+denylist = []
+
+[protocol]
+kind = "acp"
+version = "stable_v1_beta"
+framing = "json_rpc_stdio"
+
+[capability_expectations]
+streaming_text = "native_via_acp"
+session_resume = "runtime_negotiated"
+approvals = "native_request_permission"
+cancellation = "native_cancel_then_fresh_connection"

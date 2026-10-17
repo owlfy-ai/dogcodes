@@ -1,0 +1,42 @@
+schema_version = 1
+id = "antigravity"
+display_name = "Antigravity"
+homepage = "https://antigravity.google/"
+runtime_kind = "external_process"
+
+[discovery]
+candidate_executables = ["agy"]
+# `agy --version` prints a bare semver, so product identity comes from the
+# headless stream-json help surface instead.
+version_args = ["--version"]
+# `agy --help` never names the product; `models` quickly lists Gemini models,
+# a product signature no same-named executable would produce.
+identity_args = ["models"]
+version_output_markers = ["gemini"]
+env_allowlist = ["PATH"]
+timeout_millis = 3000
+output_limit_bytes = 65536
+
+[discovery.platform_paths]
+macos = []
+windows = []
+linux = []
+
+[discovery.user_paths]
+macos = [".local/bin/agy"]
+windows = []
+linux = [".local/bin/agy"]
+
+[supported_versions]
+denylist = []
+
+[protocol]
+kind = "antigravity_stream_json"
+version = "v1_headless_beta"
+framing = "ndjson_stdio"
+
+[capability_expectations]
+streaming_text = "native_via_step_update_beta"
+session_resume = "native_verified_via_conversation_flag"
+approvals = "no_interactive_surface_documented"
+cancellation = "stdin_close_interrupt_beta"

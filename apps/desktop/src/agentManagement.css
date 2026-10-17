@@ -1,0 +1,81 @@
+.workspace.agent-management { grid-template-rows: minmax(0, 1fr); }
+.agent-management .quota-center-content { padding: 36px clamp(20px, 4vw, 64px) 48px; container-type: inline-size; }
+.agent-management .quota-center-intro,
+.agent-management .quota-center-content > .quota-panel,
+.agent-management .agent-uninstalled,
+.agent-management .quota-refresh-status,
+.agent-management .quota-empty,
+.agent-management-summary { width: min(1080px, 100%); box-sizing: border-box; margin-inline: auto; }
+.agent-management .quota-center-intro { align-items: center; margin-bottom: 28px; gap: 20px; }
+.agent-management .quota-center-intro > .agent-management-description { max-width: none; margin: 0; text-align: left; }
+.agent-management-description { color: var(--muted); font-size: calc(13px * var(--ui-scale, 1)); line-height: 1.6; }
+.agent-management .quota-refresh-button { border-radius: 999px; padding: 9px 16px; background: var(--panel); }
+.agent-management .quota-refresh-button:hover:not(:disabled) { background: var(--panel-raised); }
+.agent-management-summary { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; font-size: calc(12px * var(--ui-scale, 1)); color: var(--muted); }
+.agent-management-summary > :first-child { color: inherit; font-weight: 500; }
+.quota-panel.agent-management-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 16px; }
+.quota-panel .agent-management-card { min-width: 0; padding: 22px 24px 16px; border-radius: 18px; gap: 0; }
+.agent-card-heading { display: flex; align-items: center; gap: 12px; min-width: 0; margin-bottom: 24px; }
+.agent-card-heading > .agent-icon { width: calc(34px * var(--ui-scale, 1)); height: calc(34px * var(--ui-scale, 1)); flex: none; }
+.agent-card-identity { min-width: 0; }
+.agent-card-identity h3 { font-size: calc(16px * var(--ui-scale, 1)); font-weight: 600; line-height: 1.4; margin: 0 0 4px; }
+.agent-card-identity > span { display: block; color: var(--muted); font-size: calc(12px * var(--ui-scale, 1)); line-height: 1.5; overflow-wrap: anywhere; }
+.agent-card-content { flex: 1; min-width: 0; }
+.agent-quota-caption { margin-bottom: 12px; color: var(--muted); font-size: calc(11px * var(--ui-scale, 1)); }
+.agent-quota-windows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 24px; }
+.agent-quota-window:only-child { grid-column: 1 / -1; }
+.agent-quota-label { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 9px; line-height: 1.45; font-size: calc(12px * var(--ui-scale, 1)); }
+.agent-quota-label > span { min-width: 0; overflow-wrap: anywhere; }
+.agent-quota-label strong { flex: none; font-size: calc(15px * var(--ui-scale, 1)); font-weight: 550; font-variant-numeric: tabular-nums; }
+.agent-quota-meter { height: 5px; border-radius: 999px; background: color-mix(in srgb, currentColor 10%, transparent); overflow: hidden; }
+.agent-quota-meter > i { display: block; height: 100%; border-radius: inherit; }
+.agent-quota-meter[data-unknown] { opacity: .45; }
+.agent-quota-reset { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 8px; min-height: 1.5em; font-size: calc(10px * var(--ui-scale, 1)); line-height: 1.5; color: var(--muted); }
+.agent-quota-notice { margin: 0 0 10px; padding: 12px 14px; background: color-mix(in srgb, currentColor 4%, transparent); border-radius: 10px; color: var(--muted); font-size: calc(12px * var(--ui-scale, 1)); line-height: 1.8; }
+.agent-context { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 18px; font-size: calc(11px * var(--ui-scale, 1)); color: var(--muted); }
+.agent-context b { font-weight: 500; font-variant-numeric: tabular-nums; }
+.agent-context small { width: 100%; }
+.agent-card-footer { display: flex; align-items: center; flex-wrap: nowrap; gap: 8px; margin-top: 22px; padding-top: 14px; border-top: 1px solid color-mix(in srgb, currentColor 9%, transparent); color: var(--muted); font-size: calc(11px * var(--ui-scale, 1)); line-height: 1.6; }
+/* Keep version metadata and its action on one line, including long desktop versions. */
+.agent-card-version { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-card-footer .agent-update { min-width: 0; max-width: 60%; flex: 0 1 auto; flex-wrap: nowrap; gap: 5px; }
+.agent-card-footer .agent-update-version { min-width: 0; margin: 0; padding: 2px 8px; border-radius: 6px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent-card-footer .agent-update-progress { min-width: 0; }
+.agent-card-footer .agent-update-progress > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-card-updated { margin-left: auto; align-self: flex-start; flex-shrink: 0; padding-top: 3px; color: var(--muted); font-size: calc(10px * var(--ui-scale, 1)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@container (max-width: 780px) { .agent-management .agent-management-grid { grid-template-columns: minmax(0, 1fr); } }
+@container (max-width: 380px) { .agent-management .agent-quota-windows { grid-template-columns: minmax(0, 1fr); } .agent-management .agent-management-card { padding: 18px; } }
+@media (max-width: 600px) { .agent-management .quota-center-intro { align-items: flex-start; flex-wrap: wrap; } }
+.agent-management-controls { display: flex; align-items: center; gap: 8px; margin: -8px -8px 14px; color: var(--muted); }
+.agent-management-controls .agent-drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; border-radius: 6px; padding: 0; background: transparent; color: inherit; cursor: grab; }
+.agent-management-controls .agent-drag-handle:hover { background: var(--panel-raised); color: var(--text); }
+.agent-management-controls .agent-drag-handle:active { cursor: grabbing; }
+.agent-enabled-label { margin-left: auto; font-size: calc(11px * var(--ui-scale, 1)); }
+.agent-management-controls .agent-enabled-switch { display: inline-flex; align-items: center; flex: none; width: 30px; height: 18px; padding: 2px; border: 0; border-radius: 999px; background: color-mix(in srgb, currentColor 24%, transparent); cursor: pointer; transition: background .15s; }
+.agent-enabled-switch > span { width: 14px; height: 14px; border-radius: 50%; background: white; box-shadow: 0 1px 3px #0002; transition: transform .15s; }
+.agent-management-controls .agent-enabled-switch[aria-checked="true"] { background: var(--green); }
+.agent-enabled-switch[aria-checked="true"] > span { transform: translateX(12px); }
+.agent-enabled-switch:disabled { opacity: .4; cursor: default; }
+.agent-management-controls button:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.agent-management-card[data-disabled] .agent-card-heading, .agent-management-card[data-disabled] .agent-card-content, .agent-management-card[data-disabled] .agent-card-footer { opacity: .55; }
+.agent-management-card[data-dragging] { opacity: .45; }
+.agent-management-card[data-drop-target] { outline: 2px solid var(--green); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .agent-enabled-switch, .agent-enabled-switch > span { transition: none; } }
+.agent-uninstalled { margin-top: 28px; }
+.agent-uninstalled > header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 8px; font-size: calc(12px * var(--ui-scale, 1)); }
+.agent-uninstalled > header > span { color: var(--muted); }
+.agent-uninstalled h3 { margin: 0; font-size: calc(13px * var(--ui-scale, 1)); font-weight: 600; }
+.agent-uninstalled ul { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 16px; margin: 0; padding: 0; list-style: none; }
+.agent-uninstalled li { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-width: 0; padding: 8px 4px; border-bottom: 1px solid color-mix(in srgb, currentColor 8%, transparent); font-size: calc(13px * var(--ui-scale, 1)); }
+.agent-uninstalled li > .agent-icon { width: calc(20px * var(--ui-scale, 1)); height: calc(20px * var(--ui-scale, 1)); flex: none; opacity: .6; filter: grayscale(1); }
+.agent-uninstalled-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.agent-install-link { display: inline-flex; align-items: center; gap: 3px; flex: none; padding: 2px 8px; border-radius: 6px; color: var(--green); font-size: calc(12px * var(--ui-scale, 1)); font-weight: 550; text-decoration: none; }
+.agent-install-link:hover { background: color-mix(in srgb, var(--green) 12%, transparent); }
+.agent-install-link:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.agent-install-error { width: 100%; color: #d9622b; font-size: calc(11px * var(--ui-scale, 1)); }
+@container (max-width: 780px) { .agent-management .agent-uninstalled ul { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 380px) { .agent-management .agent-uninstalled ul { grid-template-columns: minmax(0, 1fr); } }
+/* An outdated reading stays readable but greyed, next to the notice that explains it. */
+.agent-quota-notice[data-outdated] { color: var(--w-warning, #b0741b); }
+.agent-card-content:has(.agent-quota-notice[data-outdated]) .agent-quota-window { opacity: .6; }
+.agent-card-content:has(.agent-quota-notice[data-outdated]) .agent-quota-meter i { filter: grayscale(1); }

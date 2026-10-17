@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "providerB": "kimi",
+  "sameProject": true,
+  "overlap": true,
+  "cancelledA": false,
+  "approvals": 2,
+  "independentSessions": true,
+  "evidenceDirectory": "[LOCAL_TEMP]/dogcodes-live-shared-NwqT1p"
+}

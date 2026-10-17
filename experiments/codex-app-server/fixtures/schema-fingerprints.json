@@ -1,0 +1,41 @@
+{
+  "generatedAt": "2026-09-02",
+  "bundle": "codex_app_server_protocol.v2.schemas.json",
+  "installations": [
+    {
+      "codexVersion": "codex-cli 0.150.0-alpha.12.2",
+      "source": "chatgpt_macos_resource",
+      "stable": {
+        "jsonFileCount": 301,
+        "bundleBytes": 571525,
+        "bundleCanonicalSha256": "56f52801c92eac0227a94d5d5a9a0b12abb5f0baf3d899953d8b32b403269ca0",
+        "observedRawSha256": ["b25c0fcc680b9291bba599eb892789b66df7f129ffc40eb9eac2283d3f2d02dd"]
+      },
+      "experimental": {
+        "jsonFileCount": 413,
+        "bundleBytes": 693460,
+        "bundleCanonicalSha256": "b745d3000fcf1b2c630b1eea061d0e9b5b0371f250f11038f09bd26a888d3e50",
+        "observedRawSha256": ["920a565e47b9e694e9516d32ad5667d6dfec0e3292ba2edef2434d737b8bc596"]
+      }
+    },
+    {
+      "codexVersion": "codex-cli 0.144.5",
+      "source": "existing_user_node_installation",
+      "stable": {
+        "jsonFileCount": 267,
+        "bundleBytes": 471114,
+        "bundleCanonicalSha256": "5d8251e1e2f713a3c567c927386f84f2f94692d4721b90d8ff36d0ff92877621",
+        "observedRawSha256": [
+          "b226cf72ebba76ebd645817fa2a40dbe5942fd89fcf586bc8eb9c04c22a5e7ac",
+          "07b59cb2de2d3c98679d73fa09d15f8c2b281bcef0a48ae88df92f64ba34bc9c"
+        ]
+      },
+      "experimental": {
+        "jsonFileCount": 337,
+        "bundleBytes": 554097,
+        "bundleCanonicalSha256": "f5e8d20f3a8f9bb5e5b23ab0c5aa6bde7b12e7e0713606c5d0132651a4959d37",
+        "observedRawSha256": ["cd2d764b3fee6b67c917e14f1acafb6ab6ba81456c9fb0d2f1fad320478495d6"]
+      }
+    }
+  ]
+}

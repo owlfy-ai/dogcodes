@@ -1,0 +1,47 @@
+schema_version = 1
+id = "codex"
+display_name = "Codex"
+homepage = "https://developers.openai.com/codex/"
+runtime_kind = "external_process"
+
+[discovery]
+candidate_executables = ["codex"]
+version_args = ["--version"]
+version_output_markers = ["codex-cli"]
+env_allowlist = ["PATH"]
+timeout_millis = 3000
+output_limit_bytes = 65536
+
+[discovery.platform_paths]
+macos = [
+  "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
+  "/Applications/ChatGPT.app/Contents/Resources/codex",
+  "/Applications/Codex.app/Contents/Resources/codex-cli/bin/codex",
+  "/Applications/Codex.app/Contents/Resources/codex",
+  "/opt/homebrew/bin/codex",
+  "/usr/local/bin/codex",
+]
+windows = []
+linux = ["/usr/local/bin/codex", "/usr/bin/codex"]
+
+[discovery.user_paths]
+macos = [
+  "Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
+  "Applications/ChatGPT.app/Contents/Resources/codex",
+  "Applications/Codex.app/Contents/Resources/codex-cli/bin/codex",
+  "Applications/Codex.app/Contents/Resources/codex",
+]
+
+[supported_versions]
+denylist = []
+
+[protocol]
+kind = "app_server_json_rpc"
+version = "v2_minimal_beta"
+framing = "jsonl_stdio"
+
+[capability_expectations]
+streaming_text = "native"
+session_resume = "native"
+approvals = "safe_decline_until_pending_interaction"
+cancellation = "core_ui_wired_real_runtime_pending"

@@ -1,0 +1,44 @@
+[package]
+name = "agent-workspace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+review-acceptance = []
+
+[dependencies]
+agent-domain = { path = "../domain" }
+cap-std = "3"
+async-trait.workspace = true
+agent-core = { path = "../core" }
+agent-protocol = { path = "../protocol" }
+agent-runtime = { path = "../runtime" }
+hex.workspace = true
+sha2.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+similar = "2.7"
+rusqlite.workspace = true
+tokio.workspace = true
+tempfile = "3"
+
+[dev-dependencies]
+tokio.workspace = true
+
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
+rustix = { version = "1", features = ["fs"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dev-dependencies]
+rustix = { version = "1", features = ["process"] }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+exacl = "0.13"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+native-acl = { path = "../native-acl" }
+libc = "0.2"
+
+[lints]
+workspace = true

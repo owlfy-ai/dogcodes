@@ -1,0 +1,187 @@
+{
+  "provider": "opencode",
+  "turns": [
+    {
+      "turn": 1,
+      "status": "completed",
+      "usage": {
+        "requestUsage": {
+          "records": [
+            {
+              "requestId": "msg_11f7f1415001P4H00nfq63SP3K",
+              "model": "big-pickle",
+              "source": "opencode.database",
+              "inputTokens": 11474,
+              "outputTokens": 84,
+              "cacheReadTokens": 256,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 78,
+              "costUsd": 0.0,
+              "credits": null
+            }
+          ],
+          "truncated": false,
+          "unavailableReason": null
+        },
+        "contextUsedTokens": 11558,
+        "contextWindowTokens": 200000,
+        "contextUsedPercent": null,
+        "cacheHitRatePercent": null,
+        "inputTokens": 11218,
+        "outputTokens": 6,
+        "cacheReadTokens": 256,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 78,
+        "totalTokens": 11558,
+        "costUsd": 0.0,
+        "credits": null,
+        "sessionCostUsd": null,
+        "totalsScope": "native",
+        "observedAtUnixMs": 1791529788051
+      },
+      "repeatedUsage": {
+        "requestUsage": {
+          "records": [
+            {
+              "requestId": "msg_11f7f1415001P4H00nfq63SP3K",
+              "model": "big-pickle",
+              "source": "opencode.database",
+              "inputTokens": 11474,
+              "outputTokens": 84,
+              "cacheReadTokens": 256,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 78,
+              "costUsd": 0.0,
+              "credits": null
+            }
+          ],
+          "truncated": false,
+          "unavailableReason": null
+        },
+        "contextUsedTokens": 11558,
+        "contextWindowTokens": 200000,
+        "contextUsedPercent": null,
+        "cacheHitRatePercent": null,
+        "inputTokens": 11218,
+        "outputTokens": 6,
+        "cacheReadTokens": 256,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 78,
+        "totalTokens": 11558,
+        "costUsd": 0.0,
+        "credits": null,
+        "sessionCostUsd": null,
+        "totalsScope": "native",
+        "observedAtUnixMs": 1791529788053
+      }
+    },
+    {
+      "turn": 2,
+      "status": "completed",
+      "usage": {
+        "requestUsage": {
+          "records": [
+            {
+              "requestId": "msg_11f7f1415001P4H00nfq63SP3K",
+              "model": "big-pickle",
+              "source": "opencode.database",
+              "inputTokens": 11474,
+              "outputTokens": 84,
+              "cacheReadTokens": 256,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 78,
+              "costUsd": 0.0,
+              "credits": null
+            },
+            {
+              "requestId": "msg_11f7f22a0001IR4yuzJ52c1XA4",
+              "model": "big-pickle",
+              "source": "opencode.database",
+              "inputTokens": 11593,
+              "outputTokens": 6,
+              "cacheReadTokens": 256,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": 0.0,
+              "credits": null
+            }
+          ],
+          "truncated": false,
+          "unavailableReason": null
+        },
+        "contextUsedTokens": 11599,
+        "contextWindowTokens": 200000,
+        "contextUsedPercent": null,
+        "cacheHitRatePercent": null,
+        "inputTokens": 11337,
+        "outputTokens": 6,
+        "cacheReadTokens": 256,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 78,
+        "totalTokens": 11599,
+        "costUsd": 0.0,
+        "credits": null,
+        "sessionCostUsd": null,
+        "totalsScope": "native",
+        "observedAtUnixMs": 1791529789909
+      },
+      "repeatedUsage": {
+        "requestUsage": {
+          "records": [
+            {
+              "requestId": "msg_11f7f1415001P4H00nfq63SP3K",
+              "model": "big-pickle",
+              "source": "opencode.database",
+              "inputTokens": 11474,
+              "outputTokens": 84,
+              "cacheReadTokens": 256,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 78,
+              "costUsd": 0.0,
+              "credits": null
+            },
+            {
+              "requestId": "msg_11f7f22a0001IR4yuzJ52c1XA4",
+              "model": "big-pickle",
+              "source": "opencode.database",
+              "inputTokens": 11593,
+              "outputTokens": 6,
+              "cacheReadTokens": 256,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": 0.0,
+              "credits": null
+            }
+          ],
+          "truncated": false,
+          "unavailableReason": null
+        },
+        "contextUsedTokens": 11599,
+        "contextWindowTokens": 200000,
+        "contextUsedPercent": null,
+        "cacheHitRatePercent": null,
+        "inputTokens": 11337,
+        "outputTokens": 6,
+        "cacheReadTokens": 256,
+        "cacheWriteTokens": null,
+        "reasoningTokens": 78,
+        "totalTokens": 11599,
+        "costUsd": 0.0,
+        "credits": null,
+        "sessionCostUsd": null,
+        "totalsScope": "native",
+        "observedAtUnixMs": 1791529789910
+      }
+    }
+  ],
+  "cleanup": "Ok(Ok(()))",
+  "version": "2.0.18",
+  "executableKind": "desktop-managed CLI selected by dogcodes",
+  "selectedModel": "opencode/big-pickle",
+  "database": "existing user database",
+  "defaultModelFailure": {
+    "model": "opencode/exo-free",
+    "status": 410,
+    "message": "Model exo-free has been deprecated."
+  }
+}

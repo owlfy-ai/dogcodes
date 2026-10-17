@@ -1,0 +1,70 @@
+{
+  "fixture": "dogcodes-review-acceptance-izw10p",
+  "date": "2026-09-25",
+  "sameBeforeAndAfter": true,
+  "before": {
+    "tasks": [
+      [
+        "example-tsk-01",
+        "新对话",
+        null
+      ],
+      [
+        "example-tsk-02",
+        "桌面验收 · 名称固定",
+        null
+      ]
+    ],
+    "artifacts": 14,
+    "sessions": 1,
+    "projectHashes": {
+      "sample.txt": "1a7a4397d5a4ffb9524e9fb433b572289029e5daf6ca3d0f9bab5cf57d75a85d",
+      "payments/withdraw.py": "bc45de4d27b27ee0573ba2f11d6119abb0976961d4f3411b6b29b7d8f7f2eb42",
+      "reports/last.py": "0fcc80cc443298da5416654e8b5569f6bcceea042dc523df77c2a38dcc409b4a"
+    }
+  },
+  "after": {
+    "tasks": [
+      [
+        "example-tsk-01",
+        "新对话",
+        null
+      ],
+      [
+        "example-tsk-02",
+        "桌面验收 · 名称固定",
+        null
+      ]
+    ],
+    "artifacts": 14,
+    "sessions": 1,
+    "projectHashes": {
+      "sample.txt": "1a7a4397d5a4ffb9524e9fb433b572289029e5daf6ca3d0f9bab5cf57d75a85d",
+      "payments/withdraw.py": "bc45de4d27b27ee0573ba2f11d6119abb0976961d4f3411b6b29b7d8f7f2eb42",
+      "reports/last.py": "0fcc80cc443298da5416654e8b5569f6bcceea042dc523df77c2a38dcc409b4a"
+    }
+  },
+  "lifecycleEvents": [
+    [
+      "task.deleted",
+      "example-tsk-02",
+      535
+    ],
+    [
+      "task.restored",
+      "example-tsk-02",
+      536
+    ]
+  ],
+  "desktopChecks": [
+    "delete-current-switches-to-other",
+    "deleted-state-survives-restart",
+    "restore-history-and-reviews",
+    "open-restored-turn-diff-sample.txt"
+  ],
+  "limitations": [
+    "isolated-in-process-core",
+    "macOS-only",
+    "no-new-model-calls"
+  ]
+}

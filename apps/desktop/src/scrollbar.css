@@ -1,0 +1,37 @@
+/* Shared by all windows, scroll directions and the terminal's custom scrollbar. */
+:root {
+  --scrollbar-size: 10px;
+  --scrollbar-inset: 2px;
+  --scrollbar-radius: 999px;
+}
+
+/* Fallback for engines without WebKit scrollbar styling. */
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+
+@supports selector(::-webkit-scrollbar) {
+  /* Non-auto standard properties override the pseudo-elements in newer engines. */
+  * { scrollbar-width: auto; scrollbar-color: auto; }
+  *::-webkit-scrollbar { width: var(--scrollbar-size); height: var(--scrollbar-size); }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    min-width: 36px;
+    min-height: 36px;
+    border: var(--scrollbar-inset) solid transparent;
+    border-radius: var(--scrollbar-radius);
+    background: var(--scrollbar-thumb);
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-thumb:hover, *::-webkit-scrollbar-thumb:active { background-color: var(--scrollbar-thumb-hover); }
+  *::-webkit-scrollbar-corner { background: transparent; }
+  *::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+}
+
+/* xterm 6 draws its own scrollbar DOM. Width matches its reserved ruler columns. */
+.terminal-emulator .xterm .xterm-scrollable-element > .scrollbar.vertical { width: var(--scrollbar-size) !important; }
+.terminal-emulator .xterm .xterm-scrollable-element > .scrollbar.horizontal { height: var(--scrollbar-size) !important; }
+.terminal-emulator .xterm .xterm-scrollable-element > .scrollbar > .slider {
+  box-sizing: border-box;
+  border: var(--scrollbar-inset) solid transparent;
+  border-radius: var(--scrollbar-radius);
+  background-clip: padding-box !important;
+}

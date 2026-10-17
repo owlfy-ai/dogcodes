@@ -1,0 +1,66 @@
+{
+  "inputSha256": "53a70ce29f526c3f12e21ccfb39d5d0a5e5e7a5f37481f86b5b5b28379f3bd63",
+  "workflow": {
+    "groups": [
+      {
+        "id": "group-1",
+        "fileIds": [
+          "file-1"
+        ],
+        "status": "failed",
+        "contextRequests": 0,
+        "contextLog": [],
+        "initialOutput": "",
+        "verificationOutput": "",
+        "error": "无法创建只读审查会话",
+        "sessionDigests": []
+      },
+      {
+        "id": "group-2",
+        "fileIds": [
+          "file-2"
+        ],
+        "status": "failed",
+        "contextRequests": 0,
+        "contextLog": [],
+        "initialOutput": "",
+        "verificationOutput": "",
+        "error": "无法创建只读审查会话",
+        "sessionDigests": []
+      }
+    ],
+    "contextScope": "仅检索本次送审的冻结文本；另收录 1 个关联文件。范围有界，未收录不等于不存在；旧记录不补读当前代码。"
+  },
+  "report": {
+    "schemaVersion": 1,
+    "structured": true,
+    "findings": [],
+    "files": [
+      {
+        "fileId": "file-1",
+        "rootId": "[REDACTED_HIGH_ENTROPY]",
+        "rootLabel": "[REDACTED_HIGH_ENTROPY]",
+        "path": "payments/withdraw.py",
+        "status": "not_reported",
+        "rules": [
+          "代码审查：聚焦会导致错误行为的逻辑、边界、兼容性、状态一致性、异常处理与资源生命周期。",
+          "Python：核对可变默认参数、异常路径、资源释放、阻塞调用进入异步路径及输入类型边界。"
+        ]
+      },
+      {
+        "fileId": "file-2",
+        "rootId": "[REDACTED_HIGH_ENTROPY]",
+        "rootLabel": "[REDACTED_HIGH_ENTROPY]",
+        "path": "reports/last.py",
+        "status": "not_reported",
+        "rules": [
+          "代码审查：聚焦会导致错误行为的逻辑、边界、兼容性、状态一致性、异常处理与资源生命周期。",
+          "Python：核对可变默认参数、异常路径、资源释放、阻塞调用进入异步路径及输入类型边界。"
+        ]
+      }
+    ],
+    "warnings": [
+      "审查覆盖不完整，不能据此判定全部改动通过。"
+    ]
+  }
+}

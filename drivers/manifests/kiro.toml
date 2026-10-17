@@ -1,0 +1,39 @@
+schema_version = 1
+id = "kiro"
+display_name = "Kiro"
+homepage = "https://kiro.dev/"
+runtime_kind = "external_process"
+
+[discovery]
+candidate_executables = ["kiro-cli"]
+version_args = ["--version"]
+identity_args = ["--help"]
+version_output_markers = ["kiro-cli"]
+env_allowlist = ["PATH", "HOME"]
+timeout_millis = 5000
+output_limit_bytes = 65536
+launch_args = ["acp", "--agent-engine", "v3", "--auth-method", "cli"]
+
+[discovery.platform_paths]
+macos = ["/Applications/Kiro CLI.app/Contents/MacOS/kiro-cli"]
+windows = []
+linux = []
+
+[discovery.user_paths]
+macos = [".local/bin/kiro-cli", ".kiro/bin/kiro-cli"]
+windows = ["AppData/Roaming/npm/kiro-cli.cmd"]
+linux = [".local/bin/kiro-cli", ".kiro/bin/kiro-cli"]
+
+[supported_versions]
+denylist = []
+
+[protocol]
+kind = "acp"
+version = "stable_v1"
+framing = "json_rpc_stdio"
+
+[capability_expectations]
+streaming_text = "native"
+session_resume = "runtime_negotiated"
+approvals = "native_request_permission"
+cancellation = "native_cancel"

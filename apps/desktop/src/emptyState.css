@@ -1,0 +1,37 @@
+.review-empty-state { --empty-bg: var(--review-bg, var(--terminal-bg, var(--panel, #fafaf9))); --empty-muted: var(--review-muted, var(--muted, #777773)); --empty-border: var(--review-border, var(--terminal-border, #8883)); display: flex; align-items: center; justify-content: center; flex: 1; min-width: 0; min-height: 250px; box-sizing: border-box; padding: 40px 20px 80px; text-align: center; }
+.review-empty-content { max-width: 280px; min-width: 0; }
+.review-empty-art { position: relative; width: 144px; height: 124px; margin: 0 auto 18px; }
+.review-empty-art::before { content: ""; position: absolute; inset: -16px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--green) 9%, transparent), transparent 68%); }
+.review-empty-art svg { position: relative; display: block; width: 100%; height: 100%; }
+.review-empty-orbit { stroke: color-mix(in srgb, var(--muted) 24%, transparent); }
+.review-empty-sheet-back { fill: var(--empty-bg); stroke: color-mix(in srgb, var(--muted) 18%, transparent); }
+.review-empty-sheet { fill: var(--empty-bg); stroke: color-mix(in srgb, var(--muted) 28%, transparent); }
+.review-empty-line { stroke: color-mix(in srgb, var(--muted) 28%, transparent); stroke-width: 3; }
+.review-empty-branch { stroke: var(--empty-muted); }
+.review-empty-badge { fill: var(--empty-bg); stroke: color-mix(in srgb, var(--green) 45%, var(--empty-bg)); stroke-width: 1.5; }
+.review-empty-check { stroke: var(--green); }
+.review-empty-state h3 { margin: 0 0 9px; color: var(--empty-muted); font-size: calc(13px * var(--ui-scale, 1)); line-height: 1.5; font-weight: 400; letter-spacing: .02em; }
+.review-empty-state p { margin: 0; color: var(--empty-muted); font-size: calc(12px * var(--ui-scale, 1)); line-height: 1.9; text-wrap: pretty; }
+.review-empty-actions { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 20px; }
+/* Keep these controls independent of file-tree and panel button rules. */
+.review-empty-state .review-empty-actions > .review-empty-action {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  box-sizing: border-box; width: auto; height: auto; min-height: calc(34px * var(--ui-scale, 1));
+  margin: 0; padding: 7px 16px; border: 1px solid transparent; border-radius: 999px;
+  background: color-mix(in srgb, currentColor 9%, var(--empty-bg)); color: inherit;
+  font: inherit; font-size: calc(12px * var(--ui-scale, 1)); font-weight: 500; line-height: 1.4;
+  white-space: normal; text-align: center; text-decoration: none; cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+.review-empty-state .review-empty-actions > .review-empty-action--secondary { background: transparent; color: var(--empty-muted); font-weight: 400; }
+.review-empty-state .review-empty-actions > .review-empty-action:hover:not(:disabled) { background: color-mix(in srgb, currentColor 14%, var(--empty-bg)); color: inherit; }
+.review-empty-state .review-empty-actions > .review-empty-action:active:not(:disabled) { background: color-mix(in srgb, currentColor 19%, var(--empty-bg)); }
+.review-empty-state .review-empty-actions > .review-empty-action:focus-visible { outline: 2px solid var(--empty-muted); outline-offset: 3px; }
+.review-empty-state .review-empty-actions > .review-empty-action:disabled { opacity: .45; cursor: default; }
+.review-empty-state--compact { min-height: 0; padding: 14px 10px; text-align: left; }
+.review-empty-state--compact .review-empty-content { display: grid; grid-template-columns: 54px minmax(0, 1fr); column-gap: 12px; align-items: center; width: 100%; max-width: 320px; }
+.review-empty-state--compact .review-empty-art { grid-row: 1 / span 3; width: 54px; height: 47px; margin: 0; }
+.review-empty-state--compact h3 { margin: 0 0 3px; font-size: calc(12px * var(--ui-scale, 1)); }
+.review-empty-state--compact p { font-size: calc(11px * var(--ui-scale, 1)); line-height: 1.6; }
+.review-empty-state--compact .review-empty-actions { justify-content: flex-start; margin-top: 12px; }
+@media (prefers-reduced-motion: reduce) { .review-empty-state .review-empty-actions > .review-empty-action { transition: none; } }

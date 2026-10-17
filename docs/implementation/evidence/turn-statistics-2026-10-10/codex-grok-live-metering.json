@@ -1,0 +1,421 @@
+{
+  "date": "2026-10-10",
+  "codexVersion": "0.162.0-alpha.17.2",
+  "grokVersion": "1.0.50",
+  "results": [
+    {
+      "agent": "codex",
+      "scenario": "codex",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "liveRequestCount": 1,
+          "ledgerRequestCount": 1,
+          "repeatedReadStable": true,
+          "outputTokensPerSecond": 108.43373493975903,
+          "settledTurnCostUsd": null,
+          "requests": [
+            {
+              "generationMs": 83,
+              "model": "gpt-6-astra",
+              "inputTokens": 20474,
+              "outputTokens": 9,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "rolloutRequestCount": 0
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "liveRequestCount": 1,
+          "ledgerRequestCount": 2,
+          "repeatedReadStable": true,
+          "outputTokensPerSecond": 90.9090909090909,
+          "settledTurnCostUsd": null,
+          "requests": [
+            {
+              "generationMs": 99,
+              "model": "gpt-6-astra",
+              "inputTokens": 26211,
+              "outputTokens": 9,
+              "cacheReadTokens": 20352,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "rolloutRequestCount": 0
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "agent": "grok",
+      "scenario": "grok",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "liveRequestCount": 1,
+          "ledgerRequestCount": 1,
+          "repeatedReadStable": true,
+          "outputTokensPerSecond": 79.34131736526946,
+          "settledTurnCostUsd": 0.037234,
+          "requests": [
+            {
+              "generationMs": 668,
+              "model": "grok-4.7",
+              "inputTokens": 19322,
+              "outputTokens": 53,
+              "cacheReadTokens": 1152,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 48,
+              "costUsd": 0.037234,
+              "credits": null
+            }
+          ],
+          "rolloutRequestCount": 0
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "liveRequestCount": 1,
+          "ledgerRequestCount": 2,
+          "repeatedReadStable": true,
+          "outputTokensPerSecond": 200.0,
+          "settledTurnCostUsd": 0.01037,
+          "requests": [
+            {
+              "generationMs": 265,
+              "model": "grok-4.7",
+              "inputTokens": 19426,
+              "outputTokens": 53,
+              "cacheReadTokens": 19200,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 48,
+              "costUsd": 0.01037,
+              "credits": null
+            }
+          ],
+          "rolloutRequestCount": 0
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "agent": "codex",
+      "scenario": "codex-multi-pass",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "liveRequestCount": 5,
+          "ledgerRequestCount": 5,
+          "repeatedReadStable": true,
+          "outputTokensPerSecond": null,
+          "settledTurnCostUsd": null,
+          "requests": [
+            {
+              "generationMs": 951,
+              "model": "gpt-6-astra",
+              "inputTokens": 17792,
+              "outputTokens": 65,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "generationMs": 689,
+              "model": "gpt-6-astra",
+              "inputTokens": 18056,
+              "outputTokens": 96,
+              "cacheReadTokens": 17664,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 61,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "generationMs": 865,
+              "model": "gpt-6-astra",
+              "inputTokens": 18818,
+              "outputTokens": 98,
+              "cacheReadTokens": 17920,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 47,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "model": "gpt-6-astra",
+              "inputTokens": 18993,
+              "outputTokens": 66,
+              "cacheReadTokens": 18688,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "generationMs": 78,
+              "model": "gpt-6-astra",
+              "inputTokens": 19124,
+              "outputTokens": 8,
+              "cacheReadTokens": 18816,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "rolloutRequestCount": 0
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "liveRequestCount": 3,
+          "ledgerRequestCount": 8,
+          "repeatedReadStable": true,
+          "outputTokensPerSecond": null,
+          "settledTurnCostUsd": null,
+          "requests": [
+            {
+              "generationMs": 1195,
+              "model": "gpt-6-astra",
+              "inputTokens": 24889,
+              "outputTokens": 75,
+              "cacheReadTokens": 18944,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "model": "gpt-6-astra",
+              "inputTokens": 25042,
+              "outputTokens": 66,
+              "cacheReadTokens": 24704,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "generationMs": 65,
+              "model": "gpt-6-astra",
+              "inputTokens": 25174,
+              "outputTokens": 8,
+              "cacheReadTokens": 24832,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "rolloutRequestCount": 0
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "agent": "grok",
+      "scenario": "grok-multi",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "liveRequestCount": 3,
+          "ledgerRequestCount": 3,
+          "repeatedReadStable": true,
+          "outputTokensPerSecond": 122.22222222222223,
+          "settledTurnCostUsd": 0.058218,
+          "requests": [
+            {
+              "generationMs": 682,
+              "model": "grok-4.7",
+              "inputTokens": 19356,
+              "outputTokens": 102,
+              "cacheReadTokens": 1152,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 64,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "generationMs": 595,
+              "model": "grok-4.7",
+              "inputTokens": 19493,
+              "outputTokens": 101,
+              "cacheReadTokens": 19456,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 43,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "generationMs": 613,
+              "model": "grok-4.7",
+              "inputTokens": 19615,
+              "outputTokens": 28,
+              "cacheReadTokens": 19456,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 23,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "rolloutRequestCount": 0
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "liveRequestCount": 3,
+          "ledgerRequestCount": 6,
+          "repeatedReadStable": true,
+          "outputTokensPerSecond": 159.20679886685554,
+          "settledTurnCostUsd": 0.032208,
+          "requests": [
+            {
+              "generationMs": 1361,
+              "model": "grok-4.7",
+              "inputTokens": 19724,
+              "outputTokens": 187,
+              "cacheReadTokens": 19584,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 149,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "generationMs": 348,
+              "model": "grok-4.7",
+              "inputTokens": 19946,
+              "outputTokens": 72,
+              "cacheReadTokens": 19712,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 14,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "generationMs": 56,
+              "model": "grok-4.7",
+              "inputTokens": 20039,
+              "outputTokens": 22,
+              "cacheReadTokens": 19968,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 17,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "rolloutRequestCount": 0
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "agent": "codex",
+      "scenario": "codex-resume",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "liveRequestCount": 1,
+          "ledgerRequestCount": 1,
+          "repeatedReadStable": true,
+          "outputTokensPerSecond": 100.0,
+          "settledTurnCostUsd": null,
+          "requests": [
+            {
+              "generationMs": 90,
+              "model": "gpt-6-astra",
+              "inputTokens": 20490,
+              "outputTokens": 9,
+              "cacheReadTokens": 0,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 0,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "rolloutRequestCount": 0
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "liveRequestCount": 0,
+          "ledgerRequestCount": 2,
+          "repeatedReadStable": true,
+          "outputTokensPerSecond": null,
+          "settledTurnCostUsd": null,
+          "requests": [],
+          "rolloutRequestCount": 1
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "agent": "grok",
+      "scenario": "grok-resume",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "liveRequestCount": 1,
+          "ledgerRequestCount": 1,
+          "repeatedReadStable": true,
+          "outputTokensPerSecond": 127.40384615384616,
+          "settledTurnCostUsd": 0.037248,
+          "requests": [
+            {
+              "generationMs": 416,
+              "model": "grok-4.7",
+              "inputTokens": 19329,
+              "outputTokens": 53,
+              "cacheReadTokens": 1152,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 48,
+              "costUsd": 0.037248,
+              "credits": null
+            }
+          ],
+          "rolloutRequestCount": 0
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "liveRequestCount": 1,
+          "ledgerRequestCount": 2,
+          "repeatedReadStable": true,
+          "outputTokensPerSecond": 189.873417721519,
+          "settledTurnCostUsd": 0.010054,
+          "requests": [
+            {
+              "generationMs": 158,
+              "model": "grok-4.7",
+              "inputTokens": 19433,
+              "outputTokens": 30,
+              "cacheReadTokens": 19328,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 25,
+              "costUsd": 0.010054,
+              "credits": null
+            }
+          ],
+          "rolloutRequestCount": 0
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    }
+  ]
+}

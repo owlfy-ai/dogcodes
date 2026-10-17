@@ -1,0 +1,178 @@
+{
+  "provider": "claude-code",
+  "turns": [
+    {
+      "turn": 1,
+      "status": "completed",
+      "usage": {
+        "requestUsage": {
+          "records": [
+            {
+              "requestId": "msg_WEoaq365k0wGe5vcUR4aGFvp",
+              "model": "kimi-for-coding",
+              "source": "claude.stream",
+              "inputTokens": 24867,
+              "outputTokens": 67,
+              "cacheReadTokens": 17920,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 48,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "truncated": false,
+          "unavailableReason": null
+        },
+        "contextUsedTokens": 24867,
+        "contextWindowTokens": 1000000,
+        "contextUsedPercent": null,
+        "cacheHitRatePercent": 72.06337716652592,
+        "inputTokens": 6947,
+        "outputTokens": 67,
+        "cacheReadTokens": 17920,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": null,
+        "totalTokens": null,
+        "costUsd": null,
+        "credits": null,
+        "sessionCostUsd": 0.04537000000000001,
+        "totalsScope": "turn",
+        "observedAtUnixMs": 1791528820393
+      },
+      "repeatedUsage": {
+        "requestUsage": {
+          "records": [
+            {
+              "requestId": "msg_WEoaq365k0wGe5vcUR4aGFvp",
+              "model": "kimi-for-coding",
+              "source": "claude.stream",
+              "inputTokens": 24867,
+              "outputTokens": 67,
+              "cacheReadTokens": 17920,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 48,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "truncated": false,
+          "unavailableReason": null
+        },
+        "contextUsedTokens": 24867,
+        "contextWindowTokens": 1000000,
+        "contextUsedPercent": null,
+        "cacheHitRatePercent": 72.06337716652592,
+        "inputTokens": 6947,
+        "outputTokens": 67,
+        "cacheReadTokens": 17920,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": null,
+        "totalTokens": null,
+        "costUsd": null,
+        "credits": null,
+        "sessionCostUsd": 0.04537000000000001,
+        "totalsScope": "turn",
+        "observedAtUnixMs": 1791528820393
+      }
+    },
+    {
+      "turn": 2,
+      "status": "completed",
+      "usage": {
+        "requestUsage": {
+          "records": [
+            {
+              "requestId": "msg_WEoaq365k0wGe5vcUR4aGFvp",
+              "model": "kimi-for-coding",
+              "source": "claude.stream",
+              "inputTokens": 24867,
+              "outputTokens": 67,
+              "cacheReadTokens": 17920,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 48,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "requestId": "msg_P5KwY26Zr9G7uOeH2RFwG9VQ",
+              "model": "kimi-for-coding",
+              "source": "claude.stream",
+              "inputTokens": 24982,
+              "outputTokens": 24,
+              "cacheReadTokens": 24832,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 5,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "truncated": false,
+          "unavailableReason": null
+        },
+        "contextUsedTokens": 24982,
+        "contextWindowTokens": 1000000,
+        "contextUsedPercent": null,
+        "cacheHitRatePercent": 99.39956768873589,
+        "inputTokens": 150,
+        "outputTokens": 24,
+        "cacheReadTokens": 24832,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": null,
+        "totalTokens": null,
+        "costUsd": null,
+        "credits": null,
+        "sessionCostUsd": 0.05913600000000001,
+        "totalsScope": "turn",
+        "observedAtUnixMs": 1791528825035
+      },
+      "repeatedUsage": {
+        "requestUsage": {
+          "records": [
+            {
+              "requestId": "msg_WEoaq365k0wGe5vcUR4aGFvp",
+              "model": "kimi-for-coding",
+              "source": "claude.stream",
+              "inputTokens": 24867,
+              "outputTokens": 67,
+              "cacheReadTokens": 17920,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 48,
+              "costUsd": null,
+              "credits": null
+            },
+            {
+              "requestId": "msg_P5KwY26Zr9G7uOeH2RFwG9VQ",
+              "model": "kimi-for-coding",
+              "source": "claude.stream",
+              "inputTokens": 24982,
+              "outputTokens": 24,
+              "cacheReadTokens": 24832,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 5,
+              "costUsd": null,
+              "credits": null
+            }
+          ],
+          "truncated": false,
+          "unavailableReason": null
+        },
+        "contextUsedTokens": 24982,
+        "contextWindowTokens": 1000000,
+        "contextUsedPercent": null,
+        "cacheHitRatePercent": 99.39956768873589,
+        "inputTokens": 150,
+        "outputTokens": 24,
+        "cacheReadTokens": 24832,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": null,
+        "totalTokens": null,
+        "costUsd": null,
+        "credits": null,
+        "sessionCostUsd": 0.05913600000000001,
+        "totalsScope": "turn",
+        "observedAtUnixMs": 1791528825035
+      }
+    }
+  ],
+  "cleanup": "Ok(Ok(()))"
+}

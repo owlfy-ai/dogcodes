@@ -1,0 +1,5 @@
+{
+  "directories": ["node_modules", "node_module", "bower_components", "vendor", "__pycache__", "__pypackages__", "venv", "dist", "build", "target", "out", "coverage", "htmlcov"],
+  "files": ["thumbs.db", "desktop.ini"],
+  "suffixes": [".pyc", ".pyo", ".class", ".o", ".obj", ".swp", ".swo", ".tmp", ".bak", "~"]
+}

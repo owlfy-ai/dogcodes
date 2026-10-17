@@ -1,0 +1,139 @@
+{
+  "inputSha256": "660bf7a3b35d055f4b7ca5e5057cfd25956528299428ca65bf5db32834988130",
+  "workflow": {
+    "groups": [
+      {
+        "id": "group-1",
+        "fileIds": [
+          "file-1"
+        ],
+        "status": "completed",
+        "contextRequests": 4,
+        "contextLog": [
+          {
+            "phase": "initial",
+            "requests": [
+              {
+                "sourceId": "context-file-2",
+                "side": "after",
+                "startLine": 1,
+                "endLine": 15
+              },
+              {
+                "sourceId": "context-file-2",
+                "side": "before",
+                "startLine": 1,
+                "endLine": 15
+              }
+            ],
+            "responseSha256": "[REDACTED_HIGH_ENTROPY]"
+          },
+          {
+            "phase": "verification",
+            "requests": [
+              {
+                "sourceId": "context-file-2",
+                "side": "before",
+                "startLine": 1,
+                "endLine": 15
+              },
+              {
+                "sourceId": "context-file-2",
+                "side": "after",
+                "startLine": 1,
+                "endLine": 15
+              }
+            ],
+            "responseSha256": "[REDACTED_HIGH_ENTROPY]"
+          }
+        ],
+        "initialOutput": "{\"schemaVersion\":1,\"reviewedFileIds\":[\"file-1\"],\"findings\":[{\"fileId\":\"file-1\",\"severity\":\"high\",\"title\":\"删除所有权校验导致文档越权读取\",\"description\":\"当非所有者能够调用 download 并传入其他用户的有效 doc_id，且上游或数据库层未另行限制访问时，改动后会直接返回该文档正文。改动前 ensure_owner 会在 user.id != doc.owner_id 时抛出 PermissionError；改动后该检查被删除，user 参数不再参与授权。冻结的 policy.py 中 load_document 仅转发 db.get_document(doc_id)，没有显式所有权检查。材料未提供调用入口或数据库实现，因此无法确认外部攻击路径，但本函数原有的授权保护已被移除。\",\"suggestion\":\"在返回 doc.body 前恢复 ensure_owner(user, doc)，确保非所有者请求在正文返回前被拒绝。\",\"side\":\"after\",\"startLine\":3,\"endLine\":4,\"evidence\":\"    doc = load_document(doc_id)\\n    return doc.body\"}]}",
+        "verificationOutput": "{\"schemaVersion\":1,\"verifications\":[{\"findingIndex\":0,\"verdict\":\"confirmed\",\"reason\":\"确认本次改动移除了函数内的所有权保护：对于 load_document 能成功返回且 user.id != doc.owner_id 的文档，旧版会抛出 PermissionError，新版直接返回正文。load_document 的实现仅调用 db.get_document，未显式校验用户。上游授权或数据库访问限制可能阻止外部攻击，但冻结材料未提供这些实现，因此确认的是初审所述条件下的授权回退，不代表已证实外部攻击路径可达。\",\"citations\":[{\"sourceId\":\"file-1\",\"side\":\"before\",\"startLine\":2,\"endLine\":5,\"evidence\":\"def download(user, doc_id):\\n    doc = load_document(doc_id)\\n    ensure_owner(user, doc)\\n    return doc.body\"},{\"sourceId\":\"file-1\",\"side\":\"after\",\"startLine\":2,\"endLine\":4,\"evidence\":\"def download(user, doc_id):\\n    doc = load_document(doc_id)\\n    return doc.body\"},{\"sourceId\":\"context-file-2\",\"side\":\"after\",\"startLine\":6,\"endLine\":7,\"evidence\":\"def ensure_owner(user, doc):\\n    if user.id != doc.owner_id: raise PermissionError('not owner')\"},{\"sourceId\":\"context-file-2\",\"side\":\"after\",\"startLine\":9,\"endLine\":11,\"evidence\":\"def load_document(doc_id):\\n    # No authorization is performed here; the caller must check ownership.\\n    return db.get_document(doc_id)\"}]}]}",
+        "error": null,
+        "sessionDigests": [
+          "68df59f5530c7e880fca803129b0d50dd6a1f98a4f9d5ddfbdc568a95e1489b0",
+          "de7217a1ecddd2629d12e06c6f23e3f73aecef105bb1f79592f551cb9ac8a097"
+        ]
+      }
+    ],
+    "contextScope": "仅检索本次送审的冻结文本；另收录 1 个关联文件。范围有界，未收录不等于不存在；旧记录不补读当前代码。"
+  },
+  "report": {
+    "schemaVersion": 1,
+    "structured": true,
+    "findings": [
+      {
+        "fileId": "file-1",
+        "severity": "high",
+        "title": "删除所有权校验导致文档越权读取",
+        "description": "当非所有者能够调用 download 并传入其他用户的有效 doc_id，且上游或数据库层未另行限制访问时，改动后会直接返回该文档正文。改动前 ensure_owner 会在 user.id != doc.owner_id 时抛出 PermissionError；改动后该检查被删除，user 参数不再参与授权。冻结的 policy.py 中 load_document 仅转发 db.get_document(doc_id)，没有显式所有权检查。材料未提供调用入口或数据库实现，因此无法确认外部攻击路径，但本函数原有的授权保护已被移除。",
+        "suggestion": "在返回 doc.body 前恢复 ensure_owner(user, doc)，确保非所有者请求在正文返回前被拒绝。",
+        "side": "after",
+        "startLine": 3,
+        "endLine": 4,
+        "evidence": "    doc = load_document(doc_id)\n    return doc.body",
+        "path": "documents/download.py",
+        "rootId": "[REDACTED_HIGH_ENTROPY]",
+        "rootLabel": "[REDACTED_HIGH_ENTROPY]",
+        "locationVerified": true,
+        "locationNote": "位置与冻结代码一致；问题是否成立仍需核实",
+        "verification": {
+          "verdict": "confirmed",
+          "reason": "确认本次改动移除了函数内的所有权保护：对于 load_document 能成功返回且 user.id != doc.owner_id 的文档，旧版会抛出 PermissionError，新版直接返回正文。load_document 的实现仅调用 db.get_document，未显式校验用户。上游授权或数据库访问限制可能阻止外部攻击，但冻结材料未提供这些实现，因此确认的是初审所述条件下的授权回退，不代表已证实外部攻击路径可达。",
+          "citations": [
+            {
+              "sourceId": "file-1",
+              "side": "before",
+              "startLine": 2,
+              "endLine": 5,
+              "evidence": "def download(user, doc_id):\n    doc = load_document(doc_id)\n    ensure_owner(user, doc)\n    return doc.body",
+              "path": "documents/download.py",
+              "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+            },
+            {
+              "sourceId": "file-1",
+              "side": "after",
+              "startLine": 2,
+              "endLine": 4,
+              "evidence": "def download(user, doc_id):\n    doc = load_document(doc_id)\n    return doc.body",
+              "path": "documents/download.py",
+              "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+            },
+            {
+              "sourceId": "context-file-2",
+              "side": "after",
+              "startLine": 6,
+              "endLine": 7,
+              "evidence": "def ensure_owner(user, doc):\n    if user.id != doc.owner_id: raise PermissionError('not owner')",
+              "path": "policy.py",
+              "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+            },
+            {
+              "sourceId": "context-file-2",
+              "side": "after",
+              "startLine": 9,
+              "endLine": 11,
+              "evidence": "def load_document(doc_id):\n    # No authorization is performed here; the caller must check ownership.\n    return db.get_document(doc_id)",
+              "path": "policy.py",
+              "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+            }
+          ]
+        }
+      }
+    ],
+    "files": [
+      {
+        "fileId": "file-1",
+        "rootId": "[REDACTED_HIGH_ENTROPY]",
+        "rootLabel": "[REDACTED_HIGH_ENTROPY]",
+        "path": "documents/download.py",
+        "status": "reported",
+        "rules": [
+          "安全检查：围绕可达的信任边界、攻击者可控输入、权限和敏感数据泄露给出证据及攻击前提，不把假设写成已证实漏洞。",
+          "Python：核对可变默认参数、异常路径、资源释放、阻塞调用进入异步路径及输入类型边界。"
+        ]
+      }
+    ],
+    "warnings": []
+  }
+}

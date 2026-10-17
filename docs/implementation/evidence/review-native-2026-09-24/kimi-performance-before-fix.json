@@ -1,0 +1,17 @@
+{
+  "provider": "kimi",
+  "nativeVersion": "2.0.2",
+  "kind": "performance",
+  "status": "failed",
+  "error": "Agent 未返回完整审查结论",
+  "structured": true,
+  "groups": 1,
+  "completedGroups": 0,
+  "contextRequests": 0,
+  "independentVerificationSessions": 0,
+  "findings": [],
+  "reportedFiles": 0,
+  "totalFiles": 1,
+  "restored": true,
+  "fixtureUnchanged": true
+}

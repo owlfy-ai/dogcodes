@@ -1,0 +1,42 @@
+schema_version = 1
+id = "claude-code"
+display_name = "Claude Code"
+homepage = "https://code.claude.com/docs/en/overview"
+runtime_kind = "external_process"
+
+# Primary channel (decided 2026-09-03): the native headless stream-json
+# protocol, driven natively by claude-driver. Claude Code needs
+# no extra npm dependencies - the community ACP adapter
+# (@agentclientprotocol/claude-agent-acp) remains an optional accelerator for
+# users who already have Node, never a requirement.
+[discovery]
+candidate_executables = ["claude"]
+version_args = ["--version"]
+version_output_markers = ["Claude Code"]
+env_allowlist = ["PATH"]
+timeout_millis = 3000
+output_limit_bytes = 65536
+
+[discovery.platform_paths]
+macos = []
+windows = []
+linux = ["/usr/local/bin/claude", "/usr/bin/claude"]
+
+[discovery.user_paths]
+macos = [".local/bin/claude"]
+windows = []
+linux = [".local/bin/claude"]
+
+[supported_versions]
+denylist = []
+
+[protocol]
+kind = "claude_stream_json"
+version = "v1_headless_beta"
+framing = "jsonl_stdio"
+
+[capability_expectations]
+streaming_text = "native_beta"
+session_resume = "native_verified_via_resume_acceptance"
+approvals = "safe_deny_until_pending_interaction"
+cancellation = "control_request_interrupt_beta"

@@ -1,0 +1,13 @@
+.permission-picker{position:relative;flex-shrink:0}.permission-trigger{display:flex;align-items:center;gap:6px;border:0;background:var(--surface-secondary,#f4f4f3);border-radius:16px;padding:5px 9px;font-size: .8125rem;color:inherit;cursor:pointer}.permission-trigger:disabled{opacity:.6;cursor:default}.permission-trigger[data-fixed]{cursor:default}.permission-menu{position:absolute;bottom:calc(100% + 10px);left:0;width:320px;max-height:410px;overflow:auto;z-index:60;padding:7px;border:1px solid var(--border,#dededb);border-radius:14px;background:var(--surface,#fff);box-shadow:0 10px 36px #0002}.permission-menu>button{display:grid;grid-template-columns:calc(18px * var(--ui-scale, 1)) minmax(0, 1fr) 1em;gap:8px;width:100%;border:0;background:transparent;text-align:left;padding:11px 9px;color:inherit;border-radius:9px;cursor:pointer}.permission-menu>button:hover,.permission-menu>button:focus-visible{background:#8881}.permission-menu strong{display:block;font-size:.8125rem;font-weight:500}.permission-menu small{display:block;margin-top:4px;color:var(--muted,#888);font-size: .8125rem;line-height:1.5}.permission-picker .dangerous{color:#e23c38}.permission-hint,.permission-empty{padding:9px;color:var(--muted,#888);font-size: .8125rem}.permission-hint{border-top:1px solid #8882}.permission-error{margin:0;padding:9px;font-size:.8125rem}@media(prefers-color-scheme:dark){.permission-menu{background:#242424;border-color:#444}.permission-trigger{background:#ffffff0b}}
+
+:root[data-theme="dark"] .permission-menu{background:var(--panel-raised,#242424);border-color:var(--line,#444)}
+:root[data-theme="light"] .permission-menu{background:#fff;border-color:#dededb}
+:root[data-theme="light"] .permission-trigger{background:var(--surface-secondary,#f4f4f3)}
+:root[data-theme="dark"] .permission-trigger{background:var(--panel-raised,#242424);color:inherit}
+:root[data-theme="dark"] .permission-picker .dangerous{color:#ff7068}
+.permission-menu small{overflow-wrap:anywhere}
+
+.permission-picker:is([data-provider="zcode"],[data-provider="kimi"]) .permission-menu>button[aria-checked="true"]{background:#8882}
+.permission-picker:is([data-provider="zcode"],[data-provider="kimi"]) .permission-menu>button{grid-template-columns:calc(22px * var(--ui-scale, 1)) minmax(0, 1fr) 1em;gap:10px}
+
+.permission-icon { width: calc(18px * var(--ui-scale, 1)); height: calc(20px * var(--ui-scale, 1)); flex-shrink: 0; }

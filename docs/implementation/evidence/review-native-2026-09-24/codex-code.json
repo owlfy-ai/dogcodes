@@ -1,0 +1,85 @@
+{
+  "provider": "codex",
+  "nativeVersion": "0.155.0-alpha.2.6",
+  "kind": "code",
+  "status": "completed",
+  "error": null,
+  "structured": true,
+  "groups": 2,
+  "completedGroups": 2,
+  "contextRequests": 4,
+  "independentVerificationSessions": 2,
+  "findings": [
+    {
+      "path": "payments/withdraw.py",
+      "title": "移除余额检查导致超额提现返回负余额",
+      "locationVerified": true,
+      "verification": {
+        "verdict": "confirmed",
+        "reason": "前后版本的 normalize_amount 均只转换整数并拒绝非正金额，不检查余额。对于 withdraw(100, '101')，归一化结果为 101；改动前会抛出 ValueError('insufficient balance')，改动后直接计算并返回 -1。金额不超过余额时不触发问题，但不能否定超额提现场景；该行为变化由本次删除余额检查直接引入。",
+        "citations": [
+          {
+            "sourceId": "context-file-3",
+            "side": "after",
+            "startLine": 1,
+            "endLine": 4,
+            "evidence": "def normalize_amount(raw):\n    amount = int(raw)\n    if amount <= 0: raise ValueError('positive amount required')\n    return amount",
+            "path": "policy.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          },
+          {
+            "sourceId": "file-1",
+            "side": "before",
+            "startLine": 3,
+            "endLine": 5,
+            "evidence": "    amount = normalize_amount(raw)\n    if amount > balance: raise ValueError('insufficient balance')\n    return balance - amount",
+            "path": "payments/withdraw.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          },
+          {
+            "sourceId": "file-1",
+            "side": "after",
+            "startLine": 3,
+            "endLine": 4,
+            "evidence": "    amount = normalize_amount(raw)\n    return balance - amount",
+            "path": "payments/withdraw.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          }
+        ]
+      }
+    },
+    {
+      "path": "reports/last.py",
+      "title": "非空序列取末值时索引越界",
+      "locationVerified": true,
+      "verification": {
+        "verdict": "confirmed",
+        "reason": "对非空内置列表、元组或字符串，空值检查不会返回，len(values) 超出最大有效索引 len(values)-1，因此新版本会抛出 IndexError。旧版本的负索引 -1 可正确返回末项，确认问题由本次改动引入。空序列仍返回 None；自定义对象可能支持该索引，但不影响上述标准序列的触发条件。",
+        "citations": [
+          {
+            "sourceId": "file-2",
+            "side": "before",
+            "startLine": 1,
+            "endLine": 3,
+            "evidence": "def last_value(values):\n    if not values: return None\n    return values[-1]",
+            "path": "reports/last.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          },
+          {
+            "sourceId": "file-2",
+            "side": "after",
+            "startLine": 1,
+            "endLine": 3,
+            "evidence": "def last_value(values):\n    if not values: return None\n    return values[len(values)]",
+            "path": "reports/last.py",
+            "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+          }
+        ]
+      }
+    }
+  ],
+  "reportedFiles": 2,
+  "totalFiles": 2,
+  "restored": true,
+  "fixtureUnchanged": true
+}

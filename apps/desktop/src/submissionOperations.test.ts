@@ -1,0 +1,79 @@
+// @vitest-environment jsdom
+import { beforeEach, expect, it, vi } from "vitest";
+import type { CoreClient, SubmissionIntent, SubmissionIntentEntry, SubmissionStartRequest } from "@dogcodes/protocol";
+import { PendingSubmissionError, submissionOperations as operations } from "./submissionOperations";
+
+const input = { prompt: "original", model: null, thinking: null, permissionMode: null, attachments: [] };
+const target = { providerId: "codex", installationId: null };
+function intent(operationId: string): SubmissionIntent {
+  return { schemaVersion: 1, operationId, scope: "task:tsk_test", requestedAt: "2026-10-17T00:00:00Z",
+    task: { taskId: "tsk_test", projectId: "prj_test", title: "Task", preferredExecutor: target, activePrimaryRun: null, streamVersion: 3 },
+    input, target, creation: null, context: null, submission: null };
+}
+const submitted = (operationId: string): SubmissionIntentEntry => ({ state: "closed", fingerprint: "bound",
+  resolution: { status: "submitted", taskId: "tsk_test", sequence: 9, turnId: `trn_${operationId}` } });
+function fixture() {
+  const service = {
+    submissionStart: vi.fn<(request: SubmissionStartRequest) => Promise<SubmissionIntentEntry>>(),
+    submissionContinue: vi.fn<(id: string) => Promise<SubmissionIntentEntry>>(),
+    submissionRetire: vi.fn<(id: string) => Promise<SubmissionIntentEntry>>(),
+    submissionIntentGet: vi.fn<(id: string) => Promise<SubmissionIntentEntry | null>>(async () => null),
+    submissionIntentList: vi.fn(async () => ({ operationIds: [] as string[], nextCursor: null })),
+  };
+  return { ...service, client: service as unknown as CoreClient };
+}
+const request = { scope: "task:tsk_test", taskId: "tsk_test" as const, projectId: "prj_test" as const, target, input };
+beforeEach(() => localStorage.clear());
+
+it("sends one request to the service and keeps nothing in local storage", async () => {
+  const f = fixture();
+  f.submissionStart.mockImplementation(async call => submitted(call.operationId));
+  const result = await operations.start(f.client, request);
+  expect(f.submissionStart).toHaveBeenCalledExactlyOnceWith({ ...request, operationId: expect.stringMatching(/^cmd_/) });
+  expect(result).toMatchObject({ status: "submitted", taskId: "tsk_test" });
+  expect(localStorage.length).toBe(0);
+});
+
+it("trusts only the service's record of this exact identity after a lost reply", async () => {
+  const f = fixture();
+  let id = "";
+  f.submissionStart.mockImplementation(async call => { id = call.operationId; throw new Error("reply lost"); });
+  f.submissionIntentGet.mockImplementation(async asked => asked === id ? submitted(id) : null);
+  expect(await operations.start(f.client, request)).toMatchObject({ status: "submitted" });
+
+  // Stored but unfinished: recovery owns the original from now on.
+  f.submissionIntentGet.mockImplementation(async asked => asked === id ? { state: "pending", intent: intent(id) } : null);
+  const pending = await operations.start(f.client, request).catch(cause => cause);
+  expect(pending).toBeInstanceOf(PendingSubmissionError);
+  expect((pending as PendingSubmissionError).intent.operationId).toBe(id);
+  expect((pending as PendingSubmissionError).message).toBe("reply lost");
+
+  // Never stored: the caller may return the content to the composer.
+  f.submissionIntentGet.mockResolvedValue(null);
+  const rejected = await operations.start(f.client, request).catch(cause => cause);
+  expect(rejected).not.toBeInstanceOf(PendingSubmissionError);
+  expect(f.submissionContinue).not.toHaveBeenCalled();
+});
+
+it("continues or retires with the original identity and lists only service-pending originals", async () => {
+  const f = fixture();
+  const original = intent("cmd_original");
+  f.submissionContinue.mockResolvedValue(submitted("cmd_original"));
+  f.submissionRetire.mockResolvedValue({ state: "closed", fingerprint: "bound", resolution: { status: "invalidated", taskId: "tsk_test" } });
+  expect(await operations.resume(f.client, original)).toMatchObject({ status: "submitted" });
+  expect(await operations.retire(f.client, original)).toEqual({ status: "invalidated", taskId: "tsk_test" });
+  expect(f.submissionContinue).toHaveBeenCalledExactlyOnceWith("cmd_original");
+  expect(f.submissionRetire).toHaveBeenCalledExactlyOnceWith("cmd_original");
+
+  f.submissionIntentList.mockResolvedValue({ operationIds: ["cmd_original", "cmd_done"], nextCursor: null });
+  f.submissionIntentGet.mockImplementation(async id => id === "cmd_original" ? { state: "pending", intent: original } : submitted(id));
+  await operations.discover(f.client);
+  expect(operations.list(f.client)).toEqual([original]);
+});
+
+it("rejects empty content and clients without the service workflow before sending", async () => {
+  const f = fixture();
+  await expect(operations.start(f.client, { ...request, input: { ...input, prompt: " " } })).rejects.toThrow("发送内容无效");
+  await expect(operations.start({} as CoreClient, request)).rejects.toThrow("不支持可靠发送");
+  expect(f.submissionStart).not.toHaveBeenCalled();
+});

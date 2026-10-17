@@ -1,0 +1,9 @@
+{
+  "provider": "cursor",
+  "nativeVersion": "2026.09.18-9a7762b",
+  "stage": "readiness-probe",
+  "timeoutSeconds": 45,
+  "status": "failed",
+  "error": "ACP readiness probe timed out",
+  "modelPromptSent": false
+}

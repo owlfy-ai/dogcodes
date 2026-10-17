@@ -1,0 +1,66 @@
+{
+  "observedAt": "2026-09-02",
+  "isolation": {
+    "temporaryCodexHome": true,
+    "workingDirectory": "/tmp",
+    "sandbox": "read-only",
+    "approvalPolicy": "never",
+    "modelTurnStarted": false
+  },
+  "persistenceTrigger": "thread/name/set",
+  "installations": [
+    {
+      "codexVersion": "0.150.0-alpha.12.2",
+      "source": "chatgpt_macos_resource",
+      "start": {
+        "responseReceived": true,
+        "threadIdPresent": true,
+        "ephemeral": false,
+        "pathPresent": true,
+        "status": "idle"
+      },
+      "stateEvidence": {
+        "pathScopedToIsolatedHome": true,
+        "pathExistedBeforeShutdown": false,
+        "waitMillis": 1000
+      },
+      "resume": {
+        "responseReceived": true,
+        "accepted": false,
+        "errorCode": "-32600",
+        "errorKind": "not_found"
+      }
+    },
+    {
+      "codexVersion": "0.144.5",
+      "source": "existing_user_node_installation",
+      "start": {
+        "responseReceived": true,
+        "threadIdPresent": true,
+        "ephemeral": false,
+        "pathPresent": true,
+        "status": "idle"
+      },
+      "stateEvidence": {
+        "pathScopedToIsolatedHome": true,
+        "pathExistedBeforeShutdown": true,
+        "waitMillis": 1000
+      },
+      "resume": {
+        "responseReceived": true,
+        "accepted": true,
+        "threadIdPresent": true,
+        "identityMatched": true,
+        "status": "idle",
+        "turnCount": 0
+      }
+    }
+  ],
+  "redactions": [
+    "codexHome.value",
+    "thread.id",
+    "thread.path",
+    "threadResume.error.message",
+    "stderr.value"
+  ]
+}

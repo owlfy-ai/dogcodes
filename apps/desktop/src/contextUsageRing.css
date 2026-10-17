@@ -1,0 +1,26 @@
+.context-usage-ring {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted, #858880);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+.context-usage-ring:hover, .context-usage-ring:focus-visible { background: #80808012; }
+.context-usage-ring:focus-visible { outline: 2px solid var(--accent, #77a63b); outline-offset: 2px; }
+.context-usage-ring svg { flex-shrink: 0; }
+.context-usage-track { stroke: currentColor; opacity: .2; }
+.context-usage-ring.high { color: #b77b27; }
+.context-usage-ring.critical { color: #cf554c; }
+.composer-controls .context-usage-ring { font-size: calc(13px * var(--ui-scale, 1)); }
+.composer-controls .context-usage-ring svg { width: calc(18px * var(--ui-scale, 1)); height: calc(18px * var(--ui-scale, 1)); }
+.composer footer:is([data-label-stage="3"], [data-label-stage="4"]) .context-usage-ring > span { display: none; }

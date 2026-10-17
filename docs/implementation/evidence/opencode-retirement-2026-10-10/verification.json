@@ -1,0 +1,83 @@
+{
+  "provider": "opencode",
+  "cliVersion": "2.0.18",
+  "codexHostRevision": "08c7d65d",
+  "nativeError": {
+    "code": -32603,
+    "message": "Internal error: Model exo-free has been deprecated.",
+    "providerStatus": 410
+  },
+  "catalogAcceptance": {
+    "absent": "opencode/exo-free",
+    "present": "opencode/big-pickle",
+    "nativeDefault": "opencode/exo-free",
+    "result": "passed"
+  },
+  "dialogueAcceptance": [
+    {
+      "model": null,
+      "turns": [
+        {
+          "turn": 1,
+          "status": "failed: 所选模型已下线或不可用，请在模型列表中切换模型后重试。",
+          "firstOutputMs": null,
+          "nativeRequestCountCumulative": 0,
+          "requests": []
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    },
+    {
+      "model": "opencode/big-pickle",
+      "turns": [
+        {
+          "turn": 1,
+          "status": "completed",
+          "firstOutputMs": 7286,
+          "nativeRequestCountCumulative": 1,
+          "requests": [
+            {
+              "model": "big-pickle",
+              "source": "opencode.database",
+              "inputTokens": 11395,
+              "outputTokens": 19,
+              "cacheReadTokens": 3392,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 13,
+              "costUsd": 0.0
+            }
+          ]
+        },
+        {
+          "turn": 2,
+          "status": "completed",
+          "firstOutputMs": 4684,
+          "nativeRequestCountCumulative": 2,
+          "requests": [
+            {
+              "model": "big-pickle",
+              "source": "opencode.database",
+              "inputTokens": 11395,
+              "outputTokens": 19,
+              "cacheReadTokens": 3392,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 13,
+              "costUsd": 0.0
+            },
+            {
+              "model": "big-pickle",
+              "source": "opencode.database",
+              "inputTokens": 11451,
+              "outputTokens": 19,
+              "cacheReadTokens": 11392,
+              "cacheWriteTokens": 0,
+              "reasoningTokens": 13,
+              "costUsd": 0.0
+            }
+          ]
+        }
+      ],
+      "cleanup": "Ok(Ok(()))"
+    }
+  ]
+}

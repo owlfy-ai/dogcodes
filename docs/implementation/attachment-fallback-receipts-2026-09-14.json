@@ -1,0 +1,27 @@
+{
+  "grok": {
+    "version": "1.0.30",
+    "input": "inline ACP image/png Base64, no path supplied",
+    "advertisedImageCapability": false,
+    "stopReason": "end_turn",
+    "response": "The large visible character is a white **K** on a **black** background.",
+    "toolEvents": 0
+  },
+  "antigravity": {
+    "version": "1.2.2",
+    "input": "file reference in explicitly declared disposable workspace",
+    "permission": "request-review; no bypass; no global settings changes",
+    "tools": [
+      {
+        "tool": "view_file",
+        "state": "ACTIVE"
+      },
+      {
+        "tool": "view_file",
+        "state": "DONE"
+      }
+    ],
+    "result": "SUCCESS",
+    "recognized": "white K, blue mark, black textured background"
+  }
+}

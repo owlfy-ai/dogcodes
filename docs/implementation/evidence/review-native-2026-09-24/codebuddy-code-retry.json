@@ -1,0 +1,28 @@
+{
+  "provider": "codebuddy",
+  "nativeVersion": "2.156.0",
+  "kind": "code",
+  "status": "failed",
+  "error": "二次复核未完成：审查 Agent 尝试调用工具或启动子任务，已停止；可以重试或更换 Agent；保留初审结果",
+  "structured": true,
+  "groups": 2,
+  "completedGroups": 0,
+  "contextRequests": 3,
+  "independentVerificationSessions": 1,
+  "findings": [
+    {
+      "path": "payments/withdraw.py",
+      "title": "删除余额校验导致可取款超过余额（透支/负余额）",
+      "locationVerified": true,
+      "verification": {
+        "verdict": "uncertain",
+        "reason": "复核未返回唯一有效结论，保留初审问题。",
+        "citations": []
+      }
+    }
+  ],
+  "reportedFiles": 1,
+  "totalFiles": 2,
+  "restored": true,
+  "fixtureUnchanged": true
+}

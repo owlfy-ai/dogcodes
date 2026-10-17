@@ -1,0 +1,110 @@
+target/
+node_modules/
+dist/
+.DS_Store
+*.log
+*.db
+*.db-shm
+*.db-wal
+*.tsbuildinfo
+__pycache__/
+*.py[cod]
+
+# Local credentials and signing material. Commit only blank *.example templates.
+.env
+.env.*
+!.env.example
+*.local.json
+/release/private/
+*.[pP]12
+*.[pP][fF][xX]
+*.[pP]8
+*.[pP][eE][mM]
+*.[kK][eE][yY]
+*.[kK][eE][yY][cC][hH][aA][iI][nN]
+*.[kK][eE][yY][cC][hH][aA][iI][nN]-[dD][bB]
+
+# Local research captures and UI/design previews. Keep source and reviewed fixtures.
+/output/
+/experiments/**/*.json
+/experiments/**/*.jsonl
+/experiments/**/*.txt
+/experiments/**/*.png
+/experiments/**/*.jpg
+/experiments/**/*.jpeg
+/experiments/**/*.webp
+/experiments/**/*.svg
+/experiments/**/*.html
+/experiments/**/*.zip
+!/experiments/acp/fixtures/stable-v1-offline-contract.json
+!/experiments/codex-app-server/fixtures/initialize-handshakes.json
+!/experiments/codex-app-server/fixtures/persistent-resume.json
+!/experiments/codex-app-server/fixtures/schema-fingerprints.json
+
+# Release source inputs are public; local exports and packaging outputs are not.
+/release/*
+!/release/README.md
+!/release/.env.example
+!/release/tauri.signing.example.json
+
+# Machine-local Agent workspaces and launcher configuration (keep shared commands/skills).
+/.claude/worktrees/
+/.claude/launch.json
+/.worktrees/
+/.git-worktrees/
+
+# Generated Tauri permissions/schema descriptions; capabilities/ remain source inputs.
+/apps/desktop/src-tauri/gen/schemas/
+
+# Local acceptance screenshots; reviewed documentation images remain public.
+/artifacts/
+
+# Tool caches, coverage and test reports.
+.pnpm-store/
+.npm/
+.cache/
+.vite/
+.vite-temp/
+.turbo/
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+blob-report/
+*.lcov
+*.profraw
+*.profdata
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local state, editor backups and per-machine overrides.
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-shm
+*.sqlite3-wal
+*.local
+*.local.toml
+*.local.yaml
+*.local.yml
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+.idea/
+.history/
+
+# Platform metadata.
+._*
+.AppleDouble/
+.LSOverride
+Thumbs.db
+Desktop.ini
+
+# Unrelated local page kept out of the published source.
+/pelican-bicycle.html

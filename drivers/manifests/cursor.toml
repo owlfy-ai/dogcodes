@@ -1,0 +1,41 @@
+schema_version = 1
+id = "cursor"
+display_name = "Cursor"
+homepage = "https://cursor.com/"
+runtime_kind = "external_process"
+
+[discovery]
+candidate_executables = ["cursor-agent"]
+# `cursor-agent --version` prints a bare semver, so product identity comes
+# from the ACP server help surface instead.
+version_args = ["--version"]
+identity_args = ["acp", "--help"]
+version_output_markers = ["agent client protocol"]
+env_allowlist = ["PATH"]
+timeout_millis = 3000
+output_limit_bytes = 65536
+launch_args = ["acp"]
+
+[discovery.platform_paths]
+macos = []
+windows = []
+linux = []
+
+[discovery.user_paths]
+macos = [".local/bin/cursor-agent"]
+windows = []
+linux = [".local/bin/cursor-agent"]
+
+[supported_versions]
+denylist = []
+
+[protocol]
+kind = "acp"
+version = "stable_v1_beta"
+framing = "json_rpc_stdio"
+
+[capability_expectations]
+streaming_text = "native_via_acp_beta"
+session_resume = "acp_load_session_verified_runtime"
+approvals = "safe_decline_until_pending_interaction"
+cancellation = "acp_session_cancel"

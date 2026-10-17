@@ -1,0 +1,44 @@
+schema_version = 1
+id = "zcode"
+display_name = "ZCode"
+homepage = "https://z.ai/"
+runtime_kind = "external_process"
+
+[discovery]
+# The CLI ships inside the desktop app as a Node script; the app's own
+# Electron binary runs it in node mode, so no system Node.js is required.
+candidate_executables = ["ZCode"]
+version_args = [
+  "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs",
+  "--version",
+]
+identity_args = [
+  "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs",
+  "doctor",
+]
+version_output_markers = ["zcode-cli"]
+env_allowlist = ["PATH"]
+timeout_millis = 5000
+output_limit_bytes = 65536
+
+[discovery.env_overrides]
+ELECTRON_RUN_AS_NODE = "1"
+
+[discovery.platform_paths]
+macos = ["/Applications/ZCode.app/Contents/MacOS/ZCode"]
+windows = []
+linux = []
+
+[supported_versions]
+denylist = []
+
+[protocol]
+kind = "zcode_app_server"
+version = "v1_beta"
+framing = "jsonl_stdio"
+
+[capability_expectations]
+streaming_text = "native_via_app_server_beta"
+session_resume = "verified_cli_0.16.5_with_native_runtime_hydration"
+approvals = "interaction_requestPermission_shape_unverified"
+cancellation = "session_stop_beta"

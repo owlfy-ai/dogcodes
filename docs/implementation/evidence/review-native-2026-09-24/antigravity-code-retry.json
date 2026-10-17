@@ -1,0 +1,17 @@
+{
+  "provider": "antigravity",
+  "nativeVersion": null,
+  "kind": "code",
+  "status": "failed",
+  "error": "无法创建只读审查会话",
+  "structured": true,
+  "groups": 2,
+  "completedGroups": 0,
+  "contextRequests": 0,
+  "independentVerificationSessions": 0,
+  "findings": [],
+  "reportedFiles": 0,
+  "totalFiles": 2,
+  "restored": true,
+  "fixtureUnchanged": true
+}

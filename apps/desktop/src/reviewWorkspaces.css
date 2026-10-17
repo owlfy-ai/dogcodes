@@ -1,0 +1,45 @@
+/* Workspace header: one switcher line, then branch · path · status as quiet metadata. */
+.review-workspace { position: relative; flex: none; min-width: 0; padding: 10px 12px 12px; border-bottom: 1px solid var(--review-border, #8883); }
+.review-workspace-heading { display: flex; align-items: center; gap: 4px; }
+.review-workspace .review-workspace-trigger { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; margin: -2px 0 -2px -6px; padding: 5px 6px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background-color .12s; }
+.review-workspace .review-workspace-trigger:hover:not(:disabled), .review-workspace .review-workspace-trigger[aria-expanded="true"] { background: var(--review-hover, #8881); }
+.review-workspace-trigger > svg:first-child { flex: none; width: 17px; height: 17px; color: var(--review-muted, var(--muted)); }
+.review-workspace-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(14px * var(--ui-scale, 1)); font-weight: 600; letter-spacing: -.01em; }
+.review-workspace-caret { flex: none; width: 14px; height: 14px; margin-left: -4px; color: var(--review-muted, var(--muted)); transition: transform .15s; }
+.review-workspace-trigger[aria-expanded="true"] .review-workspace-caret { transform: rotate(180deg); }
+.review-workspace-badge { flex: none; margin-left: auto; padding: 2px 7px; border-radius: 999px; color: var(--review-muted, var(--muted)); background: color-mix(in srgb, currentColor 8%, transparent); font-size: calc(10.5px * var(--ui-scale, 1)); font-weight: 500; }
+.review-workspace-badge[data-current] { color: var(--green, #608a6d); background: color-mix(in srgb, var(--green, #608a6d) 12%, transparent); }
+.review-panel .review-workspace-refresh { color: var(--review-muted, var(--muted)); }
+.review-workspace-refresh:not(:disabled):active svg { transform: rotate(-90deg); transition: transform .2s; }
+.review-workspace > .review-workspace-meta { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 6px; color: var(--review-muted, var(--muted)); font-size: calc(11.5px * var(--ui-scale, 1)); }
+.review-workspace-branch { display: inline-flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; max-width: 45%; padding: 2px 7px 2px 6px; border-radius: 6px; background: color-mix(in srgb, currentColor 8%, transparent); color: var(--review-text, inherit); font: calc(11px * var(--ui-scale, 1)) ui-monospace, SFMono-Regular, Menlo, monospace; }
+.review-workspace-branch svg { flex: none; width: 12px; height: 12px; color: var(--review-muted, var(--muted)); }
+.review-workspace-branch span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-workspace > .review-workspace-meta .review-workspace-path { flex: 1 1 0; min-width: 0; margin: 0; font-size: inherit; }
+.review-workspace-changes { display: inline-flex; flex: none; align-items: center; gap: 5px; margin-left: auto; white-space: nowrap; }
+.review-workspace-changes::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .5; }
+.review-workspace-changes[data-state="clean"]::before { background: var(--green, #608a6d); opacity: 1; }
+.review-workspace-changes[data-state="dirty"] { color: var(--review-text, inherit); }
+.review-workspace-changes[data-state="dirty"]::before { background: #d39b3a; opacity: 1; }
+.review-workspace-menu .review-workspace-meta { display: flex; align-items: center; gap: 10px; min-width: 0; margin-top: 5px; color: var(--muted); font-size: calc(11px * var(--ui-scale, 1)); }
+.review-workspace-menu .review-workspace-meta > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-workspace-meta > span:not(:first-child) { flex: none; }
+.review-workspace-running { color: var(--green); }
+.review-workspace-path { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: calc(10px * var(--ui-scale, 1)); }
+.review-workspace-context { margin-top: 9px; padding: 8px 9px; border-radius: 6px; background: color-mix(in srgb, var(--green, #608a6d) 8%, transparent); font-size: calc(11px * var(--ui-scale, 1)); line-height: 1.6; }
+.review-workspace-context p { margin: 0 0 5px; }
+.review-workspace-context > div { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.review-workspace .review-workspace-context button, .review-workspace .review-workspace-error button { padding: 0; border: 0; background: transparent; color: var(--green, #608a6d); font: inherit; cursor: pointer; }
+.review-workspace button:disabled { opacity: .5; cursor: default; }
+.review-workspace button:focus-visible { outline: 2px solid var(--green, #608a6d); outline-offset: 2px; border-radius: 4px; }
+.review-workspace-error { margin: 6px 0 0; font-size: calc(11px * var(--ui-scale, 1)); line-height: 1.5; color: #bd594e; overflow-wrap: anywhere; }
+.review-workspace-error button { margin-left: 8px; }
+.review-workspace-menu { width: min(430px, calc(100vw - 24px)); max-height: min(480px, 65vh); overflow: auto; padding: 6px; border: 1px solid var(--line, #8883); border-radius: 10px; background: var(--panel); color: var(--text, inherit); box-shadow: 0 12px 36px #0003; z-index: 80; }
+.review-workspace-menu header { display: grid; gap: 4px; padding: 8px 10px 12px; font-size: calc(13px * var(--ui-scale, 1)); }
+.review-workspace-menu header small { color: var(--muted); font-size: calc(11px * var(--ui-scale, 1)); font-weight: normal; }
+.review-workspace .review-workspace-menu > button { display: block; width: 100%; margin: 2px 0; padding: 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.review-workspace .review-workspace-menu > button:hover, .review-workspace .review-workspace-menu > button:focus-visible { background: #8881; }
+.review-workspace .review-workspace-menu > button[aria-checked="true"] { border-color: color-mix(in srgb, var(--green, #608a6d) 35%, transparent); background: color-mix(in srgb, var(--green, #608a6d) 8%, transparent); }
+.review-workspace-option-title { display: flex; justify-content: space-between; gap: 12px; font-size: calc(12px * var(--ui-scale, 1)); }
+.review-workspace-option-title strong { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.review-workspace-option-title small { flex: none; color: var(--muted); font-size: calc(10px * var(--ui-scale, 1)); }

@@ -1,0 +1,130 @@
+{
+  "inputSha256": "213dd67f63288a9718bedd30aa3a057f94b61d3ea401a251c15f50e936277673",
+  "workflow": {
+    "groups": [
+      {
+        "id": "group-1",
+        "fileIds": [
+          "file-1"
+        ],
+        "status": "completed",
+        "contextRequests": 4,
+        "contextLog": [
+          {
+            "phase": "initial",
+            "requests": [
+              {
+                "sourceId": "context-file-2",
+                "side": "before",
+                "startLine": 1,
+                "endLine": 15
+              },
+              {
+                "sourceId": "context-file-2",
+                "side": "after",
+                "startLine": 1,
+                "endLine": 15
+              }
+            ],
+            "responseSha256": "[REDACTED_HIGH_ENTROPY]"
+          },
+          {
+            "phase": "verification",
+            "requests": [
+              {
+                "sourceId": "context-file-2",
+                "side": "after",
+                "startLine": 1,
+                "endLine": 15
+              },
+              {
+                "sourceId": "context-file-2",
+                "side": "before",
+                "startLine": 1,
+                "endLine": 15
+              }
+            ],
+            "responseSha256": "[REDACTED_HIGH_ENTROPY]"
+          }
+        ],
+        "initialOutput": "```json\n{\n  \"schemaVersion\": 1,\n  \"reviewedFileIds\": [\"file-1\"],\n  \"findings\": [\n    {\n      \"fileId\": \"file-1\",\n      \"severity\": \"high\",\n      \"title\": \"批量查询被改为循环内逐条远程查询（N+1 回归）\",\n      \"description\": \"改动前 names() 对全部 ids 调用一次 query_users(ids) 得到字典后本地查表；改动后在列表推导中对每个 id 单独调用 query_users([id])。根据冻结上下文 policy.py 第 13-15 行，query_users 每次调用（包括单元素输入）都会执行一次远程 SQL 查询（db.fetch_users_by_ids）。因此当 len(ids)=N 时，远程查询次数从 1 次变为 N 次，复杂度从 O(1) 次往返变为 O(N) 次往返，远端数据库负载与网络往返随输入规模线性增长；N 较大时该函数的总耗时将被远程调用延迟主导，并可能拖垮下游数据库连接资源。此问题由本次改动直接引入。验证方法：对 db.fetch_users_by_ids 打调用计数桩（mock/spy），分别用改造前后代码以 len(ids) 为 1、10、100 的输入运行 names()，断言调用次数（前：1，后：N）；或用计数日志统计 SQL 语句数并测量随 N 增长的总耗时曲线。\",\n      \"suggestion\": \"恢复批量调用：users = query_users(ids)，然后在推导中 users[id].name 本地查表；若确需逐条处理，也应在循环外一次性取数，避免在推导式内发起远程调用。\",\n      \"side\": \"after\",\n      \"startLine\": 3,\n      \"endLine\": 3,\n      \"evidence\": \"    return [query_users([id])[id].name for id in ids]\"\n    }\n  ]\n}\n```",
+        "verificationOutput": "```json\n{\"schemaVersion\":1,\"verifications\":[{\"findingIndex\":0,\"verdict\":\"confirmed\",\"reason\":\"初审结论经独立核对成立。改动后 names() 在列表推导中对每个 id 单独调用 query_users([id])（file-1 after 第 3 行），而 policy.py 第 13-15 行（before 与 after 一致，故该行为非本次改动引入但由本次改动触发）明确注明 query_users 每次调用——包括单元素输入——都执行一次远程 SQL 查询 db.fetch_users_by_ids(ids)。改动前（file-1 before 第 3 行）仅对整个 ids 调用一次 query_users 后本地查表。因此 len(ids)=N>1 时远程往返从 1 次变为 N 次，随输入规模线性增长，构成 N+1 回归。反例核查：ids 为空时改动后反而 0 次调用、改动前 1 次；N=1 时两者均为 1 次——这些边界情形只影响问题量级，不否定 N>1 时的回归事实。远程调用代价由冻结注释直接佐证，无需实测即可确认查询次数增长；具体耗时增幅仍需按初审建议用调用计数桩测量。\",\"citations\":[{\"sourceId\":\"file-1\",\"side\":\"after\",\"startLine\":3,\"endLine\":3,\"evidence\":\"    return [query_users([id])[id].name for id in ids]\"},{\"sourceId\":\"file-1\",\"side\":\"before\",\"startLine\":3,\"endLine\":4,\"evidence\":\"    users = query_users(ids)\\n    return [users[id].name for id in ids]\"},{\"sourceId\":\"context-file-2\",\"side\":\"after\",\"startLine\":13,\"endLine\":15,\"evidence\":\"def query_users(ids):\\n    # Each invocation performs one remote SQL query, including singleton input.\\n    return db.fetch_users_by_ids(ids)\"}]}]}\n```",
+        "error": null,
+        "sessionDigests": [
+          "961621918ef64426b5a9e0808ef37d959d94e60ef6dbc9e07755206de66a702e",
+          "fb26498b3d82323aa6ba18ea9f3967a45dfe1867e241813dbf098647bb31c64c"
+        ]
+      }
+    ],
+    "contextScope": "仅检索本次送审的冻结文本；另收录 1 个关联文件。范围有界，未收录不等于不存在；旧记录不补读当前代码。"
+  },
+  "report": {
+    "schemaVersion": 1,
+    "structured": true,
+    "findings": [
+      {
+        "fileId": "file-1",
+        "severity": "high",
+        "title": "批量查询被改为循环内逐条远程查询（N+1 回归）",
+        "description": "改动前 names() 对全部 ids 调用一次 query_users(ids) 得到字典后本地查表；改动后在列表推导中对每个 id 单独调用 query_users([id])。根据冻结上下文 policy.py 第 13-15 行，query_users 每次调用（包括单元素输入）都会执行一次远程 SQL 查询（db.fetch_users_by_ids）。因此当 len(ids)=N 时，远程查询次数从 1 次变为 N 次，复杂度从 O(1) 次往返变为 O(N) 次往返，远端数据库负载与网络往返随输入规模线性增长；N 较大时该函数的总耗时将被远程调用延迟主导，并可能拖垮下游数据库连接资源。此问题由本次改动直接引入。验证方法：对 db.fetch_users_by_ids 打调用计数桩（mock/spy），分别用改造前后代码以 len(ids) 为 1、10、100 的输入运行 names()，断言调用次数（前：1，后：N）；或用计数日志统计 SQL 语句数并测量随 N 增长的总耗时曲线。",
+        "suggestion": "恢复批量调用：users = query_users(ids)，然后在推导中 users[id].name 本地查表；若确需逐条处理，也应在循环外一次性取数，避免在推导式内发起远程调用。",
+        "side": "after",
+        "startLine": 3,
+        "endLine": 3,
+        "evidence": "    return [query_users([id])[id].name for id in ids]",
+        "path": "reports/names.py",
+        "rootId": "[REDACTED_HIGH_ENTROPY]",
+        "rootLabel": "[REDACTED_HIGH_ENTROPY]",
+        "locationVerified": true,
+        "locationNote": "位置与冻结代码一致；问题是否成立仍需核实",
+        "verification": {
+          "verdict": "confirmed",
+          "reason": "初审结论经独立核对成立。改动后 names() 在列表推导中对每个 id 单独调用 query_users([id])（file-1 after 第 3 行），而 policy.py 第 13-15 行（before 与 after 一致，故该行为非本次改动引入但由本次改动触发）明确注明 query_users 每次调用——包括单元素输入——都执行一次远程 SQL 查询 db.fetch_users_by_ids(ids)。改动前（file-1 before 第 3 行）仅对整个 ids 调用一次 query_users 后本地查表。因此 len(ids)=N>1 时远程往返从 1 次变为 N 次，随输入规模线性增长，构成 N+1 回归。反例核查：ids 为空时改动后反而 0 次调用、改动前 1 次；N=1 时两者均为 1 次——这些边界情形只影响问题量级，不否定 N>1 时的回归事实。远程调用代价由冻结注释直接佐证，无需实测即可确认查询次数增长；具体耗时增幅仍需按初审建议用调用计数桩测量。",
+          "citations": [
+            {
+              "sourceId": "file-1",
+              "side": "after",
+              "startLine": 3,
+              "endLine": 3,
+              "evidence": "    return [query_users([id])[id].name for id in ids]",
+              "path": "reports/names.py",
+              "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+            },
+            {
+              "sourceId": "file-1",
+              "side": "before",
+              "startLine": 3,
+              "endLine": 4,
+              "evidence": "    users = query_users(ids)\n    return [users[id].name for id in ids]",
+              "path": "reports/names.py",
+              "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+            },
+            {
+              "sourceId": "context-file-2",
+              "side": "after",
+              "startLine": 13,
+              "endLine": 15,
+              "evidence": "def query_users(ids):\n    # Each invocation performs one remote SQL query, including singleton input.\n    return db.fetch_users_by_ids(ids)",
+              "path": "policy.py",
+              "rootLabel": "[REDACTED_HIGH_ENTROPY]"
+            }
+          ]
+        }
+      }
+    ],
+    "files": [
+      {
+        "fileId": "file-1",
+        "rootId": "[REDACTED_HIGH_ENTROPY]",
+        "rootLabel": "[REDACTED_HIGH_ENTROPY]",
+        "path": "reports/names.py",
+        "status": "reported",
+        "rules": [
+          "性能分析：指出具体热点、数据规模、复杂度、阻塞或资源增长路径，给出验证方法。没有实测数据时只描述风险和测量方法，不编造耗时或收益。",
+          "Python：核对可变默认参数、异常路径、资源释放、阻塞调用进入异步路径及输入类型边界。"
+        ]
+      }
+    ],
+    "warnings": []
+  }
+}
