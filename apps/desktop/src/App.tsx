@@ -1,7 +1,7 @@
 import { AttachmentUploadRecovery } from "./AttachmentUploadRecovery";
 import { ulid } from "ulid";
-import { SubmissionRecovery, usePendingSubmissions } from "./SubmissionRecovery";
-import { PendingSubmissionError, submissionOperations } from "./submissionOperations";
+import { SubmissionRecovery, usePendingSubmissions, useUnconfirmedSubmissions } from "./SubmissionRecovery";
+import { PendingSubmissionError, UnconfirmedSubmissionError, submissionOperations } from "./submissionOperations";
 import { ApprovalRecovery, usePendingApprovalResponses } from "./ApprovalRecovery";
 import { approvalOperations } from "./approvalOperations";
 import { ContextUsageRing } from "./ContextUsageRing";
@@ -352,8 +352,11 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     setDraftValue(value);
   }, []);
   const pendingSends = usePendingSubmissions(client);
+  const unconfirmedSends = useUnconfirmedSubmissions();
+  // A send whose outcome is unknown blocks a fresh send of the same draft until verified.
   const submissionPending = !Array.isArray(pendingSends) || pendingSends.some(record => selectedTaskId
-    ? record.task.taskId === selectedTaskId : record.scope === newDraftScope.current);
+    ? record.task.taskId === selectedTaskId : record.scope === newDraftScope.current)
+    || unconfirmedSends.records.some(record => selectedTaskId ? record.taskId === selectedTaskId : record.scope === newDraftScope.current);
   const attachments = useAttachments(client);
   const clearAttachments = attachments.clear;
   const [draggingFiles, setDraggingFiles] = useState(false);
@@ -993,6 +996,11 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
           durable = true;
           attachments.consume(attachmentIds);
           submittedSelections.current.set(cause.intent.task.taskId, pendingModel);
+        } else if (cause instanceof UnconfirmedSubmissionError) {
+          // Outcome unknown: keep the original identity for verification and never
+          // refill the composer, or a resend under a new id could run twice.
+          durable = true;
+          attachments.consume(attachmentIds);
         }
         throw cause;
       }
@@ -1015,8 +1023,9 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       // Only failures before the service stored the original return to the input.
       // Once stored, recovery owns the original content and prevents a fresh resend.
       if (!durable && composerContext.current === originContext && draftRevision.current === clearedRevision) setDraft(prompt);
-      if (composerContext.current === activeContext) setError(userFacingError(cause, durable
-        ? "发送结果尚未确认，原内容已保存，请核实原发送。" : "消息未能发送，内容已保留，请重试。"));
+      if (composerContext.current === activeContext) setError(cause instanceof UnconfirmedSubmissionError
+        ? "发送结果未知，原请求和发送标识已保留，请在下方核实后再处理。"
+        : userFacingError(cause, durable ? "发送结果尚未确认，原内容已保存，请核实原发送。" : "消息未能发送，内容已保留，请重试。"));
     } finally {
       setSending(false);
       switchBusy.current = false;
@@ -1268,6 +1277,15 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             ? result.status === "submitted" ? { ...current, taskId: result.taskId, acceptedSequence: result.sequence } : null : current);
           void refresh();
           if (result.status !== "task_deleted" && selectedTaskIdRef.current === record.task.taskId) void loadConversation(record.task.taskId);
+        }} onUnconfirmedResolved={(record, result) => {
+          setPendingSubmission(current => current?.operationId === record.operationId
+            ? result.status === "submitted" ? { ...current, taskId: result.taskId, acceptedSequence: result.sequence } : null : current);
+          void refresh();
+          if (result.status === "submitted" && selectedTaskIdRef.current === result.taskId) void loadConversation(result.taskId);
+        }} onRestore={record => {
+          // Verified never received: give the text back only to the same, still-empty draft.
+          const same = selectedTaskIdRef.current ? record.taskId === selectedTaskIdRef.current : record.scope === newDraftScope.current;
+          if (same) setDraft(current => current.trim() ? current : record.input.prompt);
         }}/>
         {approvalError?.taskId === selectedTaskId && <p className="error" role="alert">{approvalError.message}</p>}
         {selectedTaskId && <ApprovalRecovery key={`approval:${selectedTaskId}`} client={client} taskId={selectedTaskId} busy={approving !== null} revision={selectedTask?.streamVersion ?? 0} onAccepted={record => {

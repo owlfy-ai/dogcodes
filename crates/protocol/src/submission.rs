@@ -70,6 +70,10 @@ pub enum SubmissionIntentEntry {
     Closed {
         fingerprint: String,
         resolution: SubmissionResolution,
+        /// Fingerprint of the original start request (`start_request_fingerprint`);
+        /// absent on records closed before it was recorded.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        request: Option<String>,
     },
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]

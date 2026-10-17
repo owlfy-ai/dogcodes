@@ -564,7 +564,7 @@ export type SubmissionResolution = { status: "submitted"; taskId: TaskId; sequen
   | { status: "invalidated"; taskId: TaskId }
   | { status: "task_deleted"; taskId: TaskId; deletionSequence: number };
 export type SubmissionIntentEntry = { state: "pending"; intent: SubmissionIntent }
-  | { state: "closed"; fingerprint: string; resolution: SubmissionResolution };
+  | { state: "closed"; fingerprint: string; resolution: SubmissionResolution; /** Fingerprint of the original start request. */ request?: string };
 /** A new send frozen and driven by the service; taskId null creates a new conversation first. */
 export interface SubmissionStartRequest {
   operationId: string; scope: string; taskId: TaskId | null; projectId: ProjectId; target: ExecutorRef; input: TurnSubmission;

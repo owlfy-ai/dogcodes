@@ -17,6 +17,42 @@ export class PendingSubmissionError extends Error {
   }
 }
 
+/** A start whose outcome is unknown: the reply and the follow-up lookup both failed. */
+export class UnconfirmedSubmissionError extends Error {
+  constructor(readonly request: UnconfirmedSubmission, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "UnconfirmedSubmissionError";
+  }
+}
+export interface StartRequest { scope: string; taskId: TaskId | null; projectId: ProjectId; target: ExecutorRef; input: TurnSubmission }
+/**
+ * This client's own retry identity for a start the service may or may not have
+ * received. It is kept until the service's record (or its absence) is verified,
+ * so a retry reuses the original id instead of risking a second send.
+ */
+export interface UnconfirmedSubmission extends StartRequest { schemaVersion: 1; operationId: string; requestedAt: string }
+export type UnconfirmedCheck = SubmissionResolution | { status: "pending"; taskId: TaskId | null } | { status: "not_received" };
+
+const unconfirmedPrefix = "dogcodes:unconfirmed-send:";
+function remember(record: UnconfirmedSubmission) {
+  // A storage failure stops here, before anything is sent.
+  localStorage.setItem(unconfirmedPrefix + record.operationId, JSON.stringify(record)); emit();
+}
+function forgetUnconfirmed(operationId: string) {
+  if (localStorage.getItem(unconfirmedPrefix + operationId) !== null) { localStorage.removeItem(unconfirmedPrefix + operationId); emit(); }
+}
+function unconfirmed(): { records: UnconfirmedSubmission[]; error: string | null } {
+  const records: UnconfirmedSubmission[] = []; let error: string | null = null;
+  for (const key of Object.keys(localStorage).filter(key => key.startsWith(unconfirmedPrefix)).sort()) {
+    try {
+      const value = JSON.parse(localStorage.getItem(key) ?? "null") as UnconfirmedSubmission;
+      if (value?.schemaVersion !== 1 || unconfirmedPrefix + value.operationId !== key || !text(value.scope) || !value.input) throw new Error("invalid");
+      records.push(value);
+    } catch { error = "部分发送结果未知的本机记录损坏，已保留原记录，请检查本机存储。"; }
+  }
+  return { records, error };
+}
+
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach(listener => listener());
 const text = (value: unknown): value is string => typeof value === "string" && value.length > 0;
@@ -80,24 +116,49 @@ function discover(client: CoreClient): Promise<void> {
   return state.flight;
 }
 
-async function start(client: CoreClient, request: { operationId?: string; scope: string; taskId: TaskId | null; projectId: ProjectId; target: ExecutorRef; input: TurnSubmission }): Promise<SubmissionResolution> {
+async function start(client: CoreClient, request: StartRequest & { operationId?: string }): Promise<SubmissionResolution> {
   const service = api(client);
-  const operationId = request.operationId ?? `cmd_${ulid()}`;
   if (!text(request.scope) || (!request.input.prompt.trim() && !request.input.attachments.length)) throw new Error("发送内容无效。");
-  return withClientOperationLock(`submission:${request.scope}`, async () => {
-    try {
-      return settled(await service.submissionStart({ ...structuredClone(request), operationId }));
-    } catch (cause) {
-      if (cause instanceof PendingSubmissionError) throw cause;
-      // The service keeps working after a lost reply; only its record of this
-      // exact identity decides whether the original exists and how it ended.
-      const latest = await service.submissionIntentGet(operationId).catch(() => null);
-      if (latest?.state === "closed") return latest.resolution;
-      if (latest?.state === "pending") throw new PendingSubmissionError(latest.intent, cause);
-      throw cause;
-    } finally { void discover(client); }
-  });
+  const record: UnconfirmedSubmission = structuredClone({ schemaVersion: 1, operationId: request.operationId ?? `cmd_${ulid()}`,
+    requestedAt: new Date().toISOString(), scope: request.scope, taskId: request.taskId, projectId: request.projectId, target: request.target, input: request.input });
+  return withClientOperationLock(`submission:${record.scope}`, () => send(service, client, record));
 }
+async function send(service: ReturnType<typeof api>, client: CoreClient, record: UnconfirmedSubmission): Promise<SubmissionResolution> {
+  const { schemaVersion: _schema, requestedAt: _at, ...call } = record;
+  remember(record);
+  try {
+    const entry = await service.submissionStart(call);
+    forgetUnconfirmed(record.operationId);
+    return settled(entry);
+  } catch (cause) {
+    if (cause instanceof PendingSubmissionError) { forgetUnconfirmed(record.operationId); throw cause; }
+    // The service keeps working after a lost reply; only a successful lookup of
+    // this exact identity decides whether the original exists and how it ended.
+    let latest: SubmissionIntentEntry | null;
+    try { latest = await service.submissionIntentGet(record.operationId); }
+    catch { throw new UnconfirmedSubmissionError(record, cause); }
+    forgetUnconfirmed(record.operationId);
+    if (latest?.state === "closed") return latest.resolution;
+    if (latest?.state === "pending") throw new PendingSubmissionError(latest.intent, cause);
+    throw cause; // Verified absent: the caller may return the content to the composer.
+  } finally { void discover(client); }
+}
+/** Read only: looks up an unconfirmed start by its original identity. */
+async function verifyUnconfirmed(client: CoreClient, record: UnconfirmedSubmission): Promise<UnconfirmedCheck> {
+  const latest = await api(client).submissionIntentGet(record.operationId);
+  if (!latest) return { status: "not_received" };
+  forgetUnconfirmed(record.operationId);
+  void discover(client);
+  return latest.state === "closed" ? latest.resolution : { status: "pending", taskId: latest.intent.task.taskId };
+}
+/** Sends the original request again with its original identity; the service deduplicates. */
+async function resendUnconfirmed(client: CoreClient, record: UnconfirmedSubmission): Promise<SubmissionResolution> {
+  const service = api(client);
+  return withClientOperationLock(`submission:${record.scope}`, () => send(service, client, record));
+}
+/** Only after verification found no record: stop tracking without sending. */
+function abandonUnconfirmed(record: UnconfirmedSubmission) { forgetUnconfirmed(record.operationId); }
+
 function original(action: "continue" | "retire") {
   return async (client: CoreClient, record: PendingSubmission): Promise<SubmissionResult> => {
     const service = api(client);
@@ -149,6 +210,11 @@ function watch(client: CoreClient) {
 export const submissionOperations = {
   start, check, resume: original("continue"), retire: original("retire"), discover, watch,
   list: (client: CoreClient) => cache(client).records,
+  unconfirmed: () => JSON.stringify(unconfirmed()),
+  verifyUnconfirmed, resendUnconfirmed, abandonUnconfirmed,
   snapshot: (client: CoreClient) => cache(client).snapshot,
-  subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+  subscribe(listener: () => void) {
+    listeners.add(listener); window.addEventListener("storage", listener);
+    return () => { listeners.delete(listener); window.removeEventListener("storage", listener); };
+  },
 };

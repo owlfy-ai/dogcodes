@@ -1,11 +1,11 @@
 //! Immutable submission intent and read-only resolution from existing Core receipts.
 //! This is not a second task projection; the host service drives the commands.
 use crate::{Core, CoreError, command_invalidation::CommandInvalidation};
-use agent_domain::{CommandId, TaskId, TurnId};
+use agent_domain::{CommandId, ExecutorRef, ProjectId, TaskId, TurnId};
 use agent_protocol::{
     CommandAck, CommandEnvelope, ConfirmContextPackage, ContextStrength, CoreCommand, CreateTask,
     EventEnvelope, StreamType, SubmitTurn,
-    submission::{SubmissionIntent, SubmissionResolution},
+    submission::{SubmissionInput, SubmissionIntent, SubmissionResolution},
 };
 use sha2::{Digest, Sha256};
 
@@ -114,6 +114,32 @@ pub fn fingerprint(intent: &SubmissionIntent) -> Result<String, CoreError> {
     let normalized = normalize(intent.clone())?;
     let bytes = serde_json::to_vec(&normalized).map_err(|_| invalid())?;
     Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+/// What a caller asked for when starting a send, independent of the identities
+/// the service assigned while freezing it. Every retry of one operation id must
+/// carry the same request, whether the original is pending or already closed.
+pub fn start_request_fingerprint(
+    scope: &str,
+    task: Option<&TaskId>,
+    project: &ProjectId,
+    target: &ExecutorRef,
+    input: &SubmissionInput,
+) -> Result<String, CoreError> {
+    let value = serde_json::json!({
+        "scope": scope, "taskId": task, "projectId": project, "target": target, "input": input,
+    });
+    let bytes = serde_json::to_vec(&value).map_err(|_| invalid())?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+/// The start request an intent was frozen from; a new conversation has no task id.
+pub fn intent_start_fingerprint(intent: &SubmissionIntent) -> Result<String, CoreError> {
+    start_request_fingerprint(
+        &intent.scope,
+        intent.creation.is_none().then_some(&intent.task.task_id),
+        &intent.task.project_id,
+        &intent.target,
+        &intent.input,
+    )
 }
 fn envelope(id: &CommandId, version: u64, payload: CoreCommand) -> CommandEnvelope<CoreCommand> {
     let mut envelope = CommandEnvelope::local(payload);

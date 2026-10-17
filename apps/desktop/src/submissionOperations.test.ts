@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from "vitest";
 import type { CoreClient, SubmissionIntent, SubmissionIntentEntry, SubmissionStartRequest } from "@dogcodes/protocol";
-import { PendingSubmissionError, submissionOperations as operations } from "./submissionOperations";
+import { PendingSubmissionError, UnconfirmedSubmissionError, submissionOperations as operations } from "./submissionOperations";
 
 const input = { prompt: "original", model: null, thinking: null, permissionMode: null, attachments: [] };
 const target = { providerId: "codex", installationId: null };
@@ -75,5 +75,53 @@ it("rejects empty content and clients without the service workflow before sendin
   const f = fixture();
   await expect(operations.start(f.client, { ...request, input: { ...input, prompt: " " } })).rejects.toThrow("发送内容无效");
   await expect(operations.start({} as CoreClient, request)).rejects.toThrow("不支持可靠发送");
+  expect(f.submissionStart).not.toHaveBeenCalled();
+});
+
+it("keeps an unknown outcome with its original identity until verified, without a second start", async () => {
+  const f = fixture();
+  let id = "";
+  f.submissionStart.mockImplementation(async call => { id = call.operationId; throw new Error("reply lost"); });
+  f.submissionIntentGet.mockRejectedValue(new Error("service restarting"));
+  const unknown = await operations.start(f.client, request).catch(cause => cause);
+  expect(unknown).toBeInstanceOf(UnconfirmedSubmissionError);
+  expect((unknown as UnconfirmedSubmissionError).request.operationId).toBe(id);
+  expect(JSON.parse(operations.unconfirmed()).records.map((r: { operationId: string }) => r.operationId)).toEqual([id]);
+  // The lookup fails again: still unknown, still kept, nothing resent.
+  await expect(operations.verifyUnconfirmed(f.client, (unknown as UnconfirmedSubmissionError).request)).rejects.toThrow("service restarting");
+  expect(JSON.parse(operations.unconfirmed()).records).toHaveLength(1);
+  // The service had in fact finished the original: verification reports it and clears the record.
+  f.submissionIntentGet.mockImplementation(async asked => asked === id ? submitted(id) : null);
+  expect(await operations.verifyUnconfirmed(f.client, (unknown as UnconfirmedSubmissionError).request)).toMatchObject({ status: "submitted" });
+  expect(JSON.parse(operations.unconfirmed()).records).toEqual([]);
+  expect(f.submissionStart).toHaveBeenCalledTimes(1);
+});
+
+it("resends an unconfirmed request only with its original identity, and drops it once absence is verified", async () => {
+  const f = fixture();
+  let id = "";
+  f.submissionStart.mockImplementationOnce(async call => { id = call.operationId; throw new Error("reply lost"); });
+  f.submissionIntentGet.mockRejectedValueOnce(new Error("offline"));
+  const { request: original } = await operations.start(f.client, request).catch(cause => cause) as UnconfirmedSubmissionError;
+  f.submissionIntentGet.mockResolvedValueOnce(null);
+  expect(await operations.verifyUnconfirmed(f.client, original)).toEqual({ status: "not_received" });
+  expect(JSON.parse(operations.unconfirmed()).records).toHaveLength(1);
+  f.submissionStart.mockImplementationOnce(async call => submitted(call.operationId));
+  expect(await operations.resendUnconfirmed(f.client, original)).toMatchObject({ status: "submitted" });
+  expect(f.submissionStart.mock.calls[1][0].operationId).toBe(id);
+  expect(JSON.parse(operations.unconfirmed()).records).toEqual([]);
+
+  // Verified absent after a failed start: nothing is kept, so the composer may take the text back.
+  f.submissionStart.mockRejectedValueOnce(new Error("rejected"));
+  f.submissionIntentGet.mockResolvedValueOnce(null);
+  const rejected = await operations.start(f.client, request).catch(cause => cause);
+  expect(rejected).not.toBeInstanceOf(UnconfirmedSubmissionError);
+  expect(JSON.parse(operations.unconfirmed()).records).toEqual([]);
+});
+
+it("sends nothing when the retry identity cannot be stored first", async () => {
+  const f = fixture();
+  vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => { throw new Error("quota"); });
+  await expect(operations.start(f.client, request)).rejects.toThrow("quota");
   expect(f.submissionStart).not.toHaveBeenCalled();
 });

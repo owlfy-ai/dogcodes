@@ -397,3 +397,33 @@ it("does not restore a failed old send into a different selected conversation", 
   expect(element.querySelector("form.composer [role=alert]")).toBeNull();
   expect(element.querySelector('[aria-label="待核实的发送请求"]')?.textContent).toContain("old conversation request");
 });
+
+it("keeps a send with an unknown outcome out of the composer and blocks a fresh send until it is verified", async () => {
+  const start = vi.spyOn(client, "submissionStart").mockRejectedValueOnce(new Error("reply lost"));
+  const lookup = vi.spyOn(client, "submissionIntentGet").mockRejectedValueOnce(new Error("service restarting"));
+  await typePrompt("结果未知的消息"); await send();
+  const original = start.mock.calls[0][0].operationId;
+  expect(element.querySelector("textarea")?.value).toBe("");
+  expect(element.querySelector('[aria-label="结果未知的发送请求"]')?.textContent).toContain("结果未知的消息");
+  await typePrompt("另一条消息"); await send();
+  expect(start).toHaveBeenCalledTimes(1);
+  // Verification finds no record: resending reuses the original identity.
+  lookup.mockResolvedValueOnce(null);
+  await click(button("核实发送结果"));
+  await act(async () => { button("重新发送原内容").click(); await new Promise(resolve => setTimeout(resolve, 900)); });
+  expect(start).toHaveBeenCalledTimes(2);
+  expect(start.mock.calls[1][0].operationId).toBe(original);
+  expect(element.querySelector('[aria-label="结果未知的发送请求"]')).toBeNull();
+});
+
+it("returns the text to the draft only after verifying the service never received it", async () => {
+  vi.spyOn(client, "submissionStart").mockRejectedValueOnce(new Error("reply lost"));
+  const lookup = vi.spyOn(client, "submissionIntentGet").mockRejectedValueOnce(new Error("offline"));
+  await typePrompt("要放回的消息"); await send();
+  expect(element.querySelector("textarea")?.value).toBe("");
+  lookup.mockResolvedValueOnce(null);
+  await click(button("核实发送结果"));
+  await click(button("放弃并放回输入框"));
+  expect(element.querySelector("textarea")?.value).toBe("要放回的消息");
+  expect(element.querySelector('[aria-label="结果未知的发送请求"]')).toBeNull();
+});

@@ -3,8 +3,8 @@ pub(crate) mod watch;
 use agent_core::{
     Core,
     submission_intents::{
-        MAX_INTENT_BYTES, SubmissionStage, fingerprint, normalize, stage_command,
-        submission_command,
+        MAX_INTENT_BYTES, SubmissionStage, fingerprint, intent_start_fingerprint, normalize,
+        stage_command, start_request_fingerprint, submission_command,
     },
 };
 use agent_domain::{CommandId, TaskId};
@@ -88,7 +88,14 @@ impl Store {
             SubmissionIntentEntry::Closed {
                 fingerprint,
                 resolution,
+                request,
             } => {
+                let digest = |value: &String| {
+                    value.len() == 64
+                        && value
+                            .bytes()
+                            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                };
                 if matches!(
                     resolution,
                     agent_protocol::submission::SubmissionResolution::Submitted { sequence: 0, .. }
@@ -96,10 +103,8 @@ impl Store {
                             deletion_sequence: 0,
                             ..
                         }
-                ) || fingerprint.len() != 64
-                    || !fingerprint
-                        .bytes()
-                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                ) || !digest(fingerprint)
+                    || request.as_ref().is_some_and(|request| !digest(request))
                 {
                     return Err("发送结束记录损坏".into());
                 }
@@ -192,18 +197,20 @@ impl Store {
         let Some(entry) = self.read(id)? else {
             return Ok(());
         };
-        let fingerprint = match entry {
-            SubmissionIntentEntry::Pending { intent } => {
-                fingerprint(&intent).map_err(|e| e.to_string())?
-            }
+        let (fingerprint, request) = match entry {
+            SubmissionIntentEntry::Pending { intent } => (
+                fingerprint(&intent).map_err(|e| e.to_string())?,
+                Some(intent_start_fingerprint(&intent).map_err(|e| e.to_string())?),
+            ),
             SubmissionIntentEntry::Closed {
                 fingerprint,
                 resolution: old,
+                request,
             } => {
                 if old == resolution {
                     return Ok(());
                 }
-                fingerprint
+                (fingerprint, request)
             }
         };
         self.write(
@@ -211,6 +218,7 @@ impl Store {
             SubmissionIntentEntry::Closed {
                 fingerprint,
                 resolution,
+                request,
             },
         )
     }
@@ -435,19 +443,33 @@ impl SubmissionIntents {
                     let id = operation_id.clone();
                     self.io(move |store| store.read(&id)).await?
                 };
+                // A retried start after a lost reply must carry the same request,
+                // whether the original is still pending or has already ended.
+                let requested = start_request_fingerprint(
+                    &scope,
+                    task_id.as_ref(),
+                    &project_id,
+                    &target,
+                    &input,
+                )
+                .map_err(|e| e.to_string())?;
+                let changed = || "原发送标识已绑定其他内容，未继续操作".to_string();
+                if let Some(SubmissionIntentEntry::Closed { request, .. }) = &found {
+                    return match request {
+                        Some(original) if *original == requested => Ok(json!(found)),
+                        Some(_) => Err(changed()),
+                        None => Err("原发送已结束，但无法核实其请求内容，未返回旧结果".into()),
+                    };
+                }
                 let intent = match found {
-                    Some(entry @ SubmissionIntentEntry::Closed { .. }) => return Ok(json!(entry)),
+                    Some(SubmissionIntentEntry::Closed { .. }) => {
+                        unreachable!("closed records returned above")
+                    }
                     Some(SubmissionIntentEntry::Pending { intent }) => {
-                        // A retried start after a lost reply must carry the same request.
-                        if intent.scope != scope
-                            || intent.task.project_id != project_id
-                            || intent.target != target
-                            || intent.input != *input
-                            || task_id
-                                .as_ref()
-                                .is_some_and(|task| task != &intent.task.task_id)
+                        if intent_start_fingerprint(&intent).map_err(|e| e.to_string())?
+                            != requested
                         {
-                            return Err("原发送标识已绑定其他内容，未继续操作".into());
+                            return Err(changed());
                         }
                         *intent
                     }
@@ -530,6 +552,9 @@ impl SubmissionIntents {
                     let entry = SubmissionIntentEntry::Closed {
                         fingerprint: fingerprint(&intent).map_err(|e| e.to_string())?,
                         resolution,
+                        request: Some(
+                            intent_start_fingerprint(&intent).map_err(|e| e.to_string())?,
+                        ),
                     };
                     let result = entry.clone();
                     self.io(move |store| store.write(&intent.operation_id, entry))
@@ -582,6 +607,7 @@ impl SubmissionIntents {
                 let entry = SubmissionIntentEntry::Closed {
                     fingerprint: fingerprint(&intent).map_err(|e| e.to_string())?,
                     resolution,
+                    request: Some(intent_start_fingerprint(&intent).map_err(|e| e.to_string())?),
                 };
                 let result = entry.clone();
                 self.io(move |store| store.write(&intent.operation_id, entry))
@@ -677,6 +703,7 @@ impl SubmissionIntents {
         let entry = SubmissionIntentEntry::Closed {
             fingerprint: fingerprint(intent).map_err(|e| e.to_string())?,
             resolution,
+            request: Some(intent_start_fingerprint(intent).map_err(|e| e.to_string())?),
         };
         let (id, written) = (intent.operation_id.clone(), entry.clone());
         self.io(move |store| store.write(&id, written)).await?;
@@ -1868,5 +1895,94 @@ mod tests {
                 .iter()
                 .any(|t| t.task_id == abandoned.task.task_id)
         );
+    }
+
+    #[tokio::test]
+    async fn retries_of_an_operation_must_carry_the_original_request_even_after_it_closed() {
+        let (_dir, host, core, _store, intent) = fixture().await;
+        let operation = CommandId::new();
+        let first = host
+            .call(&core, start(&intent, &operation, None, &intent.target))
+            .await
+            .unwrap();
+        let task = submitted_task(&first);
+        idle(&core).await;
+        // Same request: the original closure, no second send.
+        assert_eq!(
+            host.call(&core, start(&intent, &operation, None, &intent.target))
+                .await
+                .unwrap(),
+            first
+        );
+        // Different content, or naming the conversation the service created, is a different request.
+        let mut changed = start(&intent, &operation, None, &intent.target);
+        if let SubmissionIntentCall::Start { input, .. } = &mut changed {
+            input.prompt = "a different message".into();
+        }
+        assert!(
+            host.call(&core, changed)
+                .await
+                .unwrap_err()
+                .contains("其他内容")
+        );
+        assert!(
+            host.call(
+                &core,
+                start(&intent, &operation, Some(task.clone()), &intent.target)
+            )
+            .await
+            .unwrap_err()
+            .contains("其他内容")
+        );
+        assert_eq!(queued(&core).await, 1);
+
+        // A pending send for an existing conversation rejects a retry without its task id.
+        let mut next = intent.clone();
+        next.scope = format!("task:{task}");
+        disable_fake(&core).await;
+        let pending = CommandId::new();
+        assert!(
+            host.call(
+                &core,
+                start(&next, &pending, Some(task.clone()), &intent.target)
+            )
+            .await
+            .is_err()
+        );
+        assert!(
+            host.call(&core, start(&next, &pending, None, &intent.target))
+                .await
+                .unwrap_err()
+                .contains("其他内容")
+        );
+
+        // A closed record without a request fingerprint cannot vouch for a retry.
+        let legacy = CommandId::new();
+        let id = legacy.clone();
+        let entry = SubmissionIntentEntry::Closed {
+            fingerprint: "0".repeat(64),
+            resolution: agent_protocol::submission::SubmissionResolution::Invalidated {
+                task_id: task.clone(),
+            },
+            request: None,
+        };
+        host.io(move |store| store.write(&id, entry)).await.unwrap();
+        assert!(
+            host.call(&core, start(&intent, &legacy, None, &intent.target))
+                .await
+                .unwrap_err()
+                .contains("无法核实")
+        );
+    }
+    async fn disable_fake(core: &Arc<Core>) {
+        let current = core.agent_preferences().await.unwrap();
+        let mut request = CommandEnvelope::local(CoreCommand::SetAgentPreferences(
+            agent_protocol::AgentPreferences {
+                disabled: vec!["fake".into()],
+                ..Default::default()
+            },
+        ));
+        request.expected_stream_version = Some(current.revision);
+        core.execute(request).await.unwrap();
     }
 }
