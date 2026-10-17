@@ -1,7 +1,7 @@
 <!-- Keep feature scope aligned across README.md and docs/i18n/. Screenshots are shared PNG files. -->
 <div align="center">
 
-<img src="../../apps/desktop/src-tauri/icons/128x128.png" alt="dogcodes" width="96" height="96" />
+<img src="../../apps/desktop/src-tauri/icons/128x128@2x.png" alt="dogcodes" width="96" height="96" />
 
 # dogcodes
 
@@ -15,7 +15,7 @@ dogcodes 把编程 Agent、对话、代码变更和项目运行命令放进同�
 
 **开发预览版 · macOS 优先。** 安装包和发布验收仍在准备中，目前可从源码运行；Windows 尚待验证。
 
-[功能](#features) · [开始使用](#getting-started)
+[官网](https://dog.codes) · [功能](#features) · [开始使用](#getting-started)
 
 ## 支持的 Agent
 

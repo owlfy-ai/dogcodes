@@ -125,6 +125,8 @@ fn digest(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
+// Directory sync only exists on Unix; the Result serves that path.
+#[cfg_attr(not(unix), allow(clippy::unnecessary_wraps))]
 fn sync_directory(path: &Path) -> ReviewResult<()> {
     #[cfg(unix)]
     File::open(path)

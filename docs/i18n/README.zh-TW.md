@@ -1,7 +1,7 @@
 <!-- Keep feature scope aligned across README.md and docs/i18n/. Screenshots are shared PNG files. -->
 <div align="center">
 
-<img src="../../apps/desktop/src-tauri/icons/128x128.png" alt="dogcodes" width="96" height="96" />
+<img src="../../apps/desktop/src-tauri/icons/128x128@2x.png" alt="dogcodes" width="96" height="96" />
 
 # dogcodes
 
@@ -15,7 +15,7 @@ dogcodes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 
 **開發預覽版 · macOS 優先。** 安裝套件與發布驗證仍在準備中，目前可從原始碼執行；Windows 尚待驗證。
 
-[功能](#features) · [開始使用](#getting-started)
+[官網](https://dog.codes) · [功能](#features) · [開始使用](#getting-started)
 
 ## 支援的 Agent
 

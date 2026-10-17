@@ -3,6 +3,7 @@
 use driver_api::{DriverError, QuotaSnapshot, QuotaWindow};
 use std::path::Path;
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn parse(text: &str) -> Option<QuotaSnapshot> {
     let header = regex::Regex::new(r"Usage • ([^\r\n]+?)\s+Resets ([^\r\n]+)").ok()?;
     let capture = header.captures(text)?;
@@ -77,6 +78,8 @@ fn parse(text: &str) -> Option<QuotaSnapshot> {
 }
 
 #[cfg(not(target_os = "macos"))]
+// Same async signature as the macOS reader, which the caller awaits.
+#[allow(clippy::unused_async)]
 pub(super) async fn read(_: &Path, _: &Path) -> Result<QuotaSnapshot, DriverError> {
     Err(DriverError::NotConfigured(
         "Cursor native quota currently requires macOS".into(),

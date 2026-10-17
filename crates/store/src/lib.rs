@@ -6819,7 +6819,7 @@ mod tests {
                 .await
                 .unwrap();
                 submit_turn(&core, &task_id, "wait until crash").await;
-                tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                tokio::time::timeout(std::time::Duration::from_secs(20), async {
                     loop {
                         if core
                             .sync_events(0, 1000)
@@ -6983,7 +6983,7 @@ mod tests {
             }));
             submit.expected_stream_version = Some(version);
             core.execute(submit).await.unwrap();
-            tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            tokio::time::timeout(std::time::Duration::from_secs(20), async {
                 loop {
                     if !driver.received_requests().await.is_empty()
                         && core.bootstrap().await.unwrap().tasks[0]

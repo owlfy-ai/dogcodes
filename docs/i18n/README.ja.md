@@ -1,7 +1,7 @@
 <!-- Keep feature scope aligned across README.md and docs/i18n/. Screenshots are shared PNG files. -->
 <div align="center">
 
-<img src="../../apps/desktop/src-tauri/icons/128x128.png" alt="dogcodes" width="96" height="96" />
+<img src="../../apps/desktop/src-tauri/icons/128x128@2x.png" alt="dogcodes" width="96" height="96" />
 
 # dogcodes
 
@@ -15,7 +15,7 @@ dogcodes は、コーディングエージェント、会話、コードの変�
 
 **開発プレビュー · macOS を優先。** インストーラーとリリース検証は準備中です。現在はソースから実行でき、Windows の検証は未完了です。
 
-[機能](#features) · [はじめる](#getting-started)
+[公式サイト](https://dog.codes) · [機能](#features) · [はじめる](#getting-started)
 
 ## 対応エージェント
 

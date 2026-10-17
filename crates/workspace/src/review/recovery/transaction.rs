@@ -170,6 +170,8 @@ fn verify_attributes(
     Ok(())
 }
 
+// Directory sync only exists on Unix; the Result serves that path.
+#[cfg_attr(not(unix), allow(clippy::unnecessary_wraps))]
 pub(super) fn sync_directory(directory: &Dir) -> ReviewResult<()> {
     #[cfg(unix)]
     directory

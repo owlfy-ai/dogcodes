@@ -1,7 +1,7 @@
 <!-- Keep feature scope aligned across README.md and docs/i18n/. Screenshots are shared PNG files. -->
 <div align="center">
 
-<img src="../../apps/desktop/src-tauri/icons/128x128.png" alt="dogcodes" width="96" height="96" />
+<img src="../../apps/desktop/src-tauri/icons/128x128@2x.png" alt="dogcodes" width="96" height="96" />
 
 # dogcodes
 
@@ -15,7 +15,7 @@ dogcodes은 코딩 에이전트, 대화, 코드 변경 사항, 프로젝트 실�
 
 **개발 프리뷰 · macOS 우선.** 설치 패키지와 릴리스 검증을 준비 중입니다. 현재 소스에서 실행할 수 있으며 Windows 검증은 아직 완료되지 않았습니다.
 
-[기능](#features) · [시작하기](#getting-started)
+[공식 사이트](https://dog.codes) · [기능](#features) · [시작하기](#getting-started)
 
 ## 지원 에이전트
 

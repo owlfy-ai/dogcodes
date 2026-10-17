@@ -1,7 +1,7 @@
 <!-- Keep feature scope aligned across README.md and docs/i18n/. Screenshots are shared PNG files. -->
 <div align="center">
 
-<img src="../../apps/desktop/src-tauri/icons/128x128.png" alt="dogcodes" width="96" height="96" />
+<img src="../../apps/desktop/src-tauri/icons/128x128@2x.png" alt="dogcodes" width="96" height="96" />
 
 # dogcodes
 
@@ -15,7 +15,7 @@ dogcodes réunit vos agents de programmation, conversations, modifications de co
 
 **Version de développement · macOS en priorité.** Les installateurs et la validation de la publication sont en préparation. Vous pouvez déjà lancer l’application depuis les sources ; la validation sous Windows reste à faire.
 
-[Fonctionnalités](#features) · [Premiers pas](#getting-started)
+[Site web](https://dog.codes) · [Fonctionnalités](#features) · [Premiers pas](#getting-started)
 
 ## Agents pris en charge
 
