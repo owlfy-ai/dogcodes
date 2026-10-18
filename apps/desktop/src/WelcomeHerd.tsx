@@ -107,8 +107,8 @@ function SheepShape() {
 
 function SheepdogSide() {
   return <svg className="welcome-dog-shape side" viewBox="0 0 72 48">
-    <g className="welcome-dog-leg back far"><line x1="24" y1="27" x2="21" y2="40" /><circle cx="21" cy="40" r="2.2" /></g>
-    <g className="welcome-dog-leg front far"><line x1="45" y1="28" x2="48" y2="40" /><circle cx="48" cy="40" r="2.2" /></g>
+    <DogLeg hip={[24, 27]} className="back far" />
+    <DogLeg hip={[45, 28]} className="front far" />
     <g className="welcome-dog-tail"><path className="welcome-dog-coat" d="M20 21C13 18 8 14 3 9c1 7 7 13 15 16z" /><circle className="welcome-dog-white" cx="4.5" cy="10.5" r="2.6" /></g>
     <ellipse className="welcome-dog-coat" cx="34" cy="24" rx="16" ry="8" />
     <ellipse className="welcome-dog-white" cx="46" cy="27" rx="5" ry="6" />
@@ -121,7 +121,19 @@ function SheepdogSide() {
       <circle className="welcome-dog-coat" cx="68" cy="17.6" r="1.7" />
       <circle className="welcome-dog-white" cx="58.6" cy="14.6" r="1.4" /><circle className="welcome-dog-coat" cx="59" cy="14.6" r=".7" />
     </g>
-    <g className="welcome-dog-leg back near"><line x1="26" y1="28" x2="29" y2="40" /><circle cx="29" cy="40" r="2.2" /></g>
-    <g className="welcome-dog-leg front near"><line x1="43" y1="28" x2="40" y2="40" /><circle cx="40" cy="40" r="2.2" /></g>
+    <DogLeg hip={[27, 28]} className="back near" />
+    <DogLeg hip={[42, 28]} className="front near" />
   </svg>;
+}
+
+/** A leg in two parts: the thigh swings from the hip and the shin folds at the knee,
+ * so a stepping paw lifts off the ground instead of sweeping along it. */
+function DogLeg({ hip: [x, y], className }: { hip: [number, number]; className: string }) {
+  const knee = y + 6.5, paw = 40;
+  return <g className={`welcome-dog-leg ${className}`} style={{ transformOrigin: `${x}px ${y}px` }}>
+    <line x1={x} y1={y} x2={x} y2={knee} />
+    <g className="welcome-dog-shin" style={{ transformOrigin: `${x}px ${knee}px` }}>
+      <line x1={x} y1={knee} x2={x} y2={paw} /><circle cx={x} cy={paw} r="2.2" />
+    </g>
+  </g>;
 }
