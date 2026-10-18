@@ -2,7 +2,9 @@
 
 日期：2026-10-16。本文件为已确认需求的执行规格，不表示功能已经实现。当前工作包状态统一维护在 [CURRENT_WORK](../CURRENT_WORK.md)，产品范围与验收原文见 [远程访问方案](remote-access-assessment-2026-10-16.md)。
 
-排程更新：用户决定先完善桌面并在 GitHub 公开源码及 Windows/macOS/Linux 安装包。37 个子任务及需求保留，远程专项后移；RA-02 的本机生命周期、操作可靠性和共享业务状态由当前 [桌面发布任务](desktop-github-release-work-breakdown-2026-10-16.md) DT-08/09/10 提前交付并作为发布门槛。RA-02A/B/C/D/E/F/H 后续复用这些成果，再补配对身份、跨网/Dart 适配等剩余项；不将整包提前标完成。下文顺序为远程阶段恢复后的参考，实施前按已交付基础更新依赖。不提前开展 Flutter、官方服务或远控媒体。
+2026-10-18 排程更新：用户授权启动独立服务端 `../dogcodes-server` 与手机端 `../dogcodes-app` 框架，当前进展见[框架记录](mobile-server-framework-2026-10-18.md)。以下未交付范围仍保留，旧文中的“本轮仅拆分”描述的是 10 月 16 日原始拆分阶段。
+
+原排程：用户决定先完善桌面并在 GitHub 公开源码及 Windows/macOS/Linux 安装包。37 个子任务及需求保留，远程专项后移；RA-02 的本机生命周期、操作可靠性和共享业务状态由当前 [桌面发布任务](desktop-github-release-work-breakdown-2026-10-16.md) DT-08/09/10 提前交付并作为发布门槛。RA-02A/B/C/D/E/F/H 后续复用这些成果，再补配对身份、跨网/Dart 适配等剩余项；不将整包提前标完成。下文顺序为远程阶段恢复后的参考，实施前按已交付基础更新依赖。2026-10-18 已按用户新授权启动 Flutter/服务框架；远控媒体仍待探针。
 
 ## 1. 交付目标与执行边界
 
@@ -33,8 +35,8 @@
 | 文件/附件 | `workspace_browser.rs`、`artifact_export.rs`、`crates/core/src/artifacts.rs` | 共享项目读取/目录注册/附件服务；本机 OS 打开/导出行为保留本机适配 |
 | 终端与项目运行 | `terminal.rs`、`project_runs.rs`、`crates/runtime/` | 服务持有 PTY/run 生命周期，窗口和手机只订阅或操作资源 |
 | 前端客户端与偏好 | `tauriClient.ts`、`reviewClient.ts`、`projectRunClient.ts`、`historyPreferences.ts`、`historySections.ts`、`agentPreferences.ts` | 统一 TypeScript 客户端契约，端内草稿与宿主共享偏好分开 |
-| 手机端（新增） | 当前无手机工程 | 建议 `apps/mobile/`，Flutter 页面、Dart 契约/客户端及平台适配 |
-| 网络/身份（新增） | 当前只有本机 RPC 和 PairedDevice 类型 | 建议 `crates/remote-gateway/`、`services/remote-access/`，职责先分清，crate 数量后定 |
+| 手机端（新增） | 当前无手机工程 | 已指定 `../dogcodes-app/`，Flutter 页面、Dart 契约/客户端及平台适配 |
+| 网络/身份（新增） | 当前只有本机 RPC 和 PairedDevice 类型 | 官方服务已指定 `../dogcodes-server/`；PC 远程网关留在桌面仓库，具体模块待配对实现 |
 | 平台远控（新增） | 不复活悬浮岛代码 | 建议 `crates/remote-desktop/` 与隔离原生 helper；平台 FFI 不放入 Core |
 | 技术探针/验收证据（新增） | 复用 `experiments/` 和实施记录约定 | `experiments/remote-access/` 保存可复跑探针；证据按日期、平台和任务 ID 归档 |
 
@@ -113,7 +115,7 @@ RA-01C 每个平台可以独立提交证据，全部完成才关闭该项。若�
 
 ## 7. RA-04：Flutter 手机业务
 
-正式手机工程建议放在同仓库 `apps/mobile/`，便于契约一起修改和验证；是否复用 Rust 传输取 RA-01 的结论。按业务拆页面与状态，不把桌面 DOM 或整套 RustDesk UI 嵌入手机。
+正式手机工程按用户 2026-10-18 指定放在独立的 `../dogcodes-app/`；用固定样例与跨仓 smoke 验证契约一致性。是否复用 Rust 传输取 RA-01 的结论。按业务拆页面与状态，不把桌面 DOM 或整套 RustDesk UI 嵌入手机。
 
 | ID | 依赖 | 工作与产物 | 交付与验收 |
 | --- | --- | --- | --- |

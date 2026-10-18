@@ -12,15 +12,17 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import "./terminal.css";
 import { FolderIcon } from "./ProjectHoverCard";
+import { useI18n } from "./i18n";
 
 export function TerminalPane({ projectId, directoryIndex, visible, api, resourceId, operationId, onResource, onStatus }: {
   projectId: string; directoryIndex: number; visible: boolean; api: TerminalApi; resourceId?: string; operationId?: string; onResource?: (id: string) => void; onStatus?: (status: TerminalStatus) => void;
 }) {
+  const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
   const runtime = useRef<{ fit: () => void; focus: () => void } | null>(null);
   const isVisible = useRef(visible);
   isVisible.current = visible;
-  const [status, setStatus] = useState("正在启动终端…");
+  const [status, setStatus] = useState(() => t("terminal.starting"));
   const [starting, setStarting] = useState(true);
   const [generation, setGeneration] = useState(0);
   const launch = useRef({ id: operationId ?? crypto.randomUUID(), cols: 0, rows: 0 });
@@ -167,6 +169,7 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
 export function TerminalDock({ projectId, directories, open, onClose, api = terminalClient, onEditProject }: {
   projectId: string; directories: string[]; open: boolean; onClose: () => void; api?: TerminalApi; onEditProject?: () => void;
 }) {
+  const { t } = useI18n();
   const [opened, setOpened] = useState(open);
   type Tab = { id: string; directoryIndex: number; ordinal: number; resourceId?: string; status?: TerminalStatus; hidden?: boolean; closed?: boolean };
   const [selected, setSelected] = useState("");
@@ -277,14 +280,14 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
   const drag = useRef<{ y: number; height: number } | null>(null);
   useEffect(() => { if (open) setOpened(true); }, [open]);
   if (!opened) return null;
-  return <section className="terminal-panel" aria-label="项目终端" hidden={!open} style={{ height }}>
-    <div className="terminal-resize" role="separator" aria-label="调整终端高度" aria-orientation="horizontal" tabIndex={0}
+  return <section className="terminal-panel" aria-label={t("terminal.projectTerminal")} hidden={!open} style={{ height }}>
+    <div className="terminal-resize" role="separator" aria-label={t("terminal.adjustHeight")} aria-orientation="horizontal" tabIndex={0}
       aria-valuemin={140} aria-valuemax={650} aria-valuenow={height}
       onKeyDown={e => { if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); setHeight(h => Math.min(650, Math.max(140, h + (e.key === "ArrowUp" ? 20 : -20)))); } }}
       onPointerDown={e => { e.preventDefault(); drag.current = { y: e.clientY, height }; e.currentTarget.setPointerCapture(e.pointerId); }}
       onPointerMove={e => { if (drag.current) setHeight(Math.min(650, Math.max(140, drag.current.height + drag.current.y - e.clientY))); }}
       onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} />
-    <header className="terminal-toolbar"><strong>终端</strong><div ref={tabList} role="tablist" aria-label="项目目录终端">
+    <header className="terminal-toolbar"><strong>{t("terminal.title")}</strong><div ref={tabList} role="tablist" aria-label={t("terminal.projectTerminal")}>
       {visibleTabs.map((tab, index) => <div className="terminal-tab" role="presentation" key={tab.id} data-selected={selected === tab.id}><button role="tab" aria-selected={selected === tab.id}
         onClick={() => setSelected(tab.id)} onKeyDown={e => {
           if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
@@ -294,11 +297,11 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
             tabList.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
           }
         }} tabIndex={selected === tab.id ? 0 : -1}>{tabLabel(tab)}</button>
-        <button className="terminal-tab-close" aria-label={`关闭终端 ${tabLabel(tab)}`} data-tooltip="隐藏输出，进程继续运行" onClick={() => closeTab(tab.id)}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button>
+        <button className="terminal-tab-close" aria-label={`${t("terminal.closeTerminal")} ${tabLabel(tab)}`} data-tooltip={t("terminal.hideOutput")} onClick={() => closeTab(tab.id)}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button>
       </div>)}
     </div>
     <div className="terminal-add-control" ref={addControl}>
-      <button className="terminal-add" aria-label="新建终端" data-tooltip="新建终端" disabled={(!directories.length && !hiddenTabs.length) || !loaded}
+      <button className="terminal-add" aria-label={t("terminal.newTerminal")} data-tooltip={t("terminal.newTerminal")} disabled={(!directories.length && !hiddenTabs.length) || !loaded}
         aria-haspopup={hasTerminalMenu ? "menu" : undefined} aria-expanded={hasTerminalMenu ? menuOpen : undefined}
         onClick={requestTerminal}>+</button>
       {menuOpen && <div className="terminal-directory-menu" role="menu" aria-label="选择终端目录" onKeyDown={e => {

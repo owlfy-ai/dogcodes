@@ -1,4 +1,13 @@
 import { AttachmentUploadRecovery } from "./AttachmentUploadRecovery";
+import {
+  type UiLanguage,
+  type ResolvedLanguage,
+  SUPPORTED_LANGUAGES,
+  resolveLanguage,
+  getPreferenceLabels,
+  translate as t,
+  I18nProvider,
+} from "./i18n";
 import { ulid } from "ulid";
 import { SubmissionRecovery, usePendingSubmissions, useUnconfirmedSubmissions } from "./SubmissionRecovery";
 import { PendingSubmissionError, UnconfirmedSubmissionError, submissionOperations } from "./submissionOperations";
@@ -158,44 +167,8 @@ type ExecutorOption = {
   quota: QuotaSnapshotView["quota"];
 };
 
-type UiLanguage = "system" | "en" | "zh-CN";
 type UiTheme = "system" | "light" | "dark";
 type PreferencesSection = "language" | "theme" | "scale" | null;
-
-const preferenceLabels = {
-  zh: {
-    language: "界面语言",
-    theme: "界面主题",
-    scale: "界面缩放",
-    usage: "使用统计",
-    upgrade: "升级",
-    disconnect: "断开连接",
-    system: "系统默认",
-    english: "English",
-    simplifiedChinese: "中文简体",
-    light: "浅色",
-    dark: "深色",
-    small: "缩小",
-    normal: "实际大小",
-    large: "放大",
-  },
-  en: {
-    language: "Language",
-    theme: "Theme",
-    scale: "Zoom",
-    usage: "Usage",
-    upgrade: "Upgrade",
-    disconnect: "Disconnect",
-    system: "System default",
-    english: "English",
-    simplifiedChinese: "Simplified Chinese",
-    light: "Light",
-    dark: "Dark",
-    small: "Zoom out",
-    normal: "Actual size",
-    large: "Zoom in",
-  },
-} as const;
 
 function readPreference<T extends string>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -255,8 +228,7 @@ function PreferencesMenu({
   onTheme: (value: UiTheme) => void;
   onScale: (value: ScaleAction) => void;
 }) {
-  const english = isEnglishLanguage(language);
-  const labels = english ? preferenceLabels.en : preferenceLabels.zh;
+  const labels = getPreferenceLabels(language);
   const modifier = isMacPlatform() ? "⌘" : "Ctrl";
   const [position, setPosition] = useState<{ left: number; bottom: number; width: number } | null>(null);
   // Float above the footer row in the document layer, never inside the footer itself.
@@ -274,13 +246,9 @@ function PreferencesMenu({
 
   const optionMenu = section === "language" ? (
     <div className="preferences-submenu" role="menu" aria-label={labels.language}>
-      {([
-        ["system", labels.system],
-        ["en", labels.english],
-        ["zh-CN", labels.simplifiedChinese],
-      ] as const).map(([value, label]) => (
-        <button key={value} type="button" role="menuitemradio" aria-checked={language === value} onClick={() => onLanguage(value)}>
-          <span>{label}</span>{language === value && <span aria-hidden="true">✓</span>}
+      {SUPPORTED_LANGUAGES.map((item) => (
+        <button key={item.id} type="button" role="menuitemradio" aria-checked={language === item.id} onClick={() => onLanguage(item.id)}>
+          <span>{item.nativeLabel}</span>{language === item.id && <span aria-hidden="true">✓</span>}
         </button>
       ))}
     </div>
@@ -299,9 +267,9 @@ function PreferencesMenu({
   ) : section === "scale" ? (
     <div className="preferences-submenu" role="menu" aria-label={labels.scale}>
       {([
-        ["in", labels.large, "+", scale >= MAX_UI_SCALE],
-        ["out", labels.small, "−", scale <= MIN_UI_SCALE],
-        ["reset", labels.normal, "0", scale === 100],
+        ["in", labels.zoomIn, "+", scale >= MAX_UI_SCALE],
+        ["out", labels.zoomOut, "−", scale <= MIN_UI_SCALE],
+        ["reset", labels.actualSize, "0", scale === 100],
       ] as const).map(([value, label, key, disabled]) => (
         <button key={value} type="button" role="menuitem" disabled={disabled} onClick={() => onScale(value)}>
           <span>{label}</span><small>{modifier} {key}</small>
@@ -425,6 +393,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<PreferencesSection>(null);
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>(() => readPreference("dogcodes.ui.language", "system"));
+  const resolvedLang = resolveLanguage(uiLanguage);
+  const labels = getPreferenceLabels(uiLanguage);
   const [uiTheme, setUiTheme] = useState<UiTheme>(() => readPreference("dogcodes.ui.theme", "system"));
   const [uiScale, setUiScale] = useState(() => parseUiScale(readPreference("dogcodes.ui.scale", "100")));
   const preferencesRef = useRef<HTMLDivElement | null>(null);
@@ -455,8 +425,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     root.dataset.sidebarCollapsed = String(sidebarCollapsed);
     root.dataset.theme = uiTheme === "system" ? "" : uiTheme;
     root.style.setProperty("--ui-scale", String(uiScale / 100));
-    const systemLanguage = isEnglishLanguage("system") ? "en" : "zh-CN";
-    root.lang = uiLanguage === "system" ? systemLanguage : uiLanguage === "en" ? "en" : "zh-CN";
+    const resolved = resolveLanguage(uiLanguage);
+    root.lang = resolved;
     try {
       window.localStorage.setItem("dogcodes.ui.language", uiLanguage);
       window.localStorage.setItem("dogcodes.ui.theme", uiTheme);
@@ -1136,17 +1106,18 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   }
 
   return (
-    <main className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${reviewOpen && !reviewWindow.detached ? " review-expanded" : ""}`} style={{ "--sidebar-width": `${sidebarWidth.width}px`, "--review-width": `${reviewWidth.width}px` } as React.CSSProperties}>
-      <aside id="app-sidebar" className="sidebar" hidden={sidebarCollapsed}>
+    <I18nProvider initialLanguage={uiLanguage}>
+      <main className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${reviewOpen && !reviewWindow.detached ? " review-expanded" : ""}`} style={{ "--sidebar-width": `${sidebarWidth.width}px`, "--review-width": `${reviewWidth.width}px` } as React.CSSProperties}>
+        <aside id="app-sidebar" className="sidebar" hidden={sidebarCollapsed}>
         <header className="sidebar-titlebar" data-tauri-drag-region="deep">
           {!sidebarCollapsed && windowControls}
         </header>
-        <nav className="primary-nav" aria-label="主导航">
+        <nav className="primary-nav" aria-label={t("nav.mainNav", undefined, resolvedLang)}>
           <button ref={newConversationButton} aria-keyshortcuts={`${shortcutKey}+N`} className="primary-action" type="button" disabled={sending || creatingTask || snapshot.projects.length === 0} onClick={() => void createConversation()}>
-            <SidebarNavIcon kind="conversation" /><b>{creatingTask ? "正在创建…" : "新建对话"}</b><kbd>{shortcutModifier} N</kbd>
+            <SidebarNavIcon kind="conversation" /><b>{creatingTask ? t("nav.creating", undefined, resolvedLang) : t("nav.newConversation", undefined, resolvedLang)}</b><kbd>{shortcutModifier} N</kbd>
           </button>
-          <button type="button" onClick={() => setWelcomeOpen(true)}><SidebarNavIcon kind="agent" /><b>连接 Agent</b></button>
-          <button ref={quotaButton} aria-keyshortcuts={`${shortcutKey}+U`} className={activeView === "quota" ? "active" : ""} type="button" onClick={() => setActiveView("quota")}><SidebarNavIcon kind="quota" /><b>Agent 管理</b><kbd>{shortcutModifier} U</kbd></button>
+          <button type="button" onClick={() => setWelcomeOpen(true)}><SidebarNavIcon kind="agent" /><b>{t("nav.connectAgent", undefined, resolvedLang)}</b></button>
+          <button ref={quotaButton} aria-keyshortcuts={`${shortcutKey}+U`} className={activeView === "quota" ? "active" : ""} type="button" onClick={() => setActiveView("quota")}><SidebarNavIcon kind="quota" /><b>{t("nav.agentManagement", undefined, resolvedLang)}</b><kbd>{shortcutModifier} U</kbd></button>
         </nav>
         <div className="sidebar-divider" />
         <MemoConversationHistory onRevealProject={revealLocalProject} onCreateProjectConversation={createProjectConversation} createConversationDisabled={sending || creatingTask}
@@ -1156,9 +1127,9 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         <div className="sidebar-preferences" ref={preferencesRef}>
           <button
             className="preferences-trigger"
-            data-tooltip={isEnglishLanguage(uiLanguage) ? "Preferences" : "界面设置"}
+            data-tooltip={labels.title}
             type="button"
-            aria-label={isEnglishLanguage(uiLanguage) ? "Open preferences" : "打开界面设置"}
+            aria-label={labels.open}
             aria-keyshortcuts="Control+0 Meta+0"
             aria-expanded={preferencesOpen}
             onClick={() => {
@@ -1191,28 +1162,28 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         <header className="task-header" data-tauri-drag-region="deep">
           {sidebarCollapsed && <div className="collapsed-sidebar-controls">{windowControls}</div>}
           {activeView === "quota"
-            ? <div className="task-heading"><h1>Agent 管理</h1></div>
-            : <div className="task-heading"><h1>{selectedTask.title}</h1><span>{selectedProject ? projectLabel(selectedProject.displayName) : "临时工作区"}</span></div>}
+            ? <div className="task-heading"><h1>{t("agentManagement.title", undefined, resolvedLang)}</h1></div>
+            : <div className="task-heading"><h1>{selectedTask.title}</h1><span>{selectedProject ? projectLabel(selectedProject.displayName) : t("header.temporaryWorkspace", undefined, resolvedLang)}</span></div>}
           <div className="task-tools">
             {activeView === "conversation" && <>
-            <button className="panel-toggle" type="button" aria-label="显示底部终端" aria-expanded={terminalOpen} data-tooltip={terminalOpen ? "收起终端" : "显示底部终端"} onClick={() => { setTerminalLoaded(true); setTerminalOpen(open => !open); }}>
+            <button className="panel-toggle" type="button" aria-label={t("header.toggleTerminal", undefined, resolvedLang)} aria-expanded={terminalOpen} data-tooltip={terminalOpen ? t("header.collapseTerminal", undefined, resolvedLang) : t("header.toggleTerminal", undefined, resolvedLang)} onClick={() => { setTerminalLoaded(true); setTerminalOpen(open => !open); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="m7 8 3 3-3 3m6 1h4" /></svg>
             </button>
-            <button className="panel-toggle" type="button" aria-label="显示右侧边栏" disabled={!selectedTaskId} aria-expanded={reviewOpen && !reviewWindow.detached} data-tooltip={reviewWindow.detached ? "显示独立 Diff 窗口" : "显示右侧边栏"} onClick={() => { if (reviewWindow.detached) void reviewWindow.detach(); else setReviewOpen(open => !open); }}>
+            <button className="panel-toggle" type="button" aria-label={t("header.toggleReview", undefined, resolvedLang)} disabled={!selectedTaskId} aria-expanded={reviewOpen && !reviewWindow.detached} data-tooltip={reviewWindow.detached ? t("header.detachedReview", undefined, resolvedLang) : t("header.toggleReview", undefined, resolvedLang)} onClick={() => { if (reviewWindow.detached) void reviewWindow.dock(); else setReviewOpen(open => !open); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M15 3v18m-7-12 3 3-3 3" /></svg>
             </button>
             </>}
           </div>
         </header>
       {activeView === "quota" ? (
-        <QuotaCenter views={quotaViews} installations={snapshot.installations} agentUpdates={agentUpdates} refreshProgress={quotaRefreshProgress} onRefresh={() => refreshQuotasNow.current()} />
+        <QuotaCenter views={quotaViews} installations={snapshot.installations} agentUpdates={agentUpdates} refreshProgress={quotaRefreshProgress} onRefresh={() => refreshQuotasNow.current()} lang={resolvedLang} />
       ) : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}
         onDragEnter={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); dragDepth.current++; setDraggingFiles(true); } }}
         onDragOver={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = sending ? "none" : "copy"; } }}
         onDragLeave={event => { event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFiles(false); } }}
         onDrop={event => { event.preventDefault(); dragDepth.current = 0; setDraggingFiles(false); if (!sending) void attachments.add(Array.from(event.dataTransfer.files)); }}
         onPaste={event => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); if (!sending) { void attachments.add(files); const text = event.clipboardData.getData("text/plain"); if (text) setDraft(previous => previous + text); } } }}>
-        {draggingFiles && <div className="attachment-drop-overlay">松开以添加附件</div>}
+        {draggingFiles && <div className="attachment-drop-overlay">{t("welcome.dropFiles", undefined, resolvedLang)}</div>}
         <input ref={attachmentInput} type="file" multiple hidden onChange={event => { if (!sending) void attachments.add(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
 
         <PendingExecutorContext.Provider value={pendingExecutors}><AgentQuotaContext.Provider value={quotaViews}><ConversationPages transient={!selectedTaskId} taskId={showConversation ? selectedTask.taskId : null} revision={displayedTimeline} status={conversationStatus} latestUserMessageId={latestUserMessageId}>
@@ -1229,11 +1200,11 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
           }} renderAgent={renderResponseAgent} pendingAgent={pendingAgent} items={displayedTimeline.filter(item => item.kind !== "handoff" && item.kind !== "reconciliation")} client={client} activeTurnId={selectedTask.activePrimaryRun?.state === "disconnected" ? undefined : selectedTask.activePrimaryRun?.turnId} onSubagent={openSubagent} renderEntry={item => <TimelineEntry item={item} active={!!selectedTask.activePrimaryRun && selectedTask.activePrimaryRun.state !== "disconnected" && item.turnId === selectedTask.activePrimaryRun.turnId} key={item.itemId} />} />}
           </ConversationPages></AgentQuotaContext.Provider></PendingExecutorContext.Provider>
         {!showConversation && selectedTaskId && conversationLoader.pending ? <ConversationLoading visible={conversationLoader.visible} />
-        : !showConversation && timelineError ? <div className="conversation-loading"><p role="alert">{timelineError} <button type="button" onClick={() => { setTimelineLoading(true); void loadConversation(selectedTask.taskId); }}>重试</button></p></div>
+        : !showConversation && timelineError ? <div className="conversation-loading"><p role="alert">{timelineError} <button type="button" onClick={() => { setTimelineLoading(true); void loadConversation(selectedTask.taskId); }}>{t("welcome.retry", undefined, resolvedLang)}</button></p></div>
         : !showConversation ? <div className="welcome-stage">
           <img className="welcome-logo" src={appLogo} alt="" aria-hidden="true" draggable={false} />
-          <h2>你好，今天想做什么？</h2>
-          <p>{readyAgentCount > 0 ? `已为你选择可用的 ${providerLabel(selectedTask.preferredExecutor.providerId)}，无需先连接项目。` : "暂无可用 Agent，请在 Agent 管理中启用，或先连接 Agent。"}</p>
+          <h2>{t("welcome.greeting", undefined, resolvedLang)}</h2>
+          <p>{readyAgentCount > 0 ? t("welcome.readyAgentSelected", { agent: providerLabel(selectedTask.preferredExecutor.providerId) }, resolvedLang) : t("welcome.noAgentAvailable", undefined, resolvedLang)}</p>
           {approvalPanel ?? <div className="welcome-composer">
             {!selectedTaskId && <div className="welcome-project-bar"><ProjectPicker projects={snapshot.projects} selectedProject={selectedProject}
               disabled={creatingTask || sending || Boolean(selectedTask.activePrimaryRun)}
@@ -1245,6 +1216,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             {attachments.error && <p className="error" role="alert">{attachments.error}</p>}
             <ComposerInput draft={draft} setDraft={setDraft} />
             <ComposerFooter
+              lang={resolvedLang}
               modelPicker={modelPicker}
               permissionPicker={permissionPicker}
               submissionPending={submissionPending}
@@ -1268,7 +1240,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         </div> : <>
 
           <div className="composer-dock">
-            {timelineError && <p role="alert">{timelineError} <button type="button" onClick={() => void loadConversation(selectedTask.taskId)}>重试</button></p>}
+            {timelineError && <p role="alert">{timelineError} <button type="button" onClick={() => void loadConversation(selectedTask.taskId)}>{t("welcome.retry", undefined, resolvedLang)}</button></p>}
             {selectedTask.activePrimaryRun?.state === "disconnected" && <LoadingStatus>执行连接已中断，正在恢复会话…</LoadingStatus>}
             {approvalPanel ?? <form className="composer" onSubmit={submit}>
 
@@ -1277,6 +1249,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
               {attachments.error && <p className="error" role="alert">{attachments.error}</p>}
               <ComposerInput draft={draft} setDraft={setDraft} />
               <ComposerFooter
+                lang={resolvedLang}
                 modelPicker={modelPicker}
               permissionPicker={permissionPicker}
                 submissionPending={submissionPending}
@@ -1351,6 +1324,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       </AgentQuotaContext.Provider></PendingExecutorContext.Provider>
 
     </main>
+    </I18nProvider>
   );
 }
 
@@ -1358,7 +1332,7 @@ function ComposerProject({ projectName, projectPath }: { projectName?: string; p
   return (
     <div className="composer-project" data-tooltip={projectPath}>
       <span aria-hidden="true">▱</span>
-      <b>{projectName ? projectLabel(projectName) : "临时工作区"}</b>
+      <b>{projectName ? projectLabel(projectName) : t("header.temporaryWorkspace")}</b>
       {projectName !== "快速对话" && projectPath && <small>{projectPath}</small>}
     </div>
   );
@@ -1383,7 +1357,7 @@ export function ComposerInput({ draft, setDraft }: { draft: string; setDraft: (v
           if (!event.repeat) event.currentTarget.form?.requestSubmit();
         }
       }}
-      placeholder="向 Coding Agent 提问，描述你想完成的工作…"
+      placeholder={t("composer.placeholder")}
       rows={4}
       autoFocus
     />
@@ -1621,34 +1595,36 @@ export function QuotaCenter({
   agentUpdates,
   refreshProgress,
   onRefresh,
+  lang,
 }: {
   views: QuotaSnapshotView[];
   installations: InstallationSummary[];
   agentUpdates: AgentUpdateActions;
   refreshProgress: QuotaRefreshProgress | null;
   onRefresh: () => void;
+  lang?: ResolvedLanguage;
 }) {
   return (
-    <section className="workspace quota-center agent-management" aria-label="Agent 管理">
+    <section className="workspace quota-center agent-management" aria-label={t("agentManagement.title", undefined, lang)}>
 
       <div className="quota-center-content">
         <div className="quota-center-intro">
-          <p className="agent-management-description">拖拽调整顺序，启用的 Agent 将按此顺序显示在各处选择列表中。</p>
+          <p className="agent-management-description">{t("agentManagement.description", undefined, lang)}</p>
           <button className="quota-refresh-button" type="button" disabled={refreshProgress?.running}
             onClick={onRefresh} aria-busy={refreshProgress?.running ?? false}>
             {refreshProgress?.running ? <span className="task-running-spinner" aria-hidden="true" /> : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1" /></svg>}
-            {refreshProgress?.running ? "正在刷新…" : "刷新额度"}
+            {refreshProgress?.running ? t("agentManagement.refreshing", undefined, lang) : t("agentManagement.refreshQuota", undefined, lang)}
           </button>
         </div>
         {refreshProgress && <p className="quota-refresh-status" role="status">
           {refreshProgress.running
-            ? refreshProgress.total ? `正在刷新 ${refreshProgress.completed}/${refreshProgress.total} 个 Agent…` : "正在获取 Agent 列表…"
-            : refreshProgress.failed ? "无法获取 Agent 列表，请重试。"
-            : !refreshProgress.total ? "暂无可刷新的 Agent，请先完成本机 Agent 探测。"
+            ? refreshProgress.total ? t("agentManagement.progress", { completed: refreshProgress.completed, total: refreshProgress.total }, lang) : t("agentManagement.fetchingList", undefined, lang)
+            : refreshProgress.failed ? t("agentManagement.refreshFailed", undefined, lang)
+            : !refreshProgress.total ? t("agentManagement.noRefreshable", undefined, lang)
             : refreshProgress.unavailable ? `已完成刷新，${refreshProgress.unavailable} 个 Agent 未取得新额度；已有读数请以原更新时间为准。`
-            : `已刷新 ${refreshProgress.total} 个 Agent 的额度。`}
+            : t("agentManagement.refreshSuccess", { count: refreshProgress.total }, lang)}
         </p>}
-        <div className="agent-management-summary"><span>{installations.filter(item => item.providerId !== "fake").length} 个已安装 Agent</span><span>额度按各模型组及周期独立计算</span></div>
+        <div className="agent-management-summary"><span>{t("agentManagement.installedCount", { count: installations.filter(item => item.providerId !== "fake").length }, lang)}</span><span>{t("agentManagement.quotaCalculation", undefined, lang)}</span></div>
         <QuotaPanel views={views} installations={installations} agentUpdates={agentUpdates} management />
       </div>
     </section>
@@ -1656,6 +1632,7 @@ export function QuotaCenter({
 }
 
 export function ComposerFooter({
+  lang,
   permissionPicker,
   modelPicker,
   modelSelectionPending = false,
@@ -1675,6 +1652,7 @@ export function ComposerFooter({
   onAddAttachment,
 }: {
   onAddAttachment?: () => void;
+  lang?: ResolvedLanguage;
   permissionPicker?: ReactNode;
   modelPicker?: ReactNode;
   modelSelectionPending?: boolean;
@@ -1698,8 +1676,8 @@ export function ComposerFooter({
   const footerRef = useComposerLabels();
   return (
     <footer ref={footerRef} className="composer-controls">
-      <button className="composer-icon" type="button" aria-label="添加附件" disabled={sending} onClick={onAddAttachment}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg></button>
-      <Fragment key="permission-control">{permissionPicker ?? <span className="mode-chip">本地执行</span>}</Fragment>
+      <button className="composer-icon" type="button" aria-label={t("composer.addAttachment", undefined, lang)} disabled={sending} onClick={onAddAttachment}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg></button>
+      <Fragment key="permission-control">{permissionPicker ?? <span className="mode-chip">{t("composer.localExecution", undefined, lang)}</span>}</Fragment>
       <div className="spacer" />
       <ContextUsageRing quota={selectedQuota} providerId={selectedTask.preferredExecutor.providerId} />
       <Fragment key="model-control">{modelPicker}</Fragment>
@@ -1707,6 +1685,7 @@ export function ComposerFooter({
         current={selectedTask.preferredExecutor}
         options={executorOptions}
         onSelect={onSelect}
+        lang={lang}
         quotaIndicator={<QuotaRing inline
           quota={selectedQuota}
           providerId={selectedTask.preferredExecutor.providerId}
@@ -1720,15 +1699,15 @@ export function ComposerFooter({
           type="button"
           disabled={cancelling || cancelPending || ["interrupting", "disconnected"].includes(selectedTask.activePrimaryRun.state)}
           onClick={onCancel}
-          aria-label={cancelPending ? "停止结果待核实" : "停止"}
+          aria-label={cancelPending ? t("composer.stopPending", undefined, lang) : t("composer.stop", undefined, lang)}
         >
           {cancelling || selectedTask.activePrimaryRun.state === "interrupting" ? "…" : <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" stroke="none" /></svg>}
         </button>
       ) : (
         <button
           className="send composer-submit"
-          aria-label={quotaBlocked ? "额度已用尽，暂时无法发送" : "发送"}
-          data-tooltip={agentDisabled ? "请在 Agent 管理中启用 Agent，或切换到可用的 Agent" : quotaBlocked ? "当前 Agent 的额度已用尽，请等待重置或切换 Agent" : "Enter 发送 · Shift / Ctrl + Enter 换行"}
+          aria-label={quotaBlocked ? t("composer.quotaExhausted", undefined, lang) : t("composer.send", undefined, lang)}
+          data-tooltip={agentDisabled ? t("composer.enableInManagement", undefined, lang) : quotaBlocked ? t("composer.quotaExhausted", undefined, lang) : t("composer.tooltipShortcuts", undefined, lang)}
           disabled={!draft.trim() || sending || submissionPending || quotaBlocked || modelSelectionPending || agentDisabled}
         >
           {sending ? "…" : <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4m-5 5 5-5 5 5" /></svg>}
@@ -1743,11 +1722,13 @@ function AgentPicker({
   options,
   onSelect,
   quotaIndicator,
+  lang,
 }: {
   current: ExecutorRef;
   options: ExecutorOption[];
   onSelect: (executor: ExecutorRef) => void;
   quotaIndicator?: ReactNode;
+  lang?: ResolvedLanguage;
 }) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
@@ -1771,13 +1752,13 @@ function AgentPicker({
   }, []);
   return (
     <details className="agent-picker" ref={detailsRef}>
-      <summary aria-label="选择 Coding Agent" data-tooltip={`当前 Agent：${providerLabel(current.providerId)}`}>
+      <summary aria-label={t("composer.selectAgent", undefined, lang)} data-tooltip={t("composer.currentAgent", { name: providerLabel(current.providerId) }, lang)}>
         <AgentIcon providerId={current.providerId} size="small" />
         <b className="composer-control-label">{providerLabel(current.providerId)}</b>
         {quotaIndicator}
         <DropdownChevron />
       </summary>
-      <AgentPickerMenu options={options} selectedKey={executorKey(current)} title="选择下一轮 Agent" label="Coding Agent 列表" onSelect={option => {
+      <AgentPickerMenu options={options} selectedKey={executorKey(current)} title={t("composer.nextRoundAgent", undefined, lang)} label="Coding Agent 列表" onSelect={option => {
         detailsRef.current?.removeAttribute("open");
         if (option.key !== executorKey(current)) onSelect(option.executor);
         focusComposerInput(detailsRef.current);

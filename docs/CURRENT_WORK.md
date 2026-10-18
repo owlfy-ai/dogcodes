@@ -106,21 +106,21 @@ R1–R3 保留原编号并按新首发目标调整；V1 为历史已验收记录
 
 依据：[后台服务](implementation/core-daemon.md)、[平台验收](implementation/review-platform-acceptance.md)、[打包配置](../apps/desktop/src-tauri/tauri.conf.json)、[构建及签名说明](../release/README.md)。当前 `bundle.active=true`，复用已有 icns/ico 图标；新增 `.github/workflows/desktop.yml`，不发布 Release 或使用签名凭据。依赖/构建文件的索引移除已暂存，尚未提交；没有重写历史。项目 LICENSE 与其他发布资料审阅继续进行；素材由用户后续补充，本轮不再核验或整理素材。
 
-## 后续阶段：手机、官方服务与跨平台远控
+## 已启动框架：手机、官方服务与跨平台远控
 
-已确认需求和 [37 个远程访问子任务](implementation/remote-access-work-breakdown-2026-10-16.md) 完整保留；RA-02 的本机基础部分由本期 DT-08 至 DT-10 提前交付，远程特有部分后移。Windows、Linux X11/Wayland、iPhone、Android 验证设备均可由用户提供，后续实机接入仍需登记。
+2026-10-18 用户授权开始手机 App 与服务端框架，分别位于独立目录 `../dogcodes-app` 和 `../dogcodes-server`；不再采用同仓库 `apps/mobile` / `services/remote-access` 建议。已确认的 [37 个子任务](implementation/remote-access-work-breakdown-2026-10-16.md) 和原产品范围保留；桌面发布验收继续独立追踪。具体交付、验证和下一切片见[框架实施记录](implementation/mobile-server-framework-2026-10-18.md)。Windows、Linux X11/Wayland、iPhone、Android 验证设备可由用户提供，实际接入仍需登记。
 
 | 编号 | 状态 | 保留范围 |
 | --- | --- | --- |
 | RA-00 | 已完成需求收口与拆分 | 原需求、37 个子任务及 30 项验收追踪保留 |
-| RA-01 | 后续，未实施 | 配对网络、四平台媒体、Flutter、预览及推送探针 |
+| RA-01 | 初始环境/传输与加密探针已开始 | Flutter SDK、本机 Rust/Dart 加密中继及 Noise 固定向量已验证；跨网配对、四平台媒体、预览及推送未验收 |
 | RA-02 | 本机基础实施中，远程专项后续 | DT-08/09/10 覆盖本机生命周期、可靠性和共享状态；配对身份、跨网/Dart 接入等剩余项尚未实施，原任务按交付证据逐项复核 |
-| RA-03 | 后续，未实施 | 配对、远程网关、官方接入/中继 |
-| RA-04 | 后续，未实施 | Flutter iOS/Android 业务 App |
+| RA-03 | 服务框架与本机中继探针已实现 | 独立 Rust 服务、能力发现、短期票据/撤销/限额；新增端点 Noise 和配对 journal 模块/测试；真实配对入口、PC 网关与官方部署未实现 |
+| RA-04 | Flutter 工程与客户端基础已实现 | iOS/Android 工程、基础导航/邀请解析/能力查询/草稿原语；真实 PC 业务与原生包验收待完成 |
 | RA-05 | 后续，未实施 | Windows/macOS/X11/Wayland 远控、切屏及剪贴板 |
 | RA-06 | 后续，未实施 | 手机/服务/远控全链路内测；届时复用本期 R1–R3 成果 |
 
-桌面发布后再复核 RA 的代码基线、依赖和平台条件；不要求整个 RA 包完成，但已前移的 DT-08 至 DT-10 必须在 GitHub 桌面首发前验收。
+本轮框架不代表远控首版完成；下一切片为端点认证配对与 PC 网关，再接会话发送/流式/审批。已前移的 DT-08 至 DT-10 桌面验收仍按原发布计划追踪，不因手机框架完成而关闭。
 
 ## 已完成：继续维护，不重复立项
 

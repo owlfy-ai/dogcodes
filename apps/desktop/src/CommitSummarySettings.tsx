@@ -6,6 +6,13 @@ export const SUMMARY_LANGUAGES = [
   { id: "zh-TW", label: "繁體中文" },
   { id: "en", label: "English" },
   { id: "ja", label: "日本語" },
+  { id: "ko", label: "한국어" },
+  { id: "fr", label: "Français" },
+  { id: "de", label: "Deutsch" },
+  { id: "es", label: "Español" },
+  { id: "pt-BR", label: "Português (Brasil)" },
+  { id: "ru", label: "Русский" },
+  { id: "it", label: "Italiano" },
 ] as const;
 export type SummaryLanguage = (typeof SUMMARY_LANGUAGES)[number]["id"];
 export function readSummaryAgent(): SummaryExecutor | null {

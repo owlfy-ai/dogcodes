@@ -11,6 +11,7 @@ import { DeleteConversation } from "./DeleteConversation";
 import { AgentIcon, providerLabel } from "./agentPresentation";
 
 import { loadProjectHistoryPreferences, saveProjectHistoryPreference, PROJECT_HISTORY_KEY } from "./projectHistoryPreferences";
+import { useI18n } from "./i18n";
 
 const PREVIEW_COUNT = 5;
 
@@ -198,6 +199,7 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
       setError("无法保存会话列表设置，请重试。");
     }
   };
+  const { t } = useI18n();
   const row = (task: TaskSummary, isPinned = false, scope = "pinned", ids = pinned.map(item => item.taskId)) => renaming === task.taskId ? renameForm(task) : <div className={selectionVisible && task.taskId === selectedTaskId ? "history-row active" : "history-row"} key={task.taskId} data-drop-edge={dropEdge(scope, task.taskId)} {...dragProps(scope, task.taskId, ids, isPinned ? "pinned" : "projects")}>
     <button type="button" className="task" data-tooltip={task.title} data-tooltip-overflow=".task-title"
       aria-current={selectionVisible && task.taskId === selectedTaskId ? "page" : undefined} onClick={() => onSelect(task.taskId)}>
@@ -206,10 +208,10 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
       {task.activePrimaryRun && <span className="task-running-spinner" role="status" aria-label={task.activePrimaryRun.state === "disconnected" ? "连接中断" : "任务正在运行"} data-tooltip={task.activePrimaryRun.state === "disconnected" ? "连接中断" : "任务正在运行"} />}
     </button>
     <div className="history-row-actions">
-      {onRename && <button ref={renameButtonRef(task.taskId)} type="button" data-tooltip="重命名会话" aria-label="重命名会话" disabled={saving} onClick={() => beginRename(task)}>
+      {onRename && <button ref={renameButtonRef(task.taskId)} type="button" data-tooltip={t("nav.rename")} aria-label={t("nav.rename")} disabled={saving} onClick={() => beginRename(task)}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12 3 5 5M3 17l4-1L17 6l-3-3L4 13l-1 4Z" /></svg>
       </button>}
-      <button type="button" data-tooltip={isPinned ? "取消置顶" : "置顶会话"} aria-label={isPinned ? "取消置顶" : "置顶会话"}
+      <button type="button" data-tooltip={isPinned ? t("nav.unpin") : t("nav.pin")} aria-label={isPinned ? t("nav.unpin") : t("nav.pin")}
         aria-pressed={isPinned} disabled={preferencesBusy} onClick={() => update(task, isPinned ? null : "pinned")}>
         <svg className="history-pin-icon" viewBox="0 0 24 24" aria-hidden="true">
           {isPinned
@@ -217,7 +219,7 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
             : <path d="M9 3h6M10 3v5l-4 4v3h12v-3l-4-4V3M12 15v7" />}
         </svg>
       </button>
-      <button type="button" data-tooltip="归档会话" aria-label="归档会话" disabled={preferencesBusy} onClick={() => update(task, "archived")}>
+      <button type="button" data-tooltip={t("nav.archive")} aria-label={t("nav.archive")} disabled={preferencesBusy} onClick={() => update(task, "archived")}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 7v9h12V7M3 3h14v4H3ZM8 10h4" /></svg>
       </button>
     </div>
@@ -231,10 +233,10 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
     onDrop={finishDrag}>
     {error && <p className="history-error" role="alert">{error}</p>}
     {sharedHistory?.error && <div className="history-error" role="alert"><p>{sharedHistory.error}</p><button type="button" disabled={sharedHistory.busy} onClick={() => void retrySharedHistoryPreferences()}>重新核实列表设置</button></div>}
-    {pinned.length > 0 && <HistorySection className="history-pinned" label="已置顶" {...sectionProps("pinned")}>
+    {pinned.length > 0 && <HistorySection className="history-pinned" label={t("nav.pinnedSection")} {...sectionProps("pinned")}>
       {pinned.map(task => row(task, true))}
     </HistorySection>}
-    <HistorySection className="history-projects" label="项目" {...sectionProps("projects")} onCreate={onCreateProject}>
+    <HistorySection className="history-projects" label={t("nav.projectsSection")} {...sectionProps("projects")} onCreate={onCreateProject}>
     {groups.map(group => {
       const isExpanded = expanded.has(group.key);
       const collapsed = collapsedProjects.has(group.key);
@@ -272,13 +274,13 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
     {removedProjects.length > 0 && <details className="removed-projects"><summary>已移除项目（{removedProjects.length}）</summary>
       {removedProjects.map(project => <button key={project.projectId} type="button" disabled={preferencesBusy} onClick={() => updateProjectPreference(project.projectId, null)}>恢复项目：{project.displayName}</button>)}
     </details>}
-    {archived.length > 0 && <HistorySection className="history-archived" label="已归档" {...sectionProps("archived")}>
+    {archived.length > 0 && <HistorySection className="history-archived" label={t("nav.archivedSection")} {...sectionProps("archived")}>
       {archived.map(task => renaming === task.taskId ? renameForm(task) : <div className="history-archived-row" key={task.taskId} data-drop-edge={dropEdge("archived", task.taskId)} {...dragProps("archived", task.taskId, archived.map(item => item.taskId), "archived")}>
         <HistoryAgent task={task} />
         <span className="task-title" data-tooltip={task.title} data-tooltip-overflow="">{task.title}</span>
         <div className="history-row-actions">
           {onDelete && <DeleteConversation task={task} blocked={deletionBlocked(task)} onDelete={onDelete} />}
-          {onRename && <button ref={renameButtonRef(task.taskId)} type="button" data-tooltip="重命名会话" aria-label="重命名会话" disabled={saving} onClick={() => beginRename(task)}>
+          {onRename && <button ref={renameButtonRef(task.taskId)} type="button" data-tooltip={t("nav.rename")} aria-label={t("nav.rename")} disabled={saving} onClick={() => beginRename(task)}>
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12 3 5 5M3 17l4-1L17 6l-3-3L4 13l-1 4Z" /></svg>
           </button>}
           <button type="button" data-tooltip="恢复到会话列表" aria-label={`恢复会话：${task.title}`} disabled={preferencesBusy} onClick={() => update(task, null)}>

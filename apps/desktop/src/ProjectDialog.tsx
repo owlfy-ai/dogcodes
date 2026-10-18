@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { CoreClient, ProjectId, ProjectSummary } from "@dogcodes/protocol";
 import { pickProjectDirectory } from "./localProject";
 import { FolderIcon } from "./ProjectHoverCard";
+import { useI18n } from "./i18n";
 
 export function ProjectDialog({
   client,
@@ -16,6 +17,7 @@ export function ProjectDialog({
   onClose: () => void;
   onReady: (projectId: ProjectId) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [name, setName] = useState(project?.displayName ?? "");
   const [path, setPath] = useState("");
   const [directories, setDirectories] = useState<string[]>(() => project ? [project.path, ...project.additionalDirectories] : []);
@@ -63,7 +65,7 @@ export function ProjectDialog({
           if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }
       }}>
-        <header><h2 id="project-dialog-title" tabIndex={-1} data-dialog-title>{project ? "编辑项目" : "创建项目"}</h2><button type="button" aria-label="关闭" disabled={busy} onClick={onClose}>×</button></header>
+        <header><h2 id="project-dialog-title" tabIndex={-1} data-dialog-title>{project ? t("nav.editProject") : t("nav.createProject")}</h2><button type="button" aria-label={t("common.close")} disabled={busy} onClick={onClose}>×</button></header>
         <label>项目名称<input required maxLength={120} disabled={busy} placeholder="输入项目名称" value={name} onChange={(event) => setName(event.target.value)} /></label>
         <label>项目目录</label>
         <div className="project-directory-list">
@@ -90,7 +92,7 @@ export function ProjectDialog({
         </div>
         <p className="project-scope-note">选择一个主文件夹，也可以添加相关文件夹。Agent 对文件的访问遵循你设置的权限。</p>
         {message && <div className="error" role="alert">{message}</div>}
-        <footer><button className="secondary" type="button" disabled={busy} onClick={onClose}>取消</button><button className="send" disabled={busy || !name.trim() || !directories.length}>{busy && !choosingFolder ? (project ? "正在保存…" : "正在创建…") : (project ? "保存" : "创建项目")}</button></footer>
+        <footer><button className="secondary" type="button" disabled={busy} onClick={onClose}>{t("common.cancel")}</button><button className="send" disabled={busy || !name.trim() || !directories.length}>{busy && !choosingFolder ? (project ? t("common.saving") : t("nav.creating")) : (project ? t("common.save") : t("nav.createProject"))}</button></footer>
       </form>
     </div>
   );
