@@ -110,7 +110,7 @@ async fn open_target(target: LoginTarget) -> Result<(), String> {
                 .suffix(".command")
                 .tempfile()
                 .map_err(|_| "无法创建登录启动文件")?;
-            writeln!(script, "#!/bin/sh\n/bin/rm -f -- \"$0\"\ncd \"$HOME\" || exit 1\n{} -lic {}\nprintf '\\n登录操作结束，请返回 dogcodes 重新检测。\\n'",
+            writeln!(script, "#!/bin/sh\n/bin/rm -f -- \"$0\"\ncd \"$HOME\" || exit 1\n{} -lic {}\nprintf '\\n登录操作结束，请返回 dog.codes 重新检测。\\n'",
                 shell_quote(&shell.to_string_lossy()), shell_quote(&command))
                 .map_err(|_| "无法写入登录启动文件")?;
             script
@@ -137,7 +137,7 @@ async fn open_target(target: LoginTarget) -> Result<(), String> {
     };
     let command = cli_command(&executable, args)?;
     let script = format!(
-        "cd \"$HOME\" && {command}; printf '\\n登录操作结束，请返回 dogcodes 重新检测。按回车关闭。'; read reply"
+        "cd \"$HOME\" && {command}; printf '\\n登录操作结束，请返回 dog.codes 重新检测。按回车关闭。'; read reply"
     );
     for (terminal, flag) in [
         ("x-terminal-emulator", "-e"),

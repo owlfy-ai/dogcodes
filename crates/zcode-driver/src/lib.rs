@@ -814,7 +814,7 @@ fn answer_server_request(
         }
         "interaction/requestProviderRuntimeHeaders" => json!({
             "headersApplied": false,
-            "errorMessage": "dogcodes does not import provider credentials; run `zcode login`"
+            "errorMessage": "dog.codes does not import provider credentials; run `zcode login`"
         }),
         // Unknown server requests get an empty ack; the schema treats missing
         // fields as defaults and the turn keeps running.

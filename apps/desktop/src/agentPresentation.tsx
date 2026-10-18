@@ -43,6 +43,8 @@ export function providerLabel(providerId: string): string {
     opencode: "OpenCode",
     "deepseek-harness": "DeepSeek Harness",
     kiro: "Kiro",
+    // Internal provider id for app-authored messages; only the label is user-visible.
+    dogcodes: "dog.codes",
     fake: "离线模式",
     "fake-peer": "离线协作",
   };

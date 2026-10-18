@@ -1,9 +1,9 @@
 <!-- Keep feature scope aligned across README.md and docs/i18n/. Screenshots are shared PNG files. -->
 <div align="center">
 
-<img src="apps/desktop/src-tauri/icons/128x128@2x.png" alt="dogcodes" width="96" height="96" />
+<img src="apps/desktop/src-tauri/icons/128x128@2x.png" alt="dog.codes" width="96" height="96" />
 
-# dogcodes
+# dog.codes
 
 **Your coding agents. One workspace.**
 
@@ -11,7 +11,7 @@
 
 </div>
 
-dogcodes brings your coding agents, conversations, code changes, and project commands into one desktop app. Let one agent implement a feature, ask another to review it, then run the project and prepare a commit—all from the same workspace.
+dog.codes brings your coding agents, conversations, code changes, and project commands into one desktop app. Let one agent implement a feature, ask another to review it, then run the project and prepare a commit—all from the same workspace.
 
 **Development preview · macOS first.** Installers and release validation are still in progress. You can try the app from source today; Windows validation is pending.
 
@@ -67,9 +67,9 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 ### Use the subscriptions you already have
 
-**dogcodes drives the official CLIs you have installed and signed in to — Claude Code, Codex, Cursor, and more — using your own plans.**
+**dog.codes drives the official CLIs you have installed and signed in to — Claude Code, Codex, Cursor, and more — using your own plans.**
 
-- No separate dogcodes account or extra API purchase: the plans you already pay for keep working.
+- No separate dog.codes account or extra API purchase: the plans you already pay for keep working.
 - Local-first: your data stays on your computer and never passes through a relay server.
 - Agents are launched with only the environment they need, so your other secrets are not exposed to them.
 
@@ -105,7 +105,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 ### Discover how to run a project, then run it in one click
 
-**dogcodes analyzes how a project is run and debugged and turns those commands and scripts into clickable launch entries.**
+**dog.codes analyzes how a project is run and debugged and turns those commands and scripts into clickable launch entries.**
 
 - No more remembering each project's start command or opening a terminal just to launch it — one click runs it.
 - Output is collected in one place so you can check it any time.
@@ -116,7 +116,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 **Frontend, backend, and docs in separate folders? Hand them all to the agent in a single conversation.**
 
-- Even agents without native multi-folder support can work on multi-folder projects through dogcodes.
+- Even agents without native multi-folder support can work on multi-folder projects through dog.codes.
 
 <!-- Screenshot placeholder: docs/images/readme/multi-folder.png -->
 
@@ -124,7 +124,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 **Agent runs, terminals, and project commands are handled by a background service, so closing the window or a panel never interrupts them.**
 
-- Reopen dogcodes and it reconnects to the same terminals and output.
+- Reopen dog.codes and it reconnects to the same terminals and output.
 - After a lost connection or an unexpected exit, you can see what actually happened to your last operation — nothing is committed or pushed twice.
 
 <!-- Screenshot placeholder: docs/images/readme/background.png -->
@@ -151,7 +151,7 @@ pnpm desktop:dev
 ```
 
 1. Install and authenticate at least one supported agent using its official setup.
-2. Open dogcodes, connect an available agent, and add your project folders.
+2. Open dog.codes, connect an available agent, and add your project folders.
 3. Start a conversation, choose an agent and model, and describe the work.
 4. Open the Run panel to discover project commands, or inspect changes and request a review.
 

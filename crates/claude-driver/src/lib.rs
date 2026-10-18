@@ -1811,7 +1811,7 @@ impl AgentDriver for ClaudeDriver {
             "allow" => json!({"behavior": "allow", "updatedInput": input}),
             "deny" => json!({
                 "behavior": "deny",
-                "message": "denied by the operator in dogcodes",
+                "message": "denied by the operator in dog.codes",
             }),
             _ => {
                 // Put the request back so a retry stays possible.

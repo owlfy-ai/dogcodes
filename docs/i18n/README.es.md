@@ -1,9 +1,9 @@
 <!-- Keep feature scope aligned across README.md and docs/i18n/. Screenshots are shared PNG files. -->
 <div align="center">
 
-<img src="../../apps/desktop/src-tauri/icons/128x128@2x.png" alt="dogcodes" width="96" height="96" />
+<img src="../../apps/desktop/src-tauri/icons/128x128@2x.png" alt="dog.codes" width="96" height="96" />
 
-# dogcodes
+# dog.codes
 
 **Tus agentes de programación. Un solo espacio de trabajo.**
 
@@ -11,7 +11,7 @@
 
 </div>
 
-dogcodes reúne agentes de programación, conversaciones, cambios de código y comandos del proyecto en una aplicación de escritorio. Implementa una función con un agente, pide una revisión a otro y después ejecuta el proyecto y prepara el commit, sin salir del mismo espacio de trabajo.
+dog.codes reúne agentes de programación, conversaciones, cambios de código y comandos del proyecto en una aplicación de escritorio. Implementa una función con un agente, pide una revisión a otro y después ejecuta el proyecto y prepara el commit, sin salir del mismo espacio de trabajo.
 
 **Versión preliminar · macOS primero.** Los instaladores y la validación de la versión siguen en preparación. Ya puedes ejecutar la aplicación desde el código fuente; la validación en Windows está pendiente.
 
@@ -67,9 +67,9 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 
 ### Usa las suscripciones que ya tienes
 
-**dogcodes ejecuta las CLI oficiales que ya instalaste y en las que iniciaste sesión —Claude Code, Codex, Cursor y más— con tus propios planes.**
+**dog.codes ejecuta las CLI oficiales que ya instalaste y en las que iniciaste sesión —Claude Code, Codex, Cursor y más— con tus propios planes.**
 
-- Sin cuenta de dogcodes aparte ni compras de API adicionales: los planes que ya pagas siguen funcionando.
+- Sin cuenta de dog.codes aparte ni compras de API adicionales: los planes que ya pagas siguen funcionando.
 - Local primero: tus datos se quedan en tu equipo y nunca pasan por un servidor intermediario.
 - Los agentes se inician solo con las variables de entorno que necesitan, así tus otros secretos no quedan expuestos.
 
@@ -105,7 +105,7 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 
 ### Descubre cómo ejecutar un proyecto y hazlo con un clic
 
-**dogcodes analiza cómo se ejecuta y depura un proyecto y convierte esos comandos y scripts en accesos de inicio con un clic.**
+**dog.codes analiza cómo se ejecuta y depura un proyecto y convierte esos comandos y scripts en accesos de inicio con un clic.**
 
 - Olvídate de memorizar el comando de inicio de cada proyecto o de abrir una terminal solo para lanzarlo: basta un clic.
 - La salida se reúne en un solo lugar para consultarla cuando quieras.
@@ -116,7 +116,7 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 
 **¿Frontend, backend y documentación en carpetas distintas? Entrégaselas todas al agente en una sola conversación.**
 
-- Incluso los agentes sin soporte nativo para varias carpetas pueden trabajar en proyectos multicarpeta a través de dogcodes.
+- Incluso los agentes sin soporte nativo para varias carpetas pueden trabajar en proyectos multicarpeta a través de dog.codes.
 
 <!-- Captura pendiente: ../../docs/images/readme/multi-folder.png -->
 
@@ -124,7 +124,7 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 
 **Las ejecuciones de agentes, las terminales y los comandos del proyecto los gestiona un servicio en segundo plano, así que cerrar la ventana o un panel no los interrumpe.**
 
-- Al volver a abrir dogcodes, se reconecta a las mismas terminales y salidas.
+- Al volver a abrir dog.codes, se reconecta a las mismas terminales y salidas.
 - Tras una desconexión o un cierre inesperado, puedes ver qué pasó realmente con tu última operación: nada se confirma ni se envía dos veces.
 
 <!-- Captura pendiente: ../../docs/images/readme/background.png -->
@@ -151,7 +151,7 @@ pnpm desktop:dev
 ```
 
 1. Instala y autentica al menos un agente compatible siguiendo sus instrucciones oficiales.
-2. Abre dogcodes, conecta un agente disponible y añade las carpetas del proyecto.
+2. Abre dog.codes, conecta un agente disponible y añade las carpetas del proyecto.
 3. Inicia una conversación, elige un agente y un modelo, y describe el trabajo.
 4. Abre el panel de ejecución para descubrir comandos o revisa los cambios y solicita una revisión.
 

@@ -154,12 +154,12 @@ impl GitWorkspaceContextProvider {
                 temporary.index_path.as_os_str().to_owned(),
             ),
             ("GIT_LITERAL_PATHSPECS".into(), OsString::from("1")),
-            ("GIT_AUTHOR_NAME".into(), OsString::from("dogcodes")),
+            ("GIT_AUTHOR_NAME".into(), OsString::from("dog.codes")),
             (
                 "GIT_AUTHOR_EMAIL".into(),
                 OsString::from("snapshot@dogcodes.local"),
             ),
-            ("GIT_COMMITTER_NAME".into(), OsString::from("dogcodes")),
+            ("GIT_COMMITTER_NAME".into(), OsString::from("dog.codes")),
             (
                 "GIT_COMMITTER_EMAIL".into(),
                 OsString::from("snapshot@dogcodes.local"),
@@ -240,7 +240,7 @@ impl GitWorkspaceContextProvider {
             "commit-tree".into(),
             tree,
             "-m".into(),
-            "dogcodes turn snapshot".into(),
+            "dog.codes turn snapshot".into(),
         ];
         if let Some(base) = &base_commit {
             args.extend(["-p".into(), base.clone()]);

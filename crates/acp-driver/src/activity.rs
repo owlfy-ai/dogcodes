@@ -124,7 +124,7 @@ impl Activities {
                     && data["type"] == "tool"
                 {
                     data["status"] = json!("failed");
-                    data["output"] = json!("Rejected by the operator in dogcodes");
+                    data["output"] = json!("Rejected by the operator in dog.codes");
                 }
             }
         }

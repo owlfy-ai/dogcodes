@@ -121,4 +121,4 @@ jobs:
           `SHA256SUMS.txt`. See the README for supported agents and known limitations.
           NOTES
           gh release create "$TAG" --repo "$REPO" --draft --prerelease \
-            --title "dogcodes $TAG" --notes-file notes.md installers/*
+            --title "dog.codes $TAG" --notes-file notes.md installers/*

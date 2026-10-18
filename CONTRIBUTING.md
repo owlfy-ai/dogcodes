@@ -1,6 +1,6 @@
-# Contributing to dogcodes
+# Contributing to dog.codes
 
-Thanks for helping. dogcodes is a development preview: bug reports with clear
+Thanks for helping. dog.codes is a development preview: bug reports with clear
 reproduction steps are as valuable as code.
 
 ## Before you start

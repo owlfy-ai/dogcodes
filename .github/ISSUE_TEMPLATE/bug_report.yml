@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in dogcodes does not work as expected.
+description: Something in dog.codes does not work as expected.
 labels: [bug]
 body:
   - type: markdown
@@ -26,7 +26,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: dogcodes version or commit
+      label: dog.codes version or commit
     validations:
       required: true
   - type: input

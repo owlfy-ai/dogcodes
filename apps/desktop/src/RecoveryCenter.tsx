@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { CoreClient, RecoveryCode, RecoveryItem, RecoverySnapshot, TaskId } from "@dogcodes/protocol";
 
 export const recoveryMessages: Record<RecoveryCode, [string, string]> = {
-  installation_unconfigured: ["需要登录或配置", "请在 Agent 官方客户端完成登录，然后重新启动 dogcodes 检测。"],
+  installation_unconfigured: ["需要登录或配置", "请在 Agent 官方客户端完成登录，然后重新启动 dog.codes 检测。"],
   installation_broken: ["无法连接 Agent", "请检查官方客户端是否正常启动，以及本机网络与代理配置。"],
   installation_unsupported: ["版本不兼容", "当前安装版本未通过兼容性检查。请使用已支持版本。"],
   installation_not_ready: ["暂时无法使用", "请确认客户端已安装并完成登录，再到「连接 Agent」重新检测。"],

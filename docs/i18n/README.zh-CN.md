@@ -1,9 +1,9 @@
 <!-- Keep feature scope aligned across README.md and docs/i18n/. Screenshots are shared PNG files. -->
 <div align="center">
 
-<img src="../../apps/desktop/src-tauri/icons/128x128@2x.png" alt="dogcodes" width="96" height="96" />
+<img src="../../apps/desktop/src-tauri/icons/128x128@2x.png" alt="dog.codes" width="96" height="96" />
 
-# dogcodes
+# dog.codes
 
 **多个编程 Agent，一个工作台。**
 
@@ -11,7 +11,7 @@
 
 </div>
 
-dogcodes 把编程 Agent、对话、代码变更和项目运行命令放进同一个桌面应用。让一个 Agent 实现功能，换另一个检查代码，再运行项目、整理提交，整个流程都能在同一个工作台中完成。
+dog.codes 把编程 Agent、对话、代码变更和项目运行命令放进同一个桌面应用。让一个 Agent 实现功能，换另一个检查代码，再运行项目、整理提交，整个流程都能在同一个工作台中完成。
 
 **开发预览版 · macOS 优先。** 安装包和发布验收仍在准备中，目前可从源码运行；Windows 尚待验证。
 
@@ -69,7 +69,7 @@ dogcodes 把编程 Agent、对话、代码变更和项目运行命令放进同�
 
 **直接调用本机已登录的 Claude Code、Codex、Cursor 等官方命令行工具，用的是你自己的订阅额度。**
 
-- 不需要单独的 dogcodes 账号，也不必另外购买 API，已有的订阅直接派上用场。
+- 不需要单独的 dog.codes 账号，也不必另外购买 API，已有的订阅直接派上用场。
 - 本地优先：数据保存在你自己的电脑上，不经过任何中转服务器。
 - 启动 Agent 时只传入必要的环境变量，你的其他密钥不会暴露给 Agent。
 
@@ -116,7 +116,7 @@ dogcodes 把编程 Agent、对话、代码变更和项目运行命令放进同�
 
 **前端、后端、文档分散在不同目录？一个会话全部交给 Agent。**
 
-- 原本不支持多目录的 Agent，经 dogcodes 管理后也能进行多目录项目开发。
+- 原本不支持多目录的 Agent，经 dog.codes 管理后也能进行多目录项目开发。
 
 <!-- 截图占位: ../../docs/images/readme/multi-folder.png -->
 
@@ -151,7 +151,7 @@ pnpm desktop:dev
 ```
 
 1. 通过官方方式安装至少一个支持的 Agent，并完成登录。
-2. 打开 dogcodes，连接可用 Agent，添加项目目录。
+2. 打开 dog.codes，连接可用 Agent，添加项目目录。
 3. 新建对话，选择 Agent 和模型，描述要完成的工作。
 4. 打开「运行」面板分析项目命令，或查看变更并发起审查。
 

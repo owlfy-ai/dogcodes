@@ -1,4 +1,4 @@
-# dogcodes app icon
+# dog.codes app icon
 
 [`icon-master.png`](icon-master.png) is a 1024 × 1024 square source containing the selected white dog profile with a lime-green ear on a black background. It is also the source for the website logo.
 

@@ -1,9 +1,9 @@
 <!-- Keep feature scope aligned across README.md and docs/i18n/. Screenshots are shared PNG files. -->
 <div align="center">
 
-<img src="../../apps/desktop/src-tauri/icons/128x128@2x.png" alt="dogcodes" width="96" height="96" />
+<img src="../../apps/desktop/src-tauri/icons/128x128@2x.png" alt="dog.codes" width="96" height="96" />
 
-# dogcodes
+# dog.codes
 
 **多個程式開發 Agent，一個工作空間。**
 
@@ -11,7 +11,7 @@
 
 </div>
 
-dogcodes 將程式開發 Agent、對話、程式碼變更與專案執行指令整合在同一個桌面應用程式。讓一個 Agent 實作功能，換另一個審查，再執行專案、準備提交，都能在同一個工作空間完成。
+dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令整合在同一個桌面應用程式。讓一個 Agent 實作功能，換另一個審查，再執行專案、準備提交，都能在同一個工作空間完成。
 
 **開發預覽版 · macOS 優先。** 安裝套件與發布驗證仍在準備中，目前可從原始碼執行；Windows 尚待驗證。
 
@@ -69,7 +69,7 @@ dogcodes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 
 **直接調用本機已登入的 Claude Code、Codex、Cursor 等官方命令列工具，用的是你自己的訂閱額度。**
 
-- 不需要另外的 dogcodes 帳號，也不必另外購買 API，已有的訂閱直接派上用場。
+- 不需要另外的 dog.codes 帳號，也不必另外購買 API，已有的訂閱直接派上用場。
 - 本地優先：資料存在你自己的電腦，不經過任何中轉伺服器。
 - 啟動 Agent 時只傳入必要的環境變數，你的其他密鑰不會暴露給 Agent。
 
@@ -116,7 +116,7 @@ dogcodes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 
 **前端、後端、文件分散在不同目錄？一個會話全部交給 Agent。**
 
-- 原本不支援多目錄的 Agent，經 dogcodes 管理後也能進行多目錄專案開發。
+- 原本不支援多目錄的 Agent，經 dog.codes 管理後也能進行多目錄專案開發。
 
 <!-- 截圖預留: ../../docs/images/readme/multi-folder.png -->
 
@@ -151,7 +151,7 @@ pnpm desktop:dev
 ```
 
 1. 依官方方式安裝至少一個支援的 Agent 並登入。
-2. 開啟 dogcodes，連接可用 Agent，加入專案目錄。
+2. 開啟 dog.codes，連接可用 Agent，加入專案目錄。
 3. 建立對話，選擇 Agent 和模型，描述要完成的工作。
 4. 開啟執行面板分析專案指令，或檢視變更並發起審查。
 

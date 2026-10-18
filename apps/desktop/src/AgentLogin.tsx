@@ -37,7 +37,7 @@ export function AgentLogin({ installationId, name }: {
   const [error, setError] = useState<string | null>(null);
   const open = async () => {
     if (busy.current) return;
-    if (!isTauri()) { setError("请在 dogcodes 桌面端打开登录入口。"); return; }
+    if (!isTauri()) { setError("请在 dog.codes 桌面端打开登录入口。"); return; }
     busy.current = true;
     setOpening(true); setError(null);
     try {

@@ -2,7 +2,7 @@
 
 ## 命名约定
 
-产品名称统一写为 `dogcodes`，官网域名为 `dog.codes`。crate 目录、源码文件和文档文件按职责命名，不包含产品名；引用路径与 Cargo 命令使用实际目录和包名，例如 `crates/core`、`cargo test -p agent-core`。
+产品名称统一写为 `dog.codes`（同官网域名）；npm 包名、GitHub 仓库名、CLI 命令、`DOGCODES_` 环境变量、`@dogcodes/` 内部包作用域、设置存储键与协议标识仍使用 `dogcodes`。crate 目录、源码文件和文档文件按职责命名，不包含产品名；引用路径与 Cargo 命令使用实际目录和包名，例如 `crates/core`、`cargo test -p agent-core`。
 
 软件尚未发布，命名调整直接更新代码、配置、环境变量、协议标识、设置存储键、实验记录和文档，不保留旧名称别名，也不添加旧名称兼容或数据迁移逻辑。环境变量使用 `DOGCODES_` 前缀，内部 npm 包使用 `@dogcodes/` 作用域，桌面应用标识为 `codes.dog.desktop`。
 
@@ -54,4 +54,4 @@ Playwright 不在项目运行依赖中；也可通过 `--playwright-module /abso
 
 ## 本次检查范围
 
-此次仅编写说明页、翻译和图片资源，不修改应用功能，不创建 GitHub 仓库或上传发布。页面布局参考 [codex-host](https://github.com/BytePioneer-AI/codex-host)，正文按 dogcodes 的实际能力独立编写。
+此次仅编写说明页、翻译和图片资源，不修改应用功能，不创建 GitHub 仓库或上传发布。页面布局参考 [codex-host](https://github.com/BytePioneer-AI/codex-host)，正文按 dog.codes 的实际能力独立编写。

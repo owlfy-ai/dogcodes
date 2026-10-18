@@ -1131,7 +1131,7 @@ pub fn run() {
                 app.manage(StartupStatus::Ready);
                 #[cfg(feature = "review-acceptance")]
                 if let Some(window) = app.get_webview_window("main") {
-                    window.set_title("dogcodes · ISOLATED REVIEW ACCEPTANCE")?;
+                    window.set_title("dog.codes · ISOLATED REVIEW ACCEPTANCE")?;
                 }
                 #[cfg(feature = "review-acceptance")]
                 let acceptance_app = app.handle().clone();

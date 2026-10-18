@@ -247,13 +247,13 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
 
   return <main className="agent-welcome">
     <header className="welcome-topbar" data-tauri-drag-region="deep">
-      <span className="welcome-brand"><img src={logo} alt="" />dogcodes</span>
+      <span className="welcome-brand"><img src={logo} alt="" />dog.codes</span>
       <button className="welcome-skip" type="button" onClick={onContinue}>跳过，进入工作台 <span aria-hidden="true">→</span></button>
     </header>
     <div className="welcome-page-body">
       <section className="welcome-hero">
         <div className="welcome-hero-copy">
-          <p className="welcome-eyebrow"><span aria-hidden="true" />欢迎使用 dogcodes</p>
+          <p className="welcome-eyebrow"><span aria-hidden="true" />欢迎使用 dog.codes</p>
           <h1>把你的 Coding Agent<br />召集到一处</h1>
           <p className="welcome-lede">自动发现本机已安装的 Agent，统一查看登录状态与剩余额度。一个工作台，随时切换、协同完成任务。</p>
           <dl className="welcome-stats" aria-live="polite">

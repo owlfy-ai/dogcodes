@@ -31,7 +31,7 @@ export function StartupRecovery({ status, onRetry }: { status: "loading" | "unav
   useEffect(() => {
     let active = true;
     if (status === "storage_recovery_required" && isTauri()) void invoke<{code: string}>("core_startup_diagnostics").then(value => {
-      const messages: Record<string, string> = {storage_directory_unavailable:"无法访问应用数据目录。",host_lease_unavailable:"应用可能已在其他窗口运行，请关闭重复打开的应用后重试。",database_check_failed:"本地数据暂时无法读取，请先备份再检查磁盘空间和访问权限。",database_from_newer_version:"本地数据由更新版本的 dogcodes 写入，当前版本不会读取或修改它。请安装该版本或更新的版本后再打开。",scratch_directory_unavailable:"无法创建临时文件，请检查磁盘空间和访问权限。",history_recovery_failed:"上次对话的恢复未完成，请保留数据并导出问题报告。"};
+      const messages: Record<string, string> = {storage_directory_unavailable:"无法访问应用数据目录。",host_lease_unavailable:"应用可能已在其他窗口运行，请关闭重复打开的应用后重试。",database_check_failed:"本地数据暂时无法读取，请先备份再检查磁盘空间和访问权限。",database_from_newer_version:"本地数据由更新版本的 dog.codes 写入，当前版本不会读取或修改它。请安装该版本或更新的版本后再打开。",scratch_directory_unavailable:"无法创建临时文件，请检查磁盘空间和访问权限。",history_recovery_failed:"上次对话的恢复未完成，请保留数据并导出问题报告。"};
       if (active) setReason(messages[value.code] ?? "本地数据暂时无法读取。");
     }).catch(() => {});
     return () => {active = false;};
