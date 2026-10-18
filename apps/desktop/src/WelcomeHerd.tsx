@@ -2,53 +2,78 @@ import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "rea
 
 export type HerdTone = "installed" | "scanning" | "failed" | "missing";
 
-// A meadow seen from the side. Positions are fractions of the herd width from the origin;
-// y grows toward the viewer, so nearer animals are drawn larger and in front.
-const rowGap = .065;
-const outrunDepth = .27;
-const timing = { eye: 1.1, drive: 5.4, settle: 1.6, outrun: 2.8 };
-type Phase = keyof typeof timing;
-const phases: Phase[] = ["eye", "drive", "settle", "outrun"];
-// Undetected agents graze far off on the back of the meadow.
-const strayX = [-.44, -.36, -.28, -.2, -.12, -.04, .04, .12, .2, .28, .36, .44];
-const strayOrder = [0, 11, 5, 6, 2, 9, 3, 8, 1, 10, 4, 7];
-
-const ease = (value: number) => (1 - Math.cos(Math.PI * Math.min(1, Math.max(0, value)))) / 2;
+// A meadow seen from the side. Positions are fractions of the herd width from the
+// origin; y grows toward the viewer, so nearer animals are drawn larger and in front.
 const depthScale = (y: number) => 1 + y * .6;
+const ease = (value: number) => (1 - Math.cos(Math.PI * Math.min(1, Math.max(0, value)))) / 2;
+const dogHalfWidth = .075, dogHeight = .1;
+const trotSpeed = .085, eyePause = 1.6, restPause = 2.2, restEvery = 2;
 
-/** Staggered rows, so every sheep's icon stays clear of the sheep in front of it. */
-function flockLayout(count: number) {
-  const size = count <= 4 ? .13 : count <= 6 ? .12 : count <= 9 ? .105 : .095;
-  const rows = count <= 3 ? 1 : count <= 6 ? 2 : count <= 9 ? 3 : 4;
-  const offsets: [number, number][] = [];
+/** Every supported agent keeps one slot from the start, so nothing reflows or jumps. */
+export function herdLayout(count: number) {
+  const columns = Math.max(1, Math.min(5, Math.ceil(count / 3)));
+  const rows = Math.max(1, Math.ceil(count / columns));
+  const size = count <= 6 ? .12 : .105;
+  // The flock stands toward the back of the meadow so the dog can pass in front without covering it.
+  const spacing = size * 1.12, rowGap = size * .56, offset = -.05;
+  const slots: [number, number][] = [];
   for (let row = 0; row < rows; row++) {
-    const inRow = Math.floor(count / rows) + (row < count % rows ? 1 : 0);
+    const inRow = Math.min(columns, count - slots.length);
+    // Staggered rows keep each sheep's tag clear of the sheep in front of it.
     const shift = rows > 1 ? (row % 2 ? .25 : -.25) * size : 0;
     for (let col = 0; col < inRow; col++) {
-      const index = offsets.length;
-      offsets.push([(col - (inRow - 1) / 2) * size * 1.04 + shift + ((index * 37) % 7 - 3) * .003,
-        (row - (rows - 1) / 2) * rowGap + ((index * 53) % 5 - 2) * .003]);
+      slots.push([(col - (inRow - 1) / 2) * spacing + shift, (row - (rows - 1) / 2) * rowGap + offset]);
     }
   }
-  const half = Math.max(0, ...offsets.map(([x]) => Math.abs(x))) + size / 2;
-  return { offsets, size, half };
+  const halfX = Math.max(0, ...slots.map(([x]) => Math.abs(x))) + size / 2;
+  const back = Math.min(...slots.map(([, y]) => y)), front = Math.max(...slots.map(([, y]) => y));
+  // The dog's loop keeps its whole body outside the flock: beside it, behind its heads
+  // (half hidden there, as a real dog would be) and far enough in front that it never covers a sheep.
+  const cy = (back + front) / 2;
+  const loop = { cx: 0, cy, a: halfX + dogHalfWidth + .04, back: cy - back + dogHeight * .55, front: front - cy + dogHeight * 1.15 };
+  return { slots, size, loop };
 }
 
-/** The welcome hero: a sheepdog drives the detected agents across the meadow and back. */
+/** The welcome hero: every agent waits in the flock, and the sheepdog circles it,
+ * stopping to eye each agent as it is found. */
 export function WelcomeHerd({ agents, renderIcon }: { agents: { id: string; tone: HerdTone }[]; renderIcon: (id: string) => ReactNode }) {
   const herd = useRef<HTMLDivElement>(null);
   const dogRef = useRef<HTMLDivElement>(null);
-  const flockIds = agents.filter(a => a.tone === "installed").map(a => a.id);
-  const strayIds = agents.filter(a => a.tone === "failed" || a.tone === "missing").map(a => a.id);
-  const flock = flockLayout(flockIds.length);
+  const layout = herdLayout(agents.length);
+  const ready = useRef(new Set<string>());
+  const pending = useRef<string[]>([]);
+  // New arrivals get a visit; agents already known at first render do not.
+  const known = useRef<Set<string> | null>(null);
+  if (known.current === null) known.current = new Set(agents.filter(a => a.tone === "installed").map(a => a.id));
+  for (const agent of agents) {
+    if (agent.tone === "installed" && !ready.current.has(agent.id)) {
+      ready.current.add(agent.id);
+      if (!known.current.has(agent.id) && !pending.current.includes(agent.id)) pending.current.push(agent.id);
+    } else if (agent.tone !== "installed") {
+      // Found again after a rescan counts as a new arrival.
+      ready.current.delete(agent.id);
+      known.current.delete(agent.id);
+    }
+  }
 
   useLayoutEffect(() => {
     const root = herd.current, dog = dogRef.current;
     if (!root || !dog) return;
     const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    const offsets = new WeakMap<HTMLElement, [number, number]>();
-    const facing = new WeakMap<HTMLElement, number>();
-    let direction = 1, phase: Phase = "eye", phaseStart = performance.now(), last = phaseStart;
+    const { loop } = herdLayout(root.querySelectorAll(".welcome-sheep").length);
+    const slotOf = (id: string) => {
+      const sheep = [...root.querySelectorAll<HTMLElement>(".welcome-sheep")].find(item => item.dataset.agent === id);
+      return sheep ? [Number(sheep.dataset.x), Number(sheep.dataset.y)] as const : null;
+    };
+    const semi = (angle: number) => Math.sin(angle) < 0 ? loop.back : loop.front;
+    const angleOf = ([x, y]: readonly [number, number]) => Math.atan2((y - loop.cy) / (y < loop.cy ? loop.back : loop.front), (x - loop.cx) / loop.a);
+    const at = (angle: number) => [loop.cx + loop.a * Math.cos(angle), loop.cy + semi(angle) * Math.sin(angle)] as const;
+    const wrap = (angle: number) => ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+
+    // Start resting behind the flock, then trot clockwise as seen from above.
+    let angle = -Math.PI / 2, direction = 1, speed = 0, face = 1, travelled = 0;
+    let pause = still ? Infinity : 1.2, pauseKind: "eye" | "down" = "down", target: number | null = null;
+    let last = performance.now();
     const mark = (element: HTMLElement, key: string, value: string) => { if (element.dataset[key] !== value) element.dataset[key] = value; };
     const place = (element: HTMLElement, x: number, y: number) => {
       element.style.setProperty("--x", x.toFixed(4));
@@ -60,63 +85,61 @@ export function WelcomeHerd({ agents, renderIcon }: { agents: { id: string; tone
     const tick = (now: number) => {
       const elapsed = Math.min(.05, (now - last) / 1000);
       last = now;
-      let t = (now - phaseStart) / 1000;
-      if (!still && t > timing[phase]) {
-        if (phase === "outrun") direction = -direction;
-        phase = phases[(phases.indexOf(phase) + 1) % phases.length];
-        phaseStart = now;
-        t = 0;
+      if (target === null && pending.current.length) {
+        const slot = slotOf(pending.current[0]);
+        if (slot) target = wrap(angleOf(slot)); else pending.current.shift();
       }
-      const half = Number(root.dataset.half) || .1;
-      const reach = half + .08;
-      // Drive as far across the meadow as the flock's width allows.
-      const restX = Math.min(.26, Math.max(.12, .44 - reach));
-      const from = -direction * restX, to = direction * restX;
-      const driveSpan = timing.drive - .9;
-      const outrun = phase === "outrun" ? ease(t / timing.outrun) : 0;
-
-      root.querySelectorAll<HTMLElement>(".welcome-sheep.penned").forEach(sheep => {
-        // Ease toward a new slot when the flock grows, instead of jumping.
-        const target = [Number(sheep.dataset.ox), Number(sheep.dataset.oy)];
-        const offset = offsets.get(sheep) ?? [target[0], target[1]];
-        offset[0] += (target[0] - offset[0]) * Math.min(1, elapsed * 3);
-        offset[1] += (target[1] - offset[1]) * Math.min(1, elapsed * 3);
-        offsets.set(sheep, offset);
-        // 0 at the edge nearest the driving dog, 1 at the leading edge: the back of the flock moves first.
-        const lead = Math.min(1, Math.max(0, (direction * offset[0] + half) / (2 * half)));
-        const progress = phase === "eye" ? 0 : phase === "drive" ? ease((t - lead * .7) / driveSpan) : 1;
-        place(sheep, from + (to - from) * progress + offset[0], offset[1]);
-        mark(sheep, "gait", phase === "drive" && progress > 0 && progress < 1 ? "walk" : "idle");
-        // Once the dog comes round to the far flank, sheep turn away from it, nearest first.
-        const face = phase === "outrun" && outrun > .68 + .25 * (1 - lead) ? -direction : direction;
-        if (facing.get(sheep) !== face) {
-          if (facing.has(sheep)) (sheep.firstElementChild as HTMLElement | null)?.animate?.([{ translate: "0 0" }, { translate: "0 -14%" }, { translate: "0 0" }], { duration: 300, easing: "ease-out" });
-          facing.set(sheep, face);
-          sheep.style.setProperty("--facing", `${face}`);
+      if (pause > 0) {
+        pause -= elapsed;
+        speed = 0;
+      } else {
+        // Ease into and out of a stop at the target; otherwise trot steadily.
+        let remaining = Infinity;
+        if (target !== null) remaining = wrap(direction * (target - angle));
+        const [dx, dy] = [-loop.a * Math.sin(angle), semi(angle) * Math.cos(angle)];
+        const radius = Math.hypot(dx, dy);
+        const distance = remaining * radius;
+        const desired = target !== null ? Math.min(trotSpeed, Math.max(.012, distance * 1.4)) : trotSpeed;
+        speed += (desired - speed) * Math.min(1, elapsed * 2.5);
+        const step = speed * elapsed / radius;
+        if (target !== null && step >= remaining) {
+          angle = target;
+          target = null;
+          pending.current.shift();
+          pause = eyePause; pauseKind = "eye";
+        } else {
+          angle = wrap(angle + direction * step);
+          travelled += step;
+          if (target === null && travelled > restEvery * 2 * Math.PI) {
+            travelled = 0; pause = restPause; pauseKind = "down";
+          }
         }
-      });
-
-      let x: number, y = 0, gait: string, view = "side";
-      if (phase === "eye") { x = from - direction * reach; gait = "eye"; }
-      else if (phase === "drive") {
-        const progress = ease(t / driveSpan);
-        x = from + (to - from) * progress - direction * reach;
-        // Wearing: the dog swings side to side behind the flock to keep it moving straight.
-        y = Math.sin(t * Math.PI * 2 / 2.4) * .03 * Math.sin(Math.PI * progress);
-        gait = progress < 1 ? "drive" : "eye";
-      } else if (phase === "settle") { x = to - direction * reach; gait = "down"; }
-      else {
-        // The outrun loops behind the flock: away from the viewer, across, then back toward them.
-        x = to - direction * reach * Math.cos(Math.PI * outrun);
-        y = -outrunDepth * Math.sin(Math.PI * outrun);
-        const across = Math.abs(reach * Math.sin(Math.PI * outrun)), toward = -outrunDepth * Math.cos(Math.PI * outrun);
-        view = Math.abs(toward) > 1.3 * across ? (toward < 0 ? "back" : "front") : "side";
-        gait = t / timing.outrun > .97 ? "stand" : "run";
       }
+
+      const [x, y] = at(angle);
       place(dog, x, y);
-      dog.style.setProperty("--face", `${direction}`);
+      // Facing and view follow the actual direction of travel; at rest the dog looks at the flock.
+      const vx = -direction * loop.a * Math.sin(angle), vy = direction * semi(angle) * Math.cos(angle);
+      let view = "side";
+      if (pause > 0) {
+        if (Math.abs(Math.cos(angle)) > .45) face = x > loop.cx ? -1 : 1;
+        else view = y < loop.cy ? "front" : "back";
+      } else {
+        if (Math.abs(vx) > .002) face = vx > 0 ? 1 : -1;
+        // Depth reads larger on screen than it measures, so weigh it before choosing a view.
+        if (Math.abs(vy) * 1.6 > Math.abs(vx)) view = vy > 0 ? "front" : "back";
+      }
+      dog.style.setProperty("--face", `${face}`);
       mark(dog, "view", view);
-      mark(dog, "gait", gait);
+      mark(dog, "gait", pause > 0 ? pauseKind : speed > trotSpeed * .5 ? "run" : "drive");
+
+      // Sheep the dog passes close by turn away from it; the rest keep grazing.
+      root.querySelectorAll<HTMLElement>(".welcome-sheep").forEach(sheep => {
+        const sx = Number(sheep.dataset.x), sy = Number(sheep.dataset.y);
+        const near = Math.hypot((x - sx) / 1.4, y - sy) < .11;
+        const turn = near ? (x > sx ? -1 : 1) : Number(sheep.dataset.home);
+        if (sheep.style.getPropertyValue("--facing") !== `${turn}`) sheep.style.setProperty("--facing", `${turn}`);
+      });
     };
 
     tick(performance.now());
@@ -124,21 +147,21 @@ export function WelcomeHerd({ agents, renderIcon }: { agents: { id: string; tone
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  return <div className="welcome-herd" ref={herd} data-half={flock.half} aria-hidden="true">
+  return <div className="welcome-herd" ref={herd} aria-hidden="true">
     <div className="welcome-herd-meadow" />
     {agents.map((agent, index) => {
-      const inFlock = flockIds.indexOf(agent.id), stray = strayIds.indexOf(agent.id);
-      const slot = strayOrder[stray % strayOrder.length];
-      const strayY = slot % 2 ? -.3 : -.35;
-      const style: Record<string, number> = inFlock >= 0 ? { "--size": flock.size }
-        : stray >= 0 ? { "--x": strayX[slot], "--y": strayY, "--size": .1, "--depth": depthScale(strayY) * .75, "--facing": slot < 6 ? 1 : -1, zIndex: 0 }
-        : { "--size": flock.size };
-      return <span key={agent.id} style={{ ...style, "--graze": `${(index * -1.37) % 5}s` } as CSSProperties}
-        data-ox={inFlock >= 0 ? flock.offsets[inFlock][0] : undefined} data-oy={inFlock >= 0 ? flock.offsets[inFlock][1] : undefined}
-        className={`welcome-sheep ${agent.tone}${inFlock >= 0 ? " penned" : stray >= 0 ? "" : " away"}`}>
+      const [x, y] = layout.slots[index];
+      const home = index % 3 === 1 ? -1 : 1;
+      const style = {
+        "--x": x, "--y": y, "--size": layout.size, "--depth": depthScale(y), "--facing": home,
+        "--graze": `${(index * -1.37) % 5}s`, zIndex: Math.round((y + 1) * 100),
+      } as CSSProperties;
+      const lit = agent.tone === "installed";
+      return <span key={agent.id} style={style} data-agent={agent.id} data-x={x} data-y={y} data-home={home}
+        className={`welcome-sheep ${lit ? "ready" : "unknown"} ${agent.tone}`}>
         <span className="welcome-sheep-body">
           <SheepShape />
-          <span className="welcome-sheep-tag">{renderIcon(agent.id)}</span>
+          <span className="welcome-sheep-tag">{lit ? renderIcon(agent.id) : <span className="welcome-sheep-unknown">?</span>}</span>
         </span>
       </span>;
     })}
@@ -148,13 +171,18 @@ export function WelcomeHerd({ agents, renderIcon }: { agents: { id: string; tone
   </div>;
 }
 
+function Wool() {
+  return <>
+    <circle cx="16" cy="21" r="9" /><circle cx="26" cy="14" r="10" /><circle cx="38" cy="15" r="9.5" /><circle cx="45" cy="25" r="8" />
+    <circle cx="36" cy="32" r="9" /><circle cx="23" cy="32" r="9" /><circle cx="12" cy="29" r="7" /><ellipse cx="30" cy="24" rx="17" ry="12" />
+  </>;
+}
+
 function SheepShape() {
   return <svg className="welcome-sheep-shape" viewBox="0 0 60 48">
     <g className="welcome-sheep-legs"><rect x="15" y="32" width="4" height="12" rx="2" /><rect x="23" y="33" width="4" height="12" rx="2" /><rect x="35" y="33" width="4" height="12" rx="2" /><rect x="43" y="32" width="4" height="12" rx="2" /></g>
-    <g className="welcome-sheep-wool">
-      <circle cx="16" cy="21" r="9" /><circle cx="26" cy="14" r="10" /><circle cx="38" cy="15" r="9.5" /><circle cx="45" cy="25" r="8" />
-      <circle cx="36" cy="32" r="9" /><circle cx="23" cy="32" r="9" /><circle cx="12" cy="29" r="7" /><ellipse cx="30" cy="24" rx="17" ry="12" />
-    </g>
+    <g className="welcome-sheep-wool outline"><Wool /></g>
+    <g className="welcome-sheep-wool"><Wool /></g>
     <g className="welcome-sheep-head">
       <ellipse className="welcome-sheep-face" cx="53" cy="21" rx="6" ry="7.5" />
       <ellipse className="welcome-sheep-face" cx="49" cy="15" rx="3.6" ry="1.8" transform="rotate(-25 49 15)" />
