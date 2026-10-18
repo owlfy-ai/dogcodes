@@ -138,11 +138,13 @@
 .welcome-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
 
 /* Herd: a meadow seen from the side. Every supported agent has a sheep from the start; unknown ones are
-   dark outlines with a question mark and light up with their logo once found. The sheepdog circles the flock. */
+   dark outlines with a question mark and light up with their logo once found. The flock and the sheepdog
+   walk on the spot while the meadow scrolls left, so the herd reads as driven steadily to the right. */
 .welcome-herd {
   --herd-size: min(460px, 42vw);
   --wool: #e9ebe4; --wool-edge: transparent; --sheep-face: #30332e; --unknown-line: color-mix(in srgb, var(--w-muted) 55%, transparent);
   --dog-coat: #3a3e38; --dog-white: #f4f5f0; --dog-glow: color-mix(in srgb, var(--w-accent) 35%, transparent);
+  --grass: color-mix(in srgb, var(--w-muted) 45%, transparent); --pace: 5s;
   position: relative; justify-self: center; width: var(--herd-size); aspect-ratio: 10 / 6.4;
 }
 :root[data-theme="light"] .welcome-herd { --wool: #ffffff; --wool-edge: #d9dbd3; --sheep-face: #3a3d37; --dog-coat: #232521; --dog-white: #ffffff; --dog-glow: #1a1a1426; }
@@ -153,9 +155,19 @@
   position: absolute; left: 50%; top: 58%; width: 96%; height: 62%; translate: -50% -50%; border-radius: 50%;
   border: 1px dashed color-mix(in srgb, var(--w-muted) 30%, transparent);
   background: radial-gradient(closest-side, var(--w-glow), color-mix(in srgb, var(--w-surface) 25%, transparent) 70%, transparent);
+  overflow: hidden;
 }
+/* Grass tufts scroll left under the herd; the nearer layer is larger and faster for depth. */
+.welcome-herd-ground {
+  position: absolute; inset: 0; background: var(--grass);
+  -webkit-mask: var(--tufts) 0 0 / var(--tile-w) var(--tile-h) repeat; mask: var(--tufts) 0 0 / var(--tile-w) var(--tile-h) repeat;
+  animation: welcome-ground var(--speed) linear infinite;
+  --tufts: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 60'%3E%3Cg fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M12 14l-2-5M14 14v-6M16 14l2-5'/%3E%3Cpath d='M70 8l-2-4M72 8v-5M74 8l2-4'/%3E%3Cpath d='M44 38l-2-5M46 38v-6M48 38l2-5'/%3E%3Cpath d='M98 30l-2-4M100 30v-5M102 30l2-4'/%3E%3Cpath d='M24 54l-2-4M26 54v-5M28 54l2-4'/%3E%3Cpath d='M84 52l-2-5M86 52v-6M88 52l2-5'/%3E%3C/g%3E%3C/svg%3E");
+}
+.welcome-herd-ground.far { --tile-w: calc(var(--herd-size) * .24); --tile-h: calc(var(--herd-size) * .12); --speed: calc(var(--pace) * 1.6); opacity: .55; top: 4%; bottom: 46%; }
+.welcome-herd-ground.near { --tile-w: calc(var(--herd-size) * .34); --tile-h: calc(var(--herd-size) * .17); --speed: var(--pace); top: 44%; }
 
-/* Animals stand on their feet at (x, y); the loop in WelcomeHerd moves the flock and the dog. */
+/* Animals stand on their feet at (x, y), fixed by the layout in WelcomeHerd. */
 .welcome-sheep, .welcome-herd-dog {
   position: absolute; left: 50%; top: 66%;
   transform: translate(calc(var(--x, 0) * var(--herd-size) - 50%), calc(var(--y, 0) * var(--herd-size) - 90%)) scale(var(--depth, 1));
@@ -165,8 +177,14 @@
 .welcome-sheep-body { position: absolute; inset: 0; display: block; }
 .welcome-sheep-shape {
   position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible;
-  scale: var(--facing, 1) 1; transition: scale .26s ease-in-out; filter: drop-shadow(0 3px 5px #0003);
+  filter: drop-shadow(0 3px 5px #0003);
 }
+/* Walking on the spot, each at its own step, drifting a little forward and back within the flock. */
+.welcome-sheep { animation: welcome-sheep-drift var(--drift) ease-in-out var(--drift-delay) infinite alternate; }
+.welcome-sheep-shape { animation: welcome-sheep-bob calc(var(--step) / 2) ease-in-out var(--step-delay) infinite; }
+.welcome-sheep-legs rect { animation: welcome-sheep-step var(--step) ease-in-out var(--step-delay) infinite alternate; }
+.welcome-sheep-legs rect:nth-child(even) { animation-direction: alternate-reverse; }
+.welcome-sheep-head { animation: welcome-sheep-nod var(--step) ease-in-out var(--step-delay) infinite; }
 .welcome-sheep-wool { fill: var(--wool); transition: fill .7s, stroke .7s; }
 /* The outline layer draws one silhouette around the overlapping puffs; the fill layer covers the inner seams. */
 .welcome-sheep-wool.outline { stroke: var(--wool-edge); stroke-width: 2; }
@@ -186,14 +204,9 @@
 /* The icon sits on the wool's centre, which stays put whichever way the sheep faces. */
 .welcome-sheep-tag { position: absolute; left: 50%; top: 49%; width: 30%; aspect-ratio: 1; translate: -50% -50%; display: grid; }
 .welcome-sheep-tag .agent-icon { width: 100%; height: 100%; border-radius: 24%; }
-.welcome-sheep.ready .welcome-sheep-head { animation: welcome-sheep-graze 5s ease-in-out var(--graze) infinite; }
 
 .welcome-herd-dog { width: calc(var(--herd-size) * .15); aspect-ratio: 72 / 48; pointer-events: none; transform-origin: 50% 88%; }
-.welcome-dog-shape { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; display: none; filter: drop-shadow(0 0 6px var(--dog-glow)); }
-.welcome-herd-dog[data-view="side"] .welcome-dog-shape.side,
-.welcome-herd-dog[data-view="front"] .welcome-dog-shape.front,
-.welcome-herd-dog[data-view="back"] .welcome-dog-shape.back { display: block; }
-.welcome-dog-shape.side { scale: var(--face, 1) 1; transition: translate .3s; }
+.welcome-dog-shape { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 0 6px var(--dog-glow)); }
 .welcome-dog-coat { fill: var(--dog-coat); }
 .welcome-dog-white { fill: var(--dog-white); }
 .welcome-dog-leg line { stroke: var(--dog-coat); stroke-width: 4.2; stroke-linecap: round; }
@@ -204,26 +217,32 @@
 .welcome-dog-leg.far { opacity: .75; }
 .welcome-dog-head { transform-origin: 48px 22px; transition: rotate .3s; }
 .side .welcome-dog-tail { transform-origin: 20px 22px; }
-.back .welcome-dog-tail { transform-origin: 35px 26px; }
-/* Gaits: a bounding run, a low creeping drive, a crouch with the eye on the flock, and lying down. */
-.welcome-herd-dog[data-gait="run"] .welcome-dog-shape { animation: welcome-dog-bound .38s ease-in-out infinite; }
-.welcome-herd-dog[data-gait="run"] .welcome-dog-leg { animation: welcome-dog-stride .38s ease-in-out infinite alternate; }
-.welcome-herd-dog[data-gait="run"] .welcome-dog-paw { animation: welcome-dog-paw .38s ease-in-out infinite alternate; }
-.welcome-herd-dog[data-gait="run"] .welcome-dog-tail { animation: welcome-dog-wag .38s ease-in-out infinite alternate; }
-.welcome-herd-dog[data-gait="drive"] .welcome-dog-leg { animation: welcome-dog-stride .7s ease-in-out infinite alternate; }
-.welcome-herd-dog .welcome-dog-leg.front, .welcome-herd-dog .welcome-dog-paw.right { animation-direction: alternate-reverse; }
-.welcome-herd-dog .welcome-dog-leg.far { animation-delay: -.1s; }
-.welcome-herd-dog:is([data-gait="drive"], [data-gait="eye"]) .welcome-dog-shape.side { translate: 0 7%; }
-.welcome-herd-dog:is([data-gait="drive"], [data-gait="eye"]) .welcome-dog-head { rotate: 14deg; }
-.welcome-herd-dog[data-gait="down"] .welcome-dog-shape.side { translate: 0 15%; }
-.welcome-herd-dog[data-gait="down"] .welcome-dog-leg { scale: 1 .3; }
-.welcome-herd-dog[data-gait="down"] .welcome-dog-tail { animation: welcome-dog-wag 1.2s ease-in-out infinite alternate; }
+/* The dog trots low behind the flock, head down on the sheep; it looks up when an agent is found. */
+.welcome-herd-dog { animation: welcome-dog-pace 4.6s ease-in-out infinite alternate; }
+.welcome-dog-shape { animation: welcome-dog-bound .44s ease-in-out infinite; }
+.welcome-dog-leg { animation: welcome-dog-stride .44s ease-in-out infinite alternate; }
+.welcome-dog-tail { animation: welcome-dog-wag .44s ease-in-out infinite alternate; }
+.welcome-herd-dog .welcome-dog-leg.front { animation-direction: alternate-reverse; }
+.welcome-herd-dog .welcome-dog-leg.far { animation-delay: -.12s; }
+.welcome-dog-head { rotate: 10deg; }
+.welcome-herd-dog[data-alert] .welcome-dog-head { rotate: -12deg; }
+/* Dust kicked up behind the paws drifts away with the ground. */
+.welcome-dog-dust { position: absolute; left: 4%; bottom: 4%; width: 30%; height: 30%; pointer-events: none; }
+.welcome-dog-dust i { position: absolute; right: 0; bottom: 0; width: 26%; aspect-ratio: 1; border-radius: 50%; background: var(--w-muted); opacity: 0; }
+.welcome-dog-dust i { animation: welcome-dog-dust .88s ease-out infinite; }
+.welcome-dog-dust i:nth-child(2) { animation-delay: -.3s; width: 20%; }
+.welcome-dog-dust i:nth-child(3) { animation-delay: -.6s; width: 16%; }
 
 @keyframes welcome-dog-bound { 50% { translate: 0 -6%; } }
+@keyframes welcome-dog-dust { 0% { opacity: .35; translate: 0 0; scale: .6; } 100% { opacity: 0; translate: -260% -60%; scale: 1.4; } }
 @keyframes welcome-dog-stride { from { rotate: -26deg; } to { rotate: 26deg; } }
-@keyframes welcome-dog-paw { from { translate: 0 -2px; } to { translate: 0 1px; } }
 @keyframes welcome-dog-wag { from { rotate: -8deg; } to { rotate: 8deg; } }
-@keyframes welcome-sheep-graze { 0%, 55%, 100% { rotate: 0deg; } 68%, 88% { rotate: 28deg; } }
+@keyframes welcome-dog-pace { from { translate: -8% 0; } to { translate: 4% 0; } }
+@keyframes welcome-ground { to { -webkit-mask-position: calc(-1 * var(--tile-w)) 0; mask-position: calc(-1 * var(--tile-w)) 0; } }
+@keyframes welcome-sheep-drift { from { translate: -7% 0; } to { translate: 7% 0; } }
+@keyframes welcome-sheep-bob { 50% { translate: 0 -3%; } }
+@keyframes welcome-sheep-step { from { rotate: -20deg; } to { rotate: 20deg; } }
+@keyframes welcome-sheep-nod { 50% { rotate: 6deg; } }
 @keyframes welcome-sheep-hop { 40% { translate: 0 -12%; } 70% { translate: 0 2%; } }
 @keyframes welcome-sheep-reveal { from { scale: .4; opacity: 0; } }
 @keyframes welcome-sheep-wonder { 50% { opacity: .45; } }

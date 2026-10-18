@@ -142,8 +142,8 @@ section { position: relative; background: var(--bg); color: var(--fg); }
 
 /* ---------- Hero background: drifting agent cards ---------- */
 .hero-bg { position: absolute; z-index: -1; left: -8%; right: -8%; top: 110px; height: 600px; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; transform: rotate(-4deg); opacity: .6;
-  -webkit-mask-image: radial-gradient(ellipse 46% 58% at 50% 50%, transparent 0, transparent 62%, #000 100%), linear-gradient(#000 85%, transparent);
-  -webkit-mask-composite: source-in; mask-image: radial-gradient(ellipse 46% 58% at 50% 50%, transparent 0, transparent 62%, #000 100%), linear-gradient(#000 85%, transparent); mask-composite: intersect; }
+  -webkit-mask-image: radial-gradient(ellipse 46% 58% at 50% 50%, transparent 0, transparent 62%, #000 100%), linear-gradient(transparent, #000 15%, #000 85%, transparent);
+  -webkit-mask-composite: source-in; mask-image: radial-gradient(ellipse 46% 58% at 50% 50%, transparent 0, transparent 62%, #000 100%), linear-gradient(transparent, #000 15%, #000 85%, transparent); mask-composite: intersect; }
 .bg-row { overflow: hidden; }
 .bg-track { display: flex; gap: 64px; width: max-content; animation: marquee var(--dur) linear infinite var(--dir); }
 .bg-tile { display: grid; place-items: center; flex: none; width: 56px; height: 56px; border-radius: 15px; border: 1px solid #1c1c1c; }

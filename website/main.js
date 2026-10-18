@@ -1,8 +1,8 @@
 // dog.codes website — interactive demos and EN/中文 copy. No build step, no dependencies.
 // Set these once the public repository exists.
 const SITE = {
-  github: 'https://github.com/dogcodes/dogcodes',
-  releases: 'https://github.com/dogcodes/dogcodes/releases/latest',
+  github: 'https://github.com/owlfy-ai/dogcodes',
+  releases: 'https://github.com/owlfy-ai/dogcodes/releases/latest',
 };
 
 const AGENTS = [

@@ -161,8 +161,14 @@ mod tests {
         let capture = begin(&Provider, &paths).await.unwrap();
         let checkpoint = capture.checkpoint().await.unwrap().unwrap();
         let changes = capture.finish().await.unwrap();
-        assert_eq!(changes["files"][0]["path"], "/one/same.txt");
-        assert_eq!(changes["files"][1]["path"], "/two/same.txt");
+        let joined = |root: &str| {
+            std::path::Path::new(root)
+                .join("same.txt")
+                .to_string_lossy()
+                .into_owned()
+        };
+        assert_eq!(changes["files"][0]["path"], joined("/one"));
+        assert_eq!(changes["files"][1]["path"], joined("/two"));
         assert_eq!(changes["roots"][1]["changes"]["patch"], "sample");
         let recovered = recover(&Provider, &paths, checkpoint.clone())
             .await

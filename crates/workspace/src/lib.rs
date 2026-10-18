@@ -277,23 +277,41 @@ impl GitWorkspaceContextProvider {
             .await?;
         if !listed.success {
             // An unreadable index (for example mid-recovery): the committed tree
-            // still lists the tracked attribute files without needing it.
-            listed = self
+            // still lists the tracked attribute files without needing it, and the
+            // worktree holds every attribute file Git could read from it.
+            if !Self::worktree_attribute_files(&top, &mut sources) {
+                return Ok(true);
+            }
+            let unborn = !self
                 .git_process(
                     &top,
-                    &[
-                        "ls-tree",
-                        "-r",
-                        "-z",
-                        "--name-only",
-                        "HEAD",
-                        "--",
-                        ":(glob)**/.gitattributes",
-                    ],
+                    &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
                     env.clone(),
-                    GIT_OUTPUT_LIMIT,
+                    64 * 1024,
                 )
-                .await?;
+                .await?
+                .success;
+            if unborn {
+                listed.success = true;
+                listed.stdout.clear();
+            } else {
+                listed = self
+                    .git_process(
+                        &top,
+                        &[
+                            "ls-tree",
+                            "-r",
+                            "-z",
+                            "--name-only",
+                            "HEAD",
+                            "--",
+                            ":(glob)**/.gitattributes",
+                        ],
+                        env.clone(),
+                        GIT_OUTPUT_LIMIT,
+                    )
+                    .await?;
+            }
         }
         if !listed.success || listed.stdout_truncated {
             return Ok(true);
@@ -326,6 +344,35 @@ impl GitWorkspaceContextProvider {
             }
         }
         Ok(false)
+    }
+
+    /// Adds every `.gitattributes` below `top`, skipping Git directories. Returns
+    /// false when the tree is too large or unreadable to scan with confidence.
+    fn worktree_attribute_files(top: &Path, sources: &mut Vec<(PathBuf, bool)>) -> bool {
+        let mut pending = vec![top.to_path_buf()];
+        let mut visited = 0usize;
+        while let Some(directory) = pending.pop() {
+            let Ok(entries) = std::fs::read_dir(&directory) else {
+                return false;
+            };
+            for entry in entries {
+                visited += 1;
+                let Ok(entry) = entry else { return false };
+                if visited > 100_000 {
+                    return false;
+                }
+                let Ok(kind) = entry.file_type() else {
+                    return false;
+                };
+                let name = entry.file_name();
+                if kind.is_dir() && name != ".git" {
+                    pending.push(entry.path());
+                } else if kind.is_file() && name == ".gitattributes" {
+                    sources.push((entry.path(), true));
+                }
+            }
+        }
+        true
     }
 
     async fn git_process(
@@ -1762,6 +1809,25 @@ mod tests {
             expected
         );
         assert!(!workspace.join("filter-ran").exists());
+
+        // An unreadable index in a repository without commits: the worktree still
+        // shows which attribute files exist.
+        std::fs::write(workspace.join(".gitattributes"), "*.bin binary\n").unwrap();
+        std::fs::write(workspace.join(".git/index"), b"not an index").unwrap();
+        let configured = b"filter.lfs.clean\0";
+        assert!(
+            !provider
+                .filter_attributes_in_effect(&workspace, configured, &BTreeMap::new())
+                .await
+                .unwrap()
+        );
+        std::fs::write(workspace.join("sub/.gitattributes"), "*.psd filter=lfs\n").unwrap();
+        assert!(
+            provider
+                .filter_attributes_in_effect(&workspace, configured, &BTreeMap::new())
+                .await
+                .unwrap()
+        );
         std::fs::remove_dir_all(&workspace).unwrap();
     }
 

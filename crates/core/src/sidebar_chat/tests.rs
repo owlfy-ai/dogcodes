@@ -90,7 +90,12 @@ impl AgentDriver for Driver {
             ]
         );
         assert!(request.prompt.contains("不修改、新建或删除任何项目文件"));
-        assert!(request.prompt.contains(&request.working_directory));
+        // The directory travels in the JSON context, so Windows backslashes arrive escaped.
+        assert!(
+            request
+                .prompt
+                .contains(&serde_json::json!(request.working_directory).to_string())
+        );
         self.prompts.lock().unwrap().push(request);
         if let Some(receiver) = self.streamed_events.lock().unwrap().take() {
             return Ok(Box::pin(
