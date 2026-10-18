@@ -162,7 +162,7 @@ async fn open_target(target: LoginTarget) -> Result<(), String> {
     };
     let quote = |value: &str| format!("'{}'", value.replace('\'', "''"));
     let command = std::iter::once(executable.to_string_lossy().into_owned())
-        .chain(args.iter().map(|s| s.to_string()))
+        .chain(args.iter().map(ToString::to_string))
         .map(|s| quote(&s))
         .collect::<Vec<_>>()
         .join(" ");

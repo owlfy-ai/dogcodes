@@ -156,7 +156,8 @@ impl Process {
             use std::os::windows::process::CommandExt;
             let _ = std::process::Command::new("taskkill.exe")
                 .args(["/PID", &pid.to_string(), "/T", "/F"])
-                .creation_flags(0x08000000)
+                // CREATE_NO_WINDOW: no console window flashes while killing the tree.
+                .creation_flags(0x0800_0000)
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
                 .status();

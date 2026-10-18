@@ -15,6 +15,7 @@ fn intent(root: &Path, command: Option<&str>) -> LaunchIntent {
         rows: 24,
     }
 }
+#[cfg(unix)]
 async fn read_until(host: &TerminalHost, id: &str, needle: &str) -> Vec<u8> {
     tokio::time::timeout(Duration::from_secs(8), async {
         let mut bytes = vec![];
@@ -36,6 +37,7 @@ async fn read_until(host: &TerminalHost, id: &str, needle: &str) -> Vec<u8> {
     .await
     .expect("terminal output timeout")
 }
+#[cfg(unix)]
 async fn finished(host: &TerminalHost, id: &str) -> TerminalInfo {
     tokio::time::timeout(Duration::from_secs(8), async {
         let mut cursor = 0;
