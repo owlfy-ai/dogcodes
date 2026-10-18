@@ -2,7 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { userFacingError } from "./userFacingError";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { BootstrapSnapshot, CoreClient, InstallationSummary, QuotaSnapshotView, QuotaWindow } from "@dogcodes/protocol";
-import { quotaScopeLabel, quotaColor, quotaIsStale, quotaNativeResetLabel, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
+import { quotaScopeLabel, quotaColor, quotaIsStale, quotaNativeResetLabel, quotaWindowHasReset, quotaWindowLabel, formatResetTime, remainingPercent } from "./quotaPresentation";
 import { quotaRequestTimeoutMs } from "./quotaRefresh";
 import { quotaShowsLastReading, withLastReading } from "./quotaFallback";
 import { AgentLogin, agentAccountIssue, needsAgentLogin } from "./AgentLogin";
@@ -62,12 +62,12 @@ export function welcomeStatus(reading?: Reading): { label: string; tone: string;
   return { label: failed ? "检测失败" : "授权待确认", tone: "warning", detail: "未取得有效账户读数。请检查网络或原生登录状态后重试。" };
 }
 
-function WindowRing({ window, quota }: { window?: QuotaWindow; quota?: QuotaSnapshotView["quota"] }) {
+function WindowRing({ window, quota, scope = "" }: { window?: QuotaWindow; quota?: QuotaSnapshotView["quota"]; scope?: string }) {
   const expired = window && quotaWindowHasReset(window);
   const remaining = expired ? null : remainingPercent(window?.usedPercent);
   const label = window ? quotaWindowLabel(window.windowMinutes, window.id) : "剩余额度";
   const reset = window?.resetsAtUnix
-    ? `${expired ? "已到重置时间，待刷新" : "重置"} · ${new Date(window.resetsAtUnix * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`
+    ? expired ? "已到重置时间，待刷新" : `重置时间：${formatResetTime(window.resetsAtUnix)}`
     : window && quota ? quotaNativeResetLabel(quota, window) || "重置时间未提供" : "";
   return <div className="welcome-window">
     <div className="welcome-ring" role="img" aria-label={`${quotaScopeLabel(window?.scope)} ${label}：${remaining == null ? "未知" : `剩余 ${remaining}%`}`}>
@@ -75,7 +75,10 @@ function WindowRing({ window, quota }: { window?: QuotaWindow; quota?: QuotaSnap
         {remaining != null && <circle cx="50" cy="50" r="42" pathLength="100" stroke={quotaColor(remaining)} strokeDasharray={`${remaining} 100`} className="welcome-ring-value" />}</svg>
       <span><b>{remaining == null ? "—" : remaining > 0 && remaining < 1 ? "<1" : Math.round(remaining)}{remaining != null && <small>%</small>}</b><em>{remaining === 0 ? "已用尽" : "剩余"}</em></span>
     </div>
-    <div className="welcome-window-copy"><strong>{window ? `${label.replace(/\s+/g, "")}剩余` : label}</strong>{reset && <small>{reset}</small>}</div>
+    <div className="welcome-window-copy">
+      <span className="welcome-window-title"><strong>{window ? `${label.replace(/\s+/g, "")}剩余` : label}</strong>{scope && <em>{scope}</em>}</span>
+      {reset && <small>{reset}</small>}
+    </div>
   </div>;
 }
 
@@ -220,7 +223,7 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
     return <article className={`welcome-agent-card ${state.tone}${busy ? " busy" : ""}`} key={agent.id} aria-label={agent.name} style={{ "--stagger": index } as CSSProperties}>
       <header>
         <span className="welcome-agent-icon">{renderIcon(agent.id)}</span>
-        <div><h2>{agent.name}</h2><small>{reading ? "已安装" : scanning ? "正在寻找本机客户端" : "安装状态待确认"}</small></div>
+        <div><h2>{agent.name}</h2><small>{reading ? "已安装" : scanning ? "正在寻找本机客户端" : "安装状态待确认"}{outdated && quota && ` · 上次读数 ${new Date(quota.collectedAtUnixMs).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}`}</small></div>
         <span className={`welcome-status ${state.tone}`} data-tooltip={failed ? failureDetails[agent.id] : state.detail} aria-busy={busy}>
           {busy ? <span className="welcome-spinner" aria-hidden="true" /> : <i aria-hidden="true" />}{state.label}
           {!scanning && !failed && reading && needsAgentLogin(reading.installation, reading.view) &&
@@ -228,10 +231,9 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
         </span>
       </header>
       <div className={`welcome-card-quotas${outdated ? " outdated" : ""}`}>
-        {outdated && quota && <p className="welcome-outdated-note">上次读数 · {new Date(quota.collectedAtUnixMs).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}，可能已不准确</p>}
         {!scanning && displayWindows.length ? groups.map(group => <section key={group} aria-label={quotaScopeLabel(group) || "账户额度"}>
-          {quotaScopeLabel(group) && agent.id !== "antigravity" && <h3>{quotaScopeLabel(group)}</h3>}
-          <div className="welcome-rings">{displayWindows.filter(w => (w.scope ?? "") === group).map(w => <WindowRing key={w.id} window={w} quota={quota} />)}</div>
+          <div className="welcome-rings">{displayWindows.filter(w => (w.scope ?? "") === group)
+            .map(w => <WindowRing key={w.id} window={w} quota={quota} scope={agent.id !== "antigravity" ? quotaScopeLabel(group) : ""} />)}</div>
         </section>) : <div className={`welcome-empty-quota${busy ? " loading" : ""}`}>
           {busy && <span className="welcome-skeleton" aria-hidden="true"><i /><i /></span>}
           <p>{emptyMessage}</p>

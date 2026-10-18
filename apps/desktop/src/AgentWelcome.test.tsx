@@ -134,15 +134,21 @@ describe("welcome scan workflow", () => {
     const card = container.querySelector('[aria-label="Cursor"]')!;
     for (const label of ["已登录", "Cursor Models", "Other Models", "80%", "0%", "每月", "10/4"]) expect(card.textContent).toContain(label);
     expect(card.querySelectorAll('[role="img"]')).toHaveLength(2);
+    // Pool names ride inside each ring panel, right-aligned, so the card keeps
+    // the same height as neighbours without headings above the rings.
+    expect(card.querySelectorAll("h3")).toHaveLength(0);
+    const panels = [...card.querySelectorAll(".welcome-window")];
+    expect(panels.map(panel => panel.querySelector(".welcome-window-title em")?.textContent)).toEqual(["Cursor Models", "Other Models"]);
   });
   it("queries Kiro account allowance and displays its native billing date", async () => {
     const kiro = { ...installation, providerId: "kiro", installationId: "ins_kiro" };
-    const q = { ...quota(), planType: "KIRO FREE · 重置 2026-10-01（原生日期）", windows: [{ id: "kiro-included", scope: "套餐内（Kiro）", windowMinutes: 0, usedPercent: 0.16, resetsAtUnix: null }] };
+    const resetDate = `${new Date().getFullYear()}-10-01`;
+    const q = { ...quota(), planType: `KIRO FREE · 重置 ${resetDate}（原生日期）`, windows: [{ id: "kiro-included", scope: "套餐内（Kiro）", windowMinutes: 0, usedPercent: 0.16, resetsAtUnix: null }] };
     const quotaSnapshots = vi.fn(async () => [{ providerId: "kiro", installationId: "ins_kiro", quota: q }]);
     await mount({ scanAgent: async (id: string) => ({ installations: id === "kiro" ? [kiro] : [] }), quotaSnapshots } as unknown as CoreClient);
     expect(quotaSnapshots).toHaveBeenCalledWith(null, "ins_kiro");
     const card = container.querySelector('[aria-label="Kiro"]')!;
-    for (const label of ["已登录", "100%", "2026-10-01"]) expect(card.textContent).toContain(label);
+    for (const label of ["已登录", "100%", "重置时间：10/1"]) expect(card.textContent).toContain(label);
     expect(card.querySelector('[role="img"]')?.getAttribute("aria-label")).toContain("99.8%");
     expect(card.textContent).not.toContain("暂未接入");
     expect(card.textContent).not.toContain("KIRO FREE");
@@ -291,6 +297,18 @@ describe("welcome installation and upgrades", () => {
     expect(card.querySelector('.welcome-status')?.textContent).toBe(diagnostic === "quota_exhausted" ? "额度已用尽" : "额度查询受限");
     expect(card.querySelector('.agent-login')).toBeNull();
     expect(card.textContent).not.toContain("授权待确认");
+  });
+  it("folds a rate-limited last reading into the header status line, not above the rings", async () => {
+    const q = quota();
+    await mount({
+      scanAgent: async (id: string) => ({ installations: id === "codex" ? [installation] : [] }),
+      quotaSnapshots: async () => [{ ...view(q), diagnostic: "quota_rate_limited" }],
+    } as unknown as CoreClient);
+    const card = container.querySelector('[aria-label="Codex"]')!;
+    expect(card.querySelector(".welcome-outdated-note")).toBeNull();
+    expect(card.querySelector("header small")?.textContent).toContain("已安装 · 上次读数 ");
+    expect(card.querySelector(".welcome-card-quotas")?.classList.contains("outdated")).toBe(true);
+    expect(card.querySelector(".welcome-status")?.textContent).toBe("额度查询受限");
   });
   it("opens the detected installation once, keeps login unverified, and removes the entry after a successful rescan", async () => {
     vi.mocked(isTauri).mockReturnValue(true);

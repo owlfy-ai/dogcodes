@@ -78,19 +78,47 @@ function hasNativeBillingDate(id?: string): boolean {
   return id === "cursor-included" || id === "cursor-models" || id === "cursor-other-models" || id === "kiro-included";
 }
 
+const NATIVE_MONTHS: Record<string, number> = {
+  jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
+  may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7,
+  sep: 8, sept: 8, september: 8, oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11,
+};
+
+// Reset readings from native clients carry no time of day; show the date in
+// the operating system's own format. `undefined` hands the choice to Intl.
+function nativeResetDisplayText(text: string): string {
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(text);
+  if (iso) {
+    const date = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    return date.toLocaleDateString(undefined, date.getFullYear() !== new Date().getFullYear()
+      ? { year: "numeric", month: "numeric", day: "numeric" }
+      : { month: "numeric", day: "numeric" });
+  }
+  const named = /^([A-Za-z]+)\.?\s+(\d{1,2})$/.exec(text);
+  const month = named ? NATIVE_MONTHS[named[1].toLowerCase()] : undefined;
+  if (named && month != null) {
+    // The reading names no year and monthly cadence makes it obvious; never add one.
+    return new Date(new Date().getFullYear(), month, Number(named[2]))
+      .toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
+  }
+  return text;
+}
+
+/** Bare reset date for a window whose native reading keeps it in planType. */
+export function nativeResetDisplay(quota: QuotaSnapshot, window: QuotaWindow): string {
+  if (!hasNativeBillingDate(window.id)) return "";
+  const text = quota.planType?.match(NATIVE_RESET_DATE)?.[1]?.trim();
+  return text ? nativeResetDisplayText(text) : "";
+}
+
 export function quotaPlanLabel(quota: QuotaSnapshot): string | null | undefined {
   return quota.windows.some(window => hasNativeBillingDate(window.id))
     ? quota.planType?.replace(NATIVE_RESET_DATE, "") : quota.planType;
 }
 
 export function quotaNativeResetLabel(quota: QuotaSnapshot, window: QuotaWindow): string {
-  if (!hasNativeBillingDate(window.id)) return "";
-  const date = quota.planType?.match(NATIVE_RESET_DATE)?.[1]?.trim();
-  if (!date) return "";
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const parts = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2})$/.exec(date);
-  const display = parts ? `${months.indexOf(parts[1]) + 1}/${Number(parts[2])}` : date;
-  return `重置时间：${display}`;
+  const display = nativeResetDisplay(quota, window);
+  return display ? `重置时间：${display}` : "";
 }
 
 export function quotaScopeLabel(scope: string | null | undefined): string {
@@ -100,11 +128,11 @@ export function quotaScopeLabel(scope: string | null | undefined): string {
   return scope ?? "";
 }
 
-export function formatResetTime(unixSeconds: number): string {
+export function formatResetTime(unixSeconds: number, nowUnixMs = Date.now()): string {
+  // Reset timestamps always carry a time of day, so it is shown; a same-day
+  // reset needs no date, and the shape follows the operating system locale.
   const date = new Date(unixSeconds * 1000);
-  const today = new Date();
-  const sameDay = date.toDateString() === today.toDateString();
-  return sameDay
-    ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : date.toLocaleDateString([], { month: "numeric", day: "numeric" });
+  if (date.toDateString() === new Date(nowUnixMs).toDateString())
+    return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }

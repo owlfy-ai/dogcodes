@@ -1,15 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { antigravityQuotaForModel, primaryQuotaWindow, quotaIsExhausted, quotaIsStale, remainingPercent, quotaNativeResetLabel, quotaPlanLabel, quotaWindowLabel, ringQuotaWindow } from "./quotaPresentation";
+import { antigravityQuotaForModel, primaryQuotaWindow, quotaIsExhausted, quotaIsStale, remainingPercent, quotaNativeResetLabel, nativeResetDisplay, quotaPlanLabel, quotaWindowLabel, ringQuotaWindow } from "./quotaPresentation";
 
 describe("quota presentation", () => {
   it("shows Kiro's included allowance without blocking bonus or paid usage", () => {
+    // The reset year follows the current one so the same-year display never
+    // flips the year on; the exact date shape is the OS locale's choice.
+    const year = new Date().getFullYear();
     const q = { windows: [{ id: "kiro-included", scope: "套餐内（Kiro）", windowMinutes: 0, usedPercent: 100, resetsAtUnix: null }],
-      planType: "KIRO FREE · 重置 2026-10-01（原生日期） · 按量付费已开启", collectedAtUnixMs: 1000, staleAfterUnixMs: 2000,
+      planType: `KIRO FREE · 重置 ${year}-10-01（原生日期） · 按量付费已开启`, collectedAtUnixMs: 1000, staleAfterUnixMs: 2000,
       source: "native_pull", confidence: "provider_reported", parserVersion: "kiro-account-usage-v1" };
     expect(primaryQuotaWindow(q.windows)?.id).toBe("kiro-included");
     expect(quotaIsExhausted(q, 1500)).toBe(false);
-    expect(quotaNativeResetLabel(q, q.windows[0])).toBe("重置时间：2026-10-01");
+    expect(quotaNativeResetLabel(q, q.windows[0])).toBe("重置时间：10/1");
     expect(quotaPlanLabel(q)).toBe("KIRO FREE · 按量付费已开启");
+  });
+  it("keeps a differing native reset year and never invents a time of day", () => {
+    const nextYear = new Date().getFullYear() + 1;
+    const q = { windows: [{ id: "kiro-included", scope: "套餐内（Kiro）", windowMinutes: 0, usedPercent: 0, resetsAtUnix: null }],
+      planType: `KIRO FREE · 重置 ${nextYear}-01-02（原生日期）`, collectedAtUnixMs: 1000, staleAfterUnixMs: 2000,
+      source: "native_pull", confidence: "provider_reported", parserVersion: "test" };
+    expect(nativeResetDisplay(q, q.windows[0])).toContain(String(nextYear));
+    const cursor = { ...q, planType: "Pro · 重置 Oct 4（原生日期）" };
+    expect(nativeResetDisplay(cursor, { ...q.windows[0], id: "cursor-models" })).toBe("10/4");
   });
   it("maps only the explicitly selected model group", () => {
     const quota = { windows: [
