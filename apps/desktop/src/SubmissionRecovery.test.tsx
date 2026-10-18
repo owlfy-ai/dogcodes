@@ -6,7 +6,7 @@ import { DemoCoreClient } from "./demoClient";
 import { PendingSubmissionError, submissionOperations as operations } from "./submissionOperations";
 import { SubmissionRecovery } from "./SubmissionRecovery";
 let root: Root, host: HTMLDivElement;
-beforeEach(() => { vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); host = document.createElement("div"); document.body.append(host); root = createRoot(host); });
+beforeEach(() => { localStorage.clear(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); host = document.createElement("div"); document.body.append(host); root = createRoot(host); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const click = async (label: string) => act(async () => { [...host.querySelectorAll("button")].find(button => button.textContent === label)!.click(); });
 const panel = () => host.querySelector('[aria-label="待核实的发送请求"]');
@@ -74,4 +74,28 @@ it("reports a discovery failure without dropping records already listed", async 
   await act(async () => { await operations.discover(f.client); });
   expect(host.textContent).toContain("暂时无法同步后台发送记录");
   expect(panel()).not.toBeNull();
+});
+
+it("keeps a rejected recovery retry visible with its message and attachments", async () => {
+  const client = new DemoCoreClient(), task = (await client.bootstrap()).tasks[0];
+  const start = vi.spyOn(client, "submissionStart").mockRejectedValueOnce(new Error("reply lost"));
+  const lookup = vi.spyOn(client, "submissionIntentGet").mockRejectedValueOnce(new Error("offline"));
+  await operations.start(client, { scope: "draft:recover", taskId: null, projectId: task.projectId, target: task.preferredExecutor,
+    input: { prompt: "keep original", model: null, thinking: null, permissionMode: null,
+      attachments: [{ name: "notes.txt", path: "/app/notes.txt", mimeType: "text/plain" }] } }).catch(() => {});
+  const onRestore = vi.fn();
+  await act(async () => root.render(<SubmissionRecovery client={client} busy={false} canResume={() => true} onResolved={vi.fn()} onRestore={onRestore}/>));
+  lookup.mockResolvedValue(null);
+  await click("核实发送结果");
+  start.mockRejectedValueOnce(new Error("原会话不可发送，请等待回复结束或刷新后重试。"));
+  await click("重新发送原内容");
+  const unknown = host.querySelector('[aria-label="结果未知的发送请求"]');
+  expect(unknown?.textContent).toContain("keep original");
+  expect(unknown?.textContent).toContain("notes.txt");
+  expect(unknown?.textContent).toContain("原会话不可发送");
+  expect(start.mock.calls[1][0].operationId).toBe(start.mock.calls[0][0].operationId);
+  expect(onRestore).not.toHaveBeenCalled();
+  await click("放弃并放回输入框");
+  expect(onRestore).toHaveBeenCalledWith(expect.objectContaining({ input: expect.objectContaining({ prompt: "keep original" }) }));
+  expect(host.querySelector('[aria-label="结果未知的发送请求"]')).toBeNull();
 });

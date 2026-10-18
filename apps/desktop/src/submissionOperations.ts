@@ -123,8 +123,12 @@ async function start(client: CoreClient, request: StartRequest & { operationId?:
     requestedAt: new Date().toISOString(), scope: request.scope, taskId: request.taskId, projectId: request.projectId, target: request.target, input: request.input });
   return withClientOperationLock(`submission:${record.scope}`, () => send(service, client, record));
 }
-async function send(service: ReturnType<typeof api>, client: CoreClient, record: UnconfirmedSubmission): Promise<SubmissionResolution> {
+function startRequest(record: UnconfirmedSubmission) {
   const { schemaVersion: _schema, requestedAt: _at, ...call } = record;
+  return call;
+}
+async function send(service: ReturnType<typeof api>, client: CoreClient, record: UnconfirmedSubmission, keepIfAbsent = false): Promise<SubmissionResolution> {
+  const call = startRequest(record);
   remember(record);
   try {
     const entry = await service.submissionStart(call);
@@ -135,17 +139,22 @@ async function send(service: ReturnType<typeof api>, client: CoreClient, record:
     // The service keeps working after a lost reply; only a successful lookup of
     // this exact identity decides whether the original exists and how it ended.
     let latest: SubmissionIntentEntry | null;
-    try { latest = await service.submissionIntentGet(record.operationId); }
+    try { latest = await service.submissionIntentGet(record.operationId, undefined, call); }
     catch { throw new UnconfirmedSubmissionError(record, cause); }
-    forgetUnconfirmed(record.operationId);
-    if (latest?.state === "closed") return latest.resolution;
-    if (latest?.state === "pending") throw new PendingSubmissionError(latest.intent, cause);
+    if (latest) {
+      forgetUnconfirmed(record.operationId);
+      if (latest.state === "closed") return latest.resolution;
+      throw new PendingSubmissionError(latest.intent, cause);
+    }
+    // The initial composer can restore a rejected message. Recovery retries have
+    // no composer owner: retain their original text/attachments until resolved.
+    if (!keepIfAbsent) forgetUnconfirmed(record.operationId);
     throw cause; // Verified absent: the caller may return the content to the composer.
   } finally { void discover(client); }
 }
 /** Read only: looks up an unconfirmed start by its original identity. */
 async function verifyUnconfirmed(client: CoreClient, record: UnconfirmedSubmission): Promise<UnconfirmedCheck> {
-  const latest = await api(client).submissionIntentGet(record.operationId);
+  const latest = await api(client).submissionIntentGet(record.operationId, undefined, startRequest(record));
   if (!latest) return { status: "not_received" };
   forgetUnconfirmed(record.operationId);
   void discover(client);
@@ -154,7 +163,7 @@ async function verifyUnconfirmed(client: CoreClient, record: UnconfirmedSubmissi
 /** Sends the original request again with its original identity; the service deduplicates. */
 async function resendUnconfirmed(client: CoreClient, record: UnconfirmedSubmission): Promise<SubmissionResolution> {
   const service = api(client);
-  return withClientOperationLock(`submission:${record.scope}`, () => send(service, client, record));
+  return withClientOperationLock(`submission:${record.scope}`, () => send(service, client, record, true));
 }
 /** Only after verification found no record: stop tracking without sending. */
 function abandonUnconfirmed(record: UnconfirmedSubmission) { forgetUnconfirmed(record.operationId); }

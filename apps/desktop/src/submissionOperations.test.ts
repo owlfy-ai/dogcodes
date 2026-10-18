@@ -2,6 +2,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { CoreClient, SubmissionIntent, SubmissionIntentEntry, SubmissionStartRequest } from "@dogcodes/protocol";
 import { PendingSubmissionError, UnconfirmedSubmissionError, submissionOperations as operations } from "./submissionOperations";
+import { DemoCoreClient } from "./demoClient";
 
 const input = { prompt: "original", model: null, thinking: null, permissionMode: null, attachments: [] };
 const target = { providerId: "codex", installationId: null };
@@ -124,4 +125,39 @@ it("sends nothing when the retry identity cannot be stored first", async () => {
   vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => { throw new Error("quota"); });
   await expect(operations.start(f.client, request)).rejects.toThrow("quota");
   expect(f.submissionStart).not.toHaveBeenCalled();
+});
+
+it("keeps the original message and attachments when an explicit recovery retry is rejected", async () => {
+  const f = fixture();
+  const originalRequest = { ...request, input: { ...input, attachments: [{ name: "notes.txt", path: "/app/notes.txt", mimeType: "text/plain" }] } };
+  f.submissionStart.mockRejectedValueOnce(new Error("reply lost"));
+  f.submissionIntentGet.mockRejectedValueOnce(new Error("offline"));
+  const failure = await operations.start(f.client, originalRequest).catch(cause => cause) as UnconfirmedSubmissionError;
+  const original = failure.request;
+  f.submissionIntentGet.mockResolvedValue(null);
+  expect(await operations.verifyUnconfirmed(f.client, original)).toEqual({ status: "not_received" });
+  f.submissionStart.mockRejectedValueOnce(new Error("conversation busy"));
+  await expect(operations.resendUnconfirmed(f.client, original)).rejects.toThrow("conversation busy");
+  expect(JSON.parse(operations.unconfirmed()).records).toEqual([original]);
+  expect(f.submissionStart.mock.calls[1][0].operationId).toBe(original.operationId);
+  expect(f.submissionIntentGet).toHaveBeenLastCalledWith(original.operationId, undefined,
+    { ...originalRequest, operationId: original.operationId });
+  f.submissionStart.mockImplementationOnce(async call => submitted(call.operationId));
+  await expect(operations.resendUnconfirmed(f.client, original)).resolves.toMatchObject({ status: "submitted" });
+  expect(f.submissionStart.mock.calls[2][0].operationId).toBe(original.operationId);
+  expect(JSON.parse(operations.unconfirmed()).records).toEqual([]);
+});
+
+it("does not turn a changed request's rejection into the previous send's success", async () => {
+  const client = new DemoCoreClient();
+  const task = (await client.bootstrap()).tasks[0];
+  const original = { ...request, operationId: "cmd_original", scope: "draft:checked", taskId: null,
+    projectId: task.projectId, target: task.preferredExecutor };
+  await expect(operations.start(client, original)).resolves.toMatchObject({ status: "submitted" });
+  const changed = { ...original, input: { ...input, prompt: "different message" } };
+  const failure = await operations.start(client, changed).catch(cause => cause);
+  expect(failure).toBeInstanceOf(UnconfirmedSubmissionError);
+  expect(failure.message).toContain("其他内容");
+  await expect(operations.verifyUnconfirmed(client, failure.request)).rejects.toThrow("内容不一致");
+  expect(JSON.parse(operations.unconfirmed()).records[0].input.prompt).toBe("different message");
 });

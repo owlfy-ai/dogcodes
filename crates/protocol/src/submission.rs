@@ -12,6 +12,17 @@ pub struct SubmissionInput {
     pub permission_mode: Option<String>,
     pub attachments: Vec<PromptAttachment>,
 }
+/// Original client input for a send, before the service assigns task/stage IDs.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SubmissionStartRequest {
+    pub operation_id: CommandId,
+    pub scope: String,
+    pub task_id: Option<TaskId>,
+    pub project_id: ProjectId,
+    pub target: ExecutorRef,
+    pub input: SubmissionInput,
+}
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SubmissionCreation {
@@ -98,6 +109,13 @@ pub enum SubmissionIntentCall {
         #[serde(rename = "operationId")]
         operation_id: CommandId,
         expected: Option<Box<SubmissionIntent>>,
+    },
+    /// Checked lookup is a separate variant so older services cannot silently
+    /// ignore the expected request and return an unrelated receipt.
+    GetStart {
+        #[serde(rename = "operationId")]
+        operation_id: CommandId,
+        request: Box<SubmissionStartRequest>,
     },
     List {
         after: Option<CommandId>,

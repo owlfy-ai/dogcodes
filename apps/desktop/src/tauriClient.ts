@@ -65,7 +65,8 @@ export class TauriCoreClient implements CoreClient {
   submissionIntentPut(intent: import("@dogcodes/protocol").SubmissionIntent): Promise<import("@dogcodes/protocol").SubmissionIntentEntry> {
     return invoke("core_submission_intents", { call: { type: "put", intent } });
   }
-  submissionIntentGet(operationId: string, expected?: import("@dogcodes/protocol").SubmissionIntent): Promise<import("@dogcodes/protocol").SubmissionIntentEntry | null> {
+  submissionIntentGet(operationId: string, expected?: import("@dogcodes/protocol").SubmissionIntent, expectedStart?: import("@dogcodes/protocol").SubmissionStartRequest): Promise<import("@dogcodes/protocol").SubmissionIntentEntry | null> {
+    if (expectedStart) return invoke("core_submission_intents", { call: { type: "get_start", operationId, request: expectedStart } });
     return invoke("core_submission_intents", { call: { type: "get", operationId, expected: expected ?? null } });
   }
   submissionIntentList(after: string | null = null, limit = 50): Promise<import("@dogcodes/protocol").SubmissionIntentPage> {

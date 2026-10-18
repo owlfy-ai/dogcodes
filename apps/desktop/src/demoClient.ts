@@ -539,6 +539,13 @@ export class DemoCoreClient implements CoreClient {
 
   // Browser demo stand-in for the service-driven send: same call shapes, in memory.
   private submissions = new Map<string, SubmissionIntentEntry>();
+  private submissionRequests = new Map<string, string>();
+  private submissionRequestKey(request: SubmissionStartRequest) {
+    const { scope, taskId, projectId, target, input } = request;
+    return JSON.stringify([scope, taskId, projectId, target.providerId, target.installationId ?? null,
+      input.prompt, input.model, input.thinking, input.permissionMode,
+      input.attachments.map(item => [item.path, item.name, item.mimeType, item.integrity?.sha256 ?? null, item.integrity?.byteLength ?? null])]);
+  }
   private async freezeSubmission(request: SubmissionStartRequest): Promise<SubmissionIntent> {
     const snapshot = await this.bootstrap();
     const existing = request.taskId ? this.tasks.find(task => task.taskId === request.taskId) : undefined;
@@ -578,10 +585,15 @@ export class DemoCoreClient implements CoreClient {
   }
   async submissionStart(request: SubmissionStartRequest): Promise<SubmissionIntentEntry> {
     const found = this.submissions.get(request.operationId);
+    if (found && this.submissionRequests.get(request.operationId) !== this.submissionRequestKey(request)) {
+      throw new Error("原发送标识已绑定其他内容，未继续操作");
+    }
     if (found?.state === "closed") return found;
     if ([...this.submissions.values()].some(entry => entry.state === "pending" && entry.intent.operationId !== request.operationId
       && (entry.intent.scope === request.scope || entry.intent.task.taskId === request.taskId))) throw new Error("此会话或草稿已有待核实发送，请先处理原操作");
-    return this.driveSubmission(found?.state === "pending" ? found.intent : await this.freezeSubmission(request));
+    const intent = found?.state === "pending" ? found.intent : await this.freezeSubmission(request);
+    this.submissionRequests.set(request.operationId, this.submissionRequestKey(request));
+    return this.driveSubmission(intent);
   }
   async submissionContinue(operationId: string): Promise<SubmissionIntentEntry> {
     const found = this.submissions.get(operationId);
@@ -597,8 +609,13 @@ export class DemoCoreClient implements CoreClient {
     this.submissions.set(operationId, entry);
     return entry;
   }
-  async submissionIntentGet(operationId: string): Promise<SubmissionIntentEntry | null> {
-    return structuredClone(this.submissions.get(operationId) ?? null);
+  async submissionIntentGet(operationId: string, _expected?: SubmissionIntent, expectedStart?: SubmissionStartRequest): Promise<SubmissionIntentEntry | null> {
+    const found = this.submissions.get(operationId) ?? null;
+    if (expectedStart && (expectedStart.operationId !== operationId
+      || (found && this.submissionRequests.get(operationId) !== this.submissionRequestKey(expectedStart)))) {
+      throw new Error("原发送回执与请求内容不一致，未返回旧结果");
+    }
+    return structuredClone(found);
   }
   async submissionIntentList(): Promise<SubmissionIntentPage> {
     return { operationIds: [...this.submissions.entries()].filter(([, entry]) => entry.state === "pending").map(([operationId]) => operationId), nextCursor: null };

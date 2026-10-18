@@ -582,7 +582,7 @@ export interface CoreClient {
   taskDeletion?(taskId: string): Promise<TaskDeletion | null>;
   submissionIntentResolve?(intent: SubmissionIntent): Promise<SubmissionResolution | null>;
   submissionIntentPut?(intent: SubmissionIntent): Promise<SubmissionIntentEntry>;
-  submissionIntentGet?(operationId: string, expected?: SubmissionIntent): Promise<SubmissionIntentEntry | null>;
+  submissionIntentGet?(operationId: string, expected?: SubmissionIntent, expectedStart?: SubmissionStartRequest): Promise<SubmissionIntentEntry | null>;
   /** Hints only; initial connect and reconnect require a fresh read. */
   subscribeSubmissionIntents?(refresh: () => void): () => void;
   submissionIntentList?(after?: string | null, limit?: number): Promise<SubmissionIntentPage>;

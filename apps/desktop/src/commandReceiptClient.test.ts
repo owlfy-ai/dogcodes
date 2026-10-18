@@ -140,6 +140,10 @@ it("routes shared submission registration, discovery and closure through the dae
   expect(invoke).toHaveBeenLastCalledWith("core_submission_intents", { call: { type: "get", operationId: intent.operationId, expected: intent } });
   await client.submissionIntentGet(intent.operationId);
   expect(invoke).toHaveBeenLastCalledWith("core_submission_intents", { call: { type: "get", operationId: intent.operationId, expected: null } });
+  const originalStart = { operationId: intent.operationId, scope: intent.scope, taskId: task.taskId,
+    projectId: task.projectId, target: intent.target, input: intent.input };
+  await client.submissionIntentGet(intent.operationId, undefined, originalStart);
+  expect(invoke).toHaveBeenLastCalledWith("core_submission_intents", { call: { type: "get_start", operationId: intent.operationId, request: originalStart } });
   await client.submissionIntentList();
   expect(invoke).toHaveBeenLastCalledWith("core_submission_intents", { call: { type: "list", after: null, limit: 50 } });
   await client.submissionIntentResolve(intent);

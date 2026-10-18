@@ -563,6 +563,34 @@ impl SubmissionIntents {
                 }
                 Ok(json!(self.io(move |store| store.put(intent)).await?))
             }
+            SubmissionIntentCall::GetStart {
+                operation_id,
+                request,
+            } => {
+                if request.operation_id != operation_id {
+                    return Err("查询与原发送身份不一致".into());
+                }
+                let requested = start_request_fingerprint(
+                    &request.scope,
+                    request.task_id.as_ref(),
+                    &request.project_id,
+                    &request.target,
+                    &request.input,
+                )
+                .map_err(|e| e.to_string())?;
+                let found = self.io(move |store| store.read(&operation_id)).await?;
+                let original = match &found {
+                    Some(SubmissionIntentEntry::Pending { intent }) => {
+                        Some(intent_start_fingerprint(intent).map_err(|e| e.to_string())?)
+                    }
+                    Some(SubmissionIntentEntry::Closed { request, .. }) => request.clone(),
+                    None => return Ok(Value::Null),
+                };
+                if original.as_ref() != Some(&requested) {
+                    return Err("原发送回执与请求内容不一致，未返回旧结果".into());
+                }
+                Ok(json!(found))
+            }
             SubmissionIntentCall::Get {
                 operation_id,
                 expected,
@@ -1895,6 +1923,113 @@ mod tests {
                 .iter()
                 .any(|t| t.task_id == abandoned.task.task_id)
         );
+    }
+
+    #[tokio::test]
+    async fn checked_start_lookup_verifies_pending_and_closed_request_content() {
+        use agent_protocol::submission::SubmissionStartRequest;
+        let (_dir, host, core, _store, intent) = fixture().await;
+        let operation = CommandId::new();
+        let request = SubmissionStartRequest {
+            operation_id: operation.clone(),
+            scope: intent.scope.clone(),
+            task_id: None,
+            project_id: intent.task.project_id.clone(),
+            target: intent.target.clone(),
+            input: intent.input.clone(),
+        };
+        let query = |request: SubmissionStartRequest| SubmissionIntentCall::GetStart {
+            operation_id: operation.clone(),
+            request: Box::new(request),
+        };
+        assert!(
+            host.call(&core, query(request.clone()))
+                .await
+                .unwrap()
+                .is_null()
+        );
+        let first = host
+            .call(&core, start(&intent, &operation, None, &intent.target))
+            .await
+            .unwrap();
+        assert_eq!(
+            host.call(&core, query(request.clone())).await.unwrap(),
+            first
+        );
+        let mut changed = request.clone();
+        changed.input.prompt.push('!');
+        assert!(
+            host.call(&core, query(changed))
+                .await
+                .unwrap_err()
+                .contains("内容不一致")
+        );
+        let mut changed = request.clone();
+        changed.task_id = Some(submitted_task(&first));
+        assert!(
+            host.call(&core, query(changed))
+                .await
+                .unwrap_err()
+                .contains("内容不一致")
+        );
+        let mut changed = request.clone();
+        changed.target.provider_id = ProviderId::parse("other").unwrap();
+        assert!(
+            host.call(&core, query(changed))
+                .await
+                .unwrap_err()
+                .contains("内容不一致")
+        );
+        let mut wrong_id = request;
+        wrong_id.operation_id = CommandId::new();
+        assert!(
+            host.call(&core, query(wrong_id))
+                .await
+                .unwrap_err()
+                .contains("身份不一致")
+        );
+        idle(&core).await;
+        disable_fake(&core).await;
+        let operation = CommandId::new();
+        assert!(
+            host.call(&core, start(&intent, &operation, None, &intent.target))
+                .await
+                .is_err()
+        );
+        let request = SubmissionStartRequest {
+            operation_id: operation.clone(),
+            scope: intent.scope.clone(),
+            task_id: None,
+            project_id: intent.task.project_id.clone(),
+            target: intent.target.clone(),
+            input: intent.input.clone(),
+        };
+        let pending = host
+            .call(
+                &core,
+                SubmissionIntentCall::GetStart {
+                    operation_id: operation.clone(),
+                    request: Box::new(request.clone()),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(pending["state"], "pending");
+        let mut changed = request;
+        changed.input.prompt.push('!');
+        assert!(
+            host.call(
+                &core,
+                SubmissionIntentCall::GetStart {
+                    operation_id: operation,
+                    request: Box::new(changed),
+                }
+            )
+            .await
+            .unwrap_err()
+            .contains("内容不一致")
+        );
+        assert_eq!(queued(&core).await, 1);
     }
 
     #[tokio::test]
