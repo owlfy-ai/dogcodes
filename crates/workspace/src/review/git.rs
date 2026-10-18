@@ -2284,7 +2284,20 @@ mod tests {
             store.undo_recovery("checkout-test", &record.id).unwrap();
             assert_eq!(fs::read(repo.path().join("a.txt")).unwrap(), b"edited\r\n");
         }
+        // A configured driver that no attribute names cannot convert any content.
         git(repo.path(), &["config", "filter.test.smudge", "do-not-run"]);
+        assert!(
+            service
+                .compare(&root, CompareMode::Uncommitted, None, 0, &store)
+                .await
+                .is_ok()
+        );
+        // Once an attribute names it, comparison refuses instead of guessing its output.
+        fs::write(
+            repo.path().join(".gitattributes"),
+            "*.txt text eol=crlf filter=test\n",
+        )
+        .unwrap();
         assert!(
             service
                 .compare(&root, CompareMode::Uncommitted, None, 0, &store)

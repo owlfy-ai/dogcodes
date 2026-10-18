@@ -151,7 +151,14 @@ impl GitWorkspaceContextProvider {
         match filters.exit_code {
             Some(1) if filters.stdout.is_empty() => {}
             Some(0) if !filters.stdout.is_empty() => {
-                return Err(GitCollectionError::ExternalFilterConfigured);
+                // A configured driver (for example Git LFS installed globally)
+                // only runs for paths whose attributes name it.
+                if self
+                    .filter_attributes_in_effect(workspace, &filters.stdout, &env_overrides)
+                    .await?
+                {
+                    return Err(GitCollectionError::ExternalFilterConfigured);
+                }
             }
             _ => return Err(GitCollectionError::CommandFailed),
         }
@@ -162,6 +169,163 @@ impl GitWorkspaceContextProvider {
             return Err(GitCollectionError::CommandFailed);
         }
         Ok(output.stdout)
+    }
+
+    /// Whether any attribute source of this repository names a configured
+    /// filter driver. Attributes come only from `.gitattributes` files, the
+    /// repository's `info/attributes`, the global attributes file and the system
+    /// file; a source that cannot be read counts as naming one, so the guard
+    /// against unfaithful content conversion stays conservative.
+    async fn filter_attributes_in_effect(
+        &self,
+        workspace: &Path,
+        configured: &[u8],
+        env: &BTreeMap<String, OsString>,
+    ) -> Result<bool, GitCollectionError> {
+        // Attributes belong to the repository, not to a temporary index an
+        // operation happens to use.
+        let mut env = env.clone();
+        env.remove("GIT_INDEX_FILE");
+        let env = &env;
+        let drivers: std::collections::BTreeSet<&str> = configured
+            .split(|byte| *byte == 0)
+            .filter_map(|key| std::str::from_utf8(key).ok())
+            .filter_map(|key| key.strip_prefix("filter.")?.rsplit_once('.'))
+            .map(|(name, _)| name)
+            .collect();
+        if drivers.is_empty() {
+            return Ok(true);
+        }
+        let text = |output: ProcessBytesOutput| {
+            output.success.then(|| {
+                String::from_utf8_lossy(&output.stdout)
+                    .trim_end_matches(['\n', '\r'])
+                    .to_owned()
+            })
+        };
+        let Some(top) = text(
+            self.git_process(
+                workspace,
+                &["rev-parse", "--show-toplevel"],
+                env.clone(),
+                64 * 1024,
+            )
+            .await?,
+        ) else {
+            // Not a repository: no attributes apply, and the command itself
+            // reports why it cannot run.
+            return Ok(false);
+        };
+        let top = PathBuf::from(top);
+        // (path, whether it must exist to be trusted)
+        let mut sources = vec![(PathBuf::from("/etc/gitattributes"), false)];
+        let Some(info) = text(
+            self.git_process(
+                workspace,
+                &[
+                    "rev-parse",
+                    "--path-format=absolute",
+                    "--git-path",
+                    "info/attributes",
+                ],
+                env.clone(),
+                64 * 1024,
+            )
+            .await?,
+        ) else {
+            return Ok(true);
+        };
+        sources.push((PathBuf::from(info), false));
+        let global = self
+            .git_process(
+                workspace,
+                &["config", "--path", "--get", "core.attributesFile"],
+                env.clone(),
+                64 * 1024,
+            )
+            .await?;
+        match global.exit_code {
+            Some(0) => sources.push((PathBuf::from(text(global).unwrap_or_default()), false)),
+            Some(1) => {
+                let base = std::env::var_os("XDG_CONFIG_HOME")
+                    .filter(|value| !value.is_empty())
+                    .map(PathBuf::from)
+                    .or_else(|| {
+                        std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config"))
+                    });
+                if let Some(base) = base {
+                    sources.push((base.join("git/attributes"), false));
+                }
+            }
+            _ => return Ok(true),
+        }
+        let mut listed = self
+            .git_process(
+                &top,
+                &[
+                    "ls-files",
+                    "-z",
+                    "--cached",
+                    "--others",
+                    "--exclude-standard",
+                    "--",
+                    ":(glob)**/.gitattributes",
+                ],
+                env.clone(),
+                GIT_OUTPUT_LIMIT,
+            )
+            .await?;
+        if !listed.success {
+            // An unreadable index (for example mid-recovery): the committed tree
+            // still lists the tracked attribute files without needing it.
+            listed = self
+                .git_process(
+                    &top,
+                    &[
+                        "ls-tree",
+                        "-r",
+                        "-z",
+                        "--name-only",
+                        "HEAD",
+                        "--",
+                        ":(glob)**/.gitattributes",
+                    ],
+                    env.clone(),
+                    GIT_OUTPUT_LIMIT,
+                )
+                .await?;
+        }
+        if !listed.success || listed.stdout_truncated {
+            return Ok(true);
+        }
+        for path in listed
+            .stdout
+            .split(|byte| *byte == 0)
+            .filter(|path| !path.is_empty())
+        {
+            let Ok(path) = std::str::from_utf8(path) else {
+                return Ok(true);
+            };
+            // A tracked file missing from the worktree still applies from the index.
+            sources.push((top.join(path), true));
+        }
+        for (source, required) in sources {
+            match std::fs::read(&source) {
+                Ok(bytes) => {
+                    let names = String::from_utf8_lossy(&bytes);
+                    if names
+                        .split_whitespace()
+                        .filter_map(|token| token.strip_prefix("filter="))
+                        .any(|name| drivers.contains(name))
+                    {
+                        return Ok(true);
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound && !required => {}
+                Err(_) => return Ok(true),
+            }
+        }
+        Ok(false)
     }
 
     async fn git_process(
@@ -1542,6 +1706,62 @@ mod tests {
                 .unwrap()
                 .status_fingerprint
         );
+        std::fs::remove_dir_all(&workspace).unwrap();
+    }
+
+    #[tokio::test]
+    async fn configured_filters_that_no_attribute_names_do_not_block_collection() {
+        let Some(provider) = GitWorkspaceContextProvider::discover() else {
+            return;
+        };
+        let workspace = temporary_workspace("git-filter-unused");
+        std::fs::create_dir_all(workspace.join("sub")).unwrap();
+        run_git(&provider, &workspace, &["init", "--quiet"]);
+        // Like `git lfs install`: drivers configured, but this repository never uses them.
+        for driver in ["clean", "smudge", "process"] {
+            run_git(
+                &provider,
+                &workspace,
+                &[
+                    "config",
+                    &format!("filter.lfs.{driver}"),
+                    "printf invoked > filter-ran",
+                ],
+            );
+        }
+        std::fs::write(workspace.join(".gitattributes"), "*.bin binary\n").unwrap();
+        std::fs::write(workspace.join("content.txt"), "untracked content\n").unwrap();
+        let snapshot = provider.collect(workspace.to_str().unwrap()).await;
+        assert_eq!(snapshot.diagnostic, None);
+        assert!(snapshot.git_snapshot.is_some());
+        assert!(!workspace.join("filter-ran").exists());
+
+        // A nested attributes file, or a macro, that names the driver brings the guard back.
+        let expected = Some(WorkspaceCollectionDiagnostic {
+            kind: WorkspaceDiagnosticKind::ExternalFilterConfigured,
+        });
+        std::fs::write(workspace.join("sub/.gitattributes"), "*.psd filter=lfs\n").unwrap();
+        assert_eq!(
+            provider
+                .collect(workspace.to_str().unwrap())
+                .await
+                .diagnostic,
+            expected
+        );
+        std::fs::remove_file(workspace.join("sub/.gitattributes")).unwrap();
+        std::fs::write(
+            workspace.join(".gitattributes"),
+            "[attr]big filter=lfs\n*.psd big\n",
+        )
+        .unwrap();
+        assert_eq!(
+            provider
+                .collect(workspace.to_str().unwrap())
+                .await
+                .diagnostic,
+            expected
+        );
+        assert!(!workspace.join("filter-ran").exists());
         std::fs::remove_dir_all(&workspace).unwrap();
     }
 

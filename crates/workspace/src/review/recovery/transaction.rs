@@ -173,7 +173,21 @@ fn verify_attributes(
 // Directory sync only exists on Unix; the Result serves that path.
 #[cfg_attr(not(unix), allow(clippy::unnecessary_wraps))]
 pub(super) fn sync_directory(directory: &Dir) -> ReviewResult<()> {
-    #[cfg(unix)]
+    // On Linux cap-std may hold directories as O_PATH descriptors, which cannot
+    // be fsynced (EBADF). Open the same directory read-only just for the sync.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        use rustix::fs::{Mode, OFlags};
+        let readable = rustix::fs::openat(
+            directory,
+            ".",
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|_| "cannot open transaction directory for sync")?;
+        rustix::fs::fsync(&readable).map_err(|_| "cannot sync transaction directory")?;
+    }
+    #[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
     directory
         .try_clone()
         .map_err(|_| "cannot clone directory for sync")?
@@ -575,13 +589,7 @@ fn replace_with_pre_capture(
     directory
         .remove_dir(&transaction_name)
         .map_err(|_| "cannot clean transaction directory; recovery required")?;
-    #[cfg(unix)]
-    directory
-        .try_clone()
-        .map_err(|_| "cannot sync parent")?
-        .into_std_file()
-        .sync_all()
-        .map_err(|_| "cannot sync parent")?;
+    sync_directory(&directory).map_err(|_| "cannot sync parent")?;
     Ok(())
 }
 
