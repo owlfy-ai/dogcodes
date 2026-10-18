@@ -34,3 +34,32 @@
 验证：Rust 8 项安全/状态/持久化测试、1 项覆盖两个模式的独立 Cacophony 固定向量测试通过；Dart 3 项原生 FFI/身份存储/配对回执测试，连同前一轮 9 项合计 12 项通过（设置原生库路径，未跳过）；严格 Clippy 和 Flutter analyze 通过。跨仓 smoke 新增 encrypted 模式，通过真实本机中继完成握手、双向加密数据、重放拒绝与正常退出。服务未获得端点私钥。
 
 这一步仍不是手机到真实 PC 的可用配对：原生库尚未包进 iOS/Android，PC daemon 未接配对/网关，手机配对 UI 仍只读取邀请；官方服务能力继续返回 pairing/business=false。下一步固定端点库交付方式、原生打包与系统存储验收，再接 PC 的 PairedDevice 身份与真实会话闭环。先前“未完成”清单中端到端加密/配对状态指产品接入未完成；底层端点模块已有上述实现与证据。
+
+
+## 同日继续：原生打包、PC 网关与首条业务闭环
+
+以下进展更新前文的历史状态；不是全部远控需求完成。
+
+- 加密模块的规范源码移到 `crates/remote-endpoint`；PC 直接依赖安全 Rust API，不启用 FFI。App 保留同版本源码快照及逐文件 SHA-256，`tool/sync_endpoint.py --check` 验证一致；两仓可以独立构建，不使用本机绝对路径依赖。官方服务不链接端点库。
+- App 构建钩子自动生成 Android ARM64 `.so`、iOS device/simulator 静态库；产物忽略。iOS/Android 模拟器都已通过原生 Noise 握手/加密往返和真实系统安全存储读写测试。Android 当前仅 ARM64；其他 ABI 尚待适配。
+- 桌面偏好菜单新增「连接手机」：短期二维码、复制邀请链接、设备列表/撤销，关闭窗口使该窗口邀请失效。调试接入本机服务；正式版本只接受 HTTPS。密钥及主机路由令牌进入系统 keyring，公开配置和配对 journal 留在后台服务目录；损坏/不可读不会悄悄轮换身份。
+- daemon 自行维持出站在线通道与配对/重连连接，不依赖 React 窗口。官方服务新增无账号主机登记、在线通知、手机路由凭证与重连房间分配；持久化凭证摘要，不持端点私钥或会话正文。配对 journal 先持久化再发送加密 ACK；公钥固定与 Noise XXpsk3/XX 验证双方身份。
+- 远程业务走白名单：bootstrap、Agent/模型/权限目录、submission_intents、项目订阅、时间线、待审批及审批回执。仅受认证连接生成 `PairedDevice`，忽略手机自报 actor；不能远程调用 HostOnly/internal、传 daemon token 或直接 Put 原始提交意图。
+- 手机接入真实项目/会话、新会话发送、就绪且启用的 Agent、模型/思考强度、事件驱动时间线与权限审批。写前保存完整原请求/operationId，超时显示待核实；显式核实/重试使用原身份，放弃前先关闭原提交身份。审批保存原决定、版本和请求，失效时先建立旧决定栅栏。撤销禁止既有连接继续发起操作和交付结果；此前受理的任务仍由 PC 执行。
+- 业务 JSON 使用 4-byte 长度前缀/Noise 分块、8 MiB 上限、有界发送队列和并发限制；邀请入场时效与已连接通道期限分离，避免五分钟二维码到期时中断正常会话。u64 协议元数据转为十进制字符串，不递归改写用户 payload。订阅补齐全局游标，过滤项目事件并在拥塞时补页。
+
+### 本轮证据
+
+- 服务端 8 项 HTTP/WebSocket 整合测试、严格 Clippy 通过。
+- 手机 12 项普通 Dart/Widget 测试、3 项 macOS 原生 FFI 测试通过，Flutter analyze 无问题。
+- Android 模拟器及 iOS iPhone 18 Pro 模拟器的原生加密/系统安全存储 integration test 各通过 1 项；不代表相机真机、Windows/Linux keyring 或所有网络环境已验收。
+- PC 网关 4 项边界测试、Core 6 项审批相关测试通过；桌面配对测试覆盖 React StrictMode 下不会误取消当前邀请。桌面 TypeScript 类型检查通过。
+- `dogcodes-server/tools/gateway_smoke.py` 通过：真实隔离 SqliteStore/Core/提交服务、合成 Agent 驱动，手机 Dart 使用生产加密/请求实现完成配对→发送→流式→审批→重连→撤销；证据检查只执行一次任务。使用临时目录/端口/身份，不读取用户数据库、密钥或真实模型账号。
+
+复现：先用 `cargo build -p desktop --features remote-acceptance --bin remote-acceptance --locked` 构建专用测试入口，再按 server README 执行 gateway_smoke。该二进制与正常 desktop 分离，要求临时目录标记；不会因普通构建覆盖入口而误启动主程序。
+
+### 使用与后续
+
+本机服务运行方式、两模拟器配对步骤见 `../dogcodes-app/README.md` 和 `../dogcodes-server/README.md`（从对应仓库根目录读取）。PC 使用更新后的开发版本，偏好菜单打开「连接手机」。旧后台 daemon 若仍在执行任务，应等待空闲后正常退出/重开以载入新增网关，不强停任务。
+
+尚待：官方公网 TLS 部署/准入与地区实测、真实 Agent 与真机联调、首次配对 ACK 丢失后的原邀请在线回执查询（目前需重新生成二维码）、结构化问答表单、多端竞争专项、草稿接入/离线缓存、完整会话管理、Diff/Git、文件附件、终端/运行/网页预览、推送、四平台画面/键鼠/剪贴板/多屏。服务能力 pairing=true 表示路由与端点配对已接入；business=false 指云服务不提供 PC 业务端点，并非手机不能调用 PC Core。remoteDesktop=false。

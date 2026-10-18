@@ -1,3 +1,4 @@
+import { RemoteDevices } from "./RemoteDevices";
 import { AttachmentUploadRecovery } from "./AttachmentUploadRecovery";
 import {
   type UiLanguage,
@@ -213,6 +214,7 @@ function PreferencesMenu({
   onLanguage,
   onTheme,
   onScale,
+  onRemote,
   anchorRef,
   popoverRef,
 }: {
@@ -226,6 +228,7 @@ function PreferencesMenu({
   onToggle: (section: Exclude<PreferencesSection, null>) => void;
   onLanguage: (value: UiLanguage) => void;
   onTheme: (value: UiTheme) => void;
+  onRemote: () => void;
   onScale: (value: ScaleAction) => void;
 }) {
   const labels = getPreferenceLabels(language);
@@ -289,6 +292,7 @@ function PreferencesMenu({
       <button type="button" role="menuitem" className={section === "scale" ? "selected" : ""} onClick={() => onToggle("scale")}>
         <PreferencesIcon kind="scale" /><span>{labels.scale}</span><span aria-hidden="true">›</span>
       </button>
+      <button type="button" role="menuitem" onClick={onRemote}><span aria-hidden="true">▣</span><span>连接手机</span></button>
       {optionMenu}
     </div>,
     document.body,
@@ -390,6 +394,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [loadedTaskId, setLoadedTaskId] = useState<TaskId | null>(null);
   const [timelineError, setTimelineError] = useState<string | null>(null);
+  const [remoteOpen, setRemoteOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<PreferencesSection>(null);
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>(() => readPreference("dogcodes.ui.language", "system"));
@@ -1152,6 +1157,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             onToggle={(next) => setPreferencesSection((current) => current === next ? null : next)}
             onLanguage={(next) => { setUiLanguage(next); setPreferencesOpen(false); setPreferencesSection(null); }}
             onTheme={(next) => { setUiTheme(next); setPreferencesOpen(false); setPreferencesSection(null); }}
+            onRemote={() => { setPreferencesOpen(false); setRemoteOpen(true); }}
             onScale={action => setUiScale(current => adjustUiScale(current, action))}
           />
         </div>
@@ -1304,6 +1310,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         onEditProject={client.updateProject ? () => setEditingProject(selectedProject) : undefined} /></Suspense>}
       </div>
 
+      {remoteOpen && <RemoteDevices onClose={() => setRemoteOpen(false)} />}
       {editingProject && <ProjectDialog key={editingProject.projectId} client={client} project={editingProject}
         onClose={() => setEditingProject(null)} onReady={async () => { await refresh(); setEditingProject(null); }} />}
       {projectDialogOpen && <ProjectDialog

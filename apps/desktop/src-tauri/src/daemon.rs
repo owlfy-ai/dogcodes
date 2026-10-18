@@ -1,5 +1,6 @@
 //! Versioned local desktop RPC. Execution ownership stays in the service.
 mod access;
+mod remote;
 mod review_watch;
 mod startup;
 mod workspace;
@@ -89,6 +90,9 @@ impl CoreClient {
                 _directory: None,
             }),
         ))
+    }
+    pub async fn remote_control(&self, call: Value) -> Result<Value, String> {
+        self.call("remote_control", call).await
     }
     async fn connect(&self, method: &str, args: Value) -> Result<TcpStream, String> {
         let directory = match self {
@@ -1154,6 +1158,7 @@ async fn read_frame<T: DeserializeOwned>(stream: &mut TcpStream) -> Result<T, St
     serde_json::from_slice(&bytes).map_err(|e| e.to_string())
 }
 struct ServiceControl {
+    remote: Arc<remote::RemoteHost>,
     submissions: crate::submission_intents::SubmissionIntents,
     attachments: Arc<crate::attachment_service::AttachmentStore>,
     review: crate::review::ReviewHost,
@@ -1176,6 +1181,7 @@ impl ServiceControl {
             crate::project_runs::ProjectRunHost::new(directory.join("project-runs"));
         project_runs.changes = changes.clone();
         Self {
+            remote: Arc::new(remote::RemoteHost::new(directory.join("remote"))),
             submissions: crate::submission_intents::SubmissionIntents::new(
                 directory.join("submission-intents"),
             ),
@@ -1343,6 +1349,14 @@ async fn serve_connection(
         .map_err(|_| "request timeout")??;
     if request.version != VERSION || request.token != *token {
         return Err("unauthorized service connection".into());
+    }
+    if request.method == "remote_control" {
+        let result = control
+            .remote
+            .clone()
+            .call(&core, &control, request.args)
+            .await;
+        return write_frame(&mut stream, &result).await;
     }
     // Only classified methods are served; see access.rs.
     if access::method_access(&request.method).is_none() {
@@ -1707,6 +1721,11 @@ async fn run_service(directory: PathBuf) -> Result<(), String> {
         }
     }
     let control = Arc::new(ServiceControl::new(&directory));
+    remote::restore(
+        control.remote.clone(),
+        core.clone(),
+        Arc::downgrade(&control),
+    );
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| e.to_string())?;
@@ -1797,6 +1816,26 @@ pub(crate) fn record_frontend_startup(directory: &Path, stage: &str, elapsed_ms:
             elapsed_ms
         );
     }
+}
+
+#[cfg(feature = "remote-acceptance")]
+pub fn run_remote_acceptance_if_requested() -> bool {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) != Some("--remote-acceptance") {
+        return false;
+    }
+    let result = (|| {
+        let service = args.get(2).ok_or("missing service")?.clone();
+        let directory = PathBuf::from(args.get(3).ok_or("missing directory")?);
+        tokio::runtime::Runtime::new()
+            .map_err(|e| e.to_string())?
+            .block_on(remote::acceptance_run(service, directory))
+    })();
+    if let Err(error) = result {
+        eprintln!("isolated remote acceptance: {error}");
+        std::process::exit(1);
+    }
+    true
 }
 
 #[cfg(test)]

@@ -1,0 +1,45 @@
+.remote-modal-backdrop{position:fixed;
+  inset:0;
+  z-index:1000;
+  background:#0005;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px}
+.remote-modal{background:var(--panel-bg,var(--bg,#fff));
+  color:var(--text-primary,#222);
+  border:1px solid var(--border,#ddd);
+  border-radius:18px;
+  padding:24px;
+  width:480px;
+  max-width:100%;
+  max-height:90vh;
+  overflow:auto;
+  box-shadow:0 12px 60px #0003}
+.remote-modal header,.remote-device{display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px}
+.remote-modal h2{margin:0}
+.remote-modal p{line-height:1.6}
+.remote-modal input{width:100%;
+  margin:8px 0 16px;
+  padding:9px;
+  box-sizing:border-box}
+.remote-modal button{cursor:pointer;
+  padding:7px 12px;
+  border:1px solid var(--border,#ccc);
+  border-radius:8px}
+.remote-modal button:disabled{cursor:default;
+  opacity:.5}
+.remote-qr{display:flex;
+  align-items:center;
+  flex-direction:column;
+  margin:18px 0;
+  gap:8px}
+.remote-qr img{width:300px;
+  max-width:100%;
+  background:white;
+  border-radius:10px}
+.remote-device{padding:12px 0;
+  border-top:1px solid var(--border,#ddd)}

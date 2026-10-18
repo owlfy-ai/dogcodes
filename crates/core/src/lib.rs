@@ -1216,9 +1216,12 @@ impl Core {
                 }
             }
             CoreCommand::RespondToApproval(command) => {
-                if envelope.actor != ActorRef::LocalUser {
+                if !matches!(
+                    envelope.actor,
+                    ActorRef::LocalUser | ActorRef::PairedDevice(_)
+                ) {
                     return Err(CoreError::InvalidArgument(
-                        "approvals may only be answered by the local user".into(),
+                        "approvals require an authenticated user or paired device".into(),
                     ));
                 }
                 if envelope.expected_stream_version.is_none() {

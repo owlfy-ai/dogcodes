@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/remote-endpoint",
   "crates/domain",
   "crates/protocol",
   "crates/driver-api",

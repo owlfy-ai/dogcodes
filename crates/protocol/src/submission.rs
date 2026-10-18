@@ -38,6 +38,8 @@ pub struct SubmissionContext {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SubmissionIntent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<crate::ActorRef>,
     pub schema_version: u8,
     pub operation_id: CommandId,
     pub scope: String,
