@@ -153,10 +153,17 @@ img.agent-icon { display: block; object-fit: contain; object-position: center; }
 .agent-state { width: calc(7px * var(--ui-scale)); height: calc(7px * var(--ui-scale)); display: inline-block; border-radius: 50%; background: #8b6f48; box-shadow: 0 0 0 3px #8b6f4820; }
 .agent-state.ready { background: #61ba72; box-shadow: 0 0 0 3px #61ba7220; }
 .sidebar-preferences { position: relative; flex: none; display: flex; align-items: center; min-height: 38px; margin: 6px 0 0; padding-top: 6px; border-top: 1px solid #3a3937; }
-.preferences-trigger { width: calc(34px * var(--ui-scale)); height: calc(32px * var(--ui-scale)); display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
+/* Footer: app identity on the left, preferences affordance on the right; the menu floats above it. */
+.preferences-trigger { width: 100%; height: calc(36px * var(--ui-scale)); display: flex; align-items: center; gap: 9px; padding: 0 8px 0 6px; border: 0; border-radius: 8px; color: inherit; background: transparent; text-align: left; cursor: pointer; transition: background-color .12s; }
+.preferences-trigger:focus-visible { outline: 2px solid var(--sidebar-icon-hover); outline-offset: -2px; }
+.preferences-trigger .brand-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8125rem; font-weight: 600; letter-spacing: .01em; opacity: .8; transition: opacity .12s; }
+.preferences-trigger .preferences-gear { width: calc(16px * var(--ui-scale)); height: calc(16px * var(--ui-scale)); flex: none; color: var(--sidebar-icon-rest); transition: color .12s, transform .2s; }
+.preferences-trigger:is(:hover, :focus-visible, [aria-expanded="true"]) .brand-name { opacity: 1; }
+.preferences-trigger:is(:hover, :focus-visible, [aria-expanded="true"]) .preferences-gear { color: var(--sidebar-icon-hover); }
+.preferences-trigger[aria-expanded="true"] .preferences-gear { transform: rotate(30deg); }
 .preferences-trigger:hover, .preferences-trigger[aria-expanded="true"] { background: #353432; }
-.preferences-trigger .brand-mark { width: calc(30px * var(--ui-scale)); height: calc(30px * var(--ui-scale)); }
-.preferences-popover { position: absolute; left: 0; bottom: 42px; z-index: 30; width: 200px; padding: 5px; border: 1px solid #464541; border-radius: 11px; color: #e8e8e5; background: #242321; box-shadow: 0 18px 48px #0009; }
+.preferences-trigger .brand-mark { width: calc(22px * var(--ui-scale)); height: calc(22px * var(--ui-scale)); flex: none; border-radius: calc(6px * var(--ui-scale)); box-shadow: 0 0 0 1px #ffffff14, 0 1px 2px #0000004d; }
+.preferences-popover { position: fixed; z-index: 40; width: 200px; padding: 5px; border: 1px solid #464541; border-radius: 11px; color: #e8e8e5; background: #242321; box-shadow: 0 18px 48px #0009; }
 .preferences-popover > button, .preferences-submenu button { width: 100%; min-height: 31px; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 0 8px; border: 0; border-radius: 7px; color: inherit; background: transparent; font-size: calc(13px * var(--ui-scale)); text-align: left; cursor: pointer; }
 .preferences-popover > button:hover, .preferences-popover > button.selected, .preferences-submenu button:hover { background: #363532; }
 .preferences-icon { color: #b0b0aa; font-size: calc(15px * var(--ui-scale)); line-height: 1; text-align: center; }

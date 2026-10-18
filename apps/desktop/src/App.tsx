@@ -47,7 +47,8 @@ import { StreamingTimeline, isTimelineDelta } from "./streamingTimeline";
 import { ConversationPages } from "./ConversationPages";
 import { StreamingMarkdownMessage } from "./MarkdownMessage";
 import { ConversationContent, SubagentPanel, activityOf } from "./ConversationActivity";
-import { lazy, memo, Suspense, Fragment, type ReactNode, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, memo, Suspense, Fragment, type ReactNode, type RefObject, FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { adjustUiScale, parseUiScale, scaleShortcut, MIN_UI_SCALE, MAX_UI_SCALE, type ScaleAction } from "./uiScale";
 import type {
   BootstrapSnapshot,
@@ -239,7 +240,11 @@ function PreferencesMenu({
   onLanguage,
   onTheme,
   onScale,
+  anchorRef,
+  popoverRef,
 }: {
+  anchorRef: RefObject<HTMLElement | null>;
+  popoverRef: RefObject<HTMLDivElement | null>;
   open: boolean;
   section: PreferencesSection;
   language: UiLanguage;
@@ -253,7 +258,19 @@ function PreferencesMenu({
   const english = isEnglishLanguage(language);
   const labels = english ? preferenceLabels.en : preferenceLabels.zh;
   const modifier = isMacPlatform() ? "⌘" : "Ctrl";
-  if (!open) return null;
+  const [position, setPosition] = useState<{ left: number; bottom: number; width: number } | null>(null);
+  // Float above the footer row in the document layer, never inside the footer itself.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const anchor = anchorRef.current?.getBoundingClientRect();
+      if (anchor) setPosition({ left: anchor.left, bottom: window.innerHeight - anchor.top + 6, width: Math.max(200, anchor.width) });
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open, anchorRef]);
+  if (!open || !position) return null;
 
   const optionMenu = section === "language" ? (
     <div className="preferences-submenu" role="menu" aria-label={labels.language}>
@@ -293,8 +310,8 @@ function PreferencesMenu({
     </div>
   ) : null;
 
-  return (
-    <div className="preferences-popover" role="menu">
+  return createPortal(
+    <div ref={popoverRef} className="preferences-popover" role="menu" style={{ left: position.left, bottom: position.bottom, width: position.width }}>
       <button type="button" role="menuitem" className={section === "language" ? "selected" : ""} onClick={() => onToggle("language")}>
         <PreferencesIcon kind="language" /><span>{labels.language}</span><span aria-hidden="true">›</span>
       </button>
@@ -305,7 +322,8 @@ function PreferencesMenu({
         <PreferencesIcon kind="scale" /><span>{labels.scale}</span><span aria-hidden="true">›</span>
       </button>
       {optionMenu}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -410,6 +428,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const [uiTheme, setUiTheme] = useState<UiTheme>(() => readPreference("dogcodes.ui.theme", "system"));
   const [uiScale, setUiScale] = useState(() => parseUiScale(readPreference("dogcodes.ui.scale", "100")));
   const preferencesRef = useRef<HTMLDivElement | null>(null);
+  const preferencesPopoverRef = useRef<HTMLDivElement | null>(null);
   const newConversationButton = useRef<HTMLButtonElement | null>(null);
   const quotaButton = useRef<HTMLButtonElement | null>(null);
   const shortcutModifier = isMacPlatform() ? "⌘" : "Ctrl";
@@ -449,23 +468,29 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
 
   useEffect(() => {
     if (!preferencesOpen) return;
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      if (preferencesRef.current && !preferencesRef.current.contains(event.target as Node)) {
-        setPreferencesOpen(false);
-        setPreferencesSection(null);
-      }
-    };
+    const close = () => { setPreferencesOpen(false); setPreferencesSection(null); };
+    const inside = (target: EventTarget | null) => target instanceof Node
+      && (!!preferencesRef.current?.contains(target) || !!preferencesPopoverRef.current?.contains(target));
+    // Capture phase: elements that stop propagation (drag regions, rows) still close it.
+    const closeOnOutsidePointer = (event: PointerEvent) => { if (!inside(event.target)) close(); };
+    // Keyboard focus moving elsewhere also ends the menu.
+    const closeOnOutsideFocus = (event: FocusEvent) => { if (!inside(event.target)) close(); };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setPreferencesOpen(false);
       setPreferencesSection(null);
       preferencesRef.current?.querySelector<HTMLButtonElement>(".preferences-trigger")?.focus();
     };
-    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    document.addEventListener("focusin", closeOnOutsideFocus);
     document.addEventListener("keydown", closeOnEscape);
+    // Clicking outside the app window (or switching apps) blurs the window.
+    window.addEventListener("blur", close);
     return () => {
-      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+      document.removeEventListener("focusin", closeOnOutsideFocus);
       document.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("blur", close);
     };
   }, [preferencesOpen]);
 
@@ -1142,8 +1167,12 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             }}
           >
             <img className="brand-mark" src={appLogo} alt="" aria-hidden="true" draggable={false} />
+            <span className="brand-name">dogcodes</span>
+            <svg className="preferences-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>
           </button>
           <PreferencesMenu
+            anchorRef={preferencesRef}
+            popoverRef={preferencesPopoverRef}
             open={preferencesOpen}
             section={preferencesSection}
             language={uiLanguage}
