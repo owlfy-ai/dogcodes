@@ -247,23 +247,30 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let prefix = dir.path().join("node installation");
             let name = super::super::package(provider).unwrap();
-            let package = prefix.join("lib/node_modules").join(name);
+            let modules = prefix.join(if cfg!(windows) {
+                "node_modules"
+            } else {
+                "lib/node_modules"
+            });
+            let node = prefix.join(if cfg!(windows) {
+                "node.exe"
+            } else {
+                "bin/node"
+            });
+            let package = modules.join(name);
             let executable = package.join("bin/agent.js");
             write(&executable, "");
             write(
                 &package.join("package.json"),
                 &serde_json::json!({"name":name}).to_string(),
             );
-            write(&prefix.join("bin/node"), "");
-            write(&prefix.join("lib/node_modules/npm/bin/npm-cli.js"), "");
+            write(&node, "");
+            write(&modules.join("npm/bin/npm-cli.js"), "");
             let i = installation_for(provider, &executable, "1.0.0");
             let p = plan(&i);
             assert!(matches!(p, Plan::Npm { .. }));
             let s = super::super::install_spec(&i, &p, "1.1.0").unwrap();
-            assert_eq!(
-                s.executable,
-                prefix.join("bin/node").canonicalize().unwrap()
-            );
+            assert_eq!(s.executable, node.canonicalize().unwrap());
             assert!(s.args.contains(&format!("{name}@1.1.0")));
             assert!(
                 s.args.contains(

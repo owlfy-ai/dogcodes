@@ -1806,6 +1806,11 @@ mod tests {
     #[tokio::test]
     async fn all_modes_read_only_changed_blobs_in_large_trees() {
         let repo = repository();
+        let changed = if cfg!(windows) {
+            "changed file"
+        } else {
+            "changed\nfile"
+        };
         let data = tempfile::tempdir().unwrap();
         let store = ReviewStore::open(data.path().into()).unwrap();
         let service = GitReview::default();
@@ -1817,11 +1822,11 @@ mod tests {
             vec![b'x'; MAX_BYTES + 1],
         )
         .unwrap();
-        fs::write(repo.path().join("changed\nfile"), "before\n").unwrap();
+        fs::write(repo.path().join(changed), "before\n").unwrap();
         git(repo.path(), &["add", "."]);
         git(repo.path(), &["commit", "-m", "large baseline"]);
         git(repo.path(), &["branch", "baseline"]);
-        fs::write(repo.path().join("changed\nfile"), "after\n").unwrap();
+        fs::write(repo.path().join(changed), "after\n").unwrap();
         git(repo.path(), &["add", "."]);
         let root = service
             .discover(&[repo.path().to_str().unwrap().into()])
@@ -1833,13 +1838,13 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(staged.changes.len(), 1);
-        assert_eq!(staged.changes[0].path, "changed\nfile");
+        assert_eq!(staged.changes[0].path, changed);
         assert_eq!(service.blobs.lock().unwrap().len(), 2);
         service
             .change_index(
                 "task",
                 &staged,
-                "changed\nfile",
+                changed,
                 operations::IndexAction::Unstage,
                 &store,
             )
@@ -1853,14 +1858,11 @@ mod tests {
                 .changes
                 .is_empty()
         );
-        assert_eq!(
-            fs::read(repo.path().join("changed\nfile")).unwrap(),
-            b"after\n"
-        );
+        assert_eq!(fs::read(repo.path().join(changed)).unwrap(), b"after\n");
         for mode in [CompareMode::Uncommitted, CompareMode::Unstaged] {
             let comparison = service.compare(&root, mode, None, 0, &store).await.unwrap();
             assert_eq!(comparison.changes.len(), 1);
-            assert_eq!(comparison.changes[0].path, "changed\nfile");
+            assert_eq!(comparison.changes[0].path, changed);
         }
         git(repo.path(), &["add", "."]);
         git(repo.path(), &["commit", "-m", "one change"]);
@@ -1873,7 +1875,7 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(comparison.changes.len(), 1);
-            assert_eq!(comparison.changes[0].path, "changed\nfile");
+            assert_eq!(comparison.changes[0].path, changed);
             assert_eq!(
                 store
                     .read_blob(&comparison.changes[0].before.as_ref().unwrap().hash)

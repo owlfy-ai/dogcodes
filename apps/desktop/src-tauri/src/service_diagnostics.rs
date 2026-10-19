@@ -79,7 +79,9 @@ impl ServiceLog {
             uuid::Uuid::new_v4()
         ));
         let file = private_file(&path)?;
-        file.try_lock()?;
+        // Keep cleanup's exclusive lock out while allowing diagnostic readers
+        // to export the active log on Windows (exclusive byte locks block reads).
+        file.try_lock_shared()?;
         prune(&directory);
         Ok(Self {
             file: Mutex::new(file),

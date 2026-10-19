@@ -588,5 +588,11 @@ async fn builtin_history_tools_are_approved_once_but_external_tools_still_requir
     })
     .await
     .unwrap();
-    assert!(tokio::net::TcpStream::connect(&mcp.args[1]).await.is_err());
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while tokio::net::TcpStream::connect(&mcp.args[1]).await.is_ok() {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
 }

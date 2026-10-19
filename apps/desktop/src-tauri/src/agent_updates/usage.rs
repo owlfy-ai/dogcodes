@@ -488,48 +488,44 @@ mod tests {
     }
     #[test]
     fn script_matching_never_uses_prompt_text_or_other_installations() {
+        let root = tempfile::tempdir().unwrap();
+        let package = root.path().join("node/lib/node_modules/agent");
+        let script = package.join("bin/agent.js");
+        let script_text = script.to_str().unwrap();
         let scope = Scope {
-            executable: "/opt/node/lib/node_modules/agent/bin/agent.js".into(),
-            directory: Some("/opt/node/lib/node_modules/agent".into()),
+            executable: script.clone(),
+            directory: Some(package),
         };
-        let node = Path::new("/opt/node/bin/node");
+        let node = root.path().join("node/bin/node");
         let args = |args: &[&str]| {
             args.iter()
                 .map(std::ffi::OsString::from)
                 .collect::<Vec<_>>()
         };
         assert!(scope.matches_command(
-            Some(node),
-            &args(&[
-                "node",
-                "--use-system-ca",
-                "/opt/node/lib/node_modules/agent/bin/agent.js",
-                "--acp"
-            ])
+            Some(&node),
+            &args(&["node", "--use-system-ca", script_text, "--acp"])
         ));
         assert!(!scope.matches_command(
-            Some(node),
+            Some(&node),
             &args(&[
                 "node",
-                "/other/app.js",
-                "/opt/node/lib/node_modules/agent/bin/agent.js"
+                root.path().join("other/app.js").to_str().unwrap(),
+                script_text
             ])
         ));
-        assert!(!scope.matches_command(
-            Some(node),
-            &args(&[
-                "node",
-                "-e",
-                "/opt/node/lib/node_modules/agent/bin/agent.js"
-            ])
-        ));
+        assert!(!scope.matches_command(Some(&node), &args(&["node", "-e", script_text])));
         assert!(!scope.matches_command(
             Some(Path::new("/bin/sh")),
-            &args(&["sh", "-c", "/opt/node/lib/node_modules/agent/bin/agent.js"])
+            &args(&["sh", "-c", script_text])
         ));
-        assert!(!scope.contains(Path::new(
-            "/opt/node/lib/node_modules/agent-other/bin/agent.js"
-        )));
+        assert!(
+            !scope.contains(
+                &root
+                    .path()
+                    .join("node/lib/node_modules/agent-other/bin/agent.js")
+            )
+        );
     }
 
     #[test]

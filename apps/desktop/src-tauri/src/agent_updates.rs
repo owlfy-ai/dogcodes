@@ -1111,6 +1111,7 @@ mod tests {
         assert!(!message.contains("private"));
         assert!(!message.contains("remove"));
     }
+    #[cfg(unix)]
     #[test]
     fn codebuddy_homebrew_uses_official_formula() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1139,14 +1140,24 @@ mod tests {
     fn npm_updates_exact_prefix_and_rejects_foreign_package() {
         let tmp = tempfile::tempdir().unwrap();
         let prefix = tmp.path().join("node version");
-        let pkg = prefix.join("lib/node_modules/@tencent-ai/codebuddy-code");
+        let modules = prefix.join(if cfg!(windows) {
+            "node_modules"
+        } else {
+            "lib/node_modules"
+        });
+        let node = prefix.join(if cfg!(windows) {
+            "node.exe"
+        } else {
+            "bin/node"
+        });
+        let pkg = modules.join("@tencent-ai/codebuddy-code");
         std::fs::create_dir_all(&pkg).unwrap();
         std::fs::create_dir_all(prefix.join("bin")).unwrap();
-        std::fs::create_dir_all(prefix.join("lib/node_modules/npm/bin")).unwrap();
+        std::fs::create_dir_all(modules.join("npm/bin")).unwrap();
         for f in [
             pkg.join("cli.js"),
-            prefix.join("bin/node"),
-            prefix.join("lib/node_modules/npm/bin/npm-cli.js"),
+            node.clone(),
+            modules.join("npm/bin/npm-cli.js"),
         ] {
             std::fs::write(f, "").unwrap();
         }
@@ -1158,10 +1169,7 @@ mod tests {
         let i = installation_for("codebuddy", &pkg.join("cli.js"), "2.0.0");
         let p = plan(&i);
         let s = install_spec(&i, &p, "2.1.0").unwrap();
-        assert_eq!(
-            s.executable,
-            prefix.join("bin/node").canonicalize().unwrap()
-        );
+        assert_eq!(s.executable, node.canonicalize().unwrap());
         assert!(
             s.args.contains(
                 &prefix

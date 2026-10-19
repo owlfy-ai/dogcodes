@@ -82,12 +82,14 @@ impl ProviderManifest {
                 )));
             }
         }
-        for path in self.discovery.platform_paths.values().flatten() {
-            if !path.is_absolute() {
-                return Err(RegistryError::InvalidManifest(format!(
-                    "platform path {} must be absolute",
-                    path.display()
-                )));
+        for (platform, paths) in &self.discovery.platform_paths {
+            for path in paths {
+                if !platform.absolute_path(path) {
+                    return Err(RegistryError::InvalidManifest(format!(
+                        "platform path {} must be absolute",
+                        path.display()
+                    )));
+                }
             }
         }
         for path in self.discovery.user_paths.values().flatten() {
@@ -255,6 +257,31 @@ pub enum Platform {
 }
 
 impl Platform {
+    fn absolute_path(self, path: &Path) -> bool {
+        let Some(path) = path.to_str() else {
+            return false;
+        };
+        match self {
+            Self::Macos | Self::Linux => path.starts_with('/'),
+            Self::Windows => {
+                let bytes = path.as_bytes();
+                (bytes.len() >= 3
+                    && bytes[0].is_ascii_alphabetic()
+                    && bytes[1] == b':'
+                    && matches!(bytes[2], b'/' | b'\\'))
+                    || path
+                        .strip_prefix("\\\\")
+                        .or_else(|| path.strip_prefix("//"))
+                        .is_some_and(|tail| {
+                            tail.split(['/', '\\'])
+                                .filter(|part| !part.is_empty())
+                                .count()
+                                >= 2
+                        })
+            }
+        }
+    }
+
     #[must_use]
     pub const fn current() -> Self {
         if cfg!(target_os = "macos") {
@@ -666,6 +693,30 @@ mod tests {
     use super::*;
 
     const CODEX_MANIFEST: &str = include_str!("../../../drivers/manifests/codex.toml");
+
+    #[test]
+    fn manifest_paths_use_the_declared_platforms_rules() {
+        for platform in [Platform::Macos, Platform::Linux] {
+            assert!(platform.absolute_path(Path::new("/usr/local/bin/agent")));
+            assert!(!platform.absolute_path(Path::new("bin/agent")));
+            assert!(!platform.absolute_path(Path::new(r"C:\Tools\agent.exe")));
+        }
+        for path in [
+            r"C:\Tools\agent.exe",
+            "C:/Tools/agent.exe",
+            r"\\server\share\agent.exe",
+        ] {
+            assert!(Platform::Windows.absolute_path(Path::new(path)));
+        }
+        for path in [
+            "/usr/bin/agent",
+            r"\Tools\agent.exe",
+            "C:agent.exe",
+            "agent.exe",
+        ] {
+            assert!(!Platform::Windows.absolute_path(Path::new(path)));
+        }
+    }
 
     #[test]
     fn parses_and_validates_the_codex_manifest() {
