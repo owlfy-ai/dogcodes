@@ -176,8 +176,40 @@ async fn terminal_host_stop_is_available_while_input_is_blocked() {
         .unwrap()
         .unwrap();
     finished(&host, &info.id).await;
-    // Killing the process also releases the blocked writer. Its uncertain input
-    // result is never retried by the service.
+    // Stop cancels backpressured input even on Linux, where killing the slave
+    // alone does not reliably release a blocking PTY write. Never replay it.
+    let _ = tokio::time::timeout(Duration::from_secs(3), writer)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn terminal_host_child_exit_releases_backpressured_input() {
+    let root = tempfile::tempdir().unwrap();
+    let host = Arc::new(TerminalHost::default());
+    let info = host.start_resolved(intent(root.path(), Some(
+        "stty -echo -icanon; printf 'READY\\n'; while [ ! -e exit-request ]; do sleep 0.01; done"
+    )), None).await.unwrap();
+    read_until(&host, &info.id, "READY").await;
+    let writing = host.clone();
+    let id = info.id.clone();
+    let writer = tokio::spawn(async move { writing.write(&id, vec![b'x'; READ_LIMIT]).await });
+    let session = host.session(&info.id).unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while session.input.try_lock().is_ok() {
+            assert!(!writer.is_finished(), "fixture must fill the input buffer");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    std::fs::write(root.path().join("exit-request"), b"exit").unwrap();
+    assert_eq!(
+        finished(&host, &info.id).await.status,
+        TerminalStatus::Exited
+    );
     let _ = tokio::time::timeout(Duration::from_secs(3), writer)
         .await
         .unwrap()

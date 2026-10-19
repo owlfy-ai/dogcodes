@@ -578,13 +578,27 @@ impl TerminalHost {
             if session.info()?.status != TerminalStatus::Running {
                 return Err("终端未运行，未重放输入".into());
             }
-            // A full PTY input buffer must not hold the process lock: stopping
-            // the child remains possible and releases a blocked write.
+            // Linux may leave a blocking PTY write asleep even after the slave
+            // dies. Nonblocking writes must observe stop between partial writes.
             let mut input = session.input.lock().map_err(|_| "终端输入不可用")?;
             let writer = input.as_mut().ok_or("终端未运行，未重放输入")?;
+            let mut remaining = bytes.as_slice();
+            while !remaining.is_empty() {
+                if session.info()?.status != TerminalStatus::Running {
+                    return Err("终端已停止，输入结果无法确认，未重放输入".into());
+                }
+                match writer.write(remaining) {
+                    Ok(0) => return Err("终端输入未完成，未重放输入".into()),
+                    Ok(count) => remaining = &remaining[count..],
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => return Err(format!("终端输入结果无法确认，未重放输入：{error}")),
+                }
+            }
             writer
-                .write_all(&bytes)
-                .and_then(|()| writer.flush())
+                .flush()
                 .map_err(|error| format!("终端输入结果无法确认，未重放输入：{error}"))
         })
         .await
@@ -722,6 +736,17 @@ fn spawn(
     let pair = native_pty_system()
         .openpty(dimensions)
         .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    {
+        use nix::fcntl::{FcntlArg, OFlag, fcntl};
+        let fd = pair.master.as_raw_fd().ok_or("终端不支持可中断输入")?;
+        let flags = fcntl(fd, FcntlArg::F_GETFL).map_err(|e| e.to_string())?;
+        fcntl(
+            fd,
+            FcntlArg::F_SETFL(OFlag::from_bits_truncate(flags) | OFlag::O_NONBLOCK),
+        )
+        .map_err(|e| e.to_string())?;
+    }
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let mut command = command(session.intent.command.as_deref(), shell, &cwd);
@@ -765,6 +790,9 @@ fn spawn(
                     Ok(0) => break,
                     Ok(count) => session.append(&buffer[..count]),
                     Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
                     Err(_) => break,
                 }
             }
@@ -794,9 +822,6 @@ fn spawn(
                 }
                 std::thread::sleep(Duration::from_millis(10));
             };
-            if let Ok(mut input) = session.input.lock() {
-                input.take();
-            }
             if let Ok(mut output) = session.output.lock() {
                 output.info.status = TerminalStatus::Exited;
                 match status {
@@ -809,6 +834,11 @@ fn spawn(
                 if let Err(error) = save(directory.as_deref(), &session.intent, &output.info) {
                     output.info.error = Some(format!("进程已结束，但状态保存失败：{error}"));
                 }
+            }
+            // Publish exit before waiting for input: a nonblocking writer must
+            // see that the child died even when no explicit stop was requested.
+            if let Ok(mut input) = session.input.lock() {
+                input.take();
             }
             session.changed.notify_waiters();
             session.state_changes.changed();
