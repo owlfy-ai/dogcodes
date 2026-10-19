@@ -18,6 +18,7 @@ pub struct DiagnosticDirectory(pub PathBuf);
 struct ServiceLog {
     file: Mutex<File>,
     path: PathBuf,
+    _lease: File,
 }
 
 fn private_file(path: &Path) -> std::io::Result<File> {
@@ -54,12 +55,33 @@ fn log_files(directory: &Path) -> Vec<PathBuf> {
 
 fn prune(directory: &Path) {
     for path in log_files(directory).into_iter().skip(RETAINED_FILES) {
-        // Each live writer keeps its file locked. Never unlink a running service's log.
+        // Lease locks protect live writers without locking the data bytes:
+        // Windows shared byte locks also prohibit the writer's own writes.
+        let lease_path = path.with_extension("lock");
+        let Ok(lease) = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lease_path)
+        else {
+            continue;
+        };
+        if lease.try_lock().is_err() {
+            continue;
+        }
+        // Respect data-file locks held by older versions as well.
         if let Ok(file) = OpenOptions::new().read(true).write(true).open(&path)
             && file.try_lock().is_ok()
         {
             drop(file);
-            let _ = std::fs::remove_file(path);
+            if std::fs::remove_file(&path).is_ok()
+                && !path.with_extension("log").exists()
+                && !path.with_extension("previous").exists()
+            {
+                drop(lease);
+                let _ = std::fs::remove_file(lease_path);
+            }
         }
     }
 }
@@ -78,14 +100,22 @@ impl ServiceLog {
             std::process::id(),
             uuid::Uuid::new_v4()
         ));
-        let file = private_file(&path)?;
-        // Keep cleanup's exclusive lock out while allowing diagnostic readers
-        // to export the active log on Windows (exclusive byte locks block reads).
-        file.try_lock_shared()?;
+        let lease_path = path.with_extension("lock");
+        let lease = private_file(&lease_path)?;
+        lease.try_lock()?;
+        let file = match private_file(&path) {
+            Ok(file) => file,
+            Err(error) => {
+                drop(lease);
+                let _ = std::fs::remove_file(lease_path);
+                return Err(error);
+            }
+        };
         prune(&directory);
         Ok(Self {
             file: Mutex::new(file),
             path,
+            _lease: lease,
         })
     }
 
@@ -217,6 +247,17 @@ mod tests {
         assert!(active.path.exists());
         assert!(unrelated.exists());
         assert!(log_files(&directory.path().join("diagnostics")).len() <= RETAINED_FILES + 1);
+        let leases = std::fs::read_dir(directory.path().join("diagnostics"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .is_some_and(|extension| extension == "lock")
+            })
+            .count();
+        assert!(leases <= RETAINED_FILES + 1);
     }
 
     #[test]

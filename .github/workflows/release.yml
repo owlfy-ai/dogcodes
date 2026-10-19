@@ -61,6 +61,8 @@ jobs:
     timeout-minutes: 90
     env:
       CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -82,6 +84,8 @@ jobs:
           rustup target add ${{ matrix.target }}
       - run: pnpm check
       - run: cargo test --workspace --lib --tests --locked
+        env:
+          RUST_MIN_STACK: '16777216'
       - name: Build unsigned installer
         run: pnpm desktop:package --unsigned --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
       - uses: actions/upload-artifact@v7

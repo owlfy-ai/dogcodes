@@ -78,6 +78,7 @@ async fn repo(f: &Fixture) -> (PathBuf, ProjectId, TaskId) {
         vec!["config", "user.name", "Test"],
         vec!["config", "user.email", "test@example.invalid"],
         vec!["config", "commit.gpgsign", "false"],
+        vec!["config", "core.autocrlf", "false"],
     ] {
         git(&path, &args);
     }

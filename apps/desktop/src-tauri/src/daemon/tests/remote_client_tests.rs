@@ -3,7 +3,7 @@
 //! Tauri state or client-side storage is involved.
 use super::*;
 use crate::project_registry::ProjectRegistration;
-use crate::terminal_host::LaunchIntent;
+use crate::terminal_host::{LaunchIntent, TerminalStatus};
 use agent_domain::CommandId;
 use agent_protocol::{
     AgentPreferences,
@@ -83,6 +83,13 @@ async fn read_until(client: &CoreClient, id: &str, needle: &str) -> String {
             if text.contains(needle) {
                 return text;
             }
+            assert!(
+                matches!(
+                    batch.info.status,
+                    TerminalStatus::Starting | TerminalStatus::Running | TerminalStatus::Stopping
+                ),
+                "terminal exited before {needle}: {text}"
+            );
         }
     })
     .await
@@ -214,7 +221,11 @@ async fn a_second_protocol_client_drives_daily_work_and_shares_state_with_the_de
             command_id: None,
             label: "phone shell".into(),
             cwd: folder.canonicalize().unwrap(),
-            command: Some("printf 'READY\\n'; read line; stty size; printf 'DONE\\n'".into()),
+            command: Some(if cfg!(windows) {
+                "Write-Output 'READY'; $null = Read-Host; Write-Output ('{0} {1}' -f [Console]::WindowHeight, [Console]::WindowWidth); Write-Output 'DONE'"
+            } else {
+                "printf 'READY\\n'; read line; stty size; printf 'DONE\\n'"
+            }.into()),
             cols: 80,
             rows: 24,
         })
@@ -227,7 +238,14 @@ async fn a_second_protocol_client_drives_daily_work_and_shares_state_with_the_de
     let info = desktop.terminal_get(&terminal.id).await.unwrap();
     assert_eq!((info.cols, info.rows), (120, 40));
     desktop
-        .terminal_write(&terminal.id, b"go\n".to_vec())
+        .terminal_write(
+            &terminal.id,
+            if cfg!(windows) {
+                b"go\r".to_vec()
+            } else {
+                b"go\n".to_vec()
+            },
+        )
         .await
         .unwrap();
     assert!(

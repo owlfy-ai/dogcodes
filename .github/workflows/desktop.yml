@@ -81,6 +81,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Native unit and integration tests (real-provider tests remain opt-in)
+        timeout-minutes: 30
         shell: bash
         env:
           # Large debug async state machines exceed the Windows test-thread
