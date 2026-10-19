@@ -1,6 +1,14 @@
 # dogcodes 当前工作清单
 
-更新日期：2026-10-17。本文是当前完成状态、剩余工作与建议顺序的唯一维护入口。需求/详细设计说明产品及技术边界；实施记录保留各轮证据，不再单独决定当前排程。
+更新日期：2026-10-19。本文是当前完成状态、剩余工作与建议顺序的唯一维护入口。需求/详细设计说明产品及技术边界；实施记录保留各轮证据，不再单独决定当前排程。
+
+2026-10-19 测试与打包脚本清理：删除首次源码快照导出工具及其 6 项专属测试、已取消的依赖许可证生成器及 5 份无引用模板、按旧冻结材料规则断言的一次性审查验收脚本，共 9 个文件；同步移除已完成的首次公开操作说明。取消两个重复的签名命令别名，打包统一使用 `desktop:package` 的参数，端到端发行使用 `desktop:release`；源码输入保护、Mac/Windows 签名检查和实际打包/上传回归继续保留。截图、真实多 Agent 隔离验收和启动性能分析工具仍有当前调用或维护用途，未删除。剩余 32 项发布测试、发布输入检查、脚本路径/本地导入完整性及 diff 空白检查通过；历史验证数字仅作当时证据，本机配置、私有备份和既有产物未清理。
+
+2026-10-19 一键本地发行：新增 `pnpm desktop:release`，Mac 自动补齐双架构 Rust target 并构建签名/公证 DMG，Windows 构建 NSIS 并用 7-Zip 验证安装包内 EXE 与安装包的签名及时间戳；源码必须已提交推送且四处版本一致。成功打包后创建或复用同提交 tag、推送并等待 GitHub 草稿，再替换本机平台附件、校验公开签名回执、刷新五个安装包的 SHA256SUMS 和签名状态说明。跨机器更新以独占草稿附件锁串行化，拒绝移动 tag 和覆盖已公开版本；`--check` 只检查，`--upload-only` 可在同提交/包字节不变时继续，最终公开仍手动完成。同步修正草稿工作流的嵌套产物汇总及待签名说明。38 项发布脚本测试、发布输入检查通过，workflow YAML/嵌套五包汇总与哈希已用隔离夹具执行验证；GitHub 只读适配器检查通过。未实跑双平台签名发行或创建真实 tag/Release，详见 [一键发行说明](../release/README.md#one-command-on-each-signing-machine)。
+
+2026-10-19 本地发行签名配置：参照 DrillHUD 复用本机 Developer ID 与 notarytool Keychain profile，以及 Windows SimplySign 的当前证书指纹和 Certum RFC 3161 时间戳；具体值只写入 Git 忽略的 `release/.env.local` 和 `release/tauri.signing.local.json`，不复制或导出私钥。新增 `desktop:package --signed --check`、`desktop:package --signed`：Mac 支持钥匙串公证，检查身份/架构/应用标识和团队，App 与 DMG 分别公证、装订及系统评估后才导出；Windows 证书库路径先检查证书有效期、代码签名用途、私钥关联及 SignTool。23 项发布脚本测试与发布输入检查通过，本机 Apple 身份/profile 可用性检查通过；本轮未构建或提交真实公证，Windows 实际签名与三平台安装验收仍待执行。GitHub Release 流程保持显式未签名构建，本地配置不会自动传入 CI。使用方式见 [打包说明](../release/README.md#local-signing-configuration)。
+
+本机 Apple Silicon 目标检查通过，双架构检查发现缺少 `x86_64-apple-darwin` Rust target；本次官方源下载缓慢，已中止本轮新增的下载，未更改现有工具链。构建 Intel 包前需完成 `rustup target add x86_64-apple-darwin`。这不影响已核实的签名身份和公证 profile。
 
 2026-10-17 服务方法访问分类：`daemon/access.rs` 将全部服务方法归为读取/写入/订阅/仅限本机，服务入口拒绝未归类方法，测试扫描客户端调用点确保新增方法必须归类；为远程网关的方法白名单和设备权限映射提供可执行基础。desktop 227 项测试与严格 Clippy 通过。
 

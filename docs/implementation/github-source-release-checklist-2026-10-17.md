@@ -2,14 +2,16 @@
 
 日期：2026-10-17。对应 R2/R3 的源码部分。本文给出公开源码前已核实的项目、仍需维护者本人执行的动作，以及安装包首发前仍未完成的门槛。状态以 [当前工作清单](../CURRENT_WORK.md) 为准。
 
+2026-10-19 维护说明：首次源码公开已经完成，一次性快照导出工具及专属测试已删除；本文验证数字保留为历史证据。后续发布使用[既有仓库的一键发行流程](../../release/README.md#one-command-on-each-signing-machine)。
+
 ## 1. 已核实（源码可公开）
 
 | 项目 | 结果 |
 | --- | --- |
-| 发布范围 | 新仓库只公开整理后的快照，不带阿里云历史。快照由 `scripts/prepare-source-snapshot.mjs` 从**干净的 HEAD worktree** 导出，避免带入本机未提交改动；导出 1073 个文件并生成摘要清单 |
+| 发布范围 | 新仓库只公开整理后的快照，不带阿里云历史。当时的一次性工具从**干净的 HEAD worktree** 导出，避免带入本机未提交改动；导出 1073 个文件并生成摘要清单 |
 | 凭据与隐私 | 全部受跟踪文件按常见令牌格式（OpenAI/GitHub/AWS/Slack/Google、私钥块、JWT）扫描，仅命中脱敏模块与存储测试中的合成样例；本机用户名、邮箱和私有远端地址无命中；本机签名文件被忽略且发布输入检查通过 |
 | 仓库卫生 | 根目录只保留构建与说明文件；设计/验收文档在 `docs/`；与产品无关的页面已停止跟踪；全库 Markdown 相对链接无失效 |
-| 社区文件 | `LICENSE`（Apache-2.0）、`THIRD_PARTY_NOTICES.md`、`CONTRIBUTING.md`、`SECURITY.md`、Issue/PR 模板；九种 README 链接到贡献与安全说明 |
+| 社区文件 | `LICENSE`（Apache-2.0）、`CONTRIBUTING.md`、`SECURITY.md`、Issue/PR 模板；九种 README 链接到贡献与安全说明 |
 | 自动化 | `desktop.yml`：PR/推送时检查并构建三平台未签名安装包；`release.yml`：`v*` 标签校验四处版本一致，三平台构建、检查、测试并生成带校验和的草稿预发布。所用 `actions/*` 版本均已确认存在 |
 | 数据兼容 | 数据库格式号与“新格式只读拒绝、不修改”的规则已实现并写入 `release/README.md` |
 | 干净构建 | 最终提交 `d3dc07f` 已复验，见第 5 节：快照目录内冻结锁文件安装、前端检查、发布脚本测试、Rust 格式/严格 Clippy/全工作区测试的结果 |
@@ -18,21 +20,9 @@
 
 经维护者确认，源码已发布到 <https://github.com/owlfy-ai/dogcodes>（公开）。该仓库在 2026-10-16 已建好且为空，未覆盖任何内容。推送内容为提交 `d3dc07f` 的干净快照（1077 个文件，与第 5 节复验的快照逐文件一致，仅导出时间不同），作为 `main` 上的首个提交 `92fa973`；作者使用 GitHub noreply 邮箱，未公开个人邮箱。已开启 Private vulnerability reporting。首次推送触发 `Desktop checks and unsigned packages`（run 39076082426），结果见第 6 节。
 
-## 3. 原先需要维护者执行的动作
+## 3. 后续维护
 
-1. 在 GitHub 新建仓库并确定名称与可见性。
-2. 从干净 worktree 导出快照并推送（示例，路径按需调整）：
-
-   ```bash
-   git worktree add --detach ../dogcodes-release HEAD
-   cd ../dogcodes-release && node scripts/prepare-source-snapshot.mjs --output ../dogcodes-github
-   cd ../dogcodes-github && git init -b main && git add -A && git commit -m "Initial public source"
-   git remote add origin https://github.com/<owner>/<repo>.git && git push -u origin main
-   ```
-
-3. 在仓库设置中开启 **Private vulnerability reporting**（`SECURITY.md` 依赖它），按需设置 `main` 分支保护。
-4. 确认首次推送触发的 `Desktop checks and unsigned packages` 工作流在四个平台通过；失败时据日志修复后再公开宣传。
-5. README 中的截图位为 HTML 注释，不影响渲染；素材按 [README 维护](../README-MAINTENANCE.md) 由维护者补充。
+仓库创建、首次快照推送和 **Private vulnerability reporting** 已完成，无需重建仓库或重新导出快照。日常提交与版本发布沿用现有 GitHub 历史；素材按 [README 维护](../README-MAINTENANCE.md) 由维护者补充。
 
 ## 4. 安装包首发（R1/R3）仍未完成
 

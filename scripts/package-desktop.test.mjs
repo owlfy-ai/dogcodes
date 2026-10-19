@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
 import { prepareBuild, parseArguments, signingVariables } from './package-desktop.mjs';
 import { checkReleaseInputs, privateOrGeneratedPath } from './check-release-inputs.mjs';
+import { buildMacKeychainPackage, checkMacKeychain, macPackageOptions } from './signing-macos.mjs';
 
 test('release index guard catches force-added secrets and generated directories', () => {
   for (const path of ['.env', '.env.production', 'release/.env.local', 'any/config.local.json',
@@ -51,6 +52,90 @@ test('macOS signing requires a real identity and one complete notarization metho
   assert.throws(() => prepareBuild({ ...options, environment: { ...environment, APPLE_TEAM_ID: '' } }), /complete/);
   assert.throws(() => prepareBuild({ ...options, environment: { ...environment, APPLE_API_KEY: 'EXAMPLE' } }), /exactly one/);
   assert.throws(() => prepareBuild({ ...options, environment: { ...environment, APPLE_SIGNING_IDENTITY: '-' } }), /Developer ID/);
+});
+
+test('Keychain notarization accepts an installed identity without exporting credentials', () => {
+  const base = { platform: 'darwin', signed: true, environment: {},
+    localEnvironment: 'APPLE_NOTARY_PROFILE=ExampleProfile\nAPPLE_SIGNING_IDENTITY="Developer ID Application: Example (TEAM123)"' };
+  const result = prepareBuild(base);
+  assert.equal(result.config.bundle.macOS.hardenedRuntime, true);
+  assert.equal(result.env.APPLE_NOTARY_PROFILE, 'ExampleProfile');
+  assert.equal(result.env.APPLE_PASSWORD, undefined);
+  for (const key of ['APPLE_ID', 'APPLE_API_KEY', 'APPLE_CERTIFICATE']) {
+    assert.throws(() => prepareBuild({ ...base, environment: { [key]: 'private-secret' } }), /must not be combined/);
+  }
+  assert.throws(() => prepareBuild({ ...base, environment: { APPLE_SIGNING_IDENTITY: 'Apple Development: Example' } }), /full Developer ID/);
+  assert.deepEqual(parseArguments(['--signed', '--check']), { signed: true, forwarded: [], check: true });
+  assert.throws(() => parseArguments(['--check']), /requires --signed/);
+  assert.throws(() => parseArguments(['--signed', '--target', 'one', '--target', 'two']), /only once/);
+  assert.throws(() => macPackageOptions({ target: 'x86_64-pc-windows-msvc' }), /macOS Rust target/);
+  assert.throws(() => macPackageOptions({ bundles: 'nsis' }), /only app and dmg/);
+});
+
+test('Keychain preflight rejects missing identity and missing Rust targets without signing', async () => {
+  const base = { root: '.', env: { APPLE_NOTARY_PROFILE: 'ExampleProfile' },
+    config: { bundle: { macOS: { signingIdentity: 'Developer ID Application: Example (TEAM123)' } } },
+    target: 'universal-apple-darwin' };
+  await assert.rejects(checkMacKeychain({ ...base, capture: async () => '' }), /certificate AND private key/);
+  const calls = [];
+  await assert.rejects(checkMacKeychain({ ...base, capture: async (command, args) => {
+    calls.push([command, args]);
+    if (command === 'security') return '"Developer ID Application: Example (TEAM123)"';
+    if (command === 'rustup') return 'aarch64-apple-darwin\n';
+    return '{}';
+  } }), /rustup target add x86_64-apple-darwin/);
+  assert.equal(calls.some(([, args]) => args.includes('submit')), false);
+});
+
+test('Mac artifacts are exported only after app and DMG notarization, stapling and assessment succeed', async () => {
+  for (const failure of ['app-rejected', 'dmg-rejected', 'stapler-failed', 'architecture', null]) {
+    const root = mkdtempSync(resolve(tmpdir(), 'dogcodes-signing-'));
+    try {
+      const tauri = resolve(root, 'apps/desktop/src-tauri');
+      mkdirSync(tauri, { recursive: true });
+      writeFileSync(resolve(tauri, 'tauri.conf.json'), JSON.stringify({ productName: 'dog.codes', identifier: 'codes.dog.desktop', version: '0.1.0' }));
+      const calls = [];
+      let submissions = 0;
+      const parameters = { root, env: { APPLE_NOTARY_PROFILE: 'ExampleProfile' },
+        config: { bundle: { macOS: { signingIdentity: 'Developer ID Application: Example (TEAM123)' } } },
+        cli: 'tauri.js', configArgument: 'private.json', target: 'aarch64-apple-darwin',
+        run: async (command, args, options) => {
+          calls.push([command, args]);
+          if (command === process.execPath) {
+            assert.equal(options.env.APPLE_NOTARY_PROFILE, undefined);
+            assert.equal(args[args.indexOf('--bundles') + 1], 'app');
+          }
+          if (command === 'hdiutil') writeFileSync(args.at(-1), 'signed-package-fixture');
+          if (failure === 'stapler-failed' && command === 'xcrun' && args[1] === 'validate') throw new Error('stapler failed');
+        },
+        capture: async (command, args) => {
+          calls.push([command, args]);
+          if (command === 'cargo') return JSON.stringify({ target_directory: resolve(root, 'target') });
+          if (command === '/usr/libexec/PlistBuddy') return 'desktop';
+          if (command === 'lipo') return failure === 'architecture' ? 'x86_64' : 'arm64';
+          if (command === 'xcrun' && args[1] === 'submit') {
+            submissions++;
+            const rejected = failure === 'app-rejected' && submissions === 1 || failure === 'dmg-rejected' && submissions === 2;
+            return JSON.stringify({ status: rejected ? 'Invalid' : 'Accepted', id: 'example-id' });
+          }
+          throw new Error(`Unexpected tool ${command}`);
+        } };
+      const output = resolve(root, 'release/installers/0.1.0/aarch64-apple-darwin');
+      if (failure) {
+        await assert.rejects(buildMacKeychainPackage(parameters));
+        assert.equal(existsSync(output), false, failure);
+      } else {
+        await buildMacKeychainPackage(parameters);
+        assert.equal(submissions, 2);
+        assert.equal(readFileSync(resolve(output, 'dog.codes_0.1.0_aarch64.dmg'), 'utf8'), 'signed-package-fixture');
+        assert.match(readFileSync(resolve(output, 'dog.codes_0.1.0_aarch64.dmg.sha256'), 'utf8'), /^[a-f0-9]{64}  dog.codes_/);
+        assert.equal(calls.filter(([command]) => command === 'spctl').length, 2);
+        assert.equal(calls.filter(([command, args]) => command === 'xcrun' && args[1] === 'validate').length, 2);
+      }
+      const privateRoot = resolve(root, 'release/private');
+      if (existsSync(privateRoot)) assert.deepEqual(readdirSync(privateRoot), []);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }
 });
 
 test('Windows signing supports certificate-store or custom-provider configuration', () => {

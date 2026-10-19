@@ -111,8 +111,21 @@ jobs:
           path: installers
           merge-multiple: true
       - name: Checksums
-        working-directory: installers
-        run: sha256sum * | tee SHA256SUMS.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir release-assets
+          while IFS= read -r -d '' file; do
+            name=$(basename "$file")
+            if [ -e "release-assets/$name" ]; then
+              echo "Duplicate installer filename: $name" >&2
+              exit 1
+            fi
+            cp "$file" "release-assets/$name"
+          done < <(find installers -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' \) -print0)
+          test "$(find release-assets -type f | wc -l)" -eq 5
+          cd release-assets
+          sha256sum -- *.exe *.dmg *.deb *.AppImage > SHA256SUMS.txt
       - name: Create a draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -120,9 +133,17 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           cat > notes.md <<'NOTES'
-          Development preview. These installers are **unsigned**: macOS Gatekeeper and
-          Windows SmartScreen will warn before opening them. Verify each download against
-          `SHA256SUMS.txt`. See the README for supported agents and known limitations.
+          Desktop release candidate. Review installation results and known limitations
+          before publishing. The local `pnpm desktop:release` command replaces the
+          Mac and Windows CI packages and refreshes checksums automatically.
+
+          <!-- dogcodes-signing:start -->
+          | Platform | Package status |
+          | --- | --- |
+          | macOS ARM64 / Intel | Awaiting local signed packages |
+          | Windows x64 | Awaiting local signed package |
+          | Linux x64 | CI-built DEB / AppImage; no additional package signature |
+          <!-- dogcodes-signing:end -->
           NOTES
           gh release create "$TAG" --repo "$REPO" --draft --prerelease \
-            --title "dog.codes $TAG" --notes-file notes.md installers/*
+            --title "dog.codes $TAG" --notes-file notes.md release-assets/*
