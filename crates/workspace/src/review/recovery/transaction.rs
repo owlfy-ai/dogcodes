@@ -1463,6 +1463,7 @@ mod tests {
             "base",
         )
         .unwrap();
+        drop(temporary);
         let reopened = ReviewStore::open(data.path().into()).unwrap();
         reopened.reconcile_recovery("task", &record.id).unwrap();
         assert_eq!(fs::read(root.path().join("a")).unwrap(), b"base");

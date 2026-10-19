@@ -74,10 +74,18 @@ jobs:
         run: |
           rustup show active-toolchain
           rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-${{ matrix.target }}
+          cache-on-failure: true
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Native unit and integration tests (real-provider tests remain opt-in)
         shell: bash
+        env:
+          # Large debug async state machines exceed the Windows test-thread
+          # stack; this changes the harness resources, not which tests run.
+          RUST_MIN_STACK: '16777216'
         run: cargo test --workspace --lib --tests --locked --no-fail-fast 2>&1 | tee native-tests.log
       - name: Retain failed native test diagnostics
         if: failure()

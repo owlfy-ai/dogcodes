@@ -182,6 +182,11 @@ mod tests {
     use super::*;
     #[tokio::test]
     async fn head_and_ignore_preserve_working_files_and_index() {
+        let (literal, literal_rule, _, _) = if cfg!(windows) {
+            ("a[1].txt", r"/a\[1\].txt", "b[2].txt", r"/b\[2\].txt")
+        } else {
+            ("a[1]*.txt", r"/a\[1\]\*.txt", "b?.txt", r"/b\?.txt")
+        };
         let dir = tempfile::tempdir().unwrap();
         let git = GitReview::default();
         let path = dir.path();
@@ -217,20 +222,20 @@ mod tests {
             b"original"
         );
         assert!(git.ignore_file(&root, "tracked.txt").await.is_err());
-        fs::write(path.join("a[1]*.txt"), "new").unwrap();
+        fs::write(path.join(literal), "new").unwrap();
         fs::write(path.join("a1x.txt"), "keep").unwrap();
         fs::write(path.join(".gitignore"), "existing").unwrap();
-        git.ignore_file(&root, "a[1]*.txt").await.unwrap();
-        git.ignore_file(&root, "a[1]*.txt").await.unwrap();
+        git.ignore_file(&root, literal).await.unwrap();
+        git.ignore_file(&root, literal).await.unwrap();
         assert_eq!(
             fs::read_to_string(path.join(".gitignore")).unwrap(),
-            "existing\n/a\\[1\\]\\*.txt\n"
+            format!("existing\n{literal_rule}\n")
         );
         assert_eq!(
-            git.run(path, &["check-ignore", "--", "a[1]*.txt"], 1024)
+            git.run(path, &["check-ignore", "--", literal], 1024)
                 .await
                 .unwrap(),
-            b"a[1]*.txt\n"
+            format!("{literal}\n").as_bytes()
         );
         assert!(
             git.run(path, &["check-ignore", "--", "a1x.txt"], 1024)
@@ -245,10 +250,15 @@ mod tests {
     }
     #[tokio::test]
     async fn batch_ignore_preflights_tracked_files_and_appends_literal_rules_once() {
+        let (literal, literal_rule, second, second_rule) = if cfg!(windows) {
+            ("a[1].txt", r"/a\[1\].txt", "b[2].txt", r"/b\[2\].txt")
+        } else {
+            ("a[1]*.txt", r"/a\[1\]\*.txt", "b?.txt", r"/b\?.txt")
+        };
         let dir = tempfile::tempdir().unwrap();
         let git = GitReview::default();
         git.run(dir.path(), &["init"], 1024).await.unwrap();
-        for path in ["tracked", "a[1]*.txt", "b?.txt"] {
+        for path in ["tracked", literal, second] {
             fs::write(dir.path().join(path), path).unwrap();
         }
         git.run(dir.path(), &["add", "tracked"], 1024)
@@ -261,29 +271,29 @@ mod tests {
             scopes: vec![String::new()],
         };
         assert!(
-            git.ignore_files(&root, &["a[1]*.txt".into(), "tracked".into()])
+            git.ignore_files(&root, &[literal.into(), "tracked".into()])
                 .await
                 .is_err()
         );
         assert!(!dir.path().join(".gitignore").exists());
         fs::write(dir.path().join(".gitignore"), "existing\r\n").unwrap();
         let index = fs::read(dir.path().join(".git/index")).unwrap();
-        let paths = ["a[1]*.txt".into(), "b?.txt".into(), "a[1]*.txt".into()];
+        let paths = [literal.into(), second.into(), literal.into()];
         let result = git.ignore_files(&root, &paths).await.unwrap();
         assert_eq!(result.completed.len(), 2);
         assert!(result.error.is_none());
         git.ignore_files(&root, &paths).await.unwrap();
         assert_eq!(
             fs::read_to_string(dir.path().join(".gitignore")).unwrap(),
-            "existing\r\n/a\\[1\\]\\*.txt\r\n/b\\?.txt\r\n"
+            format!("existing\r\n{literal_rule}\r\n{second_rule}\r\n")
         );
         assert_eq!(fs::read(dir.path().join(".git/index")).unwrap(), index);
         assert_eq!(
-            fs::read_to_string(dir.path().join("a[1]*.txt")).unwrap(),
-            "a[1]*.txt"
+            fs::read_to_string(dir.path().join(literal)).unwrap(),
+            literal
         );
         assert!(
-            git.run(dir.path(), &["check-ignore", "a[1]*.txt", "b?.txt"], 1024)
+            git.run(dir.path(), &["check-ignore", literal, second], 1024)
                 .await
                 .is_ok()
         );

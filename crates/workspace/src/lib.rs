@@ -420,7 +420,14 @@ impl GitWorkspaceContextProvider {
                 .ok_or(GitCollectionError::InvalidOutput)?
                 .to_string(),
         ];
+        #[cfg(windows)]
+        command_args.extend(["-c".into(), "core.longpaths=true".into()]);
         command_args.extend(args.iter().map(|value| (*value).to_string()));
+        #[cfg(windows)]
+        let command_args = command_args
+            .iter()
+            .map(|value| git_path_argument(value))
+            .collect();
         let mut spec = ProcessSpec::probe(self.executable.clone(), command_args);
         #[cfg(windows)]
         spec.env_allowlist.insert("PATH".into());
@@ -1143,6 +1150,19 @@ fn is_dependency_file(path: &str) -> bool {
         })
 }
 
+// Git for Windows creates worktrees using Win32 paths, not Rust's verbatim
+// canonical paths. Keep persisted identities canonical; adapt only argv.
+#[cfg(any(windows, test))]
+fn git_path_argument(value: &str) -> String {
+    if let Some(path) = value.strip_prefix(r"\\?\UNC\") {
+        format!("//{}", path.replace('\\', "/"))
+    } else if let Some(path) = value.strip_prefix(r"\\?\") {
+        path.replace('\\', "/")
+    } else {
+        value.to_owned()
+    }
+}
+
 fn discover_git() -> Option<PathBuf> {
     let known = ["/usr/bin/git", "/opt/homebrew/bin/git"]
         .into_iter()
@@ -1159,6 +1179,20 @@ fn discover_git() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn git_argv_translates_verbatim_windows_paths_without_changing_other_arguments() {
+        assert_eq!(
+            super::git_path_argument(r"\\?\C:\repo\worktree"),
+            "C:/repo/worktree"
+        );
+        assert_eq!(
+            super::git_path_argument(r"\\?\UNC\server\share\repo"),
+            "//server/share/repo"
+        );
+        for value in ["--", "HEAD", "/tmp/repo", "relative/file"] {
+            assert_eq!(super::git_path_argument(value), value);
+        }
+    }
     #[tokio::test]
     async fn global_ignore_inherited_child() {
         use super::*;

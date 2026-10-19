@@ -1924,6 +1924,7 @@ mod tests {
     fn repository() -> tempfile::TempDir {
         let root = tempfile::tempdir().unwrap();
         git(root.path(), &["init", "-b", "main"]);
+        git(root.path(), &["config", "core.autocrlf", "false"]);
         git(root.path(), &["config", "user.name", "Review Test"]);
         git(
             root.path(),
