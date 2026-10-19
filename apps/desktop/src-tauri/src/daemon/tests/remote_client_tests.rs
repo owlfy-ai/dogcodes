@@ -74,14 +74,14 @@ fn input(prompt: &str) -> SubmissionInput {
     }
 }
 async fn read_until(client: &CoreClient, id: &str, needle: &str) -> String {
-    tokio::time::timeout(Duration::from_secs(10), async {
-        let (mut text, mut cursor) = (String::new(), 0);
+    let (mut text, mut cursor) = (String::new(), 0);
+    let result = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let batch = client.terminal_read(id, cursor).await.unwrap();
             cursor = batch.next;
             text.push_str(&String::from_utf8_lossy(&batch.bytes));
             if text.contains(needle) {
-                return text;
+                return;
             }
             assert!(
                 matches!(
@@ -92,8 +92,9 @@ async fn read_until(client: &CoreClient, id: &str, needle: &str) -> String {
             );
         }
     })
-    .await
-    .unwrap()
+    .await;
+    assert!(result.is_ok(), "terminal did not produce {needle}: {text}");
+    text
 }
 
 #[tokio::test]

@@ -15,7 +15,7 @@ fn intent(root: &Path, command: Option<&str>) -> LaunchIntent {
         rows: 24,
     }
 }
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 async fn read_until(host: &TerminalHost, id: &str, needle: &str) -> Vec<u8> {
     tokio::time::timeout(Duration::from_secs(8), async {
         let mut bytes = vec![];
@@ -37,7 +37,7 @@ async fn read_until(host: &TerminalHost, id: &str, needle: &str) -> Vec<u8> {
     .await
     .expect("terminal output timeout")
 }
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 async fn finished(host: &TerminalHost, id: &str) -> TerminalInfo {
     tokio::time::timeout(Duration::from_secs(8), async {
         let mut cursor = 0;
@@ -51,6 +51,25 @@ async fn finished(host: &TerminalHost, id: &str) -> TerminalInfo {
     })
     .await
     .expect("terminal did not exit")
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn terminal_host_windows_command_runs_and_exits_without_a_view() {
+    let root = tempfile::tempdir().unwrap();
+    let host = TerminalHost::default();
+    let info = host
+        .start_resolved(
+            intent(root.path(), Some("Write-Output 'HEADLESS_READY'; exit 7")),
+            None,
+        )
+        .await
+        .unwrap();
+    let bytes = read_until(&host, &info.id, "HEADLESS_READY").await;
+    assert!(!bytes.windows(4).any(|part| part == b"\x1b[6n"));
+    let ended = finished(&host, &info.id).await;
+    assert_eq!(ended.status, TerminalStatus::Exited);
+    assert_eq!(ended.exit_code, Some(7));
 }
 
 #[tokio::test]
