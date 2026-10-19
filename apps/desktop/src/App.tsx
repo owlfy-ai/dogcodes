@@ -310,6 +310,12 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     void refresh();
     refreshQuotas.current();
   };
+  const detectAgents = async (providerIds: string[]) => {
+    // A failed scan leaves that agent listed as not installed; the others still update.
+    await Promise.all(providerIds.map(id => client.scanAgent(id).catch(() => null)));
+    await refresh();
+    refreshQuotas.current();
+  };
   const [activeView, setActiveView] = useState<"conversation" | "quota">("conversation");
   const [startupError, setStartupError] = useState(false);
   const [snapshot, setSnapshot] = useState<BootstrapSnapshot | null>(null);
@@ -1116,7 +1122,6 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
           <button ref={newConversationButton} aria-keyshortcuts={`${shortcutKey}+N`} className="primary-action" type="button" disabled={sending || creatingTask || snapshot.projects.length === 0} onClick={() => void createConversation()}>
             <SidebarNavIcon kind="conversation" /><b>{creatingTask ? t("nav.creating", undefined, resolvedLang) : t("nav.newConversation", undefined, resolvedLang)}</b><kbd>{shortcutModifier} N</kbd>
           </button>
-          <button type="button" onClick={() => setWelcomeOpen(true)}><SidebarNavIcon kind="agent" /><b>{t("nav.connectAgent", undefined, resolvedLang)}</b></button>
           <button ref={quotaButton} aria-keyshortcuts={`${shortcutKey}+U`} className={activeView === "quota" ? "active" : ""} type="button" onClick={() => setActiveView("quota")}><SidebarNavIcon kind="quota" /><b>{t("nav.agentManagement", undefined, resolvedLang)}</b><kbd>{shortcutModifier} U</kbd></button>
         </nav>
         <div className="sidebar-divider" />
@@ -1176,7 +1181,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
           </div>
         </header>
       {activeView === "quota" ? (
-        <QuotaCenter views={quotaViews} installations={snapshot.installations} agentUpdates={agentUpdates} refreshProgress={quotaRefreshProgress} onRefresh={() => refreshQuotasNow.current()} lang={resolvedLang} />
+        <QuotaCenter views={quotaViews} installations={snapshot.installations} agentUpdates={agentUpdates} refreshProgress={quotaRefreshProgress} onRefresh={() => refreshQuotasNow.current()} onDetect={detectAgents} lang={resolvedLang} />
       ) : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}
         onDragEnter={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); dragDepth.current++; setDraggingFiles(true); } }}
         onDragOver={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = sending ? "none" : "copy"; } }}
@@ -1503,8 +1508,11 @@ export function QuotaPanel({
   installations = [],
   agentUpdates,
   management = false,
+  onDetect,
 }: {
   management?: boolean;
+  /** Scans for the given agents again, so ones installed after first launch can be enabled. */
+  onDetect?: (providerIds: string[]) => Promise<void>;
   views: QuotaSnapshotView[];
   installations?: Array<Pick<InstallationSummary, "installationId" | "version"> & Partial<Pick<InstallationSummary, "providerId" | "status">>>;
   agentUpdates?: AgentUpdateActions;
@@ -1512,6 +1520,7 @@ export function QuotaPanel({
   const preferences = useAgentPreferences();
   const [dragged, setDragged] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [detecting, setDetecting] = useState(false);
   const installedViews = management ? installations.filter(item => item.providerId && item.providerId !== "fake").map(item =>
     views.find(view => view.installationId === item.installationId) ?? { providerId: item.providerId!, installationId: item.installationId, quota: null, diagnostic: null }) : visibleQuotaViews(views, installations);
   // Only installed agents take part in ordering; known but missing ones are listed compactly below.
@@ -1581,7 +1590,12 @@ export function QuotaPanel({
   if (!uninstalled.length) return cards;
   return <>{cards}
     <section className="agent-uninstalled" aria-labelledby="agent-uninstalled-title">
-      <header><h3 id="agent-uninstalled-title">未安装</h3><span>安装并在左侧“连接 Agent”中重新检测后即可启用</span></header>
+      <header><h3 id="agent-uninstalled-title">未安装</h3><span>安装后重新检测即可启用</span>
+        {onDetect && <button className="agent-detect-button" type="button" disabled={detecting} aria-busy={detecting}
+          onClick={() => { setDetecting(true); void onDetect(uninstalled.map(agent => agent.id)).finally(() => setDetecting(false)); }}>
+          {detecting && <span className="task-running-spinner" aria-hidden="true" />}{detecting ? "正在检测…" : "重新检测"}
+        </button>}
+      </header>
       <ul>{uninstalled.map(agent => <li key={agent.id} aria-label={agent.name}>
         <AgentIcon providerId={agent.id} /><span className="agent-uninstalled-name">{agent.name}</span>
         <InstallationLink url={agent.installUrl} name={agent.name} className="agent-install-link" errorClassName="agent-install-error" />
@@ -1595,6 +1609,7 @@ export function QuotaCenter({
   agentUpdates,
   refreshProgress,
   onRefresh,
+  onDetect,
   lang,
 }: {
   views: QuotaSnapshotView[];
@@ -1602,6 +1617,7 @@ export function QuotaCenter({
   agentUpdates: AgentUpdateActions;
   refreshProgress: QuotaRefreshProgress | null;
   onRefresh: () => void;
+  onDetect?: (providerIds: string[]) => Promise<void>;
   lang?: ResolvedLanguage;
 }) {
   return (
@@ -1625,7 +1641,7 @@ export function QuotaCenter({
             : t("agentManagement.refreshSuccess", { count: refreshProgress.total }, lang)}
         </p>}
         <div className="agent-management-summary"><span>{t("agentManagement.installedCount", { count: installations.filter(item => item.providerId !== "fake").length }, lang)}</span><span>{t("agentManagement.quotaCalculation", undefined, lang)}</span></div>
-        <QuotaPanel views={views} installations={installations} agentUpdates={agentUpdates} management />
+        <QuotaPanel views={views} installations={installations} agentUpdates={agentUpdates} onDetect={onDetect} management />
       </div>
     </section>
   );

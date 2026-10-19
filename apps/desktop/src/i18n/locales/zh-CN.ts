@@ -48,7 +48,6 @@ export const zhCN: TranslationDict = {
   nav: {
     newConversation: "新建对话",
     creating: "正在创建…",
-    connectAgent: "连接 Agent",
     agentManagement: "Agent 管理",
     mainNav: "主导航",
     toggleSidebar: "切换侧边栏",
@@ -79,7 +78,7 @@ export const zhCN: TranslationDict = {
   welcome: {
     greeting: "你好，今天想做什么？",
     readyAgentSelected: "已为你选择可用的 {agent}，无需先连接项目。",
-    noAgentAvailable: "暂无可用 Agent，请在 Agent 管理中启用，或先连接 Agent。",
+    noAgentAvailable: "暂无可用 Agent，请在 Agent 管理中检测或启用。",
     dropFiles: "松开以添加附件",
     retry: "重试",
     openFolder: "打开项目文件夹",

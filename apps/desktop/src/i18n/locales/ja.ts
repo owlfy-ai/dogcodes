@@ -48,7 +48,6 @@ export const ja: TranslationDict = {
   nav: {
     newConversation: "新規チャット",
     creating: "作成中…",
-    connectAgent: "Agent に接続",
     agentManagement: "Agent 管理",
     mainNav: "メインナビゲーション",
     toggleSidebar: "サイドバー切り替え",
@@ -79,7 +78,7 @@ export const ja: TranslationDict = {
   welcome: {
     greeting: "今日はどのような作業をしますか？",
     readyAgentSelected: "利用可能な {agent} が選択されました。プロジェクトを事前に接続する必要はありません。",
-    noAgentAvailable: "利用可能な Agent がありません。Agent 管理で有効にするか、まず接続してください。",
+    noAgentAvailable: "利用可能な Agent がありません。Agent 管理で検出するか有効にしてください。",
     dropFiles: "ファイルをドロップして添付",
     retry: "再試行",
     openFolder: "フォルダを開く",
