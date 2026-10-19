@@ -6,7 +6,7 @@ export const recoveryMessages: Record<RecoveryCode, [string, string]> = {
   installation_unconfigured: ["需要登录或配置", "请在 Agent 官方客户端完成登录，然后重新启动 dog.codes 检测。"],
   installation_broken: ["无法连接 Agent", "请检查官方客户端是否正常启动，以及本机网络与代理配置。"],
   installation_unsupported: ["版本不兼容", "当前安装版本未通过兼容性检查。请使用已支持版本。"],
-  installation_not_ready: ["暂时无法使用", "请确认客户端已安装并完成登录，再到「连接 Agent」重新检测。"],
+  installation_not_ready: ["暂时无法使用", "请确认客户端已安装并完成登录，再到「Agent 管理」重新检测。"],
   driver_unavailable: ["正在恢复连接", "暂时无法连接已安装的 Agent，请稍后刷新。"],
   run_ownership_unknown: ["执行连接已中断", "后台服务恢复后会释放旧轮次占用，可返回会话直接发送消息继续。"],
   run_interrupting: ["正在等待停止", "已发送停止请求，正在等待 Agent 确认。请勿重复提交任务。"],

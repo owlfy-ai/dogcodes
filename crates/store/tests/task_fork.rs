@@ -208,6 +208,7 @@ fn request_for_nested(task: &TaskId, turn: &TurnId) -> ForkRequest {
 async fn fork_worktree_restores_selected_turn_and_preserves_source_files_and_branch() {
     let directory = tempfile::tempdir().unwrap();
     git(directory.path(), &["init", "-b", "main"]);
+    git(directory.path(), &["config", "core.autocrlf", "false"]);
     std::fs::write(directory.path().join("tracked.txt"), "committed\n").unwrap();
     git(directory.path(), &["add", "."]);
     git(
@@ -329,6 +330,7 @@ async fn historical_turn_without_snapshot_rejects_worktree_but_keeps_workspace_f
     use serde_json::json;
     let directory = tempfile::tempdir().unwrap();
     git(directory.path(), &["init", "-b", "main"]);
+    git(directory.path(), &["config", "core.autocrlf", "false"]);
     let (core, store, _, task) = setup(directory.path()).await;
     // Imported/legacy terminal events predate the durable snapshot feature.
     let old_turn = TurnId::new();
@@ -459,6 +461,7 @@ impl agent_core::WorkspaceContextProvider for FailFirstCheckout {
 async fn failed_fork_resumes_frozen_plan_after_source_changes_and_host_restart() {
     let directory = tempfile::tempdir().unwrap();
     git(directory.path(), &["init", "-b", "main"]);
+    git(directory.path(), &["config", "core.autocrlf", "false"]);
     std::fs::write(directory.path().join("file"), "base\n").unwrap();
     git(directory.path(), &["add", "."]);
     git(
@@ -572,6 +575,7 @@ impl agent_core::WorkspaceContextProvider for BlockedCheckout {
 async fn active_fork_prevents_source_deletion_and_directory_rebinding_until_finished() {
     let directory = tempfile::tempdir().unwrap();
     git(directory.path(), &["init", "-b", "main"]);
+    git(directory.path(), &["config", "core.autocrlf", "false"]);
     std::fs::write(directory.path().join("file"), "base\n").unwrap();
     git(directory.path(), &["add", "."]);
     git(

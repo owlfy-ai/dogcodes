@@ -115,7 +115,7 @@
 /* Hero */
 .welcome-hero {
   display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr); align-items: center; gap: 40px;
-  min-height: min(460px, 62vh); padding: clamp(28px, 6vh, 64px) 0 clamp(24px, 5vh, 48px);
+  min-height: min(440px, 58vh); padding: clamp(24px, 5vh, 56px) 0 clamp(16px, 3vh, 32px);
 }
 .welcome-eyebrow {
   display: inline-flex; align-items: center; gap: 8px; margin: 0 0 20px; padding: 5px 12px 5px 10px;
@@ -126,11 +126,13 @@
 .welcome-eyebrow > span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent); }
 .welcome-hero h1 { margin: 0; font-size: clamp(34px, 4.4vw, 52px); line-height: 1.12; letter-spacing: -.035em; font-weight: 700; }
 .welcome-lede { max-width: 480px; margin: 18px 0 0; color: var(--w-muted); font-size: 15px; line-height: 1.75; }
-.welcome-stats { display: flex; gap: 10px; margin: 28px 0 0; padding: 0; }
-.welcome-stats > div {
-  min-width: 92px; padding: 12px 16px; border: 1px solid var(--w-border); border-radius: 14px;
-  background: color-mix(in srgb, var(--w-surface) 75%, transparent); backdrop-filter: blur(8px);
+.welcome-stats {
+  display: inline-flex; margin: 28px 0 0; padding: 0; overflow: hidden;
+  border: 1px solid var(--w-border); border-radius: 16px;
+  background: color-mix(in srgb, var(--w-surface) 75%, transparent); backdrop-filter: blur(8px); box-shadow: var(--w-shadow);
 }
+.welcome-stats > div { min-width: 96px; padding: 12px 20px; }
+.welcome-stats > div + div { border-left: 1px solid var(--w-border); }
 .welcome-stats dt { color: var(--w-muted); font-size: 12px; }
 .welcome-stats dd { margin: 4px 0 0; font-size: 24px; font-weight: 650; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .welcome-stats .ready dd { color: var(--w-ready); }
@@ -141,11 +143,13 @@
    dark outlines with a question mark and light up with their logo once found. The flock and the sheepdog
    walk on the spot while the meadow scrolls left, so the herd reads as driven steadily to the right. */
 .welcome-herd {
-  --herd-size: min(460px, 42vw);
+  --herd-size: min(520px, 44vw);
   --wool: #e9ebe4; --wool-edge: transparent; --sheep-face: #30332e; --unknown-line: color-mix(in srgb, var(--w-muted) 55%, transparent);
   --dog-coat: #3a3e38; --dog-white: #f4f5f0; --dog-glow: color-mix(in srgb, var(--w-accent) 35%, transparent);
-  --grass: color-mix(in srgb, var(--w-muted) 45%, transparent); --pace: 5s;
+  --grass: color-mix(in srgb, var(--w-muted) 45%, transparent); --pace: 6s;
   position: relative; justify-self: center; width: var(--herd-size); aspect-ratio: 10 / 6.4;
+  /* Depth ordering stays inside the herd, so animals never draw over the sticky top bar. */
+  isolation: isolate;
 }
 :root[data-theme="light"] .welcome-herd { --wool: #ffffff; --wool-edge: #d9dbd3; --sheep-face: #3a3d37; --dog-coat: #232521; --dog-white: #ffffff; --dog-glow: #1a1a1426; }
 @media (prefers-color-scheme: light) {
@@ -153,9 +157,12 @@
 }
 .welcome-herd-meadow {
   position: absolute; left: 50%; top: 58%; width: 96%; height: 62%; translate: -50% -50%; border-radius: 50%;
-  border: 1px dashed color-mix(in srgb, var(--w-muted) 30%, transparent);
-  background: radial-gradient(closest-side, var(--w-glow), color-mix(in srgb, var(--w-surface) 25%, transparent) 70%, transparent);
+  background:
+    radial-gradient(closest-side, color-mix(in srgb, var(--w-accent) 14%, transparent), transparent),
+    radial-gradient(closest-side, color-mix(in srgb, var(--w-surface) 60%, transparent) 40%, transparent);
   overflow: hidden;
+  /* Soft edges: the grass thins out toward the rim instead of stopping at a line. */
+  -webkit-mask: radial-gradient(closest-side, #000 62%, transparent); mask: radial-gradient(closest-side, #000 62%, transparent);
 }
 /* Grass tufts scroll left under the herd; the nearer layer is larger and faster for depth. */
 .welcome-herd-ground {
@@ -181,7 +188,8 @@
 }
 /* Walking on the spot, each at its own step, drifting a little forward and back within the flock. */
 .welcome-sheep { animation: welcome-sheep-drift var(--drift) ease-in-out var(--drift-delay) infinite alternate; }
-.welcome-sheep-shape { animation: welcome-sheep-bob calc(var(--step) / 2) ease-in-out var(--step-delay) infinite; }
+/* The logo rides on the wool: it shares the body's bob, step for step. */
+.welcome-sheep :is(.welcome-sheep-shape, .welcome-sheep-tag) { animation: welcome-sheep-bob calc(var(--step) / 2) ease-in-out var(--step-delay) infinite; }
 .welcome-sheep-legs rect { animation: welcome-sheep-step var(--step) ease-in-out var(--step-delay) infinite alternate; }
 .welcome-sheep-legs rect:nth-child(even) { animation-direction: alternate-reverse; }
 .welcome-sheep-head { animation: welcome-sheep-nod var(--step) ease-in-out var(--step-delay) infinite; }
@@ -195,14 +203,14 @@
 .welcome-sheep.unknown .welcome-sheep-wool.outline { fill: var(--unknown-line); stroke: var(--unknown-line); }
 .welcome-sheep.unknown :is(.welcome-sheep-legs, .welcome-sheep-face) { fill: var(--unknown-line); }
 .welcome-sheep.unknown .welcome-sheep-eye { fill: var(--w-bg); }
-.welcome-sheep-unknown { display: grid; place-items: center; width: 100%; height: 100%; color: var(--unknown-line); font-weight: 700; font-size: calc(var(--herd-size) * var(--size) * .3); line-height: 1; }
+.welcome-sheep-unknown { display: grid; place-items: center; width: 100%; height: 100%; color: var(--unknown-line); font-weight: 700; font-size: calc(var(--herd-size) * var(--size) * .38); line-height: 1; }
 .welcome-sheep.scanning .welcome-sheep-unknown { animation: welcome-sheep-wonder 1.8s ease-in-out infinite; }
 .welcome-sheep.ready .welcome-sheep-body { animation: welcome-sheep-hop .55s ease-out; }
 .welcome-sheep.ready .agent-icon { animation: welcome-sheep-reveal .5s ease-out; }
 .welcome-sheep-head { transform-origin: 47px 24px; }
 .welcome-sheep-legs rect { transform-box: fill-box; transform-origin: 50% 0; }
 /* The icon sits on the wool's centre, which stays put whichever way the sheep faces. */
-.welcome-sheep-tag { position: absolute; left: 50%; top: 49%; width: 30%; aspect-ratio: 1; translate: -50% -50%; display: grid; }
+.welcome-sheep-tag { position: absolute; left: 50%; top: 50%; width: 42%; aspect-ratio: 1; transform: translate(-50%, -50%); display: grid; }
 .welcome-sheep-tag .agent-icon { width: 100%; height: 100%; border-radius: 24%; }
 
 .welcome-herd-dog { width: calc(var(--herd-size) * .15); aspect-ratio: 72 / 48; pointer-events: none; transform-origin: 50% 88%; }
@@ -211,19 +219,21 @@
 .welcome-dog-white { fill: var(--dog-white); }
 .welcome-dog-leg line { stroke: var(--dog-coat); stroke-width: 4.2; stroke-linecap: round; }
 .welcome-dog-leg circle { fill: var(--dog-white); }
-.welcome-dog-leg { transition: scale .3s; }
-.welcome-dog-leg.back { transform-origin: 25px 27px; }
-.welcome-dog-leg.front { transform-origin: 44px 28px; }
 .welcome-dog-leg.far { opacity: .75; }
 .welcome-dog-head { transform-origin: 48px 22px; transition: rotate .3s; }
 .side .welcome-dog-tail { transform-origin: 20px 22px; }
 /* The dog trots low behind the flock, head down on the sheep; it looks up when an agent is found. */
-.welcome-herd-dog { animation: welcome-dog-pace 4.6s ease-in-out infinite alternate; }
-.welcome-dog-shape { animation: welcome-dog-bound .44s ease-in-out infinite; }
-.welcome-dog-leg { animation: welcome-dog-stride .44s ease-in-out infinite alternate; }
-.welcome-dog-tail { animation: welcome-dog-wag .44s ease-in-out infinite alternate; }
-.welcome-herd-dog .welcome-dog-leg.front { animation-direction: alternate-reverse; }
-.welcome-herd-dog .welcome-dog-leg.far { animation-delay: -.12s; }
+/* A trot: diagonal pairs (near front with far back, near back with far front) step together. Each
+   leg pushes back slowly while planted, then folds at the knee and swings forward; the body rises
+   once per pair, twice a stride. */
+.welcome-herd-dog { --stride: .52s; animation: welcome-dog-pace 4.6s ease-in-out infinite alternate; }
+.welcome-dog-shape { animation: welcome-dog-bound calc(var(--stride) / 2) ease-in-out infinite; }
+.welcome-dog-leg { animation: welcome-dog-thigh var(--stride) linear infinite; }
+.welcome-dog-shin { animation: welcome-dog-shin var(--stride) ease-in-out infinite; }
+.welcome-dog-leg.back { animation-name: welcome-dog-hind-thigh; }
+.welcome-dog-leg.back .welcome-dog-shin { animation-name: welcome-dog-hock; }
+.welcome-dog-leg:is(.back.near, .front.far), .welcome-dog-leg:is(.back.near, .front.far) .welcome-dog-shin { animation-delay: calc(var(--stride) / -2); }
+.welcome-dog-tail { animation: welcome-dog-wag var(--stride) ease-in-out infinite alternate; }
 .welcome-dog-head { rotate: 10deg; }
 .welcome-herd-dog[data-alert] .welcome-dog-head { rotate: -12deg; }
 /* Dust kicked up behind the paws drifts away with the ground. */
@@ -233,14 +243,17 @@
 .welcome-dog-dust i:nth-child(2) { animation-delay: -.3s; width: 20%; }
 .welcome-dog-dust i:nth-child(3) { animation-delay: -.6s; width: 16%; }
 
-@keyframes welcome-dog-bound { 50% { translate: 0 -6%; } }
+@keyframes welcome-dog-bound { 0%, 100% { translate: 0 0; } 45% { translate: 0 -4%; } }
 @keyframes welcome-dog-dust { 0% { opacity: .35; translate: 0 0; scale: .6; } 100% { opacity: 0; translate: -260% -60%; scale: 1.4; } }
-@keyframes welcome-dog-stride { from { rotate: -26deg; } to { rotate: 26deg; } }
+@keyframes welcome-dog-thigh { 0% { rotate: -22deg; } 55% { rotate: 20deg; } 70% { rotate: 8deg; } 85% { rotate: -18deg; } 100% { rotate: -22deg; } }
+@keyframes welcome-dog-shin { 0%, 55% { rotate: 0deg; } 65% { rotate: 70deg; } 78% { rotate: 95deg; } 90% { rotate: 30deg; } 100% { rotate: 0deg; } }
+@keyframes welcome-dog-hind-thigh { 0% { rotate: -16deg; } 55% { rotate: 24deg; } 70% { rotate: 10deg; } 85% { rotate: -14deg; } 100% { rotate: -16deg; } }
+@keyframes welcome-dog-hock { 0% { rotate: 4deg; } 55% { rotate: -6deg; } 66% { rotate: 60deg; } 78% { rotate: 85deg; } 90% { rotate: 25deg; } 100% { rotate: 4deg; } }
 @keyframes welcome-dog-wag { from { rotate: -8deg; } to { rotate: 8deg; } }
 @keyframes welcome-dog-pace { from { translate: -8% 0; } to { translate: 4% 0; } }
 @keyframes welcome-ground { to { -webkit-mask-position: calc(-1 * var(--tile-w)) 0; mask-position: calc(-1 * var(--tile-w)) 0; } }
 @keyframes welcome-sheep-drift { from { translate: -7% 0; } to { translate: 7% 0; } }
-@keyframes welcome-sheep-bob { 50% { translate: 0 -3%; } }
+@keyframes welcome-sheep-bob { 50% { translate: 0 calc(var(--herd-size) * var(--size) * -.025); } }
 @keyframes welcome-sheep-step { from { rotate: -20deg; } to { rotate: 20deg; } }
 @keyframes welcome-sheep-nod { 50% { rotate: 6deg; } }
 @keyframes welcome-sheep-hop { 40% { translate: 0 -12%; } 70% { translate: 0 2%; } }
@@ -248,11 +261,17 @@
 @keyframes welcome-sheep-wonder { 50% { opacity: .45; } }
 
 /* Sections */
-.welcome-section { margin-top: 36px; }
+.welcome-section { margin-top: 40px; }
+.welcome-section + .welcome-section { padding-top: 32px; border-top: 1px solid color-mix(in srgb, var(--w-border) 70%, transparent); }
 .welcome-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
-.welcome-section-heading h2 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.02em; }
+.welcome-section-heading h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.02em; }
+.welcome-count {
+  min-width: 22px; height: 22px; padding: 0 7px; box-sizing: border-box; display: inline-grid; place-items: center;
+  border-radius: 999px; color: var(--w-muted); background: color-mix(in srgb, var(--w-muted) 12%, transparent);
+  font-size: 12px; font-weight: 600; letter-spacing: 0; font-variant-numeric: tabular-nums;
+}
 .welcome-section-heading p { margin: 4px 0 0; color: var(--w-muted); font-size: 13px; }
-.welcome-agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 16px; }
+.welcome-agent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; }
 .welcome-available-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 10px; }
 .welcome-none { padding: 32px; border: 1px dashed var(--w-border-strong); border-radius: 18px; text-align: center; color: var(--w-muted); }
 .welcome-none b { color: var(--w-text); font-size: 15px; }
@@ -291,7 +310,7 @@
 .welcome-status.warning, .welcome-status.third-party { color: var(--w-warning); background: color-mix(in srgb, var(--w-warning) 13%, transparent); }
 
 .welcome-card-quotas { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 18px 0 16px; }
-.welcome-rings { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.welcome-rings { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
 .welcome-window {
   display: flex; align-items: center; gap: 12px; min-width: 0; padding: 10px 12px;
   border-radius: 14px; background: var(--w-surface-quiet); border: 1px solid color-mix(in srgb, var(--w-border) 70%, transparent);
@@ -343,7 +362,7 @@
 .welcome-agent-card.uninstalled .welcome-agent-icon .agent-icon { width: 22px; height: 22px; filter: grayscale(1); opacity: .75; transition: filter .2s, opacity .2s; }
 .welcome-agent-card.uninstalled h2 { font-size: 13px; font-weight: 600; }
 .welcome-agent-card.uninstalled header small { margin-top: 1px; font-size: 11px; color: var(--w-faint); }
-.welcome-agent-card.uninstalled:hover { border-color: var(--w-border-strong); background: var(--w-surface); }
+.welcome-agent-card.uninstalled:hover { transform: translateY(-1px); border-color: var(--w-border-strong); background: var(--w-surface); box-shadow: var(--w-shadow); }
 .welcome-agent-card.uninstalled:hover .agent-icon { filter: none; opacity: 1; }
 
 .welcome-install-link {
@@ -363,11 +382,6 @@
 }
 .welcome-agent-card .welcome-error { margin: 6px 0 0; padding: 0; border: 0; background: none; font-size: 11px; }
 
-.welcome-bottom {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 40px; padding: 20px 24px;
-  border: 1px solid var(--w-border); border-radius: 18px; background: color-mix(in srgb, var(--w-surface) 70%, transparent);
-}
-.welcome-bottom p { margin: 0; color: var(--w-muted); font-size: 13px; }
 
 .welcome-spinner { display: inline-block; flex: 0 0 auto; width: calc(10px * var(--ui-scale, 1)); height: calc(10px * var(--ui-scale, 1)); box-sizing: border-box; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: welcome-spin .8s linear infinite; }
 @keyframes welcome-spin { to { transform: rotate(360deg); } }
@@ -382,7 +396,6 @@
   .welcome-topbar { padding-right: 16px; }
   .welcome-page-body { padding: 0 16px 32px; }
   .welcome-stats { flex-wrap: wrap; }
-  .welcome-bottom { flex-direction: column; align-items: stretch; text-align: center; }
 }
 @media (prefers-reduced-motion: reduce) {
   .agent-welcome { scroll-behavior: auto; }

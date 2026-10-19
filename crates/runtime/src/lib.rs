@@ -44,7 +44,14 @@ impl ProcessSpec {
         Self {
             executable,
             args,
-            env_allowlist: BTreeSet::new(),
+            env_allowlist: if cfg!(windows) {
+                ["SystemRoot", "WINDIR", "TEMP", "TMP"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect()
+            } else {
+                BTreeSet::new()
+            },
             env_overrides: BTreeMap::new(),
             cwd: None,
             timeout: Duration::from_secs(3),

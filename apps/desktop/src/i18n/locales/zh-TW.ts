@@ -48,7 +48,6 @@ export const zhTW: TranslationDict = {
   nav: {
     newConversation: "新增對話",
     creating: "正在建立…",
-    connectAgent: "連線 Agent",
     agentManagement: "Agent 管理",
     mainNav: "主導覽",
     toggleSidebar: "切換側邊欄",
@@ -79,7 +78,7 @@ export const zhTW: TranslationDict = {
   welcome: {
     greeting: "你好，今天想做些什麼？",
     readyAgentSelected: "已為你選擇可用的 {agent}，無需先連線專案。",
-    noAgentAvailable: "暫無可用 Agent，請在 Agent 管理中啟用，或先連線 Agent。",
+    noAgentAvailable: "暫無可用 Agent，請在 Agent 管理中偵測或啟用。",
     dropFiles: "放開以新增附件",
     retry: "重試",
     openFolder: "開啟專案資料夾",

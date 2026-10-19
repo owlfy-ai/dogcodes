@@ -276,7 +276,7 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
 
       <section className="welcome-section" aria-labelledby="welcome-connected-title">
         <header className="welcome-section-heading">
-          <div><h2 id="welcome-connected-title">你的 Agent</h2><p>{refreshing ? "正在检查本机连接…" : `已发现 ${installedAgents.size} 个本机 Agent`}</p></div>
+          <div><h2 id="welcome-connected-title">你的 Agent<span className="welcome-count">{connected.length}</span></h2><p>{refreshing ? "正在检查本机连接…" : `已发现 ${installedAgents.size} 个本机 Agent`}</p></div>
         </header>
         {connected.length ? <div className="welcome-agent-grid">{connected.map(renderCard)}</div>
           : <div className="welcome-none"><b>还没有发现本机 Agent</b><p>从下方安装任意一个 Coding Agent，完成后点击“重新检测”。</p></div>}
@@ -284,15 +284,11 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
 
       {available.length > 0 && <section className="welcome-section" aria-labelledby="welcome-available-title">
         <header className="welcome-section-heading">
-          <div><h2 id="welcome-available-title">更多可连接的 Agent</h2><p>安装后重新检测，即可在工作台中直接使用。</p></div>
+          <div><h2 id="welcome-available-title">更多可连接的 Agent<span className="welcome-count">{available.length}</span></h2><p>安装后重新检测，即可在工作台中直接使用。</p></div>
         </header>
         <div className="welcome-available-grid">{available.map(renderCard)}</div>
       </section>}
 
-      <footer className="welcome-bottom">
-        <p>之后也可以在侧边栏“连接 Agent”中回到这里。</p>
-        <button className="welcome-primary" type="button" onClick={onContinue}>开始使用 <span aria-hidden="true">→</span></button>
-      </footer>
     </div>
   </main>;
 }

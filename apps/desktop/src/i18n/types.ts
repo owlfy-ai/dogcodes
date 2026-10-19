@@ -55,7 +55,6 @@ export interface TranslationDict {
   nav: {
     newConversation: string;
     creating: string;
-    connectAgent: string;
     agentManagement: string;
     mainNav: string;
     toggleSidebar: string;

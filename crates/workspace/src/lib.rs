@@ -298,15 +298,7 @@ impl GitWorkspaceContextProvider {
                 listed = self
                     .git_process(
                         &top,
-                        &[
-                            "ls-tree",
-                            "-r",
-                            "-z",
-                            "--name-only",
-                            "HEAD",
-                            "--",
-                            ":(glob)**/.gitattributes",
-                        ],
+                        &["ls-tree", "-r", "-z", "--name-only", "HEAD"],
                         env.clone(),
                         GIT_OUTPUT_LIMIT,
                     )
@@ -324,8 +316,14 @@ impl GitWorkspaceContextProvider {
             let Ok(path) = std::str::from_utf8(path) else {
                 return Ok(true);
             };
-            // A tracked file missing from the worktree still applies from the index.
-            sources.push((top.join(path), true));
+            // ls-tree does not support glob pathspecs. Filter its bounded output
+            // here; a tracked missing attributes file still applies from the index.
+            if Path::new(path)
+                .file_name()
+                .is_some_and(|name| name == ".gitattributes")
+            {
+                sources.push((top.join(path), true));
+            }
         }
         for (source, required) in sources {
             match std::fs::read(&source) {
@@ -422,8 +420,17 @@ impl GitWorkspaceContextProvider {
                 .ok_or(GitCollectionError::InvalidOutput)?
                 .to_string(),
         ];
+        #[cfg(windows)]
+        command_args.extend(["-c".into(), "core.longpaths=true".into()]);
         command_args.extend(args.iter().map(|value| (*value).to_string()));
+        #[cfg(windows)]
+        let command_args = command_args
+            .iter()
+            .map(|value| git_path_argument(value))
+            .collect();
         let mut spec = ProcessSpec::probe(self.executable.clone(), command_args);
+        #[cfg(windows)]
+        spec.env_allowlist.insert("PATH".into());
         // Only file enumeration needs user configuration to resolve global
         // excludes. Keep content-reading commands isolated from global filters.
         if args.first() == Some(&"ls-files") && args.contains(&"--exclude-standard") {
@@ -1143,16 +1150,49 @@ fn is_dependency_file(path: &str) -> bool {
         })
 }
 
+// Git for Windows creates worktrees using Win32 paths, not Rust's verbatim
+// canonical paths. Keep persisted identities canonical; adapt only argv.
+#[cfg(any(windows, test))]
+fn git_path_argument(value: &str) -> String {
+    if let Some(path) = value.strip_prefix(r"\\?\UNC\") {
+        format!("//{}", path.replace('\\', "/"))
+    } else if let Some(path) = value.strip_prefix(r"\\?\") {
+        path.replace('\\', "/")
+    } else {
+        value.to_owned()
+    }
+}
+
 fn discover_git() -> Option<PathBuf> {
-    ["/usr/bin/git", "/opt/homebrew/bin/git"]
+    let known = ["/usr/bin/git", "/opt/homebrew/bin/git"]
         .into_iter()
-        .map(PathBuf::from)
-        .find(|path| path.is_file())
-        .and_then(|path| path.canonicalize().ok())
+        .map(PathBuf::from);
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let candidates = std::env::split_paths(&path)
+        .filter(|directory| directory.is_absolute())
+        .map(|directory| directory.join(if cfg!(windows) { "git.exe" } else { "git" }));
+    known
+        .chain(candidates)
+        .filter(|path| path.is_absolute() && path.is_file())
+        .find_map(|path| path.canonicalize().ok())
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn git_argv_translates_verbatim_windows_paths_without_changing_other_arguments() {
+        assert_eq!(
+            super::git_path_argument(r"\\?\C:\repo\worktree"),
+            "C:/repo/worktree"
+        );
+        assert_eq!(
+            super::git_path_argument(r"\\?\UNC\server\share\repo"),
+            "//server/share/repo"
+        );
+        for value in ["--", "HEAD", "/tmp/repo", "relative/file"] {
+            assert_eq!(super::git_path_argument(value), value);
+        }
+    }
     #[tokio::test]
     async fn global_ignore_inherited_child() {
         use super::*;
@@ -1822,6 +1862,40 @@ mod tests {
                 .unwrap()
         );
         std::fs::write(workspace.join("sub/.gitattributes"), "*.psd filter=lfs\n").unwrap();
+        assert!(
+            provider
+                .filter_attributes_in_effect(&workspace, configured, &BTreeMap::new())
+                .await
+                .unwrap()
+        );
+        // With a committed tree and a broken recovery index, ls-tree is the
+        // fallback. Its pathspec dialect does not include :(glob).
+        std::fs::remove_file(workspace.join("sub/.gitattributes")).unwrap();
+        std::fs::remove_file(workspace.join(".git/index")).unwrap();
+        run_git(&provider, &workspace, &["add", "."]);
+        run_git(
+            &provider,
+            &workspace,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "commit",
+                "-qm",
+                "attributes",
+            ],
+        );
+        std::fs::write(workspace.join(".git/index"), b"not an index").unwrap();
+        assert!(
+            !provider
+                .filter_attributes_in_effect(&workspace, configured, &BTreeMap::new())
+                .await
+                .unwrap()
+        );
+        // A committed attributes file that is absent in the working tree must
+        // still make the guard conservative with an unreadable index.
+        std::fs::remove_file(workspace.join(".gitattributes")).unwrap();
         assert!(
             provider
                 .filter_attributes_in_effect(&workspace, configured, &BTreeMap::new())

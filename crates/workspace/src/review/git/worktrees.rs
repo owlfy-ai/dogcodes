@@ -153,7 +153,15 @@ mod tests {
         assert!(!linked.primary);
         std::fs::write(main.join("file"), "source change").unwrap();
         git(&fork, &["mv", "file", "renamed"]);
-        std::fs::write(fork.join("line\nname"), "new").unwrap();
+        std::fs::write(
+            fork.join(if cfg!(windows) {
+                "line name"
+            } else {
+                "line\nname"
+            }),
+            "new",
+        )
+        .unwrap();
         let main_index = main.join(".git/index");
         let fork_index = source.common.join("worktrees/fork/index");
         let before = (

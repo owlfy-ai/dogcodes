@@ -42,6 +42,6 @@ export function AgentPickerMenu({ options, selectedKey, onSelect, title, label, 
         <AgentQuotaRing quota={quota} providerId={option.executor.providerId}/>{chosen && <i>✓</i>}
       </button>;
     })}
-    {!loading && !visibleOptions.length && <p>暂无可用 Agent，请在 Agent 管理中启用，或先连接 Agent</p>}
+    {!loading && !visibleOptions.length && <p>暂无可用 Agent，请在 Agent 管理中检测或启用</p>}
   </FloatingPopover>;
 }

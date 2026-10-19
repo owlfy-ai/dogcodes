@@ -48,7 +48,6 @@ export const ru: TranslationDict = {
   nav: {
     newConversation: "Новый чат",
     creating: "Создание…",
-    connectAgent: "Подключить Agent",
     agentManagement: "Управление Agents",
     mainNav: "Основная навигация",
     toggleSidebar: "Скрыть/показать боковую панель",
@@ -79,7 +78,7 @@ export const ru: TranslationDict = {
   welcome: {
     greeting: "Здравствуйте, чем могу помочь сегодня?",
     readyAgentSelected: "Для вас выбран готовый к работе {agent}. Предварительно подключать проект не требуется.",
-    noAgentAvailable: "Нет доступных Agents. Включите в разделе «Управление Agents» или сначала подключите Agent.",
+    noAgentAvailable: "Нет доступных Agents. Обнаружьте или включите Agent в разделе «Управление Agents».",
     dropFiles: "Перетащите файлы для прикрепления",
     retry: "Повторить",
     openFolder: "Открыть папку проекта",

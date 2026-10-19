@@ -48,7 +48,6 @@ export const ko: TranslationDict = {
   nav: {
     newConversation: "새 대화",
     creating: "생성 중…",
-    connectAgent: "Agent 연결",
     agentManagement: "Agent 관리",
     mainNav: "기본 탐색",
     toggleSidebar: "사이드바 전환",
@@ -79,7 +78,7 @@ export const ko: TranslationDict = {
   welcome: {
     greeting: "안녕하세요, 오늘 어떤 작업을 도와드릴까요?",
     readyAgentSelected: "사용 가능한 {agent}가 선택되었습니다. 프로젝트를 먼저 연결하지 않아도 됩니다.",
-    noAgentAvailable: "사용 가능한 Agent가 없습니다. Agent 관리에서 활성화하거나 먼저 연결하세요.",
+    noAgentAvailable: "사용 가능한 Agent가 없습니다. Agent 관리에서 감지하거나 활성화하세요.",
     dropFiles: "파일을 끌어다 놓아 첨부",
     retry: "다시 시도",
     openFolder: "프로젝트 폴더 열기",

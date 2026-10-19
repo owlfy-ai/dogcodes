@@ -60,6 +60,20 @@ it("offers native login in management only for installed agents with missing aut
   ]} />));
   expect([...host.querySelectorAll(".agent-login-button")].map(button => button.getAttribute("aria-label"))).toEqual(["Kimi Code：去登录"]);
 });
+it("re-detects only the uninstalled agents from management", async () => {
+  let finish = () => {};
+  const onDetect = vi.fn((_ids: string[]) => new Promise<void>(resolve => { finish = resolve; }));
+  await act(async () => root.render(<QuotaPanel management views={[]} installations={installations} onDetect={onDetect} />));
+  const button = [...host.querySelectorAll<HTMLButtonElement>(".agent-uninstalled button")].find(item => item.textContent === "重新检测")!;
+  await act(async () => button.click());
+  expect(onDetect).toHaveBeenCalledTimes(1);
+  const scanned = onDetect.mock.calls[0][0];
+  expect(scanned).toContain("claude-code");
+  expect(scanned).not.toContain("codex");
+  expect(button.disabled).toBe(true);
+  await act(async () => finish());
+  expect(button.disabled).toBe(false);
+});
 it("updates open menus immediately and restores a disabled Agent in its saved position", async () => {
   await act(async () => root.render(<Fixture />));
   expect(menuNames()).toEqual(["Codex", "Kimi"]);

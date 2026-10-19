@@ -609,7 +609,7 @@ mod tests {
         let output = Command::new("git")
             .arg("-C")
             .arg(root)
-            .args(args)
+            .args(args.iter().map(|arg| crate::git_path_argument(arg)))
             .output()
             .unwrap();
         assert!(
@@ -621,6 +621,7 @@ mod tests {
     }
     fn init(root: &Path) {
         git(root, &["init", "-b", "main"]);
+        git(root, &["config", "core.autocrlf", "false"]);
         std::fs::write(root.join("tracked.txt"), "baseline\n").unwrap();
         std::fs::write(root.join("deleted.txt"), "deleted\n").unwrap();
         std::fs::write(root.join(".gitignore"), "ignored.log\n").unwrap();
@@ -779,6 +780,7 @@ mod tests {
     async fn unborn_repository_restores_pending_files_without_creating_a_source_commit() {
         let directory = tempfile::tempdir().unwrap();
         git(directory.path(), &["init", "-b", "main"]);
+        git(directory.path(), &["config", "core.autocrlf", "false"]);
         std::fs::write(directory.path().join("new.txt"), "first result").unwrap();
         let provider = GitWorkspaceContextProvider::default();
         let snapshot = provider

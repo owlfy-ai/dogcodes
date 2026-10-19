@@ -146,7 +146,13 @@ async fn two_real_directories_capture_history_and_restart_recovery() {
     let value: Value = serde_json::from_slice(&content).unwrap();
     assert_eq!(value["schemaVersion"], 2);
     assert_eq!(value["files"].as_array().unwrap().len(), 2);
-    assert_eq!(value["files"][1]["path"], format!("{}/same.txt", paths[1]));
+    assert_eq!(
+        value["files"][1]["path"],
+        std::path::Path::new(&paths[1])
+            .join("same.txt")
+            .to_string_lossy()
+            .as_ref()
+    );
     assert!(
         value["roots"][1]["changes"]["patch"]
             .as_str()

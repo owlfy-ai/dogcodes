@@ -1,5 +1,7 @@
 //! Service-owned PTYs. Views never own or stop processes; output readers are
 //! independent of subscribers. Launch intent is recorded before spawning.
+#[cfg(any(windows, test))]
+mod startup;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -180,6 +182,26 @@ struct Session {
     state_changes: Arc<crate::state_changes::Changes>,
 }
 impl Session {
+    #[cfg(windows)]
+    fn initialize_cursor(&self, directory: Option<&Path>) -> Result<(), String> {
+        {
+            let mut input = self.input.lock().map_err(|_| "终端输入不可用")?;
+            let writer = input.as_mut().ok_or("终端输入已关闭")?;
+            writer
+                .write_all(b"\x1b[1;1R")
+                .and_then(|()| writer.flush())
+                .map_err(|error| format!("Windows 终端初始化失败：{error}"))?;
+        }
+        let mut output = self.output.lock().map_err(|_| "终端状态不可用")?;
+        if output.info.status == TerminalStatus::Starting {
+            output.info.status = TerminalStatus::Running;
+            save(directory, &self.intent, &output.info)?;
+        }
+        drop(output);
+        self.changed.notify_waiters();
+        self.state_changes.changed();
+        Ok(())
+    }
     fn info(&self) -> Result<TerminalInfo, String> {
         Ok(self
             .output
@@ -215,6 +237,36 @@ impl Session {
             gap: from != after || output.info.status == TerminalStatus::Unknown,
             bytes,
         })
+    }
+}
+
+fn reap_child(session: &Session) -> std::io::Result<portable_pty::ExitStatus> {
+    loop {
+        let ended = {
+            let mut slot = session
+                .process
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let Some(process) = slot.as_mut() else {
+                return Err(std::io::Error::other("terminal process missing"));
+            };
+            match process.child.try_wait() {
+                Ok(None) => None,
+                status => {
+                    process.armed = false;
+                    Some((slot.take(), status))
+                }
+            }
+        };
+        if let Some((process, status)) = ended {
+            // Closing ConPTY may emit a final frame. On Windows this runs on
+            // its own worker while the output thread continues draining it.
+            drop(process);
+            return status.and_then(|status| {
+                status.ok_or_else(|| std::io::Error::other("terminal was not reaped"))
+            });
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 type Sessions = Arc<Mutex<HashMap<String, Arc<Session>>>>;
@@ -578,13 +630,27 @@ impl TerminalHost {
             if session.info()?.status != TerminalStatus::Running {
                 return Err("终端未运行，未重放输入".into());
             }
-            // A full PTY input buffer must not hold the process lock: stopping
-            // the child remains possible and releases a blocked write.
+            // Linux may leave a blocking PTY write asleep even after the slave
+            // dies. Nonblocking writes must observe stop between partial writes.
             let mut input = session.input.lock().map_err(|_| "终端输入不可用")?;
             let writer = input.as_mut().ok_or("终端未运行，未重放输入")?;
+            let mut remaining = bytes.as_slice();
+            while !remaining.is_empty() {
+                if session.info()?.status != TerminalStatus::Running {
+                    return Err("终端已停止，输入结果无法确认，未重放输入".into());
+                }
+                match writer.write(remaining) {
+                    Ok(0) => return Err("终端输入未完成，未重放输入".into()),
+                    Ok(count) => remaining = &remaining[count..],
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => return Err(format!("终端输入结果无法确认，未重放输入：{error}")),
+                }
+            }
             writer
-                .write_all(&bytes)
-                .and_then(|()| writer.flush())
+                .flush()
                 .map_err(|error| format!("终端输入结果无法确认，未重放输入：{error}"))
         })
         .await
@@ -722,6 +788,17 @@ fn spawn(
     let pair = native_pty_system()
         .openpty(dimensions)
         .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    {
+        use nix::fcntl::{FcntlArg, OFlag, fcntl};
+        let fd = pair.master.as_raw_fd().ok_or("终端不支持可中断输入")?;
+        let flags = fcntl(fd, FcntlArg::F_GETFL).map_err(|e| e.to_string())?;
+        fcntl(
+            fd,
+            FcntlArg::F_SETFL(OFlag::from_bits_truncate(flags) | OFlag::O_NONBLOCK),
+        )
+        .map_err(|e| e.to_string())?;
+    }
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let mut command = command(session.intent.command.as_deref(), shell, &cwd);
@@ -742,7 +819,13 @@ fn spawn(
     // child before reporting failure; never leave an unrecorded process running.
     let setup = (|| {
         let mut output = session.output.lock().map_err(|_| "终端状态不可用")?;
-        output.info.status = TerminalStatus::Running;
+        // ConPTY inherits its initial cursor through an output/input handshake.
+        // Keep writes gated until the service answers it, even with no view.
+        output.info.status = if cfg!(windows) {
+            TerminalStatus::Starting
+        } else {
+            TerminalStatus::Running
+        };
         save(directory.as_deref(), &session.intent, &output.info)
     })();
     if let Err(error) = setup {
@@ -755,48 +838,58 @@ fn spawn(
     *session.process.lock().map_err(|_| "终端状态不可用")? = Some(process);
     session.state_changes.changed();
     let reading = session.clone();
+    #[cfg(windows)]
+    let (exit_send, exit_receive) =
+        std::sync::mpsc::channel::<std::io::Result<portable_pty::ExitStatus>>();
     let thread = std::thread::Builder::new()
         .name("terminal-output".into())
         .spawn(move || {
             let session = reading;
             let mut buffer = [0; 8192];
+            #[cfg(windows)]
+            let mut cursor = startup::StartupCursor::default();
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
-                    Ok(count) => session.append(&buffer[..count]),
+                    Ok(count) => {
+                        #[cfg(not(windows))]
+                        session.append(&buffer[..count]);
+                        #[cfg(windows)]
+                        {
+                            let (visible, respond) = cursor.consume(&buffer[..count]);
+                            if respond
+                                && let Err(error) = session.initialize_cursor(directory.as_deref())
+                            {
+                                if let Ok(mut output) = session.output.lock() {
+                                    output.info.error = Some(error);
+                                }
+                                if let Ok(mut process) = session.process.lock()
+                                    && let Some(process) = process.as_mut()
+                                {
+                                    let _ = process.stop();
+                                }
+                                break;
+                            }
+                            if !visible.is_empty() {
+                                session.append(&visible);
+                            }
+                        }
+                    }
                     Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
                     Err(_) => break,
                 }
             }
-            // Reap and disarm while holding the same lock used by stop. Checking an
-            // atomic flag after wait() leaves a window in which a reused PID may be
-            // killed. try_wait avoids blocking stop while the child is still alive.
-            let status = loop {
-                let result = {
-                    let mut process = session
-                        .process
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    let Some(child) = process.as_mut() else {
-                        break Err(std::io::Error::other("terminal process missing"));
-                    };
-                    match child.child.try_wait() {
-                        Ok(None) => None,
-                        result => {
-                            child.armed = false;
-                            process.take();
-                            Some(result)
-                        }
-                    }
-                };
-                if let Some(result) = result {
-                    break result.map(|status| status.expect("reaped child"));
-                }
-                std::thread::sleep(Duration::from_millis(10));
-            };
-            if let Ok(mut input) = session.input.lock() {
-                input.take();
-            }
+            // Process identity is disarmed under the same lock as stop. On
+            // Windows, child exit closes ConPTY before its output reaches EOF.
+            #[cfg(windows)]
+            let status = exit_receive
+                .recv()
+                .unwrap_or_else(|_| Err(std::io::Error::other("terminal reaper unavailable")));
+            #[cfg(not(windows))]
+            let status = reap_child(&session);
             if let Ok(mut output) = session.output.lock() {
                 output.info.status = TerminalStatus::Exited;
                 match status {
@@ -809,6 +902,11 @@ fn spawn(
                 if let Err(error) = save(directory.as_deref(), &session.intent, &output.info) {
                     output.info.error = Some(format!("进程已结束，但状态保存失败：{error}"));
                 }
+            }
+            // Publish exit before waiting for input: a nonblocking writer must
+            // see that the child died even when no explicit stop was requested.
+            if let Ok(mut input) = session.input.lock() {
+                input.take();
             }
             session.changed.notify_waiters();
             session.state_changes.changed();
@@ -832,6 +930,14 @@ fn spawn(
             input.take();
         }
         return Err(format!("无法读取终端输出：{error}"));
+    }
+    #[cfg(windows)]
+    {
+        let waiting = session.clone();
+        // The service owns this worker until child exit; views never own it.
+        drop(tokio::task::spawn_blocking(move || {
+            let _ = exit_send.send(reap_child(&waiting));
+        }));
     }
     Ok(())
 }

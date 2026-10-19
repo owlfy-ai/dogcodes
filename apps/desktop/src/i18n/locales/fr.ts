@@ -48,7 +48,6 @@ export const fr: TranslationDict = {
   nav: {
     newConversation: "Nouvelle conversation",
     creating: "Création…",
-    connectAgent: "Connecter un Agent",
     agentManagement: "Gestion des Agents",
     mainNav: "Navigation principale",
     toggleSidebar: "Basculer la barre latérale",
@@ -79,7 +78,7 @@ export const fr: TranslationDict = {
   welcome: {
     greeting: "Bonjour, que souhaitez-vous faire aujourd'hui ?",
     readyAgentSelected: "{agent} prêt a été sélectionné pour vous. Pas besoin de connecter un projet au préalable.",
-    noAgentAvailable: "Aucun Agent disponible. Veuillez en activer un dans la gestion des Agents ou en connecter un d'abord.",
+    noAgentAvailable: "Aucun Agent disponible. Détectez-en ou activez-en un dans la gestion des Agents.",
     dropFiles: "Déposez des fichiers pour les joindre",
     retry: "Réessayer",
     openFolder: "Ouvrir un dossier de projet",

@@ -586,6 +586,8 @@ fn replace_with_pre_capture(
             .remove_file("replacement")
             .map_err(|_| "cannot clean replacement link; recovery required")?;
     }
+    // Windows cannot remove a directory while its capability handle is open.
+    drop(temporary);
     directory
         .remove_dir(&transaction_name)
         .map_err(|_| "cannot clean transaction directory; recovery required")?;
@@ -705,6 +707,7 @@ impl ReviewStore {
                         .remove_file("replacement")
                         .map_err(|_| "cannot clean verified replacement link")?;
                 }
+                drop(temporary);
                 directory.remove_dir(&transaction_name).map_err(
                     |_| "unknown transaction entries retained; manual recovery required",
                 )?;
@@ -1460,6 +1463,7 @@ mod tests {
             "base",
         )
         .unwrap();
+        drop(temporary);
         let reopened = ReviewStore::open(data.path().into()).unwrap();
         reopened.reconcile_recovery("task", &record.id).unwrap();
         assert_eq!(fs::read(root.path().join("a")).unwrap(), b"base");

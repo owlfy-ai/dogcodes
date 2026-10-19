@@ -94,7 +94,11 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(paths.len(), 3);
-        assert!(paths.iter().any(|path| path.ends_with("a/b")));
+        assert!(
+            paths
+                .iter()
+                .any(|path| std::path::Path::new(path).ends_with("a/b"))
+        );
         assert!(paths.iter().all(|path| !path.contains("node_modules")));
     }
 

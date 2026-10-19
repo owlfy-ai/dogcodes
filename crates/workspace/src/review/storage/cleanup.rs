@@ -203,13 +203,17 @@ mod tests {
             let hash = store
                 .put_blob(format!("old content {index}").as_bytes())
                 .unwrap();
-            fs::File::open(fixture.path().join("blobs").join(&hash))
+            fs::OpenOptions::new()
+                .write(true)
+                .open(fixture.path().join("blobs").join(&hash))
                 .unwrap()
                 .set_modified(old)
                 .unwrap();
             hashes.push(hash);
         }
-        fs::File::open(fixture.path().join("blobs").join(&live))
+        fs::OpenOptions::new()
+            .write(true)
+            .open(fixture.path().join("blobs").join(&live))
             .unwrap()
             .set_modified(old)
             .unwrap();
