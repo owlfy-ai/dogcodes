@@ -61,6 +61,10 @@ pub struct ProjectRunHost {
     active: Arc<std::sync::atomic::AtomicUsize>,
     admission: Arc<tokio::sync::Mutex<()>>,
     uncertain_storage: Arc<std::sync::atomic::AtomicBool>,
+    // Access only with `cache` locked first. These contain the last durable
+    // commands plus terminal analysis state, never an unsaved Agent result.
+    finalizations: Arc<Mutex<HashMap<String, StoredCatalog>>>,
+    cleanup_pending: Arc<Mutex<HashSet<(String, String)>>>,
     pub(crate) changes: Arc<crate::state_changes::Changes>,
 }
 impl ProjectRunHost {
@@ -72,6 +76,8 @@ impl ProjectRunHost {
             active: Arc::default(),
             admission: Arc::default(),
             uncertain_storage: Arc::default(),
+            finalizations: Arc::default(),
+            cleanup_pending: Arc::default(),
             changes: Arc::new(crate::state_changes::Changes::new()),
         }
     }
@@ -83,15 +89,10 @@ impl ProjectRunHost {
         self.active.load(std::sync::atomic::Ordering::Acquire) > 0
     }
     fn load(&self, id: &str) -> Result<Option<StoredCatalog>, String> {
-        if self
-            .uncertain_storage
-            .load(std::sync::atomic::Ordering::Acquire)
-        {
-            return Err("运行配置写入结果待核实，请检查磁盘后重启后台；未重新执行操作".into());
-        }
         // Read and install under one lock, so an older disk snapshot cannot
         // overwrite an edit or an analysis accepted by another client.
         let mut cache = self.cache.lock().map_err(|_| "项目分析状态不可用")?;
+        self.flush_finalization(&mut cache, id)?;
         if let Some(value) = cache.get(id) {
             return Ok(Some(value.clone()));
         }
@@ -105,24 +106,53 @@ impl ProjectRunHost {
         if catalog.project_id != id || catalog.platform != std::env::consts::OS {
             return Err("运行配置归属不匹配，已保留原文件".into());
         }
-        for directory in &mut catalog.directories {
-            if directory.status == "analyzing" {
-                directory.status = "error".into();
-                directory.error = Some("上次分析已中断，请重新分析".into());
-            }
-        }
-        for receipt in catalog
-            .operations
-            .values_mut()
-            .filter(|r| r.result.status == "running")
-        {
-            receipt.result.status = "interrupted".into();
-            receipt.result.error = Some("后台重启，原分析已中断，未自动重新执行".into());
+        let interrupted =
+            catalog.interrupt_analysis("interrupted", "后台重启，原分析已中断，未自动重新执行");
+        if interrupted {
+            self.save(&catalog).map_err(|error| {
+                format!("上次分析已中断，恢复状态尚未保存；请检查磁盘后重试：{error}")
+            })?;
         }
         cache.insert(id.into(), catalog.clone());
         Ok(Some(catalog))
     }
+    fn flush_finalization(
+        &self,
+        cache: &mut HashMap<String, StoredCatalog>,
+        id: &str,
+    ) -> Result<(), String> {
+        self.require_known_storage()?;
+        let mut finalizations = self
+            .finalizations
+            .lock()
+            .map_err(|_| "项目分析恢复状态不可用")?;
+        if let Some(finalization) = finalizations.get(id) {
+            if cache
+                .get(id)
+                .is_none_or(|c| c.generation != finalization.generation)
+            {
+                return Err("分析恢复版本不匹配，已保留原运行配置；请重新打开后台核实".into());
+            }
+            self.save(finalization).map_err(|error| {
+                format!("分析已停止，状态尚未保存；请检查磁盘后重试，未重新执行分析：{error}")
+            })?;
+            cache.insert(id.into(), finalization.clone());
+            finalizations.remove(id);
+            self.changes.changed();
+        }
+        Ok(())
+    }
+    fn require_known_storage(&self) -> Result<(), String> {
+        if self
+            .uncertain_storage
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Err("运行配置写入结果待核实，请检查磁盘后重启后台；未重新执行操作".into());
+        }
+        Ok(())
+    }
     fn save(&self, catalog: &StoredCatalog) -> Result<(), String> {
+        self.require_known_storage()?;
         std::fs::create_dir_all(&self.directory).map_err(|e| e.to_string())?;
         // NamedTempFile replaces the existing file atomically on all supported
         // platforms; never delete a valid Windows cache before renaming.
@@ -166,6 +196,7 @@ impl ProjectRunHost {
         self.load(id)?
             .ok_or_else(|| MutationError::rejected("catalog_missing", "请先分析项目"))?;
         let mut cache = self.cache.lock().map_err(|_| "项目分析状态不可用")?;
+        self.flush_finalization(&mut cache, id)?;
         let mut catalog = cache
             .get(id)
             .cloned()
@@ -238,14 +269,28 @@ impl ProjectRunHost {
         generation: &str,
         index: usize,
         result: Result<Vec<RunCommand>, String>,
-    ) {
+    ) -> bool {
         let Ok(mut cache) = self.cache.lock() else {
-            return;
+            return false;
         };
-        let Some(catalog) = cache.get_mut(id).filter(|c| c.generation == generation) else {
-            return;
+        if self.cleanup_pending.lock().map_or(true, |pending| {
+            pending.contains(&(id.into(), generation.into()))
+        }) {
+            return false;
+        }
+        let Some(original) = cache.get(id).filter(|c| c.generation == generation) else {
+            return false;
         };
-        let directory = &mut catalog.directories[index];
+        let Ok(mut finalizations) = self.finalizations.lock() else {
+            return false;
+        };
+        if finalizations.contains_key(id) {
+            return false;
+        }
+        let mut catalog = original.clone();
+        let Some(directory) = catalog.directories.get_mut(index) else {
+            return false;
+        };
         match result {
             Ok(commands) => {
                 let mut retained: Vec<_> = directory
@@ -273,19 +318,47 @@ impl ProjectRunHost {
             }
         }
         catalog.settle_analysis();
-        if let Err(error) = self.save(catalog) {
-            catalog.directories[index].status = "error".into();
-            let message = format!("结果已生成，但未能保存缓存：{error}");
-            catalog.directories[index].error = Some(message.clone());
-            let generation = catalog.generation.clone();
-            for receipt in catalog
-                .operations
-                .values_mut()
-                .filter(|r| r.result.generation == generation)
-            {
-                receipt.result.status = "failed".into();
-                receipt.result.error = Some(message.clone());
-            }
+        if let Err(error) = self.save(&catalog) {
+            // Roll back to the durable commands. A later read may persist this
+            // terminal state after disk repair, but must never publish the
+            // generated commands or silently restart the remaining Agent work.
+            let mut failed = original.clone();
+            failed.interrupt_analysis(
+                "failed",
+                &format!("分析结果未能保存，请检查磁盘后重新分析：{error}"),
+            );
+            finalizations.insert(id.into(), failed);
+            self.changes.changed();
+            return false;
+        }
+        cache.insert(id.into(), catalog);
+        self.changes.changed();
+        true
+    }
+    fn interrupt(&self, id: &str, generation: &str) {
+        self.interrupt_with_message(id, generation, "项目分析已中断，请重新分析；未自动重新执行");
+    }
+    fn interrupt_with_message(&self, id: &str, generation: &str, message: &str) {
+        let Ok(mut cache) = self.cache.lock() else {
+            return;
+        };
+        let Some(mut catalog) = cache
+            .get(id)
+            .filter(|c| c.generation == generation)
+            .cloned()
+        else {
+            return;
+        };
+        let Ok(mut finalizations) = self.finalizations.lock() else {
+            return;
+        };
+        if finalizations.contains_key(id) || !catalog.interrupt_analysis("interrupted", message) {
+            return;
+        }
+        if self.save(&catalog).is_ok() {
+            cache.insert(id.into(), catalog);
+        } else {
+            finalizations.insert(id.into(), catalog);
         }
         self.changes.changed();
     }
@@ -456,6 +529,21 @@ async fn analyze_recorded(
     };
     {
         let mut cache = host.cache.lock().map_err(|_| "项目分析状态不可用")?;
+        // Background completion may fail while Agent admission is awaited.
+        // Save its terminal state before creating a replacement generation.
+        host.flush_finalization(&mut cache, &id)?;
+        if host
+            .cleanup_pending
+            .lock()
+            .map_err(|_| "分析清理状态不可用")?
+            .iter()
+            .any(|(project_id, _)| project_id == &id)
+        {
+            return Err(MutationError::rejected(
+                "analysis_cleanup_pending",
+                "原分析 Agent 会话关闭待核实，后台正在清理，请稍后重试",
+            ));
+        }
         // Coalesce concurrent openings, but allow an explicit refresh to supersede old work.
         if !force
             && let Some(current) = cache.get(&id)
@@ -495,11 +583,12 @@ async fn analyze_recorded(
         cache.insert(id.clone(), stored);
     }
     host.changes.changed();
-    host.active
-        .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-    let running = ActiveAnalysis(host.active.clone());
+    let running = Arc::new(ActiveAnalysis::new(
+        host.clone(),
+        id.clone(),
+        generation.clone(),
+    ));
     tokio::spawn(async move {
-        let _running = running;
         for (index, path) in paths.iter().enumerate() {
             let Ok(_permit) = host.gate.acquire().await else {
                 return;
@@ -517,20 +606,58 @@ async fn analyze_recorded(
                 let files = tokio::task::spawn_blocking(move || scan(&scan_root)).await.map_err(|_| "读取目录失败")??;
                 if files.is_empty() { return Ok(vec![]); }
                 let packet = serde_json::json!({ "platform": std::env::consts::OS, "shell": shell(), "files": files }).to_string();
-                let response = execution.analyze_project_commands(packet).await?;
+                let response = execution.analyze_project_commands_with_lifetime(packet, running.clone()).await?;
                 parse_commands(&response, &root, &files)
             }.await;
-            host.finish(&id, &generation, index, result);
+            if running.stopped.load(std::sync::atomic::Ordering::Acquire)
+                || !host.finish(&id, &generation, index, result)
+            {
+                return;
+            }
         }
     });
     drop(agent_admission);
     Ok(catalog)
 }
 
-struct ActiveAnalysis(Arc<std::sync::atomic::AtomicUsize>);
+struct ActiveAnalysis {
+    stopped: std::sync::atomic::AtomicBool,
+    host: ProjectRunHost,
+    id: String,
+    generation: String,
+}
+impl ActiveAnalysis {
+    fn new(host: ProjectRunHost, id: String, generation: String) -> Self {
+        host.active
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        Self {
+            stopped: std::sync::atomic::AtomicBool::new(false),
+            host,
+            id,
+            generation,
+        }
+    }
+}
+impl agent_core::AnalysisLifetime for ActiveAnalysis {
+    fn cleanup_pending(&self, message: &str) {
+        self.stopped
+            .store(true, std::sync::atomic::Ordering::Release);
+        if let Ok(mut pending) = self.host.cleanup_pending.lock() {
+            pending.insert((self.id.clone(), self.generation.clone()));
+        }
+        self.host
+            .interrupt_with_message(&self.id, &self.generation, message);
+    }
+}
 impl Drop for ActiveAnalysis {
     fn drop(&mut self) {
-        self.0.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        if let Ok(mut pending) = self.host.cleanup_pending.lock() {
+            pending.remove(&(self.id.clone(), self.generation.clone()));
+        }
+        self.host.interrupt(&self.id, &self.generation);
+        self.host
+            .active
+            .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
     }
 }
 
@@ -769,7 +896,11 @@ pub async fn dispatch(
                 c.operations
                     .get(&operation_id)
                     .filter(|r| r.request["taskId"] == task_id)
-                    .map(|r| r.result.clone())
+                    .map(|r| {
+                        let mut result = r.result.clone();
+                        result.request = Some(r.request.clone());
+                        result
+                    })
             })))
         }
         "project_run_open" => Ok(json!(

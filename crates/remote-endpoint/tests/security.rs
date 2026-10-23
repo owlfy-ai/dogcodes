@@ -136,8 +136,16 @@ fn concurrent_claim_first_wins_receipt_survives_restart_revocation_fences_existi
     let mut reopened = PairingBook::load(&path).unwrap();
     assert_eq!(reopened.receipt("invite", first.session()).unwrap(), grant);
     let lease = reopened.authorize(first.session()).unwrap();
+    assert_eq!(reopened.receipt_for_lease("invite", &lease).unwrap(), grant);
+    assert_eq!(
+        reopened.active_receipts().unwrap(),
+        vec![("invite".into(), grant.clone())]
+    );
+    assert!(reopened.receipt_for_lease("other-invite", &lease).is_err());
     reopened.revoke(&grant.device_id).unwrap();
     assert!(reopened.check(&lease).is_err());
+    assert!(reopened.receipt_for_lease("invite", &lease).is_err());
+    assert!(reopened.active_receipts().unwrap().is_empty());
     assert!(reopened.receipt("invite", first.session()).is_err());
     assert!(
         PairingBook::load(&path)

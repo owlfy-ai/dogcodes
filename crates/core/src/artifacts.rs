@@ -146,9 +146,9 @@ impl Core {
 }
 
 fn require_local_user(actor: &ActorRef) -> Result<(), CoreError> {
-    if actor != &ActorRef::LocalUser {
+    if !matches!(actor, ActorRef::LocalUser | ActorRef::PairedDevice(_)) {
         return Err(CoreError::InvalidArgument(
-            "artifact retrieval requires the local user".into(),
+            "artifact retrieval requires an authenticated user or paired device".into(),
         ));
     }
     Ok(())

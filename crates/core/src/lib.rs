@@ -20,6 +20,7 @@ pub mod history_bridge;
 pub mod history_delivery;
 mod multi_workspace;
 mod project_commands;
+pub use project_commands::AnalysisLifetime;
 pub mod recovery;
 pub mod review_analysis;
 mod running_permissions;
@@ -3466,7 +3467,9 @@ impl Core {
         let mut first_event = false;
         let mut first_text = false;
         let mut terminal_observed = false;
-        let mut thought_segments: BTreeMap<String, (String, std::time::Instant)> = BTreeMap::new();
+        // Open thinking segments: item id, start, and the redacted text so far
+        // (saved when the segment closes, so history can show it).
+        let mut thought_segments: BTreeMap<String, ThoughtSegment> = BTreeMap::new();
         let mut seen_display_events = std::collections::BTreeSet::new();
         let mut aliases: BTreeMap<String, String> = BTreeMap::new();
         let mut segment = 0u64;
@@ -3545,12 +3548,25 @@ impl Core {
                     .cloned()
                     .collect();
                 for key in closing {
-                    if let Some((id, start)) = thought_segments.remove(&key) {
+                    if let Some(ThoughtSegment {
+                        id,
+                        start,
+                        text,
+                        truncated,
+                    }) = thought_segments.remove(&key)
+                    {
                         self.live_thoughts
                             .write()
                             .await
                             .remove(&format!("tool:{task_id}:{}:{id}", active.turn_id));
-                        self.append_runtime_event(task_id,"activity.updated",json!({"taskId":task_id,"turnId":active.turn_id,"itemId":id,"data":{"type":"thought","parentId":key,"status":if terminal && !matches!(&event,DriverEvent::TurnCompleted{..}){"interrupted"}else{"completed"},"durationMs":u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)}}),EventSource::Hub).await?;
+                        let mut data = json!({"type":"thought","parentId":key,"status":if terminal && !matches!(&event,DriverEvent::TurnCompleted{..}){"interrupted"}else{"completed"},"durationMs":u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)});
+                        if !text.trim().is_empty() {
+                            data["text"] = json!(text);
+                            if truncated {
+                                data["textTruncated"] = json!(true);
+                            }
+                        }
+                        self.append_runtime_event(task_id,"activity.updated",json!({"taskId":task_id,"turnId":active.turn_id,"itemId":id,"data":data}),EventSource::Hub).await?;
                     }
                 }
             }
@@ -3561,21 +3577,23 @@ impl Core {
                     item_id.clone_from(scoped);
                 }
                 if is_thought {
-                    let (id, _) = thought_segments.entry(parent.clone()).or_insert_with(|| {
+                    let thought = thought_segments.entry(parent.clone()).or_insert_with(|| {
                         segment += 1;
-                        (format!("thought-{segment}"), std::time::Instant::now())
+                        ThoughtSegment::new(format!("thought-{segment}"))
                     });
-                    item_id.clone_from(id);
+                    item_id.clone_from(&thought.id);
                     let delta = data
                         .as_object_mut()
                         .and_then(|o| o.remove("delta"))
                         .and_then(|x| x.as_str().map(str::to_owned))
                         .unwrap_or_default();
+                    let redacted = self.redactor.redact(&delta).text;
+                    thought.push(&redacted);
                     let mut live = self.live_thoughts.write().await;
                     let buffer = live
-                        .entry(format!("tool:{task_id}:{}:{id}", active.turn_id))
+                        .entry(format!("tool:{task_id}:{}:{}", active.turn_id, thought.id))
                         .or_default();
-                    buffer.push_str(&self.redactor.redact(&delta).text);
+                    buffer.push_str(&redacted);
                     *buffer = buffer
                         .chars()
                         .rev()
@@ -4132,12 +4150,16 @@ fn map_driver_event(
             "turn.completed",
             json!({ "taskId": task_id, "turnId": turn_id, "summary": summary, "completedAt": Utc::now() }),
         ),
-        // Driver-provided failure text must never enter the Canonical log:
-        // only a stable failureKind plus a fixed generic message is persisted.
-        DriverEvent::TurnFailed { reason } => (
-            "turn.failed",
-            json!({ "taskId": task_id, "turnId": turn_id, "failureKind": driver_api::failure::classify(&reason).unwrap_or("driver_turn_failed"), "message": "turn execution failed", "failedAt": Utc::now() }),
-        ),
+        // The agent's own error text is kept (secret-redacted) as agentError so
+        // the user sees what the agent reported, next to the stable failureKind.
+        DriverEvent::TurnFailed { reason } => {
+            let (kind, detail) = driver_api::failure::split_turn_failure(&reason);
+            let mut payload = json!({ "taskId": task_id, "turnId": turn_id, "failureKind": kind.unwrap_or("driver_turn_failed"), "message": "turn execution failed", "failedAt": Utc::now() });
+            if let Some(detail) = detail.and_then(agent_error_text) {
+                payload["agentError"] = json!(detail);
+            }
+            ("turn.failed", payload)
+        }
         DriverEvent::TurnQuotaExhausted { resets_at_unix } => (
             "turn.failed",
             json!({
@@ -4228,6 +4250,24 @@ fn classify_resume_failure(error: &DriverError) -> ResumeFailureClassification {
     }
 }
 
+/// Upper bound for agent error text kept on a failure event.
+const AGENT_ERROR_MAX_CHARS: usize = 4000;
+
+/// Secret-redacted, length-bounded agent error text for a failure event.
+fn agent_error_text(detail: &str) -> Option<String> {
+    use redaction::SecretRedactor;
+    let detail = detail.trim();
+    if detail.is_empty() {
+        return None;
+    }
+    let mut text = redaction::DeterministicRedactor.redact(detail).text;
+    if let Some((cut, _)) = text.char_indices().nth(AGENT_ERROR_MAX_CHARS) {
+        text.truncate(cut);
+        text.push('…');
+    }
+    Some(text)
+}
+
 fn safe_turn_failure_payload(
     task_id: &TaskId,
     scope: Option<&TurnWorkspaceScope>,
@@ -4250,6 +4290,11 @@ fn safe_turn_failure_payload(
         "failureKind": failure_kind,
         "message": "turn execution failed",
     });
+    if let CoreError::Driver(error) = error
+        && let Some(detail) = driver_api::failure::error_detail(error).and_then(agent_error_text)
+    {
+        payload["agentError"] = json!(detail);
+    }
     if let Some(scope) = scope {
         payload["turnId"] = json!(scope.turn_id);
         payload["executor"] = json!(scope.executor);
@@ -5438,5 +5483,65 @@ mod tests {
                 .to_string()
                 .contains("Ab3dEf6hIj9lMn2pQr5tUv8xYz1BC4DE")
         }));
+    }
+}
+
+/// One open thinking segment of a running turn. Its text is redacted as it
+/// streams and saved when the segment closes, bounded so a long chain of
+/// thought cannot bloat the store; the live channel still shows the tail.
+struct ThoughtSegment {
+    id: String,
+    start: std::time::Instant,
+    text: String,
+    truncated: bool,
+}
+
+impl ThoughtSegment {
+    const MAX_BYTES: usize = 64 * 1024;
+
+    fn new(id: String) -> Self {
+        Self {
+            id,
+            start: std::time::Instant::now(),
+            text: String::new(),
+            truncated: false,
+        }
+    }
+
+    fn push(&mut self, delta: &str) {
+        if self.truncated {
+            return;
+        }
+        let room = Self::MAX_BYTES - self.text.len();
+        if delta.len() <= room {
+            self.text.push_str(delta);
+            return;
+        }
+        let mut end = room;
+        while !delta.is_char_boundary(end) {
+            end -= 1;
+        }
+        self.text.push_str(&delta[..end]);
+        self.truncated = true;
+    }
+}
+
+#[cfg(test)]
+mod thought_segment_tests {
+    use super::ThoughtSegment;
+
+    #[test]
+    fn saved_thinking_is_bounded_on_a_character_boundary() {
+        let mut segment = ThoughtSegment::new("thought-1".into());
+        segment.push("思考");
+        assert_eq!(segment.text, "思考");
+        let long = "想".repeat(ThoughtSegment::MAX_BYTES);
+        segment.push(&long);
+        assert!(segment.truncated);
+        assert!(segment.text.len() <= ThoughtSegment::MAX_BYTES);
+        assert!(segment.text.ends_with('想'));
+        let kept = segment.text.clone();
+        segment.push("更多");
+        assert_eq!(segment.text, kept);
     }
 }

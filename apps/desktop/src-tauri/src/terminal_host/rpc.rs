@@ -47,6 +47,14 @@ pub async fn dispatch(
             }
             Ok(json!(terminals.start(intent).await?))
         }
+        "terminal_launch_intents" => {
+            let id = args["operationId"].as_str().ok_or("缺少原启动标识")?;
+            match args["type"].as_str() {
+                Some("get") => Ok(json!(terminals.launch_receipt(id)?)),
+                Some("retire") => terminals.retire_launch(id).await,
+                _ => Err("无效的启动恢复操作".into()),
+            }
+        }
         "terminal_list" => {
             let project_id: String = serde_json::from_value(args).map_err(|e| e.to_string())?;
             Ok(json!(terminals.list(&project_id)?))
@@ -60,17 +68,21 @@ pub async fn dispatch(
                 serde_json::from_value(args).map_err(|e| e.to_string())?;
             Ok(json!(terminals.read(&id, after).await?))
         }
-        "terminal_write" => {
-            let (id, bytes): (String, Vec<u8>) =
-                serde_json::from_value(args).map_err(|e| e.to_string())?;
-            terminals.write(&id, bytes).await?;
-            Ok(Value::Null)
-        }
         "terminal_resize" => {
             let (id, cols, rows): (String, u16, u16) =
                 serde_json::from_value(args).map_err(|e| e.to_string())?;
             terminals.resize(&id, cols, rows).await?;
             Ok(Value::Null)
+        }
+        "terminal_input" => {
+            let (window, request): (String, Value) =
+                serde_json::from_value(args).map_err(|_| "无效的桌面终端输入请求")?;
+            if window != "main" && !window.starts_with("review-") {
+                return Err("此窗口不能访问终端输入".into());
+            }
+            terminals
+                .input_operation(&format!("local-window:{window}"), request)
+                .await
         }
         "terminal_stop" => {
             let id: String = serde_json::from_value(args).map_err(|e| e.to_string())?;

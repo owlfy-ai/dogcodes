@@ -7,7 +7,7 @@ import { terminalClient, terminalEnded, type TerminalApi, type TerminalConnectio
 export { terminalClient, type TerminalApi } from "./terminalClient";
 import { Terminal } from "@xterm/xterm";
 import { installTerminalKeyboard } from "./terminalKeyboard";
-import { terminalInput } from "./terminalInput";
+import { terminalInput, type TerminalInputState } from "./terminalInput";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import "./terminal.css";
@@ -19,7 +19,10 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
 }) {
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
-  const runtime = useRef<{ fit: () => void; focus: () => void } | null>(null);
+  const runtime = useRef<{ fit: () => void; focus: () => void; setInputPaused: (paused: boolean) => void } | null>(null);
+  const inputRuntime = useRef<ReturnType<typeof terminalInput> | null>(null);
+  const inputApi = useRef(api); inputApi.current = api;
+  const [inputState, setInputState] = useState<TerminalInputState>({ paused: false, busy: false, hasUnknown: false, canResume: true, message: null });
   const isVisible = useRef(visible);
   isVisible.current = visible;
   const [status, setStatus] = useState(() => t("terminal.starting"));
@@ -36,8 +39,17 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
   const statusListener = useRef(onStatus);
   statusListener.current = onStatus;
   useEffect(() => {
+    const controller = terminalInput({ get: id => inputApi.current.get(id), input: (id, request) => inputApi.current.input(id, request) }, value => {
+      if (inputRuntime.current !== controller) return;
+      setInputState(value); runtime.current?.setInputPaused(value.paused);
+    });
+    inputRuntime.current = controller; setInputState(controller.state);
+    return () => { if (inputRuntime.current === controller) inputRuntime.current = null; controller.dispose(); };
+  }, [projectId, directoryIndex]);
+  useEffect(() => {
     const element = host.current!;
-    let disposed = false, exited = false, id: string | undefined, connection: TerminalConnection | undefined;
+    const inputQueue = inputRuntime.current!;
+    let disposed = false, exited = false, accepting = false, id: string | undefined, connection: TerminalConnection | undefined;
     setStatus(knownResource.current ? "正在连接终端…" : "正在启动终端…"); setStarting(true); setRetry(false);
     const terminal = new Terminal({
       cursorBlink: true, fontSize: 13, lineHeight: 1.25, scrollback: 5000,
@@ -48,6 +60,15 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(element);
+    // Output-generated DSR/device replies must not claim input just by viewing.
+    // Capture before the WebKit keyboard fix, which may stop propagation.
+    let interacted = false;
+    const interaction = () => { interacted = true; };
+    const inputEvents = ["keydown", "paste", "compositionstart", "input", "drop"];
+    for (const event of inputEvents) element.addEventListener(event, interaction, true);
+    const mouseInteraction = () => { const mode = terminal.modes?.mouseTrackingMode; if (mode && mode !== "none") interacted = true; };
+    const mouseEvents = ["pointerdown", "mousedown", "pointermove", "mousemove", "wheel", "touchstart"];
+    for (const event of mouseEvents) element.addEventListener(event, mouseInteraction, true);
     const keyboardCleanup = installTerminalKeyboard(terminal, element);
     const theme = () => {
       const style = getComputedStyle(element);
@@ -85,16 +106,9 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "style"] });
     const media = window.matchMedia("(prefers-color-scheme: light)");
     media.addEventListener("change", theme);
-    runtime.current = { fit, focus: () => terminal.focus() };
+    runtime.current = { fit, focus: () => terminal.focus(), setInputPaused: paused => { terminal.options.disableStdin = paused || !accepting; } };
     fit();
-    const inputQueue = terminalInput(api.write, error => {
-      if (disposed || exited) return;
-      exited = true;
-      terminal.options.disableStdin = true;
-      setStarting(false); setRetry(true); setFailure(n => n + 1); setStatus("输入结果无法确认，未重新发送。");
-      connection?.detach();
-    });
-    const send = (bytes: Uint8Array) => { if (!exited && !disposed) inputQueue.push(bytes); };
+    const send = (bytes: Uint8Array) => { if (!exited && !disposed && (interacted || inputQueue.attached)) inputQueue.push(bytes); };
     const input = terminal.onData(data => send(new TextEncoder().encode(data)));
     const binary = terminal.onBinary(data => send(Uint8Array.from(data, c => c.charCodeAt(0))));
     const receive = (event: TerminalOutput) => {
@@ -102,18 +116,19 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
       if (event.kind === "data") terminal.write(new Uint8Array(event.bytes));
       else if (event.kind === "gap") terminal.write("\r\n[部分历史输出已不可用]\r\n");
       else if (event.kind === "disconnected") {
-        inputQueue.dispose(); exited = true; terminal.options.disableStdin = true;
+        inputQueue.suspend(); exited = true; accepting = false; terminal.options.disableStdin = true;
         setStarting(false); setRetry(true); setFailure(n => n + 1); setStatus(userFacingError(event.error, "终端连接已中断，进程状态待核实。"));
       } else {
         const info = event.info;
         setStarting(false);
         statusListener.current?.(info.status);
-        terminal.options.disableStdin = info.status !== "running";
+        accepting = info.status === "running";
+        terminal.options.disableStdin = !accepting || inputQueue.state.paused;
         if (info.status === "running") { setStatus(""); }
         else if (info.status === "starting") setStatus("正在启动终端…");
         else if (info.status === "stopping") setStatus("正在停止…");
         else {
-          inputQueue.dispose(); exited = true; terminal.options.disableStdin = true; setRetry(false);
+          inputQueue.ended(); exited = true; terminal.options.disableStdin = true; setRetry(false);
           setStatus(info.status === "unknown" ? (info.error ?? "原进程状态无法确认，未自动重新执行")
             : info.status === "failed" ? (info.error ?? "终端启动失败") : `终端已退出${info.exitCode === null ? "" : `（${info.exitCode}）`}`);
         }
@@ -138,12 +153,14 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
       if (!exited) { reconnect.current.delay = 1000; inputQueue.ready(id); }
       fit();
       if (isVisible.current && element.clientWidth) terminal.focus();
-    }).catch(error => { if (!disposed) { inputQueue.dispose(); setStarting(false); setRetry(true); setFailure(n => n + 1); setStatus(userFacingError(error, "无法连接终端，执行状态待核实。")); } });
+    }).catch(error => { if (!disposed) { inputQueue.suspend(); setStarting(false); setRetry(true); setFailure(n => n + 1); setStatus(userFacingError(error, "无法连接终端，执行状态待核实。")); } });
     return () => {
       disposed = true;
-      inputQueue.dispose();
+      inputQueue.suspend();
       runtime.current = null;
       observer.disconnect(); themeObserver.disconnect(); media.removeEventListener("change", theme);
+      for (const event of inputEvents) element.removeEventListener(event, interaction, true);
+      for (const event of mouseEvents) element.removeEventListener(event, mouseInteraction, true);
       keyboardCleanup(); input.dispose(); binary.dispose(); terminal.dispose();
       connection?.detach();
     };
@@ -159,9 +176,22 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
     runtime.current?.fit(); runtime.current?.focus();
     if (reconnect.current.retry) setGeneration(n => n + 1);
   }, [visible]);
+  const continueInput = async (action: "verify" | "resume") => {
+    const controller = inputRuntime.current;
+    if (controller && await controller[action]() && inputRuntime.current === controller && isVisible.current) runtime.current?.focus();
+  };
   return <div className="terminal-pane" role="tabpanel" hidden={!visible}>
     {status && <div className="terminal-status" role={starting || retry ? undefined : "status"}>{starting ? <LoadingStatus>{status}</LoadingStatus>
       : retry ? <InlineError>{status} 正在自动重新连接…</InlineError> : status}</div>}
+    {inputState.paused && !retry && <div className="terminal-input-recovery">
+      <InlineError>{userFacingError(inputState.message, "输入结果待核实，未自动重发。")}</InlineError>
+      <span>请先检查终端内容；继续输入不会重发原内容，也不会重新启动终端。</span>
+      {inputState.busy && <LoadingStatus>正在核实输入连接…</LoadingStatus>}
+      <div aria-busy={inputState.busy}>
+        {inputState.hasUnknown && <button type="button" disabled={inputState.busy} data-tooltip="只核实原输入结果，不会重新发送" onClick={() => void continueInput("verify")}>核实输入</button>}
+        {inputState.canResume && <button type="button" disabled={inputState.busy} data-tooltip="检查终端后重新连接输入，不会重发原内容" onClick={() => void continueInput("resume")}>继续输入</button>}
+      </div>
+    </div>}
     <div className="terminal-emulator" ref={host} />
   </div>;
 }

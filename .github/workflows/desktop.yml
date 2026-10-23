@@ -30,6 +30,9 @@ jobs:
       - run: pnpm test:release
       - run: pnpm check:release-inputs
       - run: pnpm check
+      - name: ZCode native account and credential bridge tests
+        shell: bash
+        run: node --test crates/zcode-driver/src/*.test.cjs
 
   desktop:
     needs: frontend
@@ -69,7 +72,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils libssl-dev build-essential
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils libssl-dev build-essential pkg-config nasm libclang-dev libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libwayland-dev libegl-dev libgbm-dev libxkbcommon-dev coturn xvfb x11-utils x11-xserver-utils pipewire-bin wireplumber dbus-x11
       - name: Install the repository Rust toolchain and target
         run: |
           rustup show active-toolchain
@@ -88,6 +91,29 @@ jobs:
           # stack; this changes the harness resources, not which tests run.
           RUST_MIN_STACK: '16777216'
         run: cargo test --workspace --lib --tests --locked --no-fail-fast 2>&1 | tee native-tests.log
+      - name: Software video capture on an isolated X11 display
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          Xvfb :99 -screen 0 1024x768x24 -nolisten tcp -ac -noreset > /tmp/dogcodes-video-xvfb.log 2>&1 &
+          video_xvfb_pid=$!
+          trap 'kill "$video_xvfb_pid" 2>/dev/null || true' EXIT
+          export DISPLAY=:99 XDG_SESSION_TYPE=x11
+          export DOGCODES_OWNED_XVFB=video-fallback-fixture-v1
+          for attempt in $(seq 1 30); do
+            if xdpyinfo >/dev/null 2>&1; then break; fi
+            sleep 0.2
+          done
+          cargo test -p dogcodes-remote-desktop --locked isolated_x11_capture -- --ignored --nocapture
+      - name: Wayland portal fixture and real PipeWire software video
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: python3 scripts/wayland_acceptance.py
+      - name: TURN UDP/TCP/TLS and certificate validation
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: python3 scripts/turn_acceptance.py
       - name: Retain failed native test diagnostics
         if: failure()
         uses: actions/upload-artifact@v7

@@ -1,11 +1,10 @@
-use super::{DriverError, ENV_ALLOWLIST, QuotaSnapshot, ZcodeLaunch};
-use std::process::Stdio;
-use tokio::io::AsyncReadExt;
+use super::{DriverError, QuotaSnapshot, ZcodeLaunch};
 
 #[derive(Default)]
 pub(super) struct Cache {
     next_attempt_ms: i64,
     snapshot: Option<QuotaSnapshot>,
+    identity: Option<String>,
     pub(super) failure: Option<&'static str>,
 }
 
@@ -16,6 +15,28 @@ impl Cache {
         now: i64,
         force: bool,
     ) -> Option<QuotaSnapshot> {
+        let identity = match super::account::Account::quota_read(launch, true).await {
+            Ok(value) => value["identity"].as_str().map(str::to_owned),
+            Err(error) => {
+                self.snapshot = None;
+                self.identity = None;
+                self.next_attempt_ms = 0;
+                self.failure = Some(
+                    if matches!(error, DriverError::CapabilityUnavailable(ref r) if r == "quota_login_required")
+                    {
+                        "quota_login_required"
+                    } else {
+                        "quota_unavailable"
+                    },
+                );
+                return None;
+            }
+        };
+        if self.identity != identity {
+            self.snapshot = None;
+            self.next_attempt_ms = 0;
+            self.identity = identity;
+        }
         if !force && now < self.next_attempt_ms {
             return self.snapshot.clone();
         }
@@ -41,60 +62,9 @@ impl Cache {
 }
 
 async fn pull(launch: &ZcodeLaunch) -> Result<QuotaSnapshot, DriverError> {
-    let fail = || {
-        DriverError::NotConfigured(
-            "ZCode quota unavailable; check the selected model and native login".into(),
-        )
-    };
-    let mut command = tokio::process::Command::new(
-        agent_runtime::electron_node_executable(&launch.app_binary).map_err(|_| {
-            DriverError::NotConfigured("ZCode background runtime is unavailable".into())
-        })?,
-    );
-    command
-        .arg("-e")
-        .arg(concat!(include_str!("quota-reader.cjs"), "\nmain();"))
-        .env_clear()
-        .env("ELECTRON_RUN_AS_NODE", "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    for key in ENV_ALLOWLIST
-        .iter()
-        .copied()
-        .chain(["ZCODE_CREDENTIAL_SECRET"])
-    {
-        if let Some(value) = std::env::var_os(key) {
-            command.env(key, value);
-        }
-    }
-    agent_runtime::apply_proxy_environment(&mut command);
-    let mut child = command.spawn().map_err(|_| fail())?;
-    let mut bytes = Vec::new();
-    child
-        .stdout
-        .take()
-        .ok_or_else(fail)?
-        .take(65537)
-        .read_to_end(&mut bytes)
-        .await
-        .map_err(|_| fail())?;
-    if bytes.len() > 65536 {
-        return Err(fail());
-    }
-    if !child.wait().await.map_err(|_| fail())?.success() {
-        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
-        return Err(DriverError::CapabilityUnavailable(
-            if value["error"] == "login_required" {
-                "quota_login_required"
-            } else {
-                "quota_unavailable"
-            }
-            .into(),
-        ));
-    }
-    serde_json::from_slice(&bytes).map_err(|_| fail())
+    let value = super::account::Account::quota_read(launch, false).await?;
+    serde_json::from_value(value["snapshot"].clone())
+        .map_err(|_| DriverError::CapabilityUnavailable("quota_unavailable".into()))
 }
 
 #[cfg(test)]
@@ -105,7 +75,7 @@ mod tests {
     async fn real_native_credentials_quota() {
         let launch = ZcodeLaunch {
             app_binary: "/Applications/ZCode.app/Contents/MacOS/ZCode".into(),
-            cli_script: "unused".into(),
+            cli_script: "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs".into(),
         };
         let snapshot = tokio::time::timeout(std::time::Duration::from_secs(18), pull(&launch))
             .await

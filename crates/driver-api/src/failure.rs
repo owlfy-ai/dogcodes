@@ -1,28 +1,102 @@
-//! Classify native errors without retaining vendor text, paths or credentials.
+//! Classify native errors into stable kinds, and carry the agent's own error
+//! text alongside so the user can see what the agent actually reported.
 use crate::DriverError;
+
+/// Separates a stable failure kind from the agent's own error text inside a
+/// `TurnFailed` reason, so adapters can keep a precise kind without dropping
+/// the vendor message.
+const DETAIL_SEPARATOR: char = '\u{1f}';
+
+const GENERIC_MESSAGE: &str = "Agent 未能完成本次请求，未提供可识别的具体原因。请先确认原生客户端能否正常对话；仍有问题时可查看“帮助与恢复”中的诊断信息。";
+
+/// A `TurnFailed` reason that keeps `kind` for classification and `detail`
+/// (the agent's own error text) for display.
+#[must_use]
+pub fn with_detail(kind: &str, detail: &str) -> String {
+    format!("{kind}{DETAIL_SEPARATOR}{detail}")
+}
+
+/// The agent-reported text inside a driver error, if it carries any.
+#[must_use]
+pub fn error_detail(error: &DriverError) -> Option<&str> {
+    match error {
+        DriverError::NotConfigured(reason)
+        | DriverError::Disconnected(reason)
+        | DriverError::Protocol(reason)
+        | DriverError::CapabilityUnavailable(reason) => Some(reason.as_str()),
+        // Session lookups describe native session identity, not an agent error.
+        DriverError::SessionMissing(_)
+        | DriverError::SessionIncompatible(_)
+        | DriverError::AutonomousTurnBusy
+        | DriverError::QuotaExhausted { .. } => None,
+    }
+    .filter(|reason| !is_canonical(reason))
+}
+
+/// `TurnFailed` reason for a driver error: its stable kind plus its own text.
+#[must_use]
+pub fn turn_failed_reason(error: &DriverError) -> String {
+    let kind = kind(error);
+    error_detail(error).map_or_else(|| kind.to_owned(), |detail| with_detail(kind, detail))
+}
+
+/// Splits a `TurnFailed` reason into its failure kind and the agent's own
+/// error text. Plain vendor text is both classified and kept as the detail;
+/// a bare kind code or fixed user message carries no detail.
+#[must_use]
+pub fn split_turn_failure(reason: &str) -> (Option<&'static str>, Option<&str>) {
+    let (head, detail) = match reason.split_once(DETAIL_SEPARATOR) {
+        Some((head, detail)) => (head, Some(detail)),
+        None => (reason, (!is_canonical(reason)).then_some(reason)),
+    };
+    let detail = detail.map(str::trim).filter(|detail| !detail.is_empty());
+    (classify(head).or_else(|| detail.and_then(classify)), detail)
+}
+
+/// The timeline text for a failed turn: the fixed guidance for `kind`, plus
+/// the agent's own error when it reported one.
+#[must_use]
+pub fn turn_failure_text(kind: &str, detail: Option<&str>) -> String {
+    let message = user_message(kind);
+    match detail.map(str::trim).filter(|detail| !detail.is_empty()) {
+        None => message.to_owned(),
+        Some(detail) if message == GENERIC_MESSAGE => {
+            format!("Agent 未能完成本次请求，返回了以下错误：\n{detail}")
+        }
+        Some(detail) => format!("{message}\n\nAgent 返回的错误：\n{detail}"),
+    }
+}
+
+const KNOWN_KINDS: [&str; 17] = [
+    "selection_rejected",
+    "selection_unverifiable",
+    "authentication_failed",
+    "subscription_required",
+    "access_denied",
+    "agent_rate_limited",
+    "model_unavailable",
+    "database_incompatible",
+    "agent_timeout",
+    "agent_connection_failed",
+    "agent_no_response",
+    "driver_not_configured",
+    "driver_disconnected",
+    "driver_protocol_error",
+    "driver_capability_unavailable",
+    "target_session_missing",
+    "target_session_incompatible",
+];
+
+fn is_canonical(message: &str) -> bool {
+    KNOWN_KINDS
+        .iter()
+        .any(|kind| message == *kind || message == user_message(kind))
+}
 
 #[must_use]
 pub fn classify(message: &str) -> Option<&'static str> {
     // Adapters may already have reduced a native error to one of these codes.
-    for kind in [
-        "selection_rejected",
-        "selection_unverifiable",
-        "authentication_failed",
-        "subscription_required",
-        "access_denied",
-        "agent_rate_limited",
-        "model_unavailable",
-        "database_incompatible",
-        "agent_timeout",
-        "agent_connection_failed",
-        "agent_no_response",
-        "driver_not_configured",
-        "driver_disconnected",
-        "driver_protocol_error",
-        "driver_capability_unavailable",
-        "target_session_missing",
-        "target_session_incompatible",
-    ] {
+    for kind in KNOWN_KINDS {
         if message == kind || message == user_message(kind) {
             return Some(kind);
         }
@@ -261,9 +335,7 @@ pub fn user_message(kind: &str) -> &'static str {
         }
         "driver_unavailable" => "当前 Agent 尚未连接。请在“连接 Agent”中重新检测后重试。",
         "interrupted" => "本次执行已停止，可以发送消息继续。",
-        _ => {
-            "Agent 未能完成本次请求，未提供可识别的具体原因。请先确认原生客户端能否正常对话；仍有问题时可查看“帮助与恢复”中的诊断信息。"
-        }
+        _ => GENERIC_MESSAGE,
     }
 }
 
@@ -289,6 +361,52 @@ mod tests {
             assert!(reported_transport_error(&quoted).is_none());
         }
         assert!(reported_transport_error("Error: invalid test fixture").is_none());
+    }
+
+    #[test]
+    fn agent_error_text_reaches_the_failure_message() {
+        let error =
+            "FAILED_PRECONDITION (code 400): User location is not supported for the API use.";
+        assert_eq!(split_turn_failure(error), (None, Some(error)));
+        let text = turn_failure_text("driver_turn_failed", Some(error));
+        assert!(text.contains(error));
+        assert!(!text.contains("未提供可识别的具体原因"));
+
+        let reason = with_detail("agent_connection_failed", "Eligibility check failed: EOF");
+        assert_eq!(
+            split_turn_failure(&reason),
+            (
+                Some("agent_connection_failed"),
+                Some("Eligibility check failed: EOF")
+            )
+        );
+        let text = turn_failure_text(
+            "agent_connection_failed",
+            Some("Eligibility check failed: EOF"),
+        );
+        assert!(text.starts_with(user_message("agent_connection_failed")));
+        assert!(text.ends_with("Eligibility check failed: EOF"));
+
+        // Fixed codes and fixed user messages carry no extra detail.
+        assert_eq!(
+            split_turn_failure("access_denied"),
+            (Some("access_denied"), None)
+        );
+        assert_eq!(
+            split_turn_failure(user_message("agent_timeout")),
+            (Some("agent_timeout"), None)
+        );
+        assert_eq!(turn_failure_text("unknown", None), user_message("unknown"));
+
+        let error = DriverError::Disconnected("agy stdin is closed".into());
+        assert_eq!(
+            split_turn_failure(&turn_failed_reason(&error)),
+            (Some("driver_disconnected"), Some("agy stdin is closed"))
+        );
+        assert_eq!(
+            turn_failed_reason(&DriverError::NotConfigured("subscription_required".into())),
+            "subscription_required"
+        );
     }
 
     fn json_error(error: &str) -> String {

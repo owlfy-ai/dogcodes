@@ -38,6 +38,8 @@ export type Activity = {
   childId?: string;
   details?: string;
   liveText?: string;
+  /** Saved thinking text was cut at the store's bound. */
+  textTruncated?: boolean;
   startedAt?: string;
   durationMs?: number;
   changes?: { path: string; diff?: string }[];
@@ -140,21 +142,36 @@ function Thought({ a, active }: { a: Activity; active: boolean }) {
       : running && a.startedAt
         ? Math.max(0, Math.floor((Date.now() - Date.parse(a.startedAt)) / 1000))
         : null;
+  const label = (
+    <span>
+      <ActivityIcon kind="思考" />
+      <span className="activity-text">
+      {running
+        ? "思考中"
+        : a.status === "interrupted"
+          ? "思考已中断"
+          : "思考"}
+      {seconds !== null
+        ? ` · ${running ? "约 " : "持续了约 "}${seconds} 秒`
+        : " · 时间未记录"}
+      </span>
+    </span>
+  );
+  // A finished segment keeps its text: collapsed like a tool step, opened on demand.
+  if (!running && a.text?.trim()) {
+    return (
+      <details className="conversation-activity thought-history">
+        <summary className="activity-line">{label}</summary>
+        <div className="activity-detail thought-detail">
+          <MarkdownMessage text={a.text} />
+          {a.textTruncated && <p className="subagent-notice">思考内容较长，只保存了前面一部分</p>}
+        </div>
+      </details>
+    );
+  }
   return (
     <div className={`thought-line${running ? " activity-running" : ""}`}>
-      <span>
-        <ActivityIcon kind="思考" />
-        <span className="activity-text">
-        {running
-          ? "思考中"
-          : a.status === "interrupted"
-            ? "思考已中断"
-            : "思考"}
-        {seconds !== null
-          ? ` · ${running ? "约 " : "持续了约 "}${seconds} 秒`
-          : " · 时间未记录"}
-        </span>
-      </span>
+      {label}
       {running && a.liveText && <ThinkingTicker text={a.liveText} />}
     </div>
   );
@@ -403,6 +420,7 @@ export function ConversationContent({
           <TurnFiles
             key={item.itemId}
             taskId={item.taskId}
+            providerId={item.turnId ? turnProviders.get(item.turnId) : undefined}
             onReviewFile={onReviewFile}
             metadata={JSON.parse(item.text)}
             client={client}

@@ -17,9 +17,13 @@ pub(crate) fn validate(
     value: &HistoryPreferences,
     envelope: &CommandEnvelope<CoreCommand>,
 ) -> Result<(), CoreError> {
-    if envelope.actor != ActorRef::LocalUser || envelope.expected_stream_version.is_none() {
+    if !matches!(
+        envelope.actor,
+        ActorRef::LocalUser | ActorRef::PairedDevice(_)
+    ) || envelope.expected_stream_version.is_none()
+    {
         return Err(CoreError::InvalidArgument(
-            "修改历史列表需要本机用户身份和当前版本，请重新读取设置".into(),
+            "修改历史列表需要已认证用户或配对设备和当前版本，请重新读取设置".into(),
         ));
     }
     let key_valid =

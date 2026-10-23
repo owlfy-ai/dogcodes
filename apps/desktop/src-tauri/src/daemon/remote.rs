@@ -16,8 +16,44 @@ use tokio_tungstenite::{
     tungstenite::{Message, client::IntoClientRequest},
 };
 
-type Socket =
+type WebSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+enum Socket {
+    Relay(Box<WebSocket>),
+    Direct(dogcodes_remote_transport::Channel),
+}
+struct Established<'a> {
+    socket: Socket,
+    session: &'a mut Session,
+    config: &'a Config,
+    lease: dogcodes_endpoint::pairing::DeviceLease,
+    peer: [u8; 32],
+    /// The screen track of a direct `desktop` connection.
+    video: Option<dogcodes_remote_transport::VideoSender>,
+}
+impl Socket {
+    async fn send(&mut self, message: Message) -> Result<(), String> {
+        match self {
+            Self::Relay(socket) => socket.send(message).await.map_err(failure),
+            Self::Direct(socket) => match message {
+                Message::Binary(bytes) => socket.send(&bytes).await,
+                Message::Close(_) => socket.close().await,
+                Message::Ping(_) | Message::Pong(_) => Ok(()),
+                _ => Err("direct transport requires binary messages".into()),
+            },
+        }
+    }
+    async fn next(&mut self) -> Option<Result<Message, String>> {
+        match self {
+            Self::Relay(socket) => socket.next().await.map(|value| value.map_err(failure)),
+            Self::Direct(socket) => match socket.receive().await {
+                Ok(Some(bytes)) => Some(Ok(Message::Binary(bytes.into()))),
+                Ok(None) => None,
+                Err(error) => Some(Err(error)),
+            },
+        }
+    }
+}
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Config {
@@ -49,6 +85,12 @@ struct State {
 pub(super) struct RemoteHost {
     directory: PathBuf,
     state: Mutex<State>,
+    native: Arc<native::Host>,
+    power: Arc<power::Host>,
+    direct_slots: Arc<tokio::sync::Semaphore>,
+    active_sessions: std::sync::atomic::AtomicUsize,
+    notifications_started: std::sync::atomic::AtomicBool,
+    revocations_started: std::sync::atomic::AtomicBool,
 }
 fn now() -> u64 {
     chrono::Utc::now().timestamp().try_into().unwrap_or(0)
@@ -58,9 +100,17 @@ fn failure(e: impl std::fmt::Debug) -> String {
 }
 impl RemoteHost {
     pub fn new(directory: PathBuf) -> Self {
+        let power = Arc::new(power::Host::new(directory.join("power-policy.json")));
+        let native = Arc::new(native::Host::new(power.clone(), directory.join("wayland")));
         Self {
             directory,
             state: Mutex::default(),
+            native,
+            power,
+            direct_slots: Arc::new(tokio::sync::Semaphore::new(8)),
+            active_sessions: std::sync::atomic::AtomicUsize::new(0),
+            notifications_started: std::sync::atomic::AtomicBool::new(false),
+            revocations_started: std::sync::atomic::AtomicBool::new(false),
         }
     }
     async fn initialize(&self, service: Option<&str>) -> Result<(), String> {
@@ -249,23 +299,31 @@ impl RemoteHost {
             }
             "revoke" => {
                 let id = call["deviceId"].as_str().ok_or("缺少设备标识")?;
-                let mut state = self.state.lock().await;
-                let r = state.ready.as_mut().ok_or("尚未启用远程连接")?;
-                r.book.revoke(id).map_err(failure)?;
-                let _ = http(
-                    &r.config,
-                    &r.secrets,
-                    reqwest::Method::DELETE,
-                    &format!("devices/{id}"),
-                )
-                .await;
-                drop(state);
+                self.revoke_device(id).await?;
                 Ok(self.status().await)
             }
             _ => Err("未知的远程配置操作".into()),
         }
     }
+    async fn revoke_device(&self, id: &str) -> Result<(), String> {
+        let (config, secrets) = {
+            let mut state = self.state.lock().await;
+            let ready = state.ready.as_mut().ok_or("尚未启用远程连接")?;
+            ready.book.revoke(id).map_err(failure)?;
+            (ready.config.clone(), ready.secrets.clone())
+        };
+        let _ = http(
+            &config,
+            &secrets,
+            reqwest::Method::DELETE,
+            &format!("devices/{id}"),
+        )
+        .await;
+        Ok(())
+    }
     async fn start_listener(self: &Arc<Self>, core: &Arc<Core>, control: &Arc<ServiceControl>) {
+        self.start_notifications(core, Arc::downgrade(control));
+        self.start_revocation_sync(Arc::downgrade(control));
         let mut state = self.state.lock().await;
         if state.running {
             return;
@@ -373,8 +431,18 @@ impl RemoteHost {
         ticket: &str,
         device: Option<&str>,
     ) -> Result<(), String> {
-        let (config, mut noise, mut candidate) = {
+        let (config, mut noise, mut candidate, first_wait) = {
             let state = self.state.lock().await;
+            // A pairing QR stays valid for minutes and the phone joins only once
+            // someone scans it; a reconnect is opened by the phone immediately.
+            let first_wait = state
+                .invitation
+                .as_ref()
+                .filter(|v| device.is_none() && v["sessionId"] == id)
+                .and_then(|v| v["expiresAt"].as_u64())
+                .map_or(HANDSHAKE_WAIT, |expires| {
+                    Duration::from_secs(expires.saturating_sub(now()).clamp(15, 300))
+                });
             let ready = state.ready.as_ref().ok_or("remote unavailable")?;
             let key: [u8; 32] = hex::decode(&ready.secrets.private_key)
                 .map_err(|_| "invalid key")?
@@ -398,10 +466,11 @@ impl RemoteHost {
                     ready.config.clone(),
                     Some(Session::new(false, &key, Some(peer), None, &context).map_err(failure)?),
                     None,
+                    first_wait,
                 )
             } else {
                 let attempt = ready.book.begin(id, &key, now()).map_err(failure)?;
-                (ready.config.clone(), None, Some(attempt))
+                (ready.config.clone(), None, Some(attempt), first_wait)
             }
         };
         let mut ws = socket(&config.service, &format!("/v1/relay/{id}"), ticket).await?;
@@ -410,7 +479,7 @@ impl RemoteHost {
             None => noise.as_mut().ok_or("missing session")?,
         };
         session
-            .read_handshake(&receive(&mut ws).await?)
+            .read_handshake(&receive(&mut ws, first_wait).await?)
             .map_err(failure)?;
         ws.send(Message::Binary(
             session.write_handshake().map_err(failure)?.into(),
@@ -418,7 +487,7 @@ impl RemoteHost {
         .await
         .map_err(|_| "connection closed")?;
         session
-            .read_handshake(&receive(&mut ws).await?)
+            .read_handshake(&receive(&mut ws, HANDSHAKE_WAIT).await?)
             .map_err(failure)?;
         let peer = session.authenticated_peer().map_err(failure)?;
         let binding = hex::encode(session.binding().map_err(failure)?);
@@ -445,17 +514,18 @@ impl RemoteHost {
             };
             let lease = ready.book.authorize(active).map_err(failure)?;
             let ack = if candidate.is_some() {
-                let route = http(
+                let route = http_body(
                     &ready.config,
                     &ready.secrets,
                     reqwest::Method::POST,
                     &format!("devices/{}", grant.device_id),
+                    Some(&json!({"invitationId":id})),
                 )
                 .await?;
                 state.invitation = None;
-                json!({"type":"paired","hostId":config.host_id,"invitationId":id,"phonePublicKey":hex::encode(peer),"hostPublicKey":config.public_key,"binding":binding,"grantRevision":grant.revision.to_string(),"routeToken":route["routeToken"]})
+                json!({"type":"paired","hostId":config.host_id,"hostName":host_name(),"invitationId":id,"phonePublicKey":hex::encode(peer),"hostPublicKey":config.public_key,"binding":binding,"grantRevision":grant.revision.to_string(),"routeToken":route["routeToken"]})
             } else {
-                json!({"type":"connected","hostId":config.host_id,"binding":binding})
+                json!({"type":"connected","hostId":config.host_id,"hostName":host_name(),"binding":binding})
             };
             (lease, ack)
         };
@@ -464,48 +534,183 @@ impl RemoteHost {
             None => noise.as_mut().ok_or("missing session")?,
         };
         send_json(&mut ws, session, &ack).await?;
-        let actor = device_actor(&peer)?;
-        let (out, mut outgoing) = mpsc::channel::<Value>(64);
-        let mut buffer = Vec::new();
-        let permits = Arc::new(tokio::sync::Semaphore::new(16));
-        let mut check = tokio::time::interval(Duration::from_millis(250));
-        let mut subscriptions = Vec::new();
-        let result=async {loop {
-            tokio::select! {
-                _=check.tick()=>{let state=self.state.lock().await;state.ready.as_ref().ok_or("remote unavailable")?.book.check(&lease).map_err(|_|"device revoked")?;},
-                value=outgoing.recv()=>if let Some(value)=value{{let state=self.state.lock().await;state.ready.as_ref().ok_or("remote unavailable")?.book.check(&lease).map_err(|_|"device revoked")?;}send_json(&mut ws,session,&value).await?;},
-                message=ws.next()=>{
-                    let bytes=match message {Some(Ok(Message::Binary(bytes)))=>bytes,Some(Ok(Message::Ping(v)))=>{ws.send(Message::Pong(v)).await.map_err(|_|"connection closed")?;continue;},_=>return Ok(())};
-                    let plain=session.open(&bytes).map_err(failure)?;buffer.extend(plain);
-                    while let Some(request)=take_json(&mut buffer)? {
-                        {let state=self.state.lock().await;state.ready.as_ref().ok_or("remote unavailable")?.book.check(&lease).map_err(|_|"device revoked")?;}
-                        let request_id=request["requestId"].as_str().ok_or("missing request id")?.to_owned();
-                        if request["hostId"]!=config.host_id || request["version"]!=1{return Err("invalid request identity".into());}
-                        let method=request["method"].as_str().ok_or("missing method")?.to_owned();let args=request["params"].clone();
-                        let (core,control,out,actor)=(core.clone(),control.clone(),out.clone(),actor.clone());
-                        if method=="subscribe_project" {
-                            for task in subscriptions.drain(..){tokio::task::JoinHandle::abort(&task);}
-                            let tx=out.clone();subscriptions.push(tokio::spawn(async move {let result=subscribe(&core,args,&tx,&request_id).await;let _=tx.send(response(&request_id,result)).await;}));
-                        } else {
-                            let permit=permits.clone().try_acquire_owned().map_err(|_|"too many in-flight requests")?;
-                            tokio::spawn(async move {let _permit=permit;let _request=control.requests.read().await;let result=remote_call(&core,&control,&method,args,actor).await;let _=out.send(response(&request_id,result)).await;});
+        self.serve(
+            core,
+            control,
+            Established {
+                socket: ws,
+                session,
+                config: &config,
+                lease,
+                peer,
+                video: None,
+            },
+        )
+        .await
+    }
+    pub(super) fn has_active_sessions(&self) -> bool {
+        self.active_sessions
+            .load(std::sync::atomic::Ordering::Acquire)
+            > 0
+    }
+    fn serve<'a>(
+        &'a self,
+        core: &'a Arc<Core>,
+        control: &'a Arc<ServiceControl>,
+        established: Established<'a>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(async move {
+            struct Count<'a>(&'a std::sync::atomic::AtomicUsize);
+            impl Drop for Count<'_> {
+                fn drop(&mut self) {
+                    self.0.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+                }
+            }
+            let Established {
+                socket: ws,
+                session,
+                config,
+                lease,
+                peer,
+                video,
+            } = established;
+            let lease = Arc::new(lease);
+            self.active_sessions
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            let _active = Count(&self.active_sessions);
+            let actor = device_actor(&peer)?;
+            let binding = hex::encode(session.binding().map_err(failure)?);
+            // Binary messages (video access units) from the native worker;
+            // bounded and refused when full, so a slow link drops frames
+            // instead of buffering seconds of them.
+            let (binary, binaries) = mpsc::channel::<(Value, Vec<u8>)>(8);
+            let disconnect = native::Disconnect::authenticated(video, binary, peer);
+            let previews = Arc::new(preview::Host::default());
+            let (out, outgoing) = mpsc::channel::<Value>(64);
+            let mut buffer = Vec::new();
+            let permits = Arc::new(tokio::sync::Semaphore::new(16));
+            let mut check = tokio::time::interval(Duration::from_millis(250));
+            let mut subscriptions = workspace::Subscriptions::default();
+            let noise = Arc::new(Mutex::new(session));
+            let (mut reader, transport) = wire::split(ws);
+            let (pong, pongs) = mpsc::channel(8);
+            let (acknowledge, acknowledgements) = mpsc::channel(32);
+            let mut writer = wire::Writer {
+                transport,
+                noise: noise.clone(),
+                remote: self,
+                lease: lease.clone(),
+                connection: disconnect.0.clone(),
+            };
+            let read = async {
+                loop {
+                    tokio::select! {
+                        _=check.tick()=>{let state=self.state.lock().await;state.ready.as_ref().ok_or("remote unavailable")?.book.check(&lease).map_err(|_|"device revoked")?;},
+                        message=reader.next()=>{
+                            let bytes=match message {Some(Ok(Message::Binary(bytes)))=>bytes,Some(Ok(Message::Ping(v)))=>{pong.try_send(Message::Pong(v)).map_err(|_|"ping queue full")?;continue;},_=>return Ok(())};
+                            let plain=noise.lock().await.open(&bytes).map_err(failure)?;buffer.extend(plain);
+                            while let Some(request)=take_json(&mut buffer)? {
+                                {let state=self.state.lock().await;state.ready.as_ref().ok_or("remote unavailable")?.book.check(&lease).map_err(|_|"device revoked")?;}
+                                if request["hostId"]!=config.host_id || request["version"]!=1{return Err("invalid request identity".into());}
+                                if request["type"]=="fragment_ack" {
+                                    acknowledge.try_send(wire::progress(request["acks"].clone())?).map_err(|_|"fragment acknowledgement queue full")?;
+                                    continue;
+                                }
+                                let request_id=request["requestId"].as_str().ok_or("missing request id")?.to_owned();
+                                if request_id.is_empty() || request_id.len()>128 {return Err("invalid request id".into());}
+
+                                let method=request["method"].as_str().ok_or("missing method")?.to_owned();let args=request["params"].clone();
+                                let (core,control,out,actor)=(core.clone(),control.clone(),out.clone(),actor.clone());
+                                let (native,connection)=(self.native.clone(),disconnect.0.clone());
+                                let (previews,lease)=(previews.clone(),lease.clone());
+                                let binding=binding.clone();
+                                if method=="transport_options" {
+                                    out.try_send(response(&request_id,wire::configure(&connection,&args))).map_err(|_|"response queue full")?;
+                                } else if method=="transport_status" {
+                                    out.try_send(response(&request_id,reader.status().await)).map_err(|_|"response queue full")?;
+                                } else if method=="unsubscribe" {
+                                    let result=match args.as_str() {Some(id)=>Ok(json!({"unsubscribed":subscriptions.remove(id).await})),None=>Err("invalid subscription id".into())};
+                                    out.try_send(response(&request_id,result)).map_err(|_|"response queue full")?;
+                                } else if method=="subscribe_project" || workspace::STREAMS.contains(&method.as_str()) {
+                                    let scope=if method=="subscribe_project" {format!("project:{}",args.get(1).map(Value::to_string).unwrap_or_default())} else {format!("watch:{request_id}")};
+                                    if let Err(error)=subscriptions.prepare(&request_id,&scope).await {out.try_send(response(&request_id,Err(error))).map_err(|_|"response queue full")?;continue;}
+                                    let tx=out.clone();let id=request_id.clone();
+                                    subscriptions.insert(request_id,scope,tokio::spawn(async move {
+                                        let result=if method=="subscribe_project" {subscribe(&core,args,&tx,&id).await.map(|_|())} else {workspace::subscribe(&core,&control,&method,args,&tx,&id).await};
+                                        if let Err(error)=result {let _=tx.send(response(&id,Err(error))).await;}
+                                        // An error after the subscribe reply, or a closed event bus, would
+                                        // otherwise end the stream silently; the phone resubscribes on this.
+                                        // An explicit unsubscribe aborts the task first, so it never arrives.
+                                        if method=="subscribe_project" {let _=tx.send(json!({"type":"subscription_ended","subscriptionId":id})).await;}
+                                    }));
+                                } else {
+                                    let Ok(permit)=permits.clone().try_acquire_owned() else {out.try_send(response(&request_id,Err("too many in-flight requests".into()))).map_err(|_|"response queue full")?;continue;};
+                                    tokio::spawn(async move {
+                                        let _permit=permit;
+                                        let _request=control.requests.read().await;
+                                        // Recheck after waiting for service access: queued requests
+                                        // must not begin effects after disconnect or grant revocation.
+                                        if !connection.alive() {return;}
+                                        let allowed={let state=control.remote.state.lock().await;state.ready.as_ref().is_some_and(|ready|ready.book.check(&lease).is_ok())};
+                                        if !allowed {let _=out.send(response(&request_id,Err("device revoked".into()))).await;return;}
+                                        let result=if method=="pairing_receipt" {control.remote.pairing_receipt(&lease,peer,&binding,args).await} else if method=="direct_open" {control.remote.open_direct(&core,&control,peer,args).await} else if preview::METHODS.contains(&method.as_str()) {previews.call(&core,&method,args).await} else if power::METHODS.contains(&method.as_str()) {control.remote.power.call(&method,args).await} else if native::METHODS.contains(&method.as_str()) {native.call(connection,&method,args).await} else {remote_call(&core,&control,&method,args,actor).await};
+                                        let _=out.send(response(&request_id,result)).await;
+                                    });
+                                }
+                            }
                         }
                     }
                 }
-            }
-        }}.await;
-        for task in subscriptions {
-            task.abort();
-        }
-        let _ = ws.close(None).await;
-        result
+            };
+            let result = tokio::select! {result=read=>result,result=writer.run(outgoing,binaries,pongs,acknowledgements)=>result};
+            drop(subscriptions);
+            drop(disconnect);
+            writer.transport.close().await;
+            result
+        })
     }
 }
+const MAX_SUBSCRIPTIONS: usize = 32;
+const MAX_FRAME_BYTES: usize = 8 * 1024 * 1024;
+mod business;
+mod clipboard;
+mod direct;
+mod native;
+mod notifications;
+mod power;
+mod preview;
+mod recovery;
+mod video;
+mod wire;
+mod workspace;
+
+/// Name shown on the paired phone; never used for identity or authorization.
+fn host_name() -> String {
+    let name = sysinfo::System::host_name().unwrap_or_default();
+    let name = name.trim();
+    let name = name
+        .len()
+        .checked_sub(6)
+        .filter(|&i| name.is_char_boundary(i) && name[i..].eq_ignore_ascii_case(".local"))
+        .map_or(name, |i| name[..i].trim());
+    if name.is_empty() {
+        "电脑".into()
+    } else {
+        name.chars().take(64).collect()
+    }
+}
+
 fn response(id: &str, result: Result<Value, String>) -> Value {
-    match result {
+    let value = match result {
         Ok(value) => json!({"type":"response","requestId":id,"result":value}),
         Err(message) => json!({"type":"response","requestId":id,"error":{"message":message}}),
+    };
+    if serde_json::to_vec(&wire_json(&value)).map_or(true, |bytes| bytes.len() > MAX_FRAME_BYTES) {
+        return json!({"type":"response","requestId":id,"error":{
+            "code":"response_too_large","message":"内容超过远程传输大小限制，请缩小查询范围后重试"
+        }});
     }
+    value
 }
 pub(super) async fn remote_call(
     core: &Arc<Core>,
@@ -514,6 +719,22 @@ pub(super) async fn remote_call(
     mut args: Value,
     actor: ActorRef,
 ) -> Result<Value, String> {
+    if !matches!(actor, ActorRef::PairedDevice(_)) {
+        return Err("paired device required".into());
+    }
+    if method == "remote_capabilities" {
+        return Ok(workspace::capabilities());
+    }
+    if method == "terminal_input" {
+        let owner = serde_json::to_string(&actor).map_err(failure)?;
+        return control.terminals.input_operation(&owner, args).await;
+    }
+    if workspace::METHODS.contains(&method) {
+        return workspace::call(core, control, method, args).await;
+    }
+    if business::METHODS.contains(&method) {
+        return business::call(core, control, method, args, actor).await;
+    }
     if let Some(envelope) = args.get_mut(0) {
         for field in ["expectedStreamVersion", "requestedAtSequence"] {
             parse_sequence(envelope.get_mut(field))?;
@@ -533,6 +754,12 @@ pub(super) async fn remote_call(
         | "approval_receipt"
         | "invalidate_approval_response"
         | "pending_approvals" => dispatch(core, method, args).await,
+        // Read-only quota status; a phone never forces a vendor refresh.
+        "quota_snapshots_for" => {
+            let (task, installation, _): (Option<String>, Option<String>, Value) =
+                serde_json::from_value(args).map_err(failure)?;
+            dispatch(core, method, json!([task, installation, false])).await
+        }
         "submission_intents" => {
             let call: agent_protocol::submission::SubmissionIntentCall =
                 serde_json::from_value(args).map_err(failure)?;
@@ -554,7 +781,11 @@ pub(super) async fn remote_call(
                 serde_json::from_value(args).map_err(failure)?;
             if !matches!(
                 envelope.payload,
-                CoreCommand::RespondToApproval(_) | CoreCommand::CancelTurn(_)
+                CoreCommand::RespondToApproval(_)
+                    | CoreCommand::CancelTurn(_)
+                    | CoreCommand::RenameTask(_)
+                    | CoreCommand::DeleteTask(_)
+                    | CoreCommand::SetHistoryPreferences(_)
             ) {
                 return Err("remote command unavailable".into());
             }
@@ -565,6 +796,8 @@ pub(super) async fn remote_call(
             } else if method == "prepare_approval_response" {
                 serde_json::to_value(core.prepare_approval_response(&envelope).map_err(failure)?)
                     .map_err(failure)
+            } else if matches!(&envelope.payload, CoreCommand::DeleteTask(_)) {
+                super::execute_task_delete(core, control, envelope).await
             } else {
                 serde_json::to_value(core.execute(envelope).await.map_err(failure)?)
                     .map_err(failure)
@@ -604,7 +837,7 @@ async fn subscribe(
     }
     out.send(response(
         request_id,
-        Ok(json!({"subscribed":true,"sequence":cursor})),
+        Ok(json!({"subscribed":true,"sequence":cursor,"subscriptionId":request_id})),
     ))
     .await
     .map_err(|_| "connection closed")?;
@@ -668,12 +901,25 @@ async fn http(
     method: reqwest::Method,
     path: &str,
 ) -> Result<Value, String> {
-    let response = http_client(&config.service)?
+    http_body(config, secrets, method, path, None).await
+}
+async fn http_body(
+    config: &Config,
+    secrets: &Secrets,
+    method: reqwest::Method,
+    path: &str,
+    body: Option<&Value>,
+) -> Result<Value, String> {
+    let mut request = http_client(&config.service)?
         .request(
             method,
             format!("{}/v1/hosts/{}/{path}", config.service, config.host_id),
         )
-        .bearer_auth(&secrets.token)
+        .bearer_auth(&secrets.token);
+    if let Some(body) = body {
+        request = request.json(body);
+    }
+    let response = request
         .send()
         .await
         .map_err(|_| "接入服务连接失败")?
@@ -702,11 +948,13 @@ async fn socket(service: &str, path: &str, token: &str) -> Result<Socket, String
     tokio::time::timeout(Duration::from_secs(10), connect_async(request))
         .await
         .map_err(|_| "connection timeout")?
-        .map(|(ws, _)| ws)
+        .map(|(ws, _)| Socket::Relay(Box::new(ws)))
         .map_err(|_| "connection failed".into())
 }
-async fn receive(ws: &mut Socket) -> Result<Vec<u8>, String> {
-    tokio::time::timeout(Duration::from_secs(15), async {
+const HANDSHAKE_WAIT: Duration = Duration::from_secs(15);
+
+async fn receive(ws: &mut Socket, wait: Duration) -> Result<Vec<u8>, String> {
+    tokio::time::timeout(wait, async {
         loop {
             match ws.next().await {
                 Some(Ok(Message::Binary(v))) => return Ok(v.to_vec()),
@@ -722,14 +970,43 @@ async fn receive(ws: &mut Socket) -> Result<Vec<u8>, String> {
     .map_err(|_| "handshake timeout")?
 }
 async fn send_json(ws: &mut Socket, noise: &mut Session, value: &Value) -> Result<(), String> {
+    send_framed(ws, noise, &json_frame(value)?).await
+}
+fn json_frame(value: &Value) -> Result<Vec<u8>, String> {
     let bytes = serde_json::to_vec(&wire_json(value)).map_err(failure)?;
-    if bytes.len() > 8 * 1024 * 1024 {
+    if bytes.len() > MAX_FRAME_BYTES {
         return Err("response too large".into());
     }
-    let length = u32::try_from(bytes.len()).map_err(failure)?;
-    let mut framed = length.to_be_bytes().to_vec();
+    let mut framed = u32::try_from(bytes.len())
+        .map_err(failure)?
+        .to_be_bytes()
+        .to_vec();
     framed.extend(bytes);
-    for part in framed.chunks(32768) {
+    Ok(framed)
+}
+
+/// Marks a binary message in the length word. JSON messages never reach it
+/// (they are capped at 8 MB), and a phone receives binary messages only for
+/// streams it asked for, so older phones never see one.
+const BINARY_FRAME: u32 = 0x8000_0000;
+/// `[u32 length | BINARY_FRAME][u32 header length][header JSON][payload]`:
+/// raw bytes beside a small JSON header, without base64's third more or a
+/// JSON parse of the bytes.
+fn binary_frame(header: &Value, payload: &[u8]) -> Result<Vec<u8>, String> {
+    let header = serde_json::to_vec(&wire_json(header)).map_err(failure)?;
+    let length = 4 + header.len() + payload.len();
+    if length > MAX_FRAME_BYTES || header.len() > 64 * 1024 {
+        return Err("binary message too large".into());
+    }
+    let mut framed = Vec::with_capacity(4 + length);
+    framed.extend((u32::try_from(length).map_err(failure)? | BINARY_FRAME).to_be_bytes());
+    framed.extend(u32::try_from(header.len()).map_err(failure)?.to_be_bytes());
+    framed.extend(header);
+    framed.extend(payload);
+    Ok(framed)
+}
+async fn send_framed(ws: &mut Socket, noise: &mut Session, framed: &[u8]) -> Result<(), String> {
+    for part in framed.chunks(dogcodes_remote_transport::PLAINTEXT_CHUNK) {
         let bytes = noise.seal(part).map_err(failure)?;
         tokio::time::timeout(
             Duration::from_secs(5),
@@ -746,7 +1023,7 @@ fn take_json(buffer: &mut Vec<u8>) -> Result<Option<Value>, String> {
         return Ok(None);
     }
     let size = u32::from_be_bytes(buffer[..4].try_into().map_err(|_| "invalid frame")?) as usize;
-    if size > 8 * 1024 * 1024 || size == 0 {
+    if size > MAX_FRAME_BYTES || size == 0 {
         return Err("invalid frame".into());
     }
     if buffer.len() < size + 4 {
@@ -762,6 +1039,7 @@ pub(super) fn restore(
     core: Arc<Core>,
     control: std::sync::Weak<ServiceControl>,
 ) {
+    host.power.start(&core, control.clone());
     if host.directory.join("config.json").exists() {
         tokio::spawn(async move {
             match host.initialize(None).await {
@@ -810,6 +1088,7 @@ fn wire_json(value: &Value) -> Value {
                             | "streamVersion"
                             | "requestedAtSequence"
                             | "deletionSequence"
+                            | "outputEnd"
                     ) && value.is_u64()
                     {
                         Value::String(value.as_u64().unwrap_or(0).to_string())
@@ -846,6 +1125,27 @@ mod tests {
         assert_eq!(wire["task"]["streamVersion"], u64::MAX.to_string());
         assert_eq!(wire["payload"], original["payload"]);
         assert_eq!(wire["input"], original["input"]);
+    }
+    #[test]
+    fn host_name_is_display_only_and_bounded() {
+        let name = host_name();
+        assert!(!name.is_empty() && name.chars().count() <= 64);
+        assert!(!name.to_ascii_lowercase().ends_with(".local"));
+    }
+    #[test]
+    fn binary_frames_carry_a_json_header_and_raw_bytes() {
+        let framed = binary_frame(&json!({"type":"video","seq":7}), &[0, 0, 0, 1, 0x65]).unwrap();
+        let word = u32::from_be_bytes(framed[..4].try_into().unwrap());
+        assert_ne!(word & BINARY_FRAME, 0);
+        assert_eq!((word & !BINARY_FRAME) as usize, framed.len() - 4);
+        let header_len = u32::from_be_bytes(framed[4..8].try_into().unwrap()) as usize;
+        let header: Value = serde_json::from_slice(&framed[8..8 + header_len]).unwrap();
+        assert_eq!(header["seq"], 7);
+        assert_eq!(&framed[8 + header_len..], &[0, 0, 0, 1, 0x65]);
+        // A binary word is never mistaken for a JSON frame by the reader.
+        let mut buffer = framed;
+        assert!(take_json(&mut buffer).is_err());
+        assert!(binary_frame(&json!({}), &vec![0; MAX_FRAME_BYTES]).is_err());
     }
     #[test]
     fn fragmented_message_reassembly_is_bounded() {

@@ -2,7 +2,7 @@ use super::*;
 use driver_api::DriverEvent;
 use futures::StreamExt;
 use std::{path::Path, time::Duration};
-const FAKE: &str = r"#!/usr/bin/env python3
+pub(super) const FAKE: &str = r"#!/usr/bin/env python3
 import json,sys,os,uuid
 args=sys.argv
 path=args[args.index('--session')+1] if '--session' in args else os.path.join(os.getcwd(),str(uuid.uuid4())+'.jsonl')
@@ -47,7 +47,7 @@ for line in sys.stdin:
 fn fixture() -> (tempfile::TempDir, PiDriver) {
     fixture_with(FAKE)
 }
-fn fixture_with(script: &str) -> (tempfile::TempDir, PiDriver) {
+pub(super) fn fixture_with(script: &str) -> (tempfile::TempDir, PiDriver) {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("pi");
@@ -61,7 +61,7 @@ fn fixture_with(script: &str) -> (tempfile::TempDir, PiDriver) {
     .unwrap();
     (dir, driver)
 }
-fn prompt(dir: &Path, text: &str) -> PromptRequest {
+pub(super) fn prompt(dir: &Path, text: &str) -> PromptRequest {
     PromptRequest {
         attachments: vec![],
         permission_mode: None,
@@ -71,7 +71,7 @@ fn prompt(dir: &Path, text: &str) -> PromptRequest {
         context: vec![],
     }
 }
-async fn events(mut stream: DriverEventStream) -> Vec<Result<DriverEvent, DriverError>> {
+pub(super) async fn events(mut stream: DriverEventStream) -> Vec<Result<DriverEvent, DriverError>> {
     tokio::time::timeout(Duration::from_secs(5), async move {
         let mut events = vec![];
         while let Some(event) = stream.next().await {

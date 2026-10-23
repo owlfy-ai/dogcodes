@@ -23,6 +23,7 @@
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .turn-summary { --summary-bg: #fff; --summary-border: #e3e5e4; --summary-muted: #a0a3a1; --summary-text: #292d2b; } }
 
 .turn-summary-undo { margin-left: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; padding: 3px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.turn-summary-commit + .turn-summary-undo { margin-left: 0; }
 .turn-summary-undo:hover:not(:disabled) { background: #8882; }
 .turn-summary-undo:disabled { color: var(--summary-muted); cursor: default; }
 .turn-summary-undo:focus-visible { outline: 2px solid #7e9eca; outline-offset: 2px; }
@@ -39,3 +40,8 @@
 .turn-undo-dialog button:disabled { opacity: .5; cursor: default; }
 :root[data-theme="light"] .turn-undo-dialog { background: #fff; color: #292d2b; }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .turn-undo-dialog { background: #fff; color: #292d2b; } }
+.turn-commit-dialog { width: min(520px, calc(100vw - 40px)); }
+.turn-commit-dialog .turn-commit-message { box-sizing: border-box; width: 100%; margin: 6px 0; padding: 8px 10px; border: 1px solid #8884; border-radius: 8px; font: inherit; color: inherit; background: transparent; resize: vertical; }
+.turn-commit-dialog .turn-commit-root { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.turn-commit-dialog .turn-commit-root select { font: inherit; color: inherit; background: transparent; border: 1px solid #8884; border-radius: 6px; padding: 3px 6px; }
+.turn-commit-dialog .turn-commit-confirm { background: var(--accent, #78a91f); color: white; border-color: transparent; }

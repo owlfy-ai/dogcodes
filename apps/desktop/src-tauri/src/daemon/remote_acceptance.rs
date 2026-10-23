@@ -81,7 +81,15 @@ impl AgentDriver for ApprovalDriver {
         }
         Ok(())
     }
+    /// Like a real driver, an interrupt ends the open turn.
     async fn interrupt(&self, _: &SessionHandle) -> Result<(), DriverError> {
+        if let Some(tx) = self.sender.lock().await.take() {
+            let _ = tx
+                .send(Ok(DriverEvent::TurnInterrupted {
+                    summary: "Synthetic turn interrupted".into(),
+                }))
+                .await;
+        }
         Ok(())
     }
     async fn shutdown(&self, _: SessionHandle) -> Result<(), DriverError> {
@@ -138,6 +146,20 @@ pub(super) async fn run(service: String, directory: PathBuf) -> Result<(), Strin
         count: std::sync::atomic::AtomicUsize::new(0),
     });
     core.register_driver(driver.clone()).await;
+    // A known, pinned recipe avoids invoking an actual Agent during gateway
+    // acceptance. Its only process prints a marker and exits.
+    std::fs::create_dir_all(directory.join("project-runs")).map_err(failure)?;
+    std::fs::write(
+        directory.join("project-runs").join(format!("{project}-{}.json", std::env::consts::OS)),
+        serde_json::to_vec(&json!({
+            "projectId":project,"platform":std::env::consts::OS,"shell":"fixture",
+            "generation":"fixture-generation","executor":null,
+            "directories":[{"path":directory,"status":"ready","userModified":true,"error":null,
+                "commands":[{"id":"fixture-run","label":"Fixture run","command":"echo fixture-project-run",
+                    "cwd":".","source":"fixture","pinned":true,"userRenamed":false}]}],
+            "operations":{}
+        })).map_err(failure)?,
+    ).map_err(failure)?;
     let control = Arc::new(ServiceControl::new(&directory));
     eprintln!("remote fixture: registering route");
     let registration: Value = reqwest::Client::builder()

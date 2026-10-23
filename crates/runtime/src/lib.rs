@@ -2,6 +2,7 @@
 
 mod electron;
 mod proxy;
+pub use process_scope::OwnedChild;
 
 pub use electron::electron_node_executable;
 pub use proxy::apply_proxy_environment;

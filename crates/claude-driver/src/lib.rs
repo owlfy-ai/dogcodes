@@ -12,6 +12,7 @@
 //! process before resuming the same transcript with the selected native mode.
 
 mod autonomous;
+mod background_output;
 mod child_events;
 mod lifecycle;
 #[cfg(test)]
@@ -777,6 +778,9 @@ async fn run_session(
     let mut usage_requests = request_usage::Requests::default();
     let mut first_output_reported = false;
     let mut turn_errors = turn_failure::TurnErrors::default();
+    let mut background_outputs = background_output::BackgroundOutputs::default();
+    let mut output_poll = tokio::time::interval(std::time::Duration::from_millis(250));
+    output_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         let actions = lifecycle.poll(
             !process
@@ -834,6 +838,10 @@ async fn run_session(
                 continue;
             }
             () = tokio::time::sleep(std::time::Duration::from_millis(25)), if lifecycle.waiting() => continue,
+            _ = output_poll.tick(), if !background_outputs.is_empty() => {
+                background_outputs.poll().await;
+                continue;
+            }
             line = lines.next_line() => match line { Ok(Some(line)) => line, _ => break },
         };
         if line.len() > FRAME_LIMIT {
@@ -848,7 +856,7 @@ async fn run_session(
         {
             latest_message = event.get("message").cloned();
         }
-        if let Ok(raw) = serde_json::from_str::<Value>(&line) {
+        if let Ok(mut raw) = serde_json::from_str::<Value>(&line) {
             let usage_request =
                 usage_requests.observe(&raw, &process.quota.usage, &process.session_id);
             if !process.turn_active.load(Ordering::Acquire) && autonomous::is_root_output(&raw) {
@@ -906,6 +914,12 @@ async fn run_session(
             {
                 process.close_agent_interactions(None, true).await;
             }
+            background_outputs.observe(
+                &raw,
+                &process.child_events.lock().expect("child events"),
+                current.as_ref(),
+            );
+            background_outputs.settle(&mut raw).await;
             process
                 .child_events
                 .lock()
@@ -1090,6 +1104,7 @@ async fn run_session(
     }
     // Windows taskkill must see a living root to enumerate its descendants.
     let stopped = process_tree::close(&mut child, pid).await;
+    background_outputs.finish().await;
     process.stdin.lock().await.take();
     let confirmed = stopped.is_ok();
     process.finished.store(confirmed, Ordering::Release);

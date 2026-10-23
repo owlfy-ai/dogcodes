@@ -319,6 +319,7 @@ fn buffered_session(root: &Path, status: TerminalStatus, created_at: i64) -> Arc
         }),
         process: Mutex::new(None),
         input: Mutex::new(None),
+        input_stream: Mutex::default(),
         changed: tokio::sync::Notify::new(),
         state_changes: Arc::new(crate::state_changes::Changes::new()),
     })

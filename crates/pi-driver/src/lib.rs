@@ -19,11 +19,31 @@ struct Session {
     connection: Arc<Connection>,
     workspace: SessionRequest,
 }
+struct PendingPromptDispatch {
+    connection: Arc<Connection>,
+    sent: bool,
+}
+impl Drop for PendingPromptDispatch {
+    fn drop(&mut self) {
+        if !self.sent {
+            self.connection.request_close();
+        }
+    }
+}
 pub struct PiDriver {
     executor: ExecutorRef,
     executable: PathBuf,
     version: Option<String>,
     sessions: Mutex<HashMap<String, Session>>,
+}
+impl Drop for PiDriver {
+    fn drop(&mut self) {
+        if let Ok(sessions) = self.sessions.try_lock() {
+            for session in sessions.values() {
+                session.connection.request_close();
+            }
+        }
+    }
 }
 fn permissions() -> PermissionCatalog {
     PermissionCatalog::new(
@@ -76,9 +96,19 @@ impl PiDriver {
         if let Err(error) = connection.abort_turn(timeout).await {
             // The result is uncertain. Retire this process and report failure;
             // never label an unconfirmed stop as a successful interruption.
-            connection.close().await;
-            self.sessions.lock().await.remove(&handle.native_session_id);
+            let _ = self.retire(&handle.native_session_id, &connection).await;
             return Err(error);
+        }
+        Ok(())
+    }
+    async fn retire(&self, id: &str, connection: &Arc<Connection>) -> Result<(), DriverError> {
+        connection.close().await?;
+        let mut sessions = self.sessions.lock().await;
+        if sessions
+            .get(id)
+            .is_some_and(|session| Arc::ptr_eq(&session.connection, connection))
+        {
+            sessions.remove(id);
         }
         Ok(())
     }
@@ -105,7 +135,7 @@ impl PiDriver {
             Ok(())
         }
         .await;
-        connection.close().await;
+        connection.close().await?;
         result
     }
     async fn connection(&self, id: &str) -> Result<Arc<Connection>, DriverError> {
@@ -181,9 +211,14 @@ impl PiDriver {
                     .expect("Pi state")
                     .disconnected
             })
-            && let Some(session) = sessions.remove(id)
         {
-            session.connection.close().await;
+            let connection = sessions
+                .get(id)
+                .expect("resident session")
+                .connection
+                .clone();
+            connection.close().await?;
+            sessions.remove(id);
         }
         if let Some(id) = resume
             && let Some(session) = sessions.get(id)
@@ -225,7 +260,7 @@ impl PiDriver {
         let state = match result {
             Ok(state) => state,
             Err(error) => {
-                connection.close().await;
+                connection.close().await?;
                 return Err(error);
             }
         };
@@ -237,7 +272,7 @@ impl PiDriver {
             })?
             .to_owned();
         if resume.is_some_and(|expected| expected != id) {
-            connection.close().await;
+            connection.close().await?;
             return Err(DriverError::SessionIncompatible(
                 "Pi restored a different session".into(),
             ));
@@ -376,7 +411,7 @@ impl AgentDriver for PiDriver {
             })
         }
         .await;
-        connection.close().await;
+        connection.close().await?;
         result
     }
     async fn prompt(
@@ -429,9 +464,16 @@ impl AgentDriver for PiDriver {
         }
         message.push_str(&request.prompt);
         let receiver = connection.begin_turn()?;
+        // Cancellation while queued for stdin must not strand the local turn
+        // claim, even if no byte of this prompt has reached the pipe yet.
+        let mut dispatch = PendingPromptDispatch {
+            connection: connection.clone(),
+            sent: false,
+        };
         let accepted = connection
             .request(&mut json!({"type":"prompt","message":message,"images":images}))
             .await?;
+        dispatch.sent = true;
         // Return the event stream immediately. A preflight extension can ask a
         // question before the prompt response; waiting here would deadlock it.
         tokio::spawn(async move {
@@ -484,13 +526,21 @@ impl AgentDriver for PiDriver {
         connection.write(&response).await
     }
     async fn shutdown(&self, handle: SessionHandle) -> Result<(), DriverError> {
-        if let Some(session) = self.sessions.lock().await.remove(&handle.native_session_id) {
-            session.connection.close().await;
+        let connection = self
+            .sessions
+            .lock()
+            .await
+            .get(&handle.native_session_id)
+            .map(|session| session.connection.clone());
+        if let Some(connection) = connection {
+            self.retire(&handle.native_session_id, &connection).await?;
         }
         Ok(())
     }
 }
 
+#[cfg(all(test, unix))]
+mod cleanup_tests;
 #[cfg(all(test, unix))]
 mod tests;
 

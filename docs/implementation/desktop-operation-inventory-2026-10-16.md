@@ -74,7 +74,7 @@ Diff 独立阅读者租约与乱序保护已实现，见[阅读租约记录](des
 | `terminal::core_terminal_list` | `apps/desktop/src-tauri/src/terminal.rs` | 生产入口 |
 | `terminal::core_terminal_get` | `apps/desktop/src-tauri/src/terminal.rs` | 生产入口 |
 | `terminal::core_terminal_read` | `apps/desktop/src-tauri/src/terminal.rs` | 生产入口 |
-| `terminal::core_terminal_write` | `apps/desktop/src-tauri/src/terminal.rs` | 生产入口 |
+| `terminal::core_terminal_input` | `apps/desktop/src-tauri/src/terminal.rs` | 生产入口 |
 | `terminal::core_terminal_resize` | `apps/desktop/src-tauri/src/terminal.rs` | 生产入口 |
 | `terminal::core_terminal_close` | `apps/desktop/src-tauri/src/terminal.rs` | 生产入口 |
 | `review_acceptance::report` | `apps/desktop/src-tauri/src/review_acceptance.rs` | 仅验收特性 |

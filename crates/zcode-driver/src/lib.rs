@@ -14,12 +14,19 @@
 //!
 //! Approval requests preserve the vendor option ids and stay parked until the
 //! Hub answers through `respond_to_interaction`; session resume is capability
-//! gated. Native credentials remain local. For 0.16.9 an empty provider registry
-//! can use a private, connection-scoped bridge of the existing CLI configuration;
-//! vendor configuration files are never modified.
+//! gated. Model configuration comes from the native Desktop provider registry.
+//! Native credentials remain local; vendor configuration files are never modified.
+//! Native account grants are projected before catalog/session creation. Runtime
+//! credentials are scoped to the same account and supplied over local pipes only.
 
+mod account;
+#[cfg(all(test, unix))]
+mod cleanup_tests;
+mod lifecycle;
 mod models;
-mod provider_config;
+mod resume;
+#[cfg(test)]
+mod resume_tests;
 mod session_usage;
 use std::{
     collections::HashMap,
@@ -41,16 +48,16 @@ use driver_api::{
 use futures::StreamExt;
 use serde_json::{Value, json};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin, ChildStdout, Command},
+    io::{AsyncBufReadExt, AsyncReadExt, BufReader},
+    process::{ChildStdout, Command},
     sync::mpsc,
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-/// Cold-resume model hydration and native history recall verified on this CLI.
+/// Versions verified against the installed CLI using an isolated native provider and history.
 #[must_use]
 pub fn verified_resume_capability(version: Option<&str>) -> SessionResumeCapability {
-    if version == Some("0.16.5") {
+    if version == Some("0.16.9") {
         SessionResumeCapability::Supported
     } else {
         SessionResumeCapability::Unknown
@@ -60,7 +67,6 @@ pub fn verified_resume_capability(version: Option<&str>) -> SessionResumeCapabil
 const FRAME_LIMIT: usize = 4 * 1024 * 1024;
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
-const TURN_TIMEOUT: std::time::Duration = std::time::Duration::from_mins(3);
 const CONTEXT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Environment variables handed to the child; everything else is stripped so
@@ -302,7 +308,7 @@ async fn read_native_catalog(
                     "session/create",
                     json!({
                         "workspace":{"workspacePath":workspace,"workspaceKey":workspace},
-                        "titleGenerationEnabled":false
+                        "persistence":"deferred"
                     }),
                     None,
                 )
@@ -311,7 +317,11 @@ async fn read_native_catalog(
                 DriverError::Protocol("zcode model probe is missing sessionId".into())
             })?;
             connection
-                .request("session/close", json!({"sessionId":id}), None)
+                .request(
+                    "session/close",
+                    json!({"sessionId":id,"expectedPersistence":"deferred"}),
+                    None,
+                )
                 .await?;
             state
         }
@@ -405,18 +415,18 @@ fn runtime_preferences() -> Value {
 }
 
 struct Connection {
-    child: Child,
-    stdin: ChildStdin,
+    native: Arc<lifecycle::NativeProcess>,
+    owner: Option<tokio::sync::watch::Receiver<bool>>,
     frames: mpsc::UnboundedReceiver<Incoming>,
     next_request_id: u64,
-    _provider_config: Option<tempfile::NamedTempFile>,
+    #[cfg(test)]
+    request_timeout: std::time::Duration,
+    account: Option<account::Account>,
 }
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        // The reader task saw EOF (or the driver was dropped); reap instead
-        // of leaking the child. kill_on_drop also guards early drops.
-        let _ = self.child.start_kill();
+        self.native.request_close();
     }
 }
 
@@ -436,71 +446,72 @@ impl Connection {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        let account = account::Account::new(launch);
+        if account.is_some() {
+            command.args(["--stdio", "--surface", "desktop"]);
+        }
         for variable in ENV_ALLOWLIST {
             if let Ok(value) = std::env::var(variable) {
                 command.env(variable, value);
             }
         }
-        let mut provider_config = None;
+        for variable in [
+            "ZCODE_DATA_BASE_DIR",
+            "ZCODE_DESKTOP_HOME_DIR",
+            "USERPROFILE",
+            "SYSTEMROOT",
+            "WINDIR",
+        ] {
+            if let Some(value) = std::env::var_os(variable) {
+                command.env(variable, value);
+            }
+        }
         if let Some(config) = launch.bundled_provider_config() {
             command.env("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE", config);
-            if launch.cli_script.is_file()
-                && let Some(home) = std::env::var_os("HOME")
+            if let Some(home) = std::env::var_os("ZCODE_DATA_BASE_DIR")
+                .or_else(|| std::env::var_os("HOME"))
+                .or_else(|| std::env::var_os("USERPROFILE"))
             {
-                provider_config = provider_config::prepare(std::path::Path::new(&home))?;
-                if let Some(config) = &provider_config {
-                    command.env("ZCODE_PERSONAL_PROVIDER_CONFIG_FILE", config.path());
-                }
+                command.env(
+                    "ZCODE_PERSONAL_PROVIDER_CONFIG_FILE",
+                    PathBuf::from(home).join(".zcode/v2/provider_config.json"),
+                );
             }
         }
         agent_runtime::apply_proxy_environment(&mut command);
-        let mut child = command.spawn().map_err(|error| {
+        let child = agent_runtime::OwnedChild::spawn(command).map_err(|error| {
             if matches!(error.kind(), std::io::ErrorKind::NotFound) {
                 DriverError::NotConfigured("ZCode app binary is missing".into())
             } else {
                 DriverError::Disconnected(format!("zcode app-server failed to start: {error}"))
             }
         })?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| DriverError::Disconnected("zcode stdin is unavailable".into()))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| DriverError::Disconnected("zcode stdout is unavailable".into()))?;
-        if let Some(stderr) = child.stderr.take() {
-            tokio::spawn(async move {
-                let mut stderr = stderr;
-                let mut sink = [0_u8; 4096];
-                while let Ok(read) = stderr.read(&mut sink).await {
-                    if read == 0 {
-                        break;
-                    }
-                }
-            });
-        }
-        let (frames_tx, frames_rx) = mpsc::unbounded_channel::<Incoming>();
-        tokio::spawn(read_frames(stdout, frames_tx));
+        let (frames_tx, frames) = mpsc::unbounded_channel();
+        let native = lifecycle::NativeProcess::start(child, frames_tx)?;
         Ok(Self {
-            child,
-            stdin,
-            frames: frames_rx,
+            native,
+            owner: None,
+            frames,
             next_request_id: 1,
-            _provider_config: provider_config,
+            #[cfg(test)]
+            request_timeout: REQUEST_TIMEOUT,
+            account,
         })
     }
-
-    async fn send(&mut self, value: &Value) -> Result<(), DriverError> {
-        async {
-            self.stdin.write_all(value.to_string().as_bytes()).await?;
-            self.stdin.write_all(b"\n").await?;
-            self.stdin.flush().await
-        }
-        .await
-        .map_err(|_| DriverError::Disconnected("zcode stdin is closed".into()))
+    fn observe_owner(&mut self, owner: tokio::sync::watch::Receiver<bool>) {
+        self.native.observe_owner(owner.clone());
+        self.owner = Some(owner);
     }
-
+    async fn send(&mut self, value: &Value) -> Result<(), DriverError> {
+        if self
+            .owner
+            .as_ref()
+            .is_some_and(|owner| *owner.borrow() || owner.has_changed().is_err())
+        {
+            return Err(DriverError::Disconnected("ZCode driver is closing".into()));
+        }
+        self.native.send(value).await
+    }
     async fn start_request(&mut self, method: &str, params: Value) -> Result<Value, DriverError> {
         let id = json!(self.next_request_id);
         self.next_request_id += 1;
@@ -517,8 +528,27 @@ impl Connection {
         params: Value,
         events: Option<&mpsc::UnboundedSender<DriverEvent>>,
     ) -> Result<Value, DriverError> {
+        if matches!(
+            method,
+            "session/create" | "session/resume" | "workspace/readState"
+        ) {
+            self.refresh_account(false).await?;
+        }
+        self.request_inner(method, params, events).await
+    }
+
+    async fn request_inner(
+        &mut self,
+        method: &str,
+        params: Value,
+        events: Option<&mpsc::UnboundedSender<DriverEvent>>,
+    ) -> Result<Value, DriverError> {
         let id = self.start_request(method, params).await?;
-        let deadline = tokio::time::Instant::now() + REQUEST_TIMEOUT;
+        #[cfg(not(test))]
+        let timeout = REQUEST_TIMEOUT;
+        #[cfg(test)]
+        let timeout = self.request_timeout;
+        let deadline = tokio::time::Instant::now() + timeout;
         loop {
             let frame = tokio::time::timeout_at(deadline, self.frames.recv())
                 .await
@@ -540,7 +570,11 @@ impl Connection {
                     method: server_method,
                     params: server_params,
                 } => {
-                    let response = answer_server_request(&server_method, &server_params, events);
+                    let response = if server_method == "interaction/requestProviderRuntimeHeaders" {
+                        self.provider_auth(&server_params).await
+                    } else {
+                        answer_server_request(&server_method, &server_params, events)
+                    };
                     if let Some(event) = notification_event(&server_method)
                         && let Some(events) = events
                     {
@@ -575,13 +609,19 @@ impl Connection {
         mut interactions: mpsc::UnboundedReceiver<InteractionDecision>,
         pending_approvals: &std::sync::Mutex<HashMap<String, PendingApproval>>,
     ) -> Result<TurnResult, DriverError> {
+        self.refresh_account(false).await?;
         let send_id = self
             .start_request(
                 "session/send",
                 json!({ "sessionId": session_id, "content": content.text, "attachments": content.attachments }),
             )
             .await?;
-        let deadline = tokio::time::Instant::now() + TURN_TIMEOUT;
+        #[cfg(not(test))]
+        let control_timeout = REQUEST_TIMEOUT;
+        #[cfg(test)]
+        let control_timeout = self.request_timeout;
+        let start_deadline = tokio::time::Instant::now() + control_timeout;
+        let mut stop_deadline = None;
         let mut stop_id = None;
         let mut cancel_open = true;
         let mut current_turn_started = false;
@@ -596,6 +636,7 @@ impl Connection {
                                 "session/stop",
                                 json!({ "sessionId": session_id }),
                             ).await?);
+                            stop_deadline=Some(tokio::time::Instant::now()+control_timeout);
                         }
                         None => cancel_open = false,
                     }
@@ -608,10 +649,8 @@ impl Connection {
                         })).await?;
                     }
                 }
-                () = tokio::time::sleep_until(deadline) => {
-                    return Err(DriverError::Protocol(
-                        "zcode turn did not emit a terminal notification in time".into(),
-                    ));
+                ()=async{if let Some(deadline)=stop_deadline{tokio::time::sleep_until(deadline).await;}else if !current_turn_started{tokio::time::sleep_until(start_deadline).await;}else{std::future::pending::<()>().await;}}=>{
+                    return Err(DriverError::Protocol("ZCode start/stop was not confirmed in time".into()));
                 }
                 frame = self.frames.recv() => {
                     let frame = frame.ok_or_else(|| {
@@ -631,19 +670,8 @@ impl Connection {
                                     "zcode session/stop request failed".into(),
                                 ));
                             }
-                            // The 0.16.5 stop handler aborts the active
-                            // controller before acknowledging `{}`. Treat that
-                            // native acknowledgement as the cancellation
-                            // terminal; the later session event, if any, is
-                            // drained by session/read or ignored before the
-                            // next turn.started.
-                            if current_turn_started {
-                                return Ok(TurnResult {
-                                    terminal: DriverEvent::TurnInterrupted {
-                                        summary: "ZCode turn was interrupted".into(),
-                                    },
-                                });
-                            }
+                            // stop only signals AbortController; its RPC reply
+                            // is not proof that the turn or tools have ended.
                         }
                         Incoming::ServerRequest {
                             id,
@@ -699,13 +727,30 @@ impl Connection {
                                 }
                                 continue;
                             }
-                            let response = answer_server_request(&method, &params, Some(events));
+                            let response = if method == "interaction/requestProviderRuntimeHeaders" {
+                                // Account verification can wait on a user challenge; cancellation
+                                // must still stop the native task and drop its private helper.
+                                tokio::select! {
+                                    biased;
+                                    message = cancel.recv(), if cancel_open && stop_id.is_none() => {
+                                        if message.is_some() {
+                                            stop_id = Some(self.start_request("session/stop", json!({"sessionId":session_id})).await?);
+                                            stop_deadline=Some(tokio::time::Instant::now()+control_timeout);
+                                        } else { cancel_open = false; }
+                                        json!({"headersApplied":false,"errorMessage":"账号验证已取消。"})
+                                    },
+                                    value = self.provider_auth(&params) => value,
+                                }
+                            } else {
+                                answer_server_request(&method, &params, Some(events))
+                            };
                             if let Some(event) = notification_event(&method) {
                                 let _ = events.send(event);
                             }
                             self.send(&json!({ "id": id, "result": response })).await?;
                         }
                         Incoming::Notification { method, params } => {
+                            if params["sessionId"].as_str().is_some_and(|id|id!=session_id){continue;}
                             let event_method = event_method(&method, &params);
                             if event_method == "turn.started" {
                                 current_turn_started = true;
@@ -766,16 +811,21 @@ impl Connection {
 /// Reads stdout lines into the shared frame channel until EOF.
 async fn read_frames(stdout: ChildStdout, frames: mpsc::UnboundedSender<Incoming>) {
     let mut reader = BufReader::new(stdout);
-    let mut line = String::new();
     loop {
-        line.clear();
-        match reader.read_line(&mut line).await {
+        let mut bytes = Vec::new();
+        let limit = u64::try_from(FRAME_LIMIT + 1).expect("frame limit");
+        match (&mut reader)
+            .take(limit)
+            .read_until(b'\n', &mut bytes)
+            .await
+        {
             Ok(0) | Err(_) => break,
+            Ok(_) if bytes.len() > FRAME_LIMIT => break,
             Ok(_) => {}
         }
-        if line.len() > FRAME_LIMIT {
+        let Ok(line) = std::str::from_utf8(&bytes) else {
             break;
-        }
+        };
         if let Some(frame) = parse_frame(line.trim_end())
             && frames.send(frame).is_err()
         {
@@ -814,7 +864,7 @@ fn answer_server_request(
         }
         "interaction/requestProviderRuntimeHeaders" => json!({
             "headersApplied": false,
-            "errorMessage": "dog.codes does not import provider credentials; run `zcode login`"
+            "errorMessage": "请在 ZCode 中登录并重新检测 Agent。"
         }),
         // Unknown server requests get an empty ack; the schema treats missing
         // fields as defaults and the turn keeps running.
@@ -841,10 +891,24 @@ fn map_request_error(method: &str, error: &Value) -> DriverError {
         );
     }
     let message = error.get("message").and_then(Value::as_str).unwrap_or("");
+    if matches!(method, "session/read" | "session/close")
+        && error["code"].as_i64() == Some(-32004)
+        && message.starts_with("Session is not active:")
+    {
+        return DriverError::SessionMissing("ZCode session is not active in this worker".into());
+    }
+
     let data_text = error
         .get("data")
         .map(std::string::ToString::to_string)
         .unwrap_or_default();
+    if method == "session/resume"
+        && (error.pointer("/data/code").and_then(Value::as_str) == Some("session_not_found")
+            || message.starts_with("Session not found:")
+            || message.starts_with("v4 command session not found:"))
+    {
+        return DriverError::SessionMissing("zcode native session does not exist".into());
+    }
     // The verified "run zcode login" signature from 0.16.5.
     if message.contains("Model config is missing") || data_text.contains("Model config is missing")
     {
@@ -865,7 +929,8 @@ pub struct ZcodeDriver {
     native_version: Option<String>,
     resume_capability: SessionResumeCapability,
     connection: Arc<tokio::sync::Mutex<Option<Connection>>>,
-    sessions: tokio::sync::Mutex<HashMap<String, Arc<SessionState>>>,
+    stopping: tokio::sync::watch::Sender<bool>,
+    sessions: Arc<tokio::sync::Mutex<HashMap<String, Arc<SessionState>>>>,
     /// Timestamp of the last successful `usage/stats` pull; a short TTL
     /// keeps polling cheap (the call is a local agent-db query, zero model).
     usage_pulled_at_unix_ms: std::sync::Mutex<Option<i64>>,
@@ -882,9 +947,33 @@ struct SessionState {
     cancel_tx: std::sync::Mutex<Option<mpsc::UnboundedSender<()>>>,
     interaction_tx: std::sync::Mutex<Option<mpsc::UnboundedSender<InteractionDecision>>>,
     pending_approvals: std::sync::Mutex<HashMap<String, PendingApproval>>,
-    close_after_turn: AtomicBool,
+    closing: AtomicBool,
+    close_result: std::sync::Mutex<Option<lifecycle::Receipt>>,
+    turn_done: std::sync::Mutex<Option<lifecycle::Receipt>>,
+    native: Option<Arc<lifecycle::NativeProcess>>,
 }
 
+impl SessionState {
+    fn finish_turn(&self) {
+        let _gate = self.close_result.lock().expect("session lifecycle");
+        self.interrupt_requested.store(false, Ordering::Release);
+        self.cancel_tx.lock().expect("cancel sender").take();
+        self.interaction_tx
+            .lock()
+            .expect("interaction sender")
+            .take();
+        self.pending_approvals
+            .lock()
+            .expect("pending approvals")
+            .clear();
+        self.turn_active.store(false, Ordering::Release);
+    }
+}
+impl Drop for ZcodeDriver {
+    fn drop(&mut self) {
+        self.stopping.send_replace(true);
+    }
+}
 impl ZcodeDriver {
     /// Creates a driver for one concrete installation. `resume_capability`
     /// must come from real runtime evidence, never from documentation.
@@ -911,7 +1000,8 @@ impl ZcodeDriver {
             native_version,
             resume_capability,
             connection: Arc::new(tokio::sync::Mutex::new(None)),
-            sessions: tokio::sync::Mutex::new(HashMap::new()),
+            sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            stopping: tokio::sync::watch::channel(false).0,
             usage_pulled_at_unix_ms: std::sync::Mutex::new(None),
             usage: Arc::default(),
             latest_context: Arc::new(std::sync::Mutex::new(HashMap::new())),
@@ -928,7 +1018,8 @@ impl ZcodeDriver {
     /// Returns [`DriverError::NotConfigured`] when the login/config step is
     /// missing and [`DriverError::Protocol`] for protocol-surface failures.
     pub async fn probe_ready(launch: &ZcodeLaunch) -> Result<(), DriverError> {
-        Self::ready_connection(launch).await.map(drop)
+        let connection = Self::ready_connection(launch).await?;
+        connection.native.close().await
     }
 
     /// Keeps the authenticated process after closing the temporary probe session.
@@ -952,7 +1043,8 @@ impl ZcodeDriver {
             resume_capability,
         )
         .map_err(|_| DriverError::Protocol("invalid ZCode installation identity".into()))?;
-        let connection = Self::ready_connection(&driver.launch).await?;
+        let mut connection = Self::ready_connection(&driver.launch).await?;
+        connection.observe_owner(driver.stopping.subscribe());
         *driver.connection.lock().await = Some(connection);
         Ok(driver)
     }
@@ -984,9 +1076,14 @@ impl ZcodeDriver {
                         "zcode readiness session/create response is missing sessionId".into(),
                     )
                 })?;
-                connection
-                    .request("session/close", json!({ "sessionId": session_id }), None)
+                let closed = connection
+                    .request("session/close", json!({"sessionId":session_id}), None)
                     .await?;
+                if closed["closed"] == false {
+                    return Err(DriverError::Protocol(
+                        "ZCode refused to close the readiness session".into(),
+                    ));
+                }
                 let after_close = connection.request("session/list", json!({}), None).await?;
                 let still_listed = after_close
                     .get("sessions")
@@ -1022,43 +1119,50 @@ impl ZcodeDriver {
         model: Option<&str>,
         thinking: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
-        if self.sessions.lock().await.contains_key(native_session_id) {
-            return Ok(SessionHandle {
-                native_session_id: native_session_id.to_owned(),
-            });
+        let resident = self.sessions.lock().await.get(native_session_id).cloned();
+        if let Some(state) = resident {
+            if state.closing.load(Ordering::Acquire)
+                || state
+                    .native
+                    .as_ref()
+                    .is_some_and(|native| native.stopping())
+            {
+                self.shutdown(SessionHandle {
+                    native_session_id: native_session_id.into(),
+                })
+                .await?;
+            } else {
+                return Ok(SessionHandle {
+                    native_session_id: native_session_id.into(),
+                });
+            }
         }
-        // Reusing a live session does not call the version-sensitive cold resume RPC.
         if self.resume_capability != SessionResumeCapability::Supported {
             return Err(DriverError::CapabilityUnavailable(
                 "zcode session/resume has not been runtime verified".into(),
             ));
         }
         let mut guard = self.ensure_connection().await?;
+        // A concurrent restore may have committed while this caller waited for the pipe.
+        if self.sessions.lock().await.contains_key(native_session_id) {
+            return Ok(SessionHandle {
+                native_session_id: native_session_id.into(),
+            });
+        }
         let connection = guard.as_mut().expect("connection ensured above");
-        let native_catalog =
-            read_native_catalog(connection, std::path::Path::new(working_directory))
-                .await
-                .unwrap_or(Value::Null);
-        let mut resumed = connection
+        let resumed = connection
             .request(
                 "session/resume",
-                json!({ "sessionId": native_session_id, "mcpServers": driver_api::HistoryMcp::native_servers(history_mcp) }),
+                json!({ "sessionId": native_session_id,
+                    "workspace":{"workspacePath":working_directory,"workspaceKey":working_directory},
+                    "mcpServers": driver_api::HistoryMcp::native_servers(history_mcp) }),
                 None,
             )
-            .await
-            .map_err(map_resume_error)?;
-        if let Some(model) = model {
-            resumed["settings"]["model"]["current"] = serde_json::from_str(model)
-                .map_err(|_| DriverError::Protocol("invalid ZCode model reference".into()))?;
-            if thinking.is_none() {
-                resumed["settings"]["thoughtLevel"]["current"] = Value::Null;
-            }
-        }
-        if let Some(thinking) = thinking {
-            resumed["settings"]["thoughtLevel"]["current"] = json!(thinking);
-        }
+            .await?;
+        // Until identity, workspace and idleness are confirmed, do not mutate or close native work.
+        resume::validate(&resumed, native_session_id, working_directory)?;
         if let Err(error) =
-            models::restore_runtime(&self.launch, connection, &resumed, native_session_id).await
+            models::select_native(connection, native_session_id, model, thinking).await
         {
             let _ = connection
                 .request(
@@ -1069,6 +1173,15 @@ impl ZcodeDriver {
                 .await;
             return Err(error);
         }
+        // Native resume returns the full catalog; readSession may only contain the current model.
+        let native_catalog = resumed.clone();
+        let resumed = if model.is_some() || thinking.is_some() {
+            connection
+                .request("session/read", json!({"sessionId":native_session_id}), None)
+                .await?
+        } else {
+            resumed
+        };
         connection
             .request(
                 "session/subscribe",
@@ -1096,7 +1209,10 @@ impl ZcodeDriver {
             cancel_tx: std::sync::Mutex::new(None),
             interaction_tx: std::sync::Mutex::new(None),
             pending_approvals: std::sync::Mutex::new(HashMap::new()),
-            close_after_turn: AtomicBool::new(false),
+            closing: AtomicBool::new(false),
+            close_result: std::sync::Mutex::new(None),
+            turn_done: std::sync::Mutex::new(None),
+            native: Some(connection.native.clone()),
         });
         self.sessions
             .lock()
@@ -1111,17 +1227,16 @@ impl ZcodeDriver {
         &self,
     ) -> Result<tokio::sync::MutexGuard<'_, Option<Connection>>, DriverError> {
         let mut guard = self.connection.lock().await;
-        if guard.as_mut().is_some_and(|connection| {
-            connection.frames.is_closed()
-                || connection
-                    .child
-                    .try_wait()
-                    .map_or(true, |status| status.is_some())
-        }) {
+        if let Some(connection) = guard.as_ref()
+            && (connection.frames.is_closed() || connection.native.stopping())
+        {
+            connection.native.close().await?;
             *guard = None;
         }
         if guard.is_none() {
-            *guard = Some(Connection::spawn(&self.launch)?);
+            let mut connection = Connection::spawn(&self.launch)?;
+            connection.observe_owner(self.stopping.subscribe());
+            *guard = Some(connection);
         }
         Ok(guard)
     }
@@ -1184,6 +1299,7 @@ impl AgentDriver for ZcodeDriver {
         let workspace = workspace.map_or_else(std::env::temp_dir, PathBuf::from);
         let mut guard = self.ensure_connection().await?;
         let connection = guard.as_mut().expect("connection ensured");
+        connection.refresh_account(true).await?;
         let state = read_native_catalog(connection, &workspace).await?;
         Ok(models::catalog(&state))
     }
@@ -1257,7 +1373,10 @@ impl AgentDriver for ZcodeDriver {
             cancel_tx: std::sync::Mutex::new(None),
             interaction_tx: std::sync::Mutex::new(None),
             pending_approvals: std::sync::Mutex::new(HashMap::new()),
-            close_after_turn: AtomicBool::new(false),
+            closing: AtomicBool::new(false),
+            close_result: std::sync::Mutex::new(None),
+            turn_done: std::sync::Mutex::new(None),
+            native: Some(connection.native.clone()),
         });
         self.sessions.lock().await.insert(session_id.clone(), state);
         Ok(SessionHandle {
@@ -1280,10 +1399,6 @@ impl AgentDriver for ZcodeDriver {
         request: HubPromptRequest,
     ) -> Result<DriverEventStream, DriverError> {
         driver_api::permissions::zcode().validate(request.permission_mode.as_deref())?;
-        {
-            let mut guard = self.ensure_connection().await?;
-            guard.as_mut().expect("connection").request("session/setMode",json!({"sessionId":handle.native_session_id,"mode":request.permission_mode.as_deref().unwrap_or("build")}),None).await?;
-        }
         let attachment_blocks = driver_api::attachments::zcode(&request.attachments).await?;
         let state = self
             .sessions
@@ -1294,20 +1409,24 @@ impl AgentDriver for ZcodeDriver {
             .ok_or_else(|| {
                 DriverError::SessionMissing("no live zcode session with this id".into())
             })?;
-        if state
-            .turn_active
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return Err(DriverError::CapabilityUnavailable(
-                "this zcode session already has an active turn".into(),
-            ));
-        }
+        let (done, done_rx) = tokio::sync::watch::channel(None);
         let (events_tx, events_rx) = mpsc::unbounded_channel();
         let (cancel_tx, cancel_rx) = mpsc::unbounded_channel();
         let (interaction_tx, interaction_rx) = mpsc::unbounded_channel();
-        *state.cancel_tx.lock().expect("cancel sender") = Some(cancel_tx);
-        *state.interaction_tx.lock().expect("interaction sender") = Some(interaction_tx);
+        {
+            let _gate = state.close_result.lock().expect("session lifecycle");
+            if state.closing.load(Ordering::Acquire) {
+                return Err(DriverError::Disconnected("ZCode session is closing".into()));
+            }
+            if state.turn_active.swap(true, Ordering::AcqRel) {
+                return Err(DriverError::CapabilityUnavailable(
+                    "this zcode session already has an active turn".into(),
+                ));
+            }
+            *state.turn_done.lock().expect("turn receipt") = Some(done_rx);
+            *state.cancel_tx.lock().expect("cancel sender") = Some(cancel_tx);
+            *state.interaction_tx.lock().expect("interaction sender") = Some(interaction_tx);
+        }
         // Context items ride as text blocks before the user prompt.
         let mut content = String::new();
         for delivery in &request.context {
@@ -1329,32 +1448,84 @@ impl AgentDriver for ZcodeDriver {
         // The turn runs on its own task holding the connection lock until
         // the vendor turn-completion response returns; events stream through
         // the channel meanwhile, and the terminal is appended after.
-        let connection = Arc::clone(&self.connection);
-        let launch = self.launch.clone();
+        let self_connection = Arc::clone(&self.connection);
+        let sessions = self.sessions.clone();
+        let mode = request
+            .permission_mode
+            .as_deref()
+            .unwrap_or("build")
+            .to_owned();
         let session_id = handle.native_session_id.clone();
         let state_for_task = Arc::clone(&state);
         let latest_context = Arc::clone(&self.latest_context);
         let usage = Arc::clone(&self.usage);
         tokio::spawn(async move {
-            let mut guard = connection.lock().await;
-            if guard.is_none() {
-                // The driver owns exactly one connection; recreate on loss.
-                if let Ok(spawned) = Connection::spawn(&launch) {
-                    *guard = Some(spawned);
-                } else {
-                    state_for_task.turn_active.store(false, Ordering::Release);
-                    *state_for_task.cancel_tx.lock().expect("cancel sender") = None;
-                    *state_for_task
-                        .interaction_tx
-                        .lock()
-                        .expect("interaction sender") = None;
-                    let _ = events_tx.send(DriverEvent::TurnFailed {
-                        reason: "ZCode app-server could not be started".into(),
-                    });
-                    return;
-                }
+            let mut guard = self_connection.lock().await;
+            if state_for_task.closing.load(Ordering::Acquire) {
+                state_for_task.finish_turn();
+                done.send_replace(Some(Ok(())));
+                let _ = events_tx.send(DriverEvent::TurnInterrupted {
+                    summary: "ZCode session closed before dispatch".into(),
+                });
+                return;
             }
-            let connection = guard.as_mut().expect("connection present");
+            let Some(connection) = guard.as_mut() else {
+                state_for_task.finish_turn();
+                lifecycle::close_session(
+                    self_connection.clone(),
+                    sessions,
+                    session_id.clone(),
+                    state_for_task.clone(),
+                );
+                done.send_replace(Some(Err(DriverError::Disconnected(
+                    "ZCode original worker is unavailable".into(),
+                ))));
+                let _ = events_tx.send(DriverEvent::TurnFailed {
+                    reason: "ZCode original worker is unavailable".into(),
+                });
+                return;
+            };
+            if state_for_task
+                .native
+                .as_ref()
+                .is_some_and(|native| !Arc::ptr_eq(native, &connection.native))
+            {
+                state_for_task.finish_turn();
+                lifecycle::close_session(
+                    self_connection.clone(),
+                    sessions,
+                    session_id.clone(),
+                    state_for_task.clone(),
+                );
+                done.send_replace(Some(Err(DriverError::Disconnected(
+                    "ZCode worker changed; restore the session first".into(),
+                ))));
+                let _ = events_tx.send(DriverEvent::TurnFailed {
+                    reason: "ZCode worker changed; restore the session first".into(),
+                });
+                return;
+            }
+            if let Err(error) = connection
+                .request(
+                    "session/setMode",
+                    json!({"sessionId":session_id,"mode":mode}),
+                    None,
+                )
+                .await
+            {
+                state_for_task.finish_turn();
+                lifecycle::close_session(
+                    self_connection.clone(),
+                    sessions,
+                    session_id.clone(),
+                    state_for_task.clone(),
+                );
+                done.send_replace(Some(Err(error)));
+                let _ = events_tx.send(DriverEvent::TurnFailed {
+                    reason: "ZCode session mode was not confirmed".into(),
+                });
+                return;
+            }
             // Capture native IDs before sending the prompt. A failed debug read
             // leaves the stable message projection as the fallback for this turn.
             let debug_before = tokio::time::timeout(
@@ -1378,6 +1549,7 @@ impl AgentDriver for ZcodeDriver {
                     &state_for_task.pending_approvals,
                 )
                 .await;
+            let verified = outcome.is_ok();
             let terminal = match outcome {
                 Ok(result) => {
                     // Read the authoritative session projection after the
@@ -1441,25 +1613,22 @@ impl AgentDriver for ZcodeDriver {
                     reason: "ZCode turn ended with an error result".into(),
                 },
             };
-            if state_for_task.close_after_turn.load(Ordering::Acquire) {
-                let _ = connection
-                    .request("session/close", json!({ "sessionId": session_id }), None)
-                    .await;
+            state_for_task.finish_turn();
+            if !verified {
+                lifecycle::close_session(
+                    Arc::clone(&self_connection),
+                    sessions,
+                    session_id.clone(),
+                    state_for_task.clone(),
+                );
             }
-            state_for_task.turn_active.store(false, Ordering::Release);
-            state_for_task
-                .interrupt_requested
-                .store(false, Ordering::Release);
-            *state_for_task.cancel_tx.lock().expect("cancel sender") = None;
-            *state_for_task
-                .interaction_tx
-                .lock()
-                .expect("interaction sender") = None;
-            state_for_task
-                .pending_approvals
-                .lock()
-                .expect("pending approvals")
-                .clear();
+            done.send_replace(Some(if verified {
+                Ok(())
+            } else {
+                Err(DriverError::Disconnected(
+                    "ZCode turn did not confirm native termination".into(),
+                ))
+            }));
             // Publish the terminal only after the state transition. A caller
             // that immediately invokes shutdown must take the normal close
             // path instead of racing the active-turn branch.
@@ -1478,13 +1647,28 @@ impl AgentDriver for ZcodeDriver {
             .get(&handle.native_session_id)
             .cloned()
             .ok_or_else(|| DriverError::SessionMissing("no live zcode session".into()))?;
-        state.interrupt_requested.store(true, Ordering::Release);
-        if let Some(cancel_tx) = state.cancel_tx.lock().expect("cancel sender").as_ref() {
-            cancel_tx.send(()).map_err(|_| {
-                DriverError::Disconnected("zcode turn cancellation channel is closed".into())
-            })?;
-        }
-        Ok(())
+        let outcome = {
+            let _gate = state.close_result.lock().expect("session lifecycle");
+            let active = state.turn_active.load(Ordering::Acquire);
+            let outcome = state.turn_done.lock().expect("turn receipt").clone();
+            if !active && outcome.is_none() {
+                return Ok(());
+            }
+            if active
+                && !state.interrupt_requested.swap(true, Ordering::AcqRel)
+                && let Some(cancel) = state.cancel_tx.lock().expect("cancel sender").as_ref()
+            {
+                cancel.send(()).map_err(|_| {
+                    DriverError::Disconnected("ZCode cancellation channel closed".into())
+                })?;
+            }
+            // A failed turn can already have left the loop while its native
+            // close is still pending. Retrying stop must retain that failure.
+            outcome.ok_or_else(|| {
+                DriverError::Disconnected("ZCode turn has no termination receipt".into())
+            })?
+        };
+        lifecycle::wait(outcome, std::time::Duration::from_secs(10)).await
     }
 
     async fn respond_to_question(
@@ -1500,6 +1684,10 @@ impl AgentDriver for ZcodeDriver {
             .get(&handle.native_session_id)
             .cloned()
             .ok_or_else(|| DriverError::SessionMissing("ZCode closed".into()))?;
+        let _lifecycle = state.close_result.lock().expect("session lifecycle");
+        if state.closing.load(Ordering::Acquire) {
+            return Err(DriverError::Disconnected("ZCode session is closing".into()));
+        }
         let pending = {
             let mut questions = state.pending_approvals.lock().expect("pending");
             let p = questions
@@ -1542,6 +1730,10 @@ impl AgentDriver for ZcodeDriver {
             .get(&handle.native_session_id)
             .cloned()
             .ok_or_else(|| DriverError::SessionMissing("no live zcode session".into()))?;
+        let _lifecycle = state.close_result.lock().expect("session lifecycle");
+        if state.closing.load(Ordering::Acquire) {
+            return Err(DriverError::Disconnected("ZCode session is closing".into()));
+        }
         let pending = state
             .pending_approvals
             .lock()
@@ -1596,40 +1788,22 @@ impl AgentDriver for ZcodeDriver {
     }
 
     async fn shutdown(&self, handle: SessionHandle) -> Result<(), DriverError> {
-        let state = self.sessions.lock().await.remove(&handle.native_session_id);
+        let state = self
+            .sessions
+            .lock()
+            .await
+            .get(&handle.native_session_id)
+            .cloned();
         let Some(state) = state else {
             return Ok(());
         };
-        if state.turn_active.load(Ordering::Acquire) {
-            // The turn task owns the connection. Ask it to stop and close the
-            // vendor session after the terminal notification arrives.
-            state.close_after_turn.store(true, Ordering::Release);
-            if let Some(cancel_tx) = state.cancel_tx.lock().expect("cancel sender").as_ref() {
-                let _ = cancel_tx.send(());
-            }
-            return Ok(());
-        }
-        let mut guard = self.connection.lock().await;
-        let Some(connection) = guard.as_mut() else {
-            return Ok(());
-        };
-        connection
-            .request(
-                "session/close",
-                json!({ "sessionId": handle.native_session_id }),
-                None,
-            )
-            .await
-            .map(|_| ())
-    }
-}
-
-fn map_resume_error(error: DriverError) -> DriverError {
-    match error {
-        DriverError::Protocol(_) => {
-            DriverError::SessionMissing("zcode native session could not be resumed".into())
-        }
-        other => other,
+        let receipt = lifecycle::close_session(
+            self.connection.clone(),
+            self.sessions.clone(),
+            handle.native_session_id,
+            state,
+        );
+        lifecycle::wait(receipt, std::time::Duration::from_secs(10)).await
     }
 }
 
@@ -1694,7 +1868,9 @@ impl QuotaProvider for ZcodeDriver {
         if force || !fresh {
             let mut guard = self.connection.lock().await;
             if guard.is_none() {
-                *guard = Some(Connection::spawn(&self.launch)?);
+                let mut connection = Connection::spawn(&self.launch)?;
+                connection.observe_owner(self.stopping.subscribe());
+                *guard = Some(connection);
             }
             let connection = guard.as_mut().expect("connection present");
             // The pull proves the surface works; the summary itself has no
@@ -1747,6 +1923,11 @@ mod tests {
         let script = format!(
             "#!/bin/sh\ni=0\nwhile IFS= read -r request; do\n  i=$((i+1))\n  case $i in\n    1|4) result='{{\"sessions\":[]}}';;\n    2) result='{created}';;\n    5) result='{{\"sessionId\":\"real\"}}';;\n    *) result='{{}}';;\n  esac\n  printf '{{\"id\":%s,\"result\":%s}}\\n' \"$i\" \"$result\"\ndone\n"
         );
+        let script = script.replace(
+            "    *) result='{}';;",
+            r#"    3|7) result='{"closed":true}';;
+    *) result='{}';;"#,
+        );
         std::fs::write(&runtime, script).unwrap();
         std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o755)).unwrap();
         let launch = ZcodeLaunch {
@@ -1769,7 +1950,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let pid = driver.connection.lock().await.as_ref().unwrap().child.id();
+        let pid = driver.connection.lock().await.as_ref().unwrap().native.id();
         let handle = driver
             .create_session(SessionRequest {
                 working_directory: "/tmp/real-workspace".into(),
@@ -1787,12 +1968,12 @@ mod tests {
         {
             let mut guard = driver.connection.lock().await;
             let connection = guard.as_mut().unwrap();
-            assert_eq!(connection.child.id(), pid);
-            connection.child.kill().await.unwrap();
+            assert_eq!(connection.native.id(), pid);
+            connection.native.close().await.unwrap();
         }
         let mut guard = driver.ensure_connection().await.unwrap();
         let connection = guard.as_mut().unwrap();
-        assert_ne!(connection.child.id(), pid);
+        assert_ne!(connection.native.id(), pid);
         assert_eq!(
             connection
                 .request("session/list", json!({}), None)
@@ -1819,14 +2000,14 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn app_server_receives_relocated_bundle_config_without_overriding_personal_config() {
+    async fn app_server_receives_relocated_native_config_paths() {
         use std::os::unix::fs::PermissionsExt;
         let root = tempfile::tempdir().unwrap();
         let runtime = root.path().join("runtime");
         std::fs::write(&runtime, concat!(
             "#!/bin/sh\n",
             "read request\n",
-            "if [ -f \"$ZCODE_BUILTIN_PROVIDER_CONFIG_FILE\" ] && [ -z \"$ZCODE_PERSONAL_PROVIDER_CONFIG_FILE\" ]; then\n",
+            "if [ -f \"$ZCODE_BUILTIN_PROVIDER_CONFIG_FILE\" ] && [ \"$ZCODE_PERSONAL_PROVIDER_CONFIG_FILE\" = \"$HOME/.zcode/v2/provider_config.json\" ]; then\n",
             "  echo '{\"id\":1,\"result\":{\"sessions\":[]}}'\n",
             "fi\n"
         )).unwrap();
@@ -1996,7 +2177,10 @@ mod tests {
                 cancel_tx: std::sync::Mutex::new(None),
                 interaction_tx: std::sync::Mutex::new(None),
                 pending_approvals: std::sync::Mutex::new(HashMap::new()),
-                close_after_turn: AtomicBool::new(false),
+                closing: AtomicBool::new(false),
+                close_result: std::sync::Mutex::new(None),
+                turn_done: std::sync::Mutex::new(None),
+                native: None,
             }),
         );
         assert_eq!(
@@ -2045,7 +2229,10 @@ mod tests {
                     ]),
                 },
             )])),
-            close_after_turn: AtomicBool::new(false),
+            closing: AtomicBool::new(false),
+            close_result: std::sync::Mutex::new(None),
+            turn_done: std::sync::Mutex::new(None),
+            native: None,
         });
         driver
             .sessions
@@ -2805,10 +2992,35 @@ mod real_quota_probe {
 mod cold_resume_errors {
     use super::*;
     #[test]
+    fn only_explicit_native_missing_errors_are_session_missing() {
+        for error in [
+            json!({"code":-32000,"message":"Session not found: private-id"}),
+            json!({"code":-32000,"message":"private","data":{"code":"session_not_found"}}),
+        ] {
+            let mapped = map_request_error("session/resume", &error);
+            assert!(matches!(mapped, DriverError::SessionMissing(_)));
+            assert!(!mapped.to_string().contains("private"));
+        }
+        for message in ["request timed out", "session_corrupted", "turn_in_progress"] {
+            assert!(matches!(
+                map_request_error("session/resume", &json!({"message":message})),
+                DriverError::Protocol(_)
+            ));
+        }
+    }
+    #[test]
     fn unverified_native_versions_are_not_promoted() {
         assert_eq!(
-            verified_resume_capability(Some("0.16.5")),
+            verified_resume_capability(Some("0.16.9")),
             SessionResumeCapability::Supported
+        );
+        assert_eq!(
+            verified_resume_capability(Some("0.16.10")),
+            SessionResumeCapability::Unknown
+        );
+        assert_eq!(
+            verified_resume_capability(Some("0.16.5")),
+            SessionResumeCapability::Unknown
         );
         assert_eq!(
             verified_resume_capability(Some("0.16.6")),

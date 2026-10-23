@@ -366,7 +366,8 @@ impl Bridge {
         self.environment(command);
         command.arg("--add-dir").arg(self.directory.path());
     }
-    pub fn start(self, process: &Arc<SessionProcess>) {
+    pub fn start(self, process: &Arc<SessionProcess>) -> tokio::task::JoinHandle<()> {
+        let mut closing = process.closing.subscribe();
         let process = Arc::downgrade(process);
         let directory = self.directory;
         tokio::spawn(async move {
@@ -375,29 +376,34 @@ impl Bridge {
             // retain the TempDir, which removes the Hook files when dropped.
             let _directory = directory;
             let permits = Arc::new(tokio::sync::Semaphore::new(32));
+            let mut requests = tokio::task::JoinSet::new();
             loop {
                 let Some(p) = process.upgrade() else {
                     break;
                 };
-                if p.finished.load(Ordering::Acquire) {
+                if p.finished.load(Ordering::Acquire) || *closing.borrow() {
                     break;
                 }
                 drop(p);
-                let accepted =
-                    tokio::time::timeout(std::time::Duration::from_secs(1), self.listener.accept())
-                        .await;
+                let accepted = tokio::select! {
+                    changed=closing.changed()=>{let _=changed;break;},
+                    accepted=tokio::time::timeout(std::time::Duration::from_secs(1),self.listener.accept())=>accepted,
+                    _=requests.join_next(),if !requests.is_empty()=>continue,
+                };
                 if let Ok(Ok((socket, _))) = accepted
                     && let Ok(permit) = Arc::clone(&permits).try_acquire_owned()
                 {
                     let p = process.clone();
                     let token = self.token.clone();
-                    tokio::spawn(async move {
+                    requests.spawn(async move {
                         let _permit = permit;
                         let _ = serve(socket, p, &token).await;
                     });
                 }
             }
-        });
+            requests.abort_all();
+            while requests.join_next().await.is_some() {}
+        })
     }
 }
 async fn serve(
@@ -549,12 +555,12 @@ async fn serve(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AntigravityDriver, SpawnSlot};
+    use crate::AntigravityDriver;
     use agent_domain::InstallationId;
     use driver_api::{AgentDriver, SessionHandle, SessionResumeCapability};
     use std::{collections::HashMap, sync::atomic::AtomicBool};
     use tokio::sync::mpsc;
-    async fn process() -> (Arc<SessionProcess>, mpsc::UnboundedReceiver<DriverEvent>) {
+    fn process() -> (Arc<SessionProcess>, mpsc::UnboundedReceiver<DriverEvent>) {
         let (tx, rx) = mpsc::unbounded_channel();
         (
             Arc::new(SessionProcess {
@@ -566,9 +572,12 @@ mod tests {
                 pending_approvals: std::sync::Mutex::new(HashMap::new()),
                 pending_questions: std::sync::Mutex::new(HashMap::new()),
                 native_id: std::sync::Mutex::new(Some("parent".into())),
-                _spawn_slot: SpawnSlot {
-                    _guard: Arc::new(tokio::sync::Mutex::new(())).lock_owned().await,
-                },
+                closing: tokio::sync::watch::channel(false).0,
+                cleanup: tokio::sync::watch::channel(None).1,
+                background: std::sync::Mutex::new(vec![]),
+                lifecycle: std::sync::Mutex::new(()),
+                stop_requested: AtomicBool::new(false),
+                input_failed: AtomicBool::new(false),
                 stdin: tokio::sync::Mutex::new(None),
                 updates: std::sync::Mutex::new(Some(tx)),
                 turn_active: AtomicBool::new(true),
@@ -639,7 +648,7 @@ mod tests {
 
     #[tokio::test]
     async fn hook_directory_lives_until_native_process_finishes() {
-        let (p, _events) = process().await;
+        let (p, _events) = process();
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().to_owned();
         std::fs::write(path.join("hook"), "fixture").unwrap();
@@ -651,13 +660,14 @@ mod tests {
             command: "fixture".into(),
             listener,
         };
-        bridge.start(&p);
+        let server = bridge.start(&p);
         tokio::task::yield_now().await;
         assert!(
             path.join("hook").exists(),
             "starting the server must retain Hook files"
         );
         p.finished.store(true, Ordering::Release);
+        server.await.unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(3), async {
             while path.exists() {
                 tokio::time::sleep(std::time::Duration::from_millis(20)).await;
@@ -670,7 +680,7 @@ mod tests {
     #[tokio::test]
     async fn tool_waits_for_explicit_approval_and_accepts_native_session_alias() {
         for decision in ["allow_once", "deny"] {
-            let (p, mut events) = process().await;
+            let (p, mut events) = process();
             let reply = request(&p, "secret", "parent").await;
             let event = tokio::time::timeout(std::time::Duration::from_secs(2), events.recv())
                 .await
@@ -733,7 +743,7 @@ mod tests {
     }
     #[tokio::test]
     async fn child_requires_registration_and_cannot_be_approved_after_parent_ends() {
-        let (p, mut events) = process().await;
+        let (p, mut events) = process();
         assert_eq!(
             request(&p, "secret", "child").await.await.unwrap()["decision"],
             "deny"
@@ -759,7 +769,7 @@ mod tests {
     }
     #[tokio::test]
     async fn rejects_foreign_session_bad_token_and_cancelled_approval() {
-        let (p, mut events) = process().await;
+        let (p, mut events) = process();
         for (token, session) in [("wrong", "parent"), ("secret", "foreign")] {
             assert_eq!(
                 request(&p, token, session).await.await.unwrap()["decision"],

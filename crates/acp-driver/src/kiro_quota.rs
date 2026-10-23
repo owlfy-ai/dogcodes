@@ -181,6 +181,7 @@ mod tests {
         let (commands, mut receiver) = mpsc::unbounded_channel();
         let (cancels, _cancels) = mpsc::unbounded_channel();
         *driver.shared.connection.lock().await = Some(ConnectionHandle {
+            native: None,
             commands,
             cancels,
             finished: Arc::new(AtomicBool::new(false)),

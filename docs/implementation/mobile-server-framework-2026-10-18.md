@@ -58,8 +58,19 @@
 
 复现：先用 `cargo build -p desktop --features remote-acceptance --bin remote-acceptance --locked` 构建专用测试入口，再按 server README 执行 gateway_smoke。该二进制与正常 desktop 分离，要求临时目录标记；不会因普通构建覆盖入口而误启动主程序。
 
+### 2026-10-18 手机业务对接补充
+
+- 网关同一连接可并存多个项目订阅（按项目替换，上限 32），手机可跨项目聚合会话；配对/重连回执附带电脑显示名称（不参与身份或授权）。
+- 白名单新增只读 `quota_snapshots_for`，忽略手机传入的强制刷新。
+- 配对邀请的首个握手等待改为直到邀请到期（15–300 秒），修复用户扫码超过 15 秒即配对失败（中继 410）。
+- 验收夹具的合成驱动在中断时结束当前轮次，与真实驱动一致；`gateway_smoke` 新增手机停止、额度、重复订阅与电脑名称检查并通过。手机 iOS 模拟器真实 UI 端到端测试见 `../dogcodes-app/integration_test/pc_control_test.dart`。
+
 ### 使用与后续
 
 本机服务运行方式、两模拟器配对步骤见 `../dogcodes-app/README.md` 和 `../dogcodes-server/README.md`（从对应仓库根目录读取）。PC 使用更新后的开发版本，偏好菜单打开「连接手机」。旧后台 daemon 若仍在执行任务，应等待空闲后正常退出/重开以载入新增网关，不强停任务。
 
-尚待：官方公网 TLS 部署/准入与地区实测、真实 Agent 与真机联调、首次配对 ACK 丢失后的原邀请在线回执查询（目前需重新生成二维码）、结构化问答表单、多端竞争专项、草稿接入/离线缓存、完整会话管理、Diff/Git、文件附件、终端/运行/网页预览、推送、四平台画面/键鼠/剪贴板/多屏。服务能力 pairing=true 表示路由与端点配对已接入；business=false 指云服务不提供 PC 业务端点，并非手机不能调用 PC Core。remoteDesktop=false。
+尚待：官方公网 TLS 部署/准入与地区实测、真实 Agent 与真机联调、首次配对 ACK 丢失后的原邀请在线回执查询（目前需重新生成二维码）、多端竞争专项、草稿接入/离线缓存、完整会话管理、Diff/Git、文件附件、终端/运行/网页预览、推送、四平台画面/键鼠/剪贴板/多屏。服务能力 pairing=true 表示路由与端点配对已接入；business=false 指云服务不提供 PC 业务端点，并非手机不能调用 PC Core。remoteDesktop=false。
+
+## 2026-10-19：workspace 网关扩展
+
+文件、Diff/Git、终端、项目运行及对应失效订阅已在 PC 加密网关开放，复用现有后台服务与回执；不需要额外开放端口。方法白名单、参数与手机待接入边界见[远程 workspace 契约](remote-workspace-gateway-2026-10-19.md)。手机现有四个占位入口仍需调用这些接口，不能将本次网关实现视为手机页面已完成。

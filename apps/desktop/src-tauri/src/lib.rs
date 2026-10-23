@@ -1203,7 +1203,7 @@ pub fn run() {
             terminal::core_terminal_list,
             terminal::core_terminal_get,
             terminal::core_terminal_read,
-            terminal::core_terminal_write,
+            terminal::core_terminal_input,
             terminal::core_terminal_resize,
             terminal::core_terminal_close,
             #[cfg(feature = "review-acceptance")]

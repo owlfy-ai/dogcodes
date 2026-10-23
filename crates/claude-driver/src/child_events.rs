@@ -12,6 +12,16 @@ pub(super) struct ChildEvents {
     settled: std::collections::HashSet<String>,
 }
 impl ChildEvents {
+    pub fn background_owner(
+        &self,
+        id: &str,
+        current: Option<&UnboundedSender<DriverEvent>>,
+    ) -> Option<UnboundedSender<DriverEvent>> {
+        if self.tool_names.get(id).is_none_or(|name| name != "Bash") || self.settled.contains(id) {
+            return None;
+        }
+        self.owners.get(id).or(current).cloned()
+    }
     pub fn dispatch(&mut self, raw: &Value, current: Option<&UnboundedSender<DriverEvent>>) {
         // Claude uses task_* notifications for background Bash as well as Agents.
         // Keep the originating tool identity instead of turning every task into a child Agent.
@@ -91,6 +101,9 @@ impl ChildEvents {
                     && let DriverEvent::Presentation { data, .. } = &mut event
                 {
                     preserve_tool_kind(data, self.tool_names.get(&tool));
+                    if let Some(truncated) = raw.get("outputTruncated") {
+                        data["outputTruncated"] = truncated.clone();
+                    }
                 }
                 if raw["type"] == "user"
                     && let DriverEvent::Presentation { item_id, data } = &mut event

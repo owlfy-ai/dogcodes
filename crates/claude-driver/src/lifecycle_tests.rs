@@ -15,6 +15,11 @@ for line in sys.stdin:
  if r.get('fixture')=='stopped': stopped()
  elif r.get('fixture')=='exit': sys.exit(0)
  elif r.get('fixture')=='withdraw': emit({'type':'control_cancel_request','request_id':'approval'})
+ elif r.get('fixture')=='append-bash':
+  with open('native-bash.output','a') as f:f.write('middle\n')
+ elif r.get('fixture')=='finish-bash':
+  with open('native-bash.output','a') as f:f.write('last\n')
+  emit({'type':'system','subtype':'task_notification','task_id':'shell-task','status':'completed','summary':'summary'})
  elif r.get('fixture')=='continue':
   emit({'type':'stream_event','event':{'type':'content_block_delta','delta':{'type':'text_delta','text':'continued'}}})
  elif r.get('fixture')=='fail': emit({'type':'result','subtype':'error_during_execution','is_error':True,'errors':['fixture failure']})
@@ -34,6 +39,12 @@ for line in sys.stdin:
  elif r.get('type')=='user':
   mode=r['message']['content'][0]['text']
   if mode=='simple': result();continue
+  if mode=='background':
+   emit({'type':'assistant','message':{'content':[{'type':'tool_use','id':'shell','name':'Bash','input':{'command':'background fixture'}}]}})
+   path=os.path.abspath('native-bash.output')
+   with open(path,'w') as f:f.write('first\n')
+   emit({'type':'user','tool_use_result':{'backgroundTaskId':'shell-task'},'message':{'content':[{'type':'tool_result','tool_use_id':'shell','content':'Output is being written to: '+path+'.'}]}})
+   result();continue
   emit({'type':'assistant','message':{'content':[{'type':'tool_use','id':'call','name':'Workflow','input':{}}]}})
   emit({'type':'system','subtype':'task_started','task_id':'worker','tool_use_id':'call','task_type':'local_workflow'})
   if mode=='approval':
@@ -55,6 +66,37 @@ fn setup() -> (tempfile::TempDir, ClaudeDriver) {
     )
     .unwrap();
     (dir, driver)
+}
+
+#[tokio::test]
+async fn background_bash_output_streams_while_idle_and_finishes_on_its_original_turn() {
+    let (dir, driver) = setup();
+    let session = driver.create_session(workspace(dir.path())).await.unwrap();
+    let process = driver.processes.lock().await[&session.native_session_id].clone();
+    let mut old = driver
+        .prompt(&session, prompt(dir.path(), "background"))
+        .await
+        .unwrap();
+    until(&mut old, terminal).await;
+    // No native stdout event accompanies this write; the reader must poll while idle.
+    process
+        .send_line(&json!({"fixture":"append-bash"}))
+        .await
+        .unwrap();
+    until(&mut old, |event|matches!(event,DriverEvent::Presentation{item_id,data} if item_id == "shell" && data["output"] == "first\nmiddle\n")).await;
+    let mut next_turn = driver
+        .prompt(&session, prompt(dir.path(), "simple"))
+        .await
+        .unwrap();
+    until(&mut next_turn, terminal).await;
+    process
+        .send_line(&json!({"fixture":"finish-bash"}))
+        .await
+        .unwrap();
+    until(&mut old, |event|matches!(event,DriverEvent::Presentation{item_id,data} if item_id == "shell" && data["status"] == "completed" && data["output"] == "first\nmiddle\nlast\n")).await;
+    assert!(old.next().await.is_none());
+    assert!(next_turn.next().await.is_none());
+    driver.shutdown(session).await.unwrap();
 }
 
 #[tokio::test]

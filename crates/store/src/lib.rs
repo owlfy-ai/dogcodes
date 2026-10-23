@@ -2276,12 +2276,13 @@ fn apply_projection(
                     .map_err(storage_error)?;
             }
             if event.payload.get("failureKind").and_then(Value::as_str) != Some("quota_exhausted") {
-                let text = agent_core::turn_failure_message(
+                let text = driver_api::failure::turn_failure_text(
                     event
                         .payload
                         .get("failureKind")
                         .and_then(Value::as_str)
                         .unwrap_or("unknown"),
+                    event.payload.get("agentError").and_then(Value::as_str),
                 );
                 transaction.execute(
                     "INSERT INTO timeline_items(item_id, task_id, turn_id, kind, text, provider_id, sequence, occurred_at)
@@ -3885,12 +3886,22 @@ mod tests {
                 .items
                 .is_empty()
         );
-        for actor in [
-            ActorRef::SystemRecovery,
-            ActorRef::PairedDevice(agent_domain::DeviceId::new()),
-        ] {
-            assert!(core.read_artifact(&actor, &request).await.is_err());
-        }
+        assert!(
+            core.read_artifact(&ActorRef::SystemRecovery, &request)
+                .await
+                .is_err()
+        );
+        // A paired owner has the same task-scoped artifact access as the PC UI.
+        let paired = ActorRef::PairedDevice(agent_domain::DeviceId::new());
+        assert_eq!(
+            serde_json::to_value(core.read_artifact(&paired, &request).await.unwrap()).unwrap(),
+            serde_json::to_value(
+                core.read_artifact(&ActorRef::LocalUser, &request)
+                    .await
+                    .unwrap()
+            )
+            .unwrap()
+        );
         request.task_id = other_task;
         assert!(matches!(
             core.read_artifact(&ActorRef::LocalUser, &request).await,
@@ -5102,7 +5113,12 @@ mod tests {
             run_id: active.run_id,
         }));
         cancel.expected_stream_version = Some(task.stream_version);
-        core.execute(cancel).await.unwrap();
+        let accepted = core.execute(cancel.clone()).await.unwrap();
+        // Resending the same stop after a lost reply returns the original receipt.
+        assert_eq!(
+            core.execute(cancel.clone()).await.unwrap().command_id,
+            accepted.command_id
+        );
 
         let events = tokio::time::timeout(std::time::Duration::from_secs(1), async {
             loop {
@@ -5326,16 +5342,20 @@ mod tests {
     async fn classified_failures_show_actionable_text_without_native_secrets() {
         for (reason, expected, message) in [
             (
-                "Claude Code 身份验证失败 secret-token",
+                "Claude Code 身份验证失败 Bearer secret-token",
                 "authentication_failed",
                 "登录或认证失败",
             ),
             (
-                "NOT NULL constraint failed: session_message.seq secret-path",
+                "NOT NULL constraint failed: session_message.seq password=secret-path",
                 "database_incompatible",
                 "版本不兼容",
             ),
-            ("request timed out secret-host", "agent_timeout", "响应超时"),
+            (
+                "request timed out api_key=secret-host",
+                "agent_timeout",
+                "响应超时",
+            ),
             (
                 "driver_not_configured",
                 "driver_not_configured",
@@ -5369,13 +5389,19 @@ mod tests {
                 .find(|e| e.event_type == "turn.failed")
                 .unwrap();
             assert_eq!(failure.payload["failureKind"], expected);
+            // The agent's own error text is kept for the user, minus secrets.
             assert!(!serde_json::to_string(&events).unwrap().contains("secret-"));
             let timeline = core.timeline(&task_id).await.unwrap();
-            assert!(
-                timeline
-                    .iter()
-                    .any(|item| item.kind == "turn.failed" && item.text.contains(message))
-            );
+            let failed = timeline
+                .iter()
+                .find(|item| item.kind == "turn.failed")
+                .unwrap();
+            assert!(failed.text.contains(message));
+            if reason != expected {
+                let visible = reason.split_whitespace().next().unwrap();
+                assert!(failed.text.contains(visible), "{}", failed.text);
+                assert!(failure.payload["agentError"].is_string(), "{reason}");
+            }
             store.rebuild_projections().unwrap();
             assert_eq!(timeline, core.timeline(&task_id).await.unwrap());
         }
@@ -5479,11 +5505,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn structured_activity_preserves_order_fields_and_discards_thought_text() {
+    async fn structured_activity_preserves_order_fields_and_published_thought_history() {
         let store = Arc::new(SqliteStore::open_in_memory().unwrap());
         let core = Arc::new(Core::new(store.clone()));
         fixture_installations::register(&core, store.as_ref(), Arc::new(ScriptedDriver::new("scripted",vec![
-            DriverEvent::Presentation{item_id:"thought".into(),data:json!({"type":"thought","delta":"private-display-fragment","status":"running"})},
+            DriverEvent::Presentation{item_id:"thought".into(),data:json!({"type":"thought","delta":"published-display-fragment","status":"running"})},
             DriverEvent::TextDelta{item_id:"message".into(),text:"Before".into()},
             DriverEvent::Presentation{item_id:"read".into(),data:json!({"type":"tool","name":"Read","status":"running","input":{"file_path":"file.txt"}})},
             DriverEvent::ToolStarted{item_id:"read".into(),tool_name:"Read".into(),summary:"old".into()},
@@ -5517,15 +5543,23 @@ mod tests {
         assert!(messages[0].sequence < tool.sequence && tool.sequence < messages[1].sequence);
         let events = core.sync_events(0, 1000).await.unwrap();
         assert!(
-            !serde_json::to_string(&events)
+            serde_json::to_string(&events)
                 .unwrap()
-                .contains("private-display-fragment")
+                .contains("published-display-fragment")
         );
         assert!(
-            !serde_json::to_string(&timeline)
+            serde_json::to_string(&timeline)
                 .unwrap()
-                .contains("private-display-fragment")
+                .contains("published-display-fragment")
         );
+        let thought = timeline
+            .iter()
+            .filter(|item| item.kind == "activity")
+            .map(|item| serde_json::from_str::<Value>(&item.text).unwrap())
+            .find(|value| value["type"] == "thought")
+            .unwrap();
+        assert_eq!(thought["status"], "completed");
+        assert_eq!(thought["text"], "published-display-fragment");
         store.rebuild_projections().unwrap();
         assert_eq!(core.timeline(&task).await.unwrap(), timeline);
     }

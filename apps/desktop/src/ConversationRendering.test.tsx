@@ -144,6 +144,28 @@ it("never displays thought text after completion or in inactive historical turns
   expect(container.textContent).toContain("3 秒");
   expect(container.textContent).not.toContain("discarded text");
 });
+it("shows a finished thought's saved text collapsed, never its live ticker", async () => {
+  const a: Activity = {
+    type: "thought",
+    status: "completed",
+    durationMs: 3100,
+    text: "先读配置，再改测试。",
+    textTruncated: true,
+    liveText: "discarded text",
+  };
+  await act(async () =>
+    root.render(
+      <ActivityRow item={item("t", a)} a={a} active={false} onSubagent={() => {}} />,
+    ),
+  );
+  const details = container.querySelector("details.thought-history");
+  expect(details).not.toBeNull();
+  expect((details as HTMLDetailsElement).open).toBe(false);
+  expect(details!.querySelector("summary")!.textContent).toContain("3 秒");
+  expect(details!.textContent).toContain("先读配置，再改测试。");
+  expect(details!.textContent).toContain("只保存了前面一部分");
+  expect(container.textContent).not.toContain("discarded text");
+});
 it("parses per-edit patches and computes net file statistics from frozen bytes", () => {
   const patch = editPatch("a.ts", "one\ntwo\n", "one\nthree\n");
   const parsed = parseGitDiff(new TextEncoder().encode(patch));

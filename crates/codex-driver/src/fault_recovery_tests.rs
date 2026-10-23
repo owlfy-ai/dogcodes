@@ -108,7 +108,11 @@ async fn idle_process_death_and_closed_registration_restore_once_and_continue() 
     assert!(completed);
     driver.shutdown(session.clone()).await.unwrap();
     // A dead actor can still have a persisted registration; presence alone is not liveness.
-    driver.sessions.lock().await.insert("s".into(), current);
+    driver
+        .sessions
+        .lock()
+        .await
+        .insert("s".into(), current.into());
     driver
         .resume_selected_session("s", workspace(dir.path()), None, None)
         .await

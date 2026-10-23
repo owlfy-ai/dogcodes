@@ -44,6 +44,7 @@ async fn normal_turns_reuse_but_cancel_and_failure_retire_the_connection() {
         let (cancels, _cancel_receiver) = mpsc::unbounded_channel();
         let finished = Arc::new(AtomicBool::new(false));
         *driver.shared.connection.lock().await = Some(ConnectionHandle {
+            native: None,
             commands,
             cancels,
             finished: finished.clone(),

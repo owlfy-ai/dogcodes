@@ -108,14 +108,14 @@ pub async fn core_terminal_read(
     state.core.terminal_read(&id, after).await
 }
 #[tauri::command]
-pub async fn core_terminal_write(
+pub async fn core_terminal_input(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, DesktopState>,
-    id: String,
-    bytes: Vec<u8>,
-) -> Result<(), String> {
-    authorize_resource(window.label(), &state, &id).await?;
-    state.core.terminal_write(&id, bytes).await
+    request: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let id = request["terminalId"].as_str().ok_or("缺少终端标识")?;
+    authorize_resource(window.label(), &state, id).await?;
+    state.core.terminal_input(window.label(), request).await
 }
 #[tauri::command]
 pub async fn core_terminal_resize(

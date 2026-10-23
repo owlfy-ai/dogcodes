@@ -1,7 +1,4 @@
-use super::{
-    AsyncReadExt, AsyncWriteExt, Command, Connection, DriverError, ENV_ALLOWLIST, SessionHandle,
-    Stdio, Value, ZcodeDriver, ZcodeLaunch, json,
-};
+use super::{Connection, DriverError, SessionHandle, Value, ZcodeDriver, json};
 use driver_api::{ModelCatalog, ModelOption};
 
 // Preserve ZCode's structured reference including optional variants losslessly.
@@ -60,167 +57,75 @@ impl ZcodeDriver {
             return Ok(());
         }
         let mut guard = self.ensure_connection().await?;
-        let connection = guard.as_mut().expect("connection ensured");
-        if let Some(model) = model {
-            let mut reference: Value = serde_json::from_str(model)
-                .map_err(|_| DriverError::Protocol("invalid ZCode model reference".into()))?;
-            if reference.get("options").is_none() {
-                // Previously saved selections have no registry reasoning option.
-                // Recover the vendor's default, never invent a level.
-                let snapshot = connection
-                    .request(
-                        "session/read",
-                        json!({"sessionId":handle.native_session_id}),
-                        None,
-                    )
-                    .await?;
-                if let Some(row) = snapshot
-                    .pointer("/settings/model/available")
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-                    .find(|row| {
-                        row["ref"]["providerId"] == reference["providerId"]
-                            && row["ref"]["modelId"] == reference["modelId"]
-                    })
-                    && row["reasoning"].get("enabled").is_none()
-                    && let Some(level) = row["reasoning"]["defaultLevel"].as_str()
-                {
-                    reference["options"] = json!({"reasoningLevel":level});
-                }
-            }
-            if reference.get("options").is_some()
-                && let Some(level) = thinking
-            {
-                reference["options"]["reasoningLevel"] = json!(level);
-            }
-            connection
-                .request(
-                    "session/setModel",
-                    json!({"sessionId":handle.native_session_id,"model":reference}),
-                    None,
-                )
-                .await?;
-        }
-        if let Some(thought) = thinking {
-            connection
-                .request(
-                    "session/setThoughtLevel",
-                    json!({"sessionId":handle.native_session_id,"thoughtLevel":thought}),
-                    None,
-                )
-                .await?;
-        }
-        Ok(())
+        select_native(
+            guard.as_mut().expect("connection ensured"),
+            &handle.native_session_id,
+            model,
+            thinking,
+        )
+        .await
     }
 }
 
-/// Rehydrate the exact restored native model, never silently substitute one.
-/// Credentials only cross local child-process pipes and are not persisted.
-pub(super) async fn restore_runtime(
-    launch: &ZcodeLaunch,
+pub(super) async fn select_native(
     connection: &mut Connection,
-    snapshot: &Value,
     session_id: &str,
+    model: Option<&str>,
+    thinking: Option<&str>,
 ) -> Result<(), DriverError> {
-    let fail = || {
-        DriverError::NotConfigured(
-            "ZCode restored model runtime is unavailable; check its native configuration".into(),
-        )
-    };
-    let model = snapshot
-        .pointer("/settings/model/current")
-        .filter(|m| m.is_object())
-        .ok_or_else(fail)?;
-    let workspace = snapshot.pointer("/session/workspace").ok_or_else(fail)?;
-    let state = connection
-        .request(
-            "workspace/readState",
-            json!({"workspace":workspace,"preferWorkspaceDefaults":true}),
-            None,
-        )
-        .await?;
-    let definition = state
-        .pointer("/modelCatalog/providers")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .find(|p| p["providerId"] == model["providerId"])
-        .and_then(|p| p["models"].as_array())
-        .into_iter()
-        .flatten()
-        .find(|m| m["modelId"] == model["modelId"])
-        .cloned()
-        .ok_or_else(fail)?;
-    let input = json!({"model":model,"definition":definition,"thoughtLevel":snapshot.pointer("/settings/thoughtLevel/current")});
-    let mut command = Command::new(
-        agent_runtime::electron_node_executable(&launch.app_binary).map_err(|_| {
-            DriverError::NotConfigured("ZCode background runtime is unavailable".into())
-        })?,
-    );
-    command
-        .arg("-e")
-        .arg(concat!(
-            include_str!("quota-reader.cjs"),
-            "\n",
-            include_str!("runtime-reader.cjs"),
-            "\nruntimeMain();"
-        ))
-        .env_clear()
-        .env("ELECTRON_RUN_AS_NODE", "1")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    for key in ENV_ALLOWLIST
-        .iter()
-        .copied()
-        .chain(["ZCODE_CREDENTIAL_SECRET"])
-    {
-        if let Some(value) = std::env::var_os(key) {
-            command.env(key, value);
+    if let Some(model) = model {
+        let mut reference: Value = serde_json::from_str(model)
+            .map_err(|_| DriverError::Protocol("invalid ZCode model reference".into()))?;
+        if reference.get("options").is_none() {
+            // Previously saved selections have no registry reasoning option.
+            // Recover the vendor's default, never invent a level.
+            let snapshot = connection
+                .request("session/read", json!({"sessionId":session_id}), None)
+                .await?;
+            if let Some(row) = snapshot
+                .pointer("/settings/model/available")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .find(|row| {
+                    row["ref"]["providerId"] == reference["providerId"]
+                        && row["ref"]["modelId"] == reference["modelId"]
+                })
+                && row["reasoning"].get("enabled").is_none()
+                && let Some(level) = row["reasoning"]["defaultLevel"].as_str()
+            {
+                reference["options"] = json!({"reasoningLevel":level});
+            }
         }
+        if reference.get("options").is_some()
+            && let Some(level) = thinking
+        {
+            reference["options"]["reasoningLevel"] = json!(level);
+        }
+        connection
+            .request(
+                "session/setModel",
+                json!({"sessionId":session_id,"model":reference}),
+                None,
+            )
+            .await?;
     }
-    let runtime = tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        let mut child = command.spawn().map_err(|_| fail())?;
-        let mut stdin = child.stdin.take().ok_or_else(fail)?;
-        stdin
-            .write_all(input.to_string().as_bytes())
-            .await
-            .map_err(|_| fail())?;
-        drop(stdin);
-        let mut bytes = Vec::new();
-        child
-            .stdout
-            .take()
-            .ok_or_else(fail)?
-            .take(1_048_577)
-            .read_to_end(&mut bytes)
-            .await
-            .map_err(|_| fail())?;
-        if bytes.len() > 1_048_576 {
-            return Err(fail());
-        }
-        if !child.wait().await.map_err(|_| fail())?.success() {
-            return Err(fail());
-        }
-        serde_json::from_slice::<Value>(&bytes).map_err(|_| fail())
-    })
-    .await
-    .map_err(|_| fail())??;
-    connection
-        .request(
-            "session/updateRuntimeModelConfig",
-            json!({"sessionId":session_id,"runtimeModel":runtime}),
-            None,
-        )
-        .await?;
+    if let Some(thought) = thinking {
+        connection
+            .request(
+                "session/setThoughtLevel",
+                json!({"sessionId":session_id,"thoughtLevel":thought}),
+                None,
+            )
+            .await?;
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ZcodeLaunch;
     use driver_api::{AgentDriver, SessionResumeCapability};
     #[test]
     fn registry_catalog_preserves_required_reasoning_selection() {

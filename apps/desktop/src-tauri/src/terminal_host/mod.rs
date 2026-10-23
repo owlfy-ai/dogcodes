@@ -1,5 +1,7 @@
 //! Service-owned PTYs. Views never own or stop processes; output readers are
 //! independent of subscribers. Launch intent is recorded before spawning.
+mod input_stream;
+mod launch_intents;
 #[cfg(any(windows, test))]
 mod startup;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
@@ -178,6 +180,7 @@ struct Session {
     output: Mutex<Output>,
     process: Mutex<Option<Process>>,
     input: Mutex<Option<Box<dyn Write + Send>>>,
+    input_stream: Mutex<input_stream::State>,
     changed: tokio::sync::Notify,
     state_changes: Arc<crate::state_changes::Changes>,
 }
@@ -303,6 +306,7 @@ pub struct TerminalHost {
     epoch: String,
     directory: Option<PathBuf>,
     sessions: Sessions,
+    retired: Mutex<BTreeSet<String>>,
     admission: tokio::sync::Mutex<()>,
     recovery_error: Option<String>,
     changes: Arc<crate::state_changes::Changes>,
@@ -313,6 +317,7 @@ impl Default for TerminalHost {
             epoch: uuid::Uuid::new_v4().to_string(),
             directory: None,
             sessions: Arc::default(),
+            retired: Mutex::default(),
             admission: tokio::sync::Mutex::new(()),
             recovery_error: None,
             changes: Arc::new(crate::state_changes::Changes::new()),
@@ -409,6 +414,7 @@ impl TerminalHost {
                 }),
                 process: Mutex::new(None),
                 input: Mutex::new(None),
+                input_stream: Mutex::default(),
                 changed: tokio::sync::Notify::new(),
                 state_changes: self.changes.clone(),
             });
@@ -466,6 +472,9 @@ impl TerminalHost {
             .cloned())
     }
     pub fn existing(&self, intent: &LaunchIntent) -> Result<Option<TerminalInfo>, String> {
+        if self.launch_retired(&intent.operation_id)? {
+            return Err("原启动已取消，未重新运行命令".into());
+        }
         if let Some(session) = self.find_session(&intent.operation_id)? {
             if session.intent != *intent {
                 return Err("终端操作标识已用于不同请求，请核实原操作".into());
@@ -479,6 +488,9 @@ impl TerminalHost {
         request: &ProjectLaunchRequest,
     ) -> Result<Option<TerminalInfo>, String> {
         uuid::Uuid::parse_str(&request.operation_id).map_err(|_| "无效的运行操作标识")?;
+        if self.launch_retired(&request.operation_id)? {
+            return Err("原启动已取消，未重新运行命令".into());
+        }
         let Some(session) = self.find_session(&request.operation_id)? else {
             return Ok(None);
         };
@@ -568,6 +580,7 @@ impl TerminalHost {
             }),
             process: Mutex::new(None),
             input: Mutex::new(None),
+            input_stream: Mutex::default(),
             changed: tokio::sync::Notify::new(),
             state_changes: self.changes.clone(),
         });
@@ -621,6 +634,7 @@ impl TerminalHost {
         let _ = tokio::time::timeout(Duration::from_secs(15), changed).await;
         session.batch(after)
     }
+    #[cfg(test)]
     pub async fn write(&self, id: &str, bytes: Vec<u8>) -> Result<(), String> {
         if bytes.len() > READ_LIMIT {
             return Err("单次终端输入过长".into());
@@ -681,8 +695,11 @@ impl TerminalHost {
         Ok(())
     }
     pub async fn stop(&self, id: &str) -> Result<TerminalInfo, String> {
-        let session = self.session(id)?;
         let _admission = self.admission.lock().await;
+        self.stop_admitted(id).await
+    }
+    async fn stop_admitted(&self, id: &str) -> Result<TerminalInfo, String> {
+        let session = self.session(id)?;
         let info = session.info()?;
         if info.status == TerminalStatus::Unknown {
             return Err("后台已重启，无法确认原进程身份；未按旧进程号停止进程".into());

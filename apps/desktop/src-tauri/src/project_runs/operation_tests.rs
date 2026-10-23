@@ -319,3 +319,455 @@ async fn project_runs_no_ready_agent_rejects_before_durable_acceptance() {
     assert!(!stored.operations.contains_key(&request.operation_id));
     assert!(!host.has_active());
 }
+
+fn accepted_catalog(
+    host: &ProjectRunHost,
+    project: &ProjectSummary,
+) -> (StoredCatalog, AnalyzeRequest) {
+    let mut catalog = host.load(project.project_id.as_str()).unwrap().unwrap();
+    let request = request();
+    catalog.generation = "accepted-analysis".into();
+    catalog.directories[0].status = "analyzing".into();
+    catalog.directories[0].commands.push(RunCommand {
+        id: "saved-command".into(),
+        label: "Previously saved".into(),
+        command: "echo saved".into(),
+        cwd: ".".into(),
+        source: "README.md".into(),
+        pinned: false,
+        user_renamed: false,
+    });
+    let mut second = catalog.directories[0].clone();
+    second.path.push_str("/extra");
+    catalog.directories.push(second);
+    catalog.record(&request.operation_id, serde_json::json!(request), "running");
+    host.save(&catalog).unwrap();
+    host.cache
+        .lock()
+        .unwrap()
+        .insert(project.project_id.to_string(), catalog.clone());
+    (catalog, request)
+}
+
+#[test]
+fn project_runs_failed_analysis_save_never_publishes_unsaved_commands_and_recovers_after_repair() {
+    let root = tempfile::tempdir().unwrap();
+    let (host, _, project) = fixture(root.path());
+    let (catalog, request) = accepted_catalog(&host, &project);
+    let mut unrelated = catalog.clone();
+    unrelated.project_id = "unrelated-project".into();
+    unrelated
+        .directories
+        .iter_mut()
+        .for_each(|d| d.status = "ready".into());
+    unrelated.operations.clear();
+    host.save(&unrelated).unwrap();
+    host.cache
+        .lock()
+        .unwrap()
+        .insert("unrelated-project".into(), unrelated);
+    let backup = root.path().join("last-durable-catalogs");
+    std::fs::rename(&host.directory, &backup).unwrap();
+    std::fs::write(&host.directory, b"blocked storage").unwrap();
+    host.finish(
+        project.project_id.as_str(),
+        &catalog.generation,
+        0,
+        Ok(vec![RunCommand {
+            id: "unsaved-command".into(),
+            label: "Must never be offered".into(),
+            command: "echo unsaved".into(),
+            cwd: ".".into(),
+            source: "README.md".into(),
+            pinned: false,
+            user_renamed: false,
+        }]),
+    );
+    assert!(
+        host.load(project.project_id.as_str()).is_err(),
+        "Reads and launches must wait for the failed finalization to be saved"
+    );
+    assert_eq!(
+        host.cache.lock().unwrap()[project.project_id.as_str()].directories[0].commands[0].id,
+        "saved-command"
+    );
+    assert!(
+        host.load("unrelated-project")
+            .unwrap()
+            .unwrap()
+            .directories
+            .iter()
+            .all(|d| d.status == "ready")
+    );
+    std::fs::remove_file(&host.directory).unwrap();
+    std::fs::rename(&backup, &host.directory).unwrap();
+    let recovered = host.load(project.project_id.as_str()).unwrap().unwrap();
+    assert!(recovered.directories.iter().all(|d| d.status == "error"));
+    assert_eq!(recovered.directories[0].commands[0].id, "saved-command");
+    assert_eq!(
+        recovered.operations[&request.operation_id].result.status,
+        "failed"
+    );
+    let restarted = ProjectRunHost::new(host.directory.clone());
+    let durable = restarted
+        .load(project.project_id.as_str())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(durable).unwrap(),
+        serde_json::to_value(recovered).unwrap()
+    );
+}
+
+async fn wait_finished(host: &ProjectRunHost) {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while host.has_active() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn project_runs_closed_queue_settles_every_accepted_directory_and_receipt() {
+    let root = tempfile::tempdir().unwrap();
+    let (host, core, mut project) = fixture(root.path());
+    project
+        .additional_directories
+        .push(root.path().join("extra").to_string_lossy().into_owned());
+    let (_, driver) = analysis_driver(&core).await;
+    let pause = host.gate.acquire_many(2).await.unwrap();
+    let request = request();
+    let accepted = run(&host, &core, &project, request.clone()).await.unwrap();
+    host.gate.close();
+    drop(pause);
+    wait_finished(&host).await;
+    let saved = host.load(project.project_id.as_str()).unwrap().unwrap();
+    assert!(saved.directories.iter().all(|d| d.status == "error"));
+    assert_eq!(
+        saved.operations[&request.operation_id].result.status,
+        "interrupted"
+    );
+    assert!(driver.received_requests().await.is_empty());
+    let restarted = ProjectRunHost::new(host.directory.clone());
+    assert_eq!(
+        run(&restarted, &core, &project, request)
+            .await
+            .unwrap()
+            .generation,
+        accepted.generation
+    );
+    assert!(!restarted.has_active());
+}
+
+#[tokio::test]
+async fn project_runs_storage_failure_stops_remaining_agent_calls_in_the_batch() {
+    let root = tempfile::tempdir().unwrap();
+    let (host, core, mut project) = fixture(root.path());
+    std::fs::write(root.path().join("README.md"), "npm run dev").unwrap();
+    let extra = root.path().join("extra");
+    std::fs::create_dir(&extra).unwrap();
+    std::fs::write(extra.join("README.md"), "npm run dev").unwrap();
+    project
+        .additional_directories
+        .push(extra.to_string_lossy().into_owned());
+    let (_, driver) = analysis_driver(&core).await;
+    let pause = host.gate.acquire_many(2).await.unwrap();
+    let request = request();
+    run(&host, &core, &project, request.clone()).await.unwrap();
+    let backup = root.path().join("last-durable-catalogs");
+    std::fs::rename(&host.directory, &backup).unwrap();
+    std::fs::write(&host.directory, b"blocked storage").unwrap();
+    drop(pause);
+    wait_finished(&host).await;
+    assert_eq!(
+        driver.received_requests().await.len(),
+        1,
+        "Do not invoke another Agent after a result cannot be saved"
+    );
+    assert!(host.load(project.project_id.as_str()).is_err());
+    std::fs::remove_file(&host.directory).unwrap();
+    std::fs::rename(&backup, &host.directory).unwrap();
+    let saved = host.load(project.project_id.as_str()).unwrap().unwrap();
+    assert!(saved.directories.iter().all(|d| d.status == "error"));
+    assert_eq!(
+        saved.operations[&request.operation_id].result.status,
+        "failed"
+    );
+    assert_eq!(driver.received_requests().await.len(), 1);
+}
+
+#[tokio::test]
+async fn project_runs_aborted_or_panicking_worker_persists_interruption_before_becoming_idle() {
+    for panic in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let (host, _, project) = fixture(root.path());
+        let (catalog, request) = accepted_catalog(&host, &project);
+        let running = ActiveAnalysis::new(
+            host.clone(),
+            project.project_id.to_string(),
+            catalog.generation.clone(),
+        );
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let worker = tokio::spawn(async move {
+            let _running = running;
+            started.send(()).unwrap();
+            assert!(!panic, "synthetic worker panic");
+            std::future::pending::<()>().await;
+        });
+        ready.await.unwrap();
+        if !panic {
+            worker.abort();
+        }
+        let error = worker.await.unwrap_err();
+        assert_eq!(error.is_panic(), panic);
+        assert!(!host.has_active());
+        let raw: StoredCatalog =
+            serde_json::from_slice(&std::fs::read(host.file(project.project_id.as_str())).unwrap())
+                .unwrap();
+        assert!(raw.directories.iter().all(|d| d.status == "error"));
+        assert_eq!(
+            raw.operations[&request.operation_id].result.status,
+            "interrupted"
+        );
+        assert_eq!(raw.directories[0].commands[0].id, "saved-command");
+    }
+}
+
+#[test]
+fn project_runs_old_worker_cleanup_cannot_interrupt_its_replacement() {
+    let root = tempfile::tempdir().unwrap();
+    let (host, _, project) = fixture(root.path());
+    let (mut catalog, old_request) = accepted_catalog(&host, &project);
+    let old = ActiveAnalysis::new(
+        host.clone(),
+        project.project_id.to_string(),
+        catalog.generation.clone(),
+    );
+    catalog
+        .operations
+        .get_mut(&old_request.operation_id)
+        .unwrap()
+        .result
+        .status = "superseded".into();
+    catalog.generation = "replacement".into();
+    let replacement_request = request();
+    catalog.record(
+        &replacement_request.operation_id,
+        serde_json::json!(replacement_request),
+        "running",
+    );
+    host.save(&catalog).unwrap();
+    host.cache
+        .lock()
+        .unwrap()
+        .insert(project.project_id.to_string(), catalog);
+    let replacement = ActiveAnalysis::new(
+        host.clone(),
+        project.project_id.to_string(),
+        "replacement".into(),
+    );
+    drop(old);
+    assert!(host.has_active());
+    let current = host.load(project.project_id.as_str()).unwrap().unwrap();
+    assert_eq!(current.generation, "replacement");
+    assert!(current.directories.iter().all(|d| d.status == "analyzing"));
+    assert_eq!(
+        current.operations[&replacement_request.operation_id]
+            .result
+            .status,
+        "running"
+    );
+    drop(replacement);
+    assert!(!host.has_active());
+}
+
+#[test]
+fn project_runs_indeterminate_commit_blocks_additional_writes_until_restart() {
+    let root = tempfile::tempdir().unwrap();
+    let (host, _, project) = fixture(root.path());
+    let (mut catalog, request) = accepted_catalog(&host, &project);
+    let before = std::fs::read(host.file(project.project_id.as_str())).unwrap();
+    host.uncertain_storage
+        .store(true, std::sync::atomic::Ordering::Release);
+    catalog.directories[0].commands[0].label = "Must not overwrite an uncertain commit".into();
+    assert!(host.save(&catalog).is_err());
+    assert_eq!(
+        std::fs::read(host.file(project.project_id.as_str())).unwrap(),
+        before
+    );
+    assert!(host.load(project.project_id.as_str()).is_err());
+    let restarted = ProjectRunHost::new(host.directory.clone());
+    let recovered = restarted
+        .load(project.project_id.as_str())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        recovered.directories[0].commands[0].label,
+        "Previously saved"
+    );
+    assert_eq!(
+        recovered.operations[&request.operation_id].result.status,
+        "interrupted"
+    );
+    let durable: StoredCatalog = serde_json::from_slice(
+        &std::fs::read(restarted.file(project.project_id.as_str())).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        durable.operations[&request.operation_id].result.status,
+        "interrupted"
+    );
+}
+
+#[tokio::test]
+async fn project_runs_pending_native_cleanup_blocks_new_analysis_but_not_original_receipt() {
+    use agent_core::AnalysisLifetime;
+    let root = tempfile::tempdir().unwrap();
+    let (host, core, project) = fixture(root.path());
+    let (_, driver) = analysis_driver(&core).await;
+    let (catalog, original) = accepted_catalog(&host, &project);
+    let lifetime = Arc::new(ActiveAnalysis::new(
+        host.clone(),
+        project.project_id.to_string(),
+        catalog.generation.clone(),
+    ));
+    lifetime.cleanup_pending("fixture: native close unconfirmed");
+    let pending = host.load(project.project_id.as_str()).unwrap().unwrap();
+    assert_eq!(
+        pending.operations[&original.operation_id].result.status,
+        "interrupted"
+    );
+    assert!(pending.directories.iter().all(|d| d.status == "error"));
+    assert!(host.has_active());
+    assert_eq!(
+        run(&host, &core, &project, original)
+            .await
+            .unwrap()
+            .generation,
+        catalog.generation
+    );
+    let retry = AnalyzeRequest {
+        expected_generation: catalog.generation.clone(),
+        ..request()
+    };
+    assert!(matches!(run(&host, &core, &project, retry.clone()).await,
+        Err(MutationError::Rejected { code, .. }) if code == "analysis_cleanup_pending"));
+    assert!(driver.received_requests().await.is_empty());
+    drop(lifetime); // The original native cleanup confirms shutdown.
+    assert!(!host.has_active());
+    assert_ne!(
+        run(&host, &core, &project, retry).await.unwrap().generation,
+        catalog.generation
+    );
+    wait_finished(&host).await;
+}
+
+struct CloseFailureDriver {
+    inner: Arc<driver_api::FakeDriver>,
+    fail: std::sync::atomic::AtomicBool,
+}
+#[async_trait::async_trait]
+impl driver_api::AgentDriver for CloseFailureDriver {
+    fn executor(&self) -> &ExecutorRef {
+        self.inner.executor()
+    }
+    fn driver_version(&self) -> &'static str {
+        "fixture"
+    }
+    async fn create_session(
+        &self,
+        request: driver_api::SessionRequest,
+    ) -> Result<driver_api::SessionHandle, driver_api::DriverError> {
+        self.inner.create_session(request).await
+    }
+    async fn create_analysis_session(
+        &self,
+        directory: &str,
+    ) -> Result<driver_api::SessionHandle, driver_api::DriverError> {
+        self.inner.create_analysis_session(directory).await
+    }
+    async fn prompt(
+        &self,
+        handle: &driver_api::SessionHandle,
+        request: driver_api::PromptRequest,
+    ) -> Result<driver_api::DriverEventStream, driver_api::DriverError> {
+        self.inner.prompt(handle, request).await
+    }
+    async fn interrupt(
+        &self,
+        handle: &driver_api::SessionHandle,
+    ) -> Result<(), driver_api::DriverError> {
+        self.inner.interrupt(handle).await
+    }
+    async fn shutdown(
+        &self,
+        handle: driver_api::SessionHandle,
+    ) -> Result<(), driver_api::DriverError> {
+        if self.fail.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(driver_api::DriverError::Disconnected(
+                "fixture: close unconfirmed".into(),
+            ));
+        }
+        self.inner.shutdown(handle).await
+    }
+}
+
+#[tokio::test]
+async fn project_runs_actual_native_close_failure_halts_batch_and_prevents_idle_retirement() {
+    let root = tempfile::tempdir().unwrap();
+    let (host, core, mut project) = fixture(root.path());
+    std::fs::write(root.path().join("README.md"), "npm run dev").unwrap();
+    let extra = root.path().join("extra");
+    std::fs::create_dir(&extra).unwrap();
+    std::fs::write(extra.join("README.md"), "npm run dev").unwrap();
+    project
+        .additional_directories
+        .push(extra.to_string_lossy().into_owned());
+    let (_, inner) = analysis_driver(&core).await;
+    let driver = Arc::new(CloseFailureDriver {
+        inner,
+        fail: std::sync::atomic::AtomicBool::new(true),
+    });
+    core.register_driver(driver.clone()).await;
+    let request = request();
+    let accepted = run(&host, &core, &project, request.clone()).await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            let current = host.load(project.project_id.as_str()).unwrap().unwrap();
+            if current.operations[&request.operation_id].result.status == "interrupted" {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        host.has_active(),
+        "The exact native cleanup still owns the service retirement lease"
+    );
+    assert_eq!(driver.inner.received_requests().await.len(), 1);
+    let next = AnalyzeRequest {
+        expected_generation: accepted.generation.clone(),
+        ..self::request()
+    };
+    assert!(matches!(run(&host, &core, &project, next).await,
+        Err(MutationError::Rejected { code, .. }) if code == "analysis_cleanup_pending"));
+    driver
+        .fail
+        .store(false, std::sync::atomic::Ordering::Release);
+    wait_finished(&host).await;
+    assert_eq!(driver.inner.received_requests().await.len(), 1);
+    let restarted = ProjectRunHost::new(host.directory.clone());
+    let receipt = restarted
+        .load(project.project_id.as_str())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        receipt.operations[&request.operation_id].result.status,
+        "interrupted"
+    );
+    assert!(receipt.directories.iter().all(|d| d.status == "error"));
+}

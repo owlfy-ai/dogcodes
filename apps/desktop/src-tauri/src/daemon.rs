@@ -229,8 +229,35 @@ impl CoreClient {
     ) -> Result<crate::terminal_host::OutputBatch, String> {
         self.call("terminal_read", json!((id, after))).await
     }
-    pub async fn terminal_write(&self, id: &str, bytes: Vec<u8>) -> Result<(), String> {
-        self.call("terminal_write", json!((id, bytes))).await
+    pub async fn terminal_input(&self, window: &str, request: Value) -> Result<Value, String> {
+        // A busy old Core remains reachable for approvals/output. Never fall
+        // back to its unsequenced writer when the new window protocol is absent.
+        let caps: Value = self.call("ping", json!([])).await?;
+        if caps["terminalInputWindowProtocol"] != 1 {
+            return Err("后台仍在运行旧版本，当前输入已暂停；输出仍可查看，请在任务安全结束后重新打开应用。".into());
+        }
+        self.call("terminal_input", json!((window, request))).await
+    }
+    #[cfg(test)]
+    async fn terminal_write(&self, id: &str, bytes: Vec<u8>) -> Result<(), String> {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        let info = self.terminal_get(id).await?;
+        let source = self
+            .terminal_input(
+                "main",
+                json!({"type":"inspect","terminalId":id,"expectedEpoch":info.epoch}),
+            )
+            .await?;
+        let stream = uuid::Uuid::new_v4().to_string();
+        let opened=self.terminal_input("main",json!({"type":"open","terminalId":id,"expectedEpoch":info.epoch,"streamId":stream,"expectedRevision":source["revision"]})).await?;
+        if opened["state"] != "ready" {
+            return Err("test terminal input not ready".into());
+        }
+        let applied=self.terminal_input("main",json!({"type":"write","terminalId":id,"expectedEpoch":info.epoch,"streamId":stream,"revision":opened["revision"],"sequence":"1","data":STANDARD.encode(bytes)})).await?;
+        if applied["state"] != "applied" {
+            return Err("test input was not confirmed".into());
+        }
+        Ok(())
     }
     pub async fn terminal_resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), String> {
         self.call("terminal_resize", json!((id, cols, rows))).await
@@ -818,7 +845,9 @@ async fn dispatch(core: &Arc<Core>, method: &str, args: Value) -> Result<Value, 
             )
             .map_err(|e| e.to_string())
         }
-        "ping" => Ok(json!({"version":VERSION,"pid":std::process::id()})),
+        "ping" => {
+            Ok(json!({"version":VERSION,"pid":std::process::id(),"terminalInputWindowProtocol":1}))
+        }
         "bootstrap" => {
             let (): () = serde_json::from_value(args).map_err(|e| e.to_string())?;
             let result = core.bootstrap().await.map_err(|e| e.to_string())?;
@@ -1264,23 +1293,12 @@ async fn dispatch_service(
     if method == "execute" {
         let (envelope,): (CommandEnvelope<CoreCommand>,) =
             serde_json::from_value(args.clone()).map_err(|e| e.to_string())?;
-        if let CoreCommand::DeleteTask(command) = &envelope.payload {
-            let task = command.task_id.to_string();
-            let _guard = control.review.gate.lock().await;
-            let result = dispatch(core, method, args).await;
-            if result.is_ok()
-                || core.bootstrap().await.is_ok_and(|snapshot| {
-                    !snapshot.tasks.iter().any(|t| t.task_id.as_str() == task)
-                })
-            {
-                control.review.forget_task(&task)?;
-                control.repairs.forget_task(&task)?;
-                control
-                    .submissions
-                    .reconcile_deleted(core, Some(&command.task_id))
-                    .await?;
-            }
-            return result;
+        if matches!(&envelope.payload, CoreCommand::DeleteTask(_)) {
+            let mut envelope = envelope;
+            // This boundary is the desktop RPC; remote callers use their own
+            // authenticated actor and call the shared cleanup service directly.
+            envelope.actor = ActorRef::LocalUser;
+            return execute_task_delete(core, control, envelope).await;
         }
         if matches!(envelope.payload, CoreCommand::UpdateProject(_)) {
             scope_guard = Some(control.review.gate.lock().await);
@@ -1325,6 +1343,36 @@ async fn dispatch_service(
         let _ = crate::project_runs::schedule(&control.project_runs, core.clone(), project).await;
     }
     Ok(result)
+}
+
+async fn execute_task_delete(
+    core: &Arc<Core>,
+    control: &ServiceControl,
+    envelope: CommandEnvelope<CoreCommand>,
+) -> Result<Value, String> {
+    let CoreCommand::DeleteTask(command) = &envelope.payload else {
+        return Err("task deletion required".into());
+    };
+    let task = command.task_id.clone();
+    let _guard = control.review.gate.lock().await;
+    let result = core
+        .execute(envelope)
+        .await
+        .map_err(|error| error.to_string());
+    if result.is_ok()
+        || core
+            .bootstrap()
+            .await
+            .is_ok_and(|snapshot| !snapshot.tasks.iter().any(|current| current.task_id == task))
+    {
+        control.review.forget_task(task.as_str())?;
+        control.repairs.forget_task(task.as_str())?;
+        control
+            .submissions
+            .reconcile_deleted(core, Some(&task))
+            .await?;
+    }
+    serde_json::to_value(result?).map_err(|error| error.to_string())
 }
 
 fn executable_build() -> Result<String, String> {
@@ -1374,6 +1422,7 @@ async fn serve_connection(
             && workspace.is_ok()
             && !control.terminals.has_active()
             && !control.project_runs.has_active()
+            && !control.remote.has_active_sessions()
             && !core.has_active_reviews().await
             && !core
                 .bootstrap()
@@ -1844,6 +1893,7 @@ mod tests {
     mod remote_client_tests;
     mod repair_tests;
     mod review_tests;
+    mod thought_history_tests;
     use super::*;
     use agent_core::CoreRepository;
     use agent_domain::ProjectId;
@@ -2540,6 +2590,174 @@ mod tests {
         assert!(f.client.execute(project()).await.is_err());
         assert!(f.core.bootstrap().await.unwrap().projects.is_empty());
     }
+
+    #[tokio::test]
+    async fn terminal_input_rejects_busy_old_core_before_sending_any_mutation() {
+        let directory = tempfile::tempdir().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = Endpoint {
+            version: VERSION,
+            address: listener.local_addr().unwrap(),
+            token: uuid::Uuid::new_v4().to_string(),
+            pid: std::process::id(),
+            build: "old-input-protocol".into(),
+        };
+        std::fs::write(
+            directory.path().join("service.json"),
+            serde_json::to_vec(&endpoint).unwrap(),
+        )
+        .unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request: Request = read_frame(&mut socket).await.unwrap();
+            assert_eq!(request.method, "ping");
+            assert_eq!(request.token, endpoint.token);
+            write_frame(
+                &mut socket,
+                &Ok::<_, String>(json!({"version":VERSION,"pid":1})),
+            )
+            .await
+            .unwrap();
+            // A second connection would carry a mutation to this old service.
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), listener.accept())
+                    .await
+                    .is_err()
+            );
+        });
+        let client = CoreClient::Remote(directory.path().into());
+        let error = client
+            .terminal_input("main", json!({"type":"write","terminalId":"not-sent"}))
+            .await
+            .unwrap_err();
+        assert!(error.contains("旧版本"));
+        server.await.unwrap();
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn terminal_input_rpc_windows_and_phone_share_cas_without_replaying_old_bytes() {
+        use crate::terminal_host::LaunchIntent;
+        use agent_protocol::CreateTask;
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        let f = fixture().await;
+        let project_id = ProjectId::new();
+        let task = TaskId::new();
+        f.client
+            .execute(CommandEnvelope::local(CoreCommand::RegisterProject(
+                RegisterProject {
+                    project_id: project_id.clone(),
+                    display_name: "Input fixture".into(),
+                    path: f.directory.path().to_string_lossy().into_owned(),
+                    additional_directories: vec![],
+                },
+            )))
+            .await
+            .unwrap();
+        f.client
+            .execute(CommandEnvelope::local(CoreCommand::CreateTask(
+                CreateTask {
+                    task_id: task.clone(),
+                    project_id: project_id.clone(),
+                    title: "Input".into(),
+                    preferred_executor: ExecutorRef {
+                        provider_id: agent_domain::ProviderId::parse("fake").unwrap(),
+                        installation_id: None,
+                    },
+                },
+            )))
+            .await
+            .unwrap();
+        let info=f.client.terminal_start(LaunchIntent{project_launch:None,operation_id:uuid::Uuid::new_v4().to_string(),project_id:project_id.to_string(),directory_index:0,task_id:Some(task.to_string()),command_id:None,label:"isolated input".into(),cwd:f.directory.path().into(),command:Some("stty -echo; printf 'READY\\n'; read text; printf 'INPUT:%s\\n' \"$text\"; sleep 60".into()),cols:80,rows:24}).await.unwrap();
+        let mut cursor = 0;
+        let mut bytes = Vec::new();
+        tokio::time::timeout(Duration::from_secs(8), async {
+            while !String::from_utf8_lossy(&bytes).contains("READY") {
+                let batch = f.client.terminal_read(&info.id, cursor).await.unwrap();
+                cursor = batch.next;
+                bytes.extend(batch.bytes);
+            }
+        })
+        .await
+        .unwrap();
+        let inspect = json!({"type":"inspect","terminalId":info.id,"expectedEpoch":info.epoch});
+        assert!(
+            f.client
+                .terminal_input("unknown-window", inspect.clone())
+                .await
+                .is_err()
+        );
+        let opening = |revision: &str, stream: &str| json!({"type":"open","terminalId":info.id,"expectedEpoch":info.epoch,"expectedRevision":revision,"streamId":stream});
+        let writing = |opened: &Value, sequence: &str, data: &[u8]| json!({"type":"write","terminalId":info.id,"expectedEpoch":info.epoch,"revision":opened["revision"],"streamId":opened["streamId"],"sequence":sequence,"data":STANDARD.encode(data)});
+        let first = f
+            .client
+            .terminal_input("main", opening("0", &uuid::Uuid::new_v4().to_string()))
+            .await
+            .unwrap();
+        let a = writing(&first, "1", b"A");
+        let applied = f.client.terminal_input("main", a.clone()).await.unwrap();
+        assert_eq!(applied["state"], "applied");
+        assert_eq!(
+            f.client.terminal_input("main", a.clone()).await.unwrap(),
+            applied
+        );
+        let review = format!("review-{task}");
+        assert!(f.client.terminal_input(&review, a).await.is_err());
+        let second = f
+            .client
+            .terminal_input(&review, opening("1", &uuid::Uuid::new_v4().to_string()))
+            .await
+            .unwrap();
+        f.client
+            .terminal_input(&review, writing(&second, "1", b"B"))
+            .await
+            .unwrap();
+        assert!(
+            f.client
+                .terminal_input("main", writing(&first, "2", b"BAD-main"))
+                .await
+                .is_err()
+        );
+        let actor = ActorRef::PairedDevice(agent_domain::DeviceId::new());
+        let third = remote::remote_call(
+            &f.core,
+            &f.control,
+            "terminal_input",
+            opening("2", &uuid::Uuid::new_v4().to_string()),
+            actor.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            f.client
+                .terminal_input(&review, writing(&second, "2", b"BAD-review"))
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            f.client.terminal_input("main", inspect).await.unwrap()["owned"],
+            false
+        );
+        remote::remote_call(
+            &f.core,
+            &f.control,
+            "terminal_input",
+            writing(&third, "1", b"C\n"),
+            actor,
+        )
+        .await
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(8), async {
+            while !String::from_utf8_lossy(&bytes).contains("INPUT:ABC") {
+                let batch = f.client.terminal_read(&info.id, cursor).await.unwrap();
+                cursor = batch.next;
+                bytes.extend(batch.bytes);
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("BAD-"));
+        f.client.terminal_stop(&info.id).await.unwrap();
+    }
     #[cfg(unix)]
     #[tokio::test]
     async fn terminal_host_rpc_disconnect_reconnect_and_idle_retirement() {
@@ -2618,6 +2836,13 @@ mod tests {
                 .connect("terminal_read", json!((&info.id, cursor)))
                 .await
                 .unwrap(),
+        );
+        let retired_write = "terminal_write";
+        assert!(
+            other
+                .call::<Value>(retired_write, json!((&info.id, b"must-not-write".to_vec())))
+                .await
+                .is_err()
         );
         other.terminal_resize(&info.id, 100, 30).await.unwrap();
         other

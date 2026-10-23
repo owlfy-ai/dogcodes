@@ -183,7 +183,7 @@ impl QuotaProvider for AntigravityDriver {
                         "quota_network_error".into(),
                     ));
                 }
-                if let Some(Classified::AuthFailure(kind)) =
+                if let Some(Classified::AuthFailure(kind, _)) =
                     classify(&String::from_utf8_lossy(line))
                 {
                     record_auth_failure(kind).await;

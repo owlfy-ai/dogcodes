@@ -1,5 +1,6 @@
 //! Pi RPC: correlate control replies by ID while continuously draining events.
 use crate::events::Turn;
+use agent_runtime::OwnedChild;
 use driver_api::{DriverError, DriverEvent};
 use serde_json::{Value, json};
 use std::{
@@ -11,8 +12,8 @@ use std::{
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin},
-    sync::{mpsc, oneshot},
+    process::ChildStdin,
+    sync::{mpsc, oneshot, watch},
 };
 
 const FRAME_LIMIT: u64 = 32 * 1024 * 1024;
@@ -26,14 +27,43 @@ pub(crate) struct State {
     pub disconnected: bool,
     cancelling: bool,
     cancel_settled: bool,
+    cancel_outcome: Option<watch::Receiver<Option<Result<(), DriverError>>>>,
 }
 pub(crate) struct Connection {
-    input: tokio::sync::Mutex<Option<ChildStdin>>,
-    child: tokio::sync::Mutex<Child>,
-    reader: tokio::task::JoinHandle<()>,
+    input: Arc<tokio::sync::Mutex<Option<ChildStdin>>>,
+    closing: watch::Sender<bool>,
+    cleanup: watch::Receiver<Option<Result<(), DriverError>>>,
     pub state: Arc<Mutex<State>>,
     settled: Arc<tokio::sync::Notify>,
 }
+
+// Dropping a future does not undo bytes or a native model/config mutation.
+// The supervisor retains the original process after this synchronous fence.
+struct RetireOnCancel<'a> {
+    connection: &'a Connection,
+    armed: bool,
+}
+impl Drop for RetireOnCancel<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.connection.request_close();
+        }
+    }
+}
+
+struct PendingSend<'a> {
+    state: &'a Mutex<State>,
+    id: &'a str,
+    transferred: bool,
+}
+impl Drop for PendingSend<'_> {
+    fn drop(&mut self) {
+        if !self.transferred {
+            self.state.lock().expect("Pi state").pending.remove(self.id);
+        }
+    }
+}
+
 pub(crate) fn disconnected() -> DriverError {
     DriverError::Disconnected("Pi RPC connection closed".into())
 }
@@ -97,8 +127,7 @@ impl Connection {
         if let Some(path) = session {
             command.args(["--session", path]);
         }
-        let mut child = command
-            .spawn()
+        let mut child = OwnedChild::spawn(command)
             .map_err(|_| DriverError::NotConfigured("Pi executable unavailable".into()))?;
         let input = child.stdin.take().ok_or_else(disconnected)?;
         let stdout = child.stdout.take().ok_or_else(disconnected)?;
@@ -187,31 +216,55 @@ impl Connection {
             shared.lock().expect("Pi state").fail(&error);
             signal.notify_one();
         });
-        Ok(Self {
-            input: tokio::sync::Mutex::new(Some(input)),
-            child: tokio::sync::Mutex::new(child),
+        let input = Arc::new(tokio::sync::Mutex::new(Some(input)));
+        let (closing, close_rx) = watch::channel(false);
+        let (completed, cleanup) = watch::channel(None);
+        tokio::spawn(supervise(
+            child,
             reader,
+            input.clone(),
+            state.clone(),
+            settled.clone(),
+            close_rx,
+            completed,
+        ));
+        Ok(Self {
+            input,
+            closing,
+            cleanup,
             state,
             settled,
         })
     }
     pub async fn write(&self, value: &Value) -> Result<(), DriverError> {
+        if self.state.lock().expect("Pi state").disconnected {
+            return Err(disconnected());
+        }
         let mut bytes = serde_json::to_vec(value)
             .map_err(|_| DriverError::Protocol("Invalid Pi command".into()))?;
         bytes.push(b'\n');
         let result = tokio::time::timeout(Duration::from_secs(10), async {
             let mut slot = self.input.lock().await;
+            if self.state.lock().expect("Pi state").disconnected {
+                return Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
+            }
             let input = slot
                 .as_mut()
                 .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::BrokenPipe))?;
+            let mut frame = RetireOnCancel {
+                connection: self,
+                armed: true,
+            };
             input.write_all(&bytes).await?;
-            input.flush().await
+            input.flush().await?;
+            frame.armed = false;
+            Ok::<_, std::io::Error>(())
         })
         .await;
         if matches!(result, Ok(Ok(()))) {
             Ok(())
         } else {
-            self.close().await;
+            let _ = self.close().await;
             Err(disconnected())
         }
     }
@@ -222,7 +275,12 @@ impl Connection {
             value["type"].as_str().unwrap_or("unknown")
         );
         let receive = self.request(&mut value).await?;
+        let mut pending = RetireOnCancel {
+            connection: self,
+            armed: true,
+        };
         if let Ok(Ok(result)) = tokio::time::timeout(Duration::from_secs(30), receive).await {
+            pending.armed = false;
             #[cfg(test)]
             eprintln!(
                 "Pi control completed {}",
@@ -232,7 +290,9 @@ impl Connection {
         } else {
             // A timed-out mutation may still execute. Invalidate the whole
             // process rather than reuse an unconfirmed model/session state.
-            self.close().await;
+            self.request_close();
+            pending.armed = false;
+            let _ = self.close().await;
             Err(DriverError::Disconnected("Pi RPC command timed out".into()))
         }
     }
@@ -250,7 +310,13 @@ impl Connection {
             }
             state.pending.insert(id.clone(), reply);
         }
+        let mut pending = PendingSend {
+            state: &self.state,
+            id: &id,
+            transferred: false,
+        };
         self.write(value).await?;
+        pending.transferred = true;
         Ok(receive)
     }
     pub fn begin_turn(
@@ -269,26 +335,56 @@ impl Connection {
     }
     /// Admit another turn only after acknowledgement, native settlement and an
     /// idle state read agree. A result acknowledgement alone does not stop Pi.
-    pub async fn abort_turn(&self, timeout: Duration) -> Result<(), DriverError> {
-        let ids = {
+    pub async fn abort_turn(self: &Arc<Self>, timeout: Duration) -> Result<(), DriverError> {
+        let (mut outcome, start) = {
             let mut state = self.state.lock().expect("Pi state");
             if state.disconnected {
                 return Err(disconnected());
             }
-            if state.turn.is_none() {
-                return Ok(());
-            }
             if state.cancelling {
-                return Err(DriverError::Protocol(
-                    "Pi cancellation already pending".into(),
-                ));
+                (
+                    state
+                        .cancel_outcome
+                        .as_ref()
+                        .expect("cancellation receipt")
+                        .clone(),
+                    None,
+                )
+            } else {
+                if state.turn.is_none() {
+                    return Ok(());
+                }
+                state.cancelling = true;
+                state.cancel_settled = false;
+                let turn = state.turn.as_mut().expect("active turn");
+                turn.interrupted = true;
+                let ids = turn.dialogs.keys().cloned().collect::<Vec<_>>();
+                let (completed, outcome) = watch::channel(None);
+                state.cancel_outcome = Some(outcome.clone());
+                (outcome, Some((ids, completed)))
             }
-            state.cancelling = true;
-            state.cancel_settled = false;
-            let turn = state.turn.as_mut().expect("active turn");
-            turn.interrupted = true;
-            turn.dialogs.keys().cloned().collect::<Vec<_>>()
         };
+        if let Some((ids, completed)) = start {
+            let connection = self.clone();
+            tokio::spawn(async move {
+                let result = connection.abort_owned(timeout, ids).await;
+                if result.is_err() {
+                    connection.request_close();
+                }
+                completed.send_replace(Some(result));
+            });
+        }
+        loop {
+            if let Some(result) = outcome.borrow_and_update().clone() {
+                return result;
+            }
+            if outcome.changed().await.is_err() {
+                self.request_close();
+                return Err(disconnected());
+            }
+        }
+    }
+    async fn abort_owned(&self, timeout: Duration, ids: Vec<String>) -> Result<(), DriverError> {
         tokio::time::timeout(timeout, async {
             for id in ids {
                 self.write(&json!({"type":"extension_ui_response","id":id,"cancelled":true}))
@@ -335,26 +431,87 @@ impl Connection {
         .map_err(|_| DriverError::Disconnected("Pi cancellation did not settle in time".into()))?
     }
 
-    pub async fn close(&self) {
+    pub fn request_close(&self) {
         self.state.lock().expect("Pi state").fail(&disconnected());
-        // Pi disposes its runtime on stdin EOF. Killing a healthy metadata
-        // process can leave native config/auth locks for the next startup.
-        // ChildStdin::shutdown alone does not necessarily close the OS handle.
-        // Taking/dropping it is what delivers EOF to the native RPC reader.
-        drop(self.input.lock().await.take());
-        let mut child = self.child.lock().await;
-        if tokio::time::timeout(Duration::from_secs(5), child.wait())
-            .await
-            .is_err()
-        {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-        }
-        self.reader.abort();
+        self.closing.send_replace(true);
+        self.settled.notify_one();
+    }
+    pub async fn close(&self) -> Result<(), DriverError> {
+        self.request_close();
+        let mut cleanup = self.cleanup.clone();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let Some(result) = cleanup.borrow_and_update().clone() {
+                    return result;
+                }
+                cleanup.changed().await.map_err(|_| {
+                    DriverError::Disconnected("Pi cleanup ended without exit confirmation".into())
+                })?;
+            }
+        })
+        .await
+        .map_err(|_| {
+            DriverError::Disconnected("Pi process shutdown timed out; cleanup continues".into())
+        })?
+    }
+    #[cfg(all(test, unix))]
+    pub fn input_busy(&self) -> bool {
+        self.input.try_lock().is_err()
+    }
+    #[cfg(all(test, unix))]
+    pub fn cleanup(&self) -> watch::Receiver<Option<Result<(), DriverError>>> {
+        self.cleanup.clone()
     }
 }
 impl Drop for Connection {
     fn drop(&mut self) {
-        self.reader.abort();
+        self.request_close();
     }
+}
+
+// This actor owns the OS process even if all callers cancel their wait. It
+// never holds the input lock while requesting forceful native termination.
+async fn supervise(
+    mut child: OwnedChild,
+    mut reader: tokio::task::JoinHandle<()>,
+    input: Arc<tokio::sync::Mutex<Option<ChildStdin>>>,
+    state: Arc<Mutex<State>>,
+    settled: Arc<tokio::sync::Notify>,
+    mut closing: watch::Receiver<bool>,
+    completed: watch::Sender<Option<Result<(), DriverError>>>,
+) {
+    tokio::select! {
+        ()=async{while !reader.is_finished(){tokio::time::sleep(Duration::from_millis(10)).await;}}=>{},
+        ()=async{while !*closing.borrow_and_update(){if closing.changed().await.is_err(){break;}}}=>{},
+        _=child.wait()=>{},
+    }
+    state.lock().expect("Pi state").fail(&disconnected());
+    settled.notify_one();
+    if let Ok(mut input) = input.try_lock() {
+        input.take();
+    }
+    // Pi flushes its native config/auth store on stdin EOF. Preserve the grace
+    // period, but never interpret stdout EOF or a kill request as exit proof.
+    if !matches!(
+        tokio::time::timeout(Duration::from_secs(5), child.wait()).await,
+        Ok(Ok(_))
+    ) {
+        let mut delay = 1;
+        while child.terminate().await.is_err() {
+            completed.send_replace(Some(Err(DriverError::Disconnected(
+                "Pi process shutdown remains unconfirmed".into(),
+            ))));
+            tokio::time::sleep(Duration::from_secs(delay)).await;
+            delay = (delay * 2).min(30);
+        }
+    }
+    input.lock().await.take();
+    if tokio::time::timeout(Duration::from_secs(1), &mut reader)
+        .await
+        .is_err()
+    {
+        reader.abort();
+        let _ = reader.await;
+    }
+    completed.send_replace(Some(Ok(())));
 }

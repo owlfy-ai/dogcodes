@@ -53,7 +53,7 @@ export const terminalClient = {
     followTerminal(await invoke<TerminalInfo>("core_terminal_get", { id }), receive),
   list: (projectId: string) => invoke<TerminalInfo[]>("core_terminal_list", { projectId }),
   get: (id: string) => invoke<TerminalInfo>("core_terminal_get", { id }),
-  write: (id: string, bytes: number[]) => invoke<void>("core_terminal_write", { id, bytes }),
+  input: (id: string, request: Record<string, unknown>) => invoke<unknown>("core_terminal_input", { request: { ...request, terminalId: id } }),
   resize: (id: string, cols: number, rows: number) => invoke<void>("core_terminal_resize", { id, cols, rows }),
   close: (id: string) => invoke<void>("core_terminal_close", { id }),
 };

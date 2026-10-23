@@ -266,19 +266,36 @@ impl PairingBook {
         Ok(grant)
     }
     pub fn receipt(&self, invitation_id: &str, session: &Session) -> Result<Grant> {
-        self.healthy()?;
-        let id = device_id(&session.authenticated_peer()?);
+        self.receipt_for_lease(invitation_id, &self.authorize(session)?)
+    }
+    /// A lease can only originate from an authenticated endpoint session.
+    pub fn receipt_for_lease(&self, invitation_id: &str, lease: &DeviceLease) -> Result<Grant> {
+        let grant = self.check(lease)?;
+        let id = &grant.device_id;
         let receipt = self
             .journal
             .receipts
             .get(invitation_id)
-            .filter(|r| r.device_id == id)
+            .filter(|r| &r.device_id == id)
             .ok_or(PairingError::Conflict)?;
-        let grant = self.active(&id)?;
         if grant.revision != receipt.revision {
             return Err(PairingError::Revoked);
         }
         Ok(grant.clone())
+    }
+    /// Public grant metadata for finishing an interrupted cloud registration.
+    pub fn active_receipts(&self) -> Result<Vec<(String, Grant)>> {
+        self.healthy()?;
+        Ok(self
+            .journal
+            .receipts
+            .iter()
+            .filter_map(|(id, receipt)| {
+                let grant = self.journal.grants.get(&receipt.device_id)?;
+                (!grant.revoked && grant.revision == receipt.revision)
+                    .then(|| (id.clone(), grant.clone()))
+            })
+            .collect())
     }
     pub fn revoke(&mut self, device_id: &str) -> Result<()> {
         self.healthy()?;
