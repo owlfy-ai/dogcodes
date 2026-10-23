@@ -273,13 +273,20 @@ async fn core_pick_project_directory(
 ) -> Result<Option<String>, String> {
     require_main_artifact_window(window.label())?;
     let (sender, receiver) = oneshot::channel();
-    app.dialog()
+    let mut dialog = app
+        .dialog()
         .file()
         .set_parent(&window)
-        .set_title("选择项目目录")
-        .pick_folder(move |path| {
-            let _ = sender.send(path);
-        });
+        .set_title("选择项目目录");
+    // Without a starting folder the system picker reopens wherever it was last
+    // left, often the filesystem root. Hidden entries stay governed by the
+    // picker's own toggle (⌘⇧. on macOS), which is off by default.
+    if let Some(directory) = project_picker_start(&app) {
+        dialog = dialog.set_directory(directory);
+    }
+    dialog.pick_folder(move |path| {
+        let _ = sender.send(path);
+    });
     let Some(path) = receiver.await.map_err(|_| "目录选择窗口已关闭")? else {
         return Ok(None);
     };
@@ -289,6 +296,14 @@ async fn core_pick_project_directory(
     }
     let path = path.to_str().ok_or("目录路径不是有效的 UTF-8")?;
     Ok(Some(path.to_owned()))
+}
+
+/// Windows opens on "This PC" so every drive is listed; elsewhere, the home directory.
+fn project_picker_start(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    if cfg!(windows) {
+        return Some("::{20D04FE0-3AEA-1069-A2D8-08002B30309D}".into());
+    }
+    app.path().home_dir().ok().filter(|home| home.is_dir())
 }
 
 #[tauri::command]
