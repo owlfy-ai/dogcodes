@@ -16,6 +16,9 @@ const SCRIPT: &str = concat!(
     "const __dogcodesCaptcha = (() => { const module = {exports:{}};\n",
     include_str!("account-captcha.cjs"),
     "\nreturn module.exports; })();\n",
+    "const __dogcodesProject = (() => { const module = {exports:{}};\n",
+    include_str!("project-token.cjs"),
+    "\nreturn module.exports; })();\n",
     include_str!("account-reader.cjs"),
     "\naccountMain();"
 );
@@ -399,9 +402,9 @@ while read request; do :; done
     }
 
     #[tokio::test]
-    #[ignore = "reads local ZCode account entitlements and model catalog; no model turn"]
+    #[ignore = "queries local ZCode account entitlements, short-lived auth and model catalog; no model turn"]
     async fn local_account_model_catalog() {
-        let driver = crate::ZcodeDriver::new(
+        let driver = crate::ZcodeDriver::connect_ready(
             "zcode",
             &agent_domain::InstallationId::new().to_string(),
             ZcodeLaunch {
@@ -411,6 +414,7 @@ while read request; do :; done
             None,
             SessionResumeCapability::Unknown,
         )
+        .await
         .unwrap();
         let catalog = driver.model_catalog().await.unwrap();
         assert!(!catalog.models.is_empty());

@@ -2550,18 +2550,20 @@ impl Core {
         installation_id: Option<&str>,
         force: bool,
     ) -> Vec<QuotaSnapshotView> {
+        let mut providers = self.quota_providers.read().await.clone();
         let executors = self
             .drivers
             .read()
             .await
             .keys()
+            // Account monitors can work before an execution driver is ready.
+            .chain(providers.keys())
             .filter(|executor| executor.installation_id.is_some())
             .filter(|executor| {
                 installation_id.is_none_or(|id| executor.installation_id.as_deref() == Some(id))
             })
             .cloned()
-            .collect::<Vec<_>>();
-        let mut providers = self.quota_providers.read().await.clone();
+            .collect::<std::collections::BTreeSet<_>>();
         let session_by_executor = match task_id {
             Some(task_id) => self
                 .repository
@@ -4955,6 +4957,52 @@ mod tests {
                 .context_used_tokens,
             Some(610)
         );
+    }
+
+    #[tokio::test]
+    async fn account_quota_is_available_without_a_ready_execution_driver() {
+        struct AccountMonitor(ExecutorRef);
+        #[async_trait::async_trait]
+        impl QuotaProvider for AccountMonitor {
+            fn executor(&self) -> &ExecutorRef {
+                &self.0
+            }
+            async fn read_quota(
+                &self,
+                _: Option<&str>,
+            ) -> Result<driver_api::QuotaSnapshot, DriverError> {
+                Ok(driver_api::QuotaSnapshot {
+                    source: "account-monitor".into(),
+                    ..Default::default()
+                })
+            }
+        }
+        let core = Core::new(Arc::new(MemoryRepository::default()));
+        let executor = ExecutorRef {
+            installation_id: Some("ins_account_monitor".into()),
+            ..executor("zcode")
+        };
+        core.register_quota_provider(Arc::new(AccountMonitor(executor.clone())))
+            .await;
+        assert!(core.registered_executors().await.is_empty());
+        let views = core
+            .quota_snapshots_for(None, executor.installation_id.as_deref())
+            .await;
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].quota.as_ref().unwrap().source, "account-monitor");
+        assert!(
+            core.quota_snapshots_for(None, Some("ins_other"))
+                .await
+                .is_empty()
+        );
+
+        core.drivers.write().await.insert(
+            executor,
+            Arc::new(driver_api::FakeDriver::new("zcode").unwrap()),
+        );
+        assert_eq!(core.quota_snapshots(None).await.len(), 1);
+        core.select_installation("zcode", None).await;
+        assert!(core.quota_snapshots(None).await.is_empty());
     }
 
     #[tokio::test]

@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const native = typeof __dogcodesNative !== 'undefined' ? __dogcodesNative : require('./credentials.cjs');
 const captcha = typeof __dogcodesCaptcha !== 'undefined' ? __dogcodesCaptcha : require('./account-captcha.cjs');
 const quotaWindows = typeof __dogcodesQuota !== 'undefined' ? __dogcodesQuota : require('./quota-reader.cjs');
+const projectTokens = typeof __dogcodesProject !== 'undefined' ? __dogcodesProject : require('./project-token.cjs');
 const MAX_BYTES = 1024 * 1024;
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const fingerprint = value => hash(JSON.stringify(value));
@@ -67,14 +68,23 @@ function context(env, providerId, mode) {
     : family === 'zai' && typeof profile.user_id === 'string' ? profile.user_id.trim() : '';
   if (!identity || identity === 'unknown') return undefined;
   const apiKey = get(`account-provider:coding-plan:${providerId}:account:${encodeURIComponent(identity)}:api-key`);
+  const loginToken = get(`oauth:${family}:access_token`);
+  const projectAuth = !apiKey && !!loginToken;
+  const baseUrl = businessOrigin(family, env);
+  const locationKey = `project-key-location:v1:${encodeURIComponent(JSON.stringify([baseUrl, family, identity, null, 1, 'non-team']))}`;
+  const rawLocation = projectAuth ? get(locationKey) : '';
+  const projectLocation = rawLocation ? projectTokens.locationFrom(JSON.parse(rawLocation)) : undefined;
   const settings = readJson(locations(env).settings);
   const selection = settings.providerFamilyConnectionSelections?.[family];
   const current = settings.providerFamilyDomain === family && (Object.hasOwn(settings, 'providerFamilyConnectionSelections')
     ? selection?.kind === mode
     : settings.modelProviderFamilyModes?.[family] !== 'apiKey'
       && settings.modelProviderFamilySelectedKeys?.[family] === `coding-plan:builtin:${family}-coding-plan`);
-  const scope = fingerprint([family, identity, mode]);
-  return { family, apiKey, current, scope, fingerprint: fingerprint([family, identity, apiKey, current]) };
+  const jwt = projectAuth ? get('zcodejwttoken') : '';
+  const scope = projectAuth ? fingerprint([family, mode, null, loginToken.trim(), jwt || null])
+    : fingerprint([family, identity, mode]);
+  return { family, apiKey, current, scope, loginToken, accountId: identity, projectAuth, projectLocation,
+    fingerprint: fingerprint([family, identity, apiKey, current, projectAuth ? [loginToken, jwt, baseUrl, projectLocation] : null]) };
 }
 
 function origin(value) {
@@ -92,11 +102,11 @@ function businessOrigin(family, env) {
     || (family === 'zai' ? (test ? 'https://api.chatglm.site' : 'https://api.z.ai') : (test ? 'https://dev.bigmodel.cn' : 'https://bigmodel.cn')));
 }
 
-async function query(url, headers, fetcher) {
+async function query(url, headers, fetcher, options = {}) {
   try {
-    const response = await fetcher(url, { headers, method: 'GET', redirect: 'error', signal: AbortSignal.timeout(8000) });
+    const response = await fetcher(url, { ...options, headers, method: options.method || 'GET', redirect: 'error', signal: AbortSignal.timeout(8000) });
     if ([401, 403].includes(response.status)) return { status: 'credential-failed' };
-    if (!response.ok) return { status: 'unknown' };
+    if (!response.ok) return { status: 'unknown', httpStatus: response.status };
     const reader = response.body.getReader();
     const chunks = []; let length = 0;
     try {
@@ -107,9 +117,23 @@ async function query(url, headers, fetcher) {
       }
     } finally { await reader.cancel().catch(() => {}); }
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    if (body.success === false || (body.code != null && ![0, 200].includes(body.code))) return { status: 'unknown' };
+    if (body.success === false || (body.code != null && ![0, 200, '0', '200'].includes(body.code))) {
+      return { status: 'unknown', ...(Number(body.code) === 404 ? { httpStatus: 404 } : {}) };
+    }
     return { status: 'ok', data: body.data };
   } catch { return { status: 'unknown' }; }
+}
+
+async function personalAuth(current, providerId, version, env, fetcher) {
+  if (!current.projectAuth) return { apiKey: current.apiKey };
+  const material = await projectTokens.resolvePersonalToken({ account: current, baseUrl: businessOrigin(current.family, env), version,
+    request: (url, options) => query(url, options.headers, fetcher, options),
+    assertCurrent: () => {
+      const after = context(env, providerId, 'individual-coding-plan');
+      if (!after?.current || after.fingerprint !== current.fingerprint) throw new Error('project_token_scope_invalidated');
+    },
+  });
+  return { apiKey: material.apiKey, apiKeyId: material.apiKeyId, projectIdentity: fingerprint(material.location) };
 }
 
 function startModels(data, ids) {
@@ -146,21 +170,24 @@ async function inspect(input, env = process.env, fetcher = fetch) {
     if (!['start-plan', 'individual-coding-plan'].includes(mode)) continue;
     const id = rule.providerId;
     if (typeof id !== 'string') continue;
-    let before;
+    let before, material;
     let status = 'unknown', allowed = [];
     try {
       before = context(env, id, mode);
       if (!before || before.family !== accountType) status = 'not-connected';
-      else if (!before.apiKey) status = 'credential-failed';
+      else if (!before.apiKey && !(before.projectAuth && before.current)) status = 'credential-failed';
       else {
-        const key = fingerprint([mode, before.family, before.apiKey]);
+        const auth = mode === 'individual-coding-plan'
+          ? await personalAuth(before, id, version, env, fetcher) : { apiKey: before.apiKey };
+        material = auth;
+        const key = fingerprint([mode, before.family, auth.apiKey]);
         if (!queried.has(key)) {
           const url = mode === 'start-plan'
             ? `${origin(env.ZCODE_BASE_URL || 'https://zcode.z.ai')}/api/v1/zcode-plan/billing/balance?app_version=${encodeURIComponent(version)}`
             : `${businessOrigin(before.family, env)}/api/biz/subscription/list`;
           queried.set(key, query(url, mode === 'start-plan'
             ? { Authorization: `Bearer ${before.apiKey}`, 'X-Device-Mid': before.deviceMid }
-            : { Authorization: before.apiKey }, fetcher));
+            : { Authorization: auth.apiKey }, fetcher));
         }
         const result = await queried.get(key);
         status = result.status;
@@ -184,6 +211,7 @@ async function inspect(input, env = process.env, fetcher = fetch) {
       ...(!entitled && status !== 'unknown' ? { unavailableReason: status } : {}) };
     if (entitled && states[id].current) authorized[id] = {
       family: before.family, mode, fingerprint: before.fingerprint, scope: before.scope,
+      ...(material?.projectIdentity ? { projectIdentity: material.projectIdentity } : {}),
       ...(mode === 'start-plan' ? { models: allowed } : {}),
     };
   }
@@ -194,7 +222,7 @@ async function inspect(input, env = process.env, fetcher = fetch) {
   }, authorized, checkedAt: Date.now(), version };
 }
 
-async function runtime(input, env = process.env, verifier = captcha.verify) {
+async function runtime(input, env = process.env, verifier = captcha.verify, fetcher = fetch) {
   const reject = message => ({ headersApplied: false, errorMessage: message });
   const request = input.request || {}, id = request.providerId, grant = input.authorized?.[id];
   const access = request.accountAccess;
@@ -210,12 +238,34 @@ async function runtime(input, env = process.env, verifier = captcha.verify) {
       || (request.expectedAccountScope && request.expectedAccountScope !== current.scope)) {
       return reject('ZCode 账号或套餐已改变，请重新检测 Agent 后重试。');
     }
+    if (current.projectAuth && request.rejectedProjectTokenFingerprint && !request.expectedAccountScope) {
+      return reject('ZCode 项目认证范围缺失，请重新检测 Agent。');
+    }
     const headers = grant.mode === 'start-plan' ? await verifier(input.version) : undefined;
+    const auth = grant.mode === 'individual-coding-plan'
+      ? await personalAuth(current, id, input.version, env, fetcher) : { apiKey: current.apiKey };
+    if (auth.projectIdentity !== grant.projectIdentity) return reject('ZCode 个人项目已改变，请重新检测 Agent。');
     const after = context(env, id, grant.mode);
     if (!after || after.fingerprint !== current.fingerprint) return reject('ZCode 账号已改变，请重新检测 Agent。');
-    return { headersApplied: true, requestAuth: { apiKey: after.apiKey,
+    return { headersApplied: true, requestAuth: { apiKey: auth.apiKey, ...(auth.apiKeyId ? { apiKeyId: auth.apiKeyId } : {}),
       ...(after.scope ? { accountScope: after.scope } : {}), ...(headers ? { headers } : {}) } };
   } catch { return reject('ZCode 账号验证未完成，请检查原生登录状态或重试。'); }
+}
+
+// Newer Desktop versions keep personal project tokens in memory instead of the
+// legacy API-key slot. The monitor also accepts the current OAuth login token
+// at the business origin; this GET needs no project-token issuance or storage.
+// Keep this authorization separate from model runtime credentials.
+function quotaContext(env, providerId) {
+  const current = context(env, providerId, 'individual-coding-plan');
+  if (!current?.current) return undefined;
+  const loginToken = credentials(env)(`oauth:${current.family}:access_token`);
+  const authorization = current.apiKey || (loginToken ? `Bearer ${loginToken.replace(/^Bearer\s+/i, '')}` : '');
+  const quotaOrigin = current.apiKey
+    ? (current.family === 'zai' ? 'https://api.z.ai' : 'https://open.bigmodel.cn')
+    : businessOrigin(current.family, env);
+  return { ...current, authorization, quotaOrigin,
+    fingerprint: fingerprint([current.fingerprint, authorization, quotaOrigin]) };
 }
 
 function quotaIdentity(input, env = process.env) {
@@ -226,9 +276,9 @@ function quotaIdentity(input, env = process.env) {
     for (const rule of rules) {
       const access = rule.config?.access;
       if (access?.mode !== 'individual-coding-plan') continue;
-      const current = context(env, rule.providerId, access.mode);
+      const current = quotaContext(env, rule.providerId);
       if (current?.family !== access.accountType || !current?.current) continue;
-      if (!current.apiKey) return { unavailable: 'quota_login_required' };
+      if (!current.authorization) return { unavailable: 'quota_login_required' };
       return { identity: current.fingerprint, providerId: rule.providerId };
     }
     return { unavailable: 'quota_unavailable' };
@@ -239,11 +289,10 @@ async function readQuota(input, env = process.env, fetcher = fetch) {
   const selected = quotaIdentity(input, env);
   if (selected.unavailable) return selected;
   try {
-    const current = context(env, selected.providerId, 'individual-coding-plan');
+    const current = quotaContext(env, selected.providerId);
     if (!current?.current || current.fingerprint !== selected.identity) return { unavailable: 'quota_login_required' };
-    const host = current.family === 'zai' ? 'api.z.ai' : 'open.bigmodel.cn';
-    const response = await query(`https://${host}/api/monitor/usage/quota/limit`, { Authorization: current.apiKey }, fetcher);
-    const after = context(env, selected.providerId, 'individual-coding-plan');
+    const response = await query(`${current.quotaOrigin}/api/monitor/usage/quota/limit`, { Authorization: current.authorization }, fetcher);
+    const after = quotaContext(env, selected.providerId);
     if (!after?.current || after.fingerprint !== selected.identity) return { unavailable: 'quota_login_required' };
     if (response.status === 'credential-failed') return { unavailable: 'quota_login_required' };
     if (response.status !== 'ok') return { unavailable: 'quota_unavailable' };
@@ -252,7 +301,7 @@ async function readQuota(input, env = process.env, fetcher = fetch) {
       windows: quotaWindows.windowsFrom(response.data), context: null,
       collectedAtUnixMs: now, staleAfterUnixMs: now + 60000,
       planType: current.family === 'zai' ? 'Z.ai' : 'BigModel', source: 'native_credentials_pull',
-      confidence: 'provider_reported', parserVersion: 'zcode-native-account-monitor-v2',
+      confidence: 'provider_reported', parserVersion: 'zcode-native-account-monitor-v3',
     } };
   } catch { return { unavailable: 'quota_unavailable' }; }
 }

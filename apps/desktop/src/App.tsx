@@ -231,18 +231,27 @@ function PreferencesMenu({
 }) {
   const labels = getPreferenceLabels(language);
   const modifier = isMacPlatform() ? "⌘" : "Ctrl";
-  const [position, setPosition] = useState<{ left: number; bottom: number; width: number } | null>(null);
+  const [position, setPosition] = useState<{ left: number; bottom: number; width: number; maxHeight: number } | null>(null);
   // Float above the footer row in the document layer, never inside the footer itself.
   useLayoutEffect(() => {
     if (!open) return;
     const place = () => {
       const anchor = anchorRef.current?.getBoundingClientRect();
-      if (anchor) setPosition({ left: anchor.left, bottom: window.innerHeight - anchor.top + 6, width: Math.max(200, anchor.width) });
+      if (!anchor) return;
+      const margin = 12;
+      const width = Math.min(Math.max(200, anchor.width), window.innerWidth - margin * 2);
+      const bottom = Math.max(margin, window.innerHeight - anchor.top + 6);
+      setPosition({
+        left: Math.max(margin, Math.min(anchor.left, window.innerWidth - width - margin)),
+        bottom,
+        width,
+        maxHeight: Math.max(0, window.innerHeight - bottom - margin),
+      });
     };
     place();
     window.addEventListener("resize", place);
     return () => window.removeEventListener("resize", place);
-  }, [open, anchorRef]);
+  }, [open, anchorRef, scale]);
   if (!open || !position) return null;
 
   const optionMenu = section === "language" ? (
@@ -280,7 +289,7 @@ function PreferencesMenu({
   ) : null;
 
   return createPortal(
-    <div ref={popoverRef} className="preferences-popover" role="menu" style={{ left: position.left, bottom: position.bottom, width: position.width }}>
+    <div ref={popoverRef} className="preferences-popover" role="menu" style={{ left: position.left, bottom: position.bottom, width: position.width, "--preferences-menu-max-height": `${position.maxHeight}px` } as React.CSSProperties}>
       <button type="button" role="menuitem" className={section === "language" ? "selected" : ""} onClick={() => onToggle("language")}>
         <PreferencesIcon kind="language" /><span>{labels.language}</span><span aria-hidden="true">›</span>
       </button>
@@ -317,7 +326,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     await refresh();
     refreshQuotas.current();
   };
-  const [activeView, setActiveView] = useState<"conversation" | "quota">("conversation");
+  const [activeView, setActiveView] = useState<"conversation" | "quota" | "remote">("conversation");
   const [startupError, setStartupError] = useState(false);
   const [snapshot, setSnapshot] = useState<BootstrapSnapshot | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<TaskId | null>(null);
@@ -397,7 +406,6 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [loadedTaskId, setLoadedTaskId] = useState<TaskId | null>(null);
   const [timelineError, setTimelineError] = useState<string | null>(null);
-  const [remoteOpen, setRemoteOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<PreferencesSection>(null);
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>(() => readPreference("dogcodes.ui.language", "system"));
@@ -1115,7 +1123,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
 
   return (
     <I18nProvider initialLanguage={uiLanguage}>
-      <main className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${reviewOpen && !reviewWindow.detached ? " review-expanded" : ""}`} style={{ "--sidebar-width": `${sidebarWidth.width}px`, "--review-width": `${reviewWidth.width}px` } as React.CSSProperties}>
+      <main className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${activeView === "conversation" && reviewOpen && !reviewWindow.detached ? " review-expanded" : ""}`} style={{ "--sidebar-width": `${sidebarWidth.width}px`, "--review-width": `${reviewWidth.width}px` } as React.CSSProperties}>
         <aside id="app-sidebar" className="sidebar" hidden={sidebarCollapsed}>
         <header className="sidebar-titlebar" data-tauri-drag-region="deep">
           {!sidebarCollapsed && windowControls}
@@ -1125,7 +1133,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             <SidebarNavIcon kind="conversation" /><b>{creatingTask ? t("nav.creating", undefined, resolvedLang) : t("nav.newConversation", undefined, resolvedLang)}</b><kbd>{shortcutModifier} N</kbd>
           </button>
           <button ref={quotaButton} aria-keyshortcuts={`${shortcutKey}+U`} className={activeView === "quota" ? "active" : ""} type="button" onClick={() => setActiveView("quota")}><SidebarNavIcon kind="quota" /><b>{t("nav.agentManagement", undefined, resolvedLang)}</b><kbd>{shortcutModifier} U</kbd></button>
-          <button className={remoteOpen ? "active" : ""} type="button" aria-haspopup="dialog" aria-expanded={remoteOpen} onClick={() => setRemoteOpen(true)}><SidebarNavIcon kind="phone" /><b>{t("remoteDevices.title", undefined, resolvedLang)}</b></button>
+          <button className={activeView === "remote" ? "active" : ""} type="button" aria-current={activeView === "remote" ? "page" : undefined} onClick={() => setActiveView("remote")}><SidebarNavIcon kind="phone" /><b>{t("remoteDevices.title", undefined, resolvedLang)}</b></button>
         </nav>
         <div className="sidebar-divider" />
         <MemoConversationHistory onRevealProject={revealLocalProject} onCreateProjectConversation={createProjectConversation} createConversationDisabled={sending || creatingTask}
@@ -1171,6 +1179,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
           {sidebarCollapsed && <div className="collapsed-sidebar-controls">{windowControls}</div>}
           {activeView === "quota"
             ? <div className="task-heading"><h1>{t("agentManagement.title", undefined, resolvedLang)}</h1></div>
+            : activeView === "remote"
+            ? <div className="task-heading"><h1>{t("remoteDevices.title", undefined, resolvedLang)}</h1></div>
             : <div className="task-heading"><h1>{selectedTask.title}</h1><span>{selectedProject ? projectLabel(selectedProject.displayName) : t("header.temporaryWorkspace", undefined, resolvedLang)}</span></div>}
           <div className="task-tools">
             {activeView === "conversation" && <>
@@ -1185,7 +1195,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         </header>
       {activeView === "quota" ? (
         <QuotaCenter views={quotaViews} installations={snapshot.installations} agentUpdates={agentUpdates} refreshProgress={quotaRefreshProgress} onRefresh={() => refreshQuotasNow.current()} onDetect={detectAgents} lang={resolvedLang} />
-      ) : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}
+      ) : activeView === "remote" ? <RemoteDevices lang={resolvedLang} /> : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}
         onDragEnter={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); dragDepth.current++; setDraggingFiles(true); } }}
         onDragOver={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = sending ? "none" : "copy"; } }}
         onDragLeave={event => { event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFiles(false); } }}
@@ -1305,14 +1315,13 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         }}/>}
         {selectedTaskId && <CancelRecovery key={selectedTaskId} client={client} taskId={selectedTaskId} busy={cancelling} onAccepted={() => { void refresh(); }}/>}
       </section>}
-      {terminalLoaded && selectedProject && <Suspense fallback={terminalOpen ? <LoadingStatus>正在加载终端…</LoadingStatus> : null}><TerminalDock
+      {terminalLoaded && selectedProject && <Suspense fallback={activeView === "conversation" && terminalOpen ? <LoadingStatus>正在加载终端…</LoadingStatus> : null}><TerminalDock
         key={selectedProject.projectId} projectId={selectedProject.projectId}
         directories={[selectedProject.path, ...selectedProject.additionalDirectories]}
-        open={terminalOpen} onClose={() => setTerminalOpen(false)}
+        open={activeView === "conversation" && terminalOpen} onClose={() => setTerminalOpen(false)}
         onEditProject={client.updateProject ? () => setEditingProject(selectedProject) : undefined} /></Suspense>}
       </div>
 
-      {remoteOpen && <RemoteDevices lang={resolvedLang} onClose={() => setRemoteOpen(false)} />}
       {editingProject && <ProjectDialog key={editingProject.projectId} client={client} project={editingProject}
         onClose={() => setEditingProject(null)} onReady={async () => { await refresh(); setEditingProject(null); }} />}
       {projectDialogOpen && <ProjectDialog
@@ -1326,9 +1335,9 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       />}
       {activeView === "conversation" && !reviewOpen && timeline.some(i => i.itemId === subagentItemId && i.taskId === selectedTask.taskId && activityOf(i)) && <SubagentPanel client={client} key={subagentItemId} item={timeline.find(i => i.itemId === subagentItemId)!} items={timeline} activeTurnId={selectedTask.activePrimaryRun?.state === "disconnected" ? undefined : selectedTask.activePrimaryRun?.turnId} onClose={() => setSubagentItemId(null)} />}
       {reviewWindow.error && <p className="review-window-error" role="alert">{reviewWindow.error}</p>}
-      {selectedTaskId && reviewOpen && !reviewWindow.detached && <ReviewResizeHandle width={reviewWidth.width} max={reviewWidth.max} onResize={reviewWidth.setWidth} />}
+      {activeView === "conversation" && selectedTaskId && reviewOpen && !reviewWindow.detached && <ReviewResizeHandle width={reviewWidth.width} max={reviewWidth.max} onResize={reviewWidth.setWidth} />}
       <PendingExecutorContext.Provider value={pendingExecutors}><AgentQuotaContext.Provider value={quotaViews}>
-        <ConversationReviewDocks workspaceNavigation onOpenConversation={taskId => { selectTask(taskId as TaskId); setActiveView("conversation"); setSubagentItemId(null); }} tasks={snapshot.tasks} selectedTaskId={selectedTaskId} onDetach={reviewWindow.available && !reviewWindow.opening ? view => void reviewWindow.detach(view) : undefined} open={reviewOpen && !reviewWindow.detached} fileRequest={reviewFileRequest} onClose={() => setReviewOpen(false)}
+        <ConversationReviewDocks workspaceNavigation onOpenConversation={taskId => { selectTask(taskId as TaskId); setActiveView("conversation"); setSubagentItemId(null); }} tasks={snapshot.tasks} selectedTaskId={selectedTaskId} onDetach={reviewWindow.available && !reviewWindow.opening ? view => void reviewWindow.detach(view) : undefined} open={activeView === "conversation" && reviewOpen && !reviewWindow.detached} fileRequest={reviewFileRequest} onClose={() => setReviewOpen(false)}
           onEditProject={selectedProject && client.updateProject ? () => setEditingProject(selectedProject) : undefined} />
       </AgentQuotaContext.Provider></PendingExecutorContext.Provider>
 

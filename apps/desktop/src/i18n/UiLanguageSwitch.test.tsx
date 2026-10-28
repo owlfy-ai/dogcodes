@@ -5,6 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
 import { DemoCoreClient } from "../demoClient";
 import { UI_LANGUAGE_KEY } from "./index";
+import { invoke } from "@tauri-apps/api/core";
+
+vi.mock("@tauri-apps/api/core", async importOriginal => ({
+  ...await importOriginal<typeof import("@tauri-apps/api/core")>(),
+  invoke: vi.fn(),
+}));
 
 let root: Root, element: HTMLDivElement, client: DemoCoreClient;
 
@@ -67,9 +73,32 @@ describe("UiLanguage switching across international languages", () => {
     const navigation = element.querySelector(".primary-nav")!;
     const entries = [...navigation.querySelectorAll("button")];
     expect(entries.map(button => button.textContent)).toEqual([expect.stringContaining("New conversation"), expect.stringContaining("Agent Management"), "Connect phone"]);
-    expect(entries[2].getAttribute("aria-haspopup")).toBe("dialog");
+    expect(entries[2].hasAttribute("aria-haspopup")).toBe(false);
     await click(trigger);
     expect(document.querySelector(".preferences-popover")?.textContent).not.toContain("Connect phone");
+  });
+
+  it("opens phone pairing as a page and cancels its invitation only when navigating away", async () => {
+    vi.mocked(invoke).mockClear().mockResolvedValue({ configured: false, connected: false, devices: [] });
+    const entries = [...element.querySelectorAll<HTMLButtonElement>(".primary-nav button")];
+    await click(entries[2]);
+    expect(element.querySelector(".global-content > .remote-page")?.getAttribute("aria-label")).toBe(entries[2].textContent);
+    expect(element.querySelector(".task-heading h1")?.textContent).toBe(entries[2].textContent);
+    expect(entries[2].getAttribute("aria-current")).toBe("page");
+    expect(element.querySelector('[role="dialog"]')).toBeNull();
+    expect(element.querySelector(".composer")).toBeNull();
+    await click(element.querySelector(".remote-primary")!);
+    const calls = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "core_remote_control")
+      .map(([, args]) => (args as { call: { type: string; dialogId?: string } }).call);
+    const invitation = calls().find(call => call.type === "invite")!;
+    await click(entries[2]);
+    await act(async () => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    expect(element.querySelector(".remote-page")).not.toBeNull();
+    expect(calls().filter(call => call.type === "cancel_invitation")).toHaveLength(0);
+    await click(entries[1]);
+    expect(element.querySelector(".remote-page")).toBeNull();
+    expect(element.querySelector(".agent-management")).not.toBeNull();
+    expect(invoke).toHaveBeenCalledWith("core_remote_control", { call: { type: "cancel_invitation", dialogId: invitation.dialogId } });
   });
 
   it("switches interface language to Japanese", async () => {

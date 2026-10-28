@@ -1,40 +1,24 @@
-.remote-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: #0006;
-  backdrop-filter: blur(6px);
-}
-.remote-modal {
-  width: min(760px, 100%);
-  max-height: calc(100dvh - 48px);
+.conversation-column > .workspace.remote-page {
+  display: block;
   overflow: auto;
-  box-sizing: border-box;
-  padding: 28px;
-  border: 1px solid var(--line);
-  border-radius: 22px;
-  background: var(--panel);
-  color: inherit;
-  box-shadow: 0 24px 90px #0004;
-  font-size: .8125rem;
-  outline: none;
+  padding: 36px clamp(24px, 5vw, 72px);
 }
-.remote-modal svg { width: 20px; height: 20px; flex: none; }
-.remote-modal button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: inherit; cursor: pointer; transition: background .15s, border-color .15s; }
-.remote-modal button:disabled { cursor: default; opacity: .5; }
-.remote-header { display: flex; align-items: center; gap: 14px; margin-bottom: 26px; }
+.remote-page-content {
+  width: min(900px, 100%);
+  margin: 0 auto;
+  color: inherit;
+  font-size: .8125rem;
+}
+.remote-page svg { width: 20px; height: 20px; flex: none; }
+.remote-page button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: inherit; cursor: pointer; transition: background .15s, border-color .15s; }
+.remote-page button:disabled { cursor: default; opacity: .5; }
+.remote-header { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
 .remote-heading-icon, .remote-device-icon { display: grid; place-items: center; flex: none; border: 1px solid var(--line); background: var(--panel-raised); border-radius: 13px; width: 46px; height: 46px; }
 .remote-heading-icon svg { width: 25px; height: 25px; }
-.remote-header h2 { margin: 0 0 5px; font-size: 1.1875rem; font-weight: 650; letter-spacing: -.025em; }
 .remote-header p { margin: 0; color: var(--muted); line-height: 1.5; }
-.remote-modal .remote-close { width: 30px; height: 30px; margin-left: auto; padding: 5px; align-self: flex-start; border: 0; border-radius: 7px; background: transparent; color: var(--muted); }
-.remote-close:hover { background: var(--panel-raised); }
-.remote-pairing-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, .9fr); gap: 30px; }
+.remote-pairing-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, .9fr); gap: 32px; padding: 28px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
 .remote-setup { min-width: 0; padding: 4px 0; }
-.remote-modal h3 { margin: 0; font-size: .875rem; font-weight: 600; }
+.remote-page h2 { margin: 0; font-size: 1rem; font-weight: 600; letter-spacing: -.02em; }
 .remote-description { margin: 10px 0 16px; color: var(--muted); line-height: 1.7; }
 .remote-steps { display: grid; gap: 10px; margin: 0 0 22px; padding: 0; list-style: none; counter-reset: remote-step; }
 .remote-steps li { display: flex; align-items: flex-start; gap: 9px; line-height: 1.6; counter-increment: remote-step; }
@@ -48,7 +32,7 @@
 .remote-connection.connected { color: inherit; }
 .remote-connection.connected > span { background: #639e57; }
 .remote-connection.disconnected > span { background: #c35b4a; }
-.remote-modal .remote-primary { width: 100%; margin-top: 16px; min-height: 40px; padding: 10px 14px; border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: 9px; background: CanvasText; color: Canvas; font-weight: 550; }
+.remote-page .remote-primary { width: 100%; margin-top: 16px; min-height: 40px; padding: 10px 14px; border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: 9px; background: CanvasText; color: Canvas; font-weight: 550; }
 .remote-primary:hover:not(:disabled) { opacity: .85; }
 .remote-trust-note { display: flex; align-items: flex-start; gap: 7px; margin: 15px 0 0; color: var(--muted); font-size: .6875rem; line-height: 1.65; }
 .remote-trust-note svg { width: 15px; height: 18px; }
@@ -59,13 +43,13 @@
 .remote-qr-panel > p, .remote-qr-panel > small { margin: 8px 0 0; max-width: 230px; color: var(--muted); font-size: .6875rem; line-height: 1.65; }
 .remote-qr-image { width: min(100%, 212px); margin: 0 0 15px; padding: 8px; box-sizing: border-box; border: 1px solid #0001; border-radius: 12px; background: white; }
 .remote-qr-image img { display: block; width: 100%; height: auto; border-radius: 5px; }
-.remote-modal .remote-copy { margin-top: 13px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: inherit; font-size: .6875rem; }
+.remote-page .remote-copy { margin-top: 13px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: inherit; font-size: .6875rem; }
 .remote-copy svg { width: 14px; height: 14px; }
 .remote-copy:hover { border-color: var(--muted); }
 .remote-error { margin-top: 20px; padding: 12px 14px; border: 1px solid #c35b4a55; border-radius: 9px; background: #c35b4a0a; color: color-mix(in srgb, #c35b4a 75%, CanvasText); line-height: 1.65; overflow-wrap: anywhere; }
 .remote-error strong { font-weight: 550; }
 .remote-error p { margin: 5px 0 0; font-size: .75rem; }
-.remote-devices { margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--line); }
+.remote-devices { margin-top: 24px; padding: 24px 28px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
 .remote-devices > header { display: flex; align-items: center; gap: 8px; }
 .remote-device-count { display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 4px; box-sizing: border-box; border-radius: 6px; background: var(--panel-raised); color: var(--muted); font-size: .6875rem; }
 .remote-devices ul { margin: 12px 0 0; padding: 0; list-style: none; }
@@ -78,9 +62,8 @@
 .remote-revoke { margin-left: auto; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--muted); }
 .remote-revoke:hover:not(:disabled) { background: #c35b4a0a; border-color: #c35b4a55; color: #c35b4a; }
 .remote-empty { margin: 14px 0 0; padding: 18px 12px; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); text-align: center; font-size: .75rem; }
-@media (max-width: 640px) {
-  .remote-modal-backdrop { padding: 12px; }
-  .remote-modal { max-height: calc(100dvh - 24px); padding: 20px; }
-  .remote-pairing-layout { grid-template-columns: 1fr; gap: 20px; }
-  .remote-qr-panel { min-height: 220px; }
+@container (max-width: 650px) {
+  .remote-pairing-layout { grid-template-columns: 1fr; gap: 24px; padding: 22px; }
+  .remote-qr-panel { min-height: 240px; }
+  .remote-devices { padding: 22px; }
 }

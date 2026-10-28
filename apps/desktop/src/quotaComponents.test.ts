@@ -19,6 +19,25 @@ const quota: NonNullable<QuotaSnapshotView["quota"]> = {
 };
 
 describe("quota components", () => {
+  it("shows ZCode account balances even when model execution is not configured", () => {
+    const html = renderToStaticMarkup(createElement(components.QuotaPanel, {
+      management: true,
+      views: [{ providerId: "zcode", installationId: "ins_zcode", quota: {
+        ...quota, context: null, planType: "BigModel", staleAfterUnixMs: Date.now() + 60_000,
+        windows: [
+          { id: "5h", windowMinutes: 300, usedPercent: 1 },
+          { id: "weekly", windowMinutes: 10080, usedPercent: 10 },
+        ],
+      } }],
+      installations: [{ providerId: "zcode", installationId: "ins_zcode", status: "not_configured", version: "0.16.9" }],
+    }));
+    expect(html).toContain("99%");
+    expect(html).toContain("90%");
+    expect(html).toContain('aria-label="5 小时剩余额度"');
+    expect(html).toContain('aria-label="每周剩余额度"');
+    expect(html).not.toContain("暂无额度读数");
+  });
+
   it("separates configuration from authentication and keeps diagnostics alongside session-only data", () => {
     const configuration = renderToStaticMarkup(createElement(components.QuotaPanel, {
       management: true,

@@ -16,26 +16,21 @@ type Status = {
 };
 type LocalError = "qrFailed" | "copyFailed";
 
-function PairingIcon({ kind }: { kind: "qr" | "shield" | "copy" | "close" }) {
+function PairingIcon({ kind }: { kind: "qr" | "shield" | "copy" }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {kind === "qr" ? <><rect x="3" y="3" width="6" height="6" rx="1" /><rect x="15" y="3" width="6" height="6" rx="1" /><rect x="3" y="15" width="6" height="6" rx="1" /><path d="M15 15h3v3h3m-6 3h3m3-9v3M3 12h3m6-9v3m0 6v6" /></>
       : kind === "shield" ? <><path d="m12 3 8 3v6c0 4-4 7-8 9-4-2-8-5-8-9V6z" /><path d="m8.5 12 2.5 2.5 4.5-5" /></>
-      : kind === "copy" ? <><rect x="8" y="8" width="12" height="13" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></>
-      : <path d="m6 6 12 12M18 6 6 18" />}
+      : <><rect x="8" y="8" width="12" height="13" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></>}
   </svg>;
 }
 
-export function RemoteDevices({ onClose, lang }: { onClose: () => void; lang?: ResolvedLanguage }) {
+export function RemoteDevices({ lang }: { lang?: ResolvedLanguage }) {
   const { resolvedLanguage } = useI18n();
   const language = lang ?? resolvedLanguage;
   const tr = (key: string, params?: Record<string, string | number>) => t(`remoteDevices.${key}`, params, language);
-  const titleId = useId();
   const descriptionId = useId();
   const serviceId = useId();
-  const dialog = useRef<HTMLElement>(null);
   const dialogId = useRef("");
-  const close = useRef(onClose);
-  close.current = onClose;
   const mounted = useRef(false);
   const [service, setService] = useState("http://127.0.0.1:8787");
   const [status, setStatus] = useState<Status>();
@@ -65,8 +60,6 @@ export function RemoteDevices({ onClose, lang }: { onClose: () => void; lang?: R
     let closed = false;
     const id = crypto.randomUUID();
     dialogId.current = id;
-    const previousFocus = document.activeElement;
-    dialog.current?.focus();
     const refresh = () => {
       void invoke<Status>("core_remote_control", { call: { type: "status" } }).then(value => {
         if (closed) return;
@@ -76,28 +69,13 @@ export function RemoteDevices({ onClose, lang }: { onClose: () => void; lang?: R
     };
     refresh();
     const timer = setInterval(() => { refresh(); setTime(Date.now()); }, 1500);
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); close.current(); }
-      if (event.key !== "Tab") return;
-      const controls = dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [tabindex="0"]');
-      if (!controls?.length) return;
-      const first = controls[0], last = controls[controls.length - 1];
-      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) {
-        event.preventDefault(); last.focus();
-      } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog.current)) {
-        event.preventDefault(); first.focus();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
     return () => {
       mounted.current = false;
       closed = true;
       clearInterval(timer);
-      document.removeEventListener("keydown", onKeyDown);
       void invoke("core_remote_control", { call: { type: "cancel_invitation", dialogId: id } }).catch(() => {});
-      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
     };
-    // Each open dialog owns its invitation, independent of language and callback changes.
+    // Keep the invitation while on this page; leaving cancels only this page's invitation.
   }, []);
 
   useEffect(() => {
@@ -129,18 +107,15 @@ export function RemoteDevices({ onClose, lang }: { onClose: () => void; lang?: R
   const connection = status?.connected ? "connected" : failure ? "disconnected" : "connecting";
   const expiry = status?.invitation ? new Intl.DateTimeFormat(language, { hour: "numeric", minute: "2-digit" }).format(status.invitation.expiresAt * 1000) : "";
 
-  return <div className="remote-modal-backdrop" onMouseDown={event => {
-    if (event.target === event.currentTarget) onClose();
-  }}>
-    <section ref={dialog} className="remote-modal" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} tabIndex={-1}>
+  return <section className="workspace remote-page" aria-label={tr("title")} aria-describedby={descriptionId}>
+    <div className="remote-page-content">
       <header className="remote-header">
         <span className="remote-heading-icon"><SidebarNavIcon kind="phone" /></span>
-        <div><h2 id={titleId}>{tr("title")}</h2><p id={descriptionId}>{tr("subtitle")}</p></div>
-        <button className="remote-close" type="button" onClick={onClose} aria-label={t("common.close", undefined, language)} data-tooltip={t("common.close", undefined, language)}><PairingIcon kind="close" /></button>
+        <p id={descriptionId}>{tr("subtitle")}</p>
       </header>
       <div className="remote-pairing-layout">
         <div className="remote-setup">
-          <h3>{tr("setupTitle")}</h3>
+          <h2>{tr("setupTitle")}</h2>
           <p className="remote-description">{tr("description")}</p>
           <ol className="remote-steps"><li>{tr("stepOpen")}</li><li>{tr("stepScan")}</li></ol>
           <label className="remote-service-label" htmlFor={serviceId}>{tr("service")}</label>
@@ -168,7 +143,7 @@ export function RemoteDevices({ onClose, lang }: { onClose: () => void; lang?: R
       </div>
       {(failure || localError) && <div className="remote-error" role="alert"><strong>{tr(localError ?? "requestFailed")}</strong>{failure && <p>{failure}</p>}</div>}
       <section className="remote-devices" aria-label={tr("pairedDevices")}>
-        <header><h3>{tr("pairedDevices")}</h3>{status && <span className="remote-device-count">{devices.length}</span>}</header>
+        <header><h2>{tr("pairedDevices")}</h2>{status && <span className="remote-device-count">{devices.length}</span>}</header>
         {devices.length ? <ul>{devices.map(device => <li className="remote-device" key={device.deviceId}>
           <span className="remote-device-icon"><SidebarNavIcon kind="phone" /></span>
           <div className="remote-device-identity"><strong>{tr("phone")}</strong><span>{device.publicKey.slice(0, 12)}</span></div>
@@ -176,6 +151,6 @@ export function RemoteDevices({ onClose, lang }: { onClose: () => void; lang?: R
             onClick={() => void call({ type: "revoke", deviceId: device.deviceId })}>{tr("revoke")}</button>
         </li>)}</ul> : <p className="remote-empty">{tr(status ? "emptyDevices" : "loading")}</p>}
       </section>
-    </section>
-  </div>;
+    </div>
+  </section>;
 }

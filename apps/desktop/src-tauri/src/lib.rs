@@ -1930,9 +1930,8 @@ async fn register_ready_antigravity_drivers(
     }
 }
 
-/// Registers the app-server driver for `ZCode` installations. The probe is
-/// zero-model-call; a missing `zcode login` surfaces as `NotConfigured`
-/// (the desktop app's own config is intentionally not shared with the CLI).
+/// Registers the native account monitor independently of model readiness.
+/// Only a successful zero-model-call probe registers the execution driver.
 async fn register_ready_zcode_drivers(
     core: Arc<Core>,
     manifest: &ProviderManifest,
@@ -1956,6 +1955,17 @@ async fn register_ready_zcode_drivers(
             app_binary: std::path::PathBuf::from(&installation.executable),
             cli_script: std::path::PathBuf::from(&cli_script),
         };
+        // The personal account's monitor GET does not need a model catalog or
+        // an app-server session. Keep it available when model readiness fails.
+        if let Ok(monitor) = ZcodeDriver::new(
+            manifest.id.as_str(),
+            installation.installation_id.as_str(),
+            launch.clone(),
+            installation.version.clone(),
+            zcode_driver::verified_resume_capability(installation.version.as_deref()),
+        ) {
+            core.register_quota_provider(Arc::new(monitor)).await;
+        }
         let readiness = ZcodeDriver::connect_ready(
             manifest.id.as_str(),
             installation.installation_id.as_str(),
@@ -1969,8 +1979,7 @@ async fn register_ready_zcode_drivers(
             Ok(driver) => {
                 let driver = Arc::new(driver);
                 core.register_driver(driver.clone()).await;
-                // Local agent-db usage stats answer quota reads; windows stay
-                // honestly empty (no subscription API in the protocol).
+                // Reuse the ready driver for both account and task-scoped usage.
                 core.register_quota_provider(driver).await;
                 if installation.status != InstallationStatus::Ready {
                     record_readiness(
@@ -2052,6 +2061,92 @@ fn is_missing_from_successful_scan(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn zcode_account_quota_survives_model_readiness_failure() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("Contents/MacOS/ZCode");
+        let resources = directory.path().join("Contents/Resources");
+        std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(resources.join("glm")).unwrap();
+        std::fs::create_dir_all(resources.join("config/provider")).unwrap();
+        std::fs::write(resources.join("glm/zcode.cjs"), "").unwrap();
+        std::fs::write(resources.join("config/provider/zcode-builtin.json"), "{}").unwrap();
+        // Isolated native/account helpers. No user credentials or provider calls.
+        std::fs::write(&executable, r#"#!/bin/sh
+if [ "$1" = "-e" ]; then
+  input=$(cat)
+  case "$input" in
+    *quota_identity*) echo '{"identity":"fixture-account"}' ;;
+    *'"action":"quota"'*) echo '{"identity":"fixture-account","snapshot":{"windows":[{"id":"5h","scope":null,"windowMinutes":300,"usedPercent":13,"resetsAtUnix":null}],"context":null,"collectedAtUnixMs":1,"staleAfterUnixMs":60001,"planType":"BigModel","source":"native_credentials_pull","confidence":"provider_reported","parserVersion":"fixture"}}' ;;
+    *) echo '{"overlay":{"revision":"fixture","providers":{},"states":{}},"authorized":{},"checkedAt":0,"version":"fixture"}' ;;
+  esac
+  exit 0
+fi
+while IFS= read -r request; do
+  id=$(printf '%s' "$request" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  case "$request" in
+    *provider/updateAccountConfig*) echo "{\"id\":$id,\"result\":{\"receivedRevision\":\"fixture\"}}" ;;
+    *) echo "{\"id\":$id,\"error\":{\"code\":-32603,\"message\":\"Model config is missing\"}}" ;;
+  esac
+done
+"#).unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        #[cfg(target_os = "macos")]
+        {
+            let helper = directory
+                .path()
+                .join("Contents/Frameworks/ZCode Helper.app/Contents");
+            std::fs::create_dir_all(helper.join("MacOS")).unwrap();
+            std::fs::copy(&executable, helper.join("MacOS/ZCode Helper")).unwrap();
+            let mut metadata = plist::Dictionary::new();
+            metadata.insert("LSUIElement".into(), plist::Value::Boolean(true));
+            plist::Value::Dictionary(metadata)
+                .to_file_xml(helper.join("Info.plist"))
+                .unwrap();
+        }
+        let manifest =
+            ProviderManifest::parse_toml(include_str!("../../../../drivers/manifests/zcode.toml"))
+                .unwrap();
+        let core = Arc::new(Core::new(Arc::new(SqliteStore::open_in_memory().unwrap())));
+        let mut probe = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
+            RecordInstallationProbe {
+                provider_id: "zcode".into(),
+                executable: executable.to_string_lossy().into_owned(),
+                fingerprint: "fixture".into(),
+                status: InstallationStatus::Installed,
+                version: Some("0.16.9".into()),
+                version_text: Some("0.16.9".into()),
+                diagnostic: None,
+                elapsed_millis: 0,
+            },
+        ));
+        probe.actor = ActorRef::SystemRecovery;
+        core.execute(probe).await.unwrap();
+        register_ready_zcode_drivers(
+            core.clone(),
+            &manifest,
+            &BTreeSet::from([executable.to_string_lossy().into_owned()]),
+        )
+        .await;
+        let installation = core.bootstrap().await.unwrap().installations.remove(0);
+        assert_eq!(installation.status, InstallationStatus::NotConfigured);
+        assert!(core.registered_executors().await.is_empty());
+        // Exercise the desktop RPC entry point, not just the helper directly.
+        let client = daemon::CoreClient::local(core);
+        let views = client
+            .quota_snapshots_for(None, Some(installation.installation_id.as_str()), true)
+            .await
+            .unwrap();
+        assert_eq!(views.len(), 1);
+        assert!(views[0].diagnostic.is_none(), "{views:?}");
+        assert_eq!(
+            views[0].quota.as_ref().unwrap().windows[0].used_percent,
+            Some(13.0)
+        );
+    }
 
     #[cfg(unix)]
     #[tokio::test]

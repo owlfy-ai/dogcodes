@@ -7,11 +7,11 @@ vi.mock("@tauri-apps/api/core",()=>({invoke}));
 vi.mock("qrcode",()=>({default:{toDataURL:vi.fn(async()=>"data:image/png;base64,fixture")}}));
 import { RemoteDevices } from "./RemoteDevices";
 describe("remote device pairing",()=>{
-  it("closes the same dialog identity that created its invitation",async()=>{
+  it("cancels the same invitation identity when leaving the page",async()=>{
     (globalThis as Record<string,unknown>).IS_REACT_ACT_ENVIRONMENT=true;
     invoke.mockResolvedValue({configured:false,connected:false,devices:[]});
     const node=document.createElement("div");document.body.append(node);const root=createRoot(node);
-    await act(async()=>{root.render(createElement(StrictMode,null,createElement(RemoteDevices,{onClose:()=>{}})));});
+    await act(async()=>{root.render(createElement(StrictMode,null,createElement(RemoteDevices,{})));});
     const button=[...node.querySelectorAll("button")].find(b=>b.textContent==="显示配对二维码")!;
     await act(async()=>{button.click();});
     const created=invoke.mock.calls.find(([,args])=>args?.call?.type==="invite")![1].call;
@@ -26,7 +26,7 @@ describe("remote device pairing",()=>{
     (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
     invoke.mockResolvedValue({ configured: true, connected: false, devices: [], error: "电脑登记凭证已失效" });
     const node = document.createElement("div"); document.body.append(node); const root = createRoot(node);
-    await act(async () => { root.render(createElement(RemoteDevices, { onClose: () => {} })); });
+    await act(async () => { root.render(createElement(RemoteDevices, {})); });
     expect(node.textContent).toContain("未连接接入服务");
     expect(node.textContent).not.toContain("正在连接接入服务");
     expect(node.querySelector('[role="alert"]')?.textContent).toContain("电脑登记凭证已失效");
@@ -39,13 +39,12 @@ describe("remote device pairing",()=>{
     const expiresAt = Math.floor(Date.now() / 1000) + 300;
     invoke.mockResolvedValue({ configured: true, connected: true, devices: [], invitation: { uri: "dogcodes://pair#fixture", expiresAt } });
     const node = document.createElement("div"); document.body.append(node); const root = createRoot(node);
-    const onClose = vi.fn();
-    await act(async () => { root.render(createElement(RemoteDevices, { onClose, lang: "zh-CN" })); });
-    expect(node.querySelector("h2")?.textContent).toBe("连接手机");
+    await act(async () => { root.render(createElement(RemoteDevices, { lang: "zh-CN" })); });
+    expect(node.querySelector(".remote-page")?.getAttribute("aria-label")).toBe("连接手机");
     expect(node.querySelector("img")?.alt).toBe("手机配对二维码");
     const calls = invoke.mock.calls.length;
-    await act(async () => { root.render(createElement(RemoteDevices, { onClose, lang: "en" })); });
-    expect(node.querySelector("h2")?.textContent).toBe("Connect phone");
+    await act(async () => { root.render(createElement(RemoteDevices, { lang: "en" })); });
+    expect(node.querySelector(".remote-page")?.getAttribute("aria-label")).toBe("Connect phone");
     expect(node.querySelector("img")?.alt).toBe("Phone pairing QR code");
     expect(node.textContent).toContain(`Valid until ${new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(expiresAt * 1000)}`);
     expect(node.textContent).not.toMatch(/[\u3400-\u9fff]/);
@@ -60,7 +59,7 @@ describe("remote device pairing",()=>{
     invoke.mockResolvedValue({ configured: true, connected: true, devices: [], invitation: { uri: "dogcodes://pair#fixture", expiresAt } });
     const node = document.createElement("div"); document.body.append(node); const root = createRoot(node);
     try {
-      await act(async () => { root.render(createElement(RemoteDevices, { onClose: () => {}, lang: "en" })); });
+      await act(async () => { root.render(createElement(RemoteDevices, { lang: "en" })); });
       expect(node.querySelector("img")).not.toBeNull();
       expect(node.textContent).toContain("Copy pairing link");
       await act(async () => { await vi.advanceTimersByTimeAsync(4500); });

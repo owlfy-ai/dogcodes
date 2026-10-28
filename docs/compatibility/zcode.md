@@ -4,7 +4,46 @@
 > [`../implementation/beta-agent-acceptance.md`](../implementation/beta-agent-acceptance.md) 为准；
 > 本文只维护 ZCode 协议事实与能力边界。
 
-更新日期：2026-10-20（原生账号权益、模型目录及冷恢复）
+更新日期：2026-10-28（新版原生登录态额度监控）
+
+## 2026-10-28 新版个人项目认证
+
+个人 Coding Plan 不再要求旧版持久化 API key：该槽缺失且原生个人连接已选中时，
+从当前 OAuth 账号读取原生项目位置，核对它属于当前账号的非团队项目，并以原生
+`POST .../api_keys/<id>/access_tokens` 获取短期项目 Token。没有位置缓存时按原生规则
+发现个人项目，并只复用名为 `zcode-api-key` 的已有 Key；缓存 Key 已删除时重新查询一次。
+尚未在 ZCode 初始化个人 Key 的账号须先在原生客户端完成连接，本实现不创建持久 Key。
+
+模型检测用项目 Token 查询有效订阅，再将权益交给原生 CLI 生成模型目录。运行时每次
+凭据回调都取得新 Token，支持原生拒绝后的有范围重试；返回 `apiKeyId` 和与原生一致的
+账号 scope。Token、项目 Key 身份不进入界面、事件或持久化配置。账号、登录 Token、
+Start JWT、原生项目位置或连接选择变化时拒绝旧授权；远端项目/Key 变化也不能静默
+跨越已有授权。旧版个人 Key 路径继续保留，团队项目不放行，个人套餐不触发验证码。
+
+本机 BigModel 已通过真实原生就绪检测、完整目录和运行时凭据回调，读到 GLM-5.3 与
+GLM-5.3-Flash；没有发送真实模型输入。Z.ai 的项目认证分支使用隔离 fixture 验证，
+尚未用真实 Z.ai 账号验收。Node 33 项、Rust Driver 76 项回归通过。
+桌面 debug App 已重新构建并加载，真实新对话的 Agent 列表可选 ZCode，模型菜单可选
+GLM-5.3 与 GLM-5.3-Flash。未通过隐藏未就绪状态或强制放行来恢复菜单。
+
+## 2026-10-28 额度监控兼容修复
+
+新版 Desktop 的个人套餐项目 Token 不再写入旧版个人 API key 槽，原实现因此把已登录
+账号误判为 `quota_login_required`。额度查询在该槽缺失时改用当前账号 OAuth access token，
+以 Bearer 认证向该账号所属业务域的 `/api/monitor/usage/quota/limit` 发起只读 GET；
+旧版个人 API key 查询仍保留。不签发项目 Token、不修改原生凭据，不把 OAuth 登录 Token
+用于模型请求。账号、登录 Token 或连接选择发生变化时丢弃查询结果及旧身份缓存。
+
+本机 BigModel 真实只读查询已取得 5 小时和每周窗口；Z.ai 分支通过隔离 fixture 验证，
+尚未用真实 Z.ai 账号验证。Node 回归 23 项、Rust Driver 回归 76 项及
+`quota::tests::real_native_credentials_quota` 本机只读验收通过。
+源码更新后需重新构建并重启后台 Core 才能加载内嵌的查询脚本。
+
+管理页补充修复：原先只有模型就绪后才注册额度 Provider，Core 查询也仅枚举可执行
+Driver；因此原生模型目录不可用时，额度接口返回空列表，卡片仍无读数。现在发现
+ZCode 安装后独立注册账号监控，Core 合并额度 Provider 与执行 Driver 的安装身份并去重。
+模型未就绪仍保持原状态，不影响个人账号额度读取，也不因此开放模型执行。
+回归覆盖未就绪时的桌面额度 RPC、安装筛选/去重/移除，以及未配置卡片的双窗口展示。
 
 ## 原生账号与套餐
 
@@ -12,7 +51,7 @@
 通过 `provider/updateAccountConfig` 交给原生 CLI。模型列表来自原生
 `settings.model.available`，不在 dog.codes 中维护固定模型名单。
 
-- 个人 Coding Plan：支持 BigModel 与 Z.AI；使用对应账号的个人套餐密钥查询订阅，
+- 个人 Coding Plan：支持 BigModel 与 Z.AI；使用对应账号的个人套餐密钥或短期项目 Token 查询订阅，
   仅当前选择的个人连接可以响应 `interaction/requestProviderRuntimeHeaders`。
   不借用其他账号、团队套餐或自定义 Provider 的密钥，不触发 Start Plan 验证。
 - Start Plan：按官方 balance 的有效套餐和模型能力提供权益；运行时使用原生 JWT。
@@ -133,7 +172,8 @@ Agent 一直在等待 MCP 认证头，不会超时也不会报错，事件流静
 - `usage/stats`（`range: 7d`）：本地 agent-db 统计（零模型调用）——30s TTL、`native_pull`。
   包含：totalTokens（665M）、cacheReadTokens（648M，97.6% 命中）、turns/tools/activeDays。
   **不是订阅额度窗口**。
-- **协议无订阅窗口 API**：没有 5h/周限额、重置时间等概念。windows 如实为空。
+- **CLI 协议无订阅窗口 API**：5h/周窗口及重置时间由上文的原生凭据监控 GET 获取；
+  无法取得订阅快照时不以本地 token 统计推算余额。
 - 上下文：`session/read` 返回 `projection.contextUsed/contextWindow`（1M 窗口），
   Turn 终态后按 native session id 保存。真实验收断言 `used_tokens > 0`、
   `window_tokens > 0`，通过。
