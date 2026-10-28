@@ -16,7 +16,6 @@ vi.mock("@tauri-apps/api/core", async importOriginal => ({
 vi.mock("./gitOperations", async importOriginal => ({ ...await importOriginal<typeof import("./gitOperations")>(), gitOperations: {
   run: (args: Record<string, unknown>) => tauri.invoke("core_review_git_action", args),
   advance: (taskId: string, operationId: string) => tauri.invoke("core_review_git_advance", { taskId, operationId }),
-  subscribe: () => () => {}, snapshot: () => "[]",
 } }));
 vi.mock("./ProjectRunPanel", () => ({ ProjectRunPanel: () => <div>运行命令</div> }));
 

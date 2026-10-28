@@ -2,6 +2,8 @@
 
 日期：2026-10-16。对应 DT-09，并衔接 DT-08/10。范围是 commit、push、pull、sync；不是全部 Git/文件副作用验收完成。
 
+2026-10-28 界面调整：按用户要求移除右侧边栏的独立 Git 操作详情卡片，包括操作说明、状态、核实/重发、继续/重试推送和结束操作按钮。`GitOperationRecovery` 组件及面板挂载已删除；普通 Git 操作入口和底层请求身份、回执处理保留。下文恢复面板交互为历史实现记录，相关底层工作流回归现位于 `ReviewGitWorkflow.test.tsx`。
+
 ## 行为与服务边界
 
 - `review/git_operations.rs` 在共享 ReviewHost 下保存 `review/git-operations/<task>/<operation>.json`。请求绑定会话、根目录、action、提交说明、暂存选择和快照；operationId 为规范 UUID。同 ID 不同请求拒绝，同请求有终态则返回原结果，不重复执行 Git。

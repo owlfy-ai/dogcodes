@@ -84,7 +84,7 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
       if (mounted.current) {
         setStageAll(null);
         if (cause instanceof GitResultUnknown && committed) {
-          // The persistent recovery panel owns this uncertain continuation.
+          // Preserve the original operation identity while its result is uncertain.
           setPushPending(false); setError({ message: "提交已完成，推送结果待核实。", detail: cause.message });
         } else {
           if (cause instanceof GitPushFailed) setPushPending(false);

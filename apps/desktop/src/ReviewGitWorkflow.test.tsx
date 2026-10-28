@@ -4,16 +4,14 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ReviewGitActions } from "./ReviewGitActions";
-import { GitOperationRecovery } from "./GitOperationRecovery";
 import { gitOperations, type GitReceipt, type GitRequest } from "./gitOperations";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-vi.mock("./reviewWatch", () => ({ subscribeReviewChanges: () => () => {} }));
 let host: HTMLDivElement, root: Root;
 const changed = vi.fn();
 beforeEach(() => { localStorage.clear(); vi.resetAllMocks(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); host = document.createElement("div"); document.body.append(host); root = createRoot(host); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); localStorage.clear(); vi.unstubAllGlobals(); });
 const click = async (text: string) => act(async () => { const button = [...host.querySelectorAll("button")].find(node => node.textContent === text); expect(button).toBeTruthy(); button!.click(); });
-it("recovers the real composer commit-and-push workflow after reopening without committing twice", async () => {
+it("preserves the composer commit-and-push workflow for receipt-based continuation without committing twice", async () => {
   let offline = true; const writes: GitRequest[] = [];
   vi.mocked(invoke).mockImplementation(async (name, args) => {
     if (name === "core_review_git_action") { const request = args as unknown as GitRequest; writes.push(request); throw "reply lost"; }
@@ -25,34 +23,32 @@ it("recovers the real composer commit-and-push workflow after reopening without 
     const request = writes.find(item => item.operationId === (args as { operationId: string }).operationId);
     return request ? { request, outcome: { status: "succeeded", completed: true } } : null;
   });
-  await act(async () => root.render(<><ReviewGitActions taskId="task" root={{ id:"repo", path:"/repo", git:true, scopes:[""] }} snapshotId="snapshot" hasChanges disabled={false} onChanged={changed}/><GitOperationRecovery taskId="task" onChanged={changed}/></>));
+  await act(async () => root.render(<ReviewGitActions taskId="task" root={{ id:"repo", path:"/repo", git:true, scopes:[""] }} snapshotId="snapshot" hasChanges disabled={false} onChanged={changed}/>));
   await act(async () => { const input = host.querySelector("input")!; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "change"); input.dispatchEvent(new Event("input", { bubbles:true })); });
   await click("提交并推送");
   expect(writes.map(item => item.action)).toEqual(["commit"]);
   const saved = gitOperations.entries("task")[0]; expect(saved.intent).toBe("commitPush");
-  // Recreate the view with no composer state or active invocation.
+  // Resolve the original request after the composer has been closed.
   await act(async () => root.render(null)); offline = false;
-  await act(async () => root.render(<GitOperationRecovery taskId="task" onChanged={changed}/>));
-  expect(host.textContent).toContain("提交已完成，尚未推送");
-  await click("继续推送");
+  await gitOperations.check(saved);
+  await gitOperations.continuePush(saved);
   expect(writes.map(item => item.action)).toEqual(["commit", "push"]);
   expect(writes[1].operationId).toBe(saved.nextOperationId);
   expect(gitOperations.entries("task")).toEqual([]);
 });
-it("offers inspection for interrupted operations and never automatically retries or discards an unreceived request", async () => {
+it("inspects interrupted operations without automatically retrying or discarding an unreceived request", async () => {
   vi.mocked(invoke).mockRejectedValue("offline");
   await expect(gitOperations.run({ taskId:"task", rootId:"repo", action:"pull", message:"" })).rejects.toThrow();
   const value = gitOperations.entries("task")[0];
   vi.mocked(invoke).mockReset().mockResolvedValue(null);
-  await act(async () => root.render(<GitOperationRecovery taskId="task" onChanged={changed}/>));
-  expect(host.textContent).toContain("重发原请求");
-  expect(host.textContent).not.toContain("结束此次操作");
+  expect(await gitOperations.check(value)).toBeNull();
+  expect(gitOperations.entries("task")).toHaveLength(1);
   expect(vi.mocked(invoke).mock.calls.every(([name]) => name === "core_review_git_operation")).toBe(true);
   vi.mocked(invoke).mockResolvedValue({ request:value.request, outcome:{status:"unknown"} });
-  await click("核实结果");
-  expect(host.textContent).not.toContain("重发原请求");
+  expect((await gitOperations.check(value))?.outcome.status).toBe("unknown");
+  expect(gitOperations.entries("task")).toHaveLength(1);
   vi.mocked(invoke).mockResolvedValue({ request:value.request, outcome:{status:"unknown"}, closed:true });
-  await click("已核对仓库，结束此次操作");
+  await gitOperations.acknowledge(value);
   expect(gitOperations.entries("task")).toEqual([]);
   expect(invoke).toHaveBeenLastCalledWith("core_review_git_close", { taskId: "task", operationId: value.request.operationId });
 });
@@ -90,25 +86,21 @@ it("keeps a rejected push recoverable after closing the composer and retries onl
   await act(async () => root.render(<ReviewGitActions taskId="task" root={{ id:"repo", path:"/repo", git:true, scopes:[""] }} snapshotId="snapshot" hasChanges disabled={false} onChanged={changed}/>));
   await act(async () => { const input = host.querySelector("input")!; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "change"); input.dispatchEvent(new Event("input", { bubbles:true })); });
   await click("提交并推送");
-  expect([...host.querySelectorAll("button")].some(button => button.textContent === "重试推送")).toBe(false); // Recovery owns the durable retry.
+  expect([...host.querySelectorAll("button")].some(button => button.textContent === "重试推送")).toBe(false); // A failed push retains its original receipt for a durable retry.
   const saved = gitOperations.entries("task")[0];
   expect(saved.committed).toBe(true); expect(saved.receipt?.outcome.status).toBe("failed");
   await act(async () => root.render(null));
-  await act(async () => root.render(<GitOperationRecovery taskId="task" onChanged={changed}/>));
-  expect(host.textContent).toContain("提交已完成"); expect(host.textContent).toContain("remote rejected");
-  await click("重试推送");
+  await gitOperations.retryPush(saved);
   expect(writes.map(item => item.action)).toEqual(["commit", "push", "push"]);
   expect(writes[2].operationId).toBe(saved.retryOperationId);
   expect(gitOperations.entries("task")).toEqual([]);
 });
-it("keeps a successful commit visible when its continuation target is unavailable", async () => {
+it("retains a successful commit receipt when its continuation target is unavailable", async () => {
   vi.mocked(invoke).mockResolvedValue(true);
   await gitOperations.run({ taskId: "task", rootId: "repo", action: "commit", message: "change" }, "commitPush");
   const pending = gitOperations.entries("task")[0];
   vi.mocked(invoke).mockImplementation(async (_name, args) => (args as { operationId: string }).operationId === pending.request.operationId
     ? { request: pending.request, outcome: { status: "succeeded", completed: true, targetError: "当前分支没有上游" } } : null);
-  await act(async () => root.render(<GitOperationRecovery taskId="task" onChanged={changed}/>));
-  expect(host.textContent).toContain("提交已完成，推送目标待核实");
-  expect(host.textContent).not.toContain("继续推送");
-  expect(host.textContent).toContain("当前分支没有上游");
+  expect((await gitOperations.check(pending))?.outcome).toEqual({ status: "succeeded", completed: true, targetError: "当前分支没有上游" });
+  expect(gitOperations.entries("task")).toHaveLength(1);
 });

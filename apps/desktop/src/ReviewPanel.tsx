@@ -1,4 +1,3 @@
-import { GitOperationRecovery } from "./GitOperationRecovery";
 import { ReviewMutationRecovery } from "./ReviewMutationRecovery";
 import { keepReviewLease } from "./reviewLease";
 import { ReviewWorkspaceBrowser, type ReviewWorkspaceApi } from "./ReviewWorkspaceBrowser";
@@ -361,7 +360,6 @@ function ReviewReader({ taskId, running, onClose, onEditProject, api = reviewCli
       onDetach({ tab, directoryId, rootId, mode, reference, parent, split, filter, fileView, selection, roots });
     }} aria-label="分离为独立窗口" data-tooltip="在独立窗口中查看，可拖至其他显示器"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 7H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" /><rect x="9" y="3" width="12" height="12" rx="2" /><path d="M9 7h12" /></svg></button>}<button type="button" onClick={onClose} aria-label="关闭 Review" data-tooltip={standalone ? "关闭窗口" : "关闭侧栏"}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg></button></div></header>
     {workspaceHeader}
-    <GitOperationRecovery taskId={taskId} visible={visible} onChanged={settled => { setRevision(value => value + 1); if (settled) setPulledRevision(value => value + 1); onWorkspaceChanged?.(); }} />
     <ReviewMutationRecovery taskId={taskId} visible={visible} onChanged={() => { setRevision(value => value + 1); onWorkspaceChanged?.(); }} />
     {runOpened && <div className="review-content" role="tabpanel" aria-label="运行" hidden={tab !== "run"}><Suspense fallback={<ReviewPanelLoading />}><ProjectRunPanel key={taskId} taskId={taskId} visible={visible && tab === "run"} onEditProject={onEditProject} /></Suspense></div>}
     {filesOpened && <div className="review-content" role="tabpanel" aria-label="文件树" hidden={tab !== "files"}><WorkspaceFiles key={taskId} taskId={taskId} visible={visible && tab === "files"} reveal={treeRequest} onEditProject={onEditProject} /></div>}

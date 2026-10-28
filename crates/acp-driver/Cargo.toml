@@ -21,8 +21,8 @@ rusqlite.workspace = true
 zstd = "0.13"
 similar = "2.7"
 tempfile = "3.27.0"
-reqwest = { version = "0.13.4", default-features = false }
-tokio = { workspace = true, features = ["io-util", "net", "process", "sync", "time"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "system-proxy", "socks"] }
+tokio = { workspace = true, features = ["fs", "io-util", "net", "process", "sync", "time"] }
 tokio-stream.workspace = true
 tokio-util = { version = "0.7.17", features = ["compat"] }
 

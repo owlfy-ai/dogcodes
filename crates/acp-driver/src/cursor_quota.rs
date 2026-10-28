@@ -1,246 +1,381 @@
-//! macOS native TUI adapter. Sends /usage only after its local command menu
-//! advertises it; never passes an initial model prompt or reads credentials.
+//! Read-only Cursor `DashboardService` adapter using the CLI's native OAuth store.
+//! Credentials stay in memory; no terminal, model prompt or credential refresh.
 use driver_api::{DriverError, QuotaSnapshot, QuotaWindow};
-use std::path::Path;
+use serde_json::Value;
+use std::{path::PathBuf, time::Duration};
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn parse(text: &str) -> Option<QuotaSnapshot> {
-    let header = regex::Regex::new(r"Usage • ([^\r\n]+?)\s+Resets ([^\r\n]+)").ok()?;
-    let capture = header.captures(text)?;
-    if !text.contains("Esc to close") {
-        return None;
-    }
-    let percent = |label: &str| -> Option<f64> {
-        let pattern = regex::Regex::new(&format!(r"\b(?:{label})\s*:?\s+([0-9]+)% used\b")).ok()?;
-        let used = pattern
-            .captures(text)?
-            .get(1)?
-            .as_str()
-            .parse::<f64>()
-            .ok()?;
-        (used <= 100.0).then_some(used)
+const ENDPOINT: &str = "https://api2.cursor.sh/aiserver.v1.DashboardService/";
+const BODY_LIMIT: usize = 1_048_576;
+
+fn login_required() -> DriverError {
+    DriverError::NotConfigured("Cursor requires login; run `agent login`".into())
+}
+
+fn parse(usage: &Value, plan: &Value) -> Result<QuotaSnapshot, DriverError> {
+    let percent = |key: &str| {
+        usage["planUsage"][key]
+            .as_f64()
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(|value| value.min(100.0))
     };
+    // Spend/limit excludes bonuses and model buckets. Only use native percentages.
+    let auto = percent("autoPercentUsed")
+        .ok_or_else(|| DriverError::Protocol("Cursor usage percentages unavailable".into()))?;
+    let end = &usage["billingCycleEnd"];
+    let reset = end
+        .as_i64()
+        .or_else(|| end.as_str()?.parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .and_then(chrono::DateTime::from_timestamp_millis)
+        .map(|date| date.timestamp());
     let window = |id: &str, scope: &str, used| QuotaWindow {
         id: id.into(),
         scope: Some(scope.into()),
         window_minutes: 0,
         used_percent: Some(used),
-        resets_at_unix: None,
+        resets_at_unix: reset,
     };
-    // Cursor's CLI retains the legacy Auto/API names for the desktop's
-    // Cursor Models/Other Models pools. Included is not either pool's balance.
-    let has_pools = regex::Regex::new(r"\b(?:Auto|API|Cursor Models|Other Models)\s*:?\s+")
-        .ok()?
-        .is_match(text);
-    let windows = if has_pools {
-        vec![
-            window(
-                "cursor-models",
-                "Cursor Models",
-                percent("Auto|Cursor Models")?,
-            ),
-            window(
-                "cursor-other-models",
-                "Other Models",
-                percent("API|Other Models")?,
-            ),
-        ]
-    } else {
-        // Older clients may only report the aggregate; do not invent a split.
-        vec![window(
-            "cursor-included",
-            "套餐内（终端读数）",
-            percent("Included")?,
-        )]
-    };
-    let billing = if text.contains("On-demand usage is off") {
-        "按量付费关闭"
-    } else {
-        "按量付费状态见原生客户端"
-    };
+    let mut windows = vec![window("cursor-models", "Cursor Models", auto)];
+    if let Some(api) = percent("apiPercentUsed") {
+        windows.push(window("cursor-other-models", "Other Models", api));
+    }
     let now = chrono::Utc::now().timestamp_millis();
-    Some(QuotaSnapshot {
-        session_usage: None,
+    Ok(QuotaSnapshot {
         windows,
-        // The TUI gives month/day only: preserve display text, never invent year/time.
-        plan_type: Some(format!(
-            "{} · 重置 {}（原生日期）· {billing}",
-            capture[1].trim(),
-            capture[2].trim()
-        )),
+        plan_type: plan["planInfo"]["planName"]
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
         collected_at_unix_ms: now,
         stale_after_unix_ms: now + 60_000,
-        source: "native_tui".into(),
+        source: "native_credentials_pull".into(),
         confidence: "provider_reported".into(),
-        parser_version: "cursor-tui-usage-v2".into(),
-        context: None,
+        parser_version: "cursor-dashboard-usage-v1".into(),
+        ..QuotaSnapshot::default()
     })
 }
 
-#[cfg(not(target_os = "macos"))]
-// Same async signature as the macOS reader, which the caller awaits.
-#[allow(clippy::unused_async)]
-pub(super) async fn read(_: &Path, _: &Path) -> Result<QuotaSnapshot, DriverError> {
-    Err(DriverError::NotConfigured(
-        "Cursor native quota currently requires macOS".into(),
-    ))
+#[derive(Debug, PartialEq, Eq)]
+enum CredentialSource {
+    Keychain,
+    File(PathBuf),
 }
 
-#[cfg(target_os = "macos")]
-pub(super) async fn read(
-    executable: &Path,
-    directory: &Path,
-) -> Result<QuotaSnapshot, DriverError> {
-    use std::process::Stdio;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let unavailable = || {
-        DriverError::Protocol("Cursor native usage unavailable or terminal layout changed".into())
+fn credential_source(
+    platform: &str,
+    api_key: Option<&str>,
+    store: Option<&str>,
+    home: Option<PathBuf>,
+    config: Option<PathBuf>,
+) -> Result<CredentialSource, DriverError> {
+    if api_key.is_some_and(|value| !value.trim().is_empty()) || store == Some("memory") {
+        return Err(DriverError::CapabilityUnavailable(
+            "Cursor subscription quota requires native OAuth credentials".into(),
+        ));
+    }
+    if platform == "macos" && store != Some("file") {
+        return Ok(CredentialSource::Keychain);
+    }
+    let home = home.ok_or_else(login_required)?;
+    let path = match platform {
+        "macos" => home.join(".cursor/auth.json"),
+        "windows" => config
+            .unwrap_or_else(|| home.join("AppData/Roaming"))
+            .join("Cursor/auth.json"),
+        _ => config
+            .unwrap_or_else(|| home.join(".config"))
+            .join("cursor/auth.json"),
     };
-    let mut command = tokio::process::Command::new("/usr/bin/script");
-    command
-        .args(["-qF", "/dev/null"])
-        .args([
-            "/bin/sh",
-            "-c",
-            "stty sane cols 120 rows 40; exec \"$@\"",
-            "cursor-quota",
-        ])
-        .arg(executable)
-        // Reading /usage must not start Cursor's background installer. This
-        // short-lived TUI otherwise can exit with a download and lock in flight.
-        .arg("--disable-auto-update")
-        // Trust applies only to this newly created, empty probe directory.
-        .args(["--mode", "ask", "--trust"])
-        .current_dir(directory)
-        .env_clear()
-        .env("TERM", "xterm-256color")
-        .env("COLUMNS", "120")
-        .env("LINES", "40")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    for key in ["HOME", "PATH", "LANG", "TZ", "TMPDIR"] {
-        if let Some(value) = std::env::var_os(key) {
-            command.env(key, value);
+    Ok(CredentialSource::File(path))
+}
+
+async fn access_token() -> Result<String, DriverError> {
+    let source = credential_source(
+        std::env::consts::OS,
+        std::env::var("CURSOR_API_KEY").ok().as_deref(),
+        std::env::var("AGENT_CLI_CREDENTIAL_STORE").ok().as_deref(),
+        std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(PathBuf::from),
+        std::env::var_os(if cfg!(target_os = "windows") {
+            "APPDATA"
+        } else {
+            "XDG_CONFIG_HOME"
+        })
+        .map(PathBuf::from),
+    )?;
+    let token = match source {
+        CredentialSource::Keychain => {
+            let output = tokio::time::timeout(
+                Duration::from_secs(5),
+                tokio::process::Command::new("/usr/bin/security")
+                    .args([
+                        "find-generic-password",
+                        "-s",
+                        "cursor-access-token",
+                        "-a",
+                        "cursor-user",
+                        "-w",
+                    ])
+                    .stdin(std::process::Stdio::null())
+                    .kill_on_drop(true)
+                    .output(),
+            )
+            .await
+            .map_err(|_| login_required())?
+            .map_err(|_| login_required())?;
+            if !output.status.success() {
+                return Err(login_required());
+            }
+            String::from_utf8(output.stdout).map_err(|_| login_required())?
         }
+        CredentialSource::File(path) => {
+            let bytes = tokio::fs::read(path).await.map_err(|_| login_required())?;
+            let auth: Value = serde_json::from_slice(&bytes).map_err(|_| login_required())?;
+            auth["accessToken"]
+                .as_str()
+                .ok_or_else(login_required)?
+                .to_owned()
+        }
+    };
+    let token = token.trim();
+    if token.is_empty() {
+        return Err(login_required());
     }
-    agent_runtime::apply_proxy_environment(&mut command);
-    let mut child = command.spawn().map_err(|_| unavailable())?;
-    let mut input = child.stdin.take().ok_or_else(unavailable)?;
-    let mut output = child.stdout.take().ok_or_else(unavailable)?;
-    let ansi = regex::Regex::new(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07")
-        .map_err(|_| unavailable())?;
-    let mut raw = Vec::new();
-    let mut buffer = [0_u8; 8192];
-    let mut state = 0;
-    let mut result = None;
-    loop {
-        let count = output.read(&mut buffer).await.map_err(|_| unavailable())?;
-        if count == 0 {
-            break;
+    Ok(token.to_owned())
+}
+
+async fn request(client: &reqwest::Client, url: &str, token: &str) -> Result<Value, DriverError> {
+    let mut response = client
+        .post(url)
+        .bearer_auth(token)
+        .header("Content-Type", "application/json")
+        .header("Connect-Protocol-Version", "1")
+        .body("{}")
+        .send()
+        .await
+        .map_err(|_| {
+            DriverError::Disconnected("Cursor usage request failed or timed out".into())
+        })?;
+    match response.status() {
+        reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
+            return Err(login_required());
         }
-        raw.extend_from_slice(&buffer[..count]);
-        if raw.len() > 512 * 1024 {
-            return Err(unavailable());
+        status if !status.is_success() => {
+            return Err(DriverError::Protocol(format!(
+                "Cursor usage endpoint returned HTTP {}",
+                status.as_u16()
+            )));
         }
-        let decoded = String::from_utf8_lossy(&raw);
-        let screen = ansi.replace_all(&decoded, "");
-        let send = match state {
-            0 if screen.contains("Workspace Trust Required") => {
-                state = 1;
-                Some("a\r")
-            }
-            0 | 1 if screen.contains("Plan, search, build anything") => {
-                state = 2;
-                Some("/usage")
-            }
-            2 if screen.contains("Show plan and on-demand usage") => {
-                state = 3;
-                Some("\r")
-            }
-            3 if parse(&screen).is_some() => {
-                result = parse(&screen);
-                state = 4;
-                Some("\x1b")
-            }
-            4 if screen.contains("Plan, search, build anything") => {
-                state = 5;
-                Some("/quit")
-            }
-            5 if screen.contains("/quit") && screen.contains("Exit") => {
-                state = 6;
-                Some("\r")
-            }
-            _ => None,
-        };
-        if let Some(text) = send {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            #[cfg(test)]
-            eprintln!("Cursor quota state: {state}");
-            input
-                .write_all(text.as_bytes())
-                .await
-                .map_err(|_| unavailable())?;
-            input.flush().await.map_err(|_| unavailable())?;
-            raw.clear();
-        }
+        _ => {}
     }
-    let status = child.wait().await.map_err(|_| unavailable())?;
-    if state != 6 || !status.success() {
-        return Err(unavailable());
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| DriverError::Protocol("Cursor usage response interrupted".into()))?
+    {
+        if body.len().saturating_add(chunk.len()) > BODY_LIMIT {
+            return Err(DriverError::Protocol(
+                "Cursor usage response exceeded size limit".into(),
+            ));
+        }
+        body.extend_from_slice(&chunk);
     }
-    result.ok_or_else(unavailable)
+    serde_json::from_slice(&body)
+        .map_err(|_| DriverError::Protocol("Cursor usage endpoint returned invalid JSON".into()))
+}
+
+pub(super) async fn read() -> Result<QuotaSnapshot, DriverError> {
+    let token = access_token().await?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|_| DriverError::Protocol("Cursor HTTP client unavailable".into()))?;
+    let usage_url = format!("{ENDPOINT}GetCurrentPeriodUsage");
+    let plan_url = format!("{ENDPOINT}GetPlanInfo");
+    let (usage, plan) = tokio::join!(
+        request(&client, &usage_url, &token),
+        request(&client, &plan_url, &token),
+    );
+    // A plan lookup failure must not discard valid account usage.
+    parse(&usage?, &plan.unwrap_or(Value::Null))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
     #[test]
-    fn preserves_native_date_and_rounded_informational_usage() {
-        let text = "Usage • Pro      Resets Oct 4\nIncluded     15% used\nOn-demand usage is off\nEsc to close";
-        let quota = parse(text).unwrap();
-        assert_eq!(quota.windows[0].used_percent, Some(15.0));
-        assert_eq!(quota.windows[0].resets_at_unix, None);
-        assert!(quota.windows[0].scope.is_some());
-        assert!(parse(&text.replace("15%", "101%")).is_none());
-        assert!(parse("Loading usage data...").is_none());
-    }
-    #[test]
-    fn separates_native_model_pools_without_using_the_aggregate() {
-        for (first, other) in [
-            ("Auto", "API"),
-            ("Auto:", "API:"),
-            ("Cursor Models", "Other Models"),
-        ] {
-            let text = format!(
-                "Usage • Pro      Resets Oct 4\nIncluded 65% used\n{first} 20% used\n{other} 100% used\nOn-demand usage is off\nEsc to close"
-            );
-            let quota = parse(&text).unwrap();
+    fn projects_native_pools_and_exact_billing_reset() {
+        for end in [json!(1_793_491_200_000_i64), json!("1793491200000")] {
+            let quota = parse(
+                &json!({"billingCycleEnd":end,"planUsage":{
+                    "autoPercentUsed":20.5,"apiPercentUsed":110,"spend":5,"limit":10
+                }}),
+                &json!({"planInfo":{"planName":"Pro"}}),
+            )
+            .unwrap();
             assert_eq!(quota.windows.len(), 2);
             assert_eq!(quota.windows[0].id, "cursor-models");
             assert_eq!(quota.windows[0].scope.as_deref(), Some("Cursor Models"));
-            assert_eq!(quota.windows[0].used_percent, Some(20.0));
+            assert_eq!(quota.windows[0].used_percent, Some(20.5));
             assert_eq!(quota.windows[1].id, "cursor-other-models");
             assert_eq!(quota.windows[1].scope.as_deref(), Some("Other Models"));
             assert_eq!(quota.windows[1].used_percent, Some(100.0));
-            assert!(quota.windows.iter().all(|w| w.resets_at_unix.is_none()));
-            assert!(parse(&text.replace("100%", "101%")).is_none());
-            assert!(parse(&text.replace(&format!("{other} 100% used"), "Loading...")).is_none());
+            assert!(
+                quota
+                    .windows
+                    .iter()
+                    .all(|w| w.resets_at_unix == Some(1_793_491_200))
+            );
+            assert_eq!(quota.plan_type.as_deref(), Some("Pro"));
+            assert_eq!(
+                quota.stale_after_unix_ms - quota.collected_at_unix_ms,
+                60_000
+            );
         }
     }
+
+    #[test]
+    fn missing_fields_stay_unknown_without_inventing_balances() {
+        for usage in [
+            json!({}),
+            json!({"planUsage":{"spend":5,"limit":10}}),
+            json!({"planUsage":{"autoPercentUsed":-1}}),
+            json!({"planUsage":{"autoPercentUsed":"20"}}),
+        ] {
+            assert!(parse(&usage, &Value::Null).is_err());
+        }
+        for end in [
+            Value::Null,
+            json!("bad"),
+            json!(0),
+            json!(-1),
+            json!(i64::MAX),
+        ] {
+            let quota = parse(
+                &json!({"billingCycleEnd":end,"planUsage":{"autoPercentUsed":0}}),
+                &Value::Null,
+            )
+            .unwrap();
+            assert_eq!(quota.windows.len(), 1);
+            assert_eq!(quota.windows[0].used_percent, Some(0.0));
+            assert_eq!(quota.windows[0].resets_at_unix, None);
+            assert_eq!(quota.plan_type, None);
+        }
+    }
+
+    #[test]
+    fn follows_native_credential_store_and_excludes_unrelated_oauth() {
+        let home = Some(PathBuf::from("/home/user"));
+        assert_eq!(
+            credential_source("macos", None, None, home.clone(), None).unwrap(),
+            CredentialSource::Keychain
+        );
+        for (platform, store, config, expected) in [
+            ("macos", Some("file"), None, "/home/user/.cursor/auth.json"),
+            ("linux", None, None, "/home/user/.config/cursor/auth.json"),
+            (
+                "linux",
+                None,
+                Some(PathBuf::from("/config")),
+                "/config/cursor/auth.json",
+            ),
+            (
+                "windows",
+                None,
+                Some(PathBuf::from("/roaming")),
+                "/roaming/Cursor/auth.json",
+            ),
+        ] {
+            assert_eq!(
+                credential_source(platform, None, store, home.clone(), config).unwrap(),
+                CredentialSource::File(PathBuf::from(expected))
+            );
+        }
+        assert!(credential_source("macos", Some("api-key"), None, home.clone(), None).is_err());
+        assert!(credential_source("macos", None, Some("memory"), home, None).is_err());
+    }
+
     #[tokio::test]
-    #[ignore = "requires authenticated Cursor on macOS; native command only"]
+    async fn dashboard_requests_are_read_only_and_sanitize_errors() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for (status, body) in [
+            ("200 OK", r#"{"planUsage":{"autoPercentUsed":12}}"#),
+            ("401 Unauthorized", "private-server-detail"),
+            ("403 Forbidden", "private-server-detail"),
+            ("302 Found", "private-server-detail"),
+            ("200 OK", "private-invalid-json"),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!(
+                "http://{}/GetCurrentPeriodUsage",
+                listener.local_addr().unwrap()
+            );
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut bytes = Vec::new();
+                loop {
+                    let mut chunk = [0; 1024];
+                    let count = stream.read(&mut chunk).await.unwrap();
+                    assert!(count > 0);
+                    bytes.extend_from_slice(&chunk[..count]);
+                    if bytes.ends_with(b"\r\n\r\n{}") {
+                        break;
+                    }
+                }
+                let request = String::from_utf8(bytes).unwrap().to_lowercase();
+                assert!(request.starts_with("post /getcurrentperiodusage http/1.1\r\n"));
+                assert!(request.contains("authorization: bearer native-token\r\n"));
+                assert!(request.contains("connect-protocol-version: 1\r\n"));
+                assert!(request.contains("content-type: application/json\r\n"));
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            });
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .timeout(Duration::from_secs(2))
+                .build()
+                .unwrap();
+            let result = request(&client, &url, "native-token").await;
+            if body.starts_with('{') {
+                assert_eq!(result.unwrap()["planUsage"]["autoPercentUsed"], 12);
+            } else {
+                let error = result.unwrap_err();
+                assert!(!error.to_string().contains("private-"));
+                assert!(!error.to_string().contains("native-token"));
+                if status.starts_with("401") || status.starts_with("403") {
+                    assert!(driver_api::failure::invalidates_account_quota(&error));
+                    assert_eq!(
+                        driver_api::failure::quota_diagnostic(&error),
+                        "quota_login_required"
+                    );
+                    assert!(matches!(error, DriverError::NotConfigured(_)));
+                }
+            }
+            server.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires authenticated Cursor; reads native OAuth and official quota only"]
     async fn real_native_quota() {
-        let executable = std::env::var("CURSOR_QUOTA_EXECUTABLE").unwrap();
-        let directory = tempfile::tempdir().unwrap();
-        let snapshot = tokio::time::timeout(
-            std::time::Duration::from_secs(27),
-            read(Path::new(&executable), directory.path()),
-        )
-        .await
-        .unwrap()
-        .unwrap();
+        let snapshot = tokio::time::timeout(Duration::from_secs(20), read())
+            .await
+            .unwrap()
+            .unwrap();
         assert!(!snapshot.windows.is_empty());
+        eprintln!(
+            "Cursor quota: {:?}; plan: {:?}",
+            snapshot.windows, snapshot.plan_type
+        );
     }
 }

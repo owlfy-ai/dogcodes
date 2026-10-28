@@ -471,7 +471,6 @@ struct AcpQuotaState {
     directories: std::sync::Mutex<HashMap<String, PathBuf>>,
     usage: driver_api::usage::UsageStore,
     kiro_credits: std::sync::Mutex<HashMap<String, HashMap<String, f64>>>,
-    cursor_directory: std::sync::OnceLock<tempfile::TempDir>,
     context_by_session: std::sync::Mutex<HashMap<String, (i64, ContextUsageSnapshot)>>,
     account_snapshot: std::sync::Mutex<Option<QuotaSnapshot>>,
     refresh: tokio::sync::Mutex<()>,
@@ -2662,25 +2661,7 @@ impl QuotaProvider for AcpDriver {
                 return kiro_quota::parse(&payload);
             }
             if self.executor.provider_id.as_str() == "cursor" {
-                if self.shared.quota.cursor_directory.get().is_none() {
-                    let directory = tempfile::Builder::new()
-                        .prefix("dogcodes-cursor-quota-")
-                        .tempdir()
-                        .map_err(|_| {
-                            DriverError::Disconnected("Cursor quota directory unavailable".into())
-                        })?;
-                    let _ = self.shared.quota.cursor_directory.set(directory);
-                }
-                return cursor_quota::read(
-                    &self.shared.launch.executable,
-                    self.shared
-                        .quota
-                        .cursor_directory
-                        .get()
-                        .expect("directory initialized")
-                        .path(),
-                )
-                .await;
+                return cursor_quota::read().await;
             }
             let (windows, plan_type, parser_version) =
                 if self.executor.provider_id.as_str() == "kimi" {

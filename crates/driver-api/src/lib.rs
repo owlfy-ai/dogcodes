@@ -191,8 +191,8 @@ pub struct QuotaSnapshot {
 ///
 /// Reading quota is a control-plane operation: it must never submit a model
 /// prompt. Native credential reuse is permitted only for an explicitly
-/// authorized read-only adapter (currently `ZCode`); credentials must never
-/// enter events, snapshots, logs, or persistence.
+/// authorized read-only adapter (currently Cursor and `ZCode`); credentials must
+/// never enter events, snapshots, logs, or persistence.
 #[async_trait]
 pub trait QuotaProvider: Send + Sync {
     fn executor(&self) -> &ExecutorRef;
