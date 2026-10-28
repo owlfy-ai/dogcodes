@@ -32,9 +32,6 @@ pub(super) trait Clipboard {
         }
         self.set(kind, bytes)
     }
-    fn legacy(&mut self, _: &str, _: Value) -> Result<Value, String> {
-        Err("剪贴板接口不可用".into())
-    }
 }
 struct SystemClipboard(Option<os::Clipboard>);
 impl Clipboard for SystemClipboard {
@@ -70,23 +67,12 @@ impl Clipboard for SystemClipboard {
         });
         Ok(())
     }
-    fn legacy(&mut self, method: &str, args: Value) -> Result<Value, String> {
-        match method {
-            "clipboard_get" => os::clipboard_get(args["kind"].as_str().ok_or("剪贴板类型无效")?),
-            "clipboard_set" => {
-                self.0 = Some(os::clipboard_set(args)?);
-                Ok(Value::Null)
-            }
-            _ => Err("剪贴板接口不可用".into()),
-        }
-    }
 }
 
-pub(super) const METHODS: &[&str] = &["clipboard_transfer", "clipboard_get", "clipboard_set"];
+pub(super) const METHODS: &[&str] = &["clipboard_transfer"];
 type Factory = Box<dyn FnOnce() -> Box<dyn Clipboard> + Send>;
 struct Request {
     owner: Arc<native::Connection>,
-    method: String,
     args: Value,
     reply: tokio::sync::oneshot::Sender<Result<Value, String>>,
 }
@@ -122,6 +108,9 @@ impl Host {
         method: &str,
         args: Value,
     ) -> Result<Value, String> {
+        if method != "clipboard_transfer" {
+            return Err("剪贴板接口不可用".into());
+        }
         let sender = self
             .sender
             .get_or_init(|| {
@@ -146,16 +135,10 @@ impl Host {
                                         continue;
                                     }
                                     let result = (|| {
-                                        if !(r.method == "clipboard_transfer"
-                                            && r.args["operation"] == "close")
-                                        {
+                                        if r.args["operation"] != "close" {
                                             unlocked()?;
                                         }
-                                        if r.method == "clipboard_transfer" {
-                                            transfers.call(&r.owner, r.args, clipboard.as_mut())
-                                        } else {
-                                            clipboard.legacy(&r.method, r.args)
-                                        }
+                                        transfers.call(&r.owner, r.args, clipboard.as_mut())
                                     })();
                                     let _ = r.reply.send(result);
                                 }
@@ -171,12 +154,7 @@ impl Host {
             .map_err(Clone::clone)?;
         let (reply, result) = tokio::sync::oneshot::channel();
         sender
-            .try_send(Request {
-                owner,
-                method: method.into(),
-                args,
-                reply,
-            })
+            .try_send(Request { owner, args, reply })
             .map_err(|_| "电脑剪贴板繁忙，请稍后重试")?;
         tokio::time::timeout(Duration::from_secs(15), result)
             .await
@@ -396,6 +374,30 @@ mod tests {
     fn owner() -> native::Disconnect {
         let (tx, _) = tokio::sync::mpsc::channel(8);
         native::Disconnect::new(None, tx)
+    }
+    #[tokio::test]
+    async fn removed_clipboard_rpcs_cannot_start_a_native_worker() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let started = Arc::new(AtomicBool::new(false));
+        let observed = started.clone();
+        let host = Host::fixture(Box::new(move || {
+            observed.store(true, Ordering::Release);
+            Box::new(Fake::default())
+        }));
+        let connection = owner();
+        for method in ["clipboard_get", "clipboard_set"] {
+            assert!(
+                host.call(
+                    connection.0.clone(),
+                    method,
+                    json!({"kind":"text","text":"fixture"})
+                )
+                .await
+                .is_err()
+            );
+        }
+        assert!(!started.load(Ordering::Acquire));
+        assert!(host.sender.get().is_none());
     }
     fn begin(t: &mut Transfers, c: &native::Disconnect, f: &mut Fake, bytes: &[u8]) -> String {
         t.call(&c.0, json!({"operation":"begin_upload","kind":"image","mimeType":"image/png","size":bytes.len(),"sha256":format!("{:x}",Sha256::digest(bytes))}), f).unwrap()["transferId"].as_str().unwrap().into()

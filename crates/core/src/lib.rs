@@ -5,6 +5,7 @@ mod approval_details;
 pub mod approval_receipts;
 pub mod artifacts;
 mod autonomous_turns;
+mod auxiliary_session;
 pub mod history_preferences;
 mod turn_usage;
 pub use turn_usage::summarize_recorded_requests;
@@ -23,9 +24,11 @@ mod project_commands;
 pub use project_commands::AnalysisLifetime;
 pub mod recovery;
 pub mod review_analysis;
+mod run_cleanup;
+mod run_control;
 mod running_permissions;
 mod session_recovery;
-pub mod sidebar_chat;
+mod session_startup;
 pub mod submission_intents;
 pub mod task_fork;
 mod text_segments;
@@ -564,6 +567,7 @@ pub struct EventSubscription {
 }
 
 struct TurnInput {
+    control: Arc<run_control::Control>,
     prompt: String,
     attachments: Vec<agent_domain::PromptAttachment>,
     model: Option<String>,
@@ -574,13 +578,14 @@ struct TurnInput {
 pub struct Core {
     turn_timing_sink: Option<TurnTimingSink>,
     active_reviews: tokio::sync::Mutex<turn_review::ActiveReviews>,
-    sidebar_chats: tokio::sync::Mutex<sidebar_chat::Chats>,
-    sidebar_chat_watch_slots: Arc<tokio::sync::Semaphore>,
     // Orders availability changes with new work admission, not live execution.
     agent_admission: tokio::sync::RwLock<()>,
     fork_gate: tokio::sync::Mutex<()>,
     active_forks: Arc<std::sync::Mutex<std::collections::BTreeMap<TaskId, TaskId>>>,
     owned_runs: recovery::OwnedRuns,
+    owned_sessions: recovery::OwnedSessions,
+    owned_controls: recovery::OwnedControls,
+    auxiliary_activity: Arc<auxiliary_session::Activity>,
     repository: Arc<dyn CoreRepository>,
     redactor: Arc<dyn SecretRedactor>,
     workspace_context: Arc<dyn WorkspaceContextProvider>,
@@ -596,6 +601,11 @@ pub struct Core {
 }
 
 impl Core {
+    /// Includes startup and original cleanup after a temporary caller has left.
+    #[must_use]
+    pub fn has_active_auxiliary_operations(&self) -> bool {
+        self.auxiliary_activity.active()
+    }
     #[must_use]
     pub fn with_turn_timing_sink(mut self, sink: TurnTimingSink) -> Self {
         self.turn_timing_sink = Some(sink);
@@ -767,12 +777,13 @@ impl Core {
         Self {
             turn_timing_sink: None,
             active_reviews: tokio::sync::Mutex::default(),
-            sidebar_chats: tokio::sync::Mutex::default(),
-            sidebar_chat_watch_slots: Arc::new(tokio::sync::Semaphore::new(64)),
             agent_admission: tokio::sync::RwLock::default(),
             fork_gate: tokio::sync::Mutex::default(),
             active_forks: Arc::default(),
             owned_runs: Arc::default(),
+            owned_sessions: Arc::default(),
+            auxiliary_activity: Arc::default(),
+            owned_controls: Arc::default(),
             workspace_access: Arc::default(),
             repository,
             redactor,
@@ -801,6 +812,7 @@ impl Core {
     }
 
     pub async fn register_quota_provider(&self, provider: Arc<dyn QuotaProvider>) {
+        let _admission = self.agent_admission.write().await;
         self.quota_providers
             .write()
             .await
@@ -925,16 +937,6 @@ impl Core {
         } else {
             None
         };
-        // Keep task/project validation and persistence ordered with sidebar
-        // admission and final shutdown. Lock order: review, then sidebar.
-        let mut sidebar_guard = if matches!(
-            &envelope.payload,
-            CoreCommand::DeleteTask(_) | CoreCommand::UpdateProject(_)
-        ) {
-            Some(self.sidebar_chats.lock().await)
-        } else {
-            None
-        };
         match &envelope.payload {
             CoreCommand::SetHistoryPreferences(preferences) => {
                 history_preferences::validate(preferences, &envelope)?;
@@ -994,11 +996,7 @@ impl Core {
                         .iter()
                         .filter(|task| task.project_id == command.project_id)
                     {
-                        if sidebar_guard
-                            .as_ref()
-                            .and_then(|chats| chats.get(&task.task_id))
-                            .is_some_and(sidebar_chat::ChatEntry::is_running)
-                            || self.fork_source_active(&task.task_id)
+                        if self.fork_source_active(&task.task_id)
                             || task.active_primary_run.is_some()
                             || self
                                 .turn_reviews(&task.task_id)
@@ -1014,8 +1012,7 @@ impl Core {
                                 })
                         {
                             return Err(CoreError::Conflict(
-                                "请等待 Fork 完成或停止正在运行的任务、审查和问答，再修改目录"
-                                    .into(),
+                                "请等待 Fork 完成或停止正在运行的任务和审查，再修改目录".into(),
                             ));
                         }
                     }
@@ -1037,11 +1034,7 @@ impl Core {
             }
             CoreCommand::DeleteTask(command) => {
                 let task = self.require_task(&command.task_id).await?;
-                if sidebar_guard
-                    .as_ref()
-                    .and_then(|chats| chats.get(&command.task_id))
-                    .is_some_and(sidebar_chat::ChatEntry::is_running)
-                    || self.fork_source_active(&command.task_id)
+                if self.fork_source_active(&command.task_id)
                     || task.active_primary_run.is_some()
                     || self
                         .turn_reviews(&command.task_id)
@@ -1057,7 +1050,7 @@ impl Core {
                         })
                 {
                     return Err(CoreError::Conflict(
-                        "请等待 Fork 完成或停止主任务、审查和问答，再删除会话".into(),
+                        "请等待 Fork 完成或停止主任务和审查，再删除会话".into(),
                     ));
                 }
                 if envelope.expected_stream_version.is_none() {
@@ -1140,6 +1133,7 @@ impl Core {
                 validate_context_route(&command.request, &snapshot)?;
             }
             CoreCommand::SubmitTurn(command) => {
+                self.require_task_cleanup_clear(&command.task_id)?;
                 if let Some(reference) = &command.review_fix {
                     self.review_fix_material(&command.task_id, reference)
                         .await?;
@@ -1258,11 +1252,9 @@ impl Core {
                 })?;
                 if approval.turn_id != active.turn_id
                     || active.state == RunState::Interrupting
-                    || !self
-                        .owned_runs
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .contains_key(&active.run_id)
+                    || self
+                        .owned_run_control(&active.run_id)
+                        .is_none_or(|control| !control.accepts_interactions())
                 {
                     return Err(CoreError::Conflict(
                         "approval no longer belongs to a managed running turn".into(),
@@ -1429,7 +1421,15 @@ impl Core {
                 .get(&executor)
                 .cloned()
                 .ok_or_else(|| CoreError::DriverUnavailable(executor.provider_id.to_string()))?;
-            Some((run_id, driver))
+            // Freeze telemetry with the original accepted run. A later registry
+            // replacement must not supply either boundary of this turn's usage.
+            let usage_provider = self.quota_providers.read().await.get(&executor).cloned();
+            Some((run_id, driver, usage_provider))
+        } else {
+            None
+        };
+        let cancel_control = if let CoreCommand::CancelTurn(command) = &envelope.payload {
+            self.owned_run_control(&command.run_id)
         } else {
             None
         };
@@ -1448,16 +1448,16 @@ impl Core {
         let mut run_ownership = if outcome.duplicate {
             None
         } else {
-            queued_driver.map(|(run_id, driver)| self.own_run(run_id, driver))
+            queued_driver
+                .map(|(run_id, driver, usage)| self.own_run_with_usage(run_id, driver, usage))
         };
-        if let CoreCommand::DeleteTask(command) = &envelope.payload {
-            // Remove only after durable deletion. Dropping the notification
-            // source also ends all live subscriptions for the deleted task.
-            if let Some(chats) = &mut sidebar_guard {
-                chats.remove(&command.task_id);
-            }
+        // Commit first: a stale/rejected command must never stop native work.
+        // Mark before publishing acceptance or scheduling the delivery worker.
+        if !outcome.duplicate
+            && let Some(control) = &cancel_control
+        {
+            control.request_stop();
         }
-        drop(sidebar_guard);
         self.publish(&outcome.events);
         drop(command_timing);
         if let CoreCommand::DeleteTask(command) = &envelope.payload {
@@ -1488,12 +1488,29 @@ impl Core {
                     timing.mark("turn_queued");
                     let dispatch_timing = timing.stage("dispatch_wait");
                     let core = Arc::clone(self);
+                    let turn = outcome
+                        .events
+                        .iter()
+                        .find(|e| e.event_type == "turn.queued")
+                        .and_then(|e| e.payload["turnId"].as_str())
+                        .and_then(|id| TurnId::parse(id).ok())
+                        .ok_or_else(|| {
+                            CoreError::Internal("queued turn identity missing".into())
+                        })?;
+                    let execution = run_cleanup::Execution::new(
+                        core.clone(),
+                        command.task_id.clone(),
+                        turn,
+                        ownership,
+                    );
                     tokio::spawn(async move {
-                        let _ownership = ownership;
+                        let control = execution.control();
+                        let _execution = execution;
                         drop(dispatch_timing);
                         core.run_turn(
                             command.task_id,
                             TurnInput {
+                                control,
                                 prompt,
                                 attachments: command.attachments,
                                 model: command.model,
@@ -1508,7 +1525,7 @@ impl Core {
                 CoreCommand::CancelTurn(command) => {
                     let core = Arc::clone(self);
                     tokio::spawn(async move {
-                        core.cancel_turn(command).await;
+                        core.cancel_turn(command, cancel_control).await;
                     });
                 }
                 CoreCommand::RespondToApproval(command) => {
@@ -1573,33 +1590,76 @@ impl Core {
         item_id: &str,
     ) -> Result<Vec<Value>, CoreError> {
         self.require_task(task_id).await?;
-        let items = self.repository.task_timeline(task_id).await?;
-        let item = items
-            .iter()
-            .find(|i| i.item_id == item_id && i.kind == "activity")
-            .ok_or_else(|| CoreError::NotFound("subagent unavailable".into()))?;
-        let data: Value = serde_json::from_str(&item.text)
-            .map_err(|_| CoreError::InvalidArgument("invalid subagent".into()))?;
-        if data["details"] != "history" && data["details"] != "history_partial" {
-            return Err(CoreError::InvalidArgument("history unavailable".into()));
+        let unavailable =
+            || CoreError::CapabilityUnavailable("无法确认子 Agent 所属的执行实例".into());
+        let (id, turn, provider, through) = {
+            let items = self.repository.task_timeline(task_id).await?;
+            let item = items
+                .iter()
+                .find(|i| i.item_id == item_id && i.kind == "activity")
+                .ok_or_else(|| CoreError::NotFound("subagent unavailable".into()))?;
+            let data: Value = serde_json::from_str(&item.text)
+                .map_err(|_| CoreError::InvalidArgument("invalid subagent".into()))?;
+            if data["type"] != "subagent"
+                || (data["details"] != "history" && data["details"] != "history_partial")
+            {
+                return Err(CoreError::InvalidArgument("history unavailable".into()));
+            }
+            let id = data["childId"]
+                .as_str()
+                .ok_or_else(|| CoreError::InvalidArgument("missing child".into()))?
+                .to_owned();
+            (
+                id,
+                item.turn_id.clone().ok_or_else(unavailable)?,
+                item.provider_id.clone(),
+                item.sequence,
+            )
+        };
+        // Installation identity belongs to this historical turn, not the task's
+        // latest preference or whichever same-provider driver is registered now.
+        let mut after = 0;
+        let origin = loop {
+            let page = self
+                .repository
+                .task_events_of_types(
+                    task_id,
+                    after,
+                    through,
+                    &["turn.queued", "turn.autonomous.started"],
+                    100,
+                )
+                .await?;
+            let Some(last) = page.last() else {
+                return Err(unavailable());
+            };
+            after = last.sequence;
+            if let Some(origin) = page
+                .into_iter()
+                .find(|event| event.payload["turnId"].as_str() == Some(turn.as_str()))
+            {
+                break origin;
+            }
+        };
+        let executor: ExecutorRef = serde_json::from_value(origin.payload["executor"].clone())
+            .map_err(|_| unavailable())?;
+        let run: RunId =
+            serde_json::from_value(origin.payload["runId"].clone()).map_err(|_| unavailable())?;
+        if provider.as_deref() != Some(executor.provider_id.as_str()) {
+            return Err(unavailable());
         }
-        let id = data["childId"]
-            .as_str()
-            .ok_or_else(|| CoreError::InvalidArgument("missing child".into()))?;
-        let drivers = self.drivers.read().await;
-        let matches: Vec<_> = drivers
-            .iter()
-            .filter(|(e, _)| Some(e.provider_id.as_str()) == item.provider_id.as_deref())
-            .map(|(_, d)| Arc::clone(d))
-            .collect();
-        if matches.len() != 1 {
-            return Err(CoreError::InvalidArgument(
-                "subagent installation unavailable or ambiguous".into(),
-            ));
-        }
-        let driver = Arc::clone(&matches[0]);
-        drop(drivers);
-        let mut result = driver.read_subagent(id).await?;
+        let driver = if self.owned_run_control(&run).is_some() {
+            // Preserve the original live scope across registry replacement.
+            self.run_driver(&run, &executor)?
+        } else {
+            self.drivers
+                .read()
+                .await
+                .get(&executor)
+                .cloned()
+                .ok_or_else(unavailable)?
+        };
+        let mut result = driver.read_subagent(&id).await?;
         for value in &mut result {
             redact_strings(value, self.redactor.as_ref());
         }
@@ -2386,10 +2446,11 @@ impl Core {
         Ok(vec![opted_out, changed])
     }
 
-    async fn cancel_turn(&self, command: CancelTurn) {
-        let result = self.cancel_turn_inner(&command).await;
+    async fn cancel_turn(&self, command: CancelTurn, control: Option<Arc<run_control::Control>>) {
+        let result = self.cancel_turn_inner(&command, control.as_deref()).await;
         let (event_type, payload) = match result {
-            Ok(()) => (
+            Ok(run_control::CancelDelivery::Deferred) => return,
+            Ok(run_control::CancelDelivery::Sent) => (
                 "turn.interrupt_sent",
                 json!({
                     "taskId": command.task_id,
@@ -2415,7 +2476,24 @@ impl Core {
             .await;
     }
 
-    async fn cancel_turn_inner(&self, command: &CancelTurn) -> Result<(), CoreError> {
+    async fn cancel_turn_inner(
+        &self,
+        command: &CancelTurn,
+        control: Option<&run_control::Control>,
+    ) -> Result<run_control::CancelDelivery, CoreError> {
+        let control = control.ok_or_else(|| {
+            CoreError::CapabilityUnavailable("original run ownership is unavailable".into())
+        })?;
+        if control.id != command.run_id {
+            return Err(CoreError::Conflict(
+                "cancel control belongs to another run".into(),
+            ));
+        }
+        // The original worker has already completed its local result handling.
+        // Do not turn a late delivery into a cancel for a replacement run.
+        if control.finished() {
+            return Ok(run_control::CancelDelivery::Deferred);
+        }
         let snapshot = self.repository.bootstrap().await?;
         let task = snapshot
             .tasks
@@ -2430,27 +2508,23 @@ impl Core {
                 "cancel target no longer matches the active run".into(),
             ));
         }
+        control.request_stop();
         self.revoke_history(&command.task_id).await;
+        match control.stop_target().await {
+            run_control::StopTarget::Deferred | run_control::StopTarget::Finished => {
+                return Ok(run_control::CancelDelivery::Deferred);
+            }
+            run_control::StopTarget::Abandoned => {
+                return Err(CoreError::CapabilityUnavailable(
+                    "original run worker ended without delivery confirmation".into(),
+                ));
+            }
+            run_control::StopTarget::Running => {}
+        }
         let driver = self.run_driver(&active.run_id, &active.executor)?;
-        let mapping = snapshot
-            .session_maps
-            .iter()
-            .find(|mapping| {
-                mapping.task_id == command.task_id
-                    && mapping.executor == active.executor
-                    && mapping.status == SessionMapStatus::Active
-            })
-            .ok_or_else(|| {
-                CoreError::CapabilityUnavailable(
-                    "active native session is not ready for interruption".into(),
-                )
-            })?;
-        driver
-            .interrupt(&SessionHandle {
-                native_session_id: mapping.native_session_id.clone(),
-            })
-            .await?;
-        Ok(())
+        let handle = self.run_session(&active.run_id, &active.executor)?;
+        driver.interrupt(&handle).await?;
+        Ok(run_control::CancelDelivery::Sent)
     }
 
     /// Quota snapshots for every registered installation. Drivers without an
@@ -2487,7 +2561,7 @@ impl Core {
             })
             .cloned()
             .collect::<Vec<_>>();
-        let providers = self.quota_providers.read().await.clone();
+        let mut providers = self.quota_providers.read().await.clone();
         let session_by_executor = match task_id {
             Some(task_id) => self
                 .repository
@@ -2495,6 +2569,23 @@ impl Core {
                 .await
                 .ok()
                 .map(|snapshot| {
+                    if let Some(active) = snapshot
+                        .tasks
+                        .iter()
+                        .find(|task| &task.task_id == task_id)
+                        .and_then(|task| task.active_primary_run.as_ref())
+                    {
+                        // Task-scoped context/usage must come from its original
+                        // accepted provider, even after installation re-detection.
+                        let original = self
+                            .owned_run_control(&active.run_id)
+                            .and_then(|control| control.usage_provider.clone());
+                        if let Some(original) = original {
+                            providers.insert(active.executor.clone(), original);
+                        } else {
+                            providers.remove(&active.executor);
+                        }
+                    }
                     snapshot
                         .session_maps
                         .into_iter()
@@ -2616,11 +2707,9 @@ impl Core {
         };
         if accepted_turn.as_ref() != Some(&active.turn_id)
             || active.state == RunState::Interrupting
-            || !self
-                .owned_runs
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .contains_key(&active.run_id)
+            || self
+                .owned_run_control(&active.run_id)
+                .is_none_or(|control| !control.accepts_interactions())
         {
             self.record_approval_delivery(
                 &command,
@@ -2673,19 +2762,11 @@ impl Core {
                 .await;
             return;
         };
-        let native_session_id = snapshot
-            .session_maps
-            .into_iter()
-            .find(|mapping| {
-                mapping.task_id == command.task_id
-                    && mapping.executor == active.executor
-                    && mapping.status == SessionMapStatus::Active
-            })
-            .map_or_else(
-                || active.run_id.to_string(),
-                |mapping| mapping.native_session_id,
-            );
-        let handle = driver_api::SessionHandle { native_session_id };
+        let Ok(handle) = self.run_session(&active.run_id, &active.executor) else {
+            self.record_approval_delivery(&command, &accepted_command, Some("session_unavailable"))
+                .await;
+            return;
+        };
         let result = if let Some(answer) = command.answer.clone() {
             driver
                 .respond_to_question(&handle, &command.approval_id, answer)
@@ -2722,8 +2803,9 @@ impl Core {
         input: TurnInput,
         timing: TurnStartupTiming,
     ) {
+        let control = input.control.clone();
         let lock_timing = timing.stage("workspace_lock");
-        let _workspace_access = self.workspace_access.read().await;
+        control.hold_workspace(self.workspace_access.clone().read_owned().await);
         drop(lock_timing);
         let scope_timing = timing.stage("workspace_scope");
         let workspace_scope = self.turn_workspace_scope(&task_id).await;
@@ -2739,29 +2821,11 @@ impl Core {
         drop(capture_timing);
         let checkpoint_timing = timing.stage("workspace_checkpoint");
         if let Some(scope) = &workspace_scope {
-            let checkpoint = match capture.as_ref() {
-                Some(Ok(capture)) => capture.checkpoint().await,
-                _ => Ok(None),
-            };
-            match checkpoint {
-                Ok(Some(value)) => {
-                    if self
-                        .record_workspace_artifact(
-                            scope,
-                            value,
-                            "workspace.turn_checkpoint_captured",
-                            "application/vnd.dogcodes.turn-checkpoint.v1+json",
-                        )
-                        .await
-                        .is_err()
-                    {
-                        let _ = self.append_runtime_event(&scope.task_id, "workspace.turn_checkpoint_failed", json!({"taskId":scope.task_id,"turnId":scope.turn_id,"failureKind":"storage_failed"}), EventSource::Hub).await;
-                    }
-                }
-                _ => {
-                    let _ = self.append_runtime_event(&scope.task_id, "workspace.turn_checkpoint_failed", json!({"taskId":scope.task_id,"turnId":scope.turn_id,"failureKind":"checkpoint_unavailable"}), EventSource::Hub).await;
-                }
-            }
+            self.record_turn_checkpoint(
+                scope,
+                capture.as_ref().and_then(|capture| capture.as_deref().ok()),
+            )
+            .await;
         }
         drop(checkpoint_timing);
         {
@@ -2781,6 +2845,10 @@ impl Core {
                 &timing,
             )
             .await;
+        if result.is_err() {
+            self.wait_failed_run_cleanup(&control).await;
+        }
+        control.settling();
         timing.mark(if result.is_ok() {
             "run_stream_finished"
         } else {
@@ -2795,14 +2863,10 @@ impl Core {
                 Ok(capture) => capture.finish().await,
                 Err(error) => Err(error),
             };
-            if self.record_turn_changes(scope, change).await.is_err() {
-                let _ = self.append_runtime_event(&scope.task_id, "workspace.turn_changes_failed",
-                        json!({"taskId": scope.task_id, "turnId": scope.turn_id, "failureKind":"storage_failed"}), EventSource::Hub).await;
-            }
+            self.persist_turn_changes(scope, change).await;
         }
         for (kind, payload, source) in terminal_events {
-            let _ = self
-                .append_runtime_event(&task_id, &kind, payload, source)
+            self.persist_original_run_event(&control, &kind, payload, source)
                 .await;
         }
         self.live_thoughts
@@ -2810,10 +2874,82 @@ impl Core {
             .await
             .retain(|key, _| !key.starts_with(&format!("tool:{task_id}:")));
         if let Err(error) = result {
-            let payload = safe_turn_failure_payload(&task_id, workspace_scope.as_ref(), &error);
-            let _ = self
-                .append_runtime_event(&task_id, "turn.failed", payload, EventSource::Hub)
+            let mut payload = safe_turn_failure_payload(&task_id, workspace_scope.as_ref(), &error);
+            if !control.session_attempted() {
+                payload["nativeSessionUntouched"] = json!(true);
+                payload["nativeDispatched"] = json!(false);
+            }
+            self.persist_original_run_event(&control, "turn.failed", payload, EventSource::Hub)
                 .await;
+        }
+        control.finish();
+    }
+
+    /// Persist the same per-turn baseline used by live and startup recovery.
+    async fn record_turn_checkpoint(
+        &self,
+        scope: &TurnWorkspaceScope,
+        capture: Option<&dyn WorkspaceTurnCapture>,
+    ) {
+        let checkpoint = match capture {
+            Some(capture) => capture.checkpoint().await,
+            _ => Ok(None),
+        };
+        match checkpoint {
+            Ok(Some(value)) => {
+                if self
+                    .record_workspace_artifact(
+                        scope,
+                        value,
+                        "workspace.turn_checkpoint_captured",
+                        "application/vnd.dogcodes.turn-checkpoint.v1+json",
+                    )
+                    .await
+                    .is_err()
+                {
+                    let _ = self.append_runtime_event(&scope.task_id, "workspace.turn_checkpoint_failed", json!({"taskId":scope.task_id,"turnId":scope.turn_id,"failureKind":"storage_failed"}), EventSource::Hub).await;
+                }
+            }
+            _ => {
+                let _ = self.append_runtime_event(&scope.task_id, "workspace.turn_checkpoint_failed", json!({"taskId":scope.task_id,"turnId":scope.turn_id,"failureKind":"checkpoint_unavailable"}), EventSource::Hub).await;
+            }
+        }
+    }
+
+    async fn persist_turn_changes(
+        &self,
+        scope: &TurnWorkspaceScope,
+        mut change: Result<Value, WorkspaceCollectionDiagnostic>,
+    ) {
+        loop {
+            match self.repository.task_execution_state(&scope.task_id).await {
+                Ok(Some(state))
+                    if state
+                        .task
+                        .active_primary_run
+                        .as_ref()
+                        .is_some_and(|run| run.run_id == scope.run_id) => {}
+                Ok(_) => return,
+                Err(_) => {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    continue;
+                }
+            }
+            match self.record_turn_changes(scope, change.clone()).await {
+                Ok(()) => return,
+                Err(CoreError::Repository(_)) => {}
+                Err(error) => {
+                    change = Err(WorkspaceCollectionDiagnostic {
+                        kind: if matches!(error, CoreError::ResourceExhausted(_)) {
+                            agent_protocol::WorkspaceDiagnosticKind::OutputTruncated
+                        } else {
+                            agent_protocol::WorkspaceDiagnosticKind::InvalidOutput
+                        },
+                    });
+                    continue;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     }
 
@@ -2964,6 +3100,7 @@ impl Core {
         timing: &TurnStartupTiming,
     ) -> Result<(), CoreError> {
         let TurnInput {
+            control,
             prompt,
             attachments,
             model,
@@ -2980,6 +3117,19 @@ impl Core {
         let active = task.active_primary_run.ok_or_else(|| {
             CoreError::Internal("queued turn has no active run projection".into())
         })?;
+        if active.run_id != control.id {
+            return Err(CoreError::Conflict(
+                "queued run was replaced during preparation".into(),
+            ));
+        }
+        if control.stopping() {
+            terminal_events.push(run_control::interruption(
+                task_id,
+                &active.turn_id,
+                !control.session_attempted(),
+            ));
+            return Ok(());
+        }
         let _permission_lease =
             self.running_permissions
                 .track(task_id, &active, permission_mode.as_deref());
@@ -3049,15 +3199,15 @@ impl Core {
         drop(auxiliary_timing);
         let history_timing = timing.stage("history_bridge");
         let mut history_lease = if driver.supports_history_mcp() {
-            self.history_lease(task_id, &active.executor).await?
+            self.history_lease(task_id, &active.executor)
+                .await?
+                .map(Arc::new)
         } else {
             None
         };
         drop(history_timing);
         let context_timing = timing.stage("session_context");
-        let history_mcp = history_lease
-            .as_ref()
-            .map(history_bridge::HistoryLease::descriptor);
+        let history_mcp = history_lease.as_ref().map(|lease| lease.descriptor());
         let existing_session = snapshot
             .session_maps
             .into_iter()
@@ -3066,8 +3216,9 @@ impl Core {
         let selection_changed = existing_session
             .as_ref()
             .is_some_and(|mapping| mapping.model != model || mapping.thinking != thinking);
-        let can_resume = |mapping: &agent_protocol::AgentSessionMapSummary| {
-            (mapping.status == SessionMapStatus::Active && driver.supports_live_session_reuse())
+        let live_reuse = driver.supports_live_session_reuse();
+        let can_resume = move |mapping: &agent_protocol::AgentSessionMapSummary| {
+            (mapping.status == SessionMapStatus::Active && live_reuse)
                 || (mapping.status == SessionMapStatus::Resumable
                     && mapping.resume_capability == ResumeCapability::Supported
                     && resume_capability == SessionResumeCapability::Supported)
@@ -3099,168 +3250,256 @@ impl Core {
         };
         drop(context_timing);
         let session_timing = timing.stage("native_session");
-        let (session, session_map_id, session_created_at, session_event_type) =
-            if let Some(mapping) = existing_session
-                .as_ref()
-                .filter(|mapping| can_resume(mapping))
-            {
-                let request = SessionRequest {
-                    history_mcp: history_mcp.clone(),
-                    permission_mode: permission_mode.clone(),
-                    working_directory: project.path.clone(),
-                    additional_directories: project
-                        .additional_directories
-                        .iter()
-                        .cloned()
-                        .chain(attachment_directories.iter().cloned())
-                        .collect(),
-                };
-                let resumed = if selection_changed {
-                    driver
-                        .reconfigure_session(
-                            &mapping.native_session_id,
-                            request,
-                            model.as_deref(),
-                            thinking.as_deref(),
-                        )
-                        .await
-                } else {
-                    driver
-                        .resume_selected_session(
-                            &mapping.native_session_id,
-                            request,
-                            model.as_deref(),
-                            thinking.as_deref(),
-                        )
-                        .await
-                };
-                match resumed {
-                    Err(error) if driver_api::failure::kind(&error) == "selection_rejected" => {
-                        return Err(error.into());
-                    }
-                    Err(DriverError::AutonomousTurnBusy) => {
-                        return Err(DriverError::AutonomousTurnBusy.into());
-                    }
-                    Err(DriverError::CapabilityUnavailable(_)) if selection_changed => {
-                        replacement_context = Some(
-                            self.prepare_rebuilt_context(
+        let operation = {
+            let core = self.clone();
+            let task_owned = task_id.clone();
+            let active = active.clone();
+            let driver = driver.clone();
+            let existing_session = existing_session.clone();
+            let project = project.clone();
+            let history_mcp = history_mcp.clone();
+            let permission_mode = permission_mode.clone();
+            let attachment_directories = attachment_directories.clone();
+            let model = model.clone();
+            let thinking = thinking.clone();
+            let pending_transfer = pending_transfer.clone();
+            let pending_opt_out = pending_opt_out.clone();
+            let mut replacement_context = replacement_context.take();
+            let control = control.clone();
+            async move {
+                let task_id = &task_owned;
+                let (session, session_map_id, session_created_at, session_event_type) =
+                    if let Some(mapping) = existing_session
+                        .as_ref()
+                        .filter(|mapping| can_resume(mapping))
+                    {
+                        let request = SessionRequest {
+                            history_mcp: history_mcp.clone(),
+                            permission_mode: permission_mode.clone(),
+                            working_directory: project.path.clone(),
+                            additional_directories: project
+                                .additional_directories
+                                .iter()
+                                .cloned()
+                                .chain(attachment_directories.iter().cloned())
+                                .collect(),
+                        };
+                        let previous_handle = driver
+                            .current_session_handle(&mapping.native_session_id)
+                            .await;
+                        let source = match previous_handle {
+                            Some(handle) => {
+                                Some(run_cleanup::Resource::capture(driver.clone(), handle).await)
+                            }
+                            None => None,
+                        };
+                        let resumed = if selection_changed {
+                            driver
+                                .reconfigure_session(
+                                    &mapping.native_session_id,
+                                    request,
+                                    model.as_deref(),
+                                    thinking.as_deref(),
+                                )
+                                .await
+                        } else {
+                            driver
+                                .resume_selected_session(
+                                    &mapping.native_session_id,
+                                    request,
+                                    model.as_deref(),
+                                    thinking.as_deref(),
+                                )
+                                .await
+                        };
+                        match resumed {
+                            Err(error)
+                                if driver_api::failure::kind(&error) == "selection_rejected" =>
+                            {
+                                return Err(error.into());
+                            }
+                            Err(DriverError::AutonomousTurnBusy) => {
+                                return Err(DriverError::AutonomousTurnBusy.into());
+                            }
+                            Err(DriverError::CapabilityUnavailable(_)) if selection_changed => {
+                                if let Some(source) = source {
+                                    source
+                                        .retire(std::time::Duration::from_secs(10))
+                                        .wait_confirmed()
+                                        .await;
+                                }
+                                // Even a persisted source without a current local handle
+                                // cannot stay active while a replacement is admitted.
+                                core.mark_startup_source_retired(
+                                    task_id,
+                                    &active.run_id,
+                                    driver.as_ref(),
+                                    mapping,
+                                )
+                                .await?;
+                                if control.stopping() {
+                                    return Err(CoreError::Driver(DriverError::Protocol(
+                                        "startup cancelled before replacement".into(),
+                                    )));
+                                }
+                                replacement_context = Some(
+                                    core.prepare_rebuilt_context(
+                                        task_id,
+                                        &active.turn_id,
+                                        &active.executor,
+                                    )
+                                    .await?,
+                                );
+                                let session = driver
+                                    .create_selected_session(
+                                        SessionRequest {
+                                            history_mcp: history_mcp.clone(),
+                                            permission_mode: permission_mode.clone(),
+                                            working_directory: project.path.clone(),
+                                            additional_directories: project
+                                                .additional_directories
+                                                .iter()
+                                                .cloned()
+                                                .chain(attachment_directories.iter().cloned())
+                                                .collect(),
+                                        },
+                                        model.as_deref(),
+                                        thinking.as_deref(),
+                                    )
+                                    .await?;
+                                (session, SessionMapId::new(), Utc::now(), "session.ready")
+                            }
+                            Ok(session) => (
+                                session,
+                                mapping.session_map_id.clone(),
+                                mapping.created_at,
+                                "session.resumed",
+                            ),
+                            Err(error) => {
+                                if let Some(source) = source {
+                                    source
+                                        .retire(std::time::Duration::from_secs(10))
+                                        .wait_confirmed()
+                                        .await;
+                                }
+                                let failure = classify_resume_failure(&error);
+                                core.record_session_resume_failure(
+                                    task_id,
+                                    &active.run_id,
+                                    mapping,
+                                    failure,
+                                )
+                                .await?;
+                                core.record_context_transfer_failed(
+                                    task_id,
+                                    pending_transfer.as_ref(),
+                                    Some(&mapping.session_map_id),
+                                    failure.transfer_reason,
+                                )
+                                .await?;
+                                core.record_reconciliation_opt_out_result(
+                                    task_id,
+                                    pending_opt_out.as_ref(),
+                                    Some(&mapping.session_map_id),
+                                    None,
+                                    "failed",
+                                    Some(failure.transfer_reason),
+                                )
+                                .await?;
+                                return Err(error.into());
+                            }
+                        }
+                    } else {
+                        if !selection_changed
+                            && (pending_transfer.as_ref().is_some_and(|transfer| {
+                                transfer.kind == ContextPackageKind::Reconciliation
+                            }) || pending_opt_out.is_some())
+                        {
+                            core.record_context_transfer_failed(
                                 task_id,
-                                &active.turn_id,
-                                &active.executor,
-                            )
-                            .await?,
-                        );
-                        driver
-                            .shutdown(SessionHandle {
-                                native_session_id: mapping.native_session_id.clone(),
-                            })
-                            .await?;
-                        let session = driver
-                            .create_selected_session(
-                                SessionRequest {
-                                    history_mcp: history_mcp.clone(),
-                                    permission_mode: permission_mode.clone(),
-                                    working_directory: project.path.clone(),
-                                    additional_directories: project
-                                        .additional_directories
-                                        .iter()
-                                        .cloned()
-                                        .chain(attachment_directories.iter().cloned())
-                                        .collect(),
-                                },
-                                model.as_deref(),
-                                thinking.as_deref(),
+                                pending_transfer.as_ref(),
+                                existing_session
+                                    .as_ref()
+                                    .map(|mapping| &mapping.session_map_id),
+                                "target_session_not_resumable",
                             )
                             .await?;
-                        (session, SessionMapId::new(), Utc::now(), "session.ready")
-                    }
-                    Ok(session) => (
-                        session,
-                        mapping.session_map_id.clone(),
-                        mapping.created_at,
-                        "session.resumed",
+                            core.record_reconciliation_opt_out_result(
+                                task_id,
+                                pending_opt_out.as_ref(),
+                                existing_session
+                                    .as_ref()
+                                    .map(|mapping| &mapping.session_map_id),
+                                None,
+                                "failed",
+                                Some("target_session_not_resumable"),
+                            )
+                            .await?;
+                            return Err(CoreError::CapabilityUnavailable(
+                                "reconciliation target session is not resumable".into(),
+                            ));
+                        }
+                        (
+                            driver
+                                .create_selected_session(
+                                    SessionRequest {
+                                        history_mcp: history_mcp.clone(),
+                                        permission_mode: permission_mode.clone(),
+                                        additional_directories: project
+                                            .additional_directories
+                                            .iter()
+                                            .cloned()
+                                            .chain(attachment_directories.iter().cloned())
+                                            .collect(),
+                                        working_directory: project.path.clone(),
+                                    },
+                                    model.as_deref(),
+                                    thinking.as_deref(),
+                                )
+                                .await?,
+                            SessionMapId::new(),
+                            Utc::now(),
+                            "session.ready",
+                        )
+                    };
+                Ok::<_, CoreError>((
+                    session,
+                    (
+                        session_map_id,
+                        session_created_at,
+                        session_event_type,
+                        replacement_context,
                     ),
-                    Err(error) => {
-                        let failure = classify_resume_failure(&error);
-                        self.record_session_resume_failure(
-                            task_id,
-                            &active.run_id,
-                            mapping,
-                            failure,
-                        )
-                        .await?;
-                        self.record_context_transfer_failed(
-                            task_id,
-                            pending_transfer.as_ref(),
-                            Some(&mapping.session_map_id),
-                            failure.transfer_reason,
-                        )
-                        .await?;
-                        self.record_reconciliation_opt_out_result(
-                            task_id,
-                            pending_opt_out.as_ref(),
-                            Some(&mapping.session_map_id),
-                            None,
-                            "failed",
-                            Some(failure.transfer_reason),
-                        )
-                        .await?;
-                        return Err(error.into());
-                    }
-                }
-            } else {
-                if !selection_changed
-                    && (pending_transfer.as_ref().is_some_and(|transfer| {
-                        transfer.kind == ContextPackageKind::Reconciliation
-                    }) || pending_opt_out.is_some())
-                {
-                    self.record_context_transfer_failed(
-                        task_id,
-                        pending_transfer.as_ref(),
-                        existing_session
-                            .as_ref()
-                            .map(|mapping| &mapping.session_map_id),
-                        "target_session_not_resumable",
-                    )
-                    .await?;
-                    self.record_reconciliation_opt_out_result(
-                        task_id,
-                        pending_opt_out.as_ref(),
-                        existing_session
-                            .as_ref()
-                            .map(|mapping| &mapping.session_map_id),
-                        None,
-                        "failed",
-                        Some("target_session_not_resumable"),
-                    )
-                    .await?;
-                    return Err(CoreError::CapabilityUnavailable(
-                        "reconciliation target session is not resumable".into(),
-                    ));
-                }
-                (
-                    driver
-                        .create_selected_session(
-                            SessionRequest {
-                                history_mcp: history_mcp.clone(),
-                                permission_mode: permission_mode.clone(),
-                                additional_directories: project
-                                    .additional_directories
-                                    .iter()
-                                    .cloned()
-                                    .chain(attachment_directories.iter().cloned())
-                                    .collect(),
-                                working_directory: project.path.clone(),
-                            },
-                            model.as_deref(),
-                            thinking.as_deref(),
-                        )
-                        .await?,
-                    SessionMapId::new(),
-                    Utc::now(),
-                    "session.ready",
-                )
-            };
+                ))
+            }
+        };
+        let Some(startup) = session_startup::Startup::start(
+            self.clone(),
+            control.clone(),
+            driver.clone(),
+            history_lease.clone(),
+            operation,
+        ) else {
+            terminal_events.push(run_control::interruption(
+                task_id,
+                &active.turn_id,
+                !control.session_attempted(),
+            ));
+            return Ok(());
+        };
+        let acquired = startup.result().await;
+        if acquired.is_err() && control.stopping() && !control.owns_native() {
+            terminal_events.push(run_control::interruption(
+                task_id,
+                &active.turn_id,
+                !control.session_attempted(),
+            ));
+            return Ok(());
+        }
+        let (
+            session,
+            (session_map_id, session_created_at, session_event_type, replacement_context),
+        ) = acquired?;
         drop(session_timing);
         let identity_timing = timing.stage("session_identity_and_context");
         self.append_session_identity(
@@ -3298,6 +3537,7 @@ impl Core {
                 session_map_id.clone(),
                 session.clone(),
                 Arc::clone(&driver),
+                control.usage_provider.clone(),
             );
         }
 
@@ -3325,6 +3565,7 @@ impl Core {
                     session,
                     &session_map_id,
                     resume_capability,
+                    &control,
                 )
                 .await?;
                 return Err(CoreError::Internal(
@@ -3373,15 +3614,37 @@ impl Core {
             })
             .collect();
         let usage_before = self
-            .read_turn_usage(&active.executor, &session.native_session_id)
+            .read_turn_usage(&control, &session.native_session_id)
             .await;
         let mut usage_meter = turn_usage::TurnMeter::new(timing.elapsed_ms());
         let prompt_timing = timing.stage("native_prompt_dispatch");
         // Admission may precede session/context preparation by several seconds.
         // Recheck the original bytes immediately before handing them to a driver.
-        driver_api::attachments::validate(&attachments)
-            .await
-            .map_err(|error| CoreError::InvalidArgument(error.to_string()))?;
+        if !control.stopping() {
+            let validation = driver_api::attachments::validate(&attachments).await;
+            if let Err(error) = validation
+                && !control.stopping()
+            {
+                return Err(CoreError::InvalidArgument(error.to_string()));
+            }
+        }
+        if !control.begin_dispatch() {
+            self.retire_native_session(
+                task_id,
+                driver.as_ref(),
+                session,
+                &session_map_id,
+                resume_capability,
+                &control,
+            )
+            .await?;
+            terminal_events.push(run_control::interruption(
+                task_id,
+                &active.turn_id,
+                !control.session_attempted(),
+            ));
+            return Ok(());
+        }
         let mut stream = match driver
             .prompt(
                 &session,
@@ -3429,11 +3692,13 @@ impl Core {
                     session,
                     &session_map_id,
                     resume_capability,
+                    &control,
                 )
                 .await?;
                 return Err(error.into());
             }
         };
+        control.ready();
         drop(prompt_timing);
         timing.mark("prompt_accepted");
         let accepted_timing = timing.stage("prompt_acceptance_bookkeeping");
@@ -3467,6 +3732,7 @@ impl Core {
         let mut first_event = false;
         let mut first_text = false;
         let mut terminal_observed = false;
+        let mut retire_required = false;
         // Open thinking segments: item id, start, and the redacted text so far
         // (saved when the segment closes, so history can show it).
         let mut thought_segments: BTreeMap<String, ThoughtSegment> = BTreeMap::new();
@@ -3532,6 +3798,7 @@ impl Core {
             );
             if terminal {
                 drop(history_lease.take());
+                control.settling();
             }
             let boundary = terminal
                 || matches!(
@@ -3566,7 +3833,22 @@ impl Core {
                                 data["textTruncated"] = json!(true);
                             }
                         }
-                        self.append_runtime_event(task_id,"activity.updated",json!({"taskId":task_id,"turnId":active.turn_id,"itemId":id,"data":data}),EventSource::Hub).await?;
+                        let payload = json!({"taskId":task_id,"turnId":active.turn_id,"itemId":id,"data":data});
+                        if terminal {
+                            terminal_events.push((
+                                "activity.updated".into(),
+                                payload,
+                                EventSource::Hub,
+                            ));
+                        } else {
+                            self.append_runtime_event(
+                                task_id,
+                                "activity.updated",
+                                payload,
+                                EventSource::Hub,
+                            )
+                            .await?;
+                        }
                     }
                 }
             }
@@ -3614,6 +3896,14 @@ impl Core {
                     | DriverEvent::TurnInterrupted { .. }
             ) {
                 terminal_observed = true;
+            }
+            if matches!(
+                event,
+                DriverEvent::TurnFailed { .. }
+                    | DriverEvent::TurnQuotaExhausted { .. }
+                    | DriverEvent::TurnInterrupted { .. }
+            ) {
+                retire_required = true;
             }
             let completed_operation = match &event {
                 DriverEvent::Presentation { item_id, data }
@@ -3688,10 +3978,11 @@ impl Core {
             }
         }
         drop(history_lease.take());
+        control.settling();
         // Freeze telemetry before potentially slow workspace capture and before
         // releasing the session for another user prompt.
         let usage_after = self
-            .read_turn_usage(&active.executor, &session.native_session_id)
+            .read_turn_usage(&control, &session.native_session_id)
             .await;
         // A driver stream that ends without a terminal event would otherwise
         // leave the task pinned to an active run forever; the Hub closes the
@@ -3704,23 +3995,22 @@ impl Core {
                     "turnId": active.turn_id,
                     "failureKind": "driver_stream_ended",
                     "message": "turn execution failed",
+                    "failedAt": Utc::now(),
                 }),
                 EventSource::Hub,
             ));
         }
-        if let (Some(scope), Some(capture)) = (workspace_scope, capture.take()) {
+        let turn_changes = if let (Some(scope), Some(capture)) = (workspace_scope, capture.take()) {
             self.capture_turn_workspace(scope, "turn_end").await;
             self.record_fork_snapshot(scope).await;
-            let changes = match capture {
+            Some(match capture {
                 Ok(capture) => capture.finish().await,
                 Err(error) => Err(error),
-            };
-            if self.record_turn_changes(scope, changes).await.is_err() {
-                let _ = self.append_runtime_event(task_id, "workspace.turn_changes_failed",
-                    json!({"taskId":task_id,"turnId":active.turn_id,"failureKind":"storage_failed"}), EventSource::Hub).await;
-            }
-        }
-        self.record_turn_usage(
+            })
+        } else {
+            None
+        };
+        let turn_usage = turn_usage::freeze(
             task_id,
             &active.turn_id,
             turn_usage::TurnUsageInput {
@@ -3732,12 +4022,7 @@ impl Core {
                 native_session_id: &session.native_session_id,
                 meter: &usage_meter,
             },
-        )
-        .await;
-        for (kind, payload, source) in terminal_events.drain(..) {
-            self.append_runtime_event(task_id, &kind, payload, source)
-                .await?;
-        }
+        );
         if terminal_observed && driver.supports_background_events() {
             self.observe_background(
                 stream,
@@ -3748,14 +4033,41 @@ impl Core {
                 session.native_session_id.clone(),
             );
         }
-        self.release_native_session(
-            task_id,
-            driver.as_ref(),
-            session,
-            &session_map_id,
-            resume_capability,
-        )
-        .await?;
+        if !terminal_observed || retire_required {
+            self.retire_native_session(
+                task_id,
+                driver.as_ref(),
+                session,
+                &session_map_id,
+                resume_capability,
+                &control,
+            )
+            .await?;
+        } else {
+            self.release_native_session(
+                task_id,
+                driver.as_ref(),
+                session,
+                &session_map_id,
+                resume_capability,
+                &control,
+            )
+            .await?;
+        }
+        // The original activity is retired, or background/idle ownership has
+        // transferred. A later bookkeeping failure must not close its successor.
+        control.native_resolved();
+        for (kind, payload) in turn_usage {
+            self.persist_original_run_event(&control, kind, payload, EventSource::Hub)
+                .await;
+        }
+        if let (Some(scope), Some(changes)) = (workspace_scope, turn_changes) {
+            self.persist_turn_changes(scope, changes).await;
+        }
+        for (kind, payload, source) in terminal_events.drain(..) {
+            self.persist_original_run_event(&control, &kind, payload, source)
+                .await;
+        }
         Ok(())
     }
 
@@ -3766,12 +4078,34 @@ impl Core {
         session: driver_api::SessionHandle,
         session_map_id: &SessionMapId,
         resume_capability: SessionResumeCapability,
+        control: &Arc<run_control::Control>,
     ) -> Result<(), CoreError> {
         if driver.supports_live_session_reuse() {
             return Ok(());
         }
+        self.retire_native_session(
+            task_id,
+            driver,
+            session,
+            session_map_id,
+            resume_capability,
+            control,
+        )
+        .await
+    }
+
+    async fn retire_native_session(
+        &self,
+        task_id: &TaskId,
+        driver: &dyn AgentDriver,
+        session: driver_api::SessionHandle,
+        session_map_id: &SessionMapId,
+        resume_capability: SessionResumeCapability,
+        control: &Arc<run_control::Control>,
+    ) -> Result<(), CoreError> {
         let native_session_id = session.native_session_id.clone();
-        driver.shutdown(session).await?;
+        let _ = driver;
+        self.wait_run_cleanup(control).await;
         let (session_event_type, status, timestamp_field) = match resume_capability {
             SessionResumeCapability::Supported => ("session.resumable", "resumable", "resumableAt"),
             SessionResumeCapability::Unsupported | SessionResumeCapability::Unknown => {
@@ -4446,6 +4780,9 @@ mod tests {
     pub(super) struct MemoryRepository {
         session_override: Mutex<Vec<agent_protocol::AgentSessionMapSummary>>,
         pub(super) task_override: Mutex<Option<TaskSummary>>,
+        pub(super) project_task_events: std::sync::atomic::AtomicBool,
+        pub(super) unavailable_event: Mutex<Option<String>>,
+        pub(super) rejected_events: std::sync::atomic::AtomicUsize,
         events: Mutex<Vec<EventEnvelope>>,
         artifacts: Mutex<BTreeMap<ArtifactId, StoredArtifact>>,
     }
@@ -4810,11 +5147,15 @@ mod tests {
                 started_at: Utc::now(),
             }),
         };
-        core.owned_runs
-            .lock()
-            .unwrap()
-            .insert(run_id.clone(), Arc::clone(&driver));
-        for case in ["replaced", "interrupting", "unowned", "request_replaced"] {
+        let ownership = core.own_run(run_id.clone(), Arc::clone(&driver));
+        ownership.control.ready();
+        for case in [
+            "replaced",
+            "interrupting",
+            "unowned",
+            "settling",
+            "request_replaced",
+        ] {
             if case != "replaced" {
                 task.active_primary_run.as_mut().unwrap().turn_id = old_turn.clone();
             }
@@ -4826,6 +5167,7 @@ mod tests {
                 core.owned_runs.lock().unwrap().remove(&run_id);
             }
             if case == "request_replaced" {
+                ownership.control.ready();
                 core.owned_runs
                     .lock()
                     .unwrap()
@@ -4838,6 +5180,13 @@ mod tests {
                 )
                 .await
                 .unwrap();
+            }
+            if case == "settling" {
+                core.owned_runs
+                    .lock()
+                    .unwrap()
+                    .insert(run_id.clone(), Arc::clone(&driver));
+                ownership.control.settling();
             }
             *repository.task_override.lock().await = Some(task.clone());
             core.deliver_approval_response(
@@ -4867,7 +5216,7 @@ mod tests {
             );
             assert_eq!(event.payload["turnId"], old_turn.to_string());
         }
-        assert_eq!(repository.events.lock().await.len(), 5);
+        assert_eq!(repository.events.lock().await.len(), 6);
     }
 
     #[derive(Default)]
@@ -4927,6 +5276,19 @@ mod tests {
         }
 
         async fn append(&self, request: AppendRequest) -> Result<AppendOutcome, RepositoryError> {
+            if self
+                .unavailable_event
+                .lock()
+                .await
+                .as_ref()
+                .is_some_and(|kind| request.events.iter().any(|event| &event.event_type == kind))
+            {
+                self.rejected_events
+                    .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                return Err(RepositoryError::Unavailable(
+                    "private storage interruption".into(),
+                ));
+            }
             let artifacts = request.artifacts.clone();
             let mut all = self.events.lock().await;
             let first = all.len() as u64 + 1;
@@ -5034,7 +5396,31 @@ mod tests {
                     _ => {}
                 }
             }
-            if let Some(task) = self.task_override.lock().await.clone() {
+            if let Some(mut task) = self.task_override.lock().await.clone() {
+                if self
+                    .project_task_events
+                    .load(std::sync::atomic::Ordering::Acquire)
+                {
+                    for event in events
+                        .iter()
+                        .filter(|e| e.stream.stream_id == task.task_id.to_string())
+                    {
+                        task.stream_version = event.stream_version;
+                        let original = task.active_primary_run.as_ref().is_some_and(|run| {
+                            event.payload["runId"].as_str() == Some(run.run_id.as_str())
+                        });
+                        if original {
+                            match event.event_type.as_str() {
+                                "turn.cancel_requested" => {
+                                    task.active_primary_run.as_mut().unwrap().state =
+                                        agent_domain::RunState::Interrupting;
+                                }
+                                "turn.failed" | "turn.completed" => task.active_primary_run = None,
+                                _ => {}
+                            }
+                        }
+                    }
+                }
                 // Keep overridden tasks valid for scoped execution-state reads.
                 if !projects
                     .iter()
@@ -5265,6 +5651,7 @@ mod tests {
         let mut turn = Box::pin(core.run_turn(
             TaskId::new(),
             TurnInput {
+                control: Arc::new(run_control::Control::new(RunId::new())),
                 prompt: "unused".into(),
                 attachments: vec![],
                 model: None,

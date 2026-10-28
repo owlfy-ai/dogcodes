@@ -27,10 +27,44 @@ use thiserror::Error;
 pub type DriverEventStream =
     Pin<Box<dyn Stream<Item = Result<DriverEvent, DriverError>> + Send + 'static>>;
 
+/// Passive proof captured from the original resident before shutdown starts.
+/// Resolving means its owned resources retired, never just a failed/expired call.
+pub type SessionShutdownProof = Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>;
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionHandle {
     pub native_session_id: String,
+    // Runtime authority is deliberately absent from persisted/remote data.
+    #[serde(skip)]
+    scope: Option<ulid::Ulid>,
+}
+
+impl SessionHandle {
+    /// A native reference for adapters without resident execution scopes.
+    #[must_use]
+    pub fn new(native_session_id: String) -> Self {
+        Self {
+            native_session_id,
+            scope: None,
+        }
+    }
+
+    /// A new resident incarnation, even if the vendor reuses its native ID.
+    #[must_use]
+    pub fn scoped(native_session_id: String) -> Self {
+        Self {
+            native_session_id,
+            scope: Some(ulid::Ulid::new()),
+        }
+    }
+
+    #[must_use]
+    pub fn same_scope(&self, other: &Self) -> bool {
+        self.native_session_id == other.native_session_id
+            && self.scope.is_some()
+            && self.scope == other.scope
+    }
 }
 
 /// App-owned stdio MCP endpoint. Never persisted in task/session projections.
@@ -351,24 +385,6 @@ pub trait AgentDriver: Send + Sync {
     fn supports_history_mcp(&self) -> bool {
         true
     }
-    /// Sidebar Q&A must fail closed unless the adapter enforces read-only tools or a read-only sandbox.
-    fn supports_readonly_chat(&self) -> bool {
-        false
-    }
-    /// Observed tool events are allowed only after native read-only restrictions are installed.
-    /// This is a defensive event check, not a substitute for native write prevention.
-    fn allows_readonly_chat_tool(&self, _name: &str) -> bool {
-        false
-    }
-    async fn create_chat_session(
-        &self,
-        _directory: &str,
-        _additional: &[String],
-    ) -> Result<SessionHandle, DriverError> {
-        Err(DriverError::CapabilityUnavailable(
-            "此 Agent 暂不支持只读问答模式".into(),
-        ))
-    }
     /// Optional native hardening; this is not an Agent availability gate.
     fn supports_readonly_analysis(&self) -> bool {
         false
@@ -612,7 +628,9 @@ pub trait AgentDriver: Send + Sync {
 
     /// Core has persisted one continuation's terminal. Until then the driver
     /// must keep new user input out, even if the native result already arrived.
-    async fn acknowledge_autonomous_turn(&self, _native_session_id: &str) {}
+    /// Only the original scope may acknowledge its persisted continuation.
+    /// Native IDs can be reused by a replacement actor.
+    async fn acknowledge_autonomous_turn(&self, _handle: &SessionHandle) {}
 
     fn supports_live_session_reuse(&self) -> bool {
         false
@@ -623,6 +641,12 @@ pub trait AgentDriver: Send + Sync {
     }
 
     async fn create_session(&self, request: SessionRequest) -> Result<SessionHandle, DriverError>;
+
+    /// Snapshot existing local ownership for explicit management, never restore
+    /// or spawn. Callers must retain this handle rather than reconstruct it.
+    async fn current_session_handle(&self, native_session_id: &str) -> Option<SessionHandle> {
+        Some(SessionHandle::new(native_session_id.to_owned()))
+    }
 
     async fn resume_session(
         &self,
@@ -671,6 +695,13 @@ pub trait AgentDriver: Send + Sync {
 
     /// Releases the live connection/process handle without deleting a resumable native session.
     async fn shutdown(&self, handle: SessionHandle) -> Result<(), DriverError>;
+
+    /// Must not send requests, re-resolve a native ID later, or create a session.
+    /// Adapters with asynchronous retirement expose the original positive proof
+    /// so a caller can keep observing after shutdown reports an uncertain result.
+    async fn shutdown_proof(&self, _handle: &SessionHandle) -> Option<SessionShutdownProof> {
+        None
+    }
 }
 
 /// Deterministic driver used by the first vertical slice and offline tests.
@@ -743,9 +774,7 @@ impl AgentDriver for FakeDriver {
     }
 
     async fn create_session(&self, _request: SessionRequest) -> Result<SessionHandle, DriverError> {
-        Ok(SessionHandle {
-            native_session_id: format!("fake_{}", ulid::Ulid::new()),
-        })
+        Ok(SessionHandle::new(format!("fake_{}", ulid::Ulid::new())))
     }
 
     async fn resume_session(
@@ -770,9 +799,7 @@ impl AgentDriver for FakeDriver {
             .lock()
             .await
             .push(native_session_id.into());
-        Ok(SessionHandle {
-            native_session_id: native_session_id.into(),
-        })
+        Ok(SessionHandle::new(native_session_id.into()))
     }
 
     async fn prompt(
@@ -818,6 +845,28 @@ impl AgentDriver for FakeDriver {
 #[cfg(test)]
 mod tests {
     use super::explicitly_reports_quota_exhaustion;
+
+    #[test]
+    fn session_authority_survives_cloning_but_never_serialization_or_id_reuse() {
+        let original = super::SessionHandle::scoped("vendor-reuses-this-id".into());
+        assert!(original.same_scope(&original.clone()));
+        assert!(!original.same_scope(&super::SessionHandle::scoped(
+            original.native_session_id.clone()
+        )));
+        assert!(!original.same_scope(&super::SessionHandle::new(
+            original.native_session_id.clone()
+        )));
+        let json = serde_json::to_value(&original).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"nativeSessionId":"vendor-reuses-this-id"})
+        );
+        let decoded: super::SessionHandle = serde_json::from_value(json).unwrap();
+        assert!(!decoded.same_scope(&original));
+        let mut changed = original.clone();
+        changed.native_session_id = "another-session".into();
+        assert!(!changed.same_scope(&original));
+    }
 
     #[test]
     fn quota_classifier_requires_explicit_exhaustion_language() {

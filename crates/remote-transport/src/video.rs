@@ -282,6 +282,7 @@ pub(crate) fn rtp_timestamp(base: u32, elapsed: Duration, last: Option<u32>) -> 
 struct Frame {
     data: bytes::Bytes,
     captured: Instant,
+    epoch: u64,
 }
 
 /// Hands encoded frames to the track. Cheap to clone; frames are packetized
@@ -293,6 +294,7 @@ pub struct VideoSender {
     target: Arc<AtomicU64>,
     keyframe: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
+    epoch: tokio::sync::watch::Sender<u64>,
 }
 
 impl VideoSender {
@@ -303,7 +305,31 @@ impl VideoSender {
         target: Arc<AtomicU64>,
         keyframe: Arc<AtomicBool>,
     ) -> Self {
+        Self::start_with_writer(
+            move |packet| {
+                let track = track.clone();
+                async move { track.write_rtp(packet).await }
+            },
+            ssrc,
+            payload_type,
+            target,
+            keyframe,
+        )
+    }
+
+    fn start_with_writer<W, F>(
+        mut write: W,
+        ssrc: u32,
+        payload_type: u8,
+        target: Arc<AtomicU64>,
+        keyframe: Arc<AtomicBool>,
+    ) -> Self
+    where
+        W: FnMut(rtc::rtp::Packet) -> F + Send + 'static,
+        F: std::future::Future<Output = webrtc::error::Result<()>> + Send,
+    {
         let (queue, mut frames) = mpsc::channel::<Frame>(QUEUE_FRAMES);
+        let (epoch, mut epochs) = tokio::sync::watch::channel(0_u64);
         let failed = Arc::new(AtomicBool::new(false));
         let writer_failed = failed.clone();
         tokio::spawn(async move {
@@ -316,7 +342,18 @@ impl VideoSender {
             let mut sequence = seed as u16;
             let mut last = None;
             let mut errors = 0u32;
+            let mut packetizer_epoch = 0;
             'frames: while let Some(frame) = frames.recv().await {
+                let current = *epochs.borrow_and_update();
+                if frame.epoch != current {
+                    continue;
+                }
+                if packetizer_epoch != current {
+                    // The payload writer caches SPS/PPS. A replacement
+                    // generation must never inherit the retired parameters.
+                    payloader = H264Payloader::default();
+                    packetizer_epoch = current;
+                }
                 let timestamp = rtp_timestamp(
                     base,
                     frame.captured.saturating_duration_since(started),
@@ -343,7 +380,12 @@ impl VideoSender {
                     sequence = sequence.wrapping_add(1);
                     // Writes before negotiation completes fail; a long run of
                     // failures means the connection is gone.
-                    if track.write_rtp(packet).await.is_ok() {
+                    let result = tokio::select! {
+                        biased;
+                        _ = epochs.changed() => continue 'frames,
+                        result = write(packet) => result,
+                    };
+                    if result.is_ok() {
                         errors = 0;
                     } else {
                         errors += 1;
@@ -360,6 +402,7 @@ impl VideoSender {
             target,
             keyframe,
             failed,
+            epoch,
         }
     }
 
@@ -372,8 +415,25 @@ impl VideoSender {
             .try_send(Frame {
                 data: data.into(),
                 captured,
+                epoch: *self.epoch.borrow(),
             })
             .is_ok()
+    }
+
+    /// Discard this application's queued frames and interrupt a pending local
+    /// RTP enqueue. Packets already accepted by WebRTC cannot be recalled.
+    /// Keep the same SSRC, sequence and timestamp clocks across the reset.
+    pub fn reset(&self) {
+        self.epoch
+            .send_modify(|epoch| *epoch = epoch.wrapping_add(1));
+        self.keyframe.store(true, Ordering::Release);
+    }
+
+    /// Advisory local queue credit; GCC still controls the RTP link. A race
+    /// with another producer may refuse push, which must retain IDR recovery.
+    #[must_use]
+    pub fn can_encode(&self) -> bool {
+        !self.closed() && self.queue.capacity() > 0
     }
 
     /// Congestion controller's current target, bits per second.
@@ -400,6 +460,126 @@ impl VideoSender {
 mod tests {
     use super::rtp_timestamp;
     use std::time::Duration;
+
+    fn nal(marker: u8) -> Vec<u8> {
+        vec![0, 0, 0, 1, 0x65, marker]
+    }
+
+    #[tokio::test]
+    async fn reset_discards_frames_queued_before_the_packet_writer_runs() {
+        use super::*;
+        let (written, mut received) = mpsc::unbounded_channel();
+        let sender = VideoSender::start_with_writer(
+            move |packet| {
+                let written = written.clone();
+                async move {
+                    written.send(packet).unwrap();
+                    Ok(())
+                }
+            },
+            1,
+            102,
+            Arc::new(AtomicU64::new(START_BITRATE)),
+            Arc::new(AtomicBool::new(false)),
+        );
+        // No await: on this current-thread runtime the actual packet writer
+        // has not polled any of the old frames when the reset happens.
+        assert!(sender.push(nal(1), Instant::now()));
+        assert!(sender.push(nal(2), Instant::now()));
+        sender.reset();
+        assert!(sender.take_keyframe_request());
+        assert!(sender.push(nal(3), Instant::now()));
+        let packet = tokio::time::timeout(Duration::from_secs(2), received.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        drop(sender);
+        assert_eq!(packet.payload.as_ref(), &[0x65, 3]);
+        assert!(received.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn reset_interrupts_a_pending_old_packet_and_keeps_rtp_clocks() {
+        use super::*;
+        let (entered, mut entering) = mpsc::unbounded_channel();
+        let (written, mut received) = mpsc::unbounded_channel();
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        let blocked = gate.clone();
+        let sender = VideoSender::start_with_writer(
+            move |packet| {
+                let (entered, written, gate) = (entered.clone(), written.clone(), blocked.clone());
+                async move {
+                    entered.send(packet.clone()).unwrap();
+                    if packet.payload.last() == Some(&1) {
+                        let _permit = gate.acquire().await.unwrap();
+                    }
+                    written.send(packet).unwrap();
+                    Ok(())
+                }
+            },
+            1,
+            102,
+            Arc::new(AtomicU64::new(START_BITRATE)),
+            Arc::new(AtomicBool::new(false)),
+        );
+        // A fragmented old frame is already waiting to enter WebRTC.
+        let mut old = vec![0, 0, 0, 1, 0x61];
+        old.extend(std::iter::repeat_n(1, 4000));
+        assert!(sender.push(old, Instant::now()));
+        let pending = tokio::time::timeout(Duration::from_secs(2), entering.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!pending.header.marker);
+        assert!(sender.push(nal(2), Instant::now()));
+        sender.reset();
+        assert!(sender.push(nal(3), Instant::now()));
+        let replacement = tokio::time::timeout(Duration::from_secs(2), received.recv()).await;
+        // Also settle a broken implementation before a negative assertion.
+        gate.add_permits(1);
+        let replacement = replacement.unwrap().unwrap();
+        assert_eq!(replacement.payload.as_ref(), &[0x65, 3]);
+        assert_eq!(
+            replacement.header.sequence_number,
+            pending.header.sequence_number.wrapping_add(1)
+        );
+        assert!(sender.push(nal(4), Instant::now()));
+        let next = tokio::time::timeout(Duration::from_secs(2), received.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(next.payload.as_ref(), &[0x65, 4]);
+        assert_eq!(next.header.ssrc, replacement.header.ssrc);
+        assert_eq!(
+            next.header.sequence_number,
+            replacement.header.sequence_number.wrapping_add(1)
+        );
+        assert_ne!(next.header.timestamp, replacement.header.timestamp);
+        drop(sender);
+    }
+
+    #[test]
+    fn encoding_credit_tracks_the_real_rtp_queue_and_retired_writer() {
+        use super::{Arc, AtomicBool, AtomicU64, Ordering, VideoSender, mpsc};
+        let (queue, mut receive) = mpsc::channel(1);
+        let sender = VideoSender {
+            queue,
+            target: Arc::new(AtomicU64::new(1_000_000)),
+            keyframe: Arc::new(AtomicBool::new(false)),
+            failed: Arc::new(AtomicBool::new(false)),
+            epoch: tokio::sync::watch::channel(0).0,
+        };
+        assert!(sender.can_encode());
+        assert!(sender.push(vec![0; 100], std::time::Instant::now()));
+        assert!(!sender.can_encode());
+        receive.try_recv().unwrap();
+        assert!(sender.can_encode());
+        sender.failed.store(true, Ordering::Release);
+        assert!(!sender.can_encode());
+        sender.failed.store(false, Ordering::Release);
+        drop(receive);
+        assert!(!sender.can_encode());
+    }
 
     #[test]
     fn video_requires_an_explicit_compatible_receiver_budget() {

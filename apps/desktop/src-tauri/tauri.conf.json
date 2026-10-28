@@ -46,6 +46,23 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "targets": "all"
+    "targets": "all",
+    "macOS": {
+      "minimumSystemVersion": "12.3"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libpipewire-0.3-0 (>= 0.3.48)",
+          "pipewire-bin (>= 0.3.48)",
+          "libgstreamer1.0-0 (>= 1.20)",
+          "libgstreamer-plugins-base1.0-0 (>= 1.20)"
+        ],
+        "recommends": [
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-bad"
+        ]
+      }
+    }
   }
 }

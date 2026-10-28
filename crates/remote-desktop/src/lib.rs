@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::HashSet, io::Cursor};
 
+pub mod cursor;
+
 pub type Result<T> = std::result::Result<T, String>;
 fn native(error: impl std::fmt::Display) -> String {
     format!("系统远控接口不可用，请检查屏幕录制、辅助功能及桌面权限：{error}")
@@ -74,6 +76,8 @@ pub fn to_normalized(display: &Display, x: i32, y: i32) -> Option<(u16, u16)> {
 pub struct Capturer {
     pub display: Display,
     source: CaptureBackend,
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    picture: video::Picture,
 }
 enum CaptureBackend {
     Native(xcap::Monitor),
@@ -91,10 +95,38 @@ impl Capturer {
             .into_iter()
             .find(|d| d.id == id)
             .ok_or("显示器已断开，请刷新屏幕列表")?;
+        #[cfg(target_os = "macos")]
+        let picture = video::Picture::new(id, std::sync::Arc::new(|| true));
+        #[cfg(target_os = "windows")]
+        let picture = video::Picture::new(id, display.name.clone(), std::sync::Arc::new(|| true));
         Ok(Self {
             display,
             source: CaptureBackend::Native(monitor),
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            picture,
         })
+    }
+    /// Stop a no-longer-used image stream while video supplies the screen.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    pub fn release_idle_picture(&mut self) {
+        self.picture.idle();
+    }
+    /// The original desktop lease, also checked after native preparation.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    pub fn new_owned(
+        id: u32,
+        alive: std::sync::Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Result<Self> {
+        let mut capturer = Self::new(id)?;
+        #[cfg(target_os = "macos")]
+        {
+            capturer.picture = video::Picture::new(id, alive);
+        }
+        #[cfg(target_os = "windows")]
+        {
+            capturer.picture = video::Picture::new(id, capturer.display.name.clone(), alive);
+        }
+        Ok(capturer)
     }
     #[cfg(target_os = "linux")]
     pub fn from_portal(session: &wayland::Session, id: u32) -> Result<Self> {
@@ -117,20 +149,89 @@ impl Capturer {
             CaptureBackend::Portal(source) => Some(source.clone()),
         }
     }
+    fn check_current(&self) -> Result<()> {
+        require_unlocked()?;
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        self.picture.check_owner()?;
+        #[cfg(target_os = "linux")]
+        if let CaptureBackend::Portal(source) = &self.source {
+            source.check_active()?;
+        }
+        Ok(())
+    }
+    fn check_picture(&self, cursor_embedded: Option<bool>) -> Result<()> {
+        self.check_current()?;
+        #[cfg(target_os = "macos")]
+        if cursor_embedded == Some(true) {
+            self.picture.check_current()?;
+        }
+        #[cfg(target_os = "windows")]
+        self.picture.check_current()?;
+        #[cfg(not(target_os = "macos"))]
+        let _ = cursor_embedded;
+        Ok(())
+    }
     /// `known` is the frame id the client is still showing; a matching
     /// capture answers `unchanged` without image bytes.
     pub fn frame(&mut self, max_width: u32, quality: u8, known: Option<&str>) -> Result<Value> {
-        require_unlocked()?;
+        self.check_current()?;
         if !(320..=2560).contains(&max_width) || !(30..=90).contains(&quality) {
             return Err("画面尺寸或质量无效".into());
         }
-        let pixels = match &self.source {
-            CaptureBackend::Native(monitor) => monitor.capture_image().map_err(native)?,
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        {
+            let current = displays()?
+                .into_iter()
+                .find(|d| d.id == self.display.id)
+                .ok_or("显示器已断开，请刷新屏幕列表")?;
+            if (
+                current.x,
+                current.y,
+                current.width,
+                current.height,
+                current.scale.to_bits(),
+            ) != (
+                self.display.x,
+                self.display.y,
+                self.display.width,
+                self.display.height,
+                self.display.scale.to_bits(),
+            ) {
+                self.picture.idle();
+            }
+            self.display = current;
+        }
+        let (pixels, cursor_embedded) = match &self.source {
+            CaptureBackend::Native(monitor) => {
+                #[cfg(target_os = "macos")]
+                if let Some(pixels) = self.picture.frame()? {
+                    (std::sync::Arc::new(pixels), Some(true))
+                } else {
+                    // SCK is optional for JPEG; the screenshot fallback keeps
+                    // an explicit separate pointer overlay mode.
+                    self.check_current()?;
+                    (
+                        std::sync::Arc::new(monitor.capture_image().map_err(native)?),
+                        Some(false),
+                    )
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    let _ = monitor;
+                    self.picture.frame()?
+                }
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                {
+                    (
+                        std::sync::Arc::new(monitor.capture_image().map_err(native)?),
+                        Some(false),
+                    )
+                }
+            }
             #[cfg(target_os = "linux")]
-            CaptureBackend::Portal(source) => (*source.frame()?).clone(),
+            CaptureBackend::Portal(source) => (source.frame()?, Some(source.cursor_embedded())),
         };
-        let image = image::DynamicImage::ImageRgba8(pixels);
-        let image = image.thumbnail(max_width, 1440).to_rgb8();
+        let image = picture_thumbnail(pixels.as_ref(), max_width)?;
         let id = {
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -138,9 +239,12 @@ impl Capturer {
             format!("{:016x}", hasher.finish())
         };
         // Never publish a frame captured during a transition to the lock screen.
-        require_unlocked()?;
+        self.check_picture(cursor_embedded)?;
         if known == Some(id.as_str()) {
-            return Ok(json!({"monitorId":self.display.id,"frameId":id,"unchanged":true}));
+            return Ok(
+                json!({"monitorId":self.display.id,"frameId":id,"unchanged":true,
+                "cursorEmbedded":cursor_embedded}),
+            );
         }
         let mut bytes = Vec::new();
         image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, quality)
@@ -149,18 +253,39 @@ impl Capturer {
         if bytes.len() > 4 * 1024 * 1024 {
             return Err("画面过大，请降低画质".into());
         }
+        let bytes = STANDARD.encode(bytes);
+        // JPEG/base64 work may outlive the previous check just like a native
+        // video encode. Revalidate immediately before returning pixels.
+        self.check_picture(cursor_embedded)?;
         Ok(
             json!({"monitorId":self.display.id,"frameId":id,"width":image.width(),"height":image.height(),
             "pointWidth":self.display.width,"pointHeight":self.display.height,"scale":self.display.scale,
-            "mimeType":"image/jpeg","bytes":STANDARD.encode(bytes)}),
+            "cursorEmbedded":cursor_embedded,
+            "mimeType":"image/jpeg","bytes":bytes}),
         )
     }
+}
+/// Borrow the retained source rather than cloning a full native-size picture.
+fn picture_thumbnail(pixels: &image::RgbaImage, max_width: u32) -> Result<image::RgbImage> {
+    let (width, height) = pixels.dimensions();
+    if width == 0 || height == 0 {
+        return Err("屏幕图像尺寸无效".into());
+    }
+    let ratio = (f64::from(max_width) / f64::from(width)).min(1440.0 / f64::from(height));
+    let size = (
+        (f64::from(width) * ratio).round().max(1.0) as u32,
+        (f64::from(height) * ratio).round().max(1.0) as u32,
+    );
+    Ok(
+        image::DynamicImage::ImageRgba8(image::imageops::thumbnail(pixels, size.0, size.1))
+            .to_rgb8(),
+    )
 }
 pub fn frame(id: u32, max_width: u32, quality: u8) -> Result<Value> {
     Capturer::new(id)?.frame(max_width, quality, None)
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Input {
     Move { x: u16, y: u16 },
@@ -169,7 +294,10 @@ pub enum Input {
     Text { text: String },
     Scroll { x: i16, y: i16 },
 }
+mod input_geometry;
 struct NativeController {
+    geometry: input_geometry::Resolver,
+    pointer: input_geometry::Pointer,
     input: Enigo,
     buttons: HashSet<enigo::Button>,
 }
@@ -177,6 +305,8 @@ impl NativeController {
     pub fn new() -> Result<Self> {
         require_unlocked()?;
         Ok(Self {
+            geometry: input_geometry::Resolver::new(),
+            pointer: input_geometry::Pointer::default(),
             input: Enigo::new(&Settings {
                 open_prompt_to_get_permissions: false,
                 release_keys_when_dropped: true,
@@ -188,17 +318,47 @@ impl NativeController {
     }
     /// Pointer position on `display`, normalised; `None` when it is elsewhere.
     pub fn cursor(&self, display: &Display) -> Option<(u16, u16)> {
+        let _context = input_geometry::Context::enter().ok()?;
+        let display = self.geometry.current(display).ok()?;
         let (x, y) = self.input.location().ok()?;
-        to_normalized(display, x, y)
+        to_normalized(&display, x, y)
     }
-    /// One lock check guards an ordered batch; events run until the first failure.
-    pub fn send_batch(&mut self, display: &Display, events: Vec<Input>) -> Result<()> {
+    /// Revalidate lock state after a positional query. One current geometry
+    /// snapshot covers the batch; owner retirement stops subsequent actions.
+    pub fn send_batch(
+        &mut self,
+        display: &Display,
+        events: Vec<Input>,
+        active: &dyn Fn() -> bool,
+    ) -> Result<()> {
         require_unlocked()?;
-        events
-            .into_iter()
-            .try_for_each(|event| self.apply(display, event))
+        let _context = input_geometry::Context::enter()?;
+        // Resolve before mutable injection; one snapshot covers the ordered batch.
+        let current = if input_geometry::needs_bounds(&events) {
+            Some(self.geometry.current(display))
+        } else {
+            None
+        };
+        if current.is_some() {
+            require_unlocked()?;
+        }
+        input_geometry::batch_guarded(
+            display,
+            events,
+            |_| current.unwrap_or_else(|| Err("缺少当前屏幕坐标".into())),
+            active,
+            |display, event| self.apply(display, event, active),
+        )
     }
-    fn apply(&mut self, display: &Display, event: Input) -> Result<()> {
+    fn reproject(&mut self, display: &Display) -> Result<()> {
+        if let Some((x, y)) = self.pointer.changed(display) {
+            let (global_x, global_y) = to_global(display, x, y);
+            self.geometry.move_to(&mut self.input, global_x, global_y)?;
+            self.pointer.remember(display, x, y);
+        }
+        Ok(())
+    }
+    fn apply(&mut self, display: &Display, event: Input, active: &dyn Fn() -> bool) -> Result<()> {
         let direction = |raw: &str| match raw {
             "press" => Ok(enigo::Direction::Press),
             "release" => Ok(enigo::Direction::Release),
@@ -207,10 +367,11 @@ impl NativeController {
         };
         match event {
             Input::Move { x, y } => {
+                let (normalized_x, normalized_y) = (x, y);
                 let (x, y) = to_global(display, x, y);
-                self.input
-                    .move_mouse(x, y, enigo::Coordinate::Abs)
-                    .map_err(native)
+                self.geometry.move_to(&mut self.input, x, y)?;
+                self.pointer.remember(display, normalized_x, normalized_y);
+                Ok(())
             }
             Input::Button {
                 button,
@@ -223,6 +384,12 @@ impl NativeController {
                     _ => return Err("鼠标按钮无效".into()),
                 };
                 let dir = direction(&raw)?;
+                if dir != enigo::Direction::Release {
+                    self.reproject(display)?;
+                }
+                if !active() {
+                    return Err("输入请求已结束".into());
+                }
                 self.input.button(button, dir).map_err(native)?;
                 if dir == enigo::Direction::Press {
                     self.buttons.insert(button);
@@ -284,9 +451,16 @@ impl NativeController {
                 if x.unsigned_abs() > 100 || y.unsigned_abs() > 100 {
                     return Err("滚动距离过大".into());
                 }
+                self.reproject(display)?;
+                if !active() {
+                    return Err("输入请求已结束".into());
+                }
                 self.input
                     .scroll(i32::from(x), enigo::Axis::Horizontal)
                     .map_err(native)?;
+                if !active() {
+                    return Err("输入请求已结束".into());
+                }
                 self.input
                     .scroll(i32::from(y), enigo::Axis::Vertical)
                     .map_err(native)
@@ -333,8 +507,19 @@ impl Controller {
         self.send_batch(display, vec![event])
     }
     pub fn send_batch(&mut self, display: &Display, events: Vec<Input>) -> Result<()> {
+        self.send_batch_guarded(display, events, || true)
+    }
+    pub fn send_batch_guarded(
+        &mut self,
+        display: &Display,
+        events: Vec<Input>,
+        active: impl Fn() -> bool,
+    ) -> Result<()> {
+        if !active() {
+            return Err("输入请求已结束".into());
+        }
         match &mut self.backend {
-            InputBackend::Native(input) => input.send_batch(display, events),
+            InputBackend::Native(input) => input.send_batch(display, events, &active),
             #[cfg(target_os = "linux")]
             InputBackend::Portal(session) => {
                 require_unlocked()?;
@@ -531,6 +716,25 @@ pub fn require_unlocked() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn borrowed_picture_thumbnail_preserves_the_existing_pixels_and_aspect() {
+        for (width, height, limit) in [
+            (640, 360, 320),
+            (360, 640, 480),
+            (1, 999, 320),
+            (999, 1, 2560),
+            (10, 10, 320),
+        ] {
+            let image = image::RgbaImage::from_fn(width, height, |x, y| {
+                image::Rgba([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8, 128])
+            });
+            let original = image::DynamicImage::ImageRgba8(image.clone())
+                .thumbnail(limit, 1440)
+                .to_rgb8();
+            assert_eq!(picture_thumbnail(&image, limit).unwrap(), original);
+        }
+        assert!(picture_thumbnail(&image::RgbaImage::new(0, 1), 320).is_err());
+    }
     fn retina() -> Display {
         // A 2x panel: frames are 3456 px wide, OS coordinates are 1728 points.
         Display {
@@ -594,3 +798,10 @@ mod clipboard_image_tests {
 
 #[cfg(target_os = "linux")]
 pub mod wayland;
+
+#[cfg(all(test, not(target_os = "linux")))]
+#[path = "wayland/geometry.rs"]
+mod wayland_geometry;
+#[cfg(all(test, not(target_os = "linux")))]
+#[path = "wayland/pixels.rs"]
+mod wayland_pixels;

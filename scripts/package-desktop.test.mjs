@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
-import { prepareBuild, parseArguments, signingVariables } from './package-desktop.mjs';
+import { prepareBuild, parseArguments, signingVariables, linuxAppImageFiles } from './package-desktop.mjs';
 import { checkReleaseInputs, privateOrGeneratedPath } from './check-release-inputs.mjs';
 import { buildMacKeychainPackage, checkMacKeychain, macPackageOptions } from './signing-macos.mjs';
 
@@ -31,6 +31,44 @@ test('unsigned builds remove inherited signing credentials and config overrides'
     assert.equal(result.config.bundle.windows.signCommand, null);
     assert.equal(result.config.bundle.macOS.signingIdentity, platform === 'darwin' ? '-' : null);
     assert.equal(environment.APPLE_PASSWORD, 'private-value');
+  }
+});
+
+test('AppImage pairs the PipeWire client with SDK paths on each native Linux architecture', () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'dogcodes appimage '));
+  try {
+    for (const architecture of ['aarch64-linux-gnu', 'x86_64-linux-gnu', 'lib64']) {
+      const libdir = resolve(root, architecture);
+      const moduledir = resolve(libdir, 'pipewire-0.3');
+      const paths = [resolve(libdir, 'spa-0.2/support/libspa-support.so'),
+        resolve(moduledir, 'libpipewire-module-protocol-native.so'),
+        resolve(moduledir, 'libpipewire-module-client-node.so')];
+      for (const path of paths) {
+        mkdirSync(resolve(path, '..'), { recursive: true });
+        writeFileSync(path, 'fixture');
+      }
+      const env = { PKG_CONFIG_PATH: resolve(root, 'sdk path') };
+      const files = linuxAppImageFiles({ env, capture(command, args, options) {
+        assert.equal(command, 'pkg-config');
+        assert.equal(args[1], 'libpipewire-0.3');
+        assert.equal(options.env, env);
+        return `${args[0] === '--variable=libdir' ? libdir : moduledir}\n`;
+      } });
+      assert.equal(files['usr/lib/spa-0.2/support/libspa-support.so'], paths[0]);
+      assert.equal(files['usr/lib/pipewire-0.3/libpipewire-module-protocol-native.so'], paths[1]);
+      assert.equal(files['usr/lib/pipewire-0.3/libpipewire-module-client-node.so'], paths[2]);
+      assert.match(readFileSync(files['usr/bin/dogcodes-appimage'], 'utf8'), /SPA_PLUGIN_DIR="\$dogcodes_appdir\/usr\/lib\/spa-0\.2"/);
+      assert.match(readFileSync(files['usr/share/applications/dog.codes.desktop'], 'utf8'), /^Exec=dogcodes-appimage$/m);
+      assert.match(readFileSync(files['usr/share/dog.codes/pipewire/client.conf'], 'utf8'), /libpipewire-module-client-node/);
+      rmSync(paths[2]);
+      assert.throws(() => linuxAppImageFiles({ capture: (_, args) => args[0] === '--variable=libdir' ? libdir : moduledir }),
+        /Missing AppImage PipeWire client resource:.*client-node/);
+    }
+    for (const path of ['', 'relative/lib']) {
+      assert.throws(() => linuxAppImageFiles({ capture: () => path }), /absolute libdir and moduledir/);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

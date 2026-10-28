@@ -2,6 +2,7 @@ use super::{DriverError, QuotaSnapshot, ZcodeLaunch};
 
 #[derive(Default)]
 pub(super) struct Cache {
+    admission: std::sync::Arc<tokio::sync::Mutex<()>>,
     next_attempt_ms: i64,
     snapshot: Option<QuotaSnapshot>,
     identity: Option<String>,
@@ -15,7 +16,13 @@ impl Cache {
         now: i64,
         force: bool,
     ) -> Option<QuotaSnapshot> {
-        let identity = match super::account::Account::quota_read(launch, true).await {
+        let identity = match super::account::Account::quota_read(
+            launch,
+            true,
+            self.admission.clone(),
+        )
+        .await
+        {
             Ok(value) => value["identity"].as_str().map(str::to_owned),
             Err(error) => {
                 self.snapshot = None;
@@ -41,7 +48,12 @@ impl Cache {
             return self.snapshot.clone();
         }
         self.next_attempt_ms = now + 60_000;
-        match tokio::time::timeout(std::time::Duration::from_secs(18), pull(launch)).await {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(18),
+            pull(launch, self.admission.clone()),
+        )
+        .await
+        {
             Ok(Ok(snapshot)) => {
                 self.snapshot = Some(snapshot);
                 self.failure = None;
@@ -61,8 +73,11 @@ impl Cache {
     }
 }
 
-async fn pull(launch: &ZcodeLaunch) -> Result<QuotaSnapshot, DriverError> {
-    let value = super::account::Account::quota_read(launch, false).await?;
+async fn pull(
+    launch: &ZcodeLaunch,
+    admission: std::sync::Arc<tokio::sync::Mutex<()>>,
+) -> Result<QuotaSnapshot, DriverError> {
+    let value = super::account::Account::quota_read(launch, false, admission).await?;
     serde_json::from_value(value["snapshot"].clone())
         .map_err(|_| DriverError::CapabilityUnavailable("quota_unavailable".into()))
 }
@@ -77,10 +92,16 @@ mod tests {
             app_binary: "/Applications/ZCode.app/Contents/MacOS/ZCode".into(),
             cli_script: "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs".into(),
         };
-        let snapshot = tokio::time::timeout(std::time::Duration::from_secs(18), pull(&launch))
-            .await
-            .unwrap()
-            .unwrap();
+        let snapshot = tokio::time::timeout(
+            std::time::Duration::from_secs(18),
+            pull(&launch, std::sync::Arc::default()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert!(snapshot.windows.iter().any(|w| w.window_minutes == 300));
     }
 }
+
+#[cfg(all(test, unix))]
+mod scope_tests;

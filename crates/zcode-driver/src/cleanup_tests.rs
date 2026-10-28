@@ -56,7 +56,7 @@ for line in sys.stdin:
 if mode in ['stubborn','probe','writer','eof','leader']:
  while True:time.sleep(60)
 ";
-fn fixture(mode: &str) -> (tempfile::TempDir, ZcodeLaunch) {
+pub(super) fn fixture(mode: &str) -> (tempfile::TempDir, ZcodeLaunch) {
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir().unwrap();
     let executable = root.path().join("runtime");
@@ -68,7 +68,7 @@ fn fixture(mode: &str) -> (tempfile::TempDir, ZcodeLaunch) {
     };
     (root, launch)
 }
-fn driver(launch: ZcodeLaunch) -> Arc<ZcodeDriver> {
+pub(super) fn driver(launch: ZcodeLaunch) -> Arc<ZcodeDriver> {
     Arc::new(
         ZcodeDriver::new(
             "zcode",
@@ -80,7 +80,7 @@ fn driver(launch: ZcodeLaunch) -> Arc<ZcodeDriver> {
         .unwrap(),
     )
 }
-async fn session(driver: &ZcodeDriver, root: &Path) -> SessionHandle {
+pub(super) async fn session(driver: &ZcodeDriver, root: &Path) -> SessionHandle {
     driver
         .create_session(SessionRequest {
             working_directory: root.to_string_lossy().into_owned(),
@@ -91,7 +91,7 @@ async fn session(driver: &ZcodeDriver, root: &Path) -> SessionHandle {
         .await
         .unwrap()
 }
-fn prompt(root: &Path, text: &str) -> HubPromptRequest {
+pub(super) fn prompt(root: &Path, text: &str) -> HubPromptRequest {
     HubPromptRequest {
         attachments: vec![],
         permission_mode: None,
@@ -101,7 +101,7 @@ fn prompt(root: &Path, text: &str) -> HubPromptRequest {
         context: vec![],
     }
 }
-fn count(root: &Path, method: &str) -> usize {
+pub(super) fn count(root: &Path, method: &str) -> usize {
     std::fs::read_to_string(root.join("requests.jsonl"))
         .unwrap_or_default()
         .lines()
@@ -109,7 +109,7 @@ fn count(root: &Path, method: &str) -> usize {
         .filter(|row| row["method"] == method)
         .count()
 }
-async fn wait_for(mut condition: impl FnMut() -> bool) {
+pub(super) async fn wait_for(mut condition: impl FnMut() -> bool) {
     tokio::time::timeout(Duration::from_secs(9), async {
         while !condition() {
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -118,12 +118,12 @@ async fn wait_for(mut condition: impl FnMut() -> bool) {
     .await
     .unwrap();
 }
-async fn events(stream: DriverEventStream) -> Vec<Result<DriverEvent, DriverError>> {
+pub(super) async fn events(stream: DriverEventStream) -> Vec<Result<DriverEvent, DriverError>> {
     tokio::time::timeout(Duration::from_secs(8), stream.collect())
         .await
         .unwrap()
 }
-async fn native(driver: &ZcodeDriver) -> Arc<lifecycle::NativeProcess> {
+pub(super) async fn native(driver: &ZcodeDriver) -> Arc<lifecycle::NativeProcess> {
     driver
         .connection
         .lock()
@@ -133,14 +133,14 @@ async fn native(driver: &ZcodeDriver) -> Arc<lifecycle::NativeProcess> {
         .native
         .clone()
 }
-fn ids(root: &Path) -> Vec<u32> {
+pub(super) fn ids(root: &Path) -> Vec<u32> {
     serde_json::from_slice::<Vec<Option<u32>>>(&std::fs::read(root.join("process.json")).unwrap())
         .unwrap()
         .into_iter()
         .flatten()
         .collect()
 }
-fn present(pid: u32) -> bool {
+pub(super) fn present(pid: u32) -> bool {
     let output = std::process::Command::new("ps")
         .args(["-p", &pid.to_string(), "-o", "pid="])
         .output()
@@ -173,7 +173,7 @@ async fn active_shutdown_waits_for_native_close_and_cancelled_waiter_does_not_af
         driver
             .sessions
             .lock()
-            .await
+            .expect("sessions")
             .contains_key(&first.native_session_id)
     );
     close.abort();
@@ -189,7 +189,7 @@ async fn active_shutdown_waits_for_native_close_and_cancelled_waiter_does_not_af
         !driver
             .sessions
             .lock()
-            .await
+            .expect("sessions")
             .contains_key(&first.native_session_id)
     );
     assert_eq!(count(root.path(), "session/close"), 1);
@@ -228,7 +228,7 @@ async fn unknown_close_uses_native_read_proof_without_repeating_or_trusting_empt
         driver
             .sessions
             .lock()
-            .await
+            .expect("sessions")
             .contains_key(&handle.native_session_id)
     );
     assert!(driver.shutdown(handle.clone()).await.is_err());
@@ -241,7 +241,7 @@ async fn unknown_close_uses_native_read_proof_without_repeating_or_trusting_empt
     let state = driver
         .sessions
         .lock()
-        .await
+        .expect("sessions")
         .get(&handle.native_session_id)
         .cloned()
         .unwrap();
@@ -251,7 +251,7 @@ async fn unknown_close_uses_native_read_proof_without_repeating_or_trusting_empt
         !driver
             .sessions
             .lock()
-            .await
+            .expect("sessions")
             .contains_key(&handle.native_session_id)
     );
     assert_eq!(count(root.path(), "session/close"), 1);
@@ -271,11 +271,11 @@ async fn explicit_native_close_refusal_retains_the_session_and_allows_a_fresh_cl
         driver
             .sessions
             .lock()
-            .await
+            .expect("sessions")
             .contains_key(&handle.native_session_id)
     );
     driver.shutdown(handle).await.unwrap();
-    assert!(driver.sessions.lock().await.is_empty());
+    assert!(driver.sessions.lock().expect("sessions").is_empty());
     assert_eq!(count(root.path(), "session/close"), 2);
     drop(driver);
     native.closed().await.unwrap();
@@ -349,7 +349,7 @@ async fn queued_turn_closes_before_dispatch_and_does_not_change_native_mode() {
     let state = driver
         .sessions
         .lock()
-        .await
+        .expect("sessions")
         .get(&second.native_session_id)
         .cloned()
         .unwrap();
@@ -500,14 +500,14 @@ async fn lost_native_close_reply_is_verified_without_replaying_the_mutation() {
         driver
             .sessions
             .lock()
-            .await
+            .expect("sessions")
             .contains_key(&handle.native_session_id)
     );
     assert!(driver.shutdown(handle.clone()).await.is_err());
     let state = driver
         .sessions
         .lock()
-        .await
+        .expect("sessions")
         .get(&handle.native_session_id)
         .cloned()
         .unwrap();

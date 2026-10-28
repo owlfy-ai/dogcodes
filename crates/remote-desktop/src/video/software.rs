@@ -1,6 +1,7 @@
 //! Bounded CPU H.264 fallback for Windows and Linux. Native screenshots or an
 //! authorized continuous Wayland source feed the same bounded capture loop.
-//! Native accelerated capture/encoding remains a separate backend to add.
+//! Windows and Linux select their hardware backends above this fallback; capture
+//! and the authorized source remain shared.
 use super::{
     EncodedFrame, Result, Sink, VideoConfig, VideoProfile, profile_size, validate_profile,
 };
@@ -21,7 +22,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// The software fallback shares the negotiated CB3.1 budget on all transports.
+/// Windows native/fallback and Linux share the negotiated CB3.1 budget on all transports.
 /// Higher-resolution accelerated backends must negotiate their own budget.
 pub(super) fn normalize(mut config: VideoConfig) -> VideoConfig {
     config.profile = VideoProfile::ConstrainedBaseline31;
@@ -30,8 +31,10 @@ pub(super) fn normalize(mut config: VideoConfig) -> VideoConfig {
 }
 #[derive(Clone)]
 pub(super) struct Frame {
-    image: Arc<RgbaImage>,
+    pub(super) cursor_embedded: Option<bool>,
+    pub(super) image: Arc<RgbaImage>,
 }
+
 impl Frame {
     pub fn size(&self) -> (u32, u32) {
         self.image.dimensions()
@@ -47,6 +50,7 @@ impl Frame {
             image::Rgba([v, v, v, 255])
         });
         Ok(Self {
+            cursor_embedded: Some(false),
             image: Arc::new(image),
         })
     }
@@ -130,6 +134,8 @@ impl Encoder {
             .encode_at(&yuv, Timestamp::from_millis(0))
             .map_err(codec_error)?;
         let probe = EncodedFrame {
+            cursor_embedded: None,
+            captured: std::time::Instant::now(),
             data: initial.to_vec(),
             keyframe: initial.frame_type() == FrameType::IDR,
             latency: Duration::ZERO,
@@ -156,6 +162,9 @@ impl Encoder {
     }
     pub fn size(&self) -> (u32, u32) {
         self.size
+    }
+    pub fn can_encode(&self) -> bool {
+        true // This codec completes synchronously under Shared's encoder lock.
     }
     pub fn error(&self) -> Option<String> {
         self.failure.clone()
@@ -270,6 +279,8 @@ impl Encoder {
             return Ok(false);
         }
         let frame = EncodedFrame {
+            cursor_embedded: frame.cursor_embedded,
+            captured,
             data,
             keyframe,
             latency: captured.elapsed(),
@@ -320,10 +331,50 @@ pub(super) struct Capture {
     native: (u32, u32),
 }
 impl Capture {
+    #[cfg(all(test, target_os = "linux"))]
     pub fn start(
         config: VideoConfig,
         sink: Box<dyn Fn(Frame) + Send + Sync>,
     ) -> Result<(Self, (u32, u32))> {
+        Self::start_with_geometry(config, sink, Arc::new(AtomicBool::new(false)))
+    }
+    #[cfg(not(target_os = "windows"))]
+    pub fn start_with_geometry(
+        config: VideoConfig,
+        sink: Box<dyn Fn(Frame) + Send + Sync>,
+        geometry_changed: Arc<AtomicBool>,
+    ) -> Result<(Self, (u32, u32))> {
+        Self::start_monitor(
+            config,
+            sink,
+            geometry_changed,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+        )
+    }
+    #[cfg(target_os = "windows")]
+    pub fn start_windows(
+        config: VideoConfig,
+        sink: Box<dyn Fn(Frame) + Send + Sync>,
+        geometry_changed: Arc<AtomicBool>,
+        paused: Arc<AtomicBool>,
+        cancelled: Arc<AtomicBool>,
+        retired: Arc<AtomicBool>,
+    ) -> Result<(Self, (u32, u32))> {
+        Self::start_monitor(config, sink, geometry_changed, paused, cancelled, retired)
+    }
+    fn start_monitor(
+        config: VideoConfig,
+        sink: Box<dyn Fn(Frame) + Send + Sync>,
+        geometry_changed: Arc<AtomicBool>,
+        paused: Arc<AtomicBool>,
+        cancelled: Arc<AtomicBool>,
+        #[cfg(target_os = "windows")] retired: Arc<AtomicBool>,
+    ) -> Result<(Self, (u32, u32))> {
+        #[cfg(not(target_os = "windows"))]
+        let _ = cancelled;
+        #[cfg(target_os = "windows")]
+        let cancelled = super::capture_source::Cancellation::new(cancelled, retired);
         #[cfg(target_os = "linux")]
         if is_wayland(
             std::env::var("XDG_SESSION_TYPE").ok().as_deref(),
@@ -349,6 +400,8 @@ impl Capture {
             return Err("显示器尺寸超过软件采集能力".into());
         }
         let display = config.display;
+        #[cfg(target_os = "windows")]
+        let pause_source = paused.clone();
         Self::start_factory(
             config,
             native,
@@ -360,15 +413,32 @@ impl Capture {
                     .into_iter()
                     .find(|m| m.id().ok() == Some(display))
                     .ok_or("视频显示器已断开")?;
-                Ok(move || {
-                    monitor
-                        .capture_image()
-                        .map(Arc::new)
-                        .map_err(|_| "视频采集失败，请检查显示器和桌面权限".into())
-                })
+                #[cfg(not(target_os = "windows"))]
+                {
+                    Ok(move || {
+                        monitor
+                            .capture_image()
+                            .map(|image| Frame {
+                                image: Arc::new(image),
+                                cursor_embedded: Some(false),
+                            })
+                            .map_err(|_| "视频采集失败，请检查显示器和桌面权限".into())
+                    })
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    let name = monitor.name().map_err(|_| "无法核实视频显示器身份")?;
+                    Ok(super::dxgi::capture(display, name, cancelled, pause_source))
+                }
             },
             sink,
-            Duration::from_secs(3),
+            if cfg!(target_os = "windows") {
+                Duration::from_secs(6)
+            } else {
+                Duration::from_secs(3)
+            },
+            geometry_changed,
+            paused,
         )
     }
 
@@ -377,14 +447,25 @@ impl Capture {
         config: VideoConfig,
         source: Arc<dyn super::ScreenSource>,
         sink: Box<dyn Fn(Frame) + Send + Sync>,
+        geometry_changed: Arc<AtomicBool>,
     ) -> Result<(Self, (u32, u32))> {
         let native = source.size()?;
         Self::start_factory(
             config,
             native,
-            move || Ok(move || source.frame()),
+            move || {
+                Ok(move || {
+                    let image = source.frame()?;
+                    Ok(Frame {
+                        image,
+                        cursor_embedded: Some(source.cursor_embedded()),
+                    })
+                })
+            },
             sink,
             Duration::from_secs(3),
+            geometry_changed,
+            Arc::new(AtomicBool::new(false)),
         )
     }
 
@@ -403,9 +484,18 @@ impl Capture {
         Self::start_factory(
             config,
             native,
-            move || Ok(move || source().map(Arc::new)),
+            move || {
+                Ok(move || {
+                    source().map(|image| Frame {
+                        image: Arc::new(image),
+                        cursor_embedded: Some(false),
+                    })
+                })
+            },
             sink,
             timeout,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
         )
     }
     fn start_factory<F, S>(
@@ -414,10 +504,12 @@ impl Capture {
         factory: F,
         sink: Box<dyn Fn(Frame) + Send + Sync>,
         timeout: Duration,
+        geometry_changed: Arc<AtomicBool>,
+        paused: Arc<AtomicBool>,
     ) -> Result<(Self, (u32, u32))>
     where
         F: FnOnce() -> Result<S> + Send + 'static,
-        S: FnMut() -> Result<Arc<RgbaImage>> + 'static,
+        S: FnMut() -> Result<Frame> + 'static,
     {
         let permit = Permit::take()?;
         let size = profile_size(native.0, native.1, config.max_width, config.profile)?;
@@ -451,16 +543,11 @@ impl Capture {
                     }
                 };
                 let mut previous: Option<Frame> = None;
+                let mut previous_source: Option<Arc<RgbaImage>> = None;
                 while !state.stopped.load(Ordering::Acquire) {
                     let started = Instant::now();
-                    let image = match source().and_then(|image| {
-                        if image.dimensions() != native {
-                            Err("显示器配置已变化，请重新连接".into())
-                        } else {
-                            Ok(image)
-                        }
-                    }) {
-                        Ok(image) => image,
+                    let frame = match source() {
+                        Ok(frame) => frame,
                         Err(error) => {
                             *state.error.lock().unwrap_or_else(|e| e.into_inner()) =
                                 Some(error.clone());
@@ -470,31 +557,60 @@ impl Capture {
                             break;
                         }
                     };
+                    let Frame {
+                        image,
+                        cursor_embedded,
+                    } = frame;
                     if state.stopped.load(Ordering::Acquire) {
                         break;
                     }
-                    let image = if native == size {
-                        image
-                    } else {
-                        Arc::new(image::imageops::resize(
-                            &*image,
-                            size.0,
-                            size.1,
-                            image::imageops::FilterType::Triangle,
-                        ))
-                    };
-                    if let Some(ready) = ready.take()
-                        && ready.send(Ok(())).is_err()
-                    {
+                    if image.dimensions() != native {
+                        // Keep the original source grant. No new-size pixels
+                        // reach the old encoder, including its refresh ticker.
+                        geometry_changed.store(true, Ordering::Release);
+                        if let Some(ready) = ready.take() {
+                            let _ = ready.send(Ok(()));
+                        }
                         break;
                     }
-                    let changed = previous
+                    // Immutable shared pixels have not changed. Skip resize and
+                    // byte comparison, while still fetching/checking the source.
+                    if previous_source
                         .as_ref()
-                        .is_none_or(|last| last.image.as_raw() != image.as_raw());
-                    if changed && !state.stopped.load(Ordering::Acquire) {
-                        let frame = Frame { image };
-                        previous = Some(frame.clone());
-                        sink(frame);
+                        .is_none_or(|last| !Arc::ptr_eq(last, &image))
+                        || previous
+                            .as_ref()
+                            .is_some_and(|last| last.cursor_embedded != cursor_embedded)
+                        || paused.load(Ordering::Acquire)
+                    {
+                        previous_source = Some(image.clone());
+                        let image = if native == size {
+                            image
+                        } else {
+                            Arc::new(image::imageops::resize(
+                                &*image,
+                                size.0,
+                                size.1,
+                                image::imageops::FilterType::Triangle,
+                            ))
+                        };
+                        if let Some(ready) = ready.take()
+                            && ready.send(Ok(())).is_err()
+                        {
+                            break;
+                        }
+                        let changed = previous.as_ref().is_none_or(|last| {
+                            last.image.as_raw() != image.as_raw()
+                                || last.cursor_embedded != cursor_embedded
+                        }) || paused.load(Ordering::Acquire);
+                        if changed && !state.stopped.load(Ordering::Acquire) {
+                            let frame = Frame {
+                                image,
+                                cursor_embedded,
+                            };
+                            previous = Some(frame.clone());
+                            sink(frame);
+                        }
                     }
                     let interval =
                         Duration::from_secs(1) / state.fps.load(Ordering::Acquire).max(1);
@@ -557,6 +673,84 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     static CAPTURE_TEST: Mutex<()> = Mutex::new(());
+    #[test]
+    fn unchanged_pixels_still_deliver_pointer_mode_changes_through_scaling() {
+        let _serial = CAPTURE_TEST.lock().unwrap();
+        wait_for(|| CAPTURES.load(Ordering::Acquire) == 0);
+        let frames = Arc::new(Mutex::new(Vec::new()));
+        let output = frames.clone();
+        let image = Arc::new(RgbaImage::new(16, 8));
+        let (capture, size) = Capture::start_factory(
+            VideoConfig {
+                max_width: 8,
+                ..config()
+            },
+            (16, 8),
+            move || {
+                let mut modes = [None, Some(true), Some(false)].into_iter();
+                Ok(move || {
+                    modes
+                        .next()
+                        .map(|cursor_embedded| Frame {
+                            image: image.clone(),
+                            cursor_embedded,
+                        })
+                        .ok_or_else(|| "fixture done".into())
+                })
+            },
+            Box::new(move |frame| {
+                output
+                    .lock()
+                    .unwrap()
+                    .push((frame.size(), frame.cursor_embedded))
+            }),
+            Duration::from_secs(1),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        assert_eq!(size, (8, 4));
+        wait_for(|| capture.error().is_some());
+        capture.stop();
+        wait_for(|| CAPTURES.load(Ordering::Acquire) == 0);
+        assert_eq!(
+            *frames.lock().unwrap(),
+            vec![((8, 4), None), ((8, 4), Some(true)), ((8, 4), Some(false))]
+        );
+    }
+    #[test]
+    fn encoded_pointer_metadata_belongs_to_the_original_input_frame() {
+        use openh264::formats::YUVSource;
+        let frames = Arc::new(Mutex::new(Vec::new()));
+        let output = frames.clone();
+        let mut encoder = Encoder::new(
+            64,
+            32,
+            30,
+            800_000,
+            Arc::new(move |frame| output.lock().unwrap().push(frame)),
+        )
+        .unwrap();
+        for cursor_embedded in [None, Some(true), Some(false)] {
+            let frame = Frame {
+                cursor_embedded,
+                ..Frame::synthetic(64, 32, 0).unwrap()
+            };
+            assert!(encoder.encode(&frame, Instant::now(), true).unwrap());
+        }
+        let mut decoder = openh264::decoder::Decoder::new().unwrap();
+        let frames = frames.lock().unwrap();
+        assert_eq!(
+            frames.iter().map(|f| f.cursor_embedded).collect::<Vec<_>>(),
+            [None, Some(true), Some(false)]
+        );
+        for frame in frames.iter() {
+            assert_eq!(
+                decoder.decode(&frame.data).unwrap().unwrap().dimensions(),
+                (64, 32)
+            );
+        }
+    }
     fn config() -> VideoConfig {
         VideoConfig {
             display: 0,
@@ -622,6 +816,92 @@ mod tests {
             }
             std::fs::write(&path, records).unwrap();
             std::fs::write(format!("{path}.h264"), annex).unwrap();
+        }
+    }
+
+    #[test]
+    #[ignore = "paced synthetic static-text quality measurement, no desktop capture"]
+    fn measure_static_text_refinement_with_real_encoder_and_decoder() {
+        use openh264::formats::YUVSource;
+        for (bitrate, refresh_idr, bounded) in [
+            (400_000, false, false),
+            (400_000, true, false),
+            (400_000, false, true),
+            (1_000_000, false, false),
+            (1_000_000, true, false),
+            (1_000_000, false, true),
+        ] {
+            let (send, receive) = mpsc::channel();
+            let mut encoder = Encoder::with_profile(
+                1280,
+                720,
+                30,
+                bitrate,
+                Arc::new(move |frame| send.send(frame).unwrap()),
+                VideoProfile::ConstrainedBaseline31,
+            )
+            .unwrap();
+            let mut decoder = openh264::decoder::Decoder::new().unwrap();
+            for t in 0..30 {
+                let tick = Instant::now();
+                if encoder
+                    .encode(&Frame::synthetic(1280, 720, t).unwrap(), tick, false)
+                    .unwrap()
+                {
+                    decoder.decode(&receive.recv().unwrap().data).unwrap();
+                }
+                std::thread::sleep(Duration::from_millis(34).saturating_sub(tick.elapsed()));
+            }
+            let frame = Frame::synthetic(1280, 720, 30).unwrap();
+            let mut original = YUVBuffer::new(1280, 720);
+            original.read_rgba8(RgbaSliceU8::new(frame.image.as_raw(), (1280, 720)));
+            let mut policy = super::super::refresh::Refresh::new();
+            let mut progress = super::super::refresh::Output::default();
+            for repeat in 0..=24 {
+                let tick = Instant::now();
+                if repeat == 0 {
+                    policy.changed(tick);
+                } else if bounded && policy.tick(tick, progress, false, 30).unwrap().is_none() {
+                    std::thread::sleep(Duration::from_millis(100));
+                    continue;
+                }
+                policy.submitting(tick, progress, repeat == 1 && refresh_idr);
+                if encoder
+                    .encode(&frame, tick, repeat == 1 && refresh_idr)
+                    .unwrap()
+                {
+                    let encoded = receive.recv().unwrap();
+                    progress.emitted(encoded.data.len(), encoded.keyframe);
+                    let image = decoder.decode(&encoded.data).unwrap().unwrap();
+                    let stride = image.strides().0;
+                    let squared: u64 = image
+                        .y()
+                        .chunks(stride)
+                        .take(720)
+                        .zip(original.y().chunks(1280))
+                        .map(|(actual, expected)| {
+                            actual[..1280]
+                                .iter()
+                                .zip(expected)
+                                .map(|(a, b)| (i64::from(*a) - i64::from(*b)).pow(2) as u64)
+                                .sum::<u64>()
+                        })
+                        .sum();
+                    let mse = squared as f64 / (1280.0 * 720.0);
+                    let psnr = 10.0 * (255.0 * 255.0 / mse.max(0.0001)).log10();
+                    println!(
+                        "static bounded={bounded} idr={refresh_idr} bitrate={bitrate} repeat={repeat} psnr={psnr:.2} bytes={} encode_us={}",
+                        encoded.data.len(),
+                        encoded.latency.as_micros()
+                    );
+                } else {
+                    println!(
+                        "static bounded={bounded} idr={refresh_idr} bitrate={bitrate} repeat={repeat} skipped"
+                    );
+                }
+                let interval = if repeat == 0 { 400 } else { 100 };
+                std::thread::sleep(Duration::from_millis(interval).saturating_sub(tick.elapsed()));
+            }
         }
     }
     #[test]
@@ -790,6 +1070,102 @@ mod tests {
         wait_for(|| capture.error().is_some());
         assert_eq!(capture.error().unwrap(), "display removed");
         assert_eq!(count.load(Ordering::Acquire), 1);
+        capture.stop();
+        wait_for(|| CAPTURES.load(Ordering::Acquire) == 0);
+    }
+    #[test]
+    fn changed_geometry_retires_capture_without_delivering_new_size_or_a_terminal_error() {
+        let _serial = CAPTURE_TEST.lock().unwrap();
+        wait_for(|| CAPTURES.load(Ordering::Acquire) == 0);
+        let changed = Arc::new(AtomicBool::new(false));
+        let frames = Arc::new(Mutex::new(Vec::new()));
+        let sent = frames.clone();
+        let (release, released) = mpsc::channel();
+        let (capture, size) = Capture::start_factory(
+            config(),
+            (16, 8),
+            move || {
+                let mut first = true;
+                Ok(move || {
+                    if first {
+                        first = false;
+                        Ok(Frame {
+                            image: Arc::new(RgbaImage::new(16, 8)),
+                            cursor_embedded: Some(false),
+                        })
+                    } else {
+                        released.recv().map_err(|_| "test release closed")?;
+                        Ok(Frame {
+                            image: Arc::new(RgbaImage::new(8, 16)),
+                            cursor_embedded: Some(false),
+                        })
+                    }
+                })
+            },
+            Box::new(move |frame| sent.lock().unwrap().push(frame.size())),
+            Duration::from_secs(1),
+            changed.clone(),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        assert_eq!(size, (16, 8));
+        release.send(()).unwrap();
+        wait_for(|| changed.load(Ordering::Acquire));
+        wait_for(|| CAPTURES.load(Ordering::Acquire) == 0);
+        assert_eq!(*frames.lock().unwrap(), vec![(16, 8)]);
+        assert!(capture.error().is_none());
+    }
+    #[test]
+    fn recovery_delivers_an_identical_cached_picture_before_resuming_publication() {
+        let _serial = CAPTURE_TEST.lock().unwrap();
+        wait_for(|| CAPTURES.load(Ordering::Acquire) == 0);
+        let paused = Arc::new(AtomicBool::new(false));
+        let source_pause = paused.clone();
+        let delivery_pause = paused.clone();
+        let frames = Arc::new(Mutex::new(Vec::new()));
+        let delivered = frames.clone();
+        let (capture, _) = Capture::start_factory(
+            config(),
+            (16, 8),
+            move || {
+                let image = Arc::new(RgbaImage::new(16, 8));
+                let mut n = 0;
+                Ok(move || {
+                    n += 1;
+                    if n == 3 {
+                        return Err("owned source ended".into());
+                    }
+                    if n == 2 {
+                        source_pause.store(true, Ordering::Release);
+                    }
+                    Ok(Frame {
+                        image: image.clone(),
+                        cursor_embedded: Some(false),
+                    })
+                })
+            },
+            Box::new(move |frame| {
+                delivered.lock().unwrap().push((
+                    frame.image.as_raw().clone(),
+                    delivery_pause.load(Ordering::Acquire),
+                ));
+                delivery_pause.store(false, Ordering::Release);
+            }),
+            Duration::from_secs(1),
+            Arc::new(AtomicBool::new(false)),
+            paused.clone(),
+        )
+        .unwrap();
+        wait_for(|| capture.error().is_some());
+        let frames = frames.lock().unwrap();
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].0, frames[1].0);
+        assert!(!frames[0].1);
+        assert!(
+            frames[1].1,
+            "resumed before delivery installed the fallback image"
+        );
+        assert!(!paused.load(Ordering::Acquire));
         capture.stop();
         wait_for(|| CAPTURES.load(Ordering::Acquire) == 0);
     }

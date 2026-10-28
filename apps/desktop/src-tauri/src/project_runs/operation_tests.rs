@@ -667,6 +667,8 @@ async fn project_runs_pending_native_cleanup_blocks_new_analysis_but_not_origina
 struct CloseFailureDriver {
     inner: Arc<driver_api::FakeDriver>,
     fail: std::sync::atomic::AtomicBool,
+    proof: Arc<tokio::sync::Notify>,
+    closes: std::sync::atomic::AtomicUsize,
 }
 #[async_trait::async_trait]
 impl driver_api::AgentDriver for CloseFailureDriver {
@@ -701,10 +703,21 @@ impl driver_api::AgentDriver for CloseFailureDriver {
     ) -> Result<(), driver_api::DriverError> {
         self.inner.interrupt(handle).await
     }
+    async fn shutdown_proof(
+        &self,
+        _: &driver_api::SessionHandle,
+    ) -> Option<driver_api::SessionShutdownProof> {
+        let proof = self.proof.clone();
+        Some(Box::pin(async move {
+            proof.notified().await;
+        }))
+    }
     async fn shutdown(
         &self,
         handle: driver_api::SessionHandle,
     ) -> Result<(), driver_api::DriverError> {
+        self.closes
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         if self.fail.load(std::sync::atomic::Ordering::Acquire) {
             return Err(driver_api::DriverError::Disconnected(
                 "fixture: close unconfirmed".into(),
@@ -729,6 +742,8 @@ async fn project_runs_actual_native_close_failure_halts_batch_and_prevents_idle_
     let driver = Arc::new(CloseFailureDriver {
         inner,
         fail: std::sync::atomic::AtomicBool::new(true),
+        proof: Arc::new(tokio::sync::Notify::new()),
+        closes: std::sync::atomic::AtomicUsize::new(0),
     });
     core.register_driver(driver.clone()).await;
     let request = request();
@@ -758,7 +773,13 @@ async fn project_runs_actual_native_close_failure_halts_batch_and_prevents_idle_
     driver
         .fail
         .store(false, std::sync::atomic::Ordering::Release);
+    driver.proof.notify_one();
     wait_finished(&host).await;
+    assert_eq!(
+        driver.closes.load(std::sync::atomic::Ordering::Acquire),
+        1,
+        "cleanup must observe its original proof, never repeat close"
+    );
     assert_eq!(driver.inner.received_requests().await.len(), 1);
     let restarted = ProjectRunHost::new(host.directory.clone());
     let receipt = restarted

@@ -4,9 +4,60 @@ The first release targets Windows, macOS and Linux. These build instructions do
 not mean those platforms have passed release acceptance yet. See
 [the current work list](../docs/CURRENT_WORK.md) for the release gates.
 
+The macOS package requires macOS 12.3 or later because the application links
+ScreenCaptureKit for remote desktop video. `bundle.macOS.minimumSystemVersion`
+in the shared Tauri configuration declares this floor for both architectures;
+signing configuration overlays keep it. This dependency requirement does not
+replace testing the installed application on the supported macOS versions.
+
 Install the [Tauri native prerequisites](https://v2.tauri.app/start/prerequisites/),
 the Rust toolchain from `rust-toolchain.toml`, Node.js 22 and the pnpm version in
 `package.json`. From the repository root:
+
+On Linux, install the native packages listed in
+[the remote desktop prerequisites](../crates/remote-desktop/README.md), then
+prepare SPA build headers before Cargo or packaging. Ubuntu 22.04's system
+headers are older than the current Rust bindings. The helper uses a pinned
+commit and verified archive, installs only headers in the ignored build cache,
+and keeps the system PipeWire runtime:
+
+```sh
+spa_sdk_env="$(python3 scripts/prepare_linux_spa_sdk.py --print-env)" && eval "$spa_sdk_env"
+```
+
+The desktop and release workflows do this automatically. Systems with sufficient
+headers use their installed SDK. `--archive /path/to/the/pinned/archive.tar.gz`
+supports offline preparation with the same mandatory checksum verification.
+
+The DEB declares PipeWire (`libpipewire-0.3-0 >= 0.3.48`) and GStreamer
+core/base (`>= 1.20`) as required runtime libraries. PipeWire is linked by the
+application even on X11; it must be installed before the executable can load.
+GStreamer plugins and GPU drivers remain optional, with software encoding as
+the fallback. A current ARM64 debug DEB has been built and installed in a clean
+Debian 12 container without recommended packages: runtime libraries resolved,
+and the desktop entry, icons and license resources matched the sources. See
+[the validation record](../docs/implementation/linux-hardware-video-2026-10-26.md#2026-10-27deb-实际构建与干净环境安装).
+Release builds on the target distributions and actual desktop/GPU operation
+still require validation.
+
+For AppImage builds, also install `file`, `patchelf`, `libpipewire-0.3-modules`
+and `libspa-0.2-modules`. The packaging command resolves the native SDK paths
+using `pkg-config` and includes SPA support, native protocol and client-node
+libraries, plus a minimal client configuration. The AppImage launcher selects
+these paths before executing the desktop binary; no PipeWire server is started.
+This is needed because automatic ELF dependency scanning misses dynamically
+loaded client modules. Use `pnpm desktop:package`, which supplies this AppImage
+configuration, rather than invoking `tauri bundle` alone.
+
+The current ARM64 debug AppImage passed relocation, library/resource checks on
+a Debian 12 baseline with only the excluded base desktop libraries installed,
+and the owned Portal/cursor/software-video fixture using its packaged client.
+These checks do not establish release-mode, x64, real desktop/GPU or driver
+compatibility. To repeat the packaged-client fixture on Linux after building:
+
+```sh
+python3 scripts/wayland_acceptance.py --format rgb-cursor --appimage /path/to/dog.codes.AppImage
+```
 
 ```sh
 pnpm install --frozen-lockfile

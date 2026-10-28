@@ -1,7 +1,17 @@
 //! One connection-owned portal session for capture and input. The private
 //! D-Bus connection, restore-token rotation and input queue belong to its actor.
+mod binding;
 mod capture;
+mod clipboard;
+mod cursor;
+mod eis;
+mod focus;
+mod geometry;
+mod gpu;
 mod input;
+mod loan;
+mod memory;
+mod metadata;
 mod pixels;
 mod portal;
 use crate::{Display, Input, Result};
@@ -9,7 +19,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -24,19 +34,39 @@ pub(super) struct StreamInfo {
     pub display: Display,
     pub node: u32,
     pub serial: Option<u64>,
+    pub mapping_id: Option<String>,
 }
 #[derive(Clone)]
 enum Phase {
     Pending,
-    Ready(Vec<StreamInfo>, bool),
+    Ready(Vec<StreamInfo>, u32),
     Error(String),
 }
 struct State {
     phase: Mutex<Phase>,
     closed: AtomicBool,
+    input_geometry_changed: AtomicBool,
+    eis_active: AtomicBool,
+    input_generation: AtomicU64,
     alive: Arc<dyn Fn() -> bool + Send + Sync>,
 }
 impl State {
+    fn check_input_geometry(&self, events: &[input::Event]) -> Result<()> {
+        if !self.eis_active.load(Ordering::Acquire)
+            && self.input_geometry_changed.load(Ordering::Acquire)
+            && events.iter().any(|event| {
+                matches!(
+                    event,
+                    input::Event::Move { .. }
+                        | input::Event::Button(_, 1)
+                        | input::Event::Scroll(..)
+                )
+            })
+        {
+            return Err("屏幕尺寸已变化，鼠标坐标需要重新授权，请重新连接远程桌面".into());
+        }
+        Ok(())
+    }
     fn active(&self) -> bool {
         !self.closed.load(Ordering::Acquire) && (self.alive)()
     }
@@ -79,6 +109,9 @@ enum Command {
         reply: std::sync::mpsc::SyncSender<Result<std::os::fd::OwnedFd>>,
     },
     Input {
+        stream: StreamInfo,
+        generation: u64,
+        raw: Vec<Input>,
         events: Vec<input::Event>,
         reply: std::sync::mpsc::SyncSender<Result<()>>,
     },
@@ -116,6 +149,9 @@ impl Session {
         let state = Arc::new(State {
             phase: Mutex::new(Phase::Pending),
             closed: AtomicBool::new(false),
+            input_geometry_changed: AtomicBool::new(false),
+            eis_active: AtomicBool::new(false),
+            input_generation: AtomicU64::new(0),
             alive,
         });
         let (sender, receiver) = mpsc::channel(16);
@@ -182,19 +218,31 @@ impl Session {
             .find(|s| s.display.id == id)
             .ok_or_else(|| "该屏幕不在本次 Wayland 授权中".into())
     }
+    fn cursor_mode(&self) -> u32 {
+        match &*self
+            .inner
+            .state
+            .phase
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+        {
+            Phase::Ready(_, mode) => *mode,
+            _ => 1,
+        }
+    }
     pub fn cursor_embedded(&self) -> bool {
-        matches!(
-            &*self
-                .inner
-                .state
-                .phase
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()),
-            Phase::Ready(_, true)
-        )
+        matches!(self.cursor_mode(), 2 | 4)
     }
     pub fn close(&self) {
         self.inner.state.closed.store(true, Ordering::Release);
+    }
+    fn invalidate_input_geometry(&self) {
+        // Pixel changes cannot supply the portal's logical_size. Keep viewing
+        // and releases/keyboard available; a fresh grant restores pointer input.
+        self.inner
+            .state
+            .input_geometry_changed
+            .store(true, Ordering::Release);
     }
     pub fn capture(&self, id: u32) -> Result<Arc<dyn crate::video::ScreenSource>> {
         let stream = self.stream(id)?;
@@ -209,16 +257,24 @@ impl Session {
         capture::start(self.clone(), stream, fd)
     }
     pub fn send(&self, id: u32, events: Vec<Input>) -> Result<()> {
+        let generation = self.inner.state.input_generation.load(Ordering::Acquire);
         let stream = self.stream(id)?;
-        let events = input::plan(
+        let planned = input::plan(
             stream.node,
             (stream.display.width, stream.display.height),
-            events,
+            events.clone(),
         )?;
+        self.inner.state.check_input_geometry(&planned)?;
         let (reply, rx) = std::sync::mpsc::sync_channel(1);
         self.inner
             .sender
-            .try_send(Command::Input { events, reply })
+            .try_send(Command::Input {
+                stream,
+                generation,
+                raw: events,
+                events: planned,
+                reply,
+            })
             .map_err(|_| "Wayland 键鼠队列繁忙")?;
         match rx.recv_timeout(Duration::from_secs(4)) {
             Ok(result) => result,

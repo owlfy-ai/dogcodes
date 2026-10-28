@@ -1,5 +1,5 @@
 //! Freeze observed usage at the prompt boundary; never attach a live session total to history.
-use super::{Core, EventSource, ExecutorRef, TaskId};
+use super::{Core, EventSource, TaskId};
 use agent_domain::TurnId;
 use agent_protocol::TurnUsage;
 use driver_api::{
@@ -12,10 +12,10 @@ use std::collections::BTreeSet;
 impl Core {
     pub(crate) async fn read_turn_usage(
         &self,
-        executor: &ExecutorRef,
+        control: &crate::run_control::Control,
         session: &str,
     ) -> Option<SessionUsageSnapshot> {
-        let provider = self.quota_providers.read().await.get(executor).cloned()?;
+        let provider = control.usage_provider.as_ref()?;
         tokio::time::timeout(
             std::time::Duration::from_secs(2),
             provider.read_session_usage(session),
@@ -35,128 +35,149 @@ impl Core {
             && request.has_data()
         {
             meter.requests.observe(request.clone());
-            let _ = self
+            let saved = self
                 .append_runtime_event(
                     task,
                     "usage.request_recorded",
                     json!({"taskId":task,"turnId":turn,"request":request}),
                     EventSource::Hub,
                 )
-                .await;
+                .await
+                .is_ok();
+            if saved {
+                meter.pending_requests.remove(&request.request_id);
+            } else if meter
+                .requests
+                .records
+                .iter()
+                .any(|record| record.request_id == request.request_id)
+            {
+                meter.pending_requests.insert(request.request_id.clone());
+            }
         }
         if meter.first_output_ms.is_none() && first_output(event) {
             let elapsed = meter.offset_ms.saturating_add(
                 u64::try_from(meter.started.elapsed().as_millis()).unwrap_or(u64::MAX),
             );
             meter.first_output_ms = Some(elapsed);
-            let _ = self
+            meter.first_output_recorded = self
                 .append_runtime_event(
                     task,
                     "turn.first_output",
                     json!({"taskId":task,"turnId":turn,"elapsedMs":elapsed}),
                     EventSource::Hub,
                 )
-                .await;
+                .await
+                .is_ok();
         }
     }
-    pub(crate) async fn record_turn_usage(
-        &self,
-        task: &TaskId,
-        turn: &TurnId,
-        input: TurnUsageInput<'_>,
-    ) {
-        let mut records = input.meter.requests.clone();
-        if let Some(report) = input.after.and_then(|s| s.request_usage.as_ref()) {
-            records.truncated |= report.truncated;
-            let baseline = input.before.and_then(|s| s.request_usage.as_ref());
-            if input.new_session || baseline.is_some() {
-                let previous: BTreeSet<_> = baseline
-                    .into_iter()
-                    .flat_map(|r| &r.records)
-                    .map(|r| &r.request_id)
-                    .collect();
-                for request in &report.records {
-                    if let Some(old) = records
-                        .records
-                        .iter_mut()
-                        .find(|r| r.request_id == request.request_id)
-                    {
-                        let mut corrected = request.clone();
-                        corrected.generation_ms = corrected.generation_ms.or(old.generation_ms);
-                        corrected.model = corrected.model.or_else(|| old.model.clone());
-                        corrected.cost_usd = corrected.cost_usd.or(old.cost_usd);
-                        if corrected != *old {
-                            *old = corrected.clone();
-                            let _ = self
-                                .append_runtime_event(
-                                    task,
-                                    "usage.request_recorded",
-                                    json!({"taskId":task,"turnId":turn,"request":corrected}),
-                                    EventSource::Hub,
-                                )
-                                .await;
-                        }
-                        continue;
+}
+
+/// Freeze request repairs, first-output latency and the summary before any retry.
+pub(crate) fn freeze(
+    task: &TaskId,
+    turn: &TurnId,
+    input: TurnUsageInput<'_>,
+) -> Vec<(&'static str, serde_json::Value)> {
+    let mut pending = input.meter.pending_requests.clone();
+    let mut records = input.meter.requests.clone();
+    if let Some(report) = input.after.and_then(|s| s.request_usage.as_ref()) {
+        records.truncated |= report.truncated;
+        let baseline = input.before.and_then(|s| s.request_usage.as_ref());
+        if input.new_session || baseline.is_some() {
+            let previous: BTreeSet<_> = baseline
+                .into_iter()
+                .flat_map(|r| &r.records)
+                .map(|r| &r.request_id)
+                .collect();
+            for request in &report.records {
+                if let Some(old) = records
+                    .records
+                    .iter_mut()
+                    .find(|r| r.request_id == request.request_id)
+                {
+                    let mut corrected = request.clone();
+                    corrected.generation_ms = corrected.generation_ms.or(old.generation_ms);
+                    corrected.model = corrected.model.or_else(|| old.model.clone());
+                    corrected.cost_usd = corrected.cost_usd.or(old.cost_usd);
+                    if corrected != *old {
+                        *old = corrected.clone();
+                        pending.insert(corrected.request_id.clone());
                     }
-                    if request.source != "claude.stream"
-                        && !(request.source == "zcode.session.messages"
-                            && records
-                                .records
-                                .iter()
-                                .any(|request| request.source == "zcode.session.debug"))
-                        && request.has_data()
-                        && !previous.contains(&request.request_id)
-                        && !records
+                    continue;
+                }
+                if request.source != "claude.stream"
+                    && !(request.source == "zcode.session.messages"
+                        && records
                             .records
                             .iter()
-                            .any(|r| r.request_id == request.request_id)
-                    {
-                        records.observe(request.clone());
-                        // Live facts were already persisted as they arrived. Persist native-history
-                        // facts too, so a restart need not invent deltas from session totals.
-                        let _ = self.append_runtime_event(task, "usage.request_recorded", json!({"taskId":task,"turnId":turn,"nativeSessionId":input.native_session_id,"request":request}), EventSource::Hub).await;
+                            .any(|request| request.source == "zcode.session.debug"))
+                    && request.has_data()
+                    && !previous.contains(&request.request_id)
+                    && !records
+                        .records
+                        .iter()
+                        .any(|r| r.request_id == request.request_id)
+                {
+                    let before_len = records.records.len();
+                    records.observe(request.clone());
+                    // Live facts were already persisted as they arrived. Persist native-history
+                    // facts too, so a restart need not invent deltas from session totals.
+                    if records.records.len() > before_len {
+                        pending.insert(request.request_id.clone());
                     }
                 }
             }
         }
-        let mut usage = if records.records.is_empty() {
-            summarize(input.before, input.after, input.new_session).unwrap_or_else(|| TurnUsage {
-                scope: "unknown".into(),
-                completeness: Some("unknown".into()),
-                incomplete_reason: Some("未取得可确认归属本轮的用量".into()),
-                ..TurnUsage::default()
-            })
-        } else {
-            summarize_recorded_requests(&records).unwrap()
-        };
-        supplement_summary_cost(input.before, input.after, input.new_session, &mut usage);
-        if usage.completeness.is_none() {
-            usage.completeness = Some(
-                if usage.scope == "native_turn" {
-                    "complete"
-                } else {
-                    "partial"
-                }
-                .into(),
-            );
-        }
-        if usage.models.is_empty() {
-            usage.models.extend(
-                input
-                    .after
-                    .and_then(|snapshot| snapshot.model.clone())
-                    .filter(|model| !matches!(model.as_str(), "auto" | "default")),
-            );
-        }
-        let _ = self
-            .append_runtime_event(
-                task,
-                "turn.usage_recorded",
-                json!({"taskId":task,"turnId":turn,"usage":usage}),
-                EventSource::Hub,
-            )
-            .await;
     }
+    let mut usage = if records.records.is_empty() {
+        summarize(input.before, input.after, input.new_session).unwrap_or_else(|| TurnUsage {
+            scope: "unknown".into(),
+            completeness: Some("unknown".into()),
+            incomplete_reason: Some("未取得可确认归属本轮的用量".into()),
+            ..TurnUsage::default()
+        })
+    } else {
+        summarize_recorded_requests(&records).unwrap()
+    };
+    supplement_summary_cost(input.before, input.after, input.new_session, &mut usage);
+    if usage.completeness.is_none() {
+        usage.completeness = Some(
+            if usage.scope == "native_turn" {
+                "complete"
+            } else {
+                "partial"
+            }
+            .into(),
+        );
+    }
+    if usage.models.is_empty() {
+        usage.models.extend(
+            input
+                .after
+                .and_then(|snapshot| snapshot.model.clone())
+                .filter(|model| !matches!(model.as_str(), "auto" | "default")),
+        );
+    }
+    let mut frozen = Vec::new();
+    for request in &records.records {
+        if pending.contains(&request.request_id) {
+            frozen.push(("usage.request_recorded", json!({"taskId":task,"turnId":turn,"nativeSessionId":input.native_session_id,"request":request})));
+        }
+    }
+    if !input.meter.first_output_recorded
+        && let Some(elapsed) = input.meter.first_output_ms
+    {
+        frozen.push((
+            "turn.first_output",
+            json!({"taskId":task,"turnId":turn,"elapsedMs":elapsed}),
+        ));
+    }
+    frozen.push((
+        "turn.usage_recorded",
+        json!({"taskId":task,"turnId":turn,"usage":usage}),
+    ));
+    frozen
 }
 
 fn supplement_summary_cost(
@@ -183,6 +204,8 @@ pub(crate) struct TurnMeter {
     offset_ms: u64,
     first_output_ms: Option<u64>,
     pub requests: RequestUsageReport,
+    pending_requests: BTreeSet<String>,
+    first_output_recorded: bool,
 }
 impl TurnMeter {
     pub fn new(offset_ms: u64) -> Self {
@@ -191,6 +214,8 @@ impl TurnMeter {
             offset_ms,
             first_output_ms: None,
             requests: RequestUsageReport::default(),
+            pending_requests: BTreeSet::new(),
+            first_output_recorded: false,
         }
     }
 }

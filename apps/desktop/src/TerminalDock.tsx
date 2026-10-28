@@ -15,7 +15,7 @@ import { FolderIcon } from "./ProjectHoverCard";
 import { useI18n } from "./i18n";
 
 export function TerminalPane({ projectId, directoryIndex, visible, api, resourceId, operationId, onResource, onStatus }: {
-  projectId: string; directoryIndex: number; visible: boolean; api: TerminalApi; resourceId?: string; operationId?: string; onResource?: (id: string) => void; onStatus?: (status: TerminalStatus) => void;
+  projectId: string; directoryIndex: number; visible: boolean; api: TerminalApi; resourceId?: string; operationId?: string; onResource?: (id: string) => void; onStatus?: (status: TerminalStatus, epoch: string) => void;
 }) {
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
@@ -121,7 +121,7 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
       } else {
         const info = event.info;
         setStarting(false);
-        statusListener.current?.(info.status);
+        statusListener.current?.(info.status, info.epoch);
         accepting = info.status === "running";
         terminal.options.disableStdin = !accepting || inputQueue.state.paused;
         if (info.status === "running") { setStatus(""); }
@@ -201,7 +201,7 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
 }) {
   const { t } = useI18n();
   const [opened, setOpened] = useState(open);
-  type Tab = { id: string; directoryIndex: number; ordinal: number; resourceId?: string; status?: TerminalStatus; hidden?: boolean; closed?: boolean };
+  type Tab = { id: string; directoryIndex: number; ordinal: number; resourceId?: string; status?: TerminalStatus; epoch?: string; hidden?: boolean; closed?: boolean };
   const [selected, setSelected] = useState("");
   const [tabs, setTabs] = useState<Tab[]>([]);
   const latestTabs = useRef(tabs);
@@ -224,7 +224,7 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
         const next = [...current];
         for (const info of shells) {
           if (next.some(tab => tab.id === info.id || tab.resourceId === info.id) || terminalEnded(info)) continue;
-          next.push({ id: info.id, resourceId: info.id, status: info.status, directoryIndex: info.directoryIndex,
+          next.push({ id: info.id, resourceId: info.id, status: info.status, epoch: info.epoch, directoryIndex: info.directoryIndex,
             ordinal: 1 + next.filter(tab => tab.directoryIndex === info.directoryIndex).length });
         }
         if (!loaded && shells.length === 0 && current.length === 0) {
@@ -241,8 +241,8 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
   const rememberResource = useCallback((tabId: string, resourceId: string) => {
     setTabs(current => current.map(tab => tab.id === tabId && tab.resourceId !== resourceId ? { ...tab, resourceId } : tab));
   }, []);
-  const rememberStatus = useCallback((tabId: string, status: TerminalStatus) => {
-    setTabs(current => current.map(tab => tab.id === tabId && tab.status !== status ? { ...tab, status } : tab));
+  const rememberStatus = useCallback((tabId: string, status: TerminalStatus, epoch: string) => {
+    setTabs(current => current.map(tab => tab.id === tabId && (tab.status !== status || tab.epoch !== epoch) ? { ...tab, status, epoch } : tab));
   }, []);
   const visibleTabs = tabs.filter(tab => !tab.hidden);
   const hiddenTabs = tabs.filter(tab => tab.hidden && !tab.closed);
@@ -279,7 +279,8 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
     if (!tab?.resourceId || !tab.status || closingRequest.current) return;
     closingRequest.current = true; setClosing(true); setCloseError("");
     try {
-      await api.close(tab.resourceId);
+      if (!tab.epoch) throw new Error("终端身份尚未确认，请连接后再关闭");
+      await api.close(tab.resourceId, tab.epoch);
       if (!mounted.current) return;
       closeTab(tab.id, true);
       if (!latestTabs.current.some(item => !item.hidden && item.id !== tab.id)) onClose();
@@ -356,6 +357,6 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
     {!loaded && !loadError && <LoadingStatus>正在查询后台终端…</LoadingStatus>}
     {loaded && visibleTabs.length === 0 && <div className="terminal-empty"><ReviewEmptyState kind="terminal" compact title={directories.length ? "暂无终端" : "尚未关联项目目录"}
       description={directories.length ? "新建终端，在项目目录中运行命令。" : "先为项目添加目录，再创建终端。"}
-      action={directories.length ? <button type="button" className="review-empty-action" aria-haspopup={hasTerminalMenu ? "menu" : undefined} aria-expanded={hasTerminalMenu ? menuOpen : undefined} onClick={requestTerminal}>新建终端</button> : onEditProject && <button type="button" className="review-empty-action" onClick={onEditProject}>添加项目目录</button>} /></div>}{visibleTabs.map(tab => <TerminalPane key={tab.id} operationId={tab.id} resourceId={tab.resourceId} onResource={id => rememberResource(tab.id, id)} onStatus={status => rememberStatus(tab.id, status)} projectId={projectId} directoryIndex={tab.directoryIndex} visible={open && selected === tab.id} api={api} />)}</div>
+      action={directories.length ? <button type="button" className="review-empty-action" aria-haspopup={hasTerminalMenu ? "menu" : undefined} aria-expanded={hasTerminalMenu ? menuOpen : undefined} onClick={requestTerminal}>新建终端</button> : onEditProject && <button type="button" className="review-empty-action" onClick={onEditProject}>添加项目目录</button>} /></div>}{visibleTabs.map(tab => <TerminalPane key={tab.id} operationId={tab.id} resourceId={tab.resourceId} onResource={id => rememberResource(tab.id, id)} onStatus={(status, epoch) => rememberStatus(tab.id, status, epoch)} projectId={projectId} directoryIndex={tab.directoryIndex} visible={open && selected === tab.id} api={api} />)}</div>
   </section>;
 }

@@ -1,7 +1,7 @@
 //! No installed Agent/model calls: private shell runtimes and native hook fixture only.
 use super::*;
 use std::{path::Path, time::Duration};
-fn script(directory: &Path, body: &str) -> PathBuf {
+pub(super) fn script(directory: &Path, body: &str) -> PathBuf {
     let path = tests::write_fake_agy(directory);
     let source = std::fs::read_to_string(&path).unwrap();
     let marker = "printf '%s\\n' \"$@\" > \"${0}.args\"";
@@ -16,7 +16,7 @@ fn script(directory: &Path, body: &str) -> PathBuf {
     .unwrap();
     path
 }
-fn request(path: &Path) -> SessionRequest {
+pub(super) fn request(path: &Path) -> SessionRequest {
     SessionRequest {
         working_directory: path.to_string_lossy().into_owned(),
         additional_directories: vec![],
@@ -24,7 +24,7 @@ fn request(path: &Path) -> SessionRequest {
         permission_mode: Some("desktop-approvals".into()),
     }
 }
-async fn pid(path: &Path) -> u32 {
+pub(super) async fn pid(path: &Path) -> u32 {
     tokio::time::timeout(Duration::from_secs(3), async {
         loop {
             if let Ok(text) = std::fs::read_to_string(path.with_extension("pid"))
@@ -38,7 +38,7 @@ async fn pid(path: &Path) -> u32 {
     .await
     .unwrap()
 }
-fn alive(pid: u32) -> bool {
+pub(super) fn alive(pid: u32) -> bool {
     std::process::Command::new("/bin/kill")
         .args(["-0", &pid.to_string()])
         .stdout(Stdio::null())
@@ -340,16 +340,17 @@ async fn cancelled_readiness_probe_keeps_auth_exclusion_until_its_scope_exits() 
         temp.path(),
         "exec 1>&-; exec 2>&-; trap '' TERM; while :; do sleep 60; done",
     );
+    let lock = SpawnLock::default();
     let probe = tokio::spawn({
-        let executable = executable.clone();
-        async move { AntigravityDriver::probe_ready(&executable).await }
+        let (executable, lock) = (executable.clone(), lock.clone());
+        async move { AntigravityDriver::probe_ready_with(&executable, &lock).await }
     });
     let native = pid(&executable).await;
     probe.abort();
     let _ = probe.await;
     assert!(alive(native));
     let next = tempfile::tempdir().unwrap();
-    let driver = tests::test_driver(tests::write_fake_agy(next.path()));
+    let driver = tests::test_driver_with(tests::write_fake_agy(next.path()), lock);
     let handle = tokio::time::timeout(
         Duration::from_secs(7),
         driver.create_session(request(next.path())),

@@ -5,8 +5,11 @@ use std::collections::{HashMap, HashSet};
 use tokio::time::{Duration, Instant};
 
 pub(super) enum Command {
-    Begin,
-    Cancel,
+    Begin(driver_api::SessionHandle),
+    Cancel {
+        handle: driver_api::SessionHandle,
+        response: tokio::sync::oneshot::Sender<Result<(), driver_api::DriverError>>,
+    },
     Close,
 }
 

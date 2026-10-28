@@ -9,6 +9,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct AcceptedExecution {
     pub(crate) driver: Arc<dyn driver_api::AgentDriver>,
+    pub(crate) auxiliary_activity: Arc<crate::auxiliary_session::Activity>,
 }
 
 /// Keep this admission alive through the caller's durable acceptance and dispatch.
@@ -81,7 +82,10 @@ impl Core {
             })?;
         Ok(ExecutionAdmission {
             _guard: guard,
-            execution: AcceptedExecution { driver },
+            execution: AcceptedExecution {
+                driver,
+                auxiliary_activity: self.auxiliary_activity.clone(),
+            },
         })
     }
 

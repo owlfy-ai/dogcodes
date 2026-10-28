@@ -104,13 +104,13 @@ async fn malformed_prompt_response_invalidates_residency_and_concurrent_restore_
         command_rx,
         cancel_rx,
         ConnectionTasks {
+            owner: None,
             background: lifecycle::Tasks::new(),
             updates: Arc::new(std::sync::Mutex::new(None)),
             pending: Arc::new(std::sync::Mutex::new(HashMap::new())),
             questions: Arc::new(std::sync::Mutex::new(HashMap::new())),
             activity: Arc::new(std::sync::Mutex::new(activity::Activities::default())),
             quota: quota.clone(),
-            next_permission_id: std::sync::atomic::AtomicU64::new(1),
         },
     ));
     let (reply, response) = oneshot::channel();
@@ -134,6 +134,7 @@ async fn malformed_prompt_response_invalidates_residency_and_concurrent_restore_
     let (reply, response) = oneshot::channel();
     commands
         .send(Command::Prompt {
+            turn: None,
             session_id: id.clone(),
             blocks: vec![],
             image_compatibility: false,
@@ -159,6 +160,7 @@ async fn malformed_prompt_response_invalidates_residency_and_concurrent_restore_
     let (reply, response) = oneshot::channel();
     commands
         .send(Command::Prompt {
+            turn: None,
             session_id: id,
             blocks: vec![],
             image_compatibility: false,

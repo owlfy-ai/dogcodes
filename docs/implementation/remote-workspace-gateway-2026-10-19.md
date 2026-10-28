@@ -25,7 +25,7 @@
 | `terminal_read` | `[id,after]` | 长轮询 `{info,from,next,gap,bytes}`；`bytes` 是原始字节数组，可包含 ANSI，按终端流解码 |
 | `terminal_write` | `[id,bytes]` | null；单次输入最多 64 KiB |
 | `terminal_resize` | `[id,cols,rows]` | null；所有客户端共享同一个终端尺寸 |
-| `terminal_stop` | `id` 字符串 | TerminalInfo；显式结束进程，断开页面或连接不等于停止 |
+| `terminal_stop` | `{terminalId, expectedEpoch}`；需 `terminalStopEpoch: true` | TerminalInfo；PC 受理锁内校验代次，不符则只返回当前状态；匹配才停止。断开页面或连接不等于停止 |
 | `project_runs` | `taskId` 字符串 | 当前平台 RunCatalog；首次缺少有效配置时沿用桌面后台分析行为 |
 | `project_runs_analyze` | `{operationId,taskId,expectedGeneration,executor?,overwriteGeneration?}` | `{Ok:RunCatalog}` 或 `{Err:{kind,code?,message}}` |
 | `project_run_edit` | `{operationId,taskId,generation,directoryIndex,commandId,edit}` | 同上；edit 为 `{action:"rename",label}` / `{action:"delete"}` / `{action:"pin",pinned}` |

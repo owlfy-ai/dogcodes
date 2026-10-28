@@ -1,20 +1,26 @@
 //! Pi's documented, long-lived RPC protocol (0.87+). No SDK subprocess wrapper.
 mod events;
+mod metadata;
+#[cfg(all(test, unix))]
+mod metadata_tests;
 mod request_usage;
+mod selection;
+mod sessions;
 mod transport;
 use agent_domain::{ExecutorRef, ProviderId, QuestionAnswer};
 use async_trait::async_trait;
 use driver_api::{
-    AgentDriver, DriverError, DriverEventStream, ModelCatalog, ModelOption, PermissionCatalog,
-    PromptRequest, SessionHandle, SessionRequest, SessionResumeCapability, ThinkingOption,
-    attachments,
+    AgentDriver, DriverError, DriverEventStream, ModelCatalog, PermissionCatalog, PromptRequest,
+    SessionHandle, SessionRequest, SessionResumeCapability, attachments,
 };
 use serde_json::{Value, json};
+use sessions::stale_scope;
 use std::{collections::HashMap, fmt::Write, path::PathBuf, sync::Arc};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, watch};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use transport::Connection;
 
+#[derive(Clone)]
 struct Session {
     connection: Arc<Connection>,
     workspace: SessionRequest,
@@ -35,14 +41,14 @@ pub struct PiDriver {
     executable: PathBuf,
     version: Option<String>,
     sessions: Mutex<HashMap<String, Session>>,
+    stopping: watch::Sender<bool>,
+    restore_gates: std::sync::Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    retired_handles: std::sync::Mutex<HashMap<String, SessionHandle>>,
+    catalog_probe: Arc<Mutex<()>>,
 }
 impl Drop for PiDriver {
     fn drop(&mut self) {
-        if let Ok(sessions) = self.sessions.try_lock() {
-            for session in sessions.values() {
-                session.connection.request_close();
-            }
-        }
+        self.stopping.send_replace(true);
     }
 }
 fn permissions() -> PermissionCatalog {
@@ -85,6 +91,10 @@ impl PiDriver {
             executable,
             version,
             sessions: Mutex::new(HashMap::new()),
+            stopping: watch::channel(false).0,
+            restore_gates: std::sync::Mutex::new(HashMap::new()),
+            retired_handles: std::sync::Mutex::new(HashMap::new()),
+            catalog_probe: Arc::new(Mutex::new(())),
         })
     }
     async fn interrupt_with_timeout(
@@ -92,23 +102,15 @@ impl PiDriver {
         handle: &SessionHandle,
         timeout: std::time::Duration,
     ) -> Result<(), DriverError> {
-        let connection = self.connection(&handle.native_session_id).await?;
-        if let Err(error) = connection.abort_turn(timeout).await {
+        let connection = self.session_for(handle).await?.connection;
+        if let Err(error) = connection.abort_turn(handle, timeout).await {
             // The result is uncertain. Retire this process and report failure;
             // never label an unconfirmed stop as a successful interruption.
-            let _ = self.retire(&handle.native_session_id, &connection).await;
+            let retiring = connection.state.lock().expect("Pi state").disconnected;
+            if retiring {
+                let _ = self.retire(handle, &connection).await;
+            }
             return Err(error);
-        }
-        Ok(())
-    }
-    async fn retire(&self, id: &str, connection: &Arc<Connection>) -> Result<(), DriverError> {
-        connection.close().await?;
-        let mut sessions = self.sessions.lock().await;
-        if sessions
-            .get(id)
-            .is_some_and(|session| Arc::ptr_eq(&session.connection, connection))
-        {
-            sessions.remove(id);
         }
         Ok(())
     }
@@ -151,42 +153,7 @@ impl PiDriver {
         model: Option<&str>,
         thinking: Option<&str>,
     ) -> Result<Value, DriverError> {
-        if let Some(model) = model {
-            let (provider, id) = model
-                .split_once('/')
-                .filter(|(p, m)| !p.is_empty() && !m.is_empty())
-                .ok_or_else(|| {
-                    DriverError::CapabilityUnavailable("Invalid Pi model selection".into())
-                })?;
-            connection
-                .call(json!({"type":"set_model","provider":provider,"modelId":id}))
-                .await?;
-        }
-        if let Some(level) = thinking {
-            let levels = connection
-                .call(json!({"type":"get_available_thinking_levels"}))
-                .await?;
-            if !levels["levels"]
-                .as_array()
-                .is_some_and(|v| v.iter().any(|v| v == level))
-            {
-                return Err(DriverError::CapabilityUnavailable(
-                    "Pi model does not support this thinking level".into(),
-                ));
-            }
-            connection
-                .call(json!({"type":"set_thinking_level","level":level}))
-                .await?;
-        }
-        let state = connection.call(json!({"type":"get_state"})).await?;
-        if model.is_some_and(|selected| model_id(&state["model"]).as_deref() != Some(selected))
-            || thinking.is_some_and(|selected| state["thinkingLevel"] != selected)
-        {
-            return Err(DriverError::Protocol(
-                "Pi did not confirm model/thinking selection".into(),
-            ));
-        }
-        Ok(state)
+        selection::configure(connection, model, thinking).await
     }
     async fn open(
         &self,
@@ -201,47 +168,64 @@ impl PiDriver {
                 "Pi does not expose native MCP configuration".into(),
             ));
         }
-        let mut sessions = self.sessions.lock().await;
-        if let Some(id) = resume
-            && sessions.get(id).is_some_and(|session| {
-                session
-                    .connection
-                    .state
-                    .lock()
-                    .expect("Pi state")
-                    .disconnected
-            })
-        {
-            let connection = sessions
-                .get(id)
-                .expect("resident session")
-                .connection
-                .clone();
-            connection.close().await?;
-            sessions.remove(id);
-        }
-        if let Some(id) = resume
-            && let Some(session) = sessions.get(id)
-        {
-            if session.workspace != request {
-                return Err(DriverError::CapabilityUnavailable(
-                    "Pi workspace changed; rebuild the session".into(),
-                ));
-            }
-            if session
-                .connection
-                .state
+        let gate = resume.map(|id| {
+            self.restore_gates
                 .lock()
-                .expect("Pi state")
-                .turn
-                .is_some()
-            {
-                return Err(DriverError::Protocol("Pi session is busy".into()));
+                .expect("Pi restore gates")
+                .entry(id.into())
+                .or_default()
+                .clone()
+        });
+        let _restoring = if let Some(gate) = &gate {
+            Some(gate.lock().await)
+        } else {
+            None
+        };
+        let existing = if let Some(id) = resume {
+            self.sessions.lock().await.get(id).cloned()
+        } else {
+            None
+        };
+        if let Some(session) = existing {
+            let connection = &session.connection;
+            let _admission = connection.admission.lock().await;
+            if connection.state.lock().expect("Pi state").disconnected {
+                let original = connection.handle().ok_or_else(stale_scope)?;
+                connection.request_close();
+                connection.confirmed().await;
+                self.retire(&original, connection).await?;
+            } else {
+                if session.workspace != request {
+                    return Err(DriverError::CapabilityUnavailable(
+                        "Pi workspace changed; rebuild the session".into(),
+                    ));
+                }
+                {
+                    let state = connection.state.lock().expect("Pi state");
+                    if state.turn.is_some() || state.cancelling {
+                        return Err(DriverError::Protocol("Pi session is busy".into()));
+                    }
+                }
+                let state = match Self::configure(connection, model, thinking).await {
+                    Ok(state) => state,
+                    Err(error) => {
+                        let retiring = connection.state.lock().expect("Pi state").disconnected;
+                        if retiring {
+                            connection.confirmed().await;
+                        }
+                        return Err(error);
+                    }
+                };
+                let id = resume.expect("existing session has a native id");
+                if state["sessionFile"].as_str() != Some(id) {
+                    connection.request_close();
+                    connection.confirmed().await;
+                    return Err(DriverError::SessionIncompatible(
+                        "Pi changed the session during reuse".into(),
+                    ));
+                }
+                return connection.handoff(id);
             }
-            Self::configure(&session.connection, model, thinking).await?;
-            return Ok(SessionHandle {
-                native_session_id: id.into(),
-            });
         }
         if let Some(id) = resume
             && (!std::path::Path::new(id).is_absolute() || !std::path::Path::new(id).is_file())
@@ -256,37 +240,60 @@ impl PiDriver {
             resume,
             false,
         )?);
+        connection.observe_owner(self.stopping.subscribe());
         let result = Self::configure(&connection, model, thinking).await;
         let state = match result {
             Ok(state) => state,
             Err(error) => {
-                connection.close().await?;
+                connection.request_close();
+                connection.confirmed().await;
                 return Err(error);
             }
         };
-        let id = state["sessionFile"]
+        let Some(id) = state["sessionFile"]
             .as_str()
             .filter(|path| std::path::Path::new(path).is_absolute())
-            .ok_or_else(|| {
-                DriverError::Protocol("Pi did not provide a persistent session file".into())
-            })?
-            .to_owned();
+            .map(str::to_owned)
+        else {
+            connection.request_close();
+            connection.confirmed().await;
+            return Err(DriverError::Protocol(
+                "Pi did not provide a persistent session file".into(),
+            ));
+        };
         if resume.is_some_and(|expected| expected != id) {
-            connection.close().await?;
+            connection.request_close();
+            connection.confirmed().await;
             return Err(DriverError::SessionIncompatible(
                 "Pi restored a different session".into(),
             ));
         }
+        let mut sessions = self.sessions.lock().await;
+        if sessions.contains_key(&id) {
+            drop(sessions);
+            connection.request_close();
+            connection.confirmed().await;
+            return Err(DriverError::SessionIncompatible(
+                "Pi returned an already owned session file".into(),
+            ));
+        }
+        let handle = match connection.handoff(&id) {
+            Ok(handle) => handle,
+            Err(error) => {
+                drop(sessions);
+                connection.request_close();
+                connection.confirmed().await;
+                return Err(error);
+            }
+        };
         sessions.insert(
-            id.clone(),
+            id,
             Session {
                 connection,
                 workspace: request,
             },
         );
-        Ok(SessionHandle {
-            native_session_id: id,
-        })
+        Ok(handle)
     }
 }
 
@@ -362,79 +369,27 @@ impl AgentDriver for PiDriver {
         model: Option<&str>,
         workspace: Option<&str>,
     ) -> Result<ModelCatalog, DriverError> {
-        let temp = std::env::temp_dir().to_string_lossy().into_owned();
-        let connection =
-            Connection::spawn(&self.executable, workspace.unwrap_or(&temp), None, true)?;
-        let result = async {
-            let initial = connection.call(json!({"type":"get_state"})).await?;
-            let state = Self::configure(&connection, model, None).await?;
-            let models = connection
-                .call(json!({"type":"get_available_models"}))
-                .await?;
-            let levels = connection
-                .call(json!({"type":"get_available_thinking_levels"}))
-                .await?;
-            let selected = model_id(&state["model"]);
-            Ok(ModelCatalog {
-                default_model: model_id(&initial["model"]),
-                models: models["models"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|row| {
-                        let id = model_id(row)?;
-                        let mut option = ModelOption::new(
-                            &id,
-                            &format!(
-                                "{} · {}",
-                                row["name"].as_str().unwrap_or(&id),
-                                row["provider"].as_str().unwrap_or("")
-                            ),
-                        );
-                        if Some(&id) == selected.as_ref() {
-                            option.thinking_options = levels["levels"]
-                                .as_array()
-                                .into_iter()
-                                .flatten()
-                                .filter_map(Value::as_str)
-                                .map(|v| ThinkingOption {
-                                    id: v.into(),
-                                    label: v.into(),
-                                })
-                                .collect();
-                            option.default_thinking =
-                                state["thinkingLevel"].as_str().map(Into::into);
-                        }
-                        Some(option)
-                    })
-                    .collect(),
-            })
-        }
-        .await;
-        connection.close().await?;
-        result
+        metadata::read(self, model, workspace).await
     }
+
     async fn prompt(
         &self,
         handle: &SessionHandle,
         request: PromptRequest,
     ) -> Result<DriverEventStream, DriverError> {
         permissions().validate(request.permission_mode.as_deref())?;
+        let session = self.session_for(handle).await?;
+        let connection = session.connection.clone();
+        let _admission = connection.admission.lock().await;
+        connection.validate_scope(handle)?;
+        if session.workspace.working_directory != request.working_directory
+            || session.workspace.additional_directories != request.additional_directories
+        {
+            return Err(DriverError::SessionIncompatible(
+                "Pi workspace does not match the active session".into(),
+            ));
+        }
         attachments::validate(&request.attachments).await?;
-        let connection = {
-            let sessions = self.sessions.lock().await;
-            let session = sessions
-                .get(&handle.native_session_id)
-                .ok_or_else(|| DriverError::SessionMissing("Pi session is not resident".into()))?;
-            if session.workspace.working_directory != request.working_directory
-                || session.workspace.additional_directories != request.additional_directories
-            {
-                return Err(DriverError::SessionIncompatible(
-                    "Pi workspace does not match the active session".into(),
-                ));
-            }
-            session.connection.clone()
-        };
         let mut message = String::new();
         for context in &request.context {
             let _ = write!(
@@ -463,7 +418,7 @@ impl AgentDriver for PiDriver {
             }
         }
         message.push_str(&request.prompt);
-        let receiver = connection.begin_turn()?;
+        let (turn_id, receiver) = connection.begin_turn(handle)?;
         // Cancellation while queued for stdin must not strand the local turn
         // claim, even if no byte of this prompt has reached the pipe yet.
         let mut dispatch = PendingPromptDispatch {
@@ -476,13 +431,24 @@ impl AgentDriver for PiDriver {
         dispatch.sent = true;
         // Return the event stream immediately. A preflight extension can ask a
         // question before the prompt response; waiting here would deadlock it.
+        let dispatched = connection.clone();
         tokio::spawn(async move {
             if let Err(error) = accepted
                 .await
                 .unwrap_or_else(|_| Err(transport::disconnected()))
-                && let Some(turn) = connection.state.lock().expect("Pi state").turn.take()
             {
-                let _ = turn.sender.send(Err(error));
+                let retiring = {
+                    let mut state = dispatched.state.lock().expect("Pi state");
+                    if state.turn.as_ref().is_some_and(|turn| turn.id == turn_id) {
+                        state.fail(&error);
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if retiring {
+                    dispatched.request_close();
+                }
             }
         });
         Ok(Box::pin(UnboundedReceiverStream::new(receiver)))
@@ -498,7 +464,9 @@ impl AgentDriver for PiDriver {
         id: &str,
         answer: QuestionAnswer,
     ) -> Result<(), DriverError> {
-        let connection = self.connection(&handle.native_session_id).await?;
+        let connection = self.session_for(handle).await?.connection;
+        let _admission = connection.admission.lock().await;
+        connection.validate_scope(handle)?;
         let response = {
             let mut state = connection.state.lock().expect("Pi state");
             let turn = state
@@ -525,22 +493,69 @@ impl AgentDriver for PiDriver {
         };
         connection.write(&response).await
     }
-    async fn shutdown(&self, handle: SessionHandle) -> Result<(), DriverError> {
-        let connection = self
-            .sessions
+    async fn current_session_handle(&self, id: &str) -> Option<SessionHandle> {
+        self.sessions
             .lock()
             .await
-            .get(&handle.native_session_id)
-            .map(|session| session.connection.clone());
-        if let Some(connection) = connection {
-            self.retire(&handle.native_session_id, &connection).await?;
+            .get(id)
+            .and_then(|s| s.connection.handle())
+    }
+
+    async fn shutdown_proof(
+        &self,
+        handle: &SessionHandle,
+    ) -> Option<driver_api::SessionShutdownProof> {
+        let sessions = self.sessions.lock().await;
+        if let Some(session) = sessions.get(&handle.native_session_id) {
+            session.connection.validate_scope(handle).ok()?;
+            let original = session.connection.clone();
+            return Some(Box::pin(async move { original.confirmed().await }));
         }
-        Ok(())
+        self.retired_handles
+            .lock()
+            .expect("Pi retired scopes")
+            .get(&handle.native_session_id)
+            .filter(|old| old.same_scope(handle))
+            .map(|_| Box::pin(async {}) as driver_api::SessionShutdownProof)
+    }
+
+    async fn shutdown(&self, handle: SessionHandle) -> Result<(), DriverError> {
+        let connection = {
+            let sessions = self.sessions.lock().await;
+            if let Some(session) = sessions.get(&handle.native_session_id) {
+                // Fence reuse synchronously, without waiting behind its write.
+                let mut state = session.connection.state.lock().expect("Pi state");
+                if !state
+                    .scope
+                    .as_ref()
+                    .is_some_and(|old| old.same_scope(&handle))
+                {
+                    return Err(stale_scope());
+                }
+                state.fail(&transport::disconnected());
+                session.connection.clone()
+            } else {
+                return if self
+                    .retired_handles
+                    .lock()
+                    .expect("Pi retired scopes")
+                    .get(&handle.native_session_id)
+                    .is_some_and(|old| old.same_scope(&handle))
+                {
+                    Ok(())
+                } else {
+                    Err(stale_scope())
+                };
+            }
+        };
+        self.retire(&handle, &connection).await
     }
 }
 
 #[cfg(all(test, unix))]
 mod cleanup_tests;
+#[cfg(all(test, unix))]
+mod scope_tests;
 #[cfg(all(test, unix))]
 mod tests;
 
@@ -562,10 +577,7 @@ impl driver_api::QuotaProvider for PiDriver {
         id: &str,
     ) -> Option<driver_api::usage::SessionUsageSnapshot> {
         let connection = self.connection(id).await.ok()?;
-        let value = connection
-            .call(json!({"type":"get_session_stats"}))
-            .await
-            .ok()?;
+        let value = connection.read_stats().await.ok()?;
         let mut usage = driver_api::usage::pi(&value);
         {
             let state = connection.state.lock().ok()?;

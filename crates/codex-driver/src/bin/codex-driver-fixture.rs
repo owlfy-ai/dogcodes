@@ -75,7 +75,7 @@ fn main() {
                 if request
                     .pointer("/params/input/0/text")
                     .and_then(Value::as_str)
-                    == Some("CHAT_RESTRICTIONS")
+                    == Some("ANALYSIS_RESTRICTIONS")
                 {
                     assert!(analysis && !full_review);
                     assert_eq!(request["params"]["sandboxPolicy"]["type"], "readOnly");
@@ -83,15 +83,15 @@ fn main() {
                     respond(
                         &mut stdout,
                         id,
-                        json!({"turn":{"id":"chat-turn","status":"inProgress"}}),
+                        json!({"turn":{"id":"analysis-restrictions-turn","status":"inProgress"}}),
                     );
                     emit(
                         &mut stdout,
-                        json!({"method":"item/agentMessage/delta","params":{"threadId":"fixture-thread","turnId":"chat-turn","itemId":"chat","delta":"chat restrictions verified"}}),
+                        json!({"method":"item/agentMessage/delta","params":{"threadId":"fixture-thread","turnId":"analysis-restrictions-turn","itemId":"analysis-restrictions","delta":"analysis restrictions verified"}}),
                     );
                     emit(
                         &mut stdout,
-                        json!({"method":"turn/completed","params":{"threadId":"fixture-thread","turn":{"id":"chat-turn","status":"completed"}}}),
+                        json!({"method":"turn/completed","params":{"threadId":"fixture-thread","turn":{"id":"analysis-restrictions-turn","status":"completed"}}}),
                     );
                     continue;
                 }

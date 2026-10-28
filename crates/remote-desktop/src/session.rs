@@ -1,5 +1,6 @@
+#[cfg(any(target_os = "macos", windows))]
 use super::Result;
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
 fn output(program: &str, args: &[&str]) -> Result<Vec<u8>> {
     use std::{
         io::Read,
@@ -121,21 +122,21 @@ pub fn locked() -> Result<bool> {
     Err("当前没有已登录桌面".into())
 }
 #[cfg(target_os = "linux")]
-pub fn locked() -> Result<bool> {
-    let session = std::env::var("XDG_SESSION_ID").unwrap_or_else(|_| "self".into());
-    let bytes = output(
-        "loginctl",
-        &["show-session", &session, "-p", "LockedHint", "--value"],
-    )?;
-    match std::str::from_utf8(&bytes)
-        .map_err(|_| "无法解析锁屏状态")?
-        .trim()
-    {
-        "yes" => Ok(true),
-        "no" => Ok(false),
-        _ => Err("无法确认当前桌面锁屏状态".into()),
-    }
+mod linux;
+#[cfg(target_os = "linux")]
+pub use linux::locked;
+#[cfg(all(target_os = "linux", test))]
+pub(crate) async fn fixture_login1_query(
+    connection: &zbus::Connection,
+    session: Option<&str>,
+    pid: u32,
+    uid: u32,
+) -> crate::Result<bool> {
+    linux::query(connection, session, pid, uid).await
 }
+
+#[cfg(any(target_os = "linux", test))]
+mod query;
 #[cfg(windows)]
 pub fn locked() -> Result<bool> {
     use windows::Win32::System::RemoteDesktop::{

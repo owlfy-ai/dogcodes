@@ -1,7 +1,10 @@
 //! macOS native TUI adapter. Sends /usage only after its local command menu
 //! advertises it; never passes an initial model prompt or reads credentials.
 use driver_api::{DriverError, QuotaSnapshot, QuotaWindow};
-use std::path::Path;
+use std::{path::Path, sync::Arc};
+
+#[cfg(all(test, unix))]
+mod scope_tests;
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn parse(text: &str) -> Option<QuotaSnapshot> {
@@ -80,7 +83,11 @@ fn parse(text: &str) -> Option<QuotaSnapshot> {
 #[cfg(not(target_os = "macos"))]
 // Same async signature as the macOS reader, which the caller awaits.
 #[allow(clippy::unused_async)]
-pub(super) async fn read(_: &Path, _: &Path) -> Result<QuotaSnapshot, DriverError> {
+pub(super) async fn read(
+    _: &Path,
+    _: Arc<tempfile::TempDir>,
+    _: Arc<tokio::sync::Mutex<()>>,
+) -> Result<QuotaSnapshot, DriverError> {
     Err(DriverError::NotConfigured(
         "Cursor native quota currently requires macOS".into(),
     ))
@@ -89,46 +96,96 @@ pub(super) async fn read(_: &Path, _: &Path) -> Result<QuotaSnapshot, DriverErro
 #[cfg(target_os = "macos")]
 pub(super) async fn read(
     executable: &Path,
-    directory: &Path,
+    directory: Arc<tempfile::TempDir>,
+    admission: Arc<tokio::sync::Mutex<()>>,
 ) -> Result<QuotaSnapshot, DriverError> {
-    use std::process::Stdio;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let unavailable = || {
-        DriverError::Protocol("Cursor native usage unavailable or terminal layout changed".into())
-    };
-    let mut command = tokio::process::Command::new("/usr/bin/script");
+    let mut command = tokio::process::Command::new(executable);
     command
-        .args(["-qF", "/dev/null"])
-        .args([
-            "/bin/sh",
-            "-c",
-            "stty sane cols 120 rows 40; exec \"$@\"",
-            "cursor-quota",
-        ])
-        .arg(executable)
         // Reading /usage must not start Cursor's background installer. This
         // short-lived TUI otherwise can exit with a download and lock in flight.
         .arg("--disable-auto-update")
         // Trust applies only to this newly created, empty probe directory.
         .args(["--mode", "ask", "--trust"])
-        .current_dir(directory)
+        .current_dir(directory.path())
         .env_clear()
         .env("TERM", "xterm-256color")
         .env("COLUMNS", "120")
-        .env("LINES", "40")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
+        .env("LINES", "40");
     for key in ["HOME", "PATH", "LANG", "TZ", "TMPDIR"] {
         if let Some(value) = std::env::var_os(key) {
             command.env(key, value);
         }
     }
     agent_runtime::apply_proxy_environment(&mut command);
-    let mut child = command.spawn().map_err(|_| unavailable())?;
-    let mut input = child.stdin.take().ok_or_else(unavailable)?;
-    let mut output = child.stdout.take().ok_or_else(unavailable)?;
+    read_owned(command, directory, admission).await
+}
+
+#[cfg(any(target_os = "macos", all(test, unix)))]
+fn unavailable() -> DriverError {
+    DriverError::Protocol("Cursor native usage unavailable or terminal layout changed".into())
+}
+
+#[cfg(any(target_os = "macos", all(test, unix)))]
+async fn read_owned(
+    command: tokio::process::Command,
+    directory: Arc<tempfile::TempDir>,
+    admission: Arc<tokio::sync::Mutex<()>>,
+) -> Result<QuotaSnapshot, DriverError> {
+    let permit = tokio::time::timeout(std::time::Duration::from_secs(45), admission.lock_owned())
+        .await
+        .map_err(|_| {
+            DriverError::CapabilityUnavailable("上一项账户额度查询仍在结束，请稍后重试".into())
+        })?;
+    let (mut reply, result) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let _permit = permit;
+        let _directory = directory;
+        if reply.is_closed() {
+            return;
+        }
+        let Ok((mut child, input, output)) =
+            agent_runtime::OwnedChild::spawn_terminal(command, 120, 40)
+        else {
+            let _ = reply.send(Err(unavailable()));
+            return;
+        };
+        let query = async {
+            // A descendant may retain the terminal after its leader exits.
+            // Observe the actual leader concurrently so its original scope is
+            // retired and terminal EOF can arrive, rather than waiting forever.
+            let (status, snapshot) = tokio::try_join!(
+                async { child.wait().await.map_err(|_| unavailable()) },
+                read_terminal(
+                    tokio::fs::File::from_std(input),
+                    tokio::fs::File::from_std(output)
+                ),
+            )?;
+            if !status.success() {
+                return Err(unavailable());
+            }
+            Ok(snapshot)
+        };
+        let outcome = tokio::select! {
+            biased;
+            () = reply.closed() => None,
+            result = query => Some(result),
+        };
+        while child.terminate().await.is_err() {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+        if let Some(outcome) = outcome {
+            let _ = reply.send(outcome);
+        }
+    });
+    result.await.map_err(|_| unavailable())?
+}
+
+#[cfg(any(target_os = "macos", all(test, unix)))]
+async fn read_terminal(
+    mut input: tokio::fs::File,
+    mut output: tokio::fs::File,
+) -> Result<QuotaSnapshot, DriverError> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let ansi = regex::Regex::new(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07")
         .map_err(|_| unavailable())?;
     let mut raw = Vec::new();
@@ -136,7 +193,12 @@ pub(super) async fn read(
     let mut state = 0;
     let mut result = None;
     loop {
-        let count = output.read(&mut buffer).await.map_err(|_| unavailable())?;
+        let count = match output.read(&mut buffer).await {
+            Ok(count) => count,
+            // Unix PTYs may report EIO on slave hangup rather than zero.
+            Err(error) if error.raw_os_error() == Some(5) => 0,
+            Err(_) => return Err(unavailable()),
+        };
         if count == 0 {
             break;
         }
@@ -186,8 +248,7 @@ pub(super) async fn read(
             raw.clear();
         }
     }
-    let status = child.wait().await.map_err(|_| unavailable())?;
-    if state != 6 || !status.success() {
+    if state != 6 {
         return Err(unavailable());
     }
     result.ok_or_else(unavailable)
@@ -236,7 +297,11 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let snapshot = tokio::time::timeout(
             std::time::Duration::from_secs(27),
-            read(Path::new(&executable), directory.path()),
+            read(
+                Path::new(&executable),
+                Arc::new(directory),
+                Arc::new(tokio::sync::Mutex::new(())),
+            ),
         )
         .await
         .unwrap()

@@ -17,14 +17,26 @@ use futures::StreamExt;
 use serde_json::json;
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
+use tokio::sync::Semaphore;
 
 struct Reviewer {
     executor: ExecutorRef,
     mode: AtomicUsize,
     calls: Mutex<Vec<(String, PromptRequest)>>,
     stopped: Mutex<Vec<String>>,
+    create_gate: Semaphore,
+    creates: AtomicUsize,
+    reject_creation: AtomicBool,
+    hold_shutdown: AtomicBool,
+    shutdown_gate: Semaphore,
+    shutdowns: Mutex<Vec<String>>,
+    close_error: AtomicBool,
+    proof_enabled: AtomicBool,
+    proof_gate: Arc<Semaphore>,
+    proof_captures: AtomicUsize,
+    handles: Arc<Mutex<std::collections::HashMap<String, SessionHandle>>>,
 }
 #[async_trait::async_trait]
 impl AgentDriver for Reviewer {
@@ -38,18 +50,25 @@ impl AgentDriver for Reviewer {
         true
     }
     async fn create_session(&self, _: SessionRequest) -> Result<SessionHandle, DriverError> {
-        Ok(SessionHandle {
-            native_session_id: "main-session".into(),
-        })
+        Ok(SessionHandle::new("main-session".into()))
     }
     async fn create_analysis_session(&self, _: &str) -> Result<SessionHandle, DriverError> {
+        self.creates.fetch_add(1, Ordering::AcqRel);
         if self.mode.load(Ordering::SeqCst) == 9 {
             self.mode.store(10, Ordering::SeqCst); // Signal that startup has begun.
-            return futures::future::pending().await;
+            self.create_gate.acquire().await.unwrap().forget();
         }
-        Ok(SessionHandle {
-            native_session_id: format!("review-{}", RunId::new()),
-        })
+        if self.reject_creation.load(Ordering::Acquire) {
+            return Err(DriverError::NotConfigured(
+                "private native startup rejection".into(),
+            ));
+        }
+        let handle = SessionHandle::scoped(format!("review-{}", RunId::new()));
+        self.handles
+            .lock()
+            .unwrap()
+            .insert(handle.native_session_id.clone(), handle.clone());
+        Ok(handle)
     }
     async fn create_review_session(
         &self,
@@ -98,6 +117,23 @@ impl AgentDriver for Reviewer {
             return Ok(Box::pin(futures::stream::pending()));
         }
         let mode = self.mode.load(Ordering::SeqCst);
+        if mode == 17 {
+            return Ok(Box::pin(
+                futures::stream::iter([Ok(DriverEvent::TextDelta {
+                    item_id: "partial".into(),
+                    text: "已核对第一处调用方".into(),
+                })])
+                .chain(futures::stream::once(async {
+                    panic!("private review stream panic")
+                })),
+            ));
+        }
+        if mode == 18 {
+            self.handles
+                .lock()
+                .unwrap()
+                .remove(&handle.native_session_id);
+        }
         if mode == 16 {
             return Ok(Box::pin(futures::stream::iter(vec![
                 Ok(DriverEvent::Presentation {
@@ -187,7 +223,60 @@ impl AgentDriver for Reviewer {
             .push(handle.native_session_id.clone());
         Ok(())
     }
-    async fn shutdown(&self, _: SessionHandle) -> Result<(), DriverError> {
+    async fn shutdown_proof(
+        &self,
+        handle: &SessionHandle,
+    ) -> Option<driver_api::SessionShutdownProof> {
+        if !handle.native_session_id.starts_with("review-")
+            || !self.proof_enabled.load(Ordering::Acquire)
+        {
+            return None;
+        }
+        assert!(
+            self.handles
+                .lock()
+                .unwrap()
+                .get(&handle.native_session_id)
+                .unwrap()
+                .same_scope(handle)
+        );
+        self.proof_captures.fetch_add(1, Ordering::AcqRel);
+        let proof = self.proof_gate.clone();
+        let handles = self.handles.clone();
+        let handle = handle.clone();
+        Some(Box::pin(async move {
+            proof.acquire().await.unwrap().forget();
+            let mut handles = handles.lock().unwrap();
+            if handles
+                .get(&handle.native_session_id)
+                .is_some_and(|current| current.same_scope(&handle))
+            {
+                handles.remove(&handle.native_session_id);
+            }
+        }))
+    }
+    async fn shutdown(&self, handle: SessionHandle) -> Result<(), DriverError> {
+        self.shutdowns
+            .lock()
+            .unwrap()
+            .push(handle.native_session_id.clone());
+        if !handle.native_session_id.starts_with("review-") {
+            return Ok(());
+        }
+        if self.hold_shutdown.load(Ordering::Acquire) {
+            self.shutdown_gate.acquire().await.unwrap().forget();
+        }
+        if self.close_error.load(Ordering::Acquire) {
+            return Err(DriverError::Disconnected("private close rejection".into()));
+        }
+        let mut handles = self.handles.lock().unwrap();
+        if !handles
+            .get(&handle.native_session_id)
+            .is_some_and(|current| current.same_scope(&handle))
+        {
+            return Err(DriverError::SessionMissing(handle.native_session_id));
+        }
+        handles.remove(&handle.native_session_id);
         Ok(())
     }
 }
@@ -243,6 +332,17 @@ async fn fixture_with_capture(capture: bool) -> Fixture {
         mode: AtomicUsize::new(0),
         calls: Mutex::default(),
         stopped: Mutex::default(),
+        create_gate: Semaphore::new(0),
+        creates: AtomicUsize::new(0),
+        reject_creation: AtomicBool::new(false),
+        hold_shutdown: AtomicBool::new(false),
+        shutdown_gate: Semaphore::new(0),
+        shutdowns: Mutex::default(),
+        close_error: AtomicBool::new(false),
+        proof_enabled: AtomicBool::new(false),
+        proof_gate: Arc::new(Semaphore::new(0)),
+        proof_captures: AtomicUsize::new(0),
+        handles: Arc::default(),
     });
     core.register_driver(driver.clone()).await;
     let project = ProjectId::new();
@@ -442,6 +542,20 @@ async fn review_can_be_cancelled_while_native_session_is_starting() {
         .cancel_turn_review(&f.request.task_id, &f.request.run_id)
         .await
         .unwrap();
+    // Accepted cancellation cannot abandon the original native creation.
+    assert_eq!(current_review(&f).await.status, ReviewStatus::Cancelling);
+    assert!(f.core.has_active_reviews().await);
+    assert!(f.core.has_active_auxiliary_operations());
+    assert_eq!(f.driver.creates.load(Ordering::Acquire), 1);
+    assert!(
+        f.driver
+            .shutdowns
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|id| id == "main-session")
+    );
+    f.driver.create_gate.add_permits(1);
     assert_eq!(
         settled(&f, &f.request.run_id).await.status,
         ReviewStatus::Cancelled
@@ -451,6 +565,164 @@ async fn review_can_be_cancelled_while_native_session_is_starting() {
         before.session_maps,
         f.core.bootstrap().await.unwrap().session_maps
     );
+}
+
+async fn current_review(f: &Fixture) -> ReviewRun {
+    f.core
+        .turn_reviews(&f.request.task_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|run| run.request.run_id == f.request.run_id)
+        .unwrap()
+}
+async fn wait_review_boundary(test: impl Fn() -> bool) {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while !test() {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("private review boundary was not reached");
+}
+fn review_closes(driver: &Reviewer) -> usize {
+    driver
+        .shutdowns
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|id| id.starts_with("review-"))
+        .count()
+}
+
+#[tokio::test]
+async fn review_completion_waits_for_original_shutdown_and_cancel_still_wins() {
+    let f = fixture().await;
+    f.driver.hold_shutdown.store(true, Ordering::Release);
+    f.core.start_turn_review(f.request.clone()).await.unwrap();
+    wait_review_boundary(|| review_closes(&f.driver) == 1).await;
+    assert_eq!(current_review(&f).await.status, ReviewStatus::Running);
+    assert!(f.core.has_active_reviews().await);
+    assert!(f.core.has_active_auxiliary_operations());
+    f.core
+        .cancel_turn_review(&f.request.task_id, &f.request.run_id)
+        .await
+        .unwrap();
+    assert_eq!(current_review(&f).await.status, ReviewStatus::Cancelling);
+    f.driver.shutdown_gate.add_permits(1);
+    let review = settled(&f, &f.request.run_id).await;
+    assert_eq!(review.status, ReviewStatus::Cancelled);
+    assert!(review.result.contains("findings"));
+    assert_eq!(review_closes(&f.driver), 1);
+    assert_eq!(f.driver.creates.load(Ordering::Acquire), 1);
+}
+
+#[tokio::test]
+async fn review_close_failure_stays_pending_until_its_original_proof_without_a_replay() {
+    let f = fixture().await;
+    f.driver.close_error.store(true, Ordering::Release);
+    f.driver.proof_enabled.store(true, Ordering::Release);
+    f.core.start_turn_review(f.request.clone()).await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let run = current_review(&f).await;
+            if run
+                .error
+                .as_deref()
+                .is_some_and(|message| message.contains("关闭尚未确认"))
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let pending = current_review(&f).await;
+    assert_eq!(pending.status, ReviewStatus::Running);
+    assert!(pending.result.contains("findings"));
+    assert!(pending.finished_at.is_none());
+    assert!(f.core.has_active_reviews().await);
+    assert_eq!(review_closes(&f.driver), 1);
+    assert_eq!(f.driver.proof_captures.load(Ordering::Acquire), 1);
+    // Replacing the registry must not retarget the original close or proof.
+    f.core
+        .register_driver(Arc::new(driver_api::FakeDriver::with_executor(
+            f.driver.executor.clone(),
+        )))
+        .await;
+    f.driver.proof_gate.add_permits(1);
+    let completed = settled(&f, &f.request.run_id).await;
+    assert_eq!(completed.status, ReviewStatus::Completed);
+    assert!(completed.error.is_none());
+    assert_eq!(review_closes(&f.driver), 1);
+    assert_eq!(f.driver.creates.load(Ordering::Acquire), 1);
+    assert_eq!(f.driver.proof_captures.load(Ordering::Acquire), 1);
+}
+
+#[tokio::test]
+async fn a_panicking_review_stream_preserves_partial_output_and_retires_only_its_original_session()
+{
+    let f = fixture().await;
+    let primary = f.core.bootstrap().await.unwrap().session_maps;
+    f.driver.mode.store(17, Ordering::Release);
+    f.driver.hold_shutdown.store(true, Ordering::Release);
+    f.core.start_turn_review(f.request.clone()).await.unwrap();
+    wait_review_boundary(|| review_closes(&f.driver) == 1).await;
+    assert!(f.core.has_active_reviews().await);
+    assert!(f.core.has_active_auxiliary_operations());
+    f.driver.shutdown_gate.add_permits(1);
+    let failed = settled(&f, &f.request.run_id).await;
+    assert_eq!(failed.status, ReviewStatus::Failed);
+    assert!(failed.result.contains("已核对第一处调用方"));
+    assert!(failed.error.as_deref().unwrap().contains("意外中断"));
+    assert_eq!(f.core.bootstrap().await.unwrap().session_maps, primary);
+    assert_eq!(f.driver.stopped.lock().unwrap().len(), 1);
+    assert!(f.driver.stopped.lock().unwrap()[0].starts_with("review-"));
+    assert_eq!(review_closes(&f.driver), 1);
+}
+
+#[tokio::test]
+async fn cancelled_startup_with_a_late_explicit_rejection_never_invents_a_native_shutdown() {
+    let f = fixture().await;
+    f.driver.mode.store(9, Ordering::Release);
+    f.driver.reject_creation.store(true, Ordering::Release);
+    f.core.start_turn_review(f.request.clone()).await.unwrap();
+    wait_review_boundary(|| f.driver.mode.load(Ordering::Acquire) == 10).await;
+    f.core
+        .cancel_turn_review(&f.request.task_id, &f.request.run_id)
+        .await
+        .unwrap();
+    assert_eq!(current_review(&f).await.status, ReviewStatus::Cancelling);
+    assert!(f.core.has_active_reviews().await);
+    f.driver.create_gate.add_permits(1);
+    assert_eq!(
+        settled(&f, &f.request.run_id).await.status,
+        ReviewStatus::Cancelled
+    );
+    assert_eq!(review_closes(&f.driver), 0);
+    assert!(f.driver.stopped.lock().unwrap().is_empty());
+    assert_eq!(f.driver.calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn review_retirement_uses_proof_captured_before_the_native_table_entry_disappears() {
+    let f = fixture().await;
+    f.driver.mode.store(18, Ordering::Release);
+    f.driver.proof_enabled.store(true, Ordering::Release);
+    f.core.start_turn_review(f.request.clone()).await.unwrap();
+    wait_review_boundary(|| review_closes(&f.driver) == 1).await;
+    assert!(f.driver.handles.lock().unwrap().is_empty());
+    assert!(f.core.has_active_reviews().await);
+    assert_eq!(f.driver.proof_captures.load(Ordering::Acquire), 1);
+    assert_eq!(current_review(&f).await.status, ReviewStatus::Running);
+    f.driver.proof_gate.add_permits(1);
+    assert_eq!(
+        settled(&f, &f.request.run_id).await.status,
+        ReviewStatus::Completed
+    );
+    assert_eq!(review_closes(&f.driver), 1);
+    assert_eq!(f.driver.proof_captures.load(Ordering::Acquire), 1);
 }
 
 #[tokio::test]

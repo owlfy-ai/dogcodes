@@ -1,13 +1,14 @@
 //! Per-connection, per-session metadata. Restore responses must not overwrite
 //! config notifications received while the request was in flight.
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 #[derive(Default)]
 pub(super) struct SessionStates {
     values: HashMap<String, Value>,
     pending: HashMap<String, (u64, Value)>,
     revision: u64,
     bindings: HashMap<String, Value>,
+    retired: HashSet<String>,
 }
 pub(super) fn merge(base: &Value, update: &Value) -> Value {
     let mut result = base.as_object().cloned().unwrap_or_default();
@@ -29,6 +30,12 @@ fn binding(mut params: Value) -> Value {
     params
 }
 impl SessionStates {
+    pub fn forget(&mut self, id: &str) {
+        self.values.remove(id);
+        self.bindings.remove(id);
+        self.pending.remove(id);
+        self.retired.insert(id.into());
+    }
     /// Only sessions fully initialized on this connection may skip session/load.
     pub fn resident(&self, id: &str, params: &Value) -> Option<Value> {
         if self.pending.contains_key(id) || self.bindings.get(id) != Some(&binding(params.clone()))
@@ -55,6 +62,7 @@ impl SessionStates {
     }
 
     pub fn begin(&mut self, id: &str) -> u64 {
+        self.retired.remove(id);
         self.bindings.remove(id);
         self.revision += 1;
         self.pending.insert(id.into(), (self.revision, json!({})));
@@ -80,6 +88,7 @@ impl SessionStates {
         }
     }
     pub fn new_session(&mut self, id: &str, response: Value) -> Value {
+        self.retired.remove(id);
         let response = merge(&response, self.values.get(id).unwrap_or(&Value::Null));
         self.values.insert(id.into(), response.clone());
         response
@@ -88,6 +97,9 @@ impl SessionStates {
         let Some(id) = event["sessionId"].as_str() else {
             return;
         };
+        if self.retired.contains(id) {
+            return;
+        }
         let update = &event["update"];
         let patch = match update["sessionUpdate"].as_str() {
             Some("config_option_update") => json!({"configOptions":update["configOptions"]}),
@@ -114,6 +126,50 @@ impl SessionStates {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retirement_forgets_cached_bindings_and_rejects_late_metadata_until_explicit_setup() {
+        let mut states = SessionStates::default();
+        let params = json!({"cwd":"/work","mcpServers":[]});
+        states.new_session("a", json!({"models":{"currentModelId":"before"}}));
+        let original = states.begin("a");
+        states
+            .finish_setup("a", original, json!({}), params.clone())
+            .unwrap();
+        states.forget("a");
+        states.observe(&json!({"sessionId":"a","update":{"sessionUpdate":"config_option_update","configOptions":["late"]}}));
+        assert!(!states.values.contains_key("a"));
+        assert!(states.resident("a", &params).is_none());
+        assert!(
+            states
+                .finish_setup(
+                    "a",
+                    original,
+                    json!({"models":{"currentModelId":"stale"}}),
+                    params.clone()
+                )
+                .is_none()
+        );
+        let restored = states.begin("a");
+        states
+            .finish_setup(
+                "a",
+                restored,
+                json!({"models":{"currentModelId":"restored"}}),
+                params.clone(),
+            )
+            .unwrap();
+        assert_eq!(
+            states.resident("a", &params).unwrap()["models"]["currentModelId"],
+            "restored"
+        );
+        assert!(
+            states
+                .resident("a", &params)
+                .unwrap()
+                .get("configOptions")
+                .is_none()
+        );
+    }
     #[test]
     fn failed_session_cannot_be_revived_by_a_late_setup_reply() {
         let mut state = SessionStates::default();

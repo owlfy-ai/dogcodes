@@ -115,7 +115,7 @@ PC 增加 terminal_input inspect/open/write：绑定后台 epoch、认证 owner�
 
 本节最终本地结果：PC 完整库 329 项通过/7 项原有按需跳过，macOS remote-desktop 19 项；手机完整 375 项（包含原生身份/加密 FFI）、Flutter analyze、普通 iOS 模拟器包与 Android ARM64 包通过。Linux 真实合成来源双向编码/解码 1 项通过；远程层 72 项通过/1 项单独启用的合成管线测试，remote-desktop 23 项通过/2 项按需跳过；macOS/Linux 严格 Clippy 通过。未安装运行模拟器、切换日常 Core 或使用用户实际屏幕/键鼠/剪贴板；服务端本节没有改动。
 
-按需重跑合成来源用例：在隔离 Linux 环境将测试 PATH 的 `loginctl` 替身设为输出 `no`（只替换该测试进程的锁屏状态查询），运行 `cargo test -p desktop --lib --locked same_synthetic_source_rebuilds_codec_in_both_directions_and_gates_real_h264 -- --ignored --test-threads=1`。ScreenSource 固定为合成像素，不会退回采集实际显示器；不要在生产部署中替换锁屏检测。
+此处原手动验收已由新入口替代。2026-10-25 Linux 改用 login1 D-Bus，旧 PATH/loginctl 替身不再适用；运行 `python3 scripts/desktop_codec_acceptance.py`，由独立私有 login1 服务执行同一 opt-in 的桌面跨模式测试，已在隔离 Linux 实际通过并接入 CI。portal/JPEG/H.264 来源另用 `scripts/wayland_acceptance.py`，两者覆盖层次不同。详见 [恢复与验收记录](video-corruption-codec-acceptance-2026-10-25.md)。
 
 
 ## 桌面终端输入后续更新
@@ -169,3 +169,103 @@ ACP stdio 与 Kimi 临时 Web 用量 helper 改用独立原进程组/Job 清理�
 新增 10 项回归，Mac/Linux ACP 各 78 项、Windows GNU all-targets 交叉检查/严格 Clippy、当前工作区桌面 320 项/Core 92 项及严格 Clippy 通过。MSVC 在 C 依赖阶段缺 Windows 标准头，未完成该环境检查；实际 Windows Job/平台设备仍后置。未调用真实 Agent、切换日常 Core 或操作模拟器/实际桌面；手机/服务端/视频生产代码未变。详见 [ACP 清理第一阶段](acp-process-cleanup-2026-10-23.md)。
 
 下一阶段继续 ACP session/cancel 的真实终态与独立等待、真正单会话退休、元数据取消和通知/审批归属；当前 shutdown 仍是连接级，不能宣称共享多个空闲业务会话的逐项关闭已解决。持续背压、其它辅助事务、Core 强退与跨物理代次、PC 功能对齐，以及全部视频/实机/网络/通知/部署范围继续保留。当前工作区终端/取消/电源协议有同期修改，之后核对以最新前后端实现为准，历史实施记录不自动证明当前行为。
+
+
+## 2026-10-24 ACP 停止与审批接续
+
+原 session/cancel 排队即成功的行为改为冻结原轮次、一次停止结果和真实 prompt 终态等待。派发前取消不发送任务，取消等待与重复停止不重复发通知；未知停止结果报告失败并继续清理原作用域。审批/问答回复检查活动会话、关闭/停止状态和原请求，先校验再取走 pending；独立随机身份阻止重建后旧审批命中新审批。停止清掉目标等待，迟到的 native 审批取消而不进入当前 UI。
+
+Mac ACP 89 项、Core 92 项、桌面 320 项及严格检查通过，Windows GNU all-targets 静态/严格检查通过；Linux ACP 89 项及严格检查于 10 月 25 日补验通过。详见 [ACP 停止与审批](acp-stop-approval-2026-10-24.md)。手机/服务端生产代码未变，没有调用真实 Agent、切换日常 Core 或操作用户桌面/模拟器。
+
+下一步仍是 ACP 真正逐会话关闭、metadata 取消和未知结果、通知/无 sessionId 回调归属、辅助事务/背压、Core 强退与跨物理代次、当前两端功能恢复核对。原视频加速/特殊来源/更高编码能力与全部实机、TURN/弱网、地区网络、推送、部署验收继续开放。
+
+
+## 2026-10-25 ACP 共享会话退休与配置结算
+
+登记原连接/原 Turn 的业务 owner，关闭一个空闲或运行中的会话时保留其它开放 owner；未确认停止保持退休中，不杀其它会话。内部 ForgetSession 确认本机缓存清除，最后一个 owner 才结束原物理作用域。关闭等待取消仍继续清理，身份比较保护替换对象；迟到文字不串入其它 session，退休/重新配置后的旧 interrupt 不改变新配置的重建标志。
+
+new/load/config 等待由独立任务保留 setup 准入，调用方消失后原结果继续结算，孤立成功结果退休，失败目标停用后才返回错误，旧 handle 不可继续发送。新增 12 项回归含 4 项先复现失败；Mac/Linux ACP 各 101 项、Mac Core 92 项/桌面 320 项及严格检查通过，Windows GNU all-targets 静态/严格检查通过。见 [ACP 会话退休](acp-session-retirement-2026-10-25.md)。手机/服务端生产代码未变，没有调用真实 Agent、切换日常 Core 或操作实际桌面/模拟器。
+
+稳定 v1 没有通用 native session/close，直接共用 Driver 时不能将本机缓存退休当成 Agent 内部全部后台资源已逐 session 释放。metadata 超时的 native 副作用、无 sessionId 回调/旧别名歧义、其它辅助事务/背压、Core 强退与跨物理代次、完整两端恢复核对，以及所有原视频加速/特殊来源/编码能力、实机/TURN/弱网/地区网络/推送/部署范围继续开放。
+
+
+## 2026-10-25 Windows 硬件编码与软件接管
+
+Windows 增加硬件 Media Foundation 优先的编码路径，NV12 系统内存输入、异步事件/帧身份/实际 SPS/合成解码准入，有界独立 COM worker 不持有发布 sink。初始化/处理超时或动态设置失败时，新软件编码器从自己的 SPS/PPS/IDR 接管；旧硬件结果不能再发出。预热图不发送，原生首个真实输入及帧率重建后也须独立 IDR。MF 固定 System32 动态加载，不增加启动时 DLL 硬依赖；Windows 发布前重新核实锁屏/停止状态。
+
+新增 8 项普通回归覆盖线程归属/挂起资源预算、迟到输出、参数集，以及两套真实 OpenH264 编解码验证软件接管；Mac 视频 27 项/Core 92 项/桌面 320 项、Linux 视频 31 项及严格检查通过，Windows GNU 严格检查、真实 PE 链接及无 MF 启动导入检查通过。真实 Windows hardware MFT 有一项显式 opt-in 合成测试，尚未执行，不将本地替身或 PE 当作 GPU 实机验收。详见 [Windows 原生视频](windows-native-video-2026-10-25.md)。手机/服务端生产代码与协议未变，手机 decoder 源码已有 SPS/PPS 变化重建处理，实际手机解码后置；未切换日常 Core 或操作用户屏幕/键鼠/剪贴板/模拟器。
+
+Windows 各显卡/纹理输入/设备恢复与零拷贝采集、Linux 加速/特殊来源、更高编码能力、所有实机/TURN/弱网/地区网络/通知/部署，以及原 PC/手机全功能恢复和 Core 异常退出等范围继续开放。
+
+
+## 2026-10-25 Wayland NV12 来源接续
+
+可映射 NV12 已支持一/双平面、偏移/填充/负跨度和 BT.601/709 range 转换；省略颜色元数据按 BT.601 limited 处理。格式失效不会继续套用旧描述，MemFd 输入保持只读，明确排除未实现的 DMA-BUF/modifier 导入。Mac 34/Linux 39 项及严格检查、Windows GNU 静态检查、Linux 生产 lib 编译、五种私有 PipeWire 来源的像素→H.264→解码均通过；旧 capture 的 NV12 来源首帧超时已隔离复现。CI 接入全部五种来源。详见 [NV12 记录](wayland-nv12-sources-2026-10-25.md)。
+
+手机/服务端协议无变动，未切换日常 Core 或操作实际屏幕/模拟器。DMA-BUF/EGL、Linux 硬件编码、Windows 原生设备/零拷贝、色彩/编码增强，PC 全功能恢复与 Core 强退/物理代次、实机/真实网络/推送/官方部署范围保持开放。
+
+## 2026-10-25 Wayland DMA-BUF/EGL 与 Linux 基线
+
+已接入动态 EGL、真实格式/modifier 协商、external image → RGBA readback，以及有界失败回退、共享 display/FD 归还保护；尚非零拷贝或 Linux 硬件编码。受限 portal 来源在连接前后核实身份并永久拒绝节点复用；兼容旧管理器路由和 done 序号。CPU MemFd 独立只读映射，固定哈希 SPA 构建头文件保持系统运行库不变。Ubuntu 22.04/PipeWire 0.3.48 与较新 0.3.65 各 46 项回归、严格检查、生产编译、五种 PipeWire 合成来源与离屏软件 EGL 均通过；Mac 34 项与严格检查、Windows GNU 严格检查通过。细节、反例和复验入口见 [DMA-BUF/EGL 记录](wayland-dmabuf-egl-2026-10-25.md)。
+
+真实 GPU DMA-BUF/NV12/多 GPU、原生调用挂起隔离与设备恢复、Linux 硬件编码、Windows 原生采集/零拷贝、特殊元数据与更高编码能力仍开放。既有 PC 全功能/操作恢复、metadata/辅助进程、Core 强退/物理代次与三平台/手机/真实网络/通知/部署验收继续保留。未切换日常 Core 或操作用户设备。
+
+## 2026-10-25 RustDesk 对照与视频发送复核
+
+已系统对照本机 RustDesk 的采集/codec、静态刷新、QoS/消费背压、Wayland crop/几何和会话状态，见 [对照与接续记录](rustdesk-video-reference-2026-10-25.md)。本轮修复所有平台编码后停止/锁屏复核及 JPEG 编码后复核；Linux 不再每次启动 loginctl，改用单 worker/32 项有界队列/250ms 期限的 login1 即时查询，验证 UID/活动/本机/图形会话，兼容后台 Core，拒绝迟到许可。原生 hook 注销保留原地址。
+
+Mac 40 项、旧/新 Linux 各 55 项、严格检查、Windows GNU 静态检查和 Linux 生产编译通过。私有总线/五种 PipeWire 来源补验后台会话、过期 ID 不改选、未知后重连、锁定结束/解锁不复活、JPEG 编码中锁定；较新 Linux 另通过 SPA RGB。JPEG 去掉最终复核及 hook 恢复按值退休的两个对照均失败。真实桌面/用户切换/权限/手机和网络未验收，全部既有目标继续；接续优先 crop/transform 与坐标，再原生编码/设备恢复和静态画质/拥塞反馈。
+
+## 2026-10-25 Wayland 可见区域与原授权接续
+
+独占 buffer loan 归还、有界/非对齐元数据副本、header 损坏丢弃、crop 与八种方向归一化已接入 CPU/EGL readback 后处理；初始连接即声明元数据，避免旧运行库初批 buffer 缺项。编码后及 JPEG/unchanged 回复核实原 source，不仅检查 OS 未锁定。见 [实施与证据](wayland-presentation-grants-2026-10-25.md)。
+
+Mac 43 项、旧/新 Linux 各 62 项、严格检查、Windows GNU 静态检查和 Linux 生产编译通过。七种私有来源核实 raw/JPEG/H.264 四角颜色与原 node 逻辑输入端点；分别移除 JPEG 原授权、视频原授权、geometry 都复现失败。运行中最终布局变化的自动接续、长期坏帧/停滞与独立 login1 的 desktop 跨模式复验入口仍需继续；全部既有硬编/设备恢复/实机/网络/PC 恢复/Core 强退/推送/部署目标保持。
+
+## 2026-10-25 持续坏帧与 desktop 跨模式入口
+
+Header/任一 plane chunk 明确损坏启动一次 3 秒期限，实际好帧清除；连续坏帧不延期，空更新/静止不启动期限，来源保留首个错误。两套 Linux 验证短暂恢复、持续 Header/UV chunk 损坏、空更新和实际 actor/worker 退出，移除期限及误将空更新当成损坏的反例均失败。Mac 43、旧/新 Linux 各 63 项与严格检查、Windows GNU 静态检查通过。新 `scripts/desktop_codec_acceptance.py` 使用私有 login1，同一来源跨 Auto/CB3.1 的真实解码/IDR/ready/释放已通过，另有桌面视频 15 项通过。详见 [实施与限制](video-corruption-codec-acceptance-2026-10-25.md)。
+
+动态布局、全部原硬编/采集/恢复/质量/网络/平台/手机/PC 操作恢复/Core/推送/部署范围继续。未切换日常 Core 或操作实际桌面。
+
+## 2026-10-25 静态补编码与真实输出核实
+
+已改为按真实编码输出推进的有界静态刷新，普通补编码按 FPS/次数/时间收尾，不额外强制质量 IDR；持续无输出与 IDR 未满足分别有 2 秒期限，新运动/普通 P 帧不能续期。终态错误退休输出且保留首因；capture/ticker 同锁选帧避免旧缓存反向覆盖。Mac 50、两套 Linux 各 70 项/严格检查、Windows GNU 静态检查、跨编码及桌面视频 15 项通过；原生/软件合成来源验证刷新停止与后续 IDR，OpenH264 的真实编解码对照记录质量/流量，两个行为移除对照失败。详见 [静态刷新](video-static-refresh-2026-10-25.md)。
+
+后续仍为网络基线/ACK/拥塞与消费背压、动态几何、原生采集/硬编/设备恢复和硬件画质校准，原 PC 功能/操作恢复/Core 强退与全部实机/网络/推送/部署范围不变。手机/服务生产代码与协议未变，没有切换日常 Core 或操作真实桌面。
+
+## 2026-10-25 二进制 ACK、基线与恢复观察
+
+四个旧行为已复现失败并修复：增长队列变正常基线、ACK burst 快速回升、静止时不制动、首帧无 ACK 反被当作样本。新鲜 ACK/超时分离，控制循环主动制动，旧 ACK 不学习/二次制动，基线逐步老化且恢复需时间观察；部分迟到 ACK 不提前重置制动时钟。Mac/Linux 全桌面各 328 项、严格检查及 Linux 跨模式通过，模块 Windows 静态检查见 [QoS 记录](video-relay-qos-2026-10-25.md)。Linux 夹具的瞬态 ETXTBSY 仅对自有临时程序做一秒内重试，不改生产升级逻辑。
+
+下一项为发送满窗时的生产端余量/消费反馈和 IDR 重试，手机失败/丢弃仍累计 ACK 的机制已核对。`scripts/relay_qos_trace.rs` 的简化链路结果显示恢复偏慢且仍有锯齿，需继续调校，不能据当前回归宣称网络优化完成。原动态几何、原生硬编/采集/设备恢复、弱网/平台/手机、全部 PC 功能/操作恢复/Core/推送/部署范围继续，没有使用实际桌面/模型或切换日常 Core。
+
+## 2026-10-25 编码前余量与最新画面
+
+二进制窗口/字节/channel 及 RTP 本地队列信用接入 live 编码前；被拒时只更新最新缓存，当前 Output 保留 IDR 恢复到真正接受，不再反复使用独立旧 lost 标记。输入时间贯穿编码/回调，Flow 边界丢弃暂停前输出且不误核销新 IDR；已提交 codec 的无输出检查仍在，背压不替未提交请求起超时。Mac live 一项在途输入，回调完成后归还信用。Mac 视频 55、两套 Linux 各 74、transport 各 7、Mac/Linux desktop 各 331 项与严格检查、Windows GNU 静态检查、Linux 跨模式及私有来源通过，两个移除修复对照失败；完整 Source→codec→RelayVideo→ACK 联调消除了激活旧请求位重开恢复的竞态，ready 重试幂等，默认 private launcher 执行两项编码/窗口验收，详见 [实施与限制](video-output-admission-2026-10-25.md)。
+
+下一步继续码率恢复偏慢/锯齿、动态最终几何和原生系统调用挂起隔离/设备恢复；所有 PC 功能/操作恢复/metadata/辅助事务/Core 强退/跨代次和实机/网络/推送/部署目标保持。未切换日常 Core 或操作实际桌面/模型/模拟器。
+
+## 2026-10-25 受保护的码率恢复
+
+二进制控制器接入新目标自己的新鲜 ACK，按已观察稳定目标和最近失败水平保护恢复；接近排队时保持目标或小步试探，持续恶化仍及时降速，超时旧帧继续排除。相同简化模型中，恢复到原目标九成由 19.5 秒缩至 11.3 秒，稳定链路末段目标由 1.09–2.02Mbps 收窄到 1.44–1.78Mbps。永久低带宽样本有吞吐/延迟折中，未视为弱网全部验收。
+
+独立控制器/模型 13 项、Mac/Linux 完整 desktop 各 336 项与严格检查、Windows GNU 模块静态检查通过；旧控制器两项模型回归及两个独立移除检查失败。Linux CI 已接入可重跑模型。详见 [实现、数据与边界](video-relay-recovery-2026-10-25.md)。协议与手机/服务端生产代码未变，接续动态几何和原生挂起隔离/设备恢复，以及全部真实网络/平台/PC/操作恢复/Core/推送/部署目标。
+
+## 2026-10-25 macOS codec 调用与销毁隔离
+
+VideoToolbox 原生对象改由有界线程创建/使用/销毁，外层初始化五秒、每次运行两秒；回调只交付单项结果，不持有真实 sink，超时旧结果丢弃。未退出 Native 仍占名额，最多两项；单项运行确认后才提交下一帧。就绪分支不再复活首个输入已经失败的流，ticker 启动失败补停止与采集清理。
+
+Mac 原生 59、旧/新 Linux 原生各 75、两端完整 desktop 各 336 项与严格检查、Windows GNU 静态检查和 Linux 两项私有编码/ACK 验收通过，四个独立保护移除对照失败；详见 [实现与证据](macos-codec-isolation-2026-10-25.md)。这不是 ScreenCaptureKit 隔离或真实设备挂起恢复；进程边界、动态几何、Linux 硬编/Windows 原生采集、实际网络/平台/手机与全部 PC 操作恢复/Core/推送/部署继续，未切换日常 Core 或操作实际桌面/模型/模拟器。
+
+## 2026-10-25 ScreenCaptureKit 采集控制隔离
+
+采集和 codec 各有两项配额。SCStream 创建/配置/停止和对象释放留在原线程，外层启动十秒、调参两秒；原生退出未确认仍占名额，真实回调独立撤销。原租约取消接入 content/启动检查，局部流停止不会关闭父租约，delegate 停止立即封住原 Shared 发布并保存首错误。Mac 66、旧/新 Linux 各 82、Mac/较新 Linux desktop 各 336、严格检查、Windows GNU 静态和私有 Linux 验收通过。
+
+早先共用缓存的反例不作为最终证据：现在独立 target 逐次清理重编八项本轮/上轮反例均按预期失败，再清理重编当前源码，Mac 66/desktop 336 与严格检查通过。详见 [当前实现与证据](macos-capture-isolation-2026-10-25.md)。下一项为退役配额的有界等待与快速重建测试，随后动态几何/进程恢复；真正 ScreenCaptureKit/权限/设备事件及全部原生平台、网络、PC 操作恢复/Core/推送/部署范围继续，未重启日常 Core 或操作实际屏幕/模型/模拟器。
+
+## 2026-10-26 原生配额等待与快速重建
+
+共享 worker 已用独立归还通知等待正常退役，最多两秒且不超过原初始化绝对期限，各池仍最多两项。旧实现先在新回归复现立即拒绝；两个池各 24 次有握手的连续重建、永久满额/启动副作用为零/不重置预算，以及模拟挂住一个调用时实际 VideoToolbox 八次新 IDR 独立解码通过。
+
+Mac 原生 71、较新 Linux 原生 86、两端完整 desktop 各 336 项与严格检查、Windows GNU 静态和 Linux 两项私有编解码/ACK 验收通过；三项独立清理重编的保护移除副本失败，详见 [实现及日志](native-retirement-grace-2026-10-26.md)。不等于两个永久挂起的上下文已恢复；继续动态几何/原生平台和进程恢复、实机/真实网络与全部 PC 操作恢复/Core/推送/部署，未切换日常 Core 或操作真实屏幕/模型。

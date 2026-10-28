@@ -51,6 +51,17 @@ async fn normal_turns_reuse_but_cancel_and_failure_retire_the_connection() {
             cursor_force: false,
             codebuddy_cwd: Some(root.path().to_owned()),
         });
+        let resident = sessions::Resident::new(
+            "session".into(),
+            driver.shared.connection.lock().await.as_ref().unwrap(),
+            false,
+        );
+        driver
+            .shared
+            .sessions
+            .lock()
+            .unwrap()
+            .insert("session".into(), resident);
         let shared = driver.shared.clone();
         let exited = finished.clone();
         tokio::spawn(async move {
@@ -72,9 +83,15 @@ async fn normal_turns_reuse_but_cancel_and_failure_retire_the_connection() {
             }
             exited.store(true, Ordering::Release);
         });
-        let handle = SessionHandle {
-            native_session_id: "session".into(),
-        };
+        let handle = driver
+            .shared
+            .sessions
+            .lock()
+            .unwrap()
+            .get("session")
+            .unwrap()
+            .handle
+            .clone();
         let request = SessionRequest {
             working_directory: root.path().to_string_lossy().into_owned(),
             history_mcp: None,
@@ -120,9 +137,10 @@ async fn normal_turns_reuse_but_cancel_and_failure_retire_the_connection() {
             assert!(resumed.is_err());
             assert!(finished.load(Ordering::Acquire));
         } else {
-            assert_eq!(resumed.unwrap().native_session_id, "session");
+            let resumed = resumed.unwrap();
+            assert_eq!(resumed.native_session_id, "session");
             assert!(!finished.load(Ordering::Acquire));
-            driver.shutdown(handle).await.unwrap();
+            driver.shutdown(resumed).await.unwrap();
         }
     }
 }

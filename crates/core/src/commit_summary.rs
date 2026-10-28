@@ -13,7 +13,8 @@ impl Core {
             .map_err(|e| e.to_string())?;
         let execution = admitted.execution();
         drop(admitted);
-        summarize_with_driver(execution.driver, &changes, language).await
+        let lifetime = execution.auxiliary_activity.lease(None);
+        summarize_with_driver(execution.driver, &changes, language, Some(lifetime)).await
     }
 }
 
@@ -31,47 +32,51 @@ fn summary_prompt(language: &str, changes: &str) -> Result<String, String> {
     ))
 }
 
-async fn summarize_with_driver(
+pub(super) async fn summarize_with_driver(
     driver: std::sync::Arc<dyn driver_api::AgentDriver>,
     changes: &str,
     language: Option<&str>,
+    lifetime: Option<std::sync::Arc<dyn crate::AnalysisLifetime>>,
 ) -> Result<String, String> {
     let driver = driver
         .independent_session_driver()
         .map_err(|e| e.to_string())?
         .unwrap_or(driver);
-    // Use the native default model and only effort values advertised for it.
-    // A separate small task must not inherit an expensive reasoning setting.
-    let catalog = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        driver.model_catalog_for(None),
+    let mut session = crate::auxiliary_session::Session::start(
+        driver.clone(),
+        lifetime,
+        crate::auxiliary_session::Purpose::Summary,
+        |driver, cwd, start| async move {
+            // Catalog and creation stay owned after their observer stops waiting.
+            // Only select thinking values advertised for the native default.
+            let catalog = driver
+                .model_catalog_for(None)
+                .await
+                .map_err(|e| e.to_string())?;
+            start.check()?;
+            let thinking = catalog
+                .default_model
+                .as_ref()
+                .and_then(|id| catalog.models.iter().find(|model| &model.id == id))
+                .and_then(|model| lowest_thinking(&model.thinking_options));
+            driver
+                .create_selected_session(
+                    SessionRequest {
+                        history_mcp: None,
+                        permission_mode: None,
+                        additional_directories: vec![],
+                        working_directory: cwd,
+                    },
+                    catalog.default_model.as_deref(),
+                    thinking,
+                )
+                .await
+                .map_err(|e| e.to_string())
+        },
     )
-    .await
-    .map_err(|_| "读取总结模型超时")?
-    .map_err(|e| e.to_string())?;
-    let thinking = catalog
-        .default_model
-        .as_ref()
-        .and_then(|id| catalog.models.iter().find(|model| &model.id == id))
-        .and_then(|model| lowest_thinking(&model.thinking_options));
-    let directory = tempfile::tempdir().map_err(|e| e.to_string())?;
-    let cwd = directory.path().to_string_lossy().into_owned();
-    let handle = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        driver.create_selected_session(
-            SessionRequest {
-                history_mcp: None,
-                permission_mode: None,
-                additional_directories: vec![],
-                working_directory: cwd.clone(),
-            },
-            catalog.default_model.as_deref(),
-            thinking,
-        ),
-    )
-    .await
-    .map_err(|_| "Agent 启动超时")?
-    .map_err(|e| e.to_string())?;
+    .await?;
+    let handle = session.handle().clone();
+    let cwd = session.directory().to_string_lossy().into_owned();
     let result = tokio::time::timeout(std::time::Duration::from_mins(2), async {
         let mut stream = driver
             .prompt(
@@ -125,11 +130,11 @@ async fn summarize_with_driver(
     })
     .await
     .unwrap_or_else(|_| Err("AI 总结超时，请重试".into()));
-    if result.is_err() {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), driver.interrupt(&handle))
-            .await;
+    if let Some(cleanup) = session.cleanup(result.is_err()) {
+        cleanup
+            .await
+            .map_err(|_| "临时 Agent 清理任务已中断，退出状态待核实")??;
     }
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), driver.shutdown(handle)).await;
     result
 }
 
@@ -322,9 +327,7 @@ mod tests {
             assert!(std::path::Path::new(&request.working_directory).is_dir());
             *self.selection.lock().unwrap() =
                 Some((model.map(Into::into), thinking.map(Into::into)));
-            Ok(driver_api::SessionHandle {
-                native_session_id: "summary-test".into(),
-            })
+            Ok(driver_api::SessionHandle::new("summary-test".into()))
         }
         async fn prompt(
             &self,
@@ -364,7 +367,7 @@ mod tests {
             events: std::sync::Mutex::new(None),
             prompts: std::sync::Mutex::new(vec![]),
         });
-        let summary = summarize_with_driver(driver.clone(), "diff data", None)
+        let summary = summarize_with_driver(driver.clone(), "diff data", None, None)
             .await
             .unwrap();
         assert!(!summary.is_empty());
@@ -394,7 +397,7 @@ mod tests {
                 events: std::sync::Mutex::new(None),
                 prompts: std::sync::Mutex::new(vec![]),
             });
-            summarize_with_driver(driver.clone(), "diff", language)
+            summarize_with_driver(driver.clone(), "diff", language, None)
                 .await
                 .unwrap();
             driver
@@ -440,7 +443,7 @@ mod tests {
             prompts: std::sync::Mutex::new(vec![]),
         });
         assert_eq!(
-            summarize_with_driver(driver.clone(), "diff", None)
+            summarize_with_driver(driver.clone(), "diff", None, None)
                 .await
                 .unwrap(),
             "提高重试次数"
@@ -460,7 +463,7 @@ mod tests {
             prompts: std::sync::Mutex::new(vec![]),
         });
         assert!(
-            summarize_with_driver(driver.clone(), "diff", None)
+            summarize_with_driver(driver.clone(), "diff", None, None)
                 .await
                 .unwrap_err()
                 .contains("尝试调用工具")

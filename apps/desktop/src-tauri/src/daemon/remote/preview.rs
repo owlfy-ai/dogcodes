@@ -101,6 +101,38 @@ fn end_header(name: &str) -> bool {
             | "proxy-authenticate"
     )
 }
+// The WebView has a different loopback port on the phone. Same-service
+// redirects must remain relative to that virtual origin, without following
+// redirects here or turning another PC service into the selected target.
+fn preview_location(value: &str, port: u16) -> String {
+    let parsed = if value.starts_with("//") {
+        reqwest::Url::parse(&format!("http:{value}"))
+    } else {
+        reqwest::Url::parse(value)
+    };
+    let Ok(target) = parsed else {
+        return value.to_owned();
+    };
+    if target.scheme() != "http"
+        || !matches!(target.host_str(), Some("127.0.0.1" | "localhost"))
+        || target.port_or_known_default() != Some(port)
+        || !target.username().is_empty()
+        || target.password().is_some()
+        || target.path().starts_with("//")
+    {
+        return value.to_owned();
+    }
+    let mut relative = target.path().to_owned();
+    if let Some(query) = target.query() {
+        relative.push('?');
+        relative.push_str(query);
+    }
+    if let Some(fragment) = target.fragment() {
+        relative.push('#');
+        relative.push_str(fragment);
+    }
+    relative
+}
 impl Host {
     async fn target(&self, core: &Core, id: &str) -> Result<u16, String> {
         let (port, task) = {
@@ -233,10 +265,16 @@ impl Host {
                     .iter()
                     .filter(|(name, _)| end_header(name.as_str()))
                     .filter_map(|(name, value)| {
-                        value
-                            .to_str()
-                            .ok()
-                            .map(|value| (name.as_str().to_string(), value.to_string()))
+                        value.to_str().ok().map(|value| {
+                            (
+                                name.as_str().to_string(),
+                                if name == reqwest::header::LOCATION {
+                                    preview_location(value, port)
+                                } else {
+                                    value.to_owned()
+                                },
+                            )
+                        })
                     })
                     .collect::<Vec<_>>();
                 if response

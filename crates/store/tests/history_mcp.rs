@@ -23,9 +23,7 @@ impl AgentDriver for WaitingDriver {
     }
     async fn create_session(&self, request: SessionRequest) -> Result<SessionHandle, DriverError> {
         *self.mcp.lock().unwrap() = request.history_mcp;
-        Ok(SessionHandle {
-            native_session_id: "fixture".into(),
-        })
+        Ok(SessionHandle::new("fixture".into()))
     }
     async fn prompt(
         &self,

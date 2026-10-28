@@ -10,9 +10,21 @@ export interface ProjectRunDirectory { path: string; status: "analyzing" | "read
 export type ProjectRunEdit = { action: "rename"; label: string } | { action: "delete" } | { action: "pin"; pinned: boolean };
 export interface ProjectRunCatalog { projectId: string; platform: string; shell: string; generation: string; executor: ExecutorRef | null; directories: ProjectRunDirectory[] }
 export interface RunProcess { id: string; api: TerminalApi; stop: () => Promise<void> }
-function process(id: string, onExit: () => void, start?: (cols: number, rows: number) => Promise<TerminalInfo>): RunProcess {
-  let stopping = false, attempted = false;
+function process(id: string, onExit: () => void, start?: (cols: number, rows: number) => Promise<TerminalInfo>, restored?: TerminalInfo): RunProcess {
+  let stopping = false, attempted = false, canceledBeforeStart = false;
+  let opening: Promise<TerminalInfo> | undefined, closing: Promise<void> | undefined;
+  let target = restored && { id: restored.id, epoch: restored.epoch };
   let dimensions: { cols: number; rows: number } | undefined;
+  const bind = (info: TerminalInfo) => {
+    if (info.id !== id || target && info.epoch !== target.epoch) throw new Error("终端身份已变化，请刷新后确认");
+    target = { id: info.id, epoch: info.epoch };
+    return info;
+  };
+  const closeTarget = () => {
+    if (!target) throw new Error("原启动结果尚未确认，请先重新连接原终端");
+    closing ??= terminalClient.close(id, target.epoch).catch(error => { closing = undefined; throw error; });
+    return closing;
+  };
   return {
     id,
     api: {
@@ -22,21 +34,34 @@ function process(id: string, onExit: () => void, start?: (cols: number, rows: nu
         dimensions ??= { cols, rows };
         const reconnectOnly = attempted || !start;
         attempted = true;
-        let info: TerminalInfo | undefined;
-        try { info = await terminalClient.get(id); } catch (error) { if (reconnectOnly) throw error; }
-        if (!info && stopping) { onExit(); throw new Error("运行已取消"); }
-        if (!info) info = await start!(dimensions.cols, dimensions.rows);
-        if (stopping) await terminalClient.close(id);
-        return followTerminal(info, event => { receive(event); if (event.kind === "state" && terminalEnded(event.info)) onExit(); });
+        const pending = (async () => {
+          let info: TerminalInfo | undefined;
+          try { info = await terminalClient.get(id); } catch (error) { if (reconnectOnly) throw error; }
+          if (!info && stopping) { canceledBeforeStart = true; onExit(); throw new Error("运行已取消"); }
+          return bind(info ?? await start!(dimensions!.cols, dimensions!.rows));
+        })();
+        opening = pending;
+        try {
+          const info = await pending;
+          if (stopping) await closeTarget();
+          return followTerminal(info, event => { receive(event); if (event.kind === "state" && terminalEnded(event.info)) onExit(); });
+        } finally { if (opening === pending) opening = undefined; }
       },
-      attach: async (_id, receive) => followTerminal(await terminalClient.get(id), event => {
+      attach: async (_id, receive) => followTerminal(bind(await terminalClient.get(id)), event => {
         receive(event); if (event.kind === "state" && terminalEnded(event.info)) onExit();
       }),
     },
     stop: async () => {
       stopping = true;
-      if (attempted || !start) await terminalClient.close(id);
-      else onExit();
+      if (!target && opening) {
+        try { await opening; } catch {
+          if (canceledBeforeStart) return;
+          throw new Error("原启动结果尚未确认，请先重新连接原终端");
+        }
+      }
+      if (target) await closeTarget();
+      else if (attempted && !canceledBeforeStart) throw new Error("原启动结果尚未确认，请先重新连接原终端");
+      else if (!canceledBeforeStart) onExit();
     },
   };
 }
@@ -49,7 +74,7 @@ export const projectRunClient = {
   edit: (taskId: string, generation: string, directoryIndex: number, commandId: string, edit: ProjectRunEdit) => runOperations.mutate("core_project_run_edit", { operationId: crypto.randomUUID(), taskId, generation, directoryIndex, commandId, edit }),
   executors: availableAgentExecutors,
   list: terminalClient.list,
-  restore: (info: TerminalInfo, onExit: () => void) => process(info.id, onExit),
+  restore: (info: TerminalInfo, onExit: () => void) => process(info.id, onExit, undefined, info),
   launch(taskId: string, catalog: ProjectRunCatalog, directoryIndex: number, commandId: string, onExit: () => void): RunProcess {
     const operationId = crypto.randomUUID();
     return process(operationId, onExit, (cols, rows) => invoke<TerminalInfo>("core_project_run_open", {

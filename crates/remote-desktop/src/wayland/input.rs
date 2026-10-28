@@ -64,7 +64,7 @@ pub(super) fn plan(stream: u32, size: (u32, u32), events: Vec<Input>) -> Result<
     }
     Ok(out)
 }
-fn unicode(c: char) -> i32 {
+pub(super) fn unicode(c: char) -> i32 {
     match c {
         '\n' | '\r' => return 0xff0d,
         '\t' => return 0xff09,
@@ -74,7 +74,7 @@ fn unicode(c: char) -> i32 {
     let n = u32::from(c);
     (if n <= 255 { n } else { 0x01000000 | n }) as i32
 }
-fn keysym(key: &str) -> Result<i32> {
+pub(super) fn keysym(key: &str) -> Result<i32> {
     let value = match key {
         "ctrl" => 0xffe3,
         "alt" => 0xffe9,

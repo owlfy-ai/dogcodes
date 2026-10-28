@@ -84,6 +84,15 @@ impl TerminalStatus {
     }
 }
 
+/// A close is bound to the terminal observed by the caller. The current info is
+/// returned unchanged on an epoch mismatch; callers must not treat it as stopped.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TerminalStopRequest {
+    pub terminal_id: String,
+    pub expected_epoch: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalInfo {
@@ -694,13 +703,16 @@ impl TerminalHost {
         session.changed.notify_waiters();
         Ok(())
     }
-    pub async fn stop(&self, id: &str) -> Result<TerminalInfo, String> {
+    pub async fn stop(&self, id: &str, expected_epoch: &str) -> Result<TerminalInfo, String> {
         let _admission = self.admission.lock().await;
-        self.stop_admitted(id).await
+        self.stop_admitted(id, expected_epoch).await
     }
-    async fn stop_admitted(&self, id: &str) -> Result<TerminalInfo, String> {
+    async fn stop_admitted(&self, id: &str, expected_epoch: &str) -> Result<TerminalInfo, String> {
         let session = self.session(id)?;
         let info = session.info()?;
+        if info.epoch != expected_epoch {
+            return Ok(info);
+        }
         if info.status == TerminalStatus::Unknown {
             return Err("后台已重启，无法确认原进程身份；未按旧进程号停止进程".into());
         }

@@ -382,6 +382,25 @@ pub(super) async fn prepare(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    fn spawn_fixture(command: &mut std::process::Command) -> std::process::Child {
+        // A concurrent fork can briefly retain a copied executable's writable
+        // descriptor. Only retry ETXTBSY, for this owned fixture and at most 1s;
+        // other launch errors and a persistent busy file still fail the test.
+        let until = Instant::now() + Duration::from_secs(1);
+        loop {
+            match command.spawn() {
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::ExecutableFileBusy
+                        && Instant::now() < until =>
+                {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                result => return result.unwrap(),
+            }
+        }
+    }
     #[test]
     fn kiro_scope_includes_cli_app_helpers_but_not_the_separate_ide() {
         let dir = tempfile::tempdir().unwrap();
@@ -442,10 +461,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let binary = temp.path().join("agent-worker");
         std::fs::copy("/bin/sleep", &binary).unwrap();
-        let mut target = std::process::Command::new(&binary)
-            .arg("60")
-            .spawn()
-            .unwrap();
+        let mut target = spawn_fixture(std::process::Command::new(&binary).arg("60"));
         let core = crate::daemon::CoreClient::local(Arc::new(agent_core::Core::new(Arc::new(
             agent_store::SqliteStore::open_in_memory().unwrap(),
         ))));
@@ -465,10 +481,7 @@ mod tests {
             .unwrap();
         assert_ne!(first.token, retry.token);
         assert!(target.try_wait().unwrap().is_none());
-        let mut second = std::process::Command::new(&binary)
-            .arg("60")
-            .spawn()
-            .unwrap();
+        let mut second = spawn_fixture(std::process::Command::new(&binary).arg("60"));
         let renewed = prepare(&core, &updates, &i, &plan, Some(&retry.token))
             .await
             .unwrap()
@@ -580,10 +593,8 @@ mod tests {
         let binary = temp.path().join("agent-shell");
         // macOS /bin/sh is a launcher that execs a different binary; copy the shell itself.
         std::fs::copy("/bin/bash", &binary).unwrap();
-        let mut parent = std::process::Command::new(&binary)
-            .args(["-c", "/bin/sleep 60 & wait"])
-            .spawn()
-            .unwrap();
+        let mut parent =
+            spawn_fixture(std::process::Command::new(&binary).args(["-c", "/bin/sleep 60 & wait"]));
         let scope = Scope {
             executable: binary.canonicalize().unwrap(),
             directory: None,
@@ -613,10 +624,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let binary = temp.path().join("agent-worker");
         std::fs::copy("/bin/sleep", &binary).unwrap();
-        let mut target = std::process::Command::new(&binary)
-            .arg("60")
-            .spawn()
-            .unwrap();
+        let mut target = spawn_fixture(std::process::Command::new(&binary).arg("60"));
         let mut unrelated = std::process::Command::new("/bin/sleep")
             .arg("60")
             .spawn()

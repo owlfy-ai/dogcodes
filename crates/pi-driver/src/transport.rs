@@ -1,7 +1,7 @@
 //! Pi RPC: correlate control replies by ID while continuously draining events.
 use crate::events::Turn;
 use agent_runtime::OwnedChild;
-use driver_api::{DriverError, DriverEvent};
+use driver_api::{DriverError, DriverEvent, SessionHandle};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -20,21 +20,23 @@ const FRAME_LIMIT: u64 = 32 * 1024 * 1024;
 type Reply = oneshot::Sender<Result<Value, DriverError>>;
 #[derive(Default)]
 pub(crate) struct State {
+    pub scope: Option<SessionHandle>,
     pub latest_cache_hit: Option<f64>,
     pub request_usage: driver_api::usage::RequestUsageReport,
     pub pending: HashMap<String, Reply>,
     pub turn: Option<Turn>,
     pub disconnected: bool,
-    cancelling: bool,
+    pub(super) cancelling: bool,
     cancel_settled: bool,
     cancel_outcome: Option<watch::Receiver<Option<Result<(), DriverError>>>>,
 }
 pub(crate) struct Connection {
+    pub admission: tokio::sync::Mutex<()>,
     input: Arc<tokio::sync::Mutex<Option<ChildStdin>>>,
-    closing: watch::Sender<bool>,
-    cleanup: watch::Receiver<Option<Result<(), DriverError>>>,
+    pub(super) closing: watch::Sender<bool>,
+    pub(super) cleanup: watch::Receiver<Option<Result<(), DriverError>>>,
     pub state: Arc<Mutex<State>>,
-    settled: Arc<tokio::sync::Notify>,
+    pub(super) settled: Arc<tokio::sync::Notify>,
 }
 
 // Dropping a future does not undo bytes or a native model/config mutation.
@@ -68,7 +70,7 @@ pub(crate) fn disconnected() -> DriverError {
     DriverError::Disconnected("Pi RPC connection closed".into())
 }
 impl State {
-    fn fail(&mut self, error: &DriverError) {
+    pub(super) fn fail(&mut self, error: &DriverError) {
         self.disconnected = true;
         for (_, reply) in self.pending.drain() {
             let _ = reply.send(Err(error.clone()));
@@ -229,6 +231,7 @@ impl Connection {
             completed,
         ));
         Ok(Self {
+            admission: tokio::sync::Mutex::new(()),
             input,
             closing,
             cleanup,
@@ -296,6 +299,22 @@ impl Connection {
             Err(DriverError::Disconnected("Pi RPC command timed out".into()))
         }
     }
+    /// A cancelled statistics observer removes its own reply slot, not the
+    /// running model turn. Partial native writes still fence the transport.
+    pub async fn read_stats(&self) -> Result<Value, DriverError> {
+        let mut value = json!({"type":"get_session_stats"});
+        let received = self.request(&mut value).await?;
+        let _pending = PendingSend {
+            state: &self.state,
+            id: value["id"].as_str().expect("Pi request id"),
+            transferred: false,
+        };
+        tokio::time::timeout(Duration::from_secs(30), received)
+            .await
+            .map_err(|_| DriverError::Disconnected("Pi statistics query timed out".into()))?
+            .map_err(|_| disconnected())?
+    }
+
     pub async fn request(
         &self,
         value: &mut Value,
@@ -321,8 +340,22 @@ impl Connection {
     }
     pub fn begin_turn(
         &self,
-    ) -> Result<mpsc::UnboundedReceiver<Result<DriverEvent, DriverError>>, DriverError> {
+        handle: &SessionHandle,
+    ) -> Result<
+        (
+            uuid::Uuid,
+            mpsc::UnboundedReceiver<Result<DriverEvent, DriverError>>,
+        ),
+        DriverError,
+    > {
         let mut state = self.state.lock().expect("Pi state");
+        if !state
+            .scope
+            .as_ref()
+            .is_some_and(|current| current.same_scope(handle))
+        {
+            return Err(super::sessions::stale_scope());
+        }
         if state.disconnected {
             return Err(disconnected());
         }
@@ -330,14 +363,27 @@ impl Connection {
             return Err(DriverError::Protocol("Pi turn already active".into()));
         }
         let (sender, receiver) = mpsc::unbounded_channel();
-        state.turn = Some(Turn::new(sender));
-        Ok(receiver)
+        let turn = Turn::new(sender);
+        let id = turn.id;
+        state.turn = Some(turn);
+        Ok((id, receiver))
     }
     /// Admit another turn only after acknowledgement, native settlement and an
     /// idle state read agree. A result acknowledgement alone does not stop Pi.
-    pub async fn abort_turn(self: &Arc<Self>, timeout: Duration) -> Result<(), DriverError> {
+    pub async fn abort_turn(
+        self: &Arc<Self>,
+        handle: &SessionHandle,
+        timeout: Duration,
+    ) -> Result<(), DriverError> {
         let (mut outcome, start) = {
             let mut state = self.state.lock().expect("Pi state");
+            if !state
+                .scope
+                .as_ref()
+                .is_some_and(|current| current.same_scope(handle))
+            {
+                return Err(super::sessions::stale_scope());
+            }
             if state.disconnected {
                 return Err(disconnected());
             }

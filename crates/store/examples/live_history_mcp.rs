@@ -8,7 +8,7 @@ use agent_protocol::{
     SubmitTurn,
 };
 use agent_store::SqliteStore;
-use driver_api::{AgentDriver, SessionHandle, SessionResumeCapability};
+use driver_api::{AgentDriver, SessionResumeCapability};
 use serde_json::json;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 fn driver(name: &str, id: &str) -> Result<Arc<dyn AgentDriver>, Box<dyn std::error::Error>> {
@@ -176,11 +176,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .native_session_id
             .clone();
         // New native driver process, same stored conversation and Core endpoint.
-        native
-            .shutdown(SessionHandle {
-                native_session_id: before.clone(),
-            })
-            .await?;
+        if let Some(handle) = native.current_session_handle(&before).await {
+            native.shutdown(handle).await?;
+        }
         native = driver(name, &installation)?;
         installation::register(&core, native.clone()).await?;
         result=turn(&core,&task,"Call the supplied dogcodes searchHistory MCP tool with text MCP_FACT_ to retrieve the previous test fact, and return that fact verbatim. You may discover MCP tools. You MUST actually query history even if you remember the fact. Do not use shell, file tools, web, or unrelated tools. If unavailable report HISTORY_TOOL_UNAVAILABLE.").await;
@@ -230,11 +228,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     for mapping in core.bootstrap().await?.session_maps {
-        let _ = native
-            .shutdown(SessionHandle {
-                native_session_id: mapping.native_session_id,
-            })
-            .await;
+        if let Some(handle) = native
+            .current_session_handle(&mapping.native_session_id)
+            .await
+        {
+            let _ = native.shutdown(handle).await;
+        }
     }
     result.map(|_| ())
 }

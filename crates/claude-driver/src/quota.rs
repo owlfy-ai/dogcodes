@@ -2,8 +2,12 @@
 //! Never refresh/write credentials or send a model prompt.
 use driver_api::{QuotaSnapshot, QuotaWindow};
 use serde_json::Value;
-use std::{path::PathBuf, process::Stdio, time::Duration};
-use tokio::{io::AsyncWriteExt, process::Command};
+use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    process::Command,
+    sync::Mutex,
+};
 
 const RATE_LIMITED: &str = "claude_quota_rate_limited";
 /// Claude Code renews its own access token whenever it runs; this driver never does.
@@ -13,6 +17,9 @@ const MAX_BACKOFF_MS: i64 = 3_600_000;
 
 #[derive(Default)]
 pub(super) struct Cache {
+    // The cache guard can be cancelled before physical helper retirement.
+    // This permit stays with each original helper until its tree is gone.
+    admission: Arc<Mutex<()>>,
     pub(super) next_attempt: i64,
     /// Set after a 429; not even a forced refresh may query before it.
     backoff_until: i64,
@@ -56,7 +63,12 @@ impl Cache {
         let now = chrono::Utc::now().timestamp_millis();
         if self.due(now, force) {
             self.next_attempt = now + 60_000;
-            match tokio::time::timeout(Duration::from_secs(20), pull(now, version)).await {
+            match tokio::time::timeout(
+                Duration::from_secs(20),
+                pull(now, version, self.admission.clone()),
+            )
+            .await
+            {
                 Ok(Ok(snapshot)) => {
                     self.snapshot = Some(snapshot);
                     self.failure = None;
@@ -110,10 +122,11 @@ fn retry_after_ms(value: &str, now: i64) -> Option<i64> {
         .map(|at| at.timestamp_millis() - now)
 }
 
-async fn credentials() -> Option<Value> {
+async fn credentials(admission: Arc<Mutex<()>>) -> Option<Value> {
     let custom = std::env::var_os("CLAUDE_CONFIG_DIR");
     if custom.is_none() && cfg!(target_os = "macos") {
-        let output = Command::new("/usr/bin/security")
+        let mut command = Command::new("/usr/bin/security");
+        command
             .args([
                 "find-generic-password",
                 "-w",
@@ -121,11 +134,16 @@ async fn credentials() -> Option<Value> {
                 "Claude Code-credentials",
             ])
             .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .output()
-            .await;
-        if let Some(output) = output.ok().filter(|output| output.status.success())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        let output = tokio::time::timeout(
+            Duration::from_secs(5),
+            command_output(command, None, 1024 * 1024, admission),
+        )
+        .await
+        .ok()
+        .and_then(Result::ok);
+        if let Some(output) = output.filter(|output| output.status.success())
             && let Ok(value) = serde_json::from_slice(&output.stdout)
         {
             return Some(value);
@@ -142,7 +160,11 @@ async fn credentials() -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
-async fn pull(now: i64, version: Option<&str>) -> Result<QuotaSnapshot, PullError> {
+async fn pull(
+    now: i64,
+    version: Option<&str>,
+    admission: Arc<Mutex<()>>,
+) -> Result<QuotaSnapshot, PullError> {
     let directory = std::env::var_os("CLAUDE_CONFIG_DIR")
         .map(PathBuf::from)
         .or_else(|| {
@@ -165,7 +187,7 @@ async fn pull(now: i64, version: Option<&str>) -> Result<QuotaSnapshot, PullErro
     if base.is_some_and(|base| base.trim_end_matches('/') != "https://api.anthropic.com") {
         return Err("claude_quota_custom_provider".into());
     }
-    let stored = credentials().await;
+    let stored = credentials(admission.clone()).await;
     let oauth = stored.as_ref().and_then(|v| v.get("claudeAiOauth"));
     let configured = std::env::var("CLAUDE_CODE_OAUTH_TOKEN").ok().or_else(|| {
         settings.as_ref()?["env"]["CLAUDE_CODE_OAUTH_TOKEN"]
@@ -209,9 +231,6 @@ async fn pull(now: i64, version: Option<&str>) -> Result<QuotaSnapshot, PullErro
         .stderr(Stdio::null())
         .kill_on_drop(true);
     agent_runtime::apply_proxy_environment(&mut command);
-    let mut child = command
-        .spawn()
-        .map_err(|_| "claude_quota_transport_unavailable")?;
     // Identify as Claude Code so the service answers with its real status codes.
     let agent = version
         .filter(|v| {
@@ -223,17 +242,13 @@ async fn pull(now: i64, version: Option<&str>) -> Result<QuotaSnapshot, PullErro
     let config = format!(
         "header = \"Authorization: Bearer {token}\"\nheader = \"anthropic-beta: oauth-2025-04-20\"\nuser-agent = \"{agent}\"\n"
     );
-    child
-        .stdin
-        .take()
-        .ok_or("claude_quota_network_error")?
-        .write_all(config.as_bytes())
-        .await
-        .map_err(|_| "claude_quota_network_error")?;
-    let output = child
-        .wait_with_output()
-        .await
-        .map_err(|_| "claude_quota_network_error")?;
+    let output = command_output(
+        command,
+        Some(config.into_bytes()),
+        1024 * 1024 + 4096,
+        admission,
+    )
+    .await?;
     // The body is followed by a Retry-After line and the status line.
     let split = output
         .stdout
@@ -267,6 +282,92 @@ async fn pull(now: i64, version: Option<&str>) -> Result<QuotaSnapshot, PullErro
             .map(str::to_owned),
     )
     .ok_or_else(|| "claude_quota_no_windows".into())
+}
+
+/// Keep stdin delivery, bounded output and original tree retirement under one
+/// owner. Cancelling a UI wait must not release admission during cleanup, nor
+/// leave a partially written credential request to another query.
+async fn command_output(
+    command: Command,
+    input: Option<Vec<u8>>,
+    limit: usize,
+    admission: Arc<Mutex<()>>,
+) -> Result<std::process::Output, PullError> {
+    let permit = admission.lock_owned().await;
+    let (mut reply, result) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let _permit = permit;
+        if reply.is_closed() {
+            return;
+        }
+        let Ok(mut child) = agent_runtime::OwnedChild::spawn(command) else {
+            let _ = reply.send(Err("claude_quota_transport_unavailable".into()));
+            return;
+        };
+        let mut stdin = child.stdin.take();
+        let stdout = child.stdout.take();
+        let io = async {
+            let write = async {
+                if let Some(input) = input {
+                    let mut stdin = stdin.take().ok_or("claude_quota_network_error")?;
+                    stdin
+                        .write_all(&input)
+                        .await
+                        .map_err(|_| "claude_quota_network_error")?;
+                    stdin
+                        .shutdown()
+                        .await
+                        .map_err(|_| "claude_quota_network_error")?;
+                }
+                drop(stdin.take());
+                Ok::<_, PullError>(())
+            };
+            let read = async {
+                let mut bytes = Vec::new();
+                stdout
+                    .ok_or("claude_quota_network_error")?
+                    .take(u64::try_from(limit).unwrap_or(u64::MAX).saturating_add(1))
+                    .read_to_end(&mut bytes)
+                    .await
+                    .map_err(|_| "claude_quota_network_error")?;
+                if bytes.len() > limit {
+                    return Err("claude_quota_network_error".into());
+                }
+                Ok::<_, PullError>(bytes)
+            };
+            let (status, (), stdout) = tokio::try_join!(
+                async {
+                    child
+                        .wait()
+                        .await
+                        .map_err(|_| PullError::from("claude_quota_network_error"))
+                },
+                write,
+                read,
+            )?;
+            Ok(std::process::Output {
+                status,
+                stdout,
+                stderr: Vec::new(),
+            })
+        };
+        let outcome = tokio::select! {
+            biased;
+            () = reply.closed() => None,
+            result = io => Some(result),
+        };
+        let mut delay = 1;
+        while child.terminate().await.is_err() {
+            tokio::time::sleep(Duration::from_secs(delay)).await;
+            delay = (delay * 2).min(30);
+        }
+        if let Some(outcome) = outcome {
+            let _ = reply.send(outcome);
+        }
+    });
+    result
+        .await
+        .map_err(|_| PullError::from("claude_quota_network_error"))?
 }
 
 fn parse(value: &Value, now: i64, plan: Option<String>) -> Option<QuotaSnapshot> {
@@ -315,7 +416,7 @@ mod tests {
     async fn real_usage_read_only() {
         let result = tokio::time::timeout(
             Duration::from_secs(20),
-            pull(chrono::Utc::now().timestamp_millis(), None),
+            pull(chrono::Utc::now().timestamp_millis(), None, Arc::default()),
         )
         .await;
         let snapshot = result
@@ -389,3 +490,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(all(test, unix))]
+mod scope_tests;

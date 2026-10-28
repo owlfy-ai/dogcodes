@@ -5,14 +5,16 @@ use crate::{
     StreamType, TaskId, TurnId, Utc, map_driver_event, recovery, text_segments::TextSegments,
 };
 use driver_api::DriverEventStream;
+use futures::FutureExt;
 use serde_json::json;
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, panic::AssertUnwindSafe, sync::Arc, time::Duration};
 
 struct AutonomousSession {
     task: TaskId,
     mapping: SessionMapId,
     handle: SessionHandle,
     driver: Arc<dyn AgentDriver>,
+    usage_provider: Option<Arc<dyn driver_api::QuotaProvider>>,
 }
 
 impl Core {
@@ -23,12 +25,14 @@ impl Core {
         mapping: SessionMapId,
         session: SessionHandle,
         driver: Arc<dyn AgentDriver>,
+        usage_provider: Option<Arc<dyn driver_api::QuotaProvider>>,
     ) {
         let identity = AutonomousSession {
             task,
             mapping,
             handle: session,
             driver,
+            usage_provider,
         };
         let core = Arc::clone(self);
         tokio::spawn(async move {
@@ -43,24 +47,37 @@ impl Core {
                     }
                     continue;
                 };
-                let outcome = core
-                    .consume_autonomous(
-                        &mut stream,
-                        &identity,
-                        native_turn_id,
-                        &mut background_owners,
-                    )
-                    .await;
-                identity
-                    .driver
-                    .acknowledge_autonomous_turn(&identity.handle.native_session_id)
-                    .await;
-                if outcome.is_err() {
-                    // A broken consumer cannot leave native work silently reusable.
-                    let _ = identity.driver.interrupt(&identity.handle).await;
-                    let _ = identity.driver.shutdown(identity.handle.clone()).await;
+                let mut admitted = false;
+                let outcome = AssertUnwindSafe(core.consume_autonomous(
+                    &mut stream,
+                    &identity,
+                    native_turn_id,
+                    &mut background_owners,
+                    &mut admitted,
+                ))
+                .catch_unwind()
+                .await;
+                if !matches!(outcome, Ok(Ok(true))) {
+                    // Admitted runs transfer their original responsibility via
+                    // Execution even on panic. Never issue a second shutdown.
+                    if !admitted {
+                        let _activity = core.auxiliary_activity.lease(None);
+                        let resource = crate::run_cleanup::Resource::capture(
+                            identity.driver.clone(),
+                            identity.handle.clone(),
+                        )
+                        .await;
+                        resource
+                            .retire(Duration::from_secs(10))
+                            .wait_confirmed()
+                            .await;
+                    }
                     break;
                 }
+                identity
+                    .driver
+                    .acknowledge_autonomous_turn(&identity.handle)
+                    .await;
             }
         });
     }
@@ -75,6 +92,7 @@ impl Core {
             mapping,
             handle: session,
             driver,
+            usage_provider,
         } = identity;
         let mut notifications = self.events.subscribe();
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
@@ -122,7 +140,10 @@ impl Core {
                 };
                 event
             });
-            let ownership = self.own_run(run.clone(), Arc::clone(driver));
+            let ownership =
+                self.own_run_with_usage(run.clone(), Arc::clone(driver), usage_provider.clone());
+            self.bind_run_session(&run, driver, session.clone())?;
+            ownership.control.ready();
             match self
                 .repository
                 .append(AppendRequest {
@@ -148,17 +169,27 @@ impl Core {
     }
 
     async fn consume_autonomous(
-        &self,
+        self: &Arc<Self>,
         stream: &mut DriverEventStream,
         identity: &AutonomousSession,
         native_turn: Option<String>,
         background_owners: &mut BTreeMap<String, TurnId>,
-    ) -> Result<(), CoreError> {
+        admitted: &mut bool,
+    ) -> Result<bool, CoreError> {
         let task = &identity.task;
         let mut meter = crate::turn_usage::TurnMeter::new(0);
         let driver = identity.driver.as_ref();
-        let (turn, _ownership) = self.admit_autonomous(identity, native_turn).await?;
-        let _workspace = self.workspace_access.read().await;
+        let (turn, ownership) = self.admit_autonomous(identity, native_turn).await?;
+        let execution =
+            crate::run_cleanup::Execution::new(self.clone(), task.clone(), turn.clone(), ownership);
+        *admitted = true;
+        let control = execution.control();
+        control.session_starting();
+        control.hold_workspace(self.workspace_access.clone().read_owned().await);
+        control.hold_native_resource(
+            crate::run_cleanup::Resource::capture(identity.driver.clone(), identity.handle.clone())
+                .await,
+        );
         let scope = self.turn_workspace_scope(task).await;
         let capture = if let Some(scope) = &scope {
             Some(
@@ -171,6 +202,13 @@ impl Core {
         } else {
             None
         };
+        if let Some(scope) = &scope {
+            self.record_turn_checkpoint(
+                scope,
+                capture.as_ref().and_then(|capture| capture.as_deref().ok()),
+            )
+            .await;
+        }
         let mut segments = TextSegments::default();
         let mut seen = std::collections::BTreeSet::new();
         let mut thoughts = BTreeMap::new();
@@ -240,9 +278,30 @@ impl Core {
             Ok(())
         }
         .await;
+        control.settling();
+        let terminal = terminal.unwrap_or(DriverEvent::TurnFailed {
+            reason: "autonomous stream ended before its terminal".into(),
+        });
+        let (terminal_kind, terminal_payload) =
+            self.map_autonomous_event(task, &turn, driver, terminal.clone());
+        // Capture display timing at the native terminal, before storage/cleanup waits.
+        let closed_thoughts: Vec<_> = thoughts.into_iter().map(|(item_id, start)| {
+            self.map_autonomous_event(task, &turn, driver, DriverEvent::Presentation {
+                item_id, data: json!({"type":"thought",
+                    "status":if matches!(terminal, DriverEvent::TurnCompleted { .. }) { "completed" } else { "interrupted" },
+                    "durationMs":u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)}),
+            })
+        }).collect();
+        let reusable = result.is_ok()
+            && (matches!(terminal, DriverEvent::TurnCompleted { .. })
+                || matches!(terminal, DriverEvent::TurnInterrupted { .. })
+                    && driver.supports_live_session_reuse());
+        if !reusable {
+            self.wait_failed_run_cleanup(&control).await;
+        }
         // Native continuation events carry their own request facts. A live session
         // snapshot may already contain a later root, so never use a snapshot delta here.
-        self.record_turn_usage(
+        let turn_usage = crate::turn_usage::freeze(
             task,
             &turn,
             crate::turn_usage::TurnUsageInput {
@@ -252,38 +311,51 @@ impl Core {
                 native_session_id: &identity.handle.native_session_id,
                 meter: &meter,
             },
-        )
-        .await;
-        if let (Some(scope), Some(capture)) = (&scope, capture) {
+        );
+        let turn_changes = if let (Some(scope), Some(capture)) = (&scope, capture) {
             self.record_fork_snapshot(scope).await;
             let change = match capture {
                 Ok(capture) => capture.finish().await,
                 Err(error) => Err(error),
             };
-            if self.record_turn_changes(scope, change).await.is_err() {
-                let _ = self
-                    .append_runtime_event(
-                        task,
-                        "workspace.turn_changes_failed",
-                        json!({"taskId":task,"turnId":turn,"failureKind":"storage_failed"}),
-                        EventSource::Hub,
-                    )
-                    .await;
-            }
+            Some(change)
+        } else {
+            None
+        };
+        for (kind, payload) in turn_usage {
+            self.persist_original_run_event(&control, kind, payload, EventSource::Hub)
+                .await;
         }
-        let terminal = terminal.unwrap_or(DriverEvent::TurnFailed {
-            reason: "autonomous stream ended before its terminal".into(),
-        });
-        for (item_id, start) in thoughts {
-            self.persist_autonomous_event(task, &turn, driver, DriverEvent::Presentation {
-                item_id, data: json!({"type":"thought",
-                    "status":if matches!(terminal, DriverEvent::TurnCompleted { .. }) { "completed" } else { "interrupted" },
-                    "durationMs":u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)}),
-            }).await?;
+        if let (Some(scope), Some(change)) = (&scope, turn_changes) {
+            self.persist_turn_changes(scope, change).await;
         }
-        self.persist_autonomous_event(task, &turn, driver, terminal)
-            .await?;
-        result
+        for (kind, payload) in closed_thoughts {
+            self.persist_original_run_event(
+                &control,
+                kind,
+                payload,
+                EventSource::Driver {
+                    provider_id: driver.executor().provider_id.to_string(),
+                    source_sequence: None,
+                },
+            )
+            .await;
+        }
+        self.persist_original_run_event(
+            &control,
+            terminal_kind,
+            terminal_payload,
+            EventSource::Driver {
+                provider_id: driver.executor().provider_id.to_string(),
+                source_sequence: None,
+            },
+        )
+        .await;
+        // This observer owns future continuations too. Do not hand it back to
+        // idle until its terminal is durable; a failed consumer must retire it.
+        control.native_resolved();
+        control.finish();
+        result.map(|()| reusable)
     }
 
     async fn persist_autonomous_event(
@@ -293,13 +365,7 @@ impl Core {
         driver: &dyn AgentDriver,
         event: DriverEvent,
     ) -> Result<(), CoreError> {
-        let reusable = matches!(&event, DriverEvent::TurnInterrupted { .. })
-            && driver.supports_live_session_reuse();
-        let (kind, mut payload) =
-            map_driver_event(task, turn, driver.executor(), event, self.redactor.as_ref());
-        if reusable {
-            payload["sessionReusable"] = json!(true);
-        }
+        let (kind, payload) = self.map_autonomous_event(task, turn, driver, event);
         self.append_runtime_event(
             task,
             kind,
@@ -310,6 +376,23 @@ impl Core {
             },
         )
         .await
+    }
+
+    fn map_autonomous_event(
+        &self,
+        task: &TaskId,
+        turn: &TurnId,
+        driver: &dyn AgentDriver,
+        event: DriverEvent,
+    ) -> (&'static str, serde_json::Value) {
+        let reusable = matches!(&event, DriverEvent::TurnInterrupted { .. })
+            && driver.supports_live_session_reuse();
+        let (kind, mut payload) =
+            map_driver_event(task, turn, driver.executor(), event, self.redactor.as_ref());
+        if reusable {
+            payload["sessionReusable"] = json!(true);
+        }
+        (kind, payload)
     }
 
     async fn autonomous_child_event(
@@ -323,6 +406,7 @@ impl Core {
             mapping,
             handle: session,
             driver,
+            ..
         } = identity;
         let Some(turn) = child_owner(&event, owners) else {
             return Ok(());

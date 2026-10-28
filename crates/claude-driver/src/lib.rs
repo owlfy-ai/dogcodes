@@ -18,7 +18,14 @@ mod lifecycle;
 #[cfg(test)]
 mod lifecycle_tests;
 mod models;
-mod process_tree;
+mod native;
+#[cfg(all(test, unix))]
+mod native_tests;
+mod readiness;
+#[cfg(all(test, unix))]
+mod readiness_tests;
+mod session_scope;
+use session_scope::{NativeAttempt, stale_scope};
 mod request_usage;
 mod selection;
 use std::{
@@ -32,6 +39,7 @@ use std::{
 };
 
 use agent_domain::{ExecutorRef, InstallationId, ProviderId};
+use agent_runtime::OwnedChild;
 use async_trait::async_trait;
 use driver_api::{
     AgentDriver, ApprovalOption, ApprovalSemanticRole, ContextDelivery, ContextDeliveryKind,
@@ -43,8 +51,8 @@ use futures::StreamExt;
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin},
-    sync::{mpsc, oneshot},
+    process::ChildStdin,
+    sync::{mpsc, oneshot, watch},
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -344,12 +352,16 @@ struct SessionProcess {
     working_directory: PathBuf,
     quota: std::sync::Arc<ClaudeQuotaState>,
     session_id: String,
+    scope: std::sync::Mutex<SessionHandle>,
+    admission: tokio::sync::Mutex<()>,
+    native: Arc<native::NativeProcess>,
     stdin: tokio::sync::Mutex<Option<ChildStdin>>,
     permission_mode: Option<String>,
     updates: std::sync::Mutex<Option<mpsc::UnboundedSender<DriverEvent>>>,
     child_events: std::sync::Mutex<child_events::ChildEvents>,
     autonomous_tx: std::sync::Mutex<Option<mpsc::UnboundedSender<DriverEvent>>>,
     autonomous_rx: std::sync::Mutex<Option<mpsc::UnboundedReceiver<DriverEvent>>>,
+    autonomous_enabled: AtomicBool,
     turn_active: AtomicBool,
     autonomous_pending: std::sync::atomic::AtomicUsize,
     interrupt_requested: AtomicBool,
@@ -368,17 +380,14 @@ struct SessionProcess {
 
 impl SessionProcess {
     fn start_autonomous_if_root(&self, raw: &Value) {
-        if !autonomous::is_root_output(raw)
-            || self
-                .autonomous_rx
-                .lock()
-                .expect("autonomous receiver")
-                .is_some()
-        {
+        if !autonomous::is_root_output(raw) || !self.autonomous_enabled.load(Ordering::Acquire) {
             return;
         }
         let mut sink = self.updates.lock().expect("updates sink");
-        if self.turn_active.load(Ordering::Acquire) {
+        if self.turn_active.load(Ordering::Acquire)
+            || self.closing.load(Ordering::Acquire)
+            || self.native.stopping()
+        {
             return;
         }
         let Some(sender) = self
@@ -402,13 +411,18 @@ impl SessionProcess {
         let stdin = guard
             .as_mut()
             .ok_or_else(|| DriverError::Disconnected("Claude stdin closed".into()))?;
-        async {
+        let mut attempt = NativeAttempt::new(self);
+        let result = async {
             stdin.write_all(value.to_string().as_bytes()).await?;
             stdin.write_all(b"\n").await?;
             stdin.flush().await
         }
         .await
-        .map_err(|_| DriverError::Disconnected("Claude Code stdin is closed".into()))
+        .map_err(|_| DriverError::Disconnected("Claude Code stdin is closed".into()));
+        if result.is_ok() {
+            attempt.confirm();
+        }
+        result
     }
 }
 
@@ -418,7 +432,10 @@ pub struct ClaudeDriver {
     native_version: Option<String>,
     resume_capability: SessionResumeCapability,
     processes: tokio::sync::Mutex<HashMap<String, Arc<SessionProcess>>>,
+    stopping: watch::Sender<bool>,
+    retired_handles: std::sync::Mutex<HashMap<String, SessionHandle>>,
     restore_gates: std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    catalog_probe: Arc<tokio::sync::Mutex<()>>,
     /// Shared quota observations (plan windows + context), fed by every
     /// session process of this driver.
     quota: Arc<ClaudeQuotaState>,
@@ -449,9 +466,128 @@ impl ClaudeDriver {
             native_version,
             resume_capability,
             processes: tokio::sync::Mutex::new(HashMap::new()),
+            stopping: watch::channel(false).0,
+            retired_handles: std::sync::Mutex::new(HashMap::new()),
             restore_gates: std::sync::Mutex::new(HashMap::new()),
+            catalog_probe: Arc::new(tokio::sync::Mutex::new(())),
             quota: Arc::new(ClaudeQuotaState::default()),
         })
+    }
+
+    async fn acquire_session(
+        &self,
+        native_session_id: &str,
+        workspace: SessionRequest,
+        model: Option<&str>,
+        thinking: Option<&str>,
+        configure: bool,
+    ) -> Result<SessionHandle, DriverError> {
+        if self.has_autonomous_turn(native_session_id).await {
+            return Err(DriverError::AutonomousTurnBusy);
+        }
+        let gate = self
+            .restore_gates
+            .lock()
+            .unwrap()
+            .entry(native_session_id.into())
+            .or_default()
+            .clone();
+        let _restoring = gate.lock().await;
+        let existing = self.processes.lock().await.get(native_session_id).cloned();
+        if let Some(process) = &existing {
+            let _admission = process.admission.lock().await;
+            let reusable = {
+                let _sink = process.updates.lock().expect("updates sink");
+                if process.turn_active.load(Ordering::Acquire)
+                    || process.autonomous_pending.load(Ordering::Acquire) > 0
+                {
+                    return Err(DriverError::AutonomousTurnBusy);
+                }
+                !process.finished.load(Ordering::Acquire)
+                    && !process.closing.load(Ordering::Acquire)
+                    && !process.native.stopping()
+                    && !process.commands.is_closed()
+                    && process.permission_mode == workspace.permission_mode
+                    && workspace.permission_mode.as_deref() != Some("plan")
+            };
+            if reusable {
+                // Keep the original scope/continuation observer on a verified
+                // configuration rollback. Only a successful admission rotates.
+                if configure {
+                    process.configure(model, thinking).await?;
+                }
+                let _sink = process.updates.lock().expect("updates sink");
+                let mut scope = process.scope.lock().expect("Claude session scope");
+                if process.turn_active.load(Ordering::Acquire)
+                    || process.autonomous_pending.load(Ordering::Acquire) > 0
+                {
+                    if configure {
+                        process.request_close();
+                    }
+                    return Err(DriverError::AutonomousTurnBusy);
+                }
+                if process.closing.load(Ordering::Acquire) || process.native.stopping() {
+                    return Err(DriverError::Disconnected(
+                        "Claude session is closing".into(),
+                    ));
+                }
+                let handle = SessionHandle::scoped(native_session_id.into());
+                let (sender, receiver) = mpsc::unbounded_channel();
+                *process.autonomous_tx.lock().expect("autonomous sender") = Some(sender);
+                *process.autonomous_rx.lock().expect("autonomous receiver") = Some(receiver);
+                *scope = handle.clone();
+                return Ok(handle);
+            }
+        }
+        if self.resume_capability != SessionResumeCapability::Supported {
+            return Err(DriverError::CapabilityUnavailable(
+                "claude --resume has not been runtime verified for this hub".into(),
+            ));
+        }
+        if workspace.permission_mode.as_deref() == Some("auto") {
+            self.permission_catalog(Some(&workspace.working_directory))
+                .await?
+                .validate(Some("auto"))?;
+        }
+        if let Some(process) = existing {
+            self.shutdown(process.handle()).await?;
+        }
+        // Resuming re-attaches to the stored transcript; the session id stays
+        // the one the hub already recorded.
+        let child = spawn_selected(
+            &ClaudeLaunch {
+                executable: self.executable.clone(),
+            },
+            native_session_id,
+            true,
+            Some(&workspace.working_directory),
+            &workspace.additional_directories,
+            SessionSelection {
+                analysis_only: false,
+                model,
+                thinking,
+                permission: workspace.permission_mode.as_deref(),
+            },
+            workspace.history_mcp.as_ref(),
+        )?;
+        let process = self
+            .install_session(
+                native_session_id,
+                child,
+                workspace.working_directory.into(),
+                workspace.permission_mode,
+                workspace.history_mcp.is_some(),
+            )
+            .await?;
+        let mut admission = NativeAttempt::new(&process);
+        if (model.is_some() || thinking.is_some())
+            && let Err(error) = process.verify_selection(model, thinking).await
+        {
+            process.request_close();
+            return Err(error);
+        }
+        admission.confirm();
+        Ok(process.handle())
     }
 
     /// Runs the control-plane `initialize` handshake against the local CLI to
@@ -463,98 +599,34 @@ impl ClaudeDriver {
     /// Returns [`DriverError::NotConfigured`] when the executable cannot start
     /// and [`DriverError::Protocol`] when the handshake fails or times out.
     pub async fn probe_ready(executable: &std::path::Path) -> Result<(), DriverError> {
-        let session_uuid = uuid::Uuid::new_v4().to_string();
-        let mut child = spawn(
-            &ClaudeLaunch {
-                executable: executable.to_path_buf(),
-            },
-            &session_uuid,
-            false,
-            None,
-        )?;
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| DriverError::Disconnected("claude stdin is unavailable".into()))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| DriverError::Disconnected("claude stdout is unavailable".into()))?;
-        let write_result = async {
-            stdin
-                .write_all(
-                    json!({
-                        "type": "control_request",
-                        "request_id": "dogcodes-probe",
-                        "request": {"subtype": "initialize", "hooks": {}},
-                    })
-                    .to_string()
-                    .as_bytes(),
-                )
-                .await?;
-            stdin.write_all(b"\n").await?;
-            stdin.flush().await
-        }
-        .await;
-        write_result
-            .map_err(|_| DriverError::Disconnected("claude stdin rejected the probe".into()))?;
-        drop(stdin);
-
-        let outcome = read_until(BufReader::new(stdout), PROBE_TIMEOUT, |classified| {
-            matches!(
-                classified,
-                Classified::ControlResponse {
-                    request_id,
-                    success: true,
-                    ..
-                } if request_id == "dogcodes-probe"
-            )
-        })
-        .await;
-        let mut child = child;
-        // stdin is already closed; the CLI finishes and exits on its own, so
-        // reap instead of killing (a kill mid-auth-persist races the token
-        // store this CLI shares with interactive sessions).
-        if tokio::time::timeout(std::time::Duration::from_secs(5), child.wait())
-            .await
-            .is_err()
-        {
-            let _ = child.kill().await;
-        }
-        match outcome {
-            Ok(true) => Ok(()),
-            Ok(false) => Err(DriverError::Protocol(
-                "claude stream-json probe ended before the control response".into(),
-            )),
-            Err(_) => Err(DriverError::Protocol(
-                "claude did not answer the stream-json control initialize handshake".into(),
-            )),
-        }
+        readiness::probe(executable).await
     }
 
     async fn install_session(
         &self,
         session_id: &str,
-        mut child: Child,
+        child: OwnedChild,
         working_directory: PathBuf,
         permission_mode: Option<String>,
         initialize_history: bool,
     ) -> Result<Arc<SessionProcess>, DriverError> {
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| DriverError::Disconnected("claude stdin is unavailable".into()))?;
+        let (native, stdin, stdout) = native::NativeProcess::start(child)?;
+        native.observe_owner(self.stopping.subscribe());
         let (autonomous_tx, autonomous_rx) = mpsc::unbounded_channel();
         let (commands, command_rx) = mpsc::unbounded_channel();
         let process = Arc::new(SessionProcess {
             working_directory,
             quota: Arc::clone(&self.quota),
             session_id: session_id.to_owned(),
+            scope: std::sync::Mutex::new(SessionHandle::scoped(session_id.into())),
+            admission: tokio::sync::Mutex::new(()),
+            native,
             stdin: tokio::sync::Mutex::new(Some(stdin)),
             permission_mode,
             updates: std::sync::Mutex::new(None),
             autonomous_tx: std::sync::Mutex::new(Some(autonomous_tx)),
             autonomous_rx: std::sync::Mutex::new(Some(autonomous_rx)),
+            autonomous_enabled: AtomicBool::new(false),
             child_events: std::sync::Mutex::new(child_events::ChildEvents::default()),
             turn_active: AtomicBool::new(false),
             autonomous_pending: std::sync::atomic::AtomicUsize::new(0),
@@ -568,10 +640,6 @@ impl ClaudeDriver {
             pending_questions: std::sync::Mutex::new(HashMap::new()),
             pending_controls: std::sync::Mutex::new(HashMap::new()),
         });
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| DriverError::Disconnected("claude stdout is unavailable".into()))?;
         let mut reader = BufReader::new(stdout);
         if initialize_history {
             process.send_line(&json!({"type":"control_request","request_id":"dogcodes-history-init","request":{"subtype":"initialize","hooks":{}}})).await?;
@@ -608,11 +676,18 @@ impl ClaudeDriver {
             .await
             .map_err(|_| DriverError::Disconnected("claude initialization timed out".into()))??;
         }
-        self.processes
-            .lock()
-            .await
-            .insert(session_id.to_owned(), Arc::clone(&process));
-        tokio::spawn(run_session(child, Arc::clone(&process), reader, command_rx));
+        let mut processes = self.processes.lock().await;
+        if processes
+            .get(session_id)
+            .is_some_and(|old| !old.cleanup_done.load(Ordering::Acquire))
+        {
+            return Err(DriverError::CapabilityUnavailable(
+                "Claude session is already owned".into(),
+            ));
+        }
+        processes.insert(session_id.to_owned(), Arc::clone(&process));
+        drop(processes);
+        tokio::spawn(run_session(Arc::clone(&process), reader, command_rx));
         Ok(process)
     }
 }
@@ -622,7 +697,7 @@ fn spawn(
     session_uuid: &str,
     resume: bool,
     working_directory: Option<&str>,
-) -> Result<Child, DriverError> {
+) -> Result<OwnedChild, DriverError> {
     spawn_workspace(launch, session_uuid, resume, working_directory, &[])
 }
 
@@ -632,7 +707,7 @@ fn spawn_workspace(
     resume: bool,
     working_directory: Option<&str>,
     additional_directories: &[String],
-) -> Result<Child, DriverError> {
+) -> Result<OwnedChild, DriverError> {
     spawn_selected(
         launch,
         session_uuid,
@@ -645,7 +720,6 @@ fn spawn_workspace(
 }
 #[derive(Default)]
 struct SessionSelection<'a> {
-    chat_only: bool,
     analysis_only: bool,
     model: Option<&'a str>,
     thinking: Option<&'a str>,
@@ -660,24 +734,19 @@ fn spawn_selected(
     additional_directories: &[String],
     selection: SessionSelection<'_>,
     history_mcp: Option<&driver_api::HistoryMcp>,
-) -> Result<Child, DriverError> {
+) -> Result<OwnedChild, DriverError> {
     let SessionSelection {
         model,
         thinking,
         permission,
         analysis_only,
-        chat_only,
     } = selection;
     // The app retains the private configuration directory for the live session.
     let mut command = tokio::process::Command::new(&launch.executable);
     if analysis_only {
         command.args([
             "--tools",
-            if chat_only {
-                "Read,Glob,Grep"
-            } else {
-                "Read,Glob,Grep,Bash"
-            },
+            "Read,Glob,Grep,Bash",
             "--strict-mcp-config",
             "--mcp-config",
             "{\"mcpServers\":{}}",
@@ -724,8 +793,6 @@ fn spawn_selected(
             args.push("--allow-dangerously-skip-permissions".into());
         }
     }
-    #[cfg(unix)]
-    command.process_group(0);
     command
         .args(args)
         .env_clear()
@@ -742,7 +809,7 @@ fn spawn_selected(
         }
     }
     agent_runtime::apply_proxy_environment(&mut command);
-    command.spawn().map_err(|error| {
+    OwnedChild::spawn(command).map_err(|error| {
         if matches!(error.kind(), std::io::ErrorKind::NotFound) {
             DriverError::NotConfigured("claude executable is missing".into())
         } else {
@@ -752,26 +819,10 @@ fn spawn_selected(
 }
 
 async fn run_session(
-    mut child: Child,
     process: Arc<SessionProcess>,
-    reader: BufReader<tokio::process::ChildStdout>,
+    reader: BufReader<tokio::io::DuplexStream>,
     mut commands: mpsc::UnboundedReceiver<lifecycle::Command>,
 ) {
-    if let Some(stderr) = child.stderr.take() {
-        // Drain stderr so a chatty CLI can never block on a full pipe; the
-        // content is diagnostics-only and is deliberately not retained.
-        tokio::spawn(async move {
-            use tokio::io::AsyncReadExt;
-            let mut stderr = stderr;
-            let mut sink = [0_u8; 4096];
-            while let Ok(read) = stderr.read(&mut sink).await {
-                if read == 0 {
-                    break;
-                }
-            }
-        });
-    }
-    let pid = child.id();
     let mut lines = reader.lines();
     let mut lifecycle = lifecycle::Lifecycle::default();
     let mut latest_message: Option<Value> = None;
@@ -826,12 +877,24 @@ async fn run_session(
             biased;
             command = commands.recv() => {
                 match command {
-                    Some(lifecycle::Command::Begin) => { lifecycle.begin(); first_output_reported = false; },
-                    Some(lifecycle::Command::Cancel) => {
-                        if !process.turn_active.load(Ordering::Acquire) { continue; }
-                        lifecycle.cancel();
-                        process.interrupt_requested.store(true, Ordering::Release);
-                        process.close_interactions(true).await;
+                    Some(lifecycle::Command::Begin(handle)) => {
+                        let current = process.scope.lock().expect("Claude session scope");
+                        if current.same_scope(&handle) { lifecycle.begin(); first_output_reported = false; }
+                    },
+                    Some(lifecycle::Command::Cancel { handle, response }) => {
+                        let result = {
+                            let current = process.scope.lock().expect("Claude session scope");
+                            if !current.same_scope(&handle) { Err(stale_scope()) }
+                            else if !process.turn_active.load(Ordering::Acquire) {
+                                Err(DriverError::CapabilityUnavailable("Claude has no active turn".into()))
+                            } else {
+                                lifecycle.cancel();
+                                process.interrupt_requested.store(true, Ordering::Release);
+                                Ok(())
+                            }
+                        };
+                        if result.is_ok() { process.close_interactions(true).await; }
+                        let _ = response.send(result);
                     }
                     Some(lifecycle::Command::Close) | None => break,
                 }
@@ -1095,37 +1158,24 @@ async fn run_session(
         }
     }
     process.closing.store(true, Ordering::Release);
-    #[cfg(unix)]
+    process.native.request_close();
     process.stdin.lock().await.take();
-    #[cfg(unix)]
-    if !process.interrupt_requested.load(Ordering::Acquire) {
-        // Let normal shutdown flush native state before escalating to the owned group.
-        let _ = tokio::time::timeout(std::time::Duration::from_millis(300), child.wait()).await;
-    }
-    // Windows taskkill must see a living root to enumerate its descendants.
-    let stopped = process_tree::close(&mut child, pid).await;
+    // The supervisor retains the exact OS scope through any timeout/failure.
+    process.native.confirmed().await;
     background_outputs.finish().await;
-    process.stdin.lock().await.take();
-    let confirmed = stopped.is_ok();
-    process.finished.store(confirmed, Ordering::Release);
+    process.finished.store(true, Ordering::Release);
     // Only confirmed process shutdown may substitute for missing native task terminals.
     process.close_interactions(true).await;
-    if confirmed {
-        process.child_events.lock().expect("child events").close();
+    process.child_events.lock().expect("child events").close();
+    process.finish_turn(if process.interrupt_requested.load(Ordering::Acquire) {
+        DriverEvent::TurnInterrupted {
+            summary: "Claude Code process stopped after cancellation".into(),
+        }
     } else {
-        process.child_events.lock().expect("child events").fail();
-    }
-    process.finish_turn(
-        if confirmed && process.interrupt_requested.load(Ordering::Acquire) {
-            DriverEvent::TurnInterrupted {
-                summary: "Claude Code process stopped after cancellation".into(),
-            }
-        } else {
-            DriverEvent::TurnFailed {
-                reason: "Claude Code stream ended before the turn completed".into(),
-            }
-        },
-    );
+        DriverEvent::TurnFailed {
+            reason: "Claude Code stream ended before the turn completed".into(),
+        }
+    });
     for (_, reply) in process.pending_controls.lock().expect("controls").drain() {
         let _ = reply.send(Err(DriverError::Disconnected(
             "Claude closed before confirming configuration".into(),
@@ -1140,14 +1190,20 @@ async fn run_session(
 }
 
 async fn read_until(
-    mut reader: BufReader<tokio::process::ChildStdout>,
+    mut reader: BufReader<tokio::io::DuplexStream>,
     timeout: std::time::Duration,
     mut matches: impl FnMut(&Classified) -> bool,
 ) -> Result<bool, DriverError> {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
         let mut line = String::new();
-        let read = tokio::time::timeout_at(deadline, reader.read_line(&mut line)).await;
+        let mut capped = tokio::io::AsyncReadExt::take(
+            &mut reader,
+            u64::try_from(FRAME_LIMIT)
+                .unwrap_or(u64::MAX)
+                .saturating_add(1),
+        );
+        let read = tokio::time::timeout_at(deadline, capped.read_line(&mut line)).await;
         match read {
             Err(_) => return Err(DriverError::Protocol("timed out".into())),
             Ok(Err(error)) => return Err(DriverError::Disconnected(error.to_string())),
@@ -1314,40 +1370,6 @@ fn user_message(blocks: Vec<Value>) -> Value {
 
 #[async_trait]
 impl AgentDriver for ClaudeDriver {
-    fn supports_readonly_chat(&self) -> bool {
-        true
-    }
-    fn allows_readonly_chat_tool(&self, name: &str) -> bool {
-        matches!(name, "Read" | "Glob" | "Grep")
-    }
-    async fn create_chat_session(
-        &self,
-        directory: &str,
-        additional: &[String],
-    ) -> Result<SessionHandle, DriverError> {
-        let id = uuid::Uuid::new_v4().to_string();
-        let child = spawn_selected(
-            &ClaudeLaunch {
-                executable: self.executable.clone(),
-            },
-            &id,
-            false,
-            Some(directory),
-            additional,
-            SessionSelection {
-                chat_only: true,
-                analysis_only: true,
-                permission: Some("plan"),
-                ..SessionSelection::default()
-            },
-            None,
-        )?;
-        self.install_session(&id, child, directory.into(), Some("plan".into()), false)
-            .await?;
-        Ok(SessionHandle {
-            native_session_id: id,
-        })
-    }
     fn supports_readonly_analysis(&self) -> bool {
         true
     }
@@ -1376,11 +1398,10 @@ impl AgentDriver for ClaudeDriver {
             },
             None,
         )?;
-        self.install_session(&id, child, directory.into(), Some("plan".into()), false)
+        let process = self
+            .install_session(&id, child, directory.into(), Some("plan".into()), false)
             .await?;
-        Ok(SessionHandle {
-            native_session_id: id,
-        })
+        Ok(process.handle())
     }
 
     async fn create_review_session(
@@ -1404,24 +1425,23 @@ impl AgentDriver for ClaudeDriver {
             },
             None,
         )?;
-        self.install_session(
-            &id,
-            child,
-            directory.into(),
-            Some("bypassPermissions".into()),
-            false,
-        )
-        .await?;
-        Ok(SessionHandle {
-            native_session_id: id,
-        })
+        let process = self
+            .install_session(
+                &id,
+                child,
+                directory.into(),
+                Some("bypassPermissions".into()),
+                false,
+            )
+            .await?;
+        Ok(process.handle())
     }
 
     async fn permission_catalog(
         &self,
         workspace: Option<&str>,
     ) -> Result<driver_api::PermissionCatalog, DriverError> {
-        let (_, auto) = models::read_with_auto(&self.executable, workspace).await?;
+        let (_, auto) = models::read_with_auto(self, workspace).await?;
         Ok(driver_api::permissions::claude_with_auto(auto))
     }
     fn executor(&self) -> &ExecutorRef {
@@ -1448,8 +1468,8 @@ impl AgentDriver for ClaudeDriver {
             .is_some_and(|p| p.autonomous_pending.load(Ordering::Acquire) > 0)
     }
 
-    async fn acknowledge_autonomous_turn(&self, id: &str) {
-        if let Some(process) = self.processes.lock().await.get(id) {
+    async fn acknowledge_autonomous_turn(&self, handle: &SessionHandle) {
+        if let Ok(process) = self.process_for(handle).await {
             let _ = process.autonomous_pending.fetch_update(
                 Ordering::AcqRel,
                 Ordering::Acquire,
@@ -1459,17 +1479,14 @@ impl AgentDriver for ClaudeDriver {
     }
 
     async fn take_autonomous_events(&self, handle: &SessionHandle) -> Option<DriverEventStream> {
-        let process = self
-            .processes
-            .lock()
-            .await
-            .get(&handle.native_session_id)
-            .cloned()?;
+        let process = self.process_for(handle).await.ok()?;
+        let _admission = process.admit(handle).await.ok()?;
         let receiver = process
             .autonomous_rx
             .lock()
             .expect("autonomous receiver")
             .take()?;
+        process.autonomous_enabled.store(true, Ordering::Release);
         Some(Box::pin(
             UnboundedReceiverStream::new(receiver).map(Ok::<_, DriverError>),
         ))
@@ -1487,14 +1504,14 @@ impl AgentDriver for ClaudeDriver {
         self.create_selected_session(request, None, None).await
     }
     async fn model_catalog(&self) -> Result<driver_api::ModelCatalog, DriverError> {
-        models::read(&self.executable, None).await
+        models::read(self, None).await
     }
     async fn model_catalog_in_workspace(
         &self,
         _model: Option<&str>,
         workspace: Option<&str>,
     ) -> Result<driver_api::ModelCatalog, DriverError> {
-        models::read(&self.executable, workspace).await
+        models::read(self, workspace).await
     }
     async fn create_selected_session(
         &self,
@@ -1517,7 +1534,6 @@ impl AgentDriver for ClaudeDriver {
             Some(request.working_directory.as_str()),
             &request.additional_directories,
             SessionSelection {
-                chat_only: false,
                 analysis_only: false,
                 model,
                 thinking,
@@ -1534,16 +1550,15 @@ impl AgentDriver for ClaudeDriver {
                 request.history_mcp.is_some(),
             )
             .await?;
+        let mut admission = NativeAttempt::new(&process);
         if (model.is_some() || thinking.is_some())
             && let Err(error) = process.verify_selection(model, thinking).await
         {
-            process.closing.store(true, Ordering::Release);
-            let _ = process.commands.send(lifecycle::Command::Close);
+            process.request_close();
             return Err(error);
         }
-        Ok(SessionHandle {
-            native_session_id: process.session_id.clone(),
-        })
+        admission.confirm();
+        Ok(process.handle())
     }
 
     async fn resume_session(
@@ -1580,114 +1595,19 @@ impl AgentDriver for ClaudeDriver {
         model: Option<&str>,
         thinking: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
-        let session = self
-            .resume_selected_session(id, request, model, thinking)
-            .await?;
-        let process = self
-            .processes
-            .lock()
+        self.acquire_session(id, request, model, thinking, true)
             .await
-            .get(id)
-            .cloned()
-            .ok_or_else(|| DriverError::SessionMissing("Claude session is not active".into()))?;
-        process.configure(model, thinking).await?;
-        Ok(session)
     }
 
     async fn resume_selected_session(
         &self,
-        native_session_id: &str,
-        workspace: SessionRequest,
+        id: &str,
+        request: SessionRequest,
         model: Option<&str>,
         thinking: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
-        if self.has_autonomous_turn(native_session_id).await {
-            return Err(DriverError::AutonomousTurnBusy);
-        }
-        let gate = self
-            .restore_gates
-            .lock()
-            .unwrap()
-            .entry(native_session_id.into())
-            .or_default()
-            .clone();
-        let _restoring = gate.lock().await;
-        let existing = self.processes.lock().await.get(native_session_id).cloned();
-        if let Some(process) = &existing
-            && (process.turn_active.load(Ordering::Acquire)
-                || process.autonomous_pending.load(Ordering::Acquire) > 0)
-        {
-            return Err(DriverError::AutonomousTurnBusy);
-        }
-        if self
-            .processes
-            .lock()
+        self.acquire_session(id, request, model, thinking, false)
             .await
-            .get(native_session_id)
-            .is_some_and(|p| {
-                !p.finished.load(Ordering::Acquire)
-                    && !p.closing.load(Ordering::Acquire)
-                    && !p.commands.is_closed()
-                    && p.permission_mode == workspace.permission_mode
-                    && workspace.permission_mode.as_deref() != Some("plan")
-            })
-        {
-            return Ok(SessionHandle {
-                native_session_id: native_session_id.into(),
-            });
-        }
-        if self.resume_capability != SessionResumeCapability::Supported {
-            return Err(DriverError::CapabilityUnavailable(
-                "claude --resume has not been runtime verified for this hub".into(),
-            ));
-        }
-        if workspace.permission_mode.as_deref() == Some("auto") {
-            self.permission_catalog(Some(&workspace.working_directory))
-                .await?
-                .validate(Some("auto"))?;
-        }
-        self.shutdown(SessionHandle {
-            native_session_id: native_session_id.into(),
-        })
-        .await?;
-        // Resuming re-attaches to the stored transcript; the session id stays
-        // the one the hub already recorded.
-        let child = spawn_selected(
-            &ClaudeLaunch {
-                executable: self.executable.clone(),
-            },
-            native_session_id,
-            true,
-            Some(&workspace.working_directory),
-            &workspace.additional_directories,
-            SessionSelection {
-                chat_only: false,
-                analysis_only: false,
-                model,
-                thinking,
-                permission: workspace.permission_mode.as_deref(),
-            },
-            workspace.history_mcp.as_ref(),
-        )?;
-        let process = self
-            .install_session(
-                native_session_id,
-                child,
-                workspace.working_directory.into(),
-                workspace.permission_mode,
-                workspace.history_mcp.is_some(),
-            )
-            .await?;
-        if (model.is_some() || thinking.is_some())
-            && let Err(error) = process.verify_selection(model, thinking).await
-        {
-            process.closing.store(true, Ordering::Release);
-            let _ = process.commands.send(lifecycle::Command::Close);
-            return Err(error);
-        }
-        Ok(SessionHandle {
-            native_session_id: process.session_id.clone(),
-        })
     }
 
     async fn prompt(
@@ -1695,16 +1615,9 @@ impl AgentDriver for ClaudeDriver {
         handle: &SessionHandle,
         request: HubPromptRequest,
     ) -> Result<DriverEventStream, DriverError> {
+        let process = self.process_for(handle).await?;
+        let _admission = process.admit(handle).await?;
         let attachment_blocks = driver_api::attachments::claude(&request.attachments).await?;
-        let process = self
-            .processes
-            .lock()
-            .await
-            .get(&handle.native_session_id)
-            .cloned()
-            .ok_or_else(|| {
-                DriverError::SessionMissing("no live claude process for this session".into())
-            })?;
         let mut blocks = Vec::with_capacity(request.context.len() + 1);
         // Port contract: every reviewed context item is delivered, in order,
         // before the user prompt inside the same native turn.
@@ -1734,36 +1647,48 @@ impl AgentDriver for ClaudeDriver {
                     "this claude session already has an active turn".into(),
                 ));
             }
+            process.interrupt_requested.store(false, Ordering::Release);
             *sink = Some(event_tx);
         }
+        let mut dispatch = NativeAttempt::new(&process);
         process
             .commands
-            .send(lifecycle::Command::Begin)
+            .send(lifecycle::Command::Begin(handle.clone()))
             .map_err(|_| DriverError::Disconnected("Claude closed".into()))?;
         if let Err(error) = process.send_line(&user_message(blocks)).await {
-            *process.updates.lock().expect("updates sink") = None;
-            process.turn_active.store(false, Ordering::Release);
+            // A partial native write has unknown acceptance. Retire this scope
+            // before any later prompt; do not make its actor appear reusable.
+            process.request_close();
             return Err(error);
         }
         let stream: DriverEventStream =
             Box::pin(UnboundedReceiverStream::new(event_rx).map(Ok::<_, DriverError>));
+        dispatch.confirm();
         Ok(stream)
     }
 
     async fn interrupt(&self, handle: &SessionHandle) -> Result<(), DriverError> {
-        let process = self
-            .processes
-            .lock()
+        let process = self.process_for(handle).await?;
+        let (response, reply) = oneshot::channel();
+        {
+            let current = process.scope.lock().expect("Claude session scope");
+            if !current.same_scope(handle) {
+                return Err(stale_scope());
+            }
+            // Cancellation must not wait behind the write it may need to stop.
+            process
+                .commands
+                .send(lifecycle::Command::Cancel {
+                    handle: handle.clone(),
+                    response,
+                })
+                .map_err(|_| {
+                    DriverError::Disconnected("Claude session closed before cancellation".into())
+                })?;
+        }
+        reply
             .await
-            .get(&handle.native_session_id)
-            .cloned()
-            .ok_or_else(|| DriverError::SessionMissing("no live claude process".into()))?;
-        process
-            .commands
-            .send(lifecycle::Command::Cancel)
-            .map_err(|_| {
-                DriverError::Disconnected("Claude session closed before cancellation".into())
-            })
+            .map_err(|_| DriverError::Disconnected("Claude cancellation unconfirmed".into()))?
     }
 
     async fn respond_to_question(
@@ -1772,13 +1697,8 @@ impl AgentDriver for ClaudeDriver {
         request_id: &str,
         answer: agent_domain::QuestionAnswer,
     ) -> Result<(), DriverError> {
-        let process = self
-            .processes
-            .lock()
-            .await
-            .get(&handle.native_session_id)
-            .cloned()
-            .ok_or_else(|| DriverError::SessionMissing("Claude closed".into()))?;
+        let process = self.process_for(handle).await?;
+        let _admission = process.admit(handle).await?;
         let input = {
             let mut questions = process.pending_questions.lock().expect("questions");
             let input = questions
@@ -1803,13 +1723,8 @@ impl AgentDriver for ClaudeDriver {
         native_request_id: &str,
         option_id: &str,
     ) -> Result<(), DriverError> {
-        let process = self
-            .processes
-            .lock()
-            .await
-            .get(&handle.native_session_id)
-            .cloned()
-            .ok_or_else(|| DriverError::SessionMissing("no live claude process".into()))?;
+        let process = self.process_for(handle).await?;
+        let _admission = process.admit(handle).await?;
         let input = process
             .pending_approvals
             .lock()
@@ -1857,37 +1772,67 @@ impl AgentDriver for ClaudeDriver {
             .await
     }
 
-    async fn shutdown(&self, handle: SessionHandle) -> Result<(), DriverError> {
-        let process = self
-            .processes
+    async fn current_session_handle(&self, id: &str) -> Option<SessionHandle> {
+        self.processes
             .lock()
             .await
-            .get(&handle.native_session_id)
-            .cloned();
-        if let Some(process) = process {
-            if !process.finished.load(Ordering::Acquire) {
-                process.closing.store(true, Ordering::Release);
-                let _ = process.commands.send(lifecycle::Command::Close);
-                tokio::time::timeout(std::time::Duration::from_secs(8), async {
-                    while !process.cleanup_done.load(Ordering::Acquire) {
-                        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-                    }
-                })
-                .await
-                .map_err(|_| {
-                    DriverError::Disconnected("Claude process shutdown timed out".into())
-                })?;
-                if !process.finished.load(Ordering::Acquire) {
-                    return Err(DriverError::Disconnected(
-                        "Claude process shutdown remains unconfirmed".into(),
-                    ));
-                }
-            }
-            self.processes
-                .lock()
-                .await
-                .remove(&handle.native_session_id);
+            .get(id)
+            .map(|process| process.handle())
+    }
+
+    async fn shutdown_proof(
+        &self,
+        handle: &SessionHandle,
+    ) -> Option<driver_api::SessionShutdownProof> {
+        let processes = self.processes.lock().await;
+        if let Some(process) = processes.get(&handle.native_session_id) {
+            process.validate_scope(handle).ok()?;
+            let original = process.clone();
+            return Some(Box::pin(async move { original.retired().await }));
         }
+        self.retired_handles
+            .lock()
+            .expect("Claude retired scopes")
+            .get(&handle.native_session_id)
+            .filter(|retired| retired.same_scope(handle))
+            .map(|_| Box::pin(async {}) as driver_api::SessionShutdownProof)
+    }
+
+    async fn shutdown(&self, handle: SessionHandle) -> Result<(), DriverError> {
+        let process = {
+            let processes = self.processes.lock().await;
+            if let Some(process) = processes.get(&handle.native_session_id) {
+                process.validate_scope(&handle)?;
+                process.clone()
+            } else {
+                return if self
+                    .retired_handles
+                    .lock()
+                    .expect("Claude retired scopes")
+                    .get(&handle.native_session_id)
+                    .is_some_and(|retired| retired.same_scope(&handle))
+                {
+                    Ok(())
+                } else {
+                    Err(stale_scope())
+                };
+            }
+        };
+        {
+            let current = process.scope.lock().expect("Claude session scope");
+            if !current.same_scope(&handle) {
+                return Err(stale_scope());
+            }
+            // Atomically fence reuse, even if a prompt/configuration currently
+            // owns admission and is blocked writing to the native stdin pipe.
+            process.request_close();
+        }
+        tokio::time::timeout(std::time::Duration::from_secs(8), process.retired())
+            .await
+            .map_err(|_| {
+                DriverError::Disconnected("Claude process shutdown remains unconfirmed".into())
+            })?;
+        self.remove_retired(&handle, &process).await;
         Ok(())
     }
 }
@@ -2319,7 +2264,11 @@ for line in sys.stdin:
             Err(DriverError::Protocol(_))
         ));
         assert!(original.pending_controls.lock().unwrap().is_empty());
-        driver.shutdown(first).await.unwrap();
+        let current = driver
+            .current_session_handle(&first.native_session_id)
+            .await
+            .unwrap();
+        driver.shutdown(current).await.unwrap();
     }
 
     #[cfg(unix)]
@@ -2392,46 +2341,6 @@ done
         }
     }
 
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn sidebar_chat_allows_only_read_tools_without_mcp_or_hooks() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let script = dir.path().join("claude-chat");
-        std::fs::write(&script, "#!/bin/sh\nprintf '%s\\n' \"$@\" > argv.tmp\n/bin/mv argv.tmp argv.txt\nwhile IFS= read -r line; do :; done\n").unwrap();
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let driver = test_driver(script);
-        assert!(driver.supports_readonly_chat());
-        let extra = tempfile::tempdir().unwrap();
-        let session = driver
-            .create_chat_session(
-                dir.path().to_str().unwrap(),
-                &[extra.path().to_string_lossy().into_owned()],
-            )
-            .await
-            .unwrap();
-        for name in ["Read", "Glob", "Grep"] {
-            assert!(driver.allows_readonly_chat_tool(name));
-        }
-        for name in ["Bash", "Write", "Edit", "Agent"] {
-            assert!(!driver.allows_readonly_chat_tool(name));
-        }
-        tokio::time::timeout(std::time::Duration::from_secs(3), async {
-            while !dir.path().join("argv.txt").exists() {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .unwrap();
-        let args = std::fs::read_to_string(dir.path().join("argv.txt")).unwrap();
-        assert!(args.contains("--tools\nRead,Glob,Grep\n"));
-        assert!(args.contains("--strict-mcp-config\n--mcp-config\n{\"mcpServers\":{}}"));
-        assert!(args.contains("--setting-sources\nuser\n"));
-        assert!(args.contains("{\"disableAllHooks\":true}"));
-        assert!(args.contains("--permission-mode\nplan"));
-        assert!(args.contains(&format!("--add-dir\n{}\n", extra.path().display())));
-        driver.shutdown(session).await.unwrap();
-    }
     #[cfg(unix)]
     #[tokio::test]
     async fn analysis_allows_read_tools_without_mcp_or_hooks() {

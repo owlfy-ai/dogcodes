@@ -50,10 +50,28 @@ impl Account {
     pub(super) async fn quota_read(
         launch: &ZcodeLaunch,
         identity_only: bool,
+        admission: std::sync::Arc<tokio::sync::Mutex<()>>,
     ) -> Result<Value, DriverError> {
         let account = Self::new(launch)
             .ok_or_else(|| DriverError::CapabilityUnavailable("quota_unavailable".into()))?;
-        let value = account.run(json!({"action":if identity_only {"quota_identity"} else {"quota"},"builtinFile":account.builtin}), Duration::from_secs(12)).await?;
+        // Keep the existing twelve-second query budget while waiting for the
+        // previous helper's actual exit. Cancelled queued callers never spawn.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(12);
+        let permit = tokio::time::timeout_at(deadline, admission.lock_owned())
+            .await
+            .map_err(|_| DriverError::CapabilityUnavailable("quota_unavailable".into()))?;
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            return Err(DriverError::CapabilityUnavailable(
+                "quota_unavailable".into(),
+            ));
+        }
+        let value = account.run_owned(
+            json!({"action":if identity_only {"quota_identity"} else {"quota"},"builtinFile":account.builtin}),
+            remaining,
+            None,
+            Some(permit),
+        ).await?;
         if let Some(reason) = value["unavailable"].as_str() {
             return Err(DriverError::CapabilityUnavailable(
                 if reason == "quota_login_required" {
@@ -77,24 +95,40 @@ impl Account {
         })
     }
 
-    pub(super) async fn runtime(&self, request: &Value) -> Value {
+    pub(super) async fn runtime(
+        &self,
+        request: &Value,
+        owner: tokio::sync::watch::Receiver<bool>,
+    ) -> Value {
+        let original = owner.clone();
         let result = self
-            .run(
+            .run_owned(
                 json!({
                     "action":"runtime", "request":request,
                     "authorized":self.grant["authorized"], "checkedAt":self.grant["checkedAt"],
                     "version":self.grant["version"],
                 }),
                 Duration::from_secs(150),
+                Some(owner),
+                None,
             )
             .await;
-        result.unwrap_or_else(|_| {
-            json!({"headersApplied":false,
+        result
+            .ok()
+            .filter(|_| !*original.borrow() && original.has_changed().is_ok())
+            .unwrap_or_else(|| {
+                json!({"headersApplied":false,
             "errorMessage":"ZCode 账号验证未完成，请检查原生登录状态后重试。"})
-        })
+            })
     }
 
-    async fn run(&self, input: Value, timeout: Duration) -> Result<Value, DriverError> {
+    async fn run_owned(
+        &self,
+        input: Value,
+        timeout: Duration,
+        owner: Option<tokio::sync::watch::Receiver<bool>>,
+        permit: Option<tokio::sync::OwnedMutexGuard<()>>,
+    ) -> Result<Value, DriverError> {
         let fail = || {
             DriverError::NotConfigured(
                 "ZCode 账号信息暂时不可用，请检查原生登录状态后重试。".into(),
@@ -118,37 +152,82 @@ impl Account {
             }
         }
         agent_runtime::apply_proxy_environment(&mut command);
-        tokio::time::timeout(timeout, async {
-            let mut child = command.spawn().map_err(|_| fail())?;
-            let mut stdin = child.stdin.take().ok_or_else(fail)?;
-            stdin
-                .write_all(input.to_string().as_bytes())
-                .await
-                .map_err(|_| fail())?;
-            drop(stdin);
-            let mut bytes = Vec::new();
-            child
-                .stdout
-                .take()
-                .ok_or_else(fail)?
-                .take(1_048_577)
-                .read_to_end(&mut bytes)
-                .await
-                .map_err(|_| fail())?;
-            if bytes.len() > 1_048_576 {
+        // Own stdin/output and physical cleanup even after the query observer
+        // disappears. The caller never receives account data before scope exit.
+        let (observer, mut abandoned) = tokio::sync::oneshot::channel::<()>();
+        let result = tokio::spawn(async move {
+            // Admission belongs to the original helper through physical exit,
+            // even after the caller releases its cache guard by cancellation.
+            let _permit = permit;
+            if !matches!(
+                abandoned.try_recv(),
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+            ) || owner
+                .as_ref()
+                .is_some_and(|owner| *owner.borrow() || owner.has_changed().is_err())
+            {
                 return Err(fail());
             }
-            if !child.wait().await.map_err(|_| fail())?.success() {
-                return Err(fail());
+            let mut child = agent_runtime::OwnedChild::spawn(command).map_err(|_| fail())?;
+            let retired = async move {
+                if let Some(mut owner) = owner {
+                    loop {
+                        if *owner.borrow_and_update() || owner.changed().await.is_err() {
+                            return;
+                        }
+                    }
+                }
+                std::future::pending::<()>().await;
+            };
+            let reading = tokio::time::timeout(timeout, async {
+                let mut stdin = child.stdin.take().ok_or_else(fail)?;
+                stdin
+                    .write_all(input.to_string().as_bytes())
+                    .await
+                    .map_err(|_| fail())?;
+                drop(stdin);
+                let output = child.stdout.take().ok_or_else(fail)?;
+                // Ordinary descendants can keep stdout open after the actual
+                // account leader exits. Observe the leader concurrently so the
+                // original scope is retired and EOF is no longer held hostage.
+                let (status, bytes) =
+                    tokio::try_join!(async { child.wait().await.map_err(|_| fail()) }, async {
+                        let mut bytes = Vec::new();
+                        output
+                            .take(1_048_577)
+                            .read_to_end(&mut bytes)
+                            .await
+                            .map_err(|_| fail())?;
+                        if bytes.len() > 1_048_576 {
+                            return Err(fail());
+                        }
+                        Ok(bytes)
+                    },)?;
+                if !status.success() {
+                    return Err(fail());
+                }
+                let value: Value = serde_json::from_slice(&bytes).map_err(|_| fail())?;
+                if value.get("error").is_some() {
+                    return Err(fail());
+                }
+                Ok(value)
+            });
+            let result = tokio::select! {
+                _ = &mut abandoned => Err(fail()),
+                () = retired => Err(fail()),
+                result = reading => result.map_err(|_| fail()),
+            };
+            let mut delay = 1;
+            while child.terminate().await.is_err() {
+                tokio::time::sleep(Duration::from_secs(delay)).await;
+                delay = (delay * 2).min(30);
             }
-            let value: Value = serde_json::from_slice(&bytes).map_err(|_| fail())?;
-            if value.get("error").is_some() {
-                return Err(fail());
-            }
-            Ok(value)
+            result?
         })
         .await
-        .map_err(|_| fail())?
+        .map_err(|_| fail())?;
+        drop(observer);
+        result
     }
 }
 
@@ -172,9 +251,11 @@ impl Connection {
             account.checked = None;
         }
         let grant = worker
-            .run(
+            .run_owned(
                 json!({"action":"inspect","builtinFile":worker.builtin}),
                 Duration::from_secs(22),
+                Some(self.native.closing()),
+                None,
             )
             .await?;
         let result = self
@@ -207,7 +288,7 @@ impl Connection {
 
     pub(super) async fn provider_auth(&self, request: &Value) -> Value {
         match &self.account {
-            Some(account) => account.runtime(request).await,
+            Some(account) => account.runtime(request, self.native.closing()).await,
             None => {
                 json!({"headersApplied":false,"errorMessage":"请在 ZCode 中登录并重新检测 Agent。"})
             }
@@ -259,6 +340,37 @@ while read request; do :; done
         std::fs::write(builtin, "{}").unwrap();
         connection.account = Account::new(&launch);
         (root, connection)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn timed_out_account_helper_is_physically_retired_before_returning_failure() {
+        use crate::cleanup_tests::present;
+        use crate::metadata::tests::{fixture, ids};
+        let (root, launch) = fixture("account-stuck");
+        std::fs::create_dir_all(launch.cli_script.parent().unwrap()).unwrap();
+        std::fs::write(&launch.cli_script, "").unwrap();
+        let builtin = root
+            .path()
+            .join("Resources/config/provider/zcode-builtin.json");
+        std::fs::create_dir_all(builtin.parent().unwrap()).unwrap();
+        std::fs::write(&builtin, "{}").unwrap();
+        let account = Account::new(&launch).unwrap();
+        let result = account
+            .run_owned(
+                json!({"action":"inspect","builtinFile":builtin}),
+                Duration::from_millis(300),
+                None,
+                None,
+            )
+            .await;
+        assert!(result.is_err());
+        let processes = ids(root.path());
+        assert_eq!(processes.len(), 2, "private account helper did not start");
+        assert!(
+            processes.iter().all(|pid| !present(*pid)),
+            "failure returned before original helper cleanup"
+        );
     }
 
     #[cfg(unix)]
@@ -339,3 +451,6 @@ while read request; do :; done
         }
     }
 }
+
+#[cfg(all(test, unix))]
+mod runtime_tests;

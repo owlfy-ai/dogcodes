@@ -198,7 +198,7 @@ it("restores an existing background shell without opening another", async () => 
   await act(async () => (element.querySelector('[role="menuitem"]') as HTMLButtonElement).click());
   expect(api.attach).toHaveBeenCalledTimes(2); expect(api.open).not.toHaveBeenCalled();
   await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="关闭当前终端"]')!.click());
-  expect(api.close).toHaveBeenCalledExactlyOnceWith("existing");
+  expect(api.close).toHaveBeenCalledExactlyOnceWith("existing", "epoch");
 });
 
 it("does not create shells when the background inventory cannot be checked", async () => {
@@ -405,7 +405,7 @@ it("closes only the selected terminal through the toolbar cross", async () => {
   expect(element.querySelector(".terminal-controls")).toBeNull();
   expect(element.querySelector('[aria-label="收起终端"]')).toBeNull();
   await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="关闭当前终端"]')!.click());
-  expect(api.close).toHaveBeenCalledExactlyOnceWith("session-1");
+  expect(api.close).toHaveBeenCalledExactlyOnceWith("session-1", "epoch");
   expect(element.querySelectorAll('[role="tab"]')).toHaveLength(1);
   expect(element.querySelector('[role="tab"]')?.textContent).toBe("web");
   expect(terminals[0].dispose).not.toHaveBeenCalled();

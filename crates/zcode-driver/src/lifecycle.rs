@@ -71,6 +71,9 @@ impl NativeProcess {
             close,
             exit,
         });
+        // A weak reference keeps passive-exit publication from retaining the
+        // close sender when every external owner has already disappeared.
+        let original = Arc::downgrade(&this);
         tokio::spawn(async move {
             let mut closing = closing;
             let mut reader = reader;
@@ -80,6 +83,11 @@ impl NativeProcess {
                 _=child.wait()=>{},
             }
             stopping.store(true, Ordering::Release);
+            if let Some(original) = original.upgrade() {
+                // Credential helpers observe this same fence for requested
+                // shutdown, actual EOF and passive original-leader exit.
+                original.close.send_replace(true);
+            }
             if let Ok(mut input) = input.try_lock() {
                 input.take();
             }
@@ -115,12 +123,26 @@ impl NativeProcess {
     pub fn stopping(&self) -> bool {
         self.stopping.load(Ordering::Acquire)
     }
+    pub fn closing(&self) -> watch::Receiver<bool> {
+        self.close.subscribe()
+    }
     pub fn request_close(&self) {
         self.stopping.store(true, Ordering::Release);
         self.close.send_replace(true);
     }
     pub async fn closed(&self) -> Result<(), DriverError> {
         wait(self.exit.clone(), Duration::from_secs(8)).await
+    }
+    pub async fn confirmed(&self) {
+        let mut exit = self.exit.clone();
+        loop {
+            if matches!(*exit.borrow_and_update(), Some(Ok(()))) {
+                return;
+            }
+            if exit.changed().await.is_err() {
+                std::future::pending::<()>().await;
+            }
+        }
     }
     pub async fn close(&self) -> Result<(), DriverError> {
         self.request_close();
@@ -207,17 +229,20 @@ pub(super) async fn wait(
 }
 
 pub(super) type Receipt = watch::Receiver<Outcome>;
-type Sessions = Arc<tokio::sync::Mutex<HashMap<String, Arc<SessionState>>>>;
+type Sessions = Arc<std::sync::Mutex<HashMap<String, Arc<SessionState>>>>;
 pub(super) fn close_session(
     connection: Arc<tokio::sync::Mutex<Option<Connection>>>,
     sessions: Sessions,
-    id: String,
+    handle: driver_api::SessionHandle,
     state: Arc<SessionState>,
-) -> Receipt {
+    retired: super::scopes::Retired,
+) -> Result<Receipt, DriverError> {
+    let id = handle.native_session_id.clone();
     let (outcome, completed) = {
         let mut close = state.close_result.lock().expect("close receipt");
+        state.validate(&handle)?;
         if let Some(outcome) = close.as_ref() {
-            return outcome.clone();
+            return Ok(outcome.clone());
         }
         state.closing.store(true, Ordering::Release);
         state.interrupt_requested.store(true, Ordering::Release);
@@ -289,13 +314,18 @@ pub(super) fn close_session(
             .await;
             match result {
                 Ok(()) => {
-                    let mut sessions = sessions.lock().await;
+                    let mut sessions = sessions.lock().expect("sessions");
                     if sessions
                         .get(&id)
                         .is_some_and(|current| Arc::ptr_eq(current, &state))
                     {
                         sessions.remove(&id);
+                        retired
+                            .lock()
+                            .expect("retired scopes")
+                            .insert(id.clone(), handle.clone());
                     }
+                    state.retired.send_replace(true);
                     completed.send_replace(Some(Ok(())));
                     break;
                 }
@@ -311,5 +341,5 @@ pub(super) fn close_session(
             delay = (delay * 2).min(30);
         }
     });
-    outcome
+    Ok(outcome)
 }

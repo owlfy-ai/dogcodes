@@ -534,6 +534,15 @@ mod video_tests {
     }
 
     async fn screen_offer(profile: Option<&str>, expected: bool) {
+        screen_offer_with_ice(profile, expected, vec![], false).await;
+    }
+
+    pub(super) async fn screen_offer_with_ice(
+        profile: Option<&str>,
+        expected: bool,
+        servers: Vec<IceServer>,
+        relay_only: bool,
+    ) {
         let mut engine = MediaEngine::default();
         if let Some(profile) = profile {
             engine
@@ -554,6 +563,16 @@ mod video_tests {
         let phone: Arc<dyn PeerConnection> = Arc::new(
             PeerConnectionBuilder::<std::net::SocketAddr>::new()
                 .with_udp_addrs(vec![std::net::SocketAddr::from(([127, 0, 0, 1], 0))])
+                .with_configuration(
+                    RTCConfigurationBuilder::new()
+                        .with_ice_servers(servers.clone())
+                        .with_ice_transport_policy(if relay_only {
+                            RTCIceTransportPolicy::Relay
+                        } else {
+                            RTCIceTransportPolicy::All
+                        })
+                        .build(),
+                )
                 .with_media_engine(engine)
                 .with_interceptor_registry(registry)
                 .with_handler(Arc::new(Phone {
@@ -584,9 +603,29 @@ mod video_tests {
             .await
             .unwrap();
         let offer = gathered_description(&phone, &gathered).await.unwrap();
-        // A data-only answer to the same offer carries no screen.
-        assert!(answer(offer.clone(), vec![]).await.unwrap().video.is_none());
-        let server = answer_with_video(offer, vec![]).await.unwrap();
+        if relay_only {
+            assert!(offer.sdp.contains("typ relay"));
+            assert!(!offer.sdp.contains("typ host"));
+        } else {
+            // A data-only answer to the same offer carries no screen.
+            assert!(answer(offer.clone(), vec![]).await.unwrap().video.is_none());
+        }
+        let server = answer_with_policy(
+            offer,
+            servers,
+            if relay_only {
+                RTCIceTransportPolicy::Relay
+            } else {
+                RTCIceTransportPolicy::All
+            },
+            true,
+        )
+        .await
+        .unwrap();
+        if relay_only {
+            assert!(server.description.sdp.contains("typ relay"));
+            assert!(!server.description.sdp.contains("typ host"));
+        }
         assert!(server.description.sdp.contains("H264"));
         if !expected {
             assert!(server.video.is_none());
@@ -601,7 +640,15 @@ mod video_tests {
             .unwrap();
         let (opened, accepted) = tokio::join!(wait_open(&channel), server.accept());
         opened.unwrap();
-        let _server = accepted.unwrap();
+        let server = accepted.unwrap();
+        let client = Channel {
+            peer: phone.clone(),
+            channel: channel.clone(),
+        };
+        if relay_only {
+            assert_eq!(client.route().await.mode, "turn-relay");
+            assert_eq!(server.route().await.mode, "turn-relay");
+        }
 
         // An IDR access unit (SPS, PPS, slice) then delta frames, ~1200 B each.
         let frame = |kind: u8, n: u8| {
@@ -629,6 +676,19 @@ mod video_tests {
         })
         .await
         .unwrap();
+        // Bootstrap the remote track before asserting delivery of a specific
+        // RTP marker. SCTP opening is not proof that initial media was seen.
+        // Direct tests use a current-thread runtime, so the writer cannot
+        // poll these queued old units before reset. TURN tests give both
+        // devices separate workers; there, already-written old units would
+        // legitimately be outside the application's reset boundary.
+        if !relay_only {
+            assert!(video.push(frame(1, 251), std::time::Instant::now()));
+            assert!(video.push(frame(1, 252), std::time::Instant::now()));
+        }
+        video.reset();
+        assert!(video.take_keyframe_request());
+        assert!(video.push(frame(5, 253), std::time::Instant::now()));
         let sender = tokio::spawn({
             let video = video.clone();
             async move {
@@ -639,20 +699,41 @@ mod video_tests {
             }
         });
         let mut packets = 0;
+        let mut recovered = false;
         let mut payload_type = None;
-        tokio::time::timeout(Duration::from_secs(10), async {
+        let media = async {
             while packets < 100 {
                 if let Some(TrackRemoteEvent::OnRtpPacket(p)) = track.poll().await {
+                    if !relay_only {
+                        assert!(!matches!(p.payload.last(), Some(251 | 252)));
+                    }
+                    recovered |= p.payload.last() == Some(&253);
                     packets += 1;
                     payload_type = Some(p.header.payload_type);
                 }
             }
+        };
+        let control = async {
+            client.send(b"control-during-video").await.unwrap();
+            assert_eq!(
+                server.receive().await.unwrap().unwrap(),
+                b"control-during-video"
+            );
+            server.send(b"video-control-reply").await.unwrap();
+            assert_eq!(
+                client.receive().await.unwrap().unwrap(),
+                b"video-control-reply"
+            );
+        };
+        tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(media, control);
         })
         .await
         .expect("RTP packets");
         let codec = track.codec(track.ssrcs().await[0]).await.unwrap();
         assert_eq!(codec.mime_type.to_lowercase(), "video/h264");
         assert!(payload_type.is_some());
+        assert!(recovered, "new-generation IDR reached the actual RTP peer");
 
         assert!(!video.take_keyframe_request());
         track
@@ -681,7 +762,20 @@ mod video_tests {
 mod turn_acceptance {
     use super::*;
     use dogcodes_endpoint::Session;
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "scripts/turn_acceptance.py supplies an isolated authenticated coturn fixture"]
+    async fn turn_video_acceptance() {
+        let encoded =
+            std::fs::read(std::env::var_os("DOGCODES_TURN_TEST_CONFIG").expect("test config path"))
+                .unwrap();
+        let setup: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+        assert_ne!(setup["reject"], true);
+        let ice: IceServer = serde_json::from_value(setup["ice"].clone()).unwrap();
+        super::video_tests::screen_offer_with_ice(None, true, vec![ice], true).await;
+    }
+    // The fixture runs both devices here. Each needs independent reactor
+    // progress while a peer flushes a burst, as on separate physical hosts.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "scripts/turn_acceptance.py supplies an isolated authenticated coturn fixture"]
     async fn turn_acceptance() {
         let encoded =
@@ -739,12 +833,14 @@ mod turn_acceptance {
         b.read_handshake(&server.receive().await.unwrap().unwrap())
             .unwrap();
         assert_eq!(a.binding().unwrap(), b.binding().unwrap());
+        let (mut transmitted_messages, mut delivered_messages) = (0, 0);
         let send = async {
             for index in 0..128_u8 {
                 client
                     .send(&a.seal(&vec![index; 16000]).unwrap())
                     .await
                     .unwrap();
+                transmitted_messages += 1;
             }
         };
         let read = async {
@@ -753,13 +849,17 @@ mod turn_acceptance {
                     b.open(&server.receive().await.unwrap().unwrap()).unwrap(),
                     vec![index; 16000]
                 );
+                delivered_messages += 1;
             }
         };
-        tokio::time::timeout(Duration::from_secs(20), async {
+        let transfer = tokio::time::timeout(Duration::from_secs(20), async {
             tokio::join!(send, read);
         })
-        .await
-        .unwrap();
+        .await;
+        assert!(
+            transfer.is_ok(),
+            "TURN 2 MiB transfer timed out: sent={transmitted_messages}/128 received={delivered_messages}/128"
+        );
         server.send(&b.seal(b"receipt").unwrap()).await.unwrap();
         assert_eq!(
             a.open(&client.receive().await.unwrap().unwrap()).unwrap(),

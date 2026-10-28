@@ -39,3 +39,17 @@ python3 scripts/turn_acceptance.py
 本机结果（2026-10-19）：7 项强制中继/失败场景通过；桌面远程网关 18 项测试通过；P2P 传输及原有 WSS 完整 Core 链路通过；iOS、Android 模拟器对更新后 PC fixture 的 P2P/流式任务/回退通过；Clippy、格式、发布输入检查和 Windows GNU 交叉编译检查通过。CI 配置已接入，尚未在 GitHub 执行。
 
 三平台代码使用同一传输实现；Windows 交叉编译及 macOS 本机验证不能替代 Windows/Linux 实机运行、官方 443/TLS 入口、IPv6、Wi-Fi/移动网络切换及中国大陆/海外跨 NAT 验收。TURN/DTLS over UDP 和 TURN-over-WebSocket 不在本次范围。
+
+## 2026-10-27：强制 TURN 视频轨与并行数据验证
+
+原脚本的七个场景只覆盖 DataChannel。本轮复用已有 RTP 收发夹具，在 UDP、TCP、TLS 和 TCP 分片代理四条正向路径分别增加视频轨验收，脚本共显式执行十一项。两端均强制 relay，核对 SDP 无 host 候选及实际选中路径为 `turn-relay`，不允许直连绕过服务器。RTP 收包期间并行发送短数据请求/回复，随后验证 PLI 到达发送器以及拥塞控制器仍报告有效目标；原 Noise、公钥 pin、约 2 MiB 有序数据和三项拒绝场景保留。
+
+视频使用合成 NAL 经实际 DTLS/SRTP/TURN 收发，没有启动屏幕采集或硬件解码器。先确认远端媒体轨已经出现，再断言指定新关键帧标记到达；SCTP 打开本身不作为首个 RTP 已到达的证明。应用层旧排队帧丢弃仍由原单线程受控测试验证；多线程 TURN 夹具不把重置前可能已经写出的包算成可撤回帧。
+
+Linux 验证暴露了原夹具把模拟手机和 PC 都放在同一个单线程运行时的问题：约 2 MiB 突发期间，本项目接收 socket 出现 45 次缓冲区丢包，服务端 socket 未丢；原二十秒期限失败。为两个端点提供两个测试工作线程后，保留原 SDK、数据量及超时，十一项全部通过，同一隔离网络命名空间的 `RcvbufErrors` 观测为零。缓冲区和 driver 顺序的试探修改没有完整解决失败，已全部撤回；最终没有生产 SDK、依赖或协议变更，也没有增加系统缓冲区或放宽期限。该修正不声称真实丢包网络已验收。
+
+最终 macOS/Linux 各十一项显式 TURN 场景、各九项普通传输测试通过；两个 fixture 测试在普通套件中默认忽略，本轮由脚本分别显式运行。两端传输包 all-targets 严格检查及 Windows GNU all-targets 严格静态检查通过。既有 Linux CI 步骤直接运行扩展后的原脚本，名称补为 data/video；本轮没有触发 GitHub 执行。
+
+最终日志：`/tmp/dogcodes-turn-video-final-acceptance-macos.log`、`/tmp/dogcodes-turn-video-final-suite-macos.log`、`/tmp/dogcodes-turn-video-final-linux.log`、`/tmp/dogcodes-turn-video-final-strict-macos.log`、`/tmp/dogcodes-turn-video-final-windows.log`。单线程失败及 socket 归属证据 `/tmp/dogcodes-turn-video-{second-linux,udp-kernel-final,udp-sockets}.log`；双线程及无缓冲区溢出证据 `/tmp/dogcodes-turn-video-workers-linux{,-fixture}.log`。初轮启动期标记断言失败保留于 `/tmp/dogcodes-turn-video-acceptance-macos.log`，未计作通过。
+
+测试仅使用 loopback、临时 coturn/凭据/CA 与隔离 Docker 环境，私有 CA 不进入系统信任库；没有操作日常 Core、真实 Agent/账号、手机/模拟器或用户屏幕/键鼠，没有提交推送。真实手机呈现、跨 NAT、公网 TURN、带宽/丢包/换网/后台恢复及原八包其它范围仍由 CURRENT_WORK 跟踪。

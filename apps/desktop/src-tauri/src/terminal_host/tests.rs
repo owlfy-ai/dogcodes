@@ -121,7 +121,7 @@ async fn terminal_host_lost_reply_and_concurrent_retry_cannot_spawn_twice() {
     changed.command = Some("printf y >> count".into());
     assert!(host.start_resolved(changed, None).await.is_err());
     assert!(host.has_active());
-    host.stop(&a.id).await.unwrap();
+    host.stop(&a.id, &a.epoch).await.unwrap();
     finished(&host, &a.id).await;
     assert!(!host.has_active());
     // An accepted operation stays accepted even after it ends or the host reopens.
@@ -155,7 +155,7 @@ async fn terminal_host_reader_disconnection_does_not_stop_process_or_repeat_inpu
     host.write(&info.id, b"one\n".to_vec()).await.unwrap();
     let text = read_until(&host, &info.id, "GOT:one").await;
     assert_eq!(String::from_utf8_lossy(&text).matches("GOT:one").count(), 1);
-    host.stop(&info.id).await.unwrap();
+    host.stop(&info.id, &info.epoch).await.unwrap();
     finished(&host, &info.id).await;
 }
 
@@ -190,7 +190,7 @@ async fn terminal_host_stop_is_available_while_input_is_blocked() {
     })
     .await
     .unwrap();
-    tokio::time::timeout(Duration::from_secs(3), host.stop(&info.id))
+    tokio::time::timeout(Duration::from_secs(3), host.stop(&info.id, &info.epoch))
         .await
         .unwrap()
         .unwrap();
@@ -281,13 +281,13 @@ async fn terminal_host_restart_marks_unresolved_intent_unknown_and_never_kills_a
             .status,
         TerminalStatus::Unknown
     );
-    assert!(restarted.stop(&info.id).await.is_err());
+    assert!(restarted.stop(&info.id, &info.epoch).await.is_err());
     assert!(restarted.write(&info.id, vec![3]).await.is_err());
     assert_eq!(
         original.get(&info.id).unwrap().status,
         TerminalStatus::Running
     );
-    original.stop(&info.id).await.unwrap();
+    original.stop(&info.id, &info.epoch).await.unwrap();
     finished(&original, &info.id).await;
 }
 
@@ -477,7 +477,7 @@ async fn terminal_host_explicit_stop_releases_child_processes() {
         .unwrap();
     read_until(&host, &info.id, "READY").await;
     let child = std::fs::read_to_string(root.path().join("child-pid")).unwrap();
-    host.stop(&info.id).await.unwrap();
+    host.stop(&info.id, &info.epoch).await.unwrap();
     finished(&host, &info.id).await;
     let state = std::process::Command::new("ps")
         .args(["-o", "stat=", "-p", child.trim()])
@@ -489,7 +489,7 @@ async fn terminal_host_explicit_stop_releases_child_processes() {
         "child still running: {state}"
     );
     assert_eq!(
-        host.stop(&info.id).await.unwrap().status,
+        host.stop(&info.id, &info.epoch).await.unwrap().status,
         TerminalStatus::Exited
     );
 }
@@ -567,4 +567,40 @@ async fn terminal_host_unbound_old_record_is_queryable_but_not_replayed_as_a_rec
             .contains("未绑定")
     );
     assert_eq!(std::fs::read(root.path().join("count")).unwrap(), b"x");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn terminal_host_stop_checks_the_target_after_waiting_for_admission() {
+    let root = tempfile::tempdir().unwrap();
+    let host = TerminalHost::default();
+    let info = host
+        .start_resolved(
+            intent(root.path(), Some("printf 'TARGET_READY\\n'; sleep 60")),
+            None,
+        )
+        .await
+        .unwrap();
+    read_until(&host, &info.id, "TARGET_READY").await;
+    let guard = host.admission.lock().await;
+    let close = host.stop(&info.id, &info.epoch);
+    tokio::pin!(close);
+    assert!(futures_util::poll!(close.as_mut()).is_pending());
+    let next_epoch = uuid::Uuid::new_v4().to_string();
+    // Model a target replacement while this request is queued. No OS PID is
+    // reused and this test owns the entire temporary process and directory.
+    host.session(&info.id)
+        .unwrap()
+        .output
+        .lock()
+        .unwrap()
+        .info
+        .epoch = next_epoch.clone();
+    drop(guard);
+    let refused = close.await.unwrap();
+    assert_eq!(refused.epoch, next_epoch);
+    assert_eq!(refused.status, TerminalStatus::Running);
+    assert_eq!(host.get(&info.id).unwrap().status, TerminalStatus::Running);
+    host.stop(&info.id, &next_epoch).await.unwrap();
+    finished(&host, &info.id).await;
 }

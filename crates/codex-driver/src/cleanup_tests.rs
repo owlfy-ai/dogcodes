@@ -11,7 +11,9 @@ signal.signal(signal.SIGTERM,signal.SIG_IGN)
 child=None
 if mode in ['probe','leader','stubborn']:
  child=subprocess.Popen([sys.executable,'-c','import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);time.sleep(60)'])
-with open('pids.json','w') as f:json.dump([os.getpid(),child.pid if child else None],f)
+pid_marker='pids.'+str(os.getpid())+'.tmp'
+with open(pid_marker,'w') as f:json.dump([os.getpid(),child.pid if child else None],f)
+os.replace(pid_marker,'pids.json')
 def out(v):print(json.dumps(v),flush=True)
 for line in sys.stdin:
  r=json.loads(line)
@@ -63,6 +65,167 @@ fn prompt(root: &Path, text: &str) -> PromptRequest {
         context: vec![],
         prompt: text.into(),
     }
+}
+
+#[tokio::test]
+async fn hot_reuse_rejects_old_authority_even_after_it_has_captured_the_actor_queue() {
+    let (root, driver) = fixture("normal");
+    let original = driver.create_session(workspace(root.path())).await.unwrap();
+    let delayed_sender = driver.command_sender(&original).await.unwrap();
+    let native = driver.sessions.lock().await["s"].native.clone().unwrap();
+    let successor = driver
+        .resume_selected_session("s", workspace(root.path()), None, None)
+        .await
+        .unwrap();
+    assert!(!original.same_scope(&successor));
+    assert!(delayed_sender.same_channel(&driver.command_sender(&successor).await.unwrap()));
+    let stream = driver
+        .prompt(&successor, prompt(root.path(), "slow"))
+        .await
+        .unwrap();
+
+    let (response, received) = oneshot::channel();
+    delayed_sender
+        .send(SessionCommand::Prompt {
+            request: prompt(root.path(), "must not run"),
+            response,
+        })
+        .await
+        .unwrap();
+    assert!(matches!(
+        received.await.unwrap(),
+        Err(DriverError::SessionIncompatible(_))
+    ));
+    for action in [
+        "interrupt",
+        "approve",
+        "answer",
+        "configure",
+        "shutdown",
+        "reuse",
+    ] {
+        let (response, received) = oneshot::channel();
+        let command = match action {
+            "interrupt" => SessionCommand::Interrupt { response },
+            "approve" => SessionCommand::Approve {
+                native_request_id: "1".into(),
+                option_id: "allow".into(),
+                response,
+            },
+            "answer" => SessionCommand::Answer {
+                native_request_id: "1".into(),
+                answer: agent_domain::QuestionAnswer {
+                    cancelled: true,
+                    values: Value::Null,
+                },
+                response,
+            },
+            "configure" => SessionCommand::Configure {
+                model: Some("wrong".into()),
+                thinking: None,
+                response,
+            },
+            "shutdown" => SessionCommand::Shutdown { response },
+            "reuse" => SessionCommand::CheckReady {
+                next_scope: SessionHandle::scoped("s".into()),
+                response,
+            },
+            _ => unreachable!(),
+        };
+        delayed_sender.send(command).await.unwrap();
+        assert!(
+            matches!(
+                timeout(Duration::from_secs(2), received)
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                Err(DriverError::SessionIncompatible(_))
+            ),
+            "{action}"
+        );
+    }
+    assert!(driver.interrupt(&original).await.is_err());
+    assert!(driver.shutdown(original.clone()).await.is_err());
+    assert!(driver.shutdown_proof(&original).await.is_none());
+    assert!(
+        driver
+            .command_sender(&SessionHandle::new("s".into()))
+            .await
+            .is_err()
+    );
+    assert!(
+        driver
+            .current_session_handle("s")
+            .await
+            .unwrap()
+            .same_scope(&successor)
+    );
+    assert_eq!(count(root.path(), "turn/start"), 1);
+    assert_eq!(count(root.path(), "turn/interrupt"), 0);
+    assert!(!native.stopping());
+    driver.shutdown(successor).await.unwrap();
+    drop(stream);
+    native.closed().await.unwrap();
+}
+
+#[tokio::test]
+async fn cancelled_queued_reuse_does_not_rotate_the_current_scope() {
+    let (root, driver) = fixture("normal");
+    let original = driver.create_session(workspace(root.path())).await.unwrap();
+    let resident = driver.sessions.lock().await["s"].clone();
+    let (response, received) = oneshot::channel();
+    drop(received);
+    resident
+        .sender()
+        .send(SessionCommand::CheckReady {
+            next_scope: SessionHandle::scoped("s".into()),
+            response,
+        })
+        .await
+        .unwrap();
+    let stream = driver
+        .prompt(&original, prompt(root.path(), "continue"))
+        .await
+        .unwrap();
+    let events = stream.collect::<Vec<_>>().await;
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, Ok(DriverEvent::TurnCompleted { .. })))
+    );
+    assert!(resident.handle().same_scope(&original));
+    driver.shutdown(original).await.unwrap();
+}
+
+#[tokio::test]
+async fn passive_exit_proof_tracks_the_original_process_across_cold_restore() {
+    let (root, driver) = fixture("normal");
+    let original = driver.create_session(workspace(root.path())).await.unwrap();
+    let native = driver.sessions.lock().await["s"].native.clone().unwrap();
+    let mut proof = driver.shutdown_proof(&original).await.unwrap();
+    assert!(
+        timeout(Duration::from_millis(20), &mut proof)
+            .await
+            .is_err()
+    );
+    assert!(!native.stopping());
+    driver.shutdown(original.clone()).await.unwrap();
+    let successor = driver
+        .resume_selected_session("s", workspace(root.path()), None, None)
+        .await
+        .unwrap();
+    let replacement = driver.sessions.lock().await["s"].native.clone().unwrap();
+    timeout(Duration::from_secs(2), proof).await.unwrap();
+    assert!(!Arc::ptr_eq(&native, &replacement));
+    assert!(driver.shutdown(original.clone()).await.is_err());
+    assert!(
+        driver
+            .prompt(&original, prompt(root.path(), "old"))
+            .await
+            .is_err()
+    );
+    assert!(!replacement.stopping());
+    driver.shutdown(successor).await.unwrap();
 }
 fn count(root: &Path, method: &str) -> usize {
     std::fs::read_to_string(root.join("requests.jsonl"))
@@ -122,7 +285,7 @@ async fn dropping_the_driver_retires_a_worker_even_while_its_prompt_write_is_blo
     let (root, driver) = fixture("writer");
     let session = driver.create_session(workspace(root.path())).await.unwrap();
     let native = driver.sessions.lock().await["s"].native.clone().unwrap();
-    let sender = driver.command_sender("s").await.unwrap();
+    let sender = driver.command_sender(&session).await.unwrap();
     let (response, received) = oneshot::channel();
     sender
         .send(SessionCommand::Prompt {
@@ -200,13 +363,10 @@ async fn a_stop_ack_without_a_real_terminal_does_not_report_success() {
     connection.thread_id = "s".into();
     connection.stop_timeout = Duration::from_millis(100);
     let native = connection.native.clone();
-    driver
+    let session = driver
         .install_session("s".into(), connection)
         .await
         .unwrap();
-    let session = SessionHandle {
-        native_session_id: "s".into(),
-    };
     let stream = driver
         .prompt(&session, prompt(root.path(), "slow"))
         .await
@@ -248,7 +408,14 @@ async fn a_cancelled_queued_prompt_is_not_dispatched_after_admission() {
     let mut connection = Connection::spawn(&driver.executable).await.unwrap();
     connection.thread_id = "s".into();
     let native = connection.native.clone();
-    let (sender, commands) = mpsc::channel(4);
+    let (commands_tx, commands) = mpsc::channel(4);
+    let scope = Arc::new(std::sync::Mutex::new(SessionHandle::scoped("s".into())));
+    let resident = ResidentSession {
+        commands: commands_tx,
+        native: Some(native.clone()),
+        scope: scope.clone(),
+    };
+    let sender = resident.sender();
     let (response, received) = oneshot::channel();
     sender
         .send(SessionCommand::Prompt {
@@ -263,8 +430,8 @@ async fn a_cancelled_queued_prompt_is_not_dispatched_after_admission() {
         .send(SessionCommand::Shutdown { response })
         .await
         .unwrap();
-    session_actor(connection, commands).await;
-    ended.await.unwrap();
+    session_actor(connection, commands, scope).await;
+    ended.await.unwrap().unwrap();
     native.closed().await.unwrap();
     assert_eq!(count(root.path(), "turn/start"), 0);
 }
@@ -276,19 +443,16 @@ async fn a_closed_actor_channel_is_not_a_substitute_for_native_exit_proof() {
     let native = connection.native.clone();
     let (commands, receiver) = mpsc::channel(4);
     drop(receiver);
+    let session = SessionHandle::scoped("s".into());
     driver.sessions.lock().await.insert(
         "s".into(),
         ResidentSession {
             commands,
             native: Some(native.clone()),
+            scope: Arc::new(std::sync::Mutex::new(session.clone())),
         },
     );
-    driver
-        .shutdown(SessionHandle {
-            native_session_id: "s".into(),
-        })
-        .await
-        .unwrap();
+    driver.shutdown(session).await.unwrap();
     native.closed().await.unwrap();
     assert!(ids(root.path()).iter().all(|id| !present(*id)));
     assert!(driver.sessions.lock().await.is_empty());
@@ -303,11 +467,13 @@ async fn restoring_a_closed_actor_waits_for_the_original_scope_before_spawning_a
     let native = connection.native.clone();
     let (commands, receiver) = mpsc::channel(4);
     drop(receiver);
+    let session = SessionHandle::scoped("s".into());
     driver.sessions.lock().await.insert(
         "s".into(),
         ResidentSession {
             commands,
             native: Some(native.clone()),
+            scope: Arc::new(std::sync::Mutex::new(session.clone())),
         },
     );
     let restored = driver

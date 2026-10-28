@@ -133,9 +133,14 @@ pub async fn core_terminal_close(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, DesktopState>,
     id: String,
+    expected_epoch: String,
 ) -> Result<(), String> {
     authorize_resource(window.label(), &state, &id).await?;
-    state.core.terminal_stop(&id).await.map(|_| ())
+    state
+        .core
+        .terminal_stop(&id, &expected_epoch)
+        .await
+        .map(|_| ())
 }
 
 #[cfg(test)]

@@ -20,9 +20,6 @@ impl AgentDriver for Reviewer {
     fn driver_version(&self) -> &'static str {
         "test"
     }
-    fn supports_readonly_chat(&self) -> bool {
-        true
-    }
     async fn create_review_session(
         &self,
         directory: &str,

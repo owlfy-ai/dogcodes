@@ -151,8 +151,12 @@ async fn installed_native_cold_resume() {
         second.resume_session(&id, &cwd),
         second.resume_session(&id, &cwd)
     );
-    let session = a.unwrap();
-    assert_eq!(b.unwrap().native_session_id, id);
+    let a = a.unwrap();
+    let b = b.unwrap();
+    assert_eq!(a.native_session_id, id);
+    assert_eq!(b.native_session_id, id);
+    assert!(!a.same_scope(&b));
+    let session = second.current_session_handle(&id).await.unwrap();
     run(
         &second,
         &session,

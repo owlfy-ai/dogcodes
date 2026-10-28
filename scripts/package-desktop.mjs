@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
@@ -108,6 +109,30 @@ export function parseArguments(args) {
   return { signed, forwarded, ...(check ? { check } : {}) };
 }
 
+// PipeWire loads these client components with dlopen; linuxdeploy only discovers
+// linked libraries. Resolve the build host's SDK paths rather than assuming x64.
+export function linuxAppImageFiles({ projectRoot = root, env = process.env, capture = execFileSync } = {}) {
+  const variable = name => capture('pkg-config', [`--variable=${name}`, 'libpipewire-0.3'],
+    { env, encoding: 'utf8' }).trim();
+  const libdir = variable('libdir');
+  const moduledir = variable('moduledir');
+  if (!isAbsolute(libdir) || !isAbsolute(moduledir)) {
+    throw new Error('PipeWire pkg-config must provide absolute libdir and moduledir paths.');
+  }
+  const files = {
+    'usr/lib/spa-0.2/support/libspa-support.so': resolve(libdir, 'spa-0.2/support/libspa-support.so'),
+    'usr/lib/pipewire-0.3/libpipewire-module-protocol-native.so': resolve(moduledir, 'libpipewire-module-protocol-native.so'),
+    'usr/lib/pipewire-0.3/libpipewire-module-client-node.so': resolve(moduledir, 'libpipewire-module-client-node.so'),
+    'usr/share/dog.codes/pipewire/client.conf': resolve(projectRoot, 'apps/desktop/src-tauri/resources/appimage/client.conf'),
+    'usr/bin/dogcodes-appimage': resolve(projectRoot, 'apps/desktop/src-tauri/resources/appimage/launch.sh'),
+    'usr/share/applications/dog.codes.desktop': resolve(projectRoot, 'apps/desktop/src-tauri/resources/appimage/dog.codes.desktop'),
+  };
+  for (const path of Object.values(files)) {
+    if (!existsSync(path)) throw new Error(`Missing AppImage PipeWire client resource: ${path}`);
+  }
+  return files;
+}
+
 async function main() {
   const { signed, forwarded, check } = parseArguments(process.argv.slice(2));
   const envPath = resolve(root, 'release/.env.local');
@@ -122,6 +147,9 @@ async function main() {
   const cli = resolve(dirname(require.resolve('@tauri-apps/cli/package.json')), 'tauri.js');
   const target = forwarded.includes('--target') ? forwarded[forwarded.indexOf('--target') + 1] : undefined;
   const bundles = forwarded.includes('--bundles') ? forwarded[forwarded.indexOf('--bundles') + 1] : undefined;
+  if (process.platform === 'linux' && (!bundles || bundles.split(',').includes('appimage'))) {
+    config.bundle.linux = { appimage: { files: linuxAppImageFiles({ env }) } };
+  }
   const keychain = signed && process.platform === 'darwin' && env.APPLE_NOTARY_PROFILE;
   if (keychain) await checkMacKeychain({ root, env, config, target, bundles });
   if (signed && process.platform === 'win32' && !config.bundle.windows.signCommand) {

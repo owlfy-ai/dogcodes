@@ -1,0 +1,2 @@
+# Private data directories for the immutable app-server fixture.
+/.tmp*/

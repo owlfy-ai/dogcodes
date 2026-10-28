@@ -164,9 +164,6 @@ impl ChildEvents {
     pub fn close(&mut self) {
         self.close_with_status("interrupted");
     }
-    pub fn fail(&mut self) {
-        self.close_with_status("failed");
-    }
     fn close_with_status(&mut self, status: &str) {
         for (id, sink) in self.owners.drain() {
             let mut data = json!({"type":"subagent","status":status,"details":"available"});

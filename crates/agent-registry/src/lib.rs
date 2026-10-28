@@ -7,7 +7,7 @@ use std::{
 };
 
 use agent_domain::ProviderId;
-use agent_runtime::{ProcessError, ProcessSpec, run_bounded};
+use agent_runtime::{ProcessError, ProcessSpec, run_scoped_bounded};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -463,7 +463,7 @@ pub async fn probe_installation(
             stdout_limit: manifest.discovery.output_limit_bytes,
             stderr_limit: manifest.discovery.output_limit_bytes,
         };
-        match run_bounded(&identity_spec).await {
+        match run_scoped_bounded(&identity_spec).await {
             // Marker output on stdout proves product identity even when the
             // CLI exits non-zero (e.g. `agy models` warns on stderr and
             // returns 1 while listing Gemini models correctly).
@@ -505,7 +505,7 @@ pub async fn probe_installation(
             }
         }
     };
-    match run_bounded(&spec).await {
+    match run_scoped_bounded(&spec).await {
         Ok(output) => {
             let raw_version_text = first_nonempty(&output.stdout, &output.stderr);
             let signature_matches = raw_version_text.as_deref().is_some_and(|text| {

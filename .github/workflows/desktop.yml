@@ -72,7 +72,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils libssl-dev build-essential pkg-config nasm libclang-dev libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libwayland-dev libegl-dev libgbm-dev libxkbcommon-dev coturn xvfb x11-utils x11-xserver-utils pipewire-bin wireplumber dbus-x11
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev file patchelf xdg-utils libssl-dev build-essential pkg-config nasm libclang-dev libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libpipewire-0.3-modules libspa-0.2-modules libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-bad libwayland-dev libegl-dev libgbm-dev libegl-mesa0 libgl1-mesa-dri libxkbcommon-dev coturn xvfb x11-utils x11-xserver-utils pipewire-bin wireplumber dbus-x11
+      - name: Compatible SPA build headers for the Linux baseline
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m unittest discover -s scripts -p test_prepare_linux_spa_sdk.py -v
+          python3 scripts/prepare_linux_spa_sdk.py --destination "${{ runner.temp }}/dogcodes-native-sdk" --github-env "$GITHUB_ENV"
       - name: Install the repository Rust toolchain and target
         run: |
           rustup show active-toolchain
@@ -82,6 +87,13 @@ jobs:
           key: desktop-${{ matrix.target }}
           cache-on-failure: true
       - run: cargo fmt --all -- --check
+      - name: Relay video QoS on deterministic capacity and ACK traces
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          rustfmt --edition 2024 --check scripts/relay_qos_trace.rs
+          rustc --edition=2024 -D warnings --test scripts/relay_qos_trace.rs -o "$RUNNER_TEMP/dogcodes-relay-qos-tests"
+          "$RUNNER_TEMP/dogcodes-relay-qos-tests"
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Native unit and integration tests (real-provider tests remain opt-in)
         timeout-minutes: 30
@@ -106,11 +118,36 @@ jobs:
             sleep 0.2
           done
           cargo test -p dogcodes-remote-desktop --locked isolated_x11_capture -- --ignored --nocapture
+      - name: Linux encoding pipeline with synthetic software elements
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        env:
+          DOGCODES_LINUX_ENCODER_FIXTURE: synthetic-only
+        run: cargo test -p dogcodes-remote-desktop --lib --locked synthetic_pipeline_verifies_headers_forced_idr_pts_rate_and_rejection -- --ignored --nocapture
       - name: Wayland portal fixture and real PipeWire software video
         if: runner.os == 'Linux'
         timeout-minutes: 5
-        run: python3 scripts/wayland_acceptance.py
-      - name: TURN UDP/TCP/TLS and certificate validation
+        run: |
+          python3 scripts/wayland_acceptance.py
+          python3 scripts/wayland_acceptance.py --format rgb-cursor
+          python3 scripts/wayland_acceptance.py --format nv12-default
+          python3 scripts/wayland_acceptance.py --format nv12-bt601
+          python3 scripts/wayland_acceptance.py --format nv12-bt709
+          python3 scripts/wayland_acceptance.py --format nv12-bt709-planes
+          python3 scripts/wayland_acceptance.py --format rgb-crop-rotate90
+          python3 scripts/wayland_acceptance.py --format rgb-crop-flipped90
+      - name: Offscreen EGL external images and shared display lifetime
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        env:
+          DOGCODES_OWNED_EGL: offscreen-only
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: cargo test -p dogcodes-remote-desktop --locked owned_egl_renderer -- --ignored --nocapture
+      - name: Desktop video migration, geometry and backpressure on a private login1 bus
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: python3 scripts/desktop_codec_acceptance.py
+      - name: TURN data/video, UDP/TCP/TLS and certificate validation
         if: runner.os == 'Linux'
         timeout-minutes: 5
         run: python3 scripts/turn_acceptance.py
@@ -124,6 +161,10 @@ jobs:
           retention-days: 7
       - name: Build unsigned installer
         run: pnpm desktop:package --unsigned --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Packaged PipeWire client on a private Portal
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: python3 scripts/wayland_acceptance.py --format rgb-cursor --appimage target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
       - name: Retain only installer artifacts for validation
         uses: actions/upload-artifact@v7
         with:

@@ -1,4 +1,6 @@
-use super::{Connection, DriverError, SessionHandle, Value, ZcodeDriver, json};
+use super::{Connection, DriverError, Value, json};
+#[cfg(test)]
+use super::{SessionHandle, ZcodeDriver};
 use driver_api::{ModelCatalog, ModelOption};
 
 // Preserve ZCode's structured reference including optional variants losslessly.
@@ -46,6 +48,7 @@ pub(super) fn catalog(value: &Value) -> ModelCatalog {
     }
     catalog
 }
+#[cfg(test)]
 impl ZcodeDriver {
     pub(super) async fn select_model(
         &self,
@@ -53,73 +56,178 @@ impl ZcodeDriver {
         model: Option<&str>,
         thinking: Option<&str>,
     ) -> Result<(), DriverError> {
-        if model.is_none() && thinking.is_none() {
-            return Ok(());
-        }
-        let mut guard = self.ensure_connection().await?;
-        select_native(
-            guard.as_mut().expect("connection ensured"),
+        let state = self
+            .sessions
+            .lock()
+            .expect("sessions")
+            .get(&handle.native_session_id)
+            .cloned()
+            .ok_or_else(super::scopes::stale)?;
+        let _admission = state.admission.lock().await;
+        state.validate(handle)?;
+        let mut attempt = self.attempt(&state, handle);
+        let mut guard = self.connection.lock().await;
+        let connection = guard.as_mut().ok_or_else(super::scopes::stale)?;
+        let result = transaction(
+            connection,
             &handle.native_session_id,
+            &state.workspace,
             model,
             thinking,
         )
-        .await
+        .await;
+        if result.is_ok()
+            || result
+                .as_ref()
+                .is_err_and(|e| driver_api::failure::kind(e) == "selection_rejected")
+        {
+            attempt.committed = true;
+        }
+        result
     }
 }
 
-pub(super) async fn select_native(
-    connection: &mut Connection,
-    session_id: &str,
+struct Selection {
+    model: Option<Value>,
+    thinking: Option<String>,
+}
+fn target(
+    before: &Value,
     model: Option<&str>,
     thinking: Option<&str>,
+) -> Result<Selection, DriverError> {
+    let rejected = || DriverError::Protocol("selection_rejected".into());
+    let mut reference = model
+        .map(serde_json::from_str::<Value>)
+        .transpose()
+        .map_err(|_| rejected())?;
+    if let Some(value) = &reference
+        && (value["providerId"].as_str().is_none_or(str::is_empty)
+            || value["modelId"].as_str().is_none_or(str::is_empty))
+    {
+        return Err(rejected());
+    }
+    let separate = before.pointer("/settings/thoughtLevel/enabled") == Some(&Value::Bool(true));
+    if let Some(thinking) = thinking {
+        if separate {
+            return Ok(Selection {
+                model: reference,
+                thinking: Some(thinking.into()),
+            });
+        }
+        if reference.is_none() {
+            reference = before.pointer("/settings/model/current").cloned();
+        }
+        let reference = reference
+            .as_mut()
+            .filter(|r| r["options"].is_object())
+            .ok_or_else(rejected)?;
+        reference["options"]["reasoningLevel"] = json!(thinking);
+    }
+    Ok(Selection {
+        model: reference,
+        thinking: None,
+    })
+}
+async fn apply(
+    connection: &mut Connection,
+    id: &str,
+    selection: &Selection,
 ) -> Result<(), DriverError> {
-    if let Some(model) = model {
-        let mut reference: Value = serde_json::from_str(model)
-            .map_err(|_| DriverError::Protocol("invalid ZCode model reference".into()))?;
-        if reference.get("options").is_none() {
-            // Previously saved selections have no registry reasoning option.
-            // Recover the vendor's default, never invent a level.
-            let snapshot = connection
-                .request("session/read", json!({"sessionId":session_id}), None)
-                .await?;
-            if let Some(row) = snapshot
-                .pointer("/settings/model/available")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .find(|row| {
-                    row["ref"]["providerId"] == reference["providerId"]
-                        && row["ref"]["modelId"] == reference["modelId"]
-                })
-                && row["reasoning"].get("enabled").is_none()
-                && let Some(level) = row["reasoning"]["defaultLevel"].as_str()
-            {
-                reference["options"] = json!({"reasoningLevel":level});
-            }
-        }
-        if reference.get("options").is_some()
-            && let Some(level) = thinking
-        {
-            reference["options"]["reasoningLevel"] = json!(level);
-        }
+    if let Some(model) = &selection.model {
         connection
             .request(
                 "session/setModel",
-                json!({"sessionId":session_id,"model":reference}),
+                json!({"sessionId":id,"model":model,"persistAsWorkspaceLastUsed":false}),
                 None,
             )
             .await?;
     }
-    if let Some(thought) = thinking {
+    if let Some(thinking) = &selection.thinking {
         connection
             .request(
                 "session/setThoughtLevel",
-                json!({"sessionId":session_id,"thoughtLevel":thought}),
+                json!({"sessionId":id,"thoughtLevel":thinking,"persistAsWorkspaceLastUsed":false}),
                 None,
             )
             .await?;
     }
     Ok(())
+}
+fn matches(snapshot: &Value, selection: &Selection) -> bool {
+    let current = &snapshot["settings"]["model"]["current"];
+    selection.model.as_ref().is_none_or(|model| {
+        model
+            .as_object()
+            .is_some_and(|fields| fields.iter().all(|(k, v)| current.get(k) == Some(v)))
+    }) && selection.thinking.as_ref().is_none_or(|thinking| {
+        snapshot["settings"]["thoughtLevel"]["current"].as_str() == Some(thinking)
+    })
+}
+pub(super) async fn transaction(
+    connection: &mut Connection,
+    id: &str,
+    workspace: &str,
+    model: Option<&str>,
+    thinking: Option<&str>,
+) -> Result<(), DriverError> {
+    if model.is_none() && thinking.is_none() {
+        return Ok(());
+    }
+    let before = connection
+        .request("session/read", json!({"sessionId":id}), None)
+        .await?;
+    super::resume::validate(&before, id, workspace)?;
+    let selection = target(&before, model, thinking)?;
+    let applied = async {
+        apply(connection, id, &selection).await?;
+        let after = connection
+            .request("session/read", json!({"sessionId":id}), None)
+            .await?;
+        super::resume::validate(&after, id, workspace)?;
+        if matches(&after, &selection) {
+            Ok(())
+        } else {
+            Err(DriverError::Protocol(
+                "ZCode did not apply the requested selection".into(),
+            ))
+        }
+    }
+    .await;
+    if applied.is_ok() {
+        return Ok(());
+    }
+    if let Some(model) = before
+        .pointer("/settings/model/current")
+        .filter(|m| m.is_object())
+    {
+        let old = Selection {
+            model: Some(model.clone()),
+            thinking: before
+                .pointer("/settings/thoughtLevel/current")
+                .and_then(Value::as_str)
+                .map(Into::into),
+        };
+        let restored = async {
+            apply(connection, id, &old).await?;
+            let after = connection
+                .request("session/read", json!({"sessionId":id}), None)
+                .await?;
+            super::resume::validate(&after, id, workspace)?;
+            Ok::<bool, DriverError>(
+                after["settings"]["model"]["current"] == before["settings"]["model"]["current"]
+                    && after["settings"]["thoughtLevel"]["current"]
+                        == before["settings"]["thoughtLevel"]["current"],
+            )
+        }
+        .await;
+        if matches!(restored, Ok(true)) {
+            return Err(DriverError::Protocol("selection_rejected".into()));
+        }
+    }
+    Err(DriverError::Protocol(
+        "ZCode selection and rollback remain unconfirmed".into(),
+    ))
 }
 
 #[cfg(test)]
@@ -175,15 +283,8 @@ mod tests {
         let selected = driver
             .select_model(&handle, Some(&model.id), model.default_thinking.as_deref())
             .await;
-        // Also verify selections persisted by pre-upgrade dogcodes.
-        let mut legacy: Value = serde_json::from_str(&model.id).unwrap();
-        legacy.as_object_mut().unwrap().remove("options");
-        let restored = driver
-            .select_model(&handle, Some(&legacy.to_string()), None)
-            .await;
         driver.shutdown(handle).await.unwrap();
         selected.unwrap();
-        restored.unwrap();
         println!("model catalog and selection passed without a model turn");
     }
 }

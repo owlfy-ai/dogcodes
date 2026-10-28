@@ -265,8 +265,18 @@ impl CoreClient {
     pub async fn terminal_stop(
         &self,
         id: &str,
+        expected_epoch: &str,
     ) -> Result<crate::terminal_host::TerminalInfo, String> {
-        self.call("terminal_stop", json!(id)).await
+        let info: crate::terminal_host::TerminalInfo = self
+            .call(
+                "terminal_stop",
+                json!({"terminalId": id, "expectedEpoch": expected_epoch}),
+            )
+            .await?;
+        if info.id != id || info.epoch != expected_epoch {
+            return Err("终端身份已变化，未关闭新的终端；请刷新后确认".into());
+        }
+        Ok(info)
     }
     pub async fn subagent_history(
         &self,
@@ -1423,6 +1433,7 @@ async fn serve_connection(
             && !control.terminals.has_active()
             && !control.project_runs.has_active()
             && !control.remote.has_active_sessions()
+            && !core.has_active_auxiliary_operations()
             && !core.has_active_reviews().await
             && !core
                 .bootstrap()
@@ -2756,7 +2767,7 @@ mod tests {
         .await
         .unwrap();
         assert!(!String::from_utf8_lossy(&bytes).contains("BAD-"));
-        f.client.terminal_stop(&info.id).await.unwrap();
+        f.client.terminal_stop(&info.id, &info.epoch).await.unwrap();
     }
     #[cfg(unix)]
     #[tokio::test]
@@ -2858,7 +2869,17 @@ mod tests {
         })
         .await
         .unwrap();
-        other.terminal_stop(&info.id).await.unwrap();
+        assert!(
+            other
+                .terminal_stop(&info.id, "obsolete-core")
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            other.terminal_get(&info.id).await.unwrap().status,
+            TerminalStatus::Running
+        );
+        other.terminal_stop(&info.id, &info.epoch).await.unwrap();
         tokio::time::timeout(Duration::from_secs(8), async {
             loop {
                 let batch = other.terminal_read(&info.id, cursor).await.unwrap();
@@ -3012,6 +3033,7 @@ mod tests {
             shutting_down: tokio::sync::Notify::new(),
             allow_shutdown: tokio::sync::Notify::new(),
             starts: std::sync::atomic::AtomicUsize::new(0),
+            prompts: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
@@ -3023,6 +3045,7 @@ mod tests {
         shutting_down: tokio::sync::Notify,
         allow_shutdown: tokio::sync::Notify,
         starts: std::sync::atomic::AtomicUsize,
+        prompts: std::sync::atomic::AtomicUsize,
     }
     #[async_trait::async_trait]
     impl driver_api::AgentDriver for ReadonlyTestDriver {
@@ -3031,9 +3054,6 @@ mod tests {
         }
         fn driver_version(&self) -> &'static str {
             "test"
-        }
-        fn supports_readonly_chat(&self) -> bool {
-            true
         }
         async fn create_review_session(
             &self,
@@ -3048,24 +3068,32 @@ mod tests {
         ) -> Result<driver_api::SessionHandle, driver_api::DriverError> {
             panic!("readonly test driver must not start a coding session")
         }
-        async fn create_chat_session(
+        async fn create_selected_session(
+            &self,
+            request: driver_api::SessionRequest,
+            _: Option<&str>,
+            _: Option<&str>,
+        ) -> Result<driver_api::SessionHandle, driver_api::DriverError> {
+            self.create_analysis_session(&request.working_directory)
+                .await
+        }
+        async fn create_analysis_session(
             &self,
             _: &str,
-            _: &[String],
         ) -> Result<driver_api::SessionHandle, driver_api::DriverError> {
             self.starts
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             self.starting.notify_one();
             self.allow_start.notified().await;
-            Ok(driver_api::SessionHandle {
-                native_session_id: "fake_chat".into(),
-            })
+            Ok(driver_api::SessionHandle::new("fake_auxiliary".into()))
         }
         async fn prompt(
             &self,
             handle: &driver_api::SessionHandle,
             request: driver_api::PromptRequest,
         ) -> Result<driver_api::DriverEventStream, driver_api::DriverError> {
+            self.prompts
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
             driver_api::AgentDriver::prompt(&self.fake, handle, request).await
         }
         async fn interrupt(
@@ -3081,6 +3109,64 @@ mod tests {
             self.shutting_down.notify_one();
             self.allow_shutdown.notified().await;
             Ok(())
+        }
+    }
+    #[tokio::test]
+    async fn abandoned_auxiliary_startup_and_original_cleanup_prevent_early_core_retirement() {
+        for summary in [false, true] {
+            let f = fixture().await;
+            let driver = readonly_test_driver(&f.core).await;
+            f.core.register_driver(driver.clone()).await;
+            let core = f.core.clone();
+            let executor = driver.executor.clone();
+            let caller = tokio::spawn(async move {
+                if summary {
+                    core.summarize_commit(executor, "private diff".into(), Some("en"))
+                        .await
+                } else {
+                    core.analyze_project_commands(executor, "private packet".into())
+                        .await
+                }
+            });
+            tokio::time::timeout(Duration::from_secs(3), driver.starting.notified())
+                .await
+                .unwrap();
+            caller.abort();
+            assert!(caller.await.unwrap_err().is_cancelled());
+            assert!(f.core.has_active_auxiliary_operations());
+            assert!(
+                !f.client
+                    .call::<bool>("retire_if_idle", json!([]))
+                    .await
+                    .unwrap()
+            );
+            driver.allow_start.notify_one();
+            tokio::time::timeout(Duration::from_secs(3), driver.shutting_down.notified())
+                .await
+                .unwrap();
+            assert!(f.core.has_active_auxiliary_operations());
+            assert!(
+                !f.client
+                    .call::<bool>("retire_if_idle", json!([]))
+                    .await
+                    .unwrap()
+            );
+            assert_eq!(driver.starts.load(std::sync::atomic::Ordering::Acquire), 1);
+            assert_eq!(driver.prompts.load(std::sync::atomic::Ordering::Acquire), 0);
+            driver.allow_shutdown.notify_one();
+            tokio::time::timeout(Duration::from_secs(3), async {
+                while f.core.has_active_auxiliary_operations() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(
+                f.client
+                    .call::<bool>("retire_if_idle", json!([]))
+                    .await
+                    .unwrap()
+            );
         }
     }
     #[tokio::test]

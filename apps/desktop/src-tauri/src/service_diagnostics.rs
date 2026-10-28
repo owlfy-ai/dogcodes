@@ -244,6 +244,16 @@ mod tests {
         for _ in 0..12 {
             drop(ServiceLog::open(directory.path()).unwrap());
         }
+        // Parallel process fixtures can briefly inherit a lease across fork,
+        // before exec closes its descriptor. Respect that live lock instead
+        // of requiring pruning to race it; persistent locks still fail here.
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        while log_files(&directory.path().join("diagnostics")).len() > RETAINED_FILES + 1
+            && std::time::Instant::now() < until
+        {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            prune(&directory.path().join("diagnostics"));
+        }
         assert!(active.path.exists());
         assert!(unrelated.exists());
         assert!(log_files(&directory.path().join("diagnostics")).len() <= RETAINED_FILES + 1);

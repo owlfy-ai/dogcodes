@@ -11,7 +11,7 @@ fn stubborn(descendant: bool) -> String {
         "descendant=None\n"
     };
     let head = format!(
-        "import json,sys,os,uuid,time,signal,subprocess\nsignal.signal(signal.SIGTERM,signal.SIG_IGN)\n{setup}with open('process.json','w') as f:json.dump([os.getpid(),descendant.pid if descendant else None],f)"
+        "import json,sys,os,uuid,time,signal,subprocess\nsignal.signal(signal.SIGTERM,signal.SIG_IGN)\n{setup}pid_marker='process.'+str(os.getpid())+'.tmp'\nwith open(pid_marker,'w') as f:json.dump([os.getpid(),descendant.pid if descendant else None],f)\nos.replace(pid_marker,'process.json')"
     );
     format!(
         "{}\nwhile True:time.sleep(60)\n",
@@ -90,6 +90,37 @@ async fn cancelled_shutdown_retains_the_original_process_until_the_tree_is_gone(
     stopped(&original).await;
     assert!(ids.iter().all(|id| !present(*id)));
     assert!(driver.sessions.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn an_unconfirmed_reconfiguration_keeps_its_startup_obligation_until_original_exit() {
+    let script = stubborn(true).replace(
+        "elif t=='set_thinking_level':level=r['level'];reply(r)",
+        "elif t=='set_thinking_level':out({'type':'response','id':r['id'],'success':False})",
+    );
+    let (root, driver) = fixture_with(&script);
+    let driver = Arc::new(driver);
+    let handle = driver
+        .create_session(session_request(root.path().to_str().unwrap()))
+        .await
+        .unwrap();
+    let connection = driver.session_for(&handle).await.unwrap().connection;
+    let ids = process_ids(root.path());
+    let changing_driver = driver.clone();
+    let id = handle.native_session_id.clone();
+    let request = session_request(root.path().to_str().unwrap());
+    let changing = tokio::spawn(async move {
+        changing_driver
+            .resume_selected_session(&id, request, Some("test/other"), Some("unsupported"))
+            .await
+    });
+    wait_for(|| connection.state.lock().unwrap().disconnected).await;
+    assert!(!changing.is_finished());
+    assert!(ids.iter().all(|id| present(*id)));
+    stopped(&connection).await;
+    assert!(changing.await.unwrap().is_err());
+    assert!(ids.iter().all(|id| !present(*id)));
+    driver.shutdown(handle).await.unwrap();
 }
 #[tokio::test]
 async fn eof_does_not_confirm_that_the_pi_process_stopped() {
@@ -272,7 +303,7 @@ async fn cancelled_abort_without_settlement_still_retires_and_can_cold_resume() 
         event,
         Ok(DriverEvent::TurnInterrupted { .. } | DriverEvent::TurnCompleted { .. })
     )));
-    driver
+    let handle = driver
         .resume_session(&handle.native_session_id, &dir.path().to_string_lossy())
         .await
         .unwrap();
@@ -320,7 +351,7 @@ async fn an_old_shutdown_waiter_cannot_remove_a_cold_replacement() {
         async move { driver.shutdown(handle).await }
     });
     wait_for(|| old.state.lock().unwrap().disconnected).await;
-    driver
+    let handle = driver
         .resume_session(&handle.native_session_id, &dir.path().to_string_lossy())
         .await
         .unwrap();

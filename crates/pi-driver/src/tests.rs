@@ -154,7 +154,13 @@ async fn acknowledged_abort_without_settlement_retires_session_without_fake_succ
 
 #[tokio::test]
 async fn settlement_with_still_streaming_state_is_not_reused() {
-    let script = FAKE.replace("'isStreaming':False", "'isStreaming':True");
+    let script = FAKE
+        .replace(
+            "current_dialog=False",
+            "current_dialog=False\nbad_idle=False",
+        )
+        .replace("'isStreaming':False", "'isStreaming':bad_idle")
+        .replace("elif t=='abort':", "elif t=='abort':\n  bad_idle=True\n  ");
     let (dir, driver) = fixture_with(&script);
     let handle = driver
         .create_session(session_request(&dir.path().to_string_lossy()))
@@ -213,12 +219,12 @@ async fn native_rpc_catalog_streaming_warm_reuse_and_cross_process_resume() {
             .count(),
         1
     );
-    driver
+    let handle = driver
         .resume_session(&handle.native_session_id, &cwd)
         .await
         .unwrap();
     let conn = driver.connection(&handle.native_session_id).await.unwrap();
-    driver
+    let handle = driver
         .resume_session(&handle.native_session_id, &cwd)
         .await
         .unwrap();
@@ -227,7 +233,7 @@ async fn native_rpc_catalog_streaming_warm_reuse_and_cross_process_resume() {
         &driver.connection(&handle.native_session_id).await.unwrap()
     ));
     driver.shutdown(handle.clone()).await.unwrap();
-    driver
+    let handle = driver
         .resume_session(&handle.native_session_id, &cwd)
         .await
         .unwrap();
@@ -336,7 +342,7 @@ async fn process_failure_and_malformed_json_terminate_the_stream() {
         )
         .await;
         assert!(failed.iter().any(Result::is_err));
-        driver
+        let handle = driver
             .resume_session(&handle.native_session_id, &dir.path().to_string_lossy())
             .await
             .unwrap();
@@ -420,7 +426,7 @@ async fn real_pi_turn_resume_and_cancel() {
         .await
         .unwrap();
     driver.shutdown(handle.clone()).await.unwrap();
-    driver
+    let handle = driver
         .resume_session(&handle.native_session_id, &cwd)
         .await
         .unwrap();

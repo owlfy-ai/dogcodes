@@ -1,6 +1,6 @@
 //! Switch physical output and fence publishing until the worker applies a new
 //! encoder profile. Auto-level frames must never leak into a CB3.1 track.
-use super::{Arc, EncodedFrame, Instant, Mutex, VideoOut};
+use super::{Arc, EncodeAdmission, EncodedFrame, Instant, Mutex, VideoOut};
 use dogcodes_remote_desktop::video::VideoProfile;
 struct State {
     output: Arc<dyn VideoOut>,
@@ -85,6 +85,20 @@ impl Output {
         state.hold = None;
         Ok(next)
     }
+    /// A replacement pipeline always waits for this decoder generation and
+    /// for the worker to confirm its actual encoder profile.
+    pub fn rebuild(&self) {
+        let mut s = self.state();
+        s.output.reset();
+        s.generation = s
+            .output
+            .video_epoch()
+            .unwrap_or_else(|| s.generation.wrapping_add(1));
+        s.codec = None;
+        s.ready = false;
+        s.required = true;
+        s.resync = true;
+    }
     pub fn codec_ready(&self) -> bool {
         let state = self.state();
         state.codec == Some(state.profile)
@@ -104,11 +118,30 @@ impl Output {
         if state.generation != generation {
             return Err("视频代次已变化，请重新准备画面".into());
         }
-        state.ready = true;
+        if !state.ready {
+            state.resync = true;
+            state.output.begin_recovery();
+            state.ready = true;
+        }
         Ok(())
     }
 }
 impl VideoOut for Output {
+    fn begin_recovery(&self) {
+        let mut state = self.state();
+        state.resync = true;
+        state.output.begin_recovery();
+    }
+    fn admission(&self) -> EncodeAdmission {
+        let state = self.state();
+        if state.ended.is_some() || !state.ready || state.codec != Some(state.profile) {
+            return EncodeAdmission::Wait;
+        }
+        match state.output.admission() {
+            EncodeAdmission::Frame if state.resync => EncodeAdmission::Keyframe,
+            permit => permit,
+        }
+    }
     fn profile(&self) -> VideoProfile {
         self.state().profile
     }
@@ -117,6 +150,7 @@ impl VideoOut for Output {
         if state.profile == profile {
             state.codec = Some(profile);
             state.resync = true;
+            state.output.begin_recovery();
         }
     }
     fn video_epoch(&self) -> Option<u64> {
@@ -174,6 +208,7 @@ mod tests {
         profile: VideoProfile,
         closed: AtomicBool,
         frames: Mutex<Vec<bool>>,
+        credit: AtomicBool,
     }
     impl Probe {
         fn new(profile: VideoProfile) -> Arc<Self> {
@@ -181,10 +216,18 @@ mod tests {
                 profile,
                 closed: AtomicBool::new(false),
                 frames: Mutex::new(Vec::new()),
+                credit: AtomicBool::new(true),
             })
         }
     }
     impl VideoOut for Probe {
+        fn admission(&self) -> EncodeAdmission {
+            if self.credit.load(Ordering::Acquire) && !self.closed() {
+                EncodeAdmission::Frame
+            } else {
+                EncodeAdmission::Wait
+            }
+        }
         fn profile(&self) -> VideoProfile {
             self.profile
         }
@@ -204,6 +247,8 @@ mod tests {
     }
     fn frame(keyframe: bool) -> EncodedFrame {
         EncodedFrame {
+            cursor_embedded: None,
+            captured: std::time::Instant::now(),
             keyframe,
             data: vec![0; 10],
             latency: std::time::Duration::ZERO,
@@ -228,6 +273,11 @@ mod tests {
         assert!(!output.push(frame(false), Instant::now()));
         assert!(output.push(frame(true), Instant::now()));
         assert!(output.push(frame(false), Instant::now()));
+        output.activate(epoch).unwrap();
+        assert!(
+            output.admission() == EncodeAdmission::Frame,
+            "ready retry rearmed a completed recovery"
+        );
         assert_eq!(*old.frames.lock().unwrap(), [true]);
         assert_eq!(*new.frames.lock().unwrap(), [true, false]);
         assert!(!output.closed());
@@ -267,5 +317,30 @@ mod tests {
         assert!(output.push(frame(true), Instant::now()));
         assert!(original.frames.lock().unwrap().is_empty());
         assert_eq!(*receiver.frames.lock().unwrap(), [true]);
+    }
+
+    #[test]
+    fn recovery_credit_tracks_the_replacement_output_and_its_ready_codec() {
+        let old = Probe::new(VideoProfile::ConstrainedBaselineAuto);
+        let output = Output::new(old.clone());
+        output.begin_recovery();
+        old.credit.store(false, Ordering::Release);
+        assert!(output.admission() == EncodeAdmission::Wait);
+        let new = Probe::new(VideoProfile::ConstrainedBaseline31);
+        new.credit.store(false, Ordering::Release);
+        let epoch = output.replace(new.clone()).unwrap();
+        old.credit.store(true, Ordering::Release);
+        assert!(output.admission() == EncodeAdmission::Wait);
+        output.activate(epoch).unwrap();
+        assert!(output.admission() == EncodeAdmission::Wait);
+        output.codec_applied(VideoProfile::ConstrainedBaseline31);
+        assert!(output.admission() == EncodeAdmission::Wait);
+        new.credit.store(true, Ordering::Release);
+        assert!(output.admission() == EncodeAdmission::Keyframe);
+        assert!(!output.push(frame(false), Instant::now()));
+        assert!(output.push(frame(true), Instant::now()));
+        assert!(output.admission() == EncodeAdmission::Frame);
+        assert!(old.frames.lock().unwrap().is_empty());
+        assert_eq!(*new.frames.lock().unwrap(), [true]);
     }
 }

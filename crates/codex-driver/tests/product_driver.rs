@@ -168,14 +168,21 @@ async fn real_process_path_accepts_large_handoff_and_streams_a_turn() {
         events.last(),
         Some(DriverEvent::TurnCompleted { .. })
     ));
-    assert_eq!(
+    // Resuming a live thread starts a new scope; the earlier handle goes stale.
+    let resumed = driver
+        .resume_session(&session.native_session_id, "")
+        .await
+        .unwrap();
+    assert_eq!(resumed.native_session_id, session.native_session_id);
+    assert!(!resumed.same_scope(&session));
+    assert!(
         driver
-            .resume_session(&session.native_session_id, "")
+            .current_session_handle(&session.native_session_id)
             .await
-            .unwrap(),
-        session
+            .unwrap()
+            .same_scope(&resumed)
     );
-    driver.shutdown(session).await.unwrap();
+    driver.shutdown(resumed).await.unwrap();
 }
 
 #[tokio::test]
@@ -236,6 +243,7 @@ async fn changed_selection_reuses_the_process_and_applies_on_turn_start() {
         working_directory: directory.path().to_string_lossy().into_owned(),
     };
     let first = driver.create_session(request()).await.unwrap();
+    let mut current = first.clone();
     let mut pid = None;
     for (model, thinking) in [
         (Some("fixture-switched"), Some("high")),
@@ -247,6 +255,8 @@ async fn changed_selection_reuses_the_process_and_applies_on_turn_start() {
             .await
             .unwrap();
         assert_eq!(updated.native_session_id, first.native_session_id);
+        assert!(!updated.same_scope(&current));
+        current = updated.clone();
         let mut stream = driver
             .prompt(
                 &updated,
@@ -276,23 +286,22 @@ async fn changed_selection_reuses_the_process_and_applies_on_turn_start() {
         }
         assert!(reported);
     }
-    driver.shutdown(first).await.unwrap();
+    driver.shutdown(current).await.unwrap();
 }
 
 #[tokio::test]
-async fn sidebar_chat_allows_sandboxed_reads_but_disables_remote_tools_and_permission_escalation() {
-    let driver =
-        CodexDriver::new(fixture_executable(), "ins_chat".into(), "fixture".into()).unwrap();
+async fn analysis_permissions_cannot_be_widened_by_full_access_prompt() {
+    let driver = CodexDriver::new(
+        fixture_executable(),
+        "ins_analysis".into(),
+        "fixture".into(),
+    )
+    .unwrap();
     let workspace = tempfile::tempdir().unwrap();
     let cwd = workspace.path().to_str().unwrap();
-    assert!(driver.supports_readonly_chat());
-    assert!(driver.allows_readonly_chat_tool("command_execution"));
-    assert!(driver.allows_readonly_chat_tool("terminal"));
-    assert!(!driver.allows_readonly_chat_tool("file_change"));
-    assert!(!driver.allows_readonly_chat_tool("edit"));
-    assert!(!driver.allows_readonly_chat_tool("web_search"));
+    assert!(driver.supports_readonly_analysis());
     let session = driver
-        .create_chat_session(cwd, &[cwd.into()])
+        .create_analysis_session_with_directories(cwd, &[cwd.into()])
         .await
         .unwrap();
     // Even an accidentally supplied full-access prompt cannot widen this session.
@@ -305,7 +314,7 @@ async fn sidebar_chat_allows_sandboxed_reads_but_disables_remote_tools_and_permi
                 permission_mode: Some("full-access".into()),
                 attachments: vec![],
                 context: vec![],
-                prompt: "CHAT_RESTRICTIONS".into(),
+                prompt: "ANALYSIS_RESTRICTIONS".into(),
             },
         )
         .await
@@ -323,6 +332,6 @@ async fn sidebar_chat_allows_sandboxed_reads_but_disables_remote_tools_and_permi
     })
     .await
     .unwrap();
-    assert_eq!(text, "chat restrictions verified");
+    assert_eq!(text, "analysis restrictions verified");
     driver.shutdown(session).await.unwrap();
 }

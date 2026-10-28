@@ -8,6 +8,13 @@ mod cleanup_tests;
 #[cfg(test)]
 mod fault_recovery_tests;
 mod lifecycle;
+mod metadata;
+#[cfg(all(test, unix))]
+mod metadata_tests;
+mod session_scope;
+use session_scope::{
+    ResidentSession, Scope, ScopedCommand, SessionSender, next_command, stale_scope,
+};
 mod live_usage;
 mod request_failure;
 mod request_usage;
@@ -285,30 +292,13 @@ pub struct CodexDriver {
     native_agent_version: String,
     sessions: Arc<Mutex<BTreeMap<String, ResidentSession>>>,
     stopping: watch::Sender<bool>,
+    retired_handles: std::sync::Mutex<BTreeMap<String, SessionHandle>>,
     restore_gates: std::sync::Mutex<HashMap<String, Arc<Mutex<()>>>>,
     quota: Arc<QuotaState>,
+    catalog_probe: Arc<Mutex<()>>,
+    history_probe: Arc<Mutex<()>>,
 }
 
-#[derive(Clone)]
-struct ResidentSession {
-    commands: mpsc::Sender<SessionCommand>,
-    native: Option<Arc<lifecycle::NativeProcess>>,
-}
-impl std::ops::Deref for ResidentSession {
-    type Target = mpsc::Sender<SessionCommand>;
-    fn deref(&self) -> &Self::Target {
-        &self.commands
-    }
-}
-#[cfg(test)]
-impl From<mpsc::Sender<SessionCommand>> for ResidentSession {
-    fn from(commands: mpsc::Sender<SessionCommand>) -> Self {
-        Self {
-            commands,
-            native: None,
-        }
-    }
-}
 impl Drop for CodexDriver {
     fn drop(&mut self) {
         self.stopping.send_replace(true);
@@ -336,18 +326,25 @@ impl CodexDriver {
             native_agent_version,
             sessions: Arc::new(Mutex::new(BTreeMap::new())),
             stopping: watch::channel(false).0,
+            retired_handles: std::sync::Mutex::new(BTreeMap::new()),
             restore_gates: std::sync::Mutex::new(HashMap::new()),
             quota: Arc::new(QuotaState::default()),
+            catalog_probe: Arc::new(Mutex::new(())),
+            history_probe: Arc::new(Mutex::new(())),
         })
     }
 
-    async fn remove_closed_session(&self, id: &str, sender: &mpsc::Sender<SessionCommand>) {
+    async fn remove_closed_session(&self, id: &str, sender: &ResidentSession) {
         let mut sessions = self.sessions.lock().await;
         if sessions
             .get(id)
-            .is_some_and(|current| current.same_channel(sender))
+            .is_some_and(|current| current.commands.same_channel(&sender.commands))
+            && let Some(retired) = sessions.remove(id)
         {
-            sessions.remove(id);
+            self.retired_handles
+                .lock()
+                .expect("Codex retired scopes")
+                .insert(id.into(), retired.handle());
         }
     }
 
@@ -391,9 +388,7 @@ impl CodexDriver {
         let mut connection = Connection::spawn(&self.executable).await?;
         connection.quota = Some(Arc::clone(&self.quota));
         let full_review = request.permission_mode.as_deref() == Some("hub-review");
-        let chat = request.permission_mode.as_deref() == Some("hub-chat");
-        let analysis =
-            chat || full_review || request.permission_mode.as_deref() == Some("hub-analysis");
+        let analysis = full_review || request.permission_mode.as_deref() == Some("hub-analysis");
         connection.full_review = full_review;
         connection.analysis_only = analysis;
         let mut config = question_session_config(request.history_mcp.as_ref(), thinking);
@@ -498,16 +493,16 @@ impl CodexDriver {
         self.quota
             .observe_thread(&native_session_id, &exchange.result);
         connection.quota = Some(Arc::clone(&self.quota));
-        self.install_session(native_session_id.clone(), connection)
-            .await?;
-        Ok(SessionHandle { native_session_id })
+        self.install_session(native_session_id, connection).await
     }
 
     async fn install_session(
         &self,
         native_session_id: String,
         connection: Connection,
-    ) -> Result<(), DriverError> {
+    ) -> Result<SessionHandle, DriverError> {
+        let handle = SessionHandle::scoped(native_session_id.clone());
+        let scope = Arc::new(std::sync::Mutex::new(handle.clone()));
         let (sender, receiver) = mpsc::channel(4);
         let mut sessions = self.sessions.lock().await;
         if sessions
@@ -528,52 +523,28 @@ impl CodexDriver {
             ResidentSession {
                 commands: sender,
                 native: Some(connection.native.clone()),
+                scope: scope.clone(),
             },
         );
         drop(sessions);
-        tokio::spawn(session_actor(connection, receiver));
-        Ok(())
+        tokio::spawn(session_actor(connection, receiver, scope));
+        Ok(handle)
     }
 
-    async fn command_sender(
-        &self,
-        native_session_id: &str,
-    ) -> Result<mpsc::Sender<SessionCommand>, DriverError> {
-        self.sessions
-            .lock()
-            .await
-            .get(native_session_id)
-            .map(|session| session.commands.clone())
-            .ok_or_else(|| DriverError::SessionMissing("codex session is not active".into()))
+    async fn command_sender(&self, handle: &SessionHandle) -> Result<SessionSender, DriverError> {
+        let sessions = self.sessions.lock().await;
+        let resident = sessions
+            .get(&handle.native_session_id)
+            .ok_or_else(|| DriverError::SessionMissing("codex session is not active".into()))?;
+        if !resident.handle().same_scope(handle) {
+            return Err(stale_scope());
+        }
+        Ok(resident.sender_for(handle.clone()))
     }
 }
 
 #[async_trait]
 impl AgentDriver for CodexDriver {
-    fn supports_readonly_chat(&self) -> bool {
-        true
-    }
-    fn allows_readonly_chat_tool(&self, name: &str) -> bool {
-        // Commands remain under the session's immutable read-only sandbox.
-        matches!(name, "command_execution" | "terminal" | "image_view")
-    }
-    async fn create_chat_session(
-        &self,
-        directory: &str,
-        additional: &[String],
-    ) -> Result<SessionHandle, DriverError> {
-        self.open_thread(
-            &SessionRequest {
-                working_directory: directory.into(),
-                additional_directories: additional.to_vec(),
-                history_mcp: None,
-                permission_mode: Some("hub-chat".into()),
-            },
-            None,
-            None,
-        )
-        .await
-    }
     fn supports_readonly_analysis(&self) -> bool {
         true
     }
@@ -648,18 +619,9 @@ impl AgentDriver for CodexDriver {
     }
 
     async fn read_subagent(&self, id: &str) -> Result<Vec<Value>, DriverError> {
-        let mut connection = Connection::spawn(&self.executable).await?;
-        let result = connection
-            .request("thread/read", json!({"threadId":id,"includeTurns":true}))
-            .await;
-        connection.shutdown().await?;
-        let exchange = result?;
+        let history = metadata::read_history(self, id).await?;
         let mut output = Vec::new();
-        if let Some(turns) = exchange
-            .result
-            .pointer("/thread/turns")
-            .and_then(Value::as_array)
-        {
+        if let Some(turns) = history.pointer("/thread/turns").and_then(Value::as_array) {
             for turn in turns {
                 if let Some(items) = turn["items"].as_array() {
                     for item in items {
@@ -679,8 +641,7 @@ impl AgentDriver for CodexDriver {
                 }
             }
         }
-        if let Some(turn) = exchange
-            .result
+        if let Some(turn) = history
             .pointer("/thread/turns")
             .and_then(Value::as_array)
             .and_then(|turns| turns.last())
@@ -691,10 +652,7 @@ impl AgentDriver for CodexDriver {
     }
 
     async fn model_catalog(&self) -> Result<driver_api::ModelCatalog, DriverError> {
-        let mut connection = Connection::spawn(&self.executable).await?;
-        let result = connection.model_catalog().await;
-        connection.shutdown().await?;
-        result
+        metadata::read(self).await
     }
     async fn create_selected_session(
         &self,
@@ -738,7 +696,7 @@ impl AgentDriver for CodexDriver {
             .resume_selected_session(id, request, model, thinking)
             .await?;
         let (response, reply) = oneshot::channel();
-        self.command_sender(id)
+        self.command_sender(&session)
             .await?
             .send(SessionCommand::Configure {
                 model: model.map(str::to_owned),
@@ -775,21 +733,27 @@ impl AgentDriver for CodexDriver {
         let _restoring = gate.lock().await;
         let existing = self.sessions.lock().await.get(native_session_id).cloned();
         if let Some(sender) = existing {
+            let lease = sender.sender();
+            let next_scope = SessionHandle::scoped(native_session_id.into());
             if !sender.is_closed() {
                 let (response, received) = oneshot::channel();
-                if sender
-                    .send(SessionCommand::CheckReady { response })
+                if lease
+                    .send(SessionCommand::CheckReady {
+                        response,
+                        next_scope: next_scope.clone(),
+                    })
                     .await
                     .is_ok()
                 {
                     match timeout(SHUTDOWN_TIMEOUT, received).await {
                         Ok(Ok(Ok(()))) => {
-                            return Ok(SessionHandle {
-                                native_session_id: native_session_id.into(),
-                            });
+                            return Ok(next_scope);
                         }
                         Ok(Ok(Err(DriverError::CapabilityUnavailable(reason)))) => {
                             return Err(DriverError::CapabilityUnavailable(reason));
+                        }
+                        Ok(Ok(Err(error @ DriverError::SessionIncompatible(_)))) => {
+                            return Err(error);
                         }
                         Err(_) => {
                             return Err(DriverError::Disconnected(
@@ -846,10 +810,7 @@ impl AgentDriver for CodexDriver {
             .observe_thread(native_session_id, &exchange.result);
         connection.quota = Some(Arc::clone(&self.quota));
         self.install_session(native_session_id.into(), connection)
-            .await?;
-        Ok(SessionHandle {
-            native_session_id: native_session_id.into(),
-        })
+            .await
     }
 
     async fn prompt(
@@ -857,7 +818,7 @@ impl AgentDriver for CodexDriver {
         handle: &SessionHandle,
         request: PromptRequest,
     ) -> Result<DriverEventStream, DriverError> {
-        let sender = self.command_sender(&handle.native_session_id).await?;
+        let sender = self.command_sender(handle).await?;
         let (response_tx, response_rx) = oneshot::channel();
         sender
             .send(SessionCommand::Prompt {
@@ -873,7 +834,7 @@ impl AgentDriver for CodexDriver {
     }
 
     async fn interrupt(&self, handle: &SessionHandle) -> Result<(), DriverError> {
-        let sender = self.command_sender(&handle.native_session_id).await?;
+        let sender = self.command_sender(handle).await?;
         let (response_tx, response_rx) = oneshot::channel();
         sender
             .send(SessionCommand::Interrupt {
@@ -892,7 +853,7 @@ impl AgentDriver for CodexDriver {
         request_id: &str,
         answer: agent_domain::QuestionAnswer,
     ) -> Result<(), DriverError> {
-        let sender = self.command_sender(&handle.native_session_id).await?;
+        let sender = self.command_sender(handle).await?;
         let (response, response_rx) = oneshot::channel();
         sender
             .send(SessionCommand::Answer {
@@ -913,7 +874,7 @@ impl AgentDriver for CodexDriver {
         native_request_id: &str,
         option_id: &str,
     ) -> Result<(), DriverError> {
-        let sender = self.command_sender(&handle.native_session_id).await?;
+        let sender = self.command_sender(handle).await?;
         let (response_tx, response_rx) = oneshot::channel();
         sender
             .send(SessionCommand::Approve {
@@ -928,49 +889,87 @@ impl AgentDriver for CodexDriver {
             .map_err(|_| DriverError::Disconnected("codex session actor stopped".into()))?
     }
 
-    async fn shutdown(&self, handle: SessionHandle) -> Result<(), DriverError> {
-        // Retain the original actor until it confirms shutdown. A cancelled or
-        // timed-out waiter must not make a later retry mistake absence for exit.
-        let sender = self
-            .sessions
+    async fn current_session_handle(&self, id: &str) -> Option<SessionHandle> {
+        self.sessions
             .lock()
             .await
+            .get(id)
+            .map(ResidentSession::handle)
+    }
+
+    async fn shutdown_proof(
+        &self,
+        handle: &SessionHandle,
+    ) -> Option<driver_api::SessionShutdownProof> {
+        let sessions = self.sessions.lock().await;
+        if let Some(resident) = sessions.get(&handle.native_session_id) {
+            if !resident.handle().same_scope(handle) {
+                return None;
+            }
+            let native = resident.native.clone()?;
+            return Some(Box::pin(async move { native.confirmed().await }));
+        }
+        self.retired_handles
+            .lock()
+            .expect("Codex retired scopes")
             .get(&handle.native_session_id)
-            .cloned();
-        let Some(sender) = sender else {
-            return Ok(());
+            .filter(|retired| retired.same_scope(handle))
+            .map(|_| Box::pin(async {}) as driver_api::SessionShutdownProof)
+    }
+
+    async fn shutdown(&self, handle: SessionHandle) -> Result<(), DriverError> {
+        // Capture authority and native resources once. A cancelled/timed-out
+        // observer must not mistake map absence or a replacement for retirement.
+        let resident = {
+            let sessions = self.sessions.lock().await;
+            if let Some(resident) = sessions.get(&handle.native_session_id) {
+                if !resident.handle().same_scope(&handle) {
+                    return Err(stale_scope());
+                }
+                resident.clone()
+            } else {
+                return if self
+                    .retired_handles
+                    .lock()
+                    .expect("Codex retired scopes")
+                    .get(&handle.native_session_id)
+                    .is_some_and(|retired| retired.same_scope(&handle))
+                {
+                    Ok(())
+                } else {
+                    Err(stale_scope())
+                };
+            }
         };
         let (response_tx, response_rx) = oneshot::channel();
-        if sender
+        let sent = resident
+            .sender_for(handle.clone())
             .send(SessionCommand::Shutdown {
                 response: response_tx,
             })
             .await
-            .is_err()
-        {
-            if let Some(native) = &sender.native {
-                native.request_close();
-                native.closed().await?;
+            .is_ok();
+        if sent {
+            match timeout(SHUTDOWN_TIMEOUT, response_rx).await {
+                Ok(Ok(result)) => result?,
+                Ok(Err(_)) if resident.native.is_some() => {}
+                Ok(Err(_)) => {
+                    return Err(DriverError::Disconnected(
+                        "codex session actor stopped without shutdown confirmation".into(),
+                    ));
+                }
+                Err(_) => return Err(DriverError::Disconnected("codex shutdown timed out".into())),
             }
-            self.remove_closed_session(&handle.native_session_id, &sender)
-                .await;
-            return Ok(());
+        } else if resident.native.is_none() {
+            return Err(DriverError::Disconnected(
+                "codex native exit remains unconfirmed".into(),
+            ));
         }
-        match timeout(SHUTDOWN_TIMEOUT, response_rx).await {
-            Ok(Ok(())) => {}
-            Ok(Err(_)) if sender.is_closed() => {}
-            Ok(Err(_)) => {
-                return Err(DriverError::Disconnected(
-                    "codex session actor stopped without shutdown confirmation".into(),
-                ));
-            }
-            Err(_) => return Err(DriverError::Disconnected("codex shutdown timed out".into())),
-        }
-        if let Some(native) = &sender.native {
+        if let Some(native) = &resident.native {
             native.request_close();
             native.closed().await?;
         }
-        self.remove_closed_session(&handle.native_session_id, &sender)
+        self.remove_closed_session(&handle.native_session_id, &resident)
             .await;
         Ok(())
     }
@@ -1167,6 +1166,7 @@ impl QuotaProvider for CodexDriver {
 
 enum SessionCommand {
     CheckReady {
+        next_scope: SessionHandle,
         response: oneshot::Sender<Result<(), DriverError>>,
     },
     Answer {
@@ -1193,21 +1193,28 @@ enum SessionCommand {
         response: oneshot::Sender<Result<(), DriverError>>,
     },
     Shutdown {
-        response: oneshot::Sender<()>,
+        response: oneshot::Sender<Result<(), DriverError>>,
     },
 }
 
 enum ActorControl {
     Continue,
     Stop,
-    Shutdown(oneshot::Sender<()>),
+    Shutdown(oneshot::Sender<Result<(), DriverError>>),
 }
 
-async fn session_actor(mut connection: Connection, mut commands: mpsc::Receiver<SessionCommand>) {
+async fn session_actor(
+    mut connection: Connection,
+    mut commands: mpsc::Receiver<ScopedCommand>,
+    scope: Scope,
+) {
     let mut shutdown_response = None;
-    while let Some(command) = commands.recv().await {
+    while let Some(command) = next_command(&mut commands, &scope).await {
         match command {
-            SessionCommand::CheckReady { response } => {
+            SessionCommand::CheckReady {
+                response,
+                next_scope,
+            } => {
                 if connection.native.stopping() {
                     // Confirm cleanup before allowing the caller to restore this identity.
                     let _ = connection.shutdown().await;
@@ -1216,7 +1223,10 @@ async fn session_actor(mut connection: Connection, mut commands: mpsc::Receiver<
                     )));
                     break;
                 }
-                let _ = response.send(Ok(()));
+                let mut current = scope.lock().expect("Codex session scope");
+                if response.send(Ok(())).is_ok() {
+                    *current = next_scope;
+                }
             }
             SessionCommand::Configure {
                 model,
@@ -1236,7 +1246,9 @@ async fn session_actor(mut connection: Connection, mut commands: mpsc::Receiver<
                         if response.send(Ok(events_rx)).is_err() {
                             break;
                         }
-                        match run_turn(&mut connection, &mut commands, &events_tx, started).await {
+                        match run_turn(&mut connection, &mut commands, &scope, &events_tx, started)
+                            .await
+                        {
                             ActorControl::Continue => {}
                             ActorControl::Stop => break,
                             ActorControl::Shutdown(response) => {
@@ -1271,7 +1283,7 @@ async fn session_actor(mut connection: Connection, mut commands: mpsc::Receiver<
     if cleanup.is_ok()
         && let Some(response) = shutdown_response
     {
-        let _ = response.send(());
+        let _ = response.send(Ok(()));
     }
 }
 
@@ -1297,11 +1309,24 @@ impl Drop for InterruptWaiters {
         )));
     }
 }
+/// A terminal `turn/completed` for this turn. The mapper ends the turn on any
+/// such frame, so identities only disqualify it when present and different:
+/// a frame without them (older app-server) still confirms the stop.
 fn confirms_turn(frame: &IncomingFrame, thread_id: &str, turn_id: &str) -> bool {
-    matches!(frame, IncomingFrame::Notification {method,params}
-        if method=="turn/completed" && params["threadId"]==thread_id
-        && params["turn"]["id"].as_str().or_else(||params["turnId"].as_str())==Some(turn_id)
-        && matches!(params["turn"]["status"].as_str(),Some("completed"|"interrupted"|"failed")))
+    let IncomingFrame::Notification { method, params } = frame else {
+        return false;
+    };
+    let thread = params["threadId"].as_str();
+    let turn = params["turn"]["id"]
+        .as_str()
+        .or_else(|| params["turnId"].as_str());
+    method == "turn/completed"
+        && thread.is_none_or(|thread| thread == thread_id)
+        && turn.is_none_or(|turn| turn == turn_id)
+        && matches!(
+            params["turn"]["status"].as_str(),
+            Some("completed" | "interrupted" | "failed")
+        )
 }
 
 async fn start_turn(
@@ -1392,7 +1417,8 @@ async fn start_turn(
 
 async fn run_turn(
     connection: &mut Connection,
-    commands: &mut mpsc::Receiver<SessionCommand>,
+    commands: &mut mpsc::Receiver<ScopedCommand>,
+    scope: &Scope,
     events: &mpsc::Sender<Result<DriverEvent, DriverError>>,
     started: StartedTurn,
 ) -> ActorControl {
@@ -1430,7 +1456,7 @@ async fn run_turn(
     }
     while !terminal {
         tokio::select! {
-            command = commands.recv() => match command {
+            command = next_command(commands, scope) => match command {
                 Some(SessionCommand::Answer {native_request_id,answer,response}) => {
                     let result = if let Some(pending)=pending_approvals.get(&native_request_id).filter(|p|p.get("questionId").is_some()) {
                         match driver_api::questions::native_form("codex", &pending["params"]).and_then(|form|form.validate(&answer)) {
@@ -1506,7 +1532,7 @@ async fn run_turn(
                 Some(SessionCommand::Configure { response, .. }) => {
                     let _ = response.send(Err(DriverError::Protocol("cannot configure an active codex turn".into())));
                 }
-                Some(SessionCommand::CheckReady { response }) => {
+                Some(SessionCommand::CheckReady { response, .. }) => {
                     let _ = response.send(Err(DriverError::CapabilityUnavailable("codex turn is already active".into())));
                 }
                 Some(SessionCommand::Shutdown { response }) => {
@@ -1980,6 +2006,12 @@ impl Connection {
     }
 
     async fn spawn(executable: &Path) -> Result<Self, DriverError> {
+        let mut connection = Self::create(executable)?;
+        connection.initialize().await?;
+        Ok(connection)
+    }
+
+    fn create(executable: &Path) -> Result<Self, DriverError> {
         let mut command = Command::new(executable);
         command
             .args(["app-server", "--listen", "stdio://"])
@@ -2006,7 +2038,7 @@ impl Connection {
         let (native, stdout, stdin) = lifecycle::NativeProcess::start(child)?;
         let mut transport = JsonlTransport::new(stdout, stdin);
         transport.native = Some(native.clone());
-        let mut connection = Self {
+        Ok(Self {
             live_usage: live_usage::LiveUsage::default(),
             analysis_only: false,
             full_review: false,
@@ -2017,8 +2049,11 @@ impl Connection {
             selection: None,
             #[cfg(test)]
             stop_timeout: REQUEST_TIMEOUT,
-        };
-        let exchange = connection
+        })
+    }
+
+    async fn initialize(&mut self) -> Result<(), DriverError> {
+        let exchange = self
             .request(
                 "initialize",
                 json!({
@@ -2034,23 +2069,20 @@ impl Connection {
         let exchange = match exchange {
             Ok(exchange) => exchange,
             Err(error) => {
-                connection.shutdown().await?;
+                self.shutdown().await?;
                 return Err(error);
             }
         };
         if !exchange.result.is_object() {
-            connection.shutdown().await?;
+            self.shutdown().await?;
             return Err(stable_error("codex initialize response is invalid"));
         }
-        let initialized = connection
-            .transport
-            .send_notification("initialized", None)
-            .await;
+        let initialized = self.transport.send_notification("initialized", None).await;
         if let Err(error) = initialized {
-            connection.shutdown().await?;
+            self.shutdown().await?;
             return Err(error);
         }
-        Ok(connection)
+        Ok(())
     }
 
     async fn request(&mut self, method: &str, params: Value) -> Result<Exchange, DriverError> {
@@ -2309,6 +2341,29 @@ fn stable_error(message: &str) -> DriverError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_stop_is_confirmed_by_this_turn_or_an_unlabelled_terminal_event() {
+        let frame = |params: serde_json::Value| super::IncomingFrame::Notification {
+            method: "turn/completed".into(),
+            params,
+        };
+        let confirms = |params| super::confirms_turn(&frame(params), "thread", "turn");
+        assert!(confirms(
+            serde_json::json!({"threadId":"thread","turn":{"id":"turn","status":"interrupted"}})
+        ));
+        assert!(confirms(
+            serde_json::json!({"turn":{"status":"interrupted"}})
+        ));
+        assert!(!confirms(
+            serde_json::json!({"threadId":"other","turn":{"id":"turn","status":"interrupted"}})
+        ));
+        assert!(!confirms(
+            serde_json::json!({"threadId":"thread","turn":{"id":"older","status":"completed"}})
+        ));
+        assert!(!confirms(
+            serde_json::json!({"threadId":"thread","turn":{"id":"turn","status":"inProgress"}})
+        ));
+    }
     #[test]
     fn missing_file_approval_scope_is_explicit_and_does_not_copy_extensions() {
         let summary = super::file_change_approval_summary(
@@ -2942,25 +2997,38 @@ mod shutdown_tests {
             .unwrap(),
         )
     }
-    fn handle() -> SessionHandle {
-        SessionHandle {
-            native_session_id: "fixture-session".into(),
-        }
+    fn resident() -> (
+        ResidentSession,
+        mpsc::Receiver<ScopedCommand>,
+        SessionHandle,
+    ) {
+        let (commands, receiver) = mpsc::channel(4);
+        let handle = SessionHandle::scoped("fixture-session".into());
+        (
+            ResidentSession {
+                commands,
+                native: None,
+                scope: Arc::new(std::sync::Mutex::new(handle.clone())),
+            },
+            receiver,
+            handle,
+        )
     }
     #[tokio::test]
     async fn cancelled_shutdown_retains_the_original_actor_until_confirmed() {
         let driver = driver();
-        let (sender, mut actor) = mpsc::channel(4);
+        let (resident, mut actor, handle) = resident();
         driver
             .sessions
             .lock()
             .await
-            .insert(handle().native_session_id, sender.into());
+            .insert(handle.native_session_id.clone(), resident);
         let first_driver = driver.clone();
-        let first = tokio::spawn(async move { first_driver.shutdown(handle()).await });
+        let original_handle = handle.clone();
+        let first = tokio::spawn(async move { first_driver.shutdown(original_handle).await });
         let SessionCommand::Shutdown {
             response: original_ack,
-        } = actor.recv().await.unwrap()
+        } = actor.recv().await.unwrap().command
         else {
             panic!("expected shutdown");
         };
@@ -2971,51 +3039,74 @@ mod shutdown_tests {
                 .sessions
                 .lock()
                 .await
-                .contains_key(&handle().native_session_id)
+                .contains_key(&handle.native_session_id)
         );
         let retry_driver = driver.clone();
-        let retry = tokio::spawn(async move { retry_driver.shutdown(handle()).await });
+        let retry_handle = handle.clone();
+        let retry = tokio::spawn(async move { retry_driver.shutdown(retry_handle).await });
         let SessionCommand::Shutdown {
             response: confirmed_ack,
-        } = actor.recv().await.unwrap()
+        } = actor.recv().await.unwrap().command
         else {
             panic!("expected original actor retry");
         };
         assert!(!retry.is_finished());
-        confirmed_ack.send(()).unwrap();
+        confirmed_ack.send(Ok(())).unwrap();
         retry.await.unwrap().unwrap();
         assert!(
             !driver
                 .sessions
                 .lock()
                 .await
-                .contains_key(&handle().native_session_id)
+                .contains_key(&handle.native_session_id)
         );
-        assert!(original_ack.send(()).is_err());
+        assert!(original_ack.send(Ok(())).is_err());
+        // Only an actual confirmed, scoped receipt makes repeated close safe.
+        driver.shutdown(handle.clone()).await.unwrap();
+        assert!(
+            driver
+                .shutdown(SessionHandle::new(handle.native_session_id))
+                .await
+                .is_err()
+        );
     }
     #[tokio::test]
     async fn late_shutdown_confirmation_does_not_remove_a_replacement_actor() {
         let driver = driver();
-        let (sender, mut actor) = mpsc::channel(4);
+        let (original, mut actor, handle) = resident();
         driver
             .sessions
             .lock()
             .await
-            .insert(handle().native_session_id.clone(), sender.into());
+            .insert(handle.native_session_id.clone(), original);
         let closing_driver = driver.clone();
-        let closing = tokio::spawn(async move { closing_driver.shutdown(handle()).await });
-        let SessionCommand::Shutdown { response } = actor.recv().await.unwrap() else {
+        let original_handle = handle.clone();
+        let closing = tokio::spawn(async move { closing_driver.shutdown(original_handle).await });
+        let SessionCommand::Shutdown { response } = actor.recv().await.unwrap().command else {
             panic!("expected shutdown");
         };
-        let (replacement, _replacement_actor) = mpsc::channel(4);
-        driver.sessions.lock().await.insert(
-            handle().native_session_id.clone(),
-            replacement.clone().into(),
-        );
-        response.send(()).unwrap();
+        let (replacement, _replacement_actor, replacement_handle) = resident();
+        let replacement_commands = replacement.commands.clone();
+        driver
+            .sessions
+            .lock()
+            .await
+            .insert(handle.native_session_id.clone(), replacement);
+        response.send(Ok(())).unwrap();
         closing.await.unwrap().unwrap();
         assert!(
-            driver.sessions.lock().await[&handle().native_session_id].same_channel(&replacement)
+            driver.sessions.lock().await[&handle.native_session_id]
+                .commands
+                .same_channel(&replacement_commands)
+        );
+        assert!(driver.shutdown(handle.clone()).await.is_err());
+        assert!(driver.shutdown_proof(&handle).await.is_none());
+        assert!(
+            driver
+                .current_session_handle(&handle.native_session_id)
+                .await
+                .unwrap()
+                .same_scope(&replacement_handle)
         );
     }
 }

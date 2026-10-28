@@ -29,7 +29,7 @@ pub(super) fn capabilities() -> Value {
     json!({
         "version": 1, "workspaceMethods": METHODS, "workspaceStreams": STREAMS,
         "commandRecoveryMethods":["command_receipt"],
-        "terminalLaunchRecovery": true, "terminalInputStreams":true, "runOperationRequest": true,
+        "terminalLaunchRecovery": true, "terminalStopEpoch": true, "terminalInputStreams":true, "runOperationRequest": true,
         "businessMethods": super::business::METHODS,
         "desktopMethods": super::native::METHODS,
         "clipboardTransfer": {"version":1,"chunkBytes":super::clipboard::CHUNK,"maxImageBytes":dogcodes_remote_desktop::MAX_CLIPBOARD_IMAGE_BYTES},

@@ -31,7 +31,7 @@
 - 只接受用户授权的 monitor stream；逻辑尺寸用于绝对指针，像素尺寸来自真实帧。负坐标和缩放不混进 stream-local 坐标。
 - 同时仅保留最新 RGBA 帧；有界软件采集轮询复用 Arc，变化才缩放/编码。支持 RGB/BGR24、RGBA/BGRA/RGBx/BGRx 的有界转换、行 padding 和 offset 校验。拒绝损坏/不完整/超尺寸缓冲；格式不支持或流断开时结束授权。
 - H.264 接入现有软件编码管线、CB3.1 预算、关键帧、码率/帧率调整及 WebRTC/P2P、TURN、WSS 发送，不新增服务端视频协议。手机解码失败时 JPEG 使用同一授权源，不能通过回退另开截图授权。
-- 尽可能让 compositor 内嵌光标，并通过 `cursorEmbedded` 告知手机。只读模式不创建输入控制器。
+- 优先让 compositor 内嵌光标；支持独立元数据的来源则在 PC 合成后通过 `cursorEmbedded` 告知手机。只读模式不创建输入控制器，见下方后续记录。
 - 输入批次在第一项效果前验证全部事件；按 monitor stream 的逻辑坐标发送绝对移动，按钮使用 evdev 码，按键/文字使用 keysym，滚动为离散轴。切屏先释放旧按钮/按键。没有混用 EIS 与 Notify 方法，也没有增加 uinput/root 服务。
 
 ## 已验证
@@ -51,3 +51,9 @@
 [ScreenCast](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html)、
 [RemoteDesktop](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.RemoteDesktop.html)、
 [PipeWire buffers](https://docs.pipewire.org/structspa__chunk.html)。RustDesk 仅参考会话/来源/输入共享的思路，没有复制实现。
+
+## 2026-10-27：独立光标元数据
+
+已补 Embedded 不可用而 Metadata 可用的路径：从同一受限 PipeWire FD 读取 SPA cursor/bitmap，按热点与预乘透明度合成，再经过原裁剪/方向和现有 JPEG/H.264。仅光标移动、隐藏和队列中先前的形状更新不会丢失；保留干净背景避免残影，不读取 X11/Enigo。格式重协商清理缓存，授权和最终发布栅栏保持。最大光标 512×512，单背景/单光标，无新网络协议或持久格式。
+
+私有 `rgb-cursor` 流实际验证像素、纯元数据移动/隐藏和三种尺寸 H.264 编解码；原内嵌 RGB 与裁剪旋转专项也通过。Linux 原生 155 项、desktop 349 项与两包严格检查通过。只有 Hidden 模式的来源仍受系统能力限制；真实 compositor、混合 DPI、旋转、性能和原工作包验收保留，详见 [实现与验证](native-cursor-2026-10-27.md#2026-10-27portal-独立光标元数据来源)。上文早期的后端/硬件待办以 CURRENT_WORK 与各后续记录为准，不重复立项。

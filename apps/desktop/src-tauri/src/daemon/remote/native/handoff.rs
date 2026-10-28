@@ -392,6 +392,7 @@ mod tests {
             expires: Instant::now() + Duration::from_secs(15),
             sequence: 42,
             controller: None,
+            cursor: dogcodes_remote_desktop::cursor::Reader::default(),
             last_frame: None,
             capturer: None,
             video: Some(Session::fixture(relay.clone())),
@@ -413,6 +414,8 @@ mod tests {
         let instance = lease.video.as_ref().unwrap().describe()["resize"]["instanceId"].clone();
         let id = uuid::Uuid::new_v4().to_string();
         let frame = || dogcodes_remote_desktop::video::EncodedFrame {
+            cursor_embedded: None,
+            captured: std::time::Instant::now(),
             data: vec![0; 10],
             keyframe: true,
             latency: Duration::ZERO,
@@ -619,6 +622,7 @@ mod rtp_tests {
             expires: Instant::now() + Duration::from_secs(15),
             sequence: 9,
             controller: None,
+            cursor: dogcodes_remote_desktop::cursor::Reader::default(),
             last_frame: None,
             capturer: None,
             video: Some(video),
@@ -708,6 +712,7 @@ mod rtp_tests {
                 expires: Instant::now() + Duration::from_secs(15),
                 sequence: 9,
                 controller: None,
+                cursor: dogcodes_remote_desktop::cursor::Reader::default(),
                 last_frame: None,
                 capturer: None,
                 video: Some(video),

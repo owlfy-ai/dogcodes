@@ -17,15 +17,30 @@ pub struct TaskDeletion {
 }
 
 pub(crate) type OwnedRuns = Arc<Mutex<BTreeMap<RunId, Arc<dyn driver_api::AgentDriver>>>>;
+pub(crate) type OwnedSessions = Arc<Mutex<BTreeMap<RunId, driver_api::SessionHandle>>>;
+pub(crate) type OwnedControls = Arc<Mutex<BTreeMap<RunId, Arc<crate::run_control::Control>>>>;
 
 pub(crate) struct RunOwnership {
     pub runs: OwnedRuns,
+    pub sessions: OwnedSessions,
+    pub controls: OwnedControls,
+    pub control: Arc<crate::run_control::Control>,
     pub run_id: RunId,
 }
 
 impl Drop for RunOwnership {
     fn drop(&mut self) {
-        self.runs
+        let mut runs = self
+            .runs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        runs.remove(&self.run_id);
+        self.control.abandon();
+        self.controls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.run_id);
+        self.sessions
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(&self.run_id);
@@ -42,17 +57,38 @@ fn provider_name(value: &str) -> String {
 }
 
 impl Core {
+    #[cfg(test)]
     pub(crate) fn own_run(
         &self,
         run_id: RunId,
         driver: Arc<dyn driver_api::AgentDriver>,
     ) -> RunOwnership {
-        self.owned_runs
+        self.own_run_with_usage(run_id, driver, None)
+    }
+    pub(crate) fn own_run_with_usage(
+        &self,
+        run_id: RunId,
+        driver: Arc<dyn driver_api::AgentDriver>,
+        usage_provider: Option<Arc<dyn driver_api::QuotaProvider>>,
+    ) -> RunOwnership {
+        let mut runs = self
+            .owned_runs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let control = Arc::new(crate::run_control::Control::with_usage_provider(
+            run_id.clone(),
+            usage_provider,
+        ));
+        self.owned_controls
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(run_id.clone(), driver);
+            .insert(run_id.clone(), control.clone());
+        runs.insert(run_id.clone(), driver);
         RunOwnership {
             runs: Arc::clone(&self.owned_runs),
+            sessions: Arc::clone(&self.owned_sessions),
+            controls: Arc::clone(&self.owned_controls),
+            control,
             run_id,
         }
     }
@@ -69,6 +105,82 @@ impl Core {
             .filter(|driver| driver.executor() == executor)
             .cloned()
             .ok_or_else(|| CoreError::DriverUnavailable(executor.provider_id.to_string()))
+    }
+
+    pub(crate) fn owned_run_control(
+        &self,
+        run: &RunId,
+    ) -> Option<Arc<crate::run_control::Control>> {
+        let runs = self
+            .owned_runs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !runs.contains_key(run) {
+            return None;
+        }
+        self.owned_controls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(run)
+            .cloned()
+    }
+
+    pub(crate) fn bind_run_session(
+        &self,
+        run: &RunId,
+        driver: &Arc<dyn driver_api::AgentDriver>,
+        handle: driver_api::SessionHandle,
+    ) -> Result<(), CoreError> {
+        let runs = self
+            .owned_runs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !runs
+            .get(run)
+            .is_some_and(|owned| Arc::ptr_eq(owned, driver))
+        {
+            return Err(CoreError::Conflict("run no longer owns this driver".into()));
+        }
+        let mut sessions = self
+            .owned_sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if sessions.contains_key(run) {
+            return Err(CoreError::Conflict(
+                "run already has a native session".into(),
+            ));
+        }
+        sessions.insert(run.clone(), handle);
+        Ok(())
+    }
+
+    pub(crate) fn run_session(
+        &self,
+        run: &RunId,
+        executor: &agent_domain::ExecutorRef,
+    ) -> Result<driver_api::SessionHandle, CoreError> {
+        let runs = self
+            .owned_runs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if runs
+            .get(run)
+            .is_none_or(|driver| driver.executor() != executor)
+        {
+            return Err(CoreError::DriverUnavailable(
+                executor.provider_id.to_string(),
+            ));
+        }
+        self.owned_sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(run)
+            .cloned()
+            .ok_or_else(|| {
+                CoreError::CapabilityUnavailable(
+                    "active native session is not ready for interaction".into(),
+                )
+            })
     }
 
     /// Read-only proof for clients retiring task-owned recovery records.
@@ -123,10 +235,8 @@ impl Core {
     /// Called exclusively during startup, before accepting commands or registering drivers.
     /// Does not replay prompts, kill processes, or restore workspace files.
     pub async fn recover_interrupted_turns(&self) -> Result<(), CoreError> {
-        use agent_domain::ArtifactId;
         use agent_protocol::EventSource;
         use serde_json::json;
-        use sha2::{Digest, Sha256};
         // A busy/corrupt review store must not prevent unrelated conversations
         // from starting. The durable pending marker is retried at next startup.
         if let Err(error) = self.cleanup_deleted_tasks(None).await {
@@ -147,59 +257,13 @@ impl Core {
                 continue;
             }
             let scope = self.turn_workspace_scope(&task.task_id).await;
-            let mut cursor = 0;
-            let mut checkpoint = None;
-            let mut changes_recorded = false;
-            loop {
-                let events = self
-                    .repository
-                    .task_events(&task.task_id, cursor, snapshot.last_sequence, 1000)
-                    .await?;
-                if events.is_empty() {
-                    break;
-                }
-                for event in &events {
-                    if event.payload["turnId"].as_str() != Some(run.turn_id.as_str()) {
-                        continue;
-                    }
-                    if event.event_type == "workspace.turn_checkpoint_captured" {
-                        checkpoint = Some(event.payload.clone());
-                    }
-                    if event.event_type == "workspace.turn_changes_captured" {
-                        changes_recorded = true;
-                    }
-                }
-                if let Some(event) = events.last() {
-                    cursor = event.sequence;
-                }
-            }
-            if !changes_recorded {
-                let mut result = Err(agent_protocol::WorkspaceCollectionDiagnostic {
-                    kind: agent_protocol::WorkspaceDiagnosticKind::WorkspaceUnavailable,
-                });
-                if let Some(payload) = checkpoint
-                    && let Some(scope) = &scope
-                {
-                    let id: ArtifactId =
-                        serde_json::from_value(payload["artifact"]["artifactId"].clone())
-                            .map_err(|e| CoreError::Internal(e.to_string()))?;
-                    if let Some(artifact) = self.repository.artifact(&id).await?
-                        && hex::encode(Sha256::digest(&artifact.content))
-                            == artifact.metadata.payload_sha256
-                        && let Ok(value) = serde_json::from_slice(&artifact.content)
-                    {
-                        result = crate::multi_workspace::recover(
-                            self.workspace_context.as_ref(),
-                            &scope.project_paths,
-                            value,
-                        )
-                        .await;
-                    }
-                }
-                if let Some(scope) = &scope {
-                    self.record_turn_changes(scope, result).await?;
-                }
-            }
+            self.recover_run_workspace(
+                &task.task_id,
+                &run.turn_id,
+                scope.as_ref(),
+                snapshot.last_sequence,
+            )
+            .await?;
             for approval in self
                 .repository
                 .pending_approvals(&task.task_id, 1000)
@@ -210,6 +274,72 @@ impl Core {
                 self.append_runtime_event(&task.task_id, "approval.expired", json!({"taskId":task.task_id,"turnId":run.turn_id,"approvalId":approval.approval_id,"reason":"host_interrupted"}), EventSource::Hub).await?;
             }
             self.append_runtime_event(&task.task_id, "turn.connection_lost", json!({"taskId":task.task_id,"turnId":run.turn_id,"runId":run.run_id,"executor":run.executor,"reason":"host_interrupted","result":"unknown","continuationAllowed":true,"message":"Execution connection lost. The local turn is closed for continuation; external tools may have continued. Inspect current results before retrying side effects. No prompt was replayed."}), EventSource::Hub).await?;
+        }
+        Ok(())
+    }
+
+    /// Shared checkpoint recovery for startup and an abandoned live worker.
+    pub(super) async fn recover_run_workspace(
+        &self,
+        task_id: &agent_domain::TaskId,
+        turn_id: &agent_domain::TurnId,
+        scope: Option<&crate::TurnWorkspaceScope>,
+        through: u64,
+    ) -> Result<(), CoreError> {
+        use agent_domain::ArtifactId;
+        use sha2::{Digest, Sha256};
+        let mut cursor = 0;
+        let mut checkpoint = None;
+        let mut changes_recorded = false;
+        loop {
+            let events = self
+                .repository
+                .task_events(task_id, cursor, through, 1000)
+                .await?;
+            if events.is_empty() {
+                break;
+            }
+            for event in &events {
+                if event.payload["turnId"].as_str() != Some(turn_id.as_str()) {
+                    continue;
+                }
+                if event.event_type == "workspace.turn_checkpoint_captured" {
+                    checkpoint = Some(event.payload.clone());
+                }
+                if event.event_type == "workspace.turn_changes_captured" {
+                    changes_recorded = true;
+                }
+            }
+            if let Some(event) = events.last() {
+                cursor = event.sequence;
+            }
+        }
+        if !changes_recorded {
+            let mut result = Err(agent_protocol::WorkspaceCollectionDiagnostic {
+                kind: agent_protocol::WorkspaceDiagnosticKind::WorkspaceUnavailable,
+            });
+            if let Some(payload) = checkpoint
+                && let Some(scope) = scope
+            {
+                let id: ArtifactId =
+                    serde_json::from_value(payload["artifact"]["artifactId"].clone())
+                        .map_err(|e| CoreError::Internal(e.to_string()))?;
+                if let Some(artifact) = self.repository.artifact(&id).await?
+                    && hex::encode(Sha256::digest(&artifact.content))
+                        == artifact.metadata.payload_sha256
+                    && let Ok(value) = serde_json::from_slice(&artifact.content)
+                {
+                    result = crate::multi_workspace::recover(
+                        self.workspace_context.as_ref(),
+                        &scope.project_paths,
+                        value,
+                    )
+                    .await;
+                }
+            }
+            if let Some(scope) = scope {
+                self.record_turn_changes(scope, result).await?;
+            }
         }
         Ok(())
     }
@@ -324,42 +454,4 @@ impl Core {
 }
 
 #[cfg(test)]
-mod ownership_tests {
-    use super::*;
-    use crate::tests::MemoryRepository;
-    use driver_api::{AgentDriver, FakeDriver};
-
-    #[tokio::test]
-    async fn run_driver_survives_selection_and_same_identity_replacement_then_releases() {
-        let core = Core::new(Arc::new(MemoryRepository::default()));
-        let original: Arc<dyn AgentDriver> = Arc::new(FakeDriver::new("fake").unwrap());
-        let weak = Arc::downgrade(&original);
-        let executor = original.executor().clone();
-        core.register_driver(original.clone()).await;
-        let run = RunId::new();
-        let ownership = core.own_run(run.clone(), original.clone());
-        core.select_installation("fake", None).await;
-        let replacement: Arc<dyn AgentDriver> = Arc::new(FakeDriver::new("fake").unwrap());
-        core.register_driver(replacement.clone()).await;
-        assert!(Arc::ptr_eq(
-            &original,
-            &core.run_driver(&run, &executor).unwrap()
-        ));
-        assert!(!Arc::ptr_eq(
-            &replacement,
-            &core.run_driver(&run, &executor).unwrap()
-        ));
-        let wrong = agent_domain::ExecutorRef {
-            installation_id: Some("other".into()),
-            ..executor.clone()
-        };
-        assert!(core.run_driver(&run, &wrong).is_err());
-        assert!(core.run_driver(&RunId::new(), &executor).is_err());
-        drop(original);
-        assert!(weak.upgrade().is_some());
-        drop(ownership);
-        assert!(weak.upgrade().is_none());
-        assert!(core.run_driver(&run, &executor).is_err());
-        assert_eq!(core.registered_executors().await, vec![executor]);
-    }
-}
+mod ownership_tests;

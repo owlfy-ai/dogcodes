@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Force real authenticated TURN UDP/TCP/TLS, Noise and negative TLS cases locally.
+"""Force real TURN UDP/TCP/TLS, Noise, RTP video and negative TLS cases locally.
 Requires coturn, openssl and cargo. Never installs a root certificate globally.
 """
 import argparse
@@ -141,7 +141,11 @@ verbose
             print(f'TURN acceptance: {name}',flush=True)
             run(a.cargo,'test','-p','dogcodes-remote-transport','--lib','--locked',
                 'turn_acceptance::turn_acceptance','--','--ignored','--exact','--nocapture',cwd=root,env=case_env,timeout=75)
-        print('PASS: forced UDP/TCP/TLS relay, fresh pinned Noise, ordered encrypted data, TLS trust/name validation and unavailable-server rejection.')
+            if not reject:
+                print(f'TURN video acceptance: {name}',flush=True)
+                run(a.cargo,'test','-p','dogcodes-remote-transport','--lib','--locked',
+                    'turn_acceptance::turn_video_acceptance','--','--ignored','--exact','--nocapture',cwd=root,env=case_env,timeout=75)
+        print('PASS: forced UDP/TCP/TLS relay, fresh pinned Noise, ordered encrypted data, RTP H.264 with concurrent control and PLI, TLS trust/name validation and unavailable-server rejection.')
     except Exception:
         log.seek(0)
         print(log.read().decode(errors='replace').replace(password, '<redacted>')[-5000:])

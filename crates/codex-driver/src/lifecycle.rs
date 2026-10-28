@@ -101,6 +101,20 @@ impl NativeProcess {
         .await
         .map_err(|_| failure("shutdown is still pending confirmation"))?
     }
+
+    /// Passive positive proof for this exact child scope. Neither an interim
+    /// cleanup error nor loss of the supervisor proves that the child exited.
+    pub async fn confirmed(&self) {
+        let mut exit = self.exit.clone();
+        loop {
+            if matches!(*exit.borrow_and_update(), Some(Ok(()))) {
+                return;
+            }
+            if exit.changed().await.is_err() {
+                std::future::pending::<()>().await;
+            }
+        }
+    }
     pub fn observe_owner(self: &Arc<Self>, mut owner: watch::Receiver<bool>) {
         let native = self.clone();
         tokio::spawn(async move {
@@ -123,4 +137,50 @@ impl NativeProcess {
 }
 fn failure(reason: &str) -> DriverError {
     DriverError::Disconnected(format!("Codex {reason}"))
+}
+
+#[cfg(test)]
+mod proof_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn passive_proof_waits_through_errors_without_requesting_cleanup() {
+        let (close, _closing) = watch::channel(false);
+        let (completed, exit) = watch::channel(Some(Err(failure("still running"))));
+        let native = NativeProcess {
+            stopping: AtomicBool::new(false),
+            close,
+            exit,
+        };
+        let mut proof = std::pin::pin!(native.confirmed());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut proof)
+                .await
+                .is_err()
+        );
+        assert!(!native.stopping());
+        assert!(!*native.close.borrow());
+        completed.send_replace(Some(Ok(())));
+        tokio::time::timeout(Duration::from_secs(1), proof)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn losing_the_supervisor_does_not_prove_exit() {
+        let (close, _closing) = watch::channel(false);
+        let (completed, exit) = watch::channel(None);
+        let native = NativeProcess {
+            stopping: AtomicBool::new(false),
+            close,
+            exit,
+        };
+        drop(completed);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), native.confirmed())
+                .await
+                .is_err()
+        );
+        assert!(!native.stopping());
+    }
 }

@@ -43,6 +43,48 @@ async fn the_fence_protocols_are_gone_and_plain_stop_remains() {
             .is_err()
     );
 }
+#[cfg(unix)]
+#[tokio::test]
+async fn terminal_stop_requires_a_frozen_target_and_never_stops_a_replacement_epoch() {
+    let f = Fixture::new().await;
+    let started = f.call("terminal_start", f.terminal()).await.unwrap();
+    let id = started["id"].as_str().unwrap();
+    // Every request missing a bound epoch fails before touching the process.
+    for invalid in [
+        json!(id),
+        json!({"terminalId":id}),
+        json!({"terminalId":id,"expectedEpoch":null}),
+        json!({"terminalId":id,"expectedEpoch":started["epoch"],"unknown":true}),
+    ] {
+        assert!(f.call("terminal_stop", invalid).await.is_err());
+        assert_eq!(
+            f.call("terminal_get", json!(id)).await.unwrap()["status"],
+            "running"
+        );
+    }
+    let obsolete_target = json!({"terminalId":id,"expectedEpoch":uuid::Uuid::new_v4().to_string()});
+    let refused = f.call("terminal_stop", obsolete_target).await.unwrap();
+    assert_eq!(refused["epoch"], started["epoch"]);
+    assert_eq!(refused["status"], "running");
+    let target = json!({"terminalId":id,"expectedEpoch":started["epoch"]});
+    f.call("terminal_stop", target.clone()).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            let state = f.call("terminal_get", json!(id)).await.unwrap();
+            if state["status"] == "exited" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        f.call("terminal_stop", target).await.unwrap()["status"],
+        "exited"
+    );
+}
+
 impl Fixture {
     async fn new() -> Self {
         let temp = tempfile::tempdir().unwrap();
@@ -119,6 +161,7 @@ impl Fixture {
             "directoryIndex":0,"taskId":self.task,"commandId":null,"label":"Remote terminal",
             "cwd":self.root(),"command":null,"cols":80,"rows":24})
     }
+    #[cfg(unix)]
     fn seed_run(&self) {
         let directory = self.temp.path().join("service/project-runs");
         std::fs::create_dir_all(&directory).unwrap();
@@ -354,7 +397,12 @@ async fn terminal_reattaches_by_identity_and_supports_input_offsets_resize_and_s
             .await
             .is_err()
     );
-    f.call("terminal_stop", json!(id)).await.unwrap();
+    f.call(
+        "terminal_stop",
+        json!({"terminalId":id,"expectedEpoch":started["epoch"]}),
+    )
+    .await
+    .unwrap();
     let mut outside = f.terminal();
     outside["cwd"] = json!(f.temp.path());
     assert!(f.call("terminal_start", outside).await.is_err());
@@ -389,9 +437,12 @@ async fn project_run_uses_frozen_recipe_and_same_terminal_on_retry() {
     let stale = json!({"taskId":f.task,"generation":"stale","directoryIndex":0,"commandId":"hello",
         "cols":80,"rows":24,"operationId":uuid::Uuid::new_v4().to_string()});
     assert!(f.call("project_run_start", stale).await.is_err());
-    f.call("terminal_stop", launched["id"].clone())
-        .await
-        .unwrap();
+    f.call(
+        "terminal_stop",
+        json!({"terminalId":launched["id"],"expectedEpoch":launched["epoch"]}),
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -755,7 +806,11 @@ async fn encrypted_socket_routes_workspace_calls_unsubscribes_and_checks_revocat
         read_response(&mut direct, &mut direct_noise, &mut direct_buffer).await["result"]["state"],
         "applied"
     );
-    f.control.terminals.stop(&input_terminal.id).await.unwrap();
+    f.control
+        .terminals
+        .stop(&input_terminal.id, &input_terminal.epoch)
+        .await
+        .unwrap();
     send_json(&mut direct,&mut direct_noise,&json!({"version":1,"hostId":"fixture-host","requestId":"direct-power","method":"power_preferences_set","params":{"enabled":true}})).await.unwrap();
     let reply = read_response(&mut direct, &mut direct_noise, &mut direct_buffer).await;
     assert_eq!(reply["result"]["enabled"], true, "{reply}");
@@ -1018,4 +1073,102 @@ async fn preview_uses_fixed_loopback_target_and_tunnels_websocket_without_replay
             .await
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn preview_redirects_keep_the_selected_target_and_preserve_other_destinations() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let f = Fixture::new().await;
+    let previews = super::super::preview::Host::default();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let cases = [
+        (
+            format!("http://127.0.0.1:{port}/signin?next=%2Fhome#form"),
+            "/signin?next=%2Fhome#form".to_owned(),
+        ),
+        (
+            format!("http://localhost:{port}/nested/%E4%B8%AD"),
+            "/nested/%E4%B8%AD".to_owned(),
+        ),
+        (format!("//localhost:{port}/next"), "/next".to_owned()),
+        (
+            "../relative?next=1".to_owned(),
+            "../relative?next=1".to_owned(),
+        ),
+        (
+            "https://example.invalid/outside".to_owned(),
+            "https://example.invalid/outside".to_owned(),
+        ),
+        (
+            format!(
+                "http://localhost:{}/other",
+                if port == 65535 { port - 1 } else { port + 1 }
+            ),
+            format!(
+                "http://localhost:{}/other",
+                if port == 65535 { port - 1 } else { port + 1 }
+            ),
+        ),
+        (
+            format!("http://127.0.0.1:{port}//example.invalid/escape"),
+            format!("http://127.0.0.1:{port}//example.invalid/escape"),
+        ),
+    ];
+    let redirects = cases
+        .iter()
+        .map(|(value, _)| value.clone())
+        .collect::<Vec<_>>();
+    let server = tokio::spawn(async move {
+        for (index, location) in redirects.into_iter().enumerate() {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 8192];
+            let size = socket.read(&mut request).await.unwrap();
+            assert!(
+                String::from_utf8_lossy(&request[..size])
+                    .starts_with(&format!("GET /source/{index} HTTP/1.1"))
+            );
+            socket.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes()).await.unwrap();
+        }
+    });
+    let lease = previews
+        .call(
+            &f.core,
+            "preview_open",
+            json!({"taskId":f.task,"port":port}),
+        )
+        .await
+        .unwrap();
+    let id = lease["previewId"].as_str().unwrap();
+    for (index, (_, expected)) in cases.iter().enumerate() {
+        let response = tokio::time::timeout(
+            Duration::from_secs(3),
+            previews.call(
+                &f.core,
+                "preview_http",
+                json!({"previewId":id,"path":format!("/source/{index}")}),
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            response["status"], 302,
+            "the PC must not follow a redirect itself"
+        );
+        let location = response["headers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row[0] == "location")
+            .unwrap()[1]
+            .as_str()
+            .unwrap();
+        assert_eq!(location, expected);
+    }
+    server.await.unwrap();
+    previews
+        .call(&f.core, "preview_close", json!(id))
+        .await
+        .unwrap();
 }

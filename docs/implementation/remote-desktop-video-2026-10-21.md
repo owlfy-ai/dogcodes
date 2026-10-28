@@ -40,7 +40,7 @@
 | 采集 | ScreenCaptureKit `SCStream`：NV12（`420v`）、由 WindowServer 缩放到编码尺寸（≤1920 宽、偶数）、只在内容变化时回调、`showsCursor` 带真实光标、`queueDepth 6` | `crates/remote-desktop/src/video.rs` `platform::Capture` |
 | 编码 | VideoToolbox：`EnableLowLatencyRateControl`、`RealTime`、Constrained Baseline、无 B 帧、`AverageBitRate` + 1 秒 1.5 倍 `DataRateLimits`、`MaxAllowedFrameQP 51`（码率不够时降画质而不是丢帧）、20 s 兜底 IDR；AVCC→Annex-B，关键帧前置 SPS/PPS | `platform::Encoder` |
 | 关键帧 | 开始、切换显示器、接收端 PLI/FIR、发送队列满（丢了被引用的帧）、手机首帧超时请求；画面静止时用保留的最后一帧重编码 | `Shared::tick`、`KeyframeRequests` 拦截器 |
-| 静态刷新 | 运动停止 400 ms 后重编码一次最后一帧，画面变清晰（RustDesk `static_refresh` 的做法） | `Shared::tick` |
+| 静态刷新 | 2026-10-25 更新：运动静止 400ms 后有界普通补编码，按实际输出/IDR 确认、FPS/尝试/输出/时间上限收尾；测量与限制见 [静态刷新](video-static-refresh-2026-10-25.md) | `Shared::tick`、`video/refresh.rs` |
 | 锁屏 | 采集回调每 200 ms 查一次锁屏状态，锁定或状态未知时不编码；worker 每秒检查，锁屏时结束租约 | `Shared::unlocked` |
 | 传输 | 视频轨 + 自己打包 RTP：时间戳取采集时刻（90 kHz），保证"静止 5 秒后的第一帧"时间戳也正确；协商只注册 H.264（42e01f/42001f/4d001f/640c1f，pm=1，level-asymmetry-allowed） | `crates/remote-transport/src/video.rs` |
 | 拥塞控制 | TWCC 反馈 → GCC 估计（`rtc-interceptor`），以 2.5 倍目标码率节奏发包（同 libwebrtc），NACK 重传，RTCP SR/RR；GCC 估计值发布给编码器 | `video::engine`、`PublishedGcc` |
@@ -196,3 +196,14 @@ WebRTC 完全不通（只剩 WebSocket 中继）时，同一个 H.264 码流改�
 ## 换路基础（2026-10-22 后续）
 
 PC 已补同一手机的新认证连接接续二进制视频输出和控制租约、版本/序号栅栏，以及可切换的 Wayland 来源活性。手机输入队列增加可取消的迁移屏障。后续已接入手机二进制 WSS→P2P 迁移、首帧交接、未知结果核实/栅栏与二进制凭据续期；随后已补同编码预算 RTP→RTP 原位迁移、手机续期及实际首帧交接；随后补齐二进制/RTP 的编码预算重建接续及手机旧纹理保留；更高 RTP 等级协商、真实 TURN 续期/弱网验收仍开放。契约和接续步骤见 [物理连接迁移说明](desktop-handoff-2026-10-22.md)。
+
+
+## 2026-10-27：图片回退沿用实际光标来源
+
+发现 Wayland Portal 画面已由 compositor 内嵌系统光标，但 JPEG 响应没有暴露该事实。手机切到图片模式后默认保留独立箭头，在操作后可能与画面中的系统光标重叠并持续残留；不能从 H.264/JPEG 编码类型推断光标是否内嵌。
+
+`Capturer::frame` 现在在完整 JPEG 和 `unchanged` 回复都携带 `cursorEmbedded`：Portal 使用原授权 ScreenSource 的实际值，原生 xcap 截图为 false。手机在每次图片回复中采用这一元数据，来源改变时清理旧叠加和预测；内嵌来源仍只显示 400 ms 本地操作预测，随后由既有定时器移除。没有新 RPC、权限请求或独立光标服务。此前缺字段默认当 macOS 视频处理的旧版判断已删除，符合尚未发布、不做兼容的约定。
+
+验证：修改前新增手机用例实际出现重复箭头，两个状态用例及一个真实页面用例失败；私有 Wayland/PipeWire 验证在 JPEG 的 `cursorEmbedded` 断言得到 Null。修复后，完整 JPEG 与相同画面的无 bytes 回复均返回 true，原授权结束与锁屏仍拒绝返回图像。手机 433 项普通测试通过，9 项 FFI 按需测试未启用；三文件 analyze 无问题。macOS 原生库 101 项、Linux 原生库 142 项及独立 Portal 专项通过，两平台严格 Clippy、Windows GNU all-targets 静态严格检查通过。没有访问用户屏幕、键鼠、剪贴板、安装 Agent 或日常 Core。
+
+日志 `/tmp/dogcodes-jpeg-cursor-before-flutter.log`、`/tmp/dogcodes-jpeg-cursor-before-linux.log`、`/tmp/dogcodes-jpeg-cursor-after-linux.log`、`/tmp/dogcodes-jpeg-cursor-macos.log`、`/tmp/dogcodes-jpeg-cursor-all-flutter.log`、`/tmp/dogcodes-jpeg-cursor-analyze.log` 及两端严格/Windows 静态日志。原生光标形状、Windows 个别采集源的内嵌判定、只读软件视频位置和真实设备验收仍保留；本次没有据元数据修复宣称已完成原生光标传输。

@@ -1,6 +1,6 @@
 //! Authenticated local-service boundary. Project membership is validated here,
 //! independent of desktop window labels or client-side path checks.
-use super::{LaunchIntent, TerminalHost};
+use super::{LaunchIntent, TerminalHost, TerminalStopRequest};
 use agent_core::Core;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -85,8 +85,13 @@ pub async fn dispatch(
                 .await
         }
         "terminal_stop" => {
-            let id: String = serde_json::from_value(args).map_err(|e| e.to_string())?;
-            Ok(json!(terminals.stop(&id).await?))
+            let target: TerminalStopRequest =
+                serde_json::from_value(args).map_err(|e| e.to_string())?;
+            Ok(json!(
+                terminals
+                    .stop(&target.terminal_id, &target.expected_epoch)
+                    .await?
+            ))
         }
         _ => Err("unknown terminal operation".into()),
     }

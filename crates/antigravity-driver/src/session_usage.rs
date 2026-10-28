@@ -95,11 +95,17 @@ pub(super) async fn read(process: &SessionProcess) -> Option<SessionUsageSnapsho
     let port = port(&log)?;
     // Self-signed TLS is accepted only for the owned loopback service. No proxy,
     // redirects, credentials, or model prompt; bounded time and response size.
-    let output = tokio::process::Command::new("curl")
+    let mut command = tokio::process::Command::new("curl");
+    command
         .args(["--disable", "--silent", "--fail", "--insecure", "--noproxy", "*", "--max-time", "2", "--max-filesize", "2097152", "--proto", "=https", "-H", "Content-Type: application/json", "--data-binary"])
         .arg(json!({"cascadeId":id,"generatorMetadataOffset":0,"includeMessages":false}).to_string())
         .arg(format!("https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/GetCascadeTrajectoryGeneratorMetadata"))
-        .stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).kill_on_drop(true).output().await.ok()?;
+        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
+    let output = agent_runtime::OwnedChild::spawn(command)
+        .ok()?
+        .wait_with_output(2 * 1024 * 1024)
+        .await
+        .ok()?;
     if !output.status.success() || output.stdout.len() > 2 * 1024 * 1024 {
         return None;
     }

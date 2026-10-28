@@ -22,8 +22,6 @@ pub(super) const METHODS: &[&str] = &[
     "remote_desktop_video",
     "remote_desktop_handoff",
     "clipboard_transfer",
-    "clipboard_get",
-    "clipboard_set",
 ];
 pub(super) struct Connection {
     id: String,
@@ -198,6 +196,7 @@ struct Lease {
     expires: Instant,
     sequence: u64,
     controller: Option<os::Controller>,
+    cursor: os::cursor::Reader,
     last_frame: Option<Instant>,
     capturer: Option<os::Capturer>,
     /// H.264 screen video on the connection's track; frame pulls remain
@@ -247,14 +246,27 @@ fn displays_for(portal: Option<&PortalSession>) -> Result<Vec<os::Display>, Stri
     let _ = portal;
     os::displays()
 }
-fn capturer_for(portal: Option<&PortalSession>, display: u32) -> Result<os::Capturer, String> {
+fn capturer_for(
+    portal: Option<&PortalSession>,
+    display: u32,
+    owner: &handoff::Liveness,
+) -> Result<os::Capturer, String> {
     #[cfg(target_os = "linux")]
     if let Some(portal) = portal {
         return os::Capturer::from_portal(portal, display);
     }
     #[cfg(not(target_os = "linux"))]
     let _ = portal;
-    os::Capturer::new(display)
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        let owner = owner.clone();
+        os::Capturer::new_owned(display, Arc::new(move || owner.alive()))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = owner;
+        os::Capturer::new(display)
+    }
 }
 fn controller_for(portal: Option<&PortalSession>) -> Result<os::Controller, String> {
     #[cfg(target_os = "linux")]
@@ -385,6 +397,14 @@ impl Worker {
         }
         if let Some(lease) = &mut self.lease {
             handoff::expire(lease);
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            if lease
+                .last_frame
+                .is_some_and(|last| last.elapsed() > Duration::from_secs(5))
+                && let Some(capturer) = &mut lease.capturer
+            {
+                capturer.release_idle_picture();
+            }
         }
         if self
             .lease
@@ -486,7 +506,13 @@ impl Worker {
                 {
                     return Err("本次远控模式与电脑授权不一致，请重新连接".into());
                 }
-                let capturer = capturer_for(portal.as_ref(), display)?;
+                let liveness = handoff::Liveness::new(&connection);
+                #[cfg(target_os = "linux")]
+                let liveness = self
+                    .preparing
+                    .as_ref()
+                    .map_or(liveness, |p| p.liveness.clone());
+                let capturer = capturer_for(portal.as_ref(), display, &liveness)?;
                 let id = uuid::Uuid::new_v4().to_string();
                 // Video failure (no track, no permission, no encoder) leaves
                 // the JPEG path working; the reason goes back to the phone.
@@ -544,16 +570,12 @@ impl Worker {
                         if described.get("generation").is_none() {
                             described["generation"] = relay.stats()["generation"].clone();
                         }
-                        described["clientReadyRequired"] =
-                            relay.stats()["clientReadyRequired"].clone();
+                        described["clientReadyRequired"] = json!(
+                            relay.stats()["clientReadyRequired"] == true
+                                || described["clientReadyRequired"] == true
+                        );
                     }
                 }
-                let liveness = handoff::Liveness::new(&connection);
-                #[cfg(target_os = "linux")]
-                let liveness = self
-                    .preparing
-                    .as_ref()
-                    .map_or(liveness, |p| p.liveness.clone());
                 self.lease = Some(Lease {
                     liveness,
                     handoff: None,
@@ -563,6 +585,7 @@ impl Worker {
                     display,
                     expires: Instant::now() + Duration::from_secs(15),
                     sequence: 0,
+                    cursor: os::cursor::Reader::default(),
                     controller: if control {
                         Some(controller_for(portal.as_ref())?)
                     } else {
@@ -633,22 +656,36 @@ impl Worker {
                     "webrtc"
                 });
                 if let Some(relay) = &lease.relay {
-                    description["clientReadyRequired"] =
-                        relay.stats()["clientReadyRequired"].clone();
+                    description["clientReadyRequired"] = json!(
+                        relay.stats()["clientReadyRequired"] == true
+                            || description["clientReadyRequired"] == true
+                    );
                 }
                 stats["video"] = description;
                 stats["handoffRevision"] = json!(lease.handoff_revision.to_string());
 
-                // Software screenshots omit the pointer. Report its position
-                // separately without constructing an input controller for a
-                // view-only connection or enlarging its permissions.
-                if !cfg!(target_os = "macos")
-                    && let (Some(controller), Some(capturer)) =
-                        (lease.controller.as_ref(), lease.capturer.as_ref())
-                {
-                    stats["cursor"] = controller
-                        .cursor(&capturer.display)
-                        .map_or(Value::Null, |(x, y)| json!({"x":x,"y":y}));
+                // Cursor reads are independent from input control. Never query
+                // unrestricted desktop APIs for a Portal-owned or embedded source.
+                if args["includeCursor"] == true {
+                    stats["cursor"] =
+                        if lease.portal.is_none() && stats["video"]["cursorEmbedded"] == false {
+                            lease
+                                .capturer
+                                .as_ref()
+                                .and_then(|capturer| {
+                                    lease.cursor.snapshot(
+                                        &capturer.display,
+                                        args["knownCursorShapeId"].as_str(),
+                                    )
+                                })
+                                .unwrap_or(Value::Null)
+                        } else {
+                            Value::Null
+                        };
+                    os::require_unlocked()?;
+                    if !lease.owner.alive() || Instant::now() >= lease.expires {
+                        return Err("远控租约已结束，请重新连接".into());
+                    }
                 }
                 if let Some(relay) = &lease.relay {
                     super::parse_sequence(args.get_mut("ack"))?;
@@ -681,7 +718,9 @@ impl Worker {
                         // Reopen after a failed capture or a display change.
                         let capturer = match lease.capturer.take() {
                             Some(capturer) => capturer,
-                            None => capturer_for(lease.portal.as_ref(), lease.display)?,
+                            None => {
+                                capturer_for(lease.portal.as_ref(), lease.display, &lease.liveness)?
+                            }
                         };
                         let capturer = lease.capturer.insert(capturer);
                         let mut frame = capturer.frame(
@@ -691,14 +730,29 @@ impl Worker {
                         );
                         if frame.is_err() {
                             lease.capturer = None;
-                        } else if let (Ok(frame), Some(controller), Some(capturer)) = (
-                            frame.as_mut(),
-                            lease.controller.as_ref(),
-                            lease.capturer.as_ref(),
-                        ) {
-                            frame["cursor"] = controller
-                                .cursor(&capturer.display)
-                                .map_or(Value::Null, |(x, y)| json!({"x":x,"y":y}));
+                        } else if let (Ok(frame), Some(capturer)) =
+                            (frame.as_mut(), lease.capturer.as_ref())
+                        {
+                            frame["cursor"] =
+                                if lease.portal.is_none() && frame["cursorEmbedded"] == false {
+                                    lease
+                                        .cursor
+                                        .snapshot(
+                                            &capturer.display,
+                                            args["knownCursorShapeId"].as_str(),
+                                        )
+                                        .unwrap_or(Value::Null)
+                                } else {
+                                    Value::Null
+                                };
+                        }
+                        if frame.is_ok() {
+                            // Cursor queries/PNG conversion can outlive the
+                            // capture's final check; revalidate before returning.
+                            os::require_unlocked()?;
+                            if !lease.owner.alive() || Instant::now() >= lease.expires {
+                                return Err("远控租约已结束，请重新连接".into());
+                            }
                         }
                         frame
                     }
@@ -713,7 +767,8 @@ impl Worker {
                         {
                             return Err("显示器已断开".into());
                         }
-                        let capturer = capturer_for(lease.portal.as_ref(), display)?;
+                        let capturer =
+                            capturer_for(lease.portal.as_ref(), display, &lease.liveness)?;
                         let controller = lease
                             .controller
                             .as_ref()
@@ -738,8 +793,10 @@ impl Worker {
                                 if described.get("generation").is_none() {
                                     described["generation"] = relay.stats()["generation"].clone();
                                 }
-                                described["clientReadyRequired"] =
-                                    relay.stats()["clientReadyRequired"].clone();
+                                described["clientReadyRequired"] = json!(
+                                    relay.stats()["clientReadyRequired"] == true
+                                        || described["clientReadyRequired"] == true
+                                );
                             } else {
                                 described["transport"] = json!("webrtc");
                             }
@@ -763,7 +820,15 @@ impl Worker {
                                 .find(|m| m.id == lease.display)
                                 .ok_or("显示器已断开")?,
                         };
-                        controller.send_batch(&display, events)?;
+                        // A slow native geometry reply must not turn an old
+                        // gesture into a later action on a retired connection.
+                        let (owner, expires) = (
+                            lease.owner.clone(),
+                            lease.expires.min(Instant::now() + Duration::from_secs(2)),
+                        );
+                        controller.send_batch_guarded(&display, events, || {
+                            owner.alive() && Instant::now() < expires
+                        })?;
                         Ok(json!({"sequence":sequence.to_string()}))
                     }
                 })();
@@ -816,6 +881,7 @@ mod tests {
             display: 0,
             expires: Instant::now(),
             sequence: 0,
+            cursor: os::cursor::Reader::default(),
             controller: None,
             last_frame: None,
             capturer: None,
