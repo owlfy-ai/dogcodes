@@ -63,6 +63,18 @@ describe("i18n core", () => {
     expect(resolveLanguage("system", "en-US")).toBe("en");
   });
 
+  it("translates phone pairing in every language with matching placeholders", () => {
+    const reference = LOCALES.en.remoteDevices;
+    for (const lang of resolvedLanguages) {
+      const dictionary = LOCALES[lang].remoteDevices;
+      expect(Object.keys(dictionary).sort()).toEqual(Object.keys(reference).sort());
+      for (const key of Object.keys(reference) as (keyof typeof reference)[]) {
+        expect(dictionary[key].trim()).not.toBe("");
+        expect(dictionary[key].match(/\{\w+\}/g) ?? []).toEqual(reference[key].match(/\{\w+\}/g) ?? []);
+      }
+    }
+  });
+
   it("interpolates parameters in translation strings", () => {
     const zh = translate("welcome.readyAgentSelected", { agent: "Codex" }, "zh-CN");
     expect(zh).toContain("Codex");

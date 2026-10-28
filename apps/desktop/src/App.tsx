@@ -214,7 +214,6 @@ function PreferencesMenu({
   onLanguage,
   onTheme,
   onScale,
-  onRemote,
   anchorRef,
   popoverRef,
 }: {
@@ -228,7 +227,6 @@ function PreferencesMenu({
   onToggle: (section: Exclude<PreferencesSection, null>) => void;
   onLanguage: (value: UiLanguage) => void;
   onTheme: (value: UiTheme) => void;
-  onRemote: () => void;
   onScale: (value: ScaleAction) => void;
 }) {
   const labels = getPreferenceLabels(language);
@@ -292,7 +290,6 @@ function PreferencesMenu({
       <button type="button" role="menuitem" className={section === "scale" ? "selected" : ""} onClick={() => onToggle("scale")}>
         <PreferencesIcon kind="scale" /><span>{labels.scale}</span><span aria-hidden="true">›</span>
       </button>
-      <button type="button" role="menuitem" onClick={onRemote}><span aria-hidden="true">▣</span><span>连接手机</span></button>
       {optionMenu}
     </div>,
     document.body,
@@ -1128,6 +1125,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             <SidebarNavIcon kind="conversation" /><b>{creatingTask ? t("nav.creating", undefined, resolvedLang) : t("nav.newConversation", undefined, resolvedLang)}</b><kbd>{shortcutModifier} N</kbd>
           </button>
           <button ref={quotaButton} aria-keyshortcuts={`${shortcutKey}+U`} className={activeView === "quota" ? "active" : ""} type="button" onClick={() => setActiveView("quota")}><SidebarNavIcon kind="quota" /><b>{t("nav.agentManagement", undefined, resolvedLang)}</b><kbd>{shortcutModifier} U</kbd></button>
+          <button className={remoteOpen ? "active" : ""} type="button" aria-haspopup="dialog" aria-expanded={remoteOpen} onClick={() => setRemoteOpen(true)}><SidebarNavIcon kind="phone" /><b>{t("remoteDevices.title", undefined, resolvedLang)}</b></button>
         </nav>
         <div className="sidebar-divider" />
         <MemoConversationHistory onRevealProject={revealLocalProject} onCreateProjectConversation={createProjectConversation} createConversationDisabled={sending || creatingTask}
@@ -1162,7 +1160,6 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             onToggle={(next) => setPreferencesSection((current) => current === next ? null : next)}
             onLanguage={(next) => { setUiLanguage(next); setPreferencesOpen(false); setPreferencesSection(null); }}
             onTheme={(next) => { setUiTheme(next); setPreferencesOpen(false); setPreferencesSection(null); }}
-            onRemote={() => { setPreferencesOpen(false); setRemoteOpen(true); }}
             onScale={action => setUiScale(current => adjustUiScale(current, action))}
           />
         </div>
@@ -1315,7 +1312,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         onEditProject={client.updateProject ? () => setEditingProject(selectedProject) : undefined} /></Suspense>}
       </div>
 
-      {remoteOpen && <RemoteDevices onClose={() => setRemoteOpen(false)} />}
+      {remoteOpen && <RemoteDevices lang={resolvedLang} onClose={() => setRemoteOpen(false)} />}
       {editingProject && <ProjectDialog key={editingProject.projectId} client={client} project={editingProject}
         onClose={() => setEditingProject(null)} onReady={async () => { await refresh(); setEditingProject(null); }} />}
       {projectDialogOpen && <ProjectDialog

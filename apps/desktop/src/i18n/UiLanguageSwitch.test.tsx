@@ -64,6 +64,12 @@ describe("UiLanguage switching across international languages", () => {
 
     expect(element.textContent).toContain("New conversation");
     expect(element.textContent).toContain("Agent Management");
+    const navigation = element.querySelector(".primary-nav")!;
+    const entries = [...navigation.querySelectorAll("button")];
+    expect(entries.map(button => button.textContent)).toEqual([expect.stringContaining("New conversation"), expect.stringContaining("Agent Management"), "Connect phone"]);
+    expect(entries[2].getAttribute("aria-haspopup")).toBe("dialog");
+    await click(trigger);
+    expect(document.querySelector(".preferences-popover")?.textContent).not.toContain("Connect phone");
   });
 
   it("switches interface language to Japanese", async () => {
@@ -86,6 +92,7 @@ describe("UiLanguage switching across international languages", () => {
 
     expect(element.textContent).toContain("新規チャット");
     expect(element.textContent).toContain("Agent 管理");
+    expect(element.querySelector(".primary-nav")?.textContent).toContain("スマートフォンを接続");
   });
 
   it("switches interface language to French", async () => {
