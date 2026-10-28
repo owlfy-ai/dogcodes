@@ -98,7 +98,7 @@ export function RemoteDevices({ onClose }: { onClose: () => void }) {
         <input value={service} disabled={busy || status?.configured}
           onChange={event => setService(event.target.value)} placeholder="https://…" />
       </label>
-      {status?.configured && <p>{status.connected ? "已连接接入服务" : "正在连接接入服务…"}</p>}
+      {status?.configured && <p>{status.connected ? "已连接接入服务" : (error || status.error) ? "未连接接入服务" : "正在连接接入服务…"}</p>}
       <button type="button" disabled={busy} onClick={() => void call({ type: "invite", service })}>
         {status?.invitation ? "重新生成二维码" : "显示配对二维码"}
       </button>

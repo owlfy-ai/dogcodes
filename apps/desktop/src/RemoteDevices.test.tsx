@@ -22,4 +22,15 @@ describe("remote device pairing",()=>{
     expect(invoke).toHaveBeenCalledWith("core_remote_control",{call:{type:"cancel_invitation",dialogId:created.dialogId}});
     node.remove();
   });
+  it("shows a connection failure instead of an endless connecting status", async () => {
+    (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
+    invoke.mockResolvedValue({ configured: true, connected: false, devices: [], error: "电脑登记凭证已失效" });
+    const node = document.createElement("div"); document.body.append(node); const root = createRoot(node);
+    await act(async () => { root.render(createElement(RemoteDevices, { onClose: () => {} })); });
+    expect(node.textContent).toContain("未连接接入服务");
+    expect(node.textContent).not.toContain("正在连接接入服务");
+    expect(node.querySelector('[role="alert"]')?.textContent).toBe("电脑登记凭证已失效");
+    await act(async () => { root.unmount(); }); node.remove();
+  });
+
 });

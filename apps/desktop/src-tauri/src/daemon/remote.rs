@@ -147,49 +147,10 @@ impl RemoteHost {
                 .trim_end_matches('/')
                 .to_owned();
             validate_service(&service)?;
-            let registration: Value = http_client(&service)?
-                .post(format!("{service}/v1/hosts"))
-                .send()
-                .await
-                .map_err(|_| "无法连接接入服务，请确认服务已启动")?
-                .error_for_status()
-                .map_err(|_| "接入服务暂时无法登记电脑")?
-                .json()
-                .await
-                .map_err(|_| "接入服务响应无效")?;
             let key = dogcodes_endpoint::keypair().map_err(|_| "无法生成电脑身份")?;
-            let config = Config {
-                service,
-                host_id: registration["hostId"]
-                    .as_str()
-                    .ok_or("缺少电脑标识")?
-                    .into(),
-                public_key: hex::encode(key.public),
-            };
-            let secrets = Secrets {
-                token: registration["hostToken"]
-                    .as_str()
-                    .ok_or("缺少路由凭证")?
-                    .into(),
-                private_key: hex::encode(key.private),
-            };
-            let (id, secret) = (
-                config.host_id.clone(),
-                serde_json::to_string(&secrets).map_err(|_| "无法保存电脑身份")?,
-            );
-            tokio::task::spawn_blocking(move || {
-                keyring::Entry::new("ai.owlfy.dogcodes.remote", &id)
-                    .and_then(|e| e.set_password(&secret))
-            })
-            .await
-            .map_err(|_| "保存系统密钥失败")?
-            .map_err(|_| "系统密钥存储不可用，尚未启用远程连接")?;
-            std::fs::create_dir_all(&self.directory).map_err(|_| "无法保存远程配置")?;
-            std::fs::write(
-                &path,
-                serde_json::to_vec(&config).map_err(|_| "无法保存远程配置")?,
-            )
-            .map_err(|_| "无法保存远程配置")?;
+            let (config, secrets) =
+                register_host(&service, hex::encode(key.public), hex::encode(key.private)).await?;
+            save_registration(&self.directory, &config, &secrets).await?;
             (config, secrets)
         };
         validate_service(&config.service)?;
@@ -237,13 +198,30 @@ impl RemoteHost {
                     return Err("配对窗口已关闭。".into());
                 }
                 let ready = state.ready.as_mut().ok_or("电脑身份不可用")?;
-                let grant: Value = http(
-                    &ready.config,
-                    &ready.secrets,
-                    reqwest::Method::POST,
-                    "invitations",
-                )
-                .await?;
+                let old_host = ready.config.host_id.clone();
+                let result = ready
+                    .invitation(
+                        &self.directory,
+                        self.active_sessions
+                            .load(std::sync::atomic::Ordering::Acquire)
+                            != 0,
+                    )
+                    .await;
+                if ready.config.host_id != old_host {
+                    // A new routing registration invalidates any old invitation.
+                    ready.book.cancel_invitation();
+                    state.invitation = None;
+                    state.invitation_owner = None;
+                    state.listening = false;
+                }
+                let grant = match result {
+                    Ok(grant) => grant,
+                    Err(error) => {
+                        state.error = Some(error.clone());
+                        return Err(error);
+                    }
+                };
+                let ready = state.ready.as_mut().ok_or("电脑身份不可用")?;
                 let id = grant["sessionId"]
                     .as_str()
                     .ok_or("邀请响应无效")?
@@ -351,6 +329,9 @@ impl RemoteHost {
                     Ok(mut ws) => {
                         {
                             let mut state = host.state.lock().await;
+                            if !current_registration(&state, &config) {
+                                continue;
+                            }
                             state.error = None;
                             state.listening = true;
                         }
@@ -385,10 +366,20 @@ impl RemoteHost {
                         }
                     }
                     Err(_) => {
-                        host.state.lock().await.error = Some("接入服务连接中断，正在重连".into());
+                        let mut state = host.state.lock().await;
+                        if current_registration(&state, &config) {
+                            state.error = Some(
+                                "接入服务连接中断，正在重连；若配对失败，请重新生成二维码".into(),
+                            );
+                        }
                     }
                 }
-                host.state.lock().await.listening = false;
+                {
+                    let mut state = host.state.lock().await;
+                    if current_registration(&state, &config) {
+                        state.listening = false;
+                    }
+                }
                 if weak.upgrade().is_none() {
                     break;
                 }
@@ -680,6 +671,8 @@ mod notifications;
 mod power;
 mod preview;
 mod recovery;
+mod registration;
+use registration::{current_registration, register_host, save_registration};
 mod video;
 mod wire;
 mod workspace;
@@ -882,18 +875,29 @@ fn device_actor(peer: &[u8; 32]) -> Result<ActorRef, String> {
 fn validate_service(service: &str) -> Result<(), String> {
     let url = reqwest::Url::parse(service).map_err(|_| "接入服务地址无效")?;
     if (url.scheme() != "https"
-        && !(cfg!(debug_assertions)
-            && url.scheme() == "http"
-            && matches!(url.host_str(), Some("127.0.0.1" | "localhost"))))
+        && !(cfg!(debug_assertions) && url.scheme() == "http" && development_service_host(&url)))
         || url.username() != ""
         || url.password().is_some()
         || url.query().is_some()
         || url.fragment().is_some()
         || url.path() != "/"
     {
-        return Err("接入服务须使用 HTTPS；调试版本支持本机服务".into());
+        return Err("接入服务须使用 HTTPS；调试版本支持本机或局域网 IP".into());
     }
     Ok(())
+}
+fn development_service_host(url: &reqwest::Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    if host == "localhost" {
+        return true;
+    }
+    match host.trim_matches(['[', ']']).parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(ip)) => ip.is_loopback() || ip.is_private(),
+        Ok(std::net::IpAddr::V6(ip)) => ip.is_loopback(),
+        Err(_) => false,
+    }
 }
 async fn http(
     config: &Config,
@@ -910,6 +914,15 @@ async fn http_body(
     path: &str,
     body: Option<&Value>,
 ) -> Result<Value, String> {
+    decode_http(http_request(config, secrets, method, path, body).await?).await
+}
+async fn http_request(
+    config: &Config,
+    secrets: &Secrets,
+    method: reqwest::Method,
+    path: &str,
+    body: Option<&Value>,
+) -> Result<reqwest::Response, String> {
     let mut request = http_client(&config.service)?
         .request(
             method,
@@ -919,13 +932,23 @@ async fn http_body(
     if let Some(body) = body {
         request = request.json(body);
     }
-    let response = request
+    request
         .send()
         .await
-        .map_err(|_| "接入服务连接失败")?
-        .error_for_status()
-        .map_err(|_| "接入服务拒绝请求")?;
-    if response.status() == reqwest::StatusCode::NO_CONTENT {
+        .map_err(|_| "无法连接接入服务，请确认服务已启动并检查网络".into())
+}
+async fn decode_http(response: reqwest::Response) -> Result<Value, String> {
+    let status = response.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("电脑登记凭证已失效，请在本机撤销原手机绑定后重新生成配对二维码".into());
+    }
+    if !status.is_success() {
+        return Err(format!(
+            "接入服务暂时无法处理请求（HTTP {}），请稍后重试",
+            status.as_u16()
+        ));
+    }
+    if status == reqwest::StatusCode::NO_CONTENT {
         Ok(Value::Null)
     } else {
         response.json().await.map_err(|_| "接入服务响应无效".into())
@@ -1067,7 +1090,10 @@ fn http_client(service: &str) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .redirect(reqwest::redirect::Policy::none());
-    if service.starts_with("http://127.0.0.1:") {
+    if reqwest::Url::parse(service)
+        .ok()
+        .is_some_and(|url| development_service_host(&url))
+    {
         builder = builder.no_proxy();
     }
     builder.build().map_err(|_| "连接配置失败".into())
@@ -1156,6 +1182,29 @@ mod tests {
         assert_eq!(take_json(&mut bytes).unwrap().unwrap()["type"], "fixture");
         assert!(bytes.is_empty());
         assert!(take_json(&mut (9_u32 * 1024 * 1024).to_be_bytes().to_vec()).is_err());
+    }
+    #[test]
+    fn development_origins_allow_literal_lan_ips_but_not_public_http() {
+        for service in [
+            "http://192.168.1.161:8787",
+            "http://10.0.0.2:8787",
+            "http://172.16.0.2:8787",
+            "http://127.0.0.1:8787",
+            "http://[::1]:8787",
+        ] {
+            assert_eq!(validate_service(service).is_ok(), cfg!(debug_assertions));
+        }
+        for service in [
+            "http://8.8.8.8:8787",
+            "http://172.32.0.1:8787",
+            "http://example.invalid",
+            "http://192.168.1.161:8787/path",
+            "http://user@192.168.1.161:8787",
+            "http://192.168.1.161:8787?query=1",
+        ] {
+            assert!(validate_service(service).is_err());
+        }
+        assert!(validate_service("https://access.example.invalid").is_ok());
     }
     #[tokio::test]
     async fn closed_pairing_dialog_cannot_issue_a_late_invitation() {
