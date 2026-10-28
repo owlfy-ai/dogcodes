@@ -2,7 +2,7 @@ use super::{Core, ReviewRun, ReviewStatus};
 use super::{activity, activity::ActivityOutput, workspace};
 use chrono::Utc;
 use driver_api::{AgentDriver, DriverEvent, PromptRequest};
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -122,6 +122,23 @@ pub(super) fn recover_incomplete_review(run: &mut ReviewRun) {
     }
 }
 
+// The native lease ends only when the original startup/retirement assets do.
+// The review worker separately keeps its active entry through final persistence.
+struct NativeLifetime {
+    settled: watch::Sender<bool>,
+    pending: watch::Sender<Option<String>>,
+}
+impl crate::AnalysisLifetime for NativeLifetime {
+    fn cleanup_pending(&self, message: &str) {
+        self.pending.send_replace(Some(message.into()));
+    }
+}
+impl Drop for NativeLifetime {
+    fn drop(&mut self) {
+        self.settled.send_replace(true);
+    }
+}
+
 impl Core {
     async fn flush_review_activity(
         &self,
@@ -151,6 +168,44 @@ impl Core {
         output.committed();
         Ok(())
     }
+    async fn wait_review_native(
+        &self,
+        run: &mut ReviewRun,
+        cancel: &mut watch::Receiver<bool>,
+        settled: &mut watch::Receiver<bool>,
+        pending: &mut watch::Receiver<Option<String>>,
+    ) {
+        let mut written = None;
+        let mut settled_open = true;
+        let mut pending_open = true;
+        loop {
+            if *settled.borrow() {
+                return;
+            }
+            let message = pending.borrow().clone();
+            if let Some(message) = message
+                && written.as_ref() != Some(&message)
+            {
+                // Cancellation already persists its own state. Only publish a
+                // new pending message, ordered with that same cancellation.
+                let _active = self.active_reviews.lock().await;
+                run.status = if *cancel.borrow() {
+                    ReviewStatus::Cancelling
+                } else {
+                    ReviewStatus::Running
+                };
+                run.error = Some(self.redactor.redact(&message).text);
+                let _ = self.save_review(run, None).await;
+                written = Some(message);
+            }
+            tokio::select! {
+                result = settled.changed(), if settled_open => { settled_open = result.is_ok(); },
+                result = pending.changed(), if pending_open => { pending_open = result.is_ok(); },
+                else => std::future::pending::<()>().await,
+            }
+        }
+    }
+
     pub(super) async fn execute_review(
         self: Arc<Self>,
         mut run: ReviewRun,
@@ -167,20 +222,38 @@ impl Core {
         // Keep partial output outside the cancellable future.
         let mut output = ReviewOutput::default();
         let mut activity = ActivityOutput::default();
-        let outcome = async {
-            self.save_review(&run, None).await.map_err(|_| "无法保存审查状态".to_owned())?;
+        let (native, mut settled) = watch::channel(false);
+        let (message, mut pending) = watch::channel(None);
+        let lifetime = self.auxiliary_activity.lease(Some(Arc::new(NativeLifetime {
+            settled: native,
+            pending: message,
+        })));
+        let outcome = {
+            let core = &self;
+            let run = &mut run;
+            let output = &mut output;
+            let activity = &mut activity;
+            let cancel = &mut cancel;
+            std::panic::AssertUnwindSafe(async move {
+            core.save_review(run, None).await.map_err(|_| "无法保存审查状态".to_owned())?;
             if *cancel.borrow() { return Err("审查已取消".into()); }
-            let handle = tokio::select! {
+            let startup_additional = additional.clone();
+            let startup = crate::auxiliary_session::Session::start_in_workspace(
+                driver.clone(), Some(lifetime), cwd.clone(),
+                move |driver, cwd, _| async move {
+                    driver.create_review_session(&cwd, &startup_additional).await
+                        .map_err(|error| format!("无法创建审查会话：{error}"))
+                },
+            );
+            let mut session = tokio::select! {
                 biased;
                 _ = cancel.changed() => return Err("审查已取消".into()),
-                result = tokio::time::timeout(Duration::from_mins(1), driver.create_review_session(&cwd, &additional)) => {
-                    result.map_err(|_| "审查 Agent 启动超时".to_owned())?
-                        .map_err(|error| format!("无法创建审查会话：{error}"))?
-                }
+                result = startup => result?,
             };
+            let handle = session.handle().clone();
             run.native_session_id = Some(handle.native_session_id.clone());
             let analyze = async {
-                self.save_review(&run, None).await.map_err(|_| "无法保存审查状态".to_owned())?;
+                core.save_review(run, None).await.map_err(|_| "无法保存审查状态".to_owned())?;
                 let mut stream = driver.prompt(&handle, PromptRequest {
                     prompt: workspace::prompt(run.request.kind, &scope), working_directory: cwd,
                     additional_directories: additional, attachments: vec![], context: vec![],
@@ -193,7 +266,7 @@ impl Core {
                     let event = tokio::select! {
                         biased;
                         _ = tick.tick() => {
-                            self.flush_review_activity(&mut run, &mut activity).await?;
+                            core.flush_review_activity(run, activity).await?;
                             continue;
                         }
                         event = stream.next() => event,
@@ -225,20 +298,30 @@ impl Core {
                 _ = cancel.changed() => Err("审查已取消".into()),
                 result = tokio::time::timeout(Duration::from_mins(15), analyze) => result.unwrap_or_else(|_| Err("审查超过 15 分钟，可重试".into())),
             };
-            if result.is_err() { let _ = tokio::time::timeout(Duration::from_secs(5), driver.interrupt(&handle)).await; }
-            let _ = tokio::time::timeout(Duration::from_secs(5), driver.shutdown(handle)).await;
+            // Observation is independent. NativeLifetime carries the original
+            // proof through Pending, and the outer worker waits for its release.
+            drop(session.cleanup(result.is_err()));
             result
-        }.await;
-        // Flush the tail on success, failure, timeout and cancellation alike.
-        let flush = self.flush_review_activity(&mut run, &mut activity).await;
+            }).catch_unwind().await.unwrap_or_else(|_| Err("审查执行意外中断，正在清理原会话".into()))
+        };
+        // Preserve received output while original cleanup is still pending.
+        let flush =
+            std::panic::AssertUnwindSafe(self.flush_review_activity(&mut run, &mut activity))
+                .catch_unwind()
+                .await
+                .unwrap_or_else(|_| Err("无法保存审查输出".into()));
         let outcome = outcome.and_then(|value| flush.map(|()| value));
         run.result = self.redactor.redact(&output.text()).text;
-        // Serialize final status with cancellation, including the completion race.
+        self.wait_review_native(&mut run, &mut cancel, &mut settled, &mut pending)
+            .await;
+        // Native retirement is confirmed before settling the review. Serialize
+        // the terminal state with cancellation, including the completion race.
         let mut active = self.active_reviews.lock().await;
-        match outcome {
+        match &outcome {
             Ok(final_text) if !*cancel.borrow() => {
                 run.status = ReviewStatus::Completed;
-                run.result = self.redactor.redact(&final_text).text;
+                run.error = None;
+                run.result = self.redactor.redact(final_text).text;
                 // Progress messages belong to the execution trace, not the final JSON report.
                 run.report = output.report();
                 if let Some(report) = run.report.as_mut() {
@@ -263,7 +346,10 @@ impl Core {
                 } else {
                     ReviewStatus::Failed
                 };
-                run.error = result.err().map(|error| self.redactor.redact(&error).text);
+                run.error = result
+                    .as_ref()
+                    .err()
+                    .map(|error| self.redactor.redact(error).text);
             }
         }
         run.finished_at = Some(Utc::now());

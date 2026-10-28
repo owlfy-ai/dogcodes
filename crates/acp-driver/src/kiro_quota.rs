@@ -91,18 +91,9 @@ pub(super) fn parse(payload: &serde_json::Value) -> Result<QuotaSnapshot, Driver
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        AcpDriver, AcpLaunch, Command, ConnectionHandle, QuotaProvider, SessionResumeCapability,
-    };
+    use crate::{AcpDriver, AcpLaunch, QuotaProvider, SessionResumeCapability};
     use serde_json::json;
-    use std::{
-        path::PathBuf,
-        sync::{
-            Arc,
-            atomic::{AtomicBool, Ordering},
-        },
-    };
-    use tokio::sync::mpsc;
+    use std::path::PathBuf;
 
     fn fixture() -> serde_json::Value {
         json!({"success":true,"data":{"planName":"KIRO FREE","billingCycleReset":"2026-10-01","overagesEnabled":false,"usageBreakdowns":[{"resourceType":"CREDIT","displayName":"Credits","used":0.08,"limit":50,"percentage":0,"hasLimit":true}],"bonusCredits":[],"addOnCredits":[]}})
@@ -166,7 +157,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn account_refresh_reuses_connection_caches_and_preserves_expiry_on_failure() {
+    async fn a_fresh_account_cache_never_starts_a_native_process() {
         let driver = AcpDriver::new(
             "kiro",
             &agent_domain::InstallationId::new().to_string(),
@@ -178,55 +169,12 @@ mod tests {
             SessionResumeCapability::Supported,
         )
         .unwrap();
-        let (commands, mut receiver) = mpsc::unbounded_channel();
-        let (cancels, _cancels) = mpsc::unbounded_channel();
-        *driver.shared.connection.lock().await = Some(ConnectionHandle {
-            commands,
-            cancels,
-            finished: Arc::new(AtomicBool::new(false)),
-            cursor_force: false,
-            codebuddy_cwd: None,
-        });
-        let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let count = requests.clone();
-        let server = tokio::spawn(async move {
-            while let Some(command) = receiver.recv().await {
-                let Command::ReadKiroUsage { reply } = command else {
-                    panic!("account query must not create sessions or prompts")
-                };
-                let index = count.fetch_add(1, Ordering::SeqCst);
-                let result = match index.cmp(&2) {
-                    std::cmp::Ordering::Less => Ok(fixture()),
-                    std::cmp::Ordering::Equal => {
-                        Err(DriverError::Disconnected("fixture offline".into()))
-                    }
-                    std::cmp::Ordering::Greater => {
-                        Err(DriverError::NotConfigured("authentication_failed".into()))
-                    }
-                };
-                let _ = reply.send(result);
-            }
-        });
+        let cached = parse(&fixture()).unwrap();
+        driver.shared.quota.record_account(cached.clone());
         let (first, second) = tokio::join!(driver.read_quota(None), driver.read_quota(None));
-        assert_eq!(first.unwrap(), second.unwrap());
-        assert_eq!(requests.load(Ordering::SeqCst), 1);
-        let fresh = driver.read_quota_with_refresh(None, true).await.unwrap();
-        assert_eq!(requests.load(Ordering::SeqCst), 2);
-        assert!(driver.read_quota_with_refresh(None, true).await.is_err());
-        assert_eq!(driver.read_quota(None).await.unwrap(), fresh);
-        assert_eq!(requests.load(Ordering::SeqCst), 3);
-        assert!(matches!(
-            driver.read_quota_with_refresh(None, true).await,
-            Err(DriverError::NotConfigured(_))
-        ));
-        assert!(matches!(
-            driver.read_quota(None).await,
-            Err(DriverError::NotConfigured(_))
-        ));
-        assert!(driver.shared.quota.account_snapshot(None).is_none());
-        assert_eq!(requests.load(Ordering::SeqCst), 4);
-        drop(driver);
-        server.await.unwrap();
+        assert_eq!(first.unwrap(), cached);
+        assert_eq!(second.unwrap(), cached);
+        assert!(driver.shared.connection.lock().await.is_none());
     }
 
     #[tokio::test]

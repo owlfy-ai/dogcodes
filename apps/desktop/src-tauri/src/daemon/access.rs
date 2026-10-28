@@ -78,11 +78,12 @@ pub(crate) fn method_access(method: &str) -> Option<MethodAccess> {
         | "terminal_resize"
         | "terminal_start"
         | "terminal_stop"
-        | "terminal_write"
+        | "terminal_input"
         | "update_project" => Write,
         "subscribe" | "subscribe_project" | "review_watch" | "project_runs_watch"
         | "submission_watch" | "workspace_watch" => Stream,
-        "retire_if_idle"
+        "remote_control"
+        | "retire_if_idle"
         | "workspace_lease"
         | "scan_agent"
         | "project_run_open"

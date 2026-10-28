@@ -4,6 +4,9 @@ use super::*;
 fn expired_check_budget_fails_closed_and_removes_progress_hook() {
     let connection = Connection::open_in_memory().unwrap();
     connection.execute_batch("CREATE TABLE large_fixture(value); WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<10000) INSERT INTO large_fixture SELECT x FROM n;").unwrap();
+    connection
+        .pragma_update(None, "user_version", STORE_FORMAT_VERSION)
+        .unwrap();
     assert!(check_database_with_budget(&connection, std::time::Duration::ZERO).is_err());
     check_database(&connection).unwrap();
 }
@@ -74,18 +77,62 @@ fn user_version(path: &std::path::Path) -> i64 {
 }
 
 #[test]
-fn new_and_legacy_databases_record_the_current_format() {
+fn empty_database_initializes_only_the_current_format() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("app.db");
     drop(SqliteStore::open(&path).unwrap());
     assert_eq!(user_version(&path), STORE_FORMAT_VERSION);
-    // A database created before the stamp is adopted without rewriting data.
+}
+
+#[test]
+fn unstamped_existing_database_is_refused_without_adopting_or_rewriting_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("app.db");
+    drop(SqliteStore::open(&path).unwrap());
     Connection::open(&path)
         .unwrap()
         .pragma_update(None, "user_version", 0)
         .unwrap();
-    drop(SqliteStore::open(&path).unwrap());
-    assert_eq!(user_version(&path), STORE_FORMAT_VERSION);
+    let before = std::fs::read(&path).unwrap();
+    let error = SqliteStore::open(&path).err().unwrap().to_string();
+    assert!(error.contains(UNSUPPORTED_FORMAT_ERROR), "{error}");
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert_eq!(user_version(&path), 0);
+}
+
+#[test]
+fn an_unstamped_view_only_database_is_not_treated_as_empty() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("app.db");
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch("CREATE VIEW existing_view AS SELECT 'keep' AS value;")
+        .unwrap();
+    let before = std::fs::read(&path).unwrap();
+    let error = SqliteStore::open(&path).err().unwrap().to_string();
+    assert!(error.contains(UNSUPPORTED_FORMAT_ERROR), "{error}");
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert_eq!(user_version(&path), 0);
+}
+
+#[test]
+fn reopening_does_not_backfill_missing_indexes() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("app.db");
+    let store = SqliteStore::open(&path).unwrap();
+    store
+        .connection
+        .lock()
+        .unwrap()
+        .execute_batch("DROP INDEX events_task_type_sequence;")
+        .unwrap();
+    drop(store);
+    let store = SqliteStore::open(&path).unwrap();
+    let exists: bool = store.connection.lock().unwrap().query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='index' AND name='events_task_type_sequence')",
+        [], |row| row.get(0),
+    ).unwrap();
+    assert!(!exists);
 }
 
 #[test]

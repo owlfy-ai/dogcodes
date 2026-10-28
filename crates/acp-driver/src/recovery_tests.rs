@@ -6,6 +6,7 @@ fn closed_control_channels_are_unavailable_before_process_cleanup_finishes() {
     let (commands, command_rx) = mpsc::unbounded_channel();
     let (cancels, cancel_rx) = mpsc::unbounded_channel();
     let handle = ConnectionHandle {
+        native: None,
         codebuddy_cwd: None,
         cursor_force: false,
         commands,
@@ -24,6 +25,7 @@ async fn cleanup_marker_preserves_exit_confirmation_without_retaining_the_old_tr
     let (commands, mut command_rx) = mpsc::unbounded_channel();
     let (cancels, mut cancel_rx) = mpsc::unbounded_channel();
     let handle = ConnectionHandle {
+        native: None,
         codebuddy_cwd: Some("/work".into()),
         cursor_force: true,
         commands,
@@ -102,12 +104,13 @@ async fn malformed_prompt_response_invalidates_residency_and_concurrent_restore_
         command_rx,
         cancel_rx,
         ConnectionTasks {
+            owner: None,
+            background: lifecycle::Tasks::new(),
             updates: Arc::new(std::sync::Mutex::new(None)),
             pending: Arc::new(std::sync::Mutex::new(HashMap::new())),
             questions: Arc::new(std::sync::Mutex::new(HashMap::new())),
             activity: Arc::new(std::sync::Mutex::new(activity::Activities::default())),
             quota: quota.clone(),
-            next_permission_id: std::sync::atomic::AtomicU64::new(1),
         },
     ));
     let (reply, response) = oneshot::channel();
@@ -131,6 +134,7 @@ async fn malformed_prompt_response_invalidates_residency_and_concurrent_restore_
     let (reply, response) = oneshot::channel();
     commands
         .send(Command::Prompt {
+            turn: None,
             session_id: id.clone(),
             blocks: vec![],
             image_compatibility: false,
@@ -156,6 +160,7 @@ async fn malformed_prompt_response_invalidates_residency_and_concurrent_restore_
     let (reply, response) = oneshot::channel();
     commands
         .send(Command::Prompt {
+            turn: None,
             session_id: id,
             blocks: vec![],
             image_compatibility: false,

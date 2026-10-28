@@ -23,9 +23,7 @@ impl AgentDriver for Writer {
         "test"
     }
     async fn create_session(&self, _: SessionRequest) -> Result<SessionHandle, DriverError> {
-        Ok(SessionHandle {
-            native_session_id: "fixture".into(),
-        })
+        Ok(SessionHandle::new("fixture".into()))
     }
     async fn prompt(
         &self,
@@ -270,9 +268,7 @@ impl AgentDriver for Controlled {
         "test"
     }
     async fn create_session(&self, _: SessionRequest) -> Result<SessionHandle, DriverError> {
-        Ok(SessionHandle {
-            native_session_id: "controlled".into(),
-        })
+        Ok(SessionHandle::new("controlled".into()))
     }
     async fn prompt(
         &self,

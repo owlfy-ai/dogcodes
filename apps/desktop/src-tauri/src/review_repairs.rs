@@ -32,6 +32,8 @@ pub struct RepairContext {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepairIntent {
+    #[serde(default = "local_actor")]
+    pub actor: ActorRef,
     /// Also the command identity of the repair turn.
     pub operation_id: CommandId,
     pub task_id: TaskId,
@@ -41,6 +43,9 @@ pub struct RepairIntent {
     pub target: ExecutorRef,
     pub context: Option<RepairContext>,
     pub created_at: DateTime<Utc>,
+}
+fn local_actor() -> ActorRef {
+    ActorRef::LocalUser
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -154,6 +159,7 @@ pub(crate) fn submit_envelope(intent: &RepairIntent, version: u64) -> CommandEnv
     envelope.command_id = intent.operation_id.clone();
     envelope.idempotency_key = intent.operation_id.to_string();
     envelope.expected_stream_version = Some(version);
+    envelope.actor = intent.actor.clone();
     envelope
 }
 fn context_envelope(
@@ -169,6 +175,7 @@ fn context_envelope(
     envelope.command_id = context.operation_id.clone();
     envelope.idempotency_key = context.operation_id.to_string();
     envelope.expected_stream_version = Some(intent.base_version);
+    envelope.actor = intent.actor.clone();
     envelope
 }
 fn accepted(ack: Option<CommandAck>) -> Option<CommandAck> {
@@ -283,6 +290,14 @@ impl ReviewRepairs {
     }
 
     pub async fn call(&self, core: &Arc<Core>, call: RepairCall) -> Result<Value, String> {
+        self.call_as(core, call, ActorRef::LocalUser).await
+    }
+    pub async fn call_as(
+        &self,
+        core: &Arc<Core>,
+        call: RepairCall,
+        actor: ActorRef,
+    ) -> Result<Value, String> {
         let entry = match call {
             RepairCall::Get { task_id, run_id } => {
                 return serde_json::to_value(self.read(&task_id, &run_id).await?)
@@ -296,7 +311,7 @@ impl ReviewRepairs {
             } => {
                 let _gate = self.gate.lock().await;
                 let entry = self
-                    .freeze(core, operation_id, task_id, reference, target)
+                    .freeze_as(core, operation_id, task_id, reference, target, actor)
                     .await?;
                 // A retried start of a finished request is read-only.
                 if entry.pending() {
@@ -344,13 +359,33 @@ impl ReviewRepairs {
     }
 
     /// Records the frozen request without mutating the task. Callers hold the gate.
+    #[cfg(test)]
     pub(crate) async fn freeze(
+        &self,
+        core: &Arc<Core>,
+        operation_id: CommandId,
+        task_id: TaskId,
+        reference: ReviewFixRef,
+        target: Option<ExecutorRef>,
+    ) -> Result<RepairEntry, String> {
+        self.freeze_as(
+            core,
+            operation_id,
+            task_id,
+            reference,
+            target,
+            ActorRef::LocalUser,
+        )
+        .await
+    }
+    async fn freeze_as(
         &self,
         core: &Arc<Core>,
         operation_id: CommandId,
         task_id: TaskId,
         mut reference: ReviewFixRef,
         target: Option<ExecutorRef>,
+        actor: ActorRef,
     ) -> Result<RepairEntry, String> {
         if reference.input_sha256.trim().is_empty() || reference.finding_indices.is_empty() {
             return Err("请选择有效的审查问题。".into());
@@ -400,6 +435,7 @@ impl ReviewRepairs {
         let now = Utc::now();
         let entry = RepairEntry {
             intent: RepairIntent {
+                actor,
                 operation_id,
                 task_id,
                 base_version: task.stream_version,
@@ -600,8 +636,7 @@ impl ReviewRepairs {
         let intent = entry.intent.clone();
         if let Some(version) = Self::known_version(&entry) {
             // Fence the exact original submit so it cannot be accepted later.
-            let mut envelope = submit_envelope(&intent, version);
-            envelope.actor = ActorRef::LocalUser;
+            let envelope = submit_envelope(&intent, version);
             match core
                 .invalidate_pending_command(&envelope)
                 .await

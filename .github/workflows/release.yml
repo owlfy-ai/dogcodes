@@ -77,7 +77,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils libssl-dev build-essential
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev file patchelf xdg-utils libssl-dev build-essential pkg-config nasm libclang-dev libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libpipewire-0.3-modules libspa-0.2-modules pipewire-bin wireplumber dbus libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libwayland-dev libegl-dev libgbm-dev libxkbcommon-dev
+      - name: Compatible SPA build headers for the Linux baseline
+        if: runner.os == 'Linux'
+        run: python3 scripts/prepare_linux_spa_sdk.py --destination "${{ runner.temp }}/dogcodes-native-sdk" --github-env "$GITHUB_ENV"
       - name: Install the repository Rust toolchain and target
         run: |
           rustup show active-toolchain
@@ -88,6 +91,12 @@ jobs:
           RUST_MIN_STACK: '16777216'
       - name: Build unsigned installer
         run: pnpm desktop:package --unsigned --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Release AppImage client on a private Portal
+        if: runner.os == 'Linux'
+        timeout-minutes: 15
+        env:
+          RUST_MIN_STACK: '16777216'
+        run: python3 scripts/wayland_acceptance.py --release --format rgb-cursor --appimage target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
       - uses: actions/upload-artifact@v7
         with:
           name: installer-${{ matrix.target }}

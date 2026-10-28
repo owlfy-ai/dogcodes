@@ -5,23 +5,26 @@ import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { TerminalDock, type TerminalApi } from "./TerminalDock";
 
 import type { TerminalInfo, TerminalConnection } from "./terminalClient";
+import { inputFixture, inputTick, testCrypto } from "./terminalInput.fixture";
+let inputFixtures = new WeakMap<TerminalApi, ReturnType<typeof inputFixture>>();
 const detach = vi.fn();
 const info = (id = "existing", index = 0): TerminalInfo => ({ id, epoch: "epoch", projectId: "project", directoryIndex: index, taskId: null, commandId: null, label: "终端", cwd: "/project/web", command: null, status: "running", exitCode: null, error: null, outputEnd: 0, createdAt: 1 });
 const connection = (id: string): TerminalConnection => ({ id, detach: () => detach(id) });
-const terminals = vi.hoisted(() => [] as { input?: (data: string) => void; write: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }[]);
+const terminals = vi.hoisted(() => [] as { input?: (data: string) => void; binary?: (data: string) => void; modes: { mouseTrackingMode: string }; write: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; options: Record<string, unknown> }[]);
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
-    cols = 80; rows = 24; options = {}; write = vi.fn(); dispose = vi.fn();
+    cols = 80; rows = 24; options = {}; modes = { mouseTrackingMode: "none" }; write = vi.fn(); dispose = vi.fn();
     constructor() { terminals.push(this); }
     open() {} loadAddon() {} focus() {}
     onData(callback: (data: string) => void) { (this as typeof terminals[number]).input = callback; return { dispose() {} }; }
-    onBinary() { return { dispose() {} }; }
+    onBinary(callback: (data: string) => void) { (this as typeof terminals[number]).binary = callback; return { dispose() {} }; }
   },
 }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() {} } }));
 let root: Root, element: HTMLDivElement;
 beforeEach(() => {
-  terminals.length = 0; detach.mockClear();
+  terminals.length = 0; detach.mockClear(); inputFixtures = new WeakMap();
+  vi.stubGlobal("crypto", testCrypto);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   vi.stubGlobal("matchMedia", () => ({ addEventListener() {}, removeEventListener() {} }));
@@ -30,13 +33,16 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); element.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 function client(): TerminalApi {
-  return {
+  const fixture = inputFixture();
+  const api: TerminalApi = {
     open: vi.fn(async (_, index, _cols, _rows, receive) => { receive({ kind: "state", info: info(`session-${index}`, index) }); return connection(`session-${index}`); }),
     attach: vi.fn(async (id, receive) => { receive({ kind: "state", info: info(id) }); return connection(id); }),
     list: vi.fn(async () => []), get: vi.fn(async id => info(id)),
-    write: vi.fn(async () => {}), resize: vi.fn(async () => {}), close: vi.fn(async () => {}),
+    input: fixture.client().input, resize: vi.fn(async () => {}), close: vi.fn(async () => {}),
   };
+  inputFixtures.set(api, fixture); return api;
 }
+const userInput = (element: HTMLElement) => element.querySelector(".terminal-emulator")!.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true }));
 const directories = ["/project/web", "/project/server"];
 
 it("starts one session per directory on demand and preserves both when hidden or switching tabs", async () => {
@@ -68,8 +74,8 @@ it("detaches sessions that finish opening after StrictMode cleanup or unmount", 
 it("sends UTF-8 and control keys in order and does not restart an exited shell", async () => {
   const api = client();
   await act(async () => root.render(<TerminalDock projectId="project" directories={["/project/web"]} open onClose={() => {}} api={api} />));
-  await act(async () => { terminals[0].input?.("中文"); terminals[0].input?.("\x03"); });
-  expect(vi.mocked(api.write).mock.calls.flatMap(call => call[1])).toEqual([...new TextEncoder().encode("中文"), 3]);
+  await act(async () => { userInput(element); terminals[0].input?.("中文"); terminals[0].input?.("\x03"); await inputTick(); });
+  expect(inputFixtures.get(api)!.writes.flat()).toEqual([...new TextEncoder().encode("中文"), 3]);
   const receive = vi.mocked(api.open).mock.calls[0][4];
   await act(async () => receive({ kind: "data", bytes: [65] }));
   expect(terminals[0].write).toHaveBeenCalledWith(new Uint8Array([65]));
@@ -192,7 +198,7 @@ it("restores an existing background shell without opening another", async () => 
   await act(async () => (element.querySelector('[role="menuitem"]') as HTMLButtonElement).click());
   expect(api.attach).toHaveBeenCalledTimes(2); expect(api.open).not.toHaveBeenCalled();
   await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="关闭当前终端"]')!.click());
-  expect(api.close).toHaveBeenCalledExactlyOnceWith("existing");
+  expect(api.close).toHaveBeenCalledExactlyOnceWith("existing", "epoch");
 });
 
 it("does not create shells when the background inventory cannot be checked", async () => {
@@ -215,19 +221,78 @@ it("automatically checks the original operation after a lost launch reply instea
   expect(api.close).not.toHaveBeenCalled();
 });
 
-it("does not mark a disconnected process completed and automatically reconnects without replaying input", async () => {
-  vi.useFakeTimers();
+it("unknown input pauses only input, preserves output and resumes only after explicit inspection", async () => {
+  vi.useFakeTimers(); const api = client(), fixture = inputFixtures.get(api)!; fixture.notAdmitted = true;
+  await act(async () => root.render(<TerminalDock projectId="project" directories={["/project"]} open onClose={() => {}} api={api} />));
+  await act(async () => { userInput(element); terminals[0].input?.("one\n"); await inputTick(); });
+  expect(element.textContent).toContain("输入结果尚未确认"); expect(element.textContent).not.toContain("终端已退出");
+  expect(terminals[0].options.disableStdin).toBe(true); expect(detach).not.toHaveBeenCalled();
+  const receive = vi.mocked(api.open).mock.calls[0][4];
+  await act(async () => receive({ kind: "data", bytes: [65] }));
+  expect(terminals[0].write).toHaveBeenCalledWith(new Uint8Array([65]));
+  await act(async () => receive({ kind: "state", info: info("session-0") }));
+  expect(element.textContent).toContain("输入结果尚未确认"); expect(terminals[0].options.disableStdin).toBe(true);
+  await act(async () => vi.advanceTimersByTimeAsync(1000)); expect(api.attach).not.toHaveBeenCalled();
+  const button = (text: string) => [...element.querySelectorAll<HTMLButtonElement>(".terminal-input-recovery button")].find(button => button.textContent === text)!;
+  const before = vi.mocked(api.input).mock.calls.length;
+  await act(async () => { button("核实输入").click(); await inputTick(); });
+  expect(vi.mocked(api.input).mock.calls.slice(before).map(call => call[1].type)).toEqual(["inspect"]);
+  fixture.notAdmitted = false;
+  await act(async () => { button("继续输入").click(); await inputTick(); });
+  expect(terminals[0].options.disableStdin).toBe(false); expect(fixture.writes).toEqual([]);
+  await act(async () => { terminals[0].input?.("new\n"); await inputTick(); });
+  expect(new TextDecoder().decode(Uint8Array.from(fixture.writes.flat()))).toBe("new\n");
+  expect(api.open).toHaveBeenCalledTimes(1); expect(api.close).not.toHaveBeenCalled();
+});
+
+it("viewing terminal protocol replies does not claim input; a keyboard gesture may claim it", async () => {
   const api = client();
   await act(async () => root.render(<TerminalDock projectId="project" directories={["/project"]} open onClose={() => {}} api={api} />));
-  vi.mocked(api.write).mockRejectedValue(new Error("unknown input result"));
-  await act(async () => terminals[0].input?.("one\n"));
-  expect(element.textContent).toContain("输入结果无法确认");
-  expect(element.textContent).not.toContain("终端已退出");
-  expect(element.querySelector('.terminal-status button')).toBeNull();
-  await act(async () => vi.advanceTimersByTimeAsync(1000));
-  expect(api.attach).toHaveBeenCalledWith("session-0", expect.any(Function));
-  expect(api.write).toHaveBeenCalledTimes(1); expect(api.open).toHaveBeenCalledTimes(1);
-  expect(api.close).not.toHaveBeenCalled();
+  await act(async () => { terminals[0].input?.("\x1b[1;1R"); await inputTick(); });
+  expect(api.input).not.toHaveBeenCalled();
+  await act(async () => { userInput(element); terminals[0].input?.("hello"); await inputTick(); });
+  expect(new TextDecoder().decode(Uint8Array.from(inputFixtures.get(api)!.writes.flat()))).toBe("hello");
+});
+
+it("an ordinary focus click stays passive but a TUI mouse report may acquire input", async () => {
+  const api = client();
+  await act(async () => root.render(<TerminalDock projectId="project" directories={["/project"]} open onClose={() => {}} api={api} />));
+  const emulator = element.querySelector(".terminal-emulator")!;
+  await act(async () => { emulator.dispatchEvent(new Event("pointerdown", { bubbles: true })); terminals[0].input?.("\x1b[1;1R"); await inputTick(); });
+  expect(api.input).not.toHaveBeenCalled();
+  await act(async () => { terminals[0].modes.mouseTrackingMode = "vt200"; emulator.dispatchEvent(new Event("pointerdown", { bubbles: true })); terminals[0].binary?.("\x1b[M !!"); await inputTick(); });
+  expect(inputFixtures.get(api)!.writes.flat()).toEqual([27,91,77,32,33,33]);
+});
+
+it("output reattachment retains unresolved input, and read-only proof enables input without replay", async () => {
+  vi.useFakeTimers(); const api = client(), fixture = inputFixtures.get(api)!; let finish!: () => void;
+  fixture.gate = new Promise<void>(resolve => { finish = resolve; });
+  await act(async () => root.render(<TerminalDock projectId="project" directories={["/project"]} open onClose={() => {}} api={api} />));
+  await act(async () => { userInput(element); terminals[0].input?.("one"); await inputTick(); });
+  const receive = vi.mocked(api.open).mock.calls[0][4];
+  await act(async () => receive({ kind: "disconnected", error: "offline" }));
+  await act(async () => vi.advanceTimersByTimeAsync(1000)); expect(api.attach).toHaveBeenCalledTimes(1);
+  await act(async () => { finish(); await inputTick(); });
+  expect(terminals.at(-1)!.options.disableStdin).toBe(true);
+  const verify = [...element.querySelectorAll<HTMLButtonElement>(".terminal-input-recovery button")].find(button => button.textContent === "核实输入")!;
+  await act(async () => { verify.click(); await inputTick(); });
+  expect(terminals.at(-1)!.options.disableStdin).toBe(false); expect(fixture.writes.length).toBe(1);
+  expect(api.open).toHaveBeenCalledTimes(1); expect(api.close).not.toHaveBeenCalled();
+});
+
+it("replacing an API wrapper preserves the same terminal's unknown input identity", async () => {
+  const api = client(), fixture = inputFixtures.get(api)!; fixture.notAdmitted = true;
+  await act(async () => root.render(<TerminalDock projectId="project" directories={["/project"]} open onClose={() => {}} api={api} />));
+  await act(async () => { userInput(element); terminals[0].input?.("old"); await inputTick(); });
+  expect(element.querySelector(".terminal-input-recovery")).not.toBeNull();
+  const next = { ...api };
+  await act(async () => root.render(<TerminalDock projectId="project" directories={["/project"]} open onClose={() => {}} api={next} />));
+  expect(terminals.at(-1)!.options.disableStdin).toBe(true);
+  const before = vi.mocked(api.input).mock.calls.length;
+  const verify = [...element.querySelectorAll<HTMLButtonElement>(".terminal-input-recovery button")].find(button => button.textContent === "核实输入")!;
+  await act(async () => { verify.click(); await inputTick(); });
+  expect(vi.mocked(api.input).mock.calls.slice(before).map(call => call[1].type)).toEqual(["inspect"]);
+  expect(vi.mocked(api.input).mock.calls.filter(call => call[1].type === "write").length).toBe(1);
 });
 
 it("shows a friendly startup error instead of the raw exception, without a manual recovery button", async () => {
@@ -340,7 +405,7 @@ it("closes only the selected terminal through the toolbar cross", async () => {
   expect(element.querySelector(".terminal-controls")).toBeNull();
   expect(element.querySelector('[aria-label="收起终端"]')).toBeNull();
   await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="关闭当前终端"]')!.click());
-  expect(api.close).toHaveBeenCalledExactlyOnceWith("session-1");
+  expect(api.close).toHaveBeenCalledExactlyOnceWith("session-1", "epoch");
   expect(element.querySelectorAll('[role="tab"]')).toHaveLength(1);
   expect(element.querySelector('[role="tab"]')?.textContent).toBe("web");
   expect(terminals[0].dispose).not.toHaveBeenCalled();

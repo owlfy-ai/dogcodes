@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
+exclude = ["vendor/webrtc"]
 members = [
+  "crates/remote-endpoint",
+  "crates/remote-desktop",
+  "crates/remote-transport",
   "crates/domain",
   "crates/protocol",
   "crates/driver-api",
@@ -13,6 +17,7 @@ members = [
   "crates/core",
   "crates/store",
   "crates/runtime",
+  "crates/process-scope",
   "crates/agent-registry",
   "crates/redaction",
   "crates/workspace",
@@ -61,3 +66,7 @@ too_many_lines = "allow"
 # Tauri commands and daemon handlers hold large async state machines by design;
 # boxing each future adds churn without benefit. Other pedantic lints stay on.
 large_futures = "allow"
+
+# Reviewed local extension of 0.21.1: TURN TCP/TLS. See vendor/webrtc/DOGCODES.md.
+[patch.crates-io]
+webrtc = { path = "vendor/webrtc" }

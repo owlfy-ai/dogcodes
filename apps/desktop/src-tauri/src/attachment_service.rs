@@ -11,6 +11,7 @@ use std::{
 };
 
 pub const MAX_BYTES: usize = 25 * 1024 * 1024;
+mod transfer;
 const MAX_BASE64: usize = MAX_BYTES.div_ceil(3) * 4;
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -289,6 +290,9 @@ pub async fn dispatch(
     method: &str,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    if method.starts_with("attachment_upload_") || method == "attachment_read_chunk" {
+        return transfer::dispatch(store, method, args).await;
+    }
     let method = method.to_owned();
     tokio::task::spawn_blocking(move || match method.as_str() {
         "attachment_save" => {
@@ -322,6 +326,60 @@ mod tests {
             byte_length: bytes.len() as u64,
             sha256: format!("{:x}", Sha256::digest(bytes)),
         }
+    }
+    #[test]
+    fn chunk_upload_resumes_after_restart_and_never_overwrites_a_conflicting_retry() {
+        let temp = tempfile::tempdir().unwrap();
+        let bytes = vec![42; 300_000];
+        let request = request(&bytes);
+        let store = AttachmentStore::new(temp.path().into());
+        assert_eq!(
+            store.transfer_status(&request, true).unwrap()["offset"],
+            "0"
+        );
+        assert_eq!(
+            store
+                .transfer_chunk(&request, 0, &STANDARD.encode(&bytes[..200_000]))
+                .unwrap()["offset"],
+            "200000"
+        );
+        drop(store);
+        let store = AttachmentStore::new(temp.path().into());
+        assert_eq!(
+            store.transfer_status(&request, false).unwrap()["offset"],
+            "200000"
+        );
+        assert!(
+            store
+                .transfer_chunk(&request, 200_001, &STANDARD.encode(b"x"))
+                .is_err()
+        );
+        assert!(
+            store
+                .transfer_chunk(&request, 0, &STANDARD.encode(b"wrong"))
+                .is_err()
+        );
+        store
+            .transfer_chunk(&request, 0, &STANDARD.encode(&bytes[..200_000]))
+            .unwrap();
+        assert!(store.transfer_commit(&request).is_err());
+        store
+            .transfer_chunk(&request, 200_000, &STANDARD.encode(&bytes[200_000..]))
+            .unwrap();
+        let saved = store.transfer_commit(&request).unwrap();
+        assert_eq!(store.transfer_commit(&request).unwrap(), saved);
+        assert_eq!(
+            store.transfer_status(&request, false).unwrap()["state"],
+            "completed"
+        );
+        store.transfer_abort(&request).unwrap();
+        assert_eq!(
+            STANDARD.decode(store.read(&saved.path).unwrap()).unwrap(),
+            bytes
+        );
+        let mut conflicting = request.clone();
+        conflicting.name = "different.txt".into();
+        assert!(store.transfer_status(&conflicting, true).is_err());
     }
     #[test]
     fn attachment_receipt_is_read_only_and_reopens_the_same_upload() {

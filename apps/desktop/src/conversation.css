@@ -258,6 +258,17 @@
   align-items: center;
   gap: 8px;
 }
+/* A finished thought with saved text: the same line, opening like a tool step. */
+.thought-history > .activity-line > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #929292;
+}
+.thought-detail {
+  padding: 4px 14px;
+  color: var(--muted, #8a8a85);
+}
 /* Right-align the stream so new chunks immediately enter at the right edge. */
 .thought-marquee {
   flex: 1;

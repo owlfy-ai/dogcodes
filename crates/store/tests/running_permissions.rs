@@ -40,9 +40,7 @@ impl AgentDriver for ApprovalDriver {
         ))
     }
     async fn create_session(&self, _: SessionRequest) -> Result<SessionHandle, DriverError> {
-        Ok(SessionHandle {
-            native_session_id: "session".into(),
-        })
+        Ok(SessionHandle::new("session".into()))
     }
     async fn prompt(
         &self,

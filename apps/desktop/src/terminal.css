@@ -47,3 +47,10 @@
 .terminal-empty .review-empty-state { --empty-muted: color-mix(in srgb, var(--terminal-fg) 75%, var(--terminal-bg)); flex-shrink: 0; }
 .terminal-empty .review-empty-state--compact .review-empty-content { grid-template-columns: calc(96px * var(--ui-scale, 1)) minmax(0, 1fr); column-gap: calc(20px * var(--ui-scale, 1)); max-width: calc(380px * var(--ui-scale, 1)); }
 .terminal-empty .review-empty-state--compact .review-empty-art { width: calc(96px * var(--ui-scale, 1)); height: calc(83px * var(--ui-scale, 1)); }
+
+.terminal-input-recovery { flex: none; padding: 4px 14px 8px; font-size: calc(12px * var(--ui-scale, 1)); }
+.terminal-input-recovery .inline-error { margin: 0 0 4px; font-size: inherit; }
+.terminal-input-recovery > span { color: var(--muted); }
+.terminal-input-recovery > div:last-child { display: flex; gap: 8px; margin-top: 6px; }
+.terminal-input-recovery button { padding: 4px 9px; border: 1px solid var(--terminal-border); border-radius: 6px; color: inherit; background: transparent; font: inherit; }
+.terminal-input-recovery button:hover { background: #8882; }

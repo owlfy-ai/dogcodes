@@ -39,6 +39,6 @@ framing = "jsonl_stdio"
 
 [capability_expectations]
 streaming_text = "native_via_app_server_beta"
-session_resume = "verified_cli_0.16.5_with_native_runtime_hydration"
+session_resume = "native_cold_resume_verified_0.16.9"
 approvals = "interaction_requestPermission_shape_unverified"
 cancellation = "session_stop_beta"

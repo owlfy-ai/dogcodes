@@ -1,5 +1,6 @@
 import { HistoricalTurnDiff } from "./HistoricalTurnDiff";
 import { TurnUndoAction } from "./TurnUndoAction";
+import { TurnCommitAction } from "./TurnCommitAction";
 import { InlineFileEdit } from "./InlineFileEdit";
 import { cachedTurnArtifact, loadTurnArtifact, turnArtifactKey, type TurnArtifact } from "./turnArtifactCache";
 import { useEffect, useState } from "react";
@@ -16,11 +17,13 @@ export function TurnFiles({
   metadata,
   client,
   operation = false,
+  providerId,
 }: {
   taskId: TaskId;
   metadata: ArtifactMetadata;
   client: CoreClient;
   operation?: boolean;
+  providerId?: string;
   onReviewFile?: (path: string) => void;
 }) {
   const key = turnArtifactKey(taskId, metadata);
@@ -68,6 +71,7 @@ export function TurnFiles({
         <svg className="turn-summary-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m6 4 4 4-4 4" /></svg>
         <strong>{data.files.length} 个文件已更改</strong>
         {diff && <span className="turn-summary-counts"><span className="additions">+{diff.additions}</span><span className="deletions">−{diff.deletions}</span></span>}
+        <TurnCommitAction key={`commit-${key}`} taskId={taskId} data={data} providerId={providerId} />
         <TurnUndoAction key={key} taskId={taskId} metadata={metadata} count={data.files.length} />
       </summary>
       <div className="turn-summary-list">

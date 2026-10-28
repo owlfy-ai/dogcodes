@@ -169,7 +169,31 @@ impl Bridge {
     pub async fn prepare(
         executable: &std::path::Path,
         workspace: &SessionRequest,
+        slot: super::SpawnSlot,
+    ) -> Result<(Self, super::SpawnSlot), DriverError> {
+        let executable = executable.to_path_buf();
+        let workspace = workspace.clone();
+        // Caller cancellation must not release auth exclusion while the native
+        // verification helper is still writing the shared credential store.
+        let (_observer, cancelled) = oneshot::channel::<()>();
+        tokio::spawn(async move {
+            let bridge = Self::prepare_owned(&executable, &workspace, cancelled).await?;
+            Ok((bridge, slot))
+        })
+        .await
+        .map_err(|_| DriverError::Disconnected("Antigravity Hook preparation actor ended".into()))?
+    }
+
+    async fn prepare_owned(
+        executable: &std::path::Path,
+        workspace: &SessionRequest,
+        mut cancelled: oneshot::Receiver<()>,
     ) -> Result<Self, DriverError> {
+        let abandoned =
+            || DriverError::Disconnected("Antigravity Hook verification caller left".into());
+        if cancelled.try_recv() == Err(oneshot::error::TryRecvError::Closed) {
+            return Err(abandoned());
+        }
         let fail =
             || DriverError::CapabilityUnavailable("桌面审批 Hook 验证失败，未启动工具".into());
         let started = std::time::Instant::now();
@@ -231,6 +255,9 @@ impl Bridge {
             listener,
         };
         if cache_hit {
+            if cancelled.try_recv() == Err(oneshot::error::TryRecvError::Closed) {
+                return Err(abandoned());
+            }
             eprintln!(
                 "antigravity timing stage=hook_verification cache=hit elapsed_ms={}",
                 started.elapsed().as_millis()
@@ -261,30 +288,46 @@ impl Bridge {
         // Match the native session launch, including GUI-only system proxies.
         agent_runtime::apply_proxy_environment(&mut cmd);
         bridge.environment(&mut cmd);
-        let output = tokio::time::timeout(HOOK_PROBE_TIMEOUT, async {
-            use tokio::io::AsyncReadExt;
-            let mut child = cmd.spawn().map_err(|_| fail())?;
-            let mut bytes = Vec::new();
-            child
-                .stdout
-                .take()
-                .ok_or_else(fail)?
-                .take(LIMIT + 1)
-                .read_to_end(&mut bytes)
-                .await
-                .map_err(|_| fail())?;
-            if bytes.len() as u64 > LIMIT {
-                return Err(fail());
-            }
-            if !child.wait().await.map_err(|_| fail())?.success() {
-                return Err(fail());
-            }
-            Ok(bytes)
-        })
-        .await
-        .map_err(|_| {
-            DriverError::CapabilityUnavailable("桌面审批 Hook 验证超时，未启动工具".into())
-        })??;
+        if cancelled.try_recv() == Err(oneshot::error::TryRecvError::Closed) {
+            return Err(abandoned());
+        }
+        let mut child = agent_runtime::OwnedChild::spawn(cmd).map_err(|_| fail())?;
+        let result = tokio::select! {
+            biased;
+            _ = &mut cancelled => Err(abandoned()),
+            result = tokio::time::timeout(HOOK_PROBE_TIMEOUT, async {
+                use tokio::io::AsyncReadExt;
+                let mut bytes = Vec::new();
+                child
+                    .stdout
+                    .take()
+                    .ok_or_else(fail)?
+                    .take(LIMIT + 1)
+                    .read_to_end(&mut bytes)
+                    .await
+                    .map_err(|_| fail())?;
+                if bytes.len() as u64 > LIMIT {
+                    return Err(fail());
+                }
+                if !child.wait().await.map_err(|_| fail())?.success() {
+                    return Err(fail());
+                }
+                Ok(bytes)
+            }) => result.map_err(|_| {
+                DriverError::CapabilityUnavailable("桌面审批 Hook 验证超时，未启动工具".into())
+            }),
+        };
+        // Continue retirement of this exact OS scope even when the query failed.
+        // The enclosing owned worker retains the auth slot throughout.
+        let mut delay = 1;
+        while child.terminate().await.is_err() {
+            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+            delay = (delay * 2).min(30);
+        }
+        let output = result??;
+        if cancelled.try_recv() == Err(oneshot::error::TryRecvError::Closed) {
+            return Err(abandoned());
+        }
         if !bridge.verified(&output) {
             return Err(fail());
         }
@@ -366,7 +409,8 @@ impl Bridge {
         self.environment(command);
         command.arg("--add-dir").arg(self.directory.path());
     }
-    pub fn start(self, process: &Arc<SessionProcess>) {
+    pub fn start(self, process: &Arc<SessionProcess>) -> tokio::task::JoinHandle<()> {
+        let mut closing = process.closing.subscribe();
         let process = Arc::downgrade(process);
         let directory = self.directory;
         tokio::spawn(async move {
@@ -375,36 +419,47 @@ impl Bridge {
             // retain the TempDir, which removes the Hook files when dropped.
             let _directory = directory;
             let permits = Arc::new(tokio::sync::Semaphore::new(32));
+            let mut requests = tokio::task::JoinSet::new();
             loop {
                 let Some(p) = process.upgrade() else {
                     break;
                 };
-                if p.finished.load(Ordering::Acquire) {
+                if p.finished.load(Ordering::Acquire) || *closing.borrow() {
                     break;
                 }
                 drop(p);
-                let accepted =
-                    tokio::time::timeout(std::time::Duration::from_secs(1), self.listener.accept())
-                        .await;
+                let accepted = tokio::select! {
+                    changed=closing.changed()=>{let _=changed;break;},
+                    accepted=tokio::time::timeout(std::time::Duration::from_secs(1),self.listener.accept())=>accepted,
+                    _=requests.join_next(),if !requests.is_empty()=>continue,
+                };
                 if let Ok(Ok((socket, _))) = accepted
                     && let Ok(permit) = Arc::clone(&permits).try_acquire_owned()
                 {
                     let p = process.clone();
+                    let origin = p.upgrade().and_then(|p| p.lease());
                     let token = self.token.clone();
-                    tokio::spawn(async move {
+                    requests.spawn(async move {
                         let _permit = permit;
-                        let _ = serve(socket, p, &token).await;
+                        let _ = serve(socket, p, &token, origin).await;
                     });
                 }
             }
-        });
+            requests.abort_all();
+            while requests.join_next().await.is_some() {}
+        })
     }
 }
 async fn serve(
     socket: tokio::net::TcpStream,
     process: std::sync::Weak<SessionProcess>,
     token: &str,
+    origin: Option<super::sessions::TurnLease>,
 ) -> std::io::Result<()> {
+    enum Pending {
+        Question(String, oneshot::Receiver<agent_domain::QuestionAnswer>),
+        Approval(String, oneshot::Receiver<bool>),
+    }
     use tokio::io::AsyncReadExt;
     let (read, mut write) = socket.into_split();
     let mut line = String::new();
@@ -413,108 +468,70 @@ async fn serve(
         tokio::io::BufReader::new(read.take(LIMIT + 1)).read_line(&mut line),
     )
     .await;
-    let mut allow = false;
+    let mut pending = None;
+    let mut sink = None;
     if matches!(read_result, Ok(Ok(_)))
         && line.len() as u64 <= LIMIT
-        && let (Ok(v), Some(p)) = (serde_json::from_str::<Value>(&line), process.upgrade())
+        && let (Ok(v), Some(p), Some(lease)) = (
+            serde_json::from_str::<Value>(&line),
+            process.upgrade(),
+            origin.as_ref(),
+        )
     {
+        let _gate = p.lifecycle.lock().expect("session lifecycle");
         let payload = &v["payload"];
-        let own = payload["conversationId"].as_str().is_some_and(|id| {
+        let conversation = payload["conversationId"].as_str();
+        let own = conversation.is_some_and(|id| {
             p.native_id.lock().expect("native id").as_deref() == Some(id)
                 || p.approval_children.lock().expect("children").contains(id)
         });
         if v["token"] == token
             && own
-            && p.turn_active.load(Ordering::Acquire)
-            && !p.interrupt_requested.load(Ordering::Acquire)
-            && let (Some(step), Some(name)) = (
+            && p.owns(lease)
+            && let (Some(step), Some(name), Some(conversation)) = (
                 payload["stepIdx"].as_u64(),
                 payload["toolCall"]["name"]
                     .as_str()
                     .filter(|s| !s.is_empty() && s.len() <= 256),
+                conversation,
             )
+            && p.seen_hooks
+                .lock()
+                .expect("seen hooks")
+                .insert((conversation.into(), step))
         {
+            sink.clone_from(&p.updates.lock().expect("updates sink"));
+            // Never reuse the native step as a UI permission identity. Old
+            // handlers must not remove or answer a newer request at that step.
+            let id = format!("hook-{}", uuid::Uuid::new_v4());
             if name == "ask_question" {
-                let id = format!(
-                    "hook-question-{}-{step}",
-                    payload["conversationId"].as_str().unwrap()
-                );
-                let params = &payload["toolCall"]["args"];
-                let mut reason =
-                    "The question could not be answered. Do not infer a user answer.".to_owned();
-                if let Ok(form) = driver_api::questions::native_form("antigravity", params) {
+                if let Ok(form) =
+                    driver_api::questions::native_form("antigravity", &payload["toolCall"]["args"])
+                {
                     let (sender, receiver) = oneshot::channel();
-                    let fresh = {
-                        let mut pending = p.pending_questions.lock().expect("questions");
-                        if pending.contains_key(&id) {
-                            false
-                        } else {
-                            pending.insert(
-                                id.clone(),
-                                PendingQuestion {
-                                    form: form.clone(),
-                                    sender,
-                                },
-                            );
-                            true
-                        }
-                    };
-                    if fresh {
-                        if let Some(sink) = p.updates.lock().expect("updates").as_ref() {
-                            let _ = sink.send(DriverEvent::QuestionRequested {
-                                native_request_id: id.clone(),
-                                form,
-                            });
-                        }
-                        if let Ok(Ok(answer)) = tokio::time::timeout(TIMEOUT, receiver).await
-                            && p.turn_active.load(Ordering::Acquire)
-                            && !p.interrupt_requested.load(Ordering::Acquire)
-                        {
-                            reason = if answer.cancelled {
-                                "The user cancelled this question. No answer was provided. Do not retry automatically.".into()
-                            } else {
-                                format!(
-                                    "dogcodes collected the user's answers: {}. Native ask_question is blocked only to prevent automatic skipping. Continue using these answers; do not ask again.",
-                                    answer.values
-                                )
-                            };
-                        }
-                        p.pending_questions.lock().expect("questions").remove(&id);
-                        if let Some(sink) = p.updates.lock().expect("updates").as_ref() {
-                            let _ = sink.send(DriverEvent::QuestionClosed {
-                                native_request_id: id.clone(),
-                            });
-                        }
+                    p.pending_questions.lock().expect("questions").insert(
+                        id.clone(),
+                        PendingQuestion {
+                            form: form.clone(),
+                            sender,
+                        },
+                    );
+                    if let Some(sink) = &sink {
+                        let _ = sink.send(DriverEvent::QuestionRequested {
+                            native_request_id: id.clone(),
+                            form,
+                        });
                     }
+                    pending = Some(Pending::Question(id, receiver));
                 }
-                write
-                    .write_all(
-                        json!({"decision":"deny","reason":reason})
-                            .to_string()
-                            .as_bytes(),
-                    )
-                    .await?;
-                return write.shutdown().await;
-            }
-            if p.permission_mode.as_deref() == Some("dangerously-skip-permissions") {
-                allow = true;
-            } else if name != "ask_permission" {
-                let id = format!(
-                    "hook-{}-{step}",
-                    payload["conversationId"].as_str().unwrap()
-                );
-                let (tx, rx) = oneshot::channel();
-                let fresh = {
-                    let mut pending = p.pending_approvals.lock().expect("approvals");
-                    if pending.contains_key(&id) {
-                        false
-                    } else {
-                        pending.insert(id.clone(), tx);
-                        true
-                    }
-                };
-                if fresh {
-                    let event = DriverEvent::ApprovalRequested {
+            } else {
+                let (sender, receiver) = oneshot::channel();
+                p.pending_approvals
+                    .lock()
+                    .expect("approvals")
+                    .insert(id.clone(), sender);
+                if let Some(sink) = &sink {
+                    let _ = sink.send(DriverEvent::ApprovalRequested {
                         native_request_id: id.clone(),
                         tool_name: name.into(),
                         command_summary: payload["toolCall"]["args"].to_string(),
@@ -530,45 +547,133 @@ async fn serve(
                                 semantic_role: ApprovalSemanticRole::Reject,
                             },
                         ],
-                    };
-                    if let Some(sink) = p.updates.lock().expect("updates").as_ref() {
-                        let _ = sink.send(event);
-                    }
-                    allow = matches!(tokio::time::timeout(TIMEOUT, rx).await, Ok(Ok(true)))
-                        && p.turn_active.load(Ordering::Acquire)
-                        && !p.interrupt_requested.load(Ordering::Acquire);
-                    p.pending_approvals.lock().expect("approvals").remove(&id);
+                    });
                 }
+                pending = Some(Pending::Approval(id, receiver));
             }
         }
     }
-    write.write_all(json!({"decision":if allow{"allow"}else{"deny"},"reason":if allow{"Approved once in dogcodes"}else{"No desktop approval was granted"}}).to_string().as_bytes()).await?;
+    let denied = || json!({"decision":"deny","reason":"No desktop approval was granted"});
+    let mut response = denied();
+    let mut requires_live = false;
+    match pending {
+        Some(Pending::Question(id, receiver)) => {
+            let answer = tokio::time::timeout(TIMEOUT, receiver).await;
+            if let Some(p) = process.upgrade() {
+                let _gate = p.lifecycle.lock().expect("session lifecycle");
+                p.pending_questions.lock().expect("questions").remove(&id);
+                if origin.as_ref().is_some_and(|lease| p.owns(lease))
+                    && let Ok(Ok(answer)) = answer
+                {
+                    requires_live = true;
+                    response = question_response(&answer);
+                }
+            }
+            if let Some(sink) = &sink {
+                let _ = sink.send(DriverEvent::QuestionClosed {
+                    native_request_id: id,
+                });
+            }
+        }
+        Some(Pending::Approval(id, receiver)) => {
+            let approved = matches!(tokio::time::timeout(TIMEOUT, receiver).await, Ok(Ok(true)));
+            if let Some(p) = process.upgrade() {
+                let _gate = p.lifecycle.lock().expect("session lifecycle");
+                p.pending_approvals.lock().expect("approvals").remove(&id);
+                if approved && origin.as_ref().is_some_and(|lease| p.owns(lease)) {
+                    requires_live = true;
+                    response = json!({"decision":"allow","reason":"Approved once in dogcodes"});
+                }
+            }
+        }
+        None => {}
+    }
+    let mut bytes = response.to_string().into_bytes();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        write.writable().await?;
+        let p = process.upgrade();
+        let gate = p
+            .as_ref()
+            .map(|p| p.lifecycle.lock().expect("session lifecycle"));
+        if requires_live
+            && !p
+                .as_ref()
+                .zip(origin.as_ref())
+                .is_some_and(|(p, lease)| p.owns(lease))
+        {
+            if offset == 0 {
+                bytes = denied().to_string().into_bytes();
+                requires_live = false;
+            } else {
+                // A partial frame is intentionally incomplete; the Hook client
+                // rejects it. No late allow/answer is committed to another turn.
+                return Ok(());
+            }
+        }
+        match write.try_write(&bytes[offset..]) {
+            Ok(0) => return Err(std::io::ErrorKind::WriteZero.into()),
+            Ok(written) => offset += written,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(error) => return Err(error),
+        }
+        drop(gate);
+    }
     write.shutdown().await
+}
+
+fn question_response(answer: &agent_domain::QuestionAnswer) -> Value {
+    let reason = if answer.cancelled {
+        "The user cancelled this question. No answer was provided. Do not retry automatically."
+            .into()
+    } else {
+        format!(
+            "dogcodes collected the user's answers: {}. Native ask_question is blocked only to prevent automatic skipping. Continue using these answers; do not ask again.",
+            answer.values
+        )
+    };
+    json!({"decision":"deny","reason":reason})
+}
+
+pub(super) fn validate_answer(answer: &agent_domain::QuestionAnswer) -> Result<(), DriverError> {
+    if question_response(answer).to_string().len() as u64 > LIMIT {
+        return Err(DriverError::Protocol("回答过长，请缩短后重试".into()));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AntigravityDriver, SpawnSlot};
+    use crate::AntigravityDriver;
     use agent_domain::InstallationId;
     use driver_api::{AgentDriver, SessionHandle, SessionResumeCapability};
     use std::{collections::HashMap, sync::atomic::AtomicBool};
     use tokio::sync::mpsc;
-    async fn process() -> (Arc<SessionProcess>, mpsc::UnboundedReceiver<DriverEvent>) {
+    fn process() -> (Arc<SessionProcess>, mpsc::UnboundedReceiver<DriverEvent>) {
         let (tx, rx) = mpsc::unbounded_channel();
         (
             Arc::new(SessionProcess {
+                scope: std::sync::Mutex::new(SessionHandle::scoped("local-handle".into())),
+                turn: std::sync::Mutex::new(Some(uuid::Uuid::new_v4())),
+                started: std::sync::Mutex::new(None),
+                model: None,
+                admission: tokio::sync::Mutex::new(()),
                 usage: std::sync::Mutex::new(None),
                 usage_log: None,
                 workspace_instruction: String::new(),
                 permission_mode: Some("desktop-approvals".into()),
                 approval_children: std::sync::Mutex::new(std::collections::HashSet::default()),
                 pending_approvals: std::sync::Mutex::new(HashMap::new()),
+                seen_hooks: std::sync::Mutex::new(std::collections::HashSet::new()),
                 pending_questions: std::sync::Mutex::new(HashMap::new()),
                 native_id: std::sync::Mutex::new(Some("parent".into())),
-                _spawn_slot: SpawnSlot {
-                    _guard: Arc::new(tokio::sync::Mutex::new(())).lock_owned().await,
-                },
+                closing: tokio::sync::watch::channel(false).0,
+                cleanup: tokio::sync::watch::channel(None).1,
+                background: std::sync::Mutex::new(vec![]),
+                lifecycle: std::sync::Mutex::new(()),
+                stop_requested: AtomicBool::new(false),
+                input_failed: AtomicBool::new(false),
                 stdin: tokio::sync::Mutex::new(None),
                 updates: std::sync::Mutex::new(Some(tx)),
                 turn_active: AtomicBool::new(true),
@@ -586,9 +691,10 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let weak = Arc::downgrade(p);
+        let p_lease = p.lease();
         tokio::spawn(async move {
             let (socket, _) = listener.accept().await.unwrap();
-            serve(socket, weak, "secret").await.unwrap();
+            serve(socket, weak, "secret", p_lease).await.unwrap();
         });
         let payload = json!({"token":token,"payload":{"conversationId":session,"stepIdx":1,"toolCall":{"name":"run_command","args":{"CommandLine":"echo fixture"}}}});
         tokio::spawn(async move {
@@ -603,6 +709,285 @@ mod tests {
             serde_json::from_str(&result).unwrap()
         })
     }
+    fn driver_with(_p: &Arc<SessionProcess>) -> Arc<AntigravityDriver> {
+        Arc::new(
+            AntigravityDriver::new(
+                "antigravity",
+                &InstallationId::new().to_string(),
+                "unused".into(),
+                None,
+                SessionResumeCapability::Unknown,
+            )
+            .unwrap(),
+        )
+    }
+    fn payload(step: u64, question: bool) -> Value {
+        let tool = if question {
+            json!({"name":"ask_question","args":{"questions":[{"id":"answer","question":"Choose"}]}})
+        } else {
+            json!({"name":"run_command","args":{"CommandLine":"echo fixture"}})
+        };
+        json!({"token":"secret","payload":{"conversationId":"parent","stepIdx":step,"toolCall":tool}})
+    }
+    async fn connected(p: &Arc<SessionProcess>) -> tokio::net::TcpStream {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client = tokio::net::TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (socket, _) = listener.accept().await.unwrap();
+        let origin = p.lease();
+        let weak = Arc::downgrade(p);
+        tokio::spawn(async move {
+            serve(socket, weak, "secret", origin).await.unwrap();
+        });
+        client
+    }
+    async fn response(mut socket: tokio::net::TcpStream) -> Value {
+        use tokio::io::AsyncReadExt;
+        let mut bytes = Vec::new();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            socket.read_to_end(&mut bytes),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+    fn next_turn(p: &Arc<SessionProcess>) -> mpsc::UnboundedReceiver<DriverEvent> {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        let _gate = p.lifecycle.lock().unwrap();
+        *p.scope.lock().unwrap() = SessionHandle::scoped("local-handle".into());
+        *p.turn.lock().unwrap() = Some(uuid::Uuid::new_v4());
+        *p.updates.lock().unwrap() = Some(sender);
+        receiver
+    }
+
+    #[tokio::test]
+    async fn delayed_hook_payload_cannot_move_from_an_old_socket_into_a_new_turn() {
+        let (p, mut old_events) = process();
+        let mut socket = connected(&p).await;
+        let mut new_events = next_turn(&p);
+        socket
+            .write_all(format!("{}\n", payload(1, false)).as_bytes())
+            .await
+            .unwrap();
+        assert_eq!(response(socket).await["decision"], "deny");
+        assert!(old_events.try_recv().is_err());
+        assert!(new_events.try_recv().is_err());
+        assert!(p.pending_approvals.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn old_approval_completion_does_not_consume_a_new_turns_approval() {
+        let (p, mut old_events) = process();
+        let old = p.handle();
+        let driver = driver_with(&p);
+        driver
+            .processes
+            .lock()
+            .await
+            .insert("local-handle".into(), p.clone());
+        let mut socket = connected(&p).await;
+        socket
+            .write_all(format!("{}\n", payload(1, false)).as_bytes())
+            .await
+            .unwrap();
+        let DriverEvent::ApprovalRequested {
+            native_request_id: old_id,
+            ..
+        } = old_events.recv().await.unwrap()
+        else {
+            panic!("approval");
+        };
+        let old_sender = p.pending_approvals.lock().unwrap().remove(&old_id).unwrap();
+        let mut new_events = next_turn(&p);
+        let mut new_socket = connected(&p).await;
+        new_socket
+            .write_all(format!("{}\n", payload(2, false)).as_bytes())
+            .await
+            .unwrap();
+        let DriverEvent::ApprovalRequested {
+            native_request_id: new_id,
+            ..
+        } = new_events.recv().await.unwrap()
+        else {
+            panic!("approval");
+        };
+        assert_ne!(old_id, new_id);
+        old_sender.send(true).unwrap();
+        assert_eq!(response(socket).await["decision"], "deny");
+        assert!(p.pending_approvals.lock().unwrap().contains_key(&new_id));
+        assert!(
+            driver
+                .respond_to_interaction(&old, &new_id, "allow_once")
+                .await
+                .is_err()
+        );
+        driver
+            .respond_to_interaction(&p.handle(), &new_id, "allow_once")
+            .await
+            .unwrap();
+        assert_eq!(response(new_socket).await["decision"], "allow");
+    }
+
+    #[tokio::test]
+    async fn old_question_answer_and_closed_event_stay_with_the_original_turn() {
+        let (p, mut old_events) = process();
+        let mut socket = connected(&p).await;
+        socket
+            .write_all(format!("{}\n", payload(1, true)).as_bytes())
+            .await
+            .unwrap();
+        let DriverEvent::QuestionRequested {
+            native_request_id, ..
+        } = old_events.recv().await.unwrap()
+        else {
+            panic!("question");
+        };
+        let sender = p
+            .pending_questions
+            .lock()
+            .unwrap()
+            .remove(&native_request_id)
+            .unwrap()
+            .sender;
+        let mut new_events = next_turn(&p);
+        sender
+            .send(agent_domain::QuestionAnswer {
+                cancelled: false,
+                values: json!({"answer":"old private answer"}),
+            })
+            .unwrap();
+        let reply = response(socket).await;
+        assert_eq!(reply["decision"], "deny");
+        assert!(!reply.to_string().contains("old private answer"));
+        assert!(
+            matches!(old_events.recv().await,Some(DriverEvent::QuestionClosed { native_request_id:id }) if id==native_request_id)
+        );
+        assert!(new_events.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn an_oversized_encoded_answer_can_be_corrected_without_losing_the_question() {
+        let (p, mut events) = process();
+        let driver = driver_with(&p);
+        driver
+            .processes
+            .lock()
+            .await
+            .insert("local-handle".into(), p.clone());
+        let mut socket = connected(&p).await;
+        socket
+            .write_all(format!("{}\n", payload(1, true)).as_bytes())
+            .await
+            .unwrap();
+        let DriverEvent::QuestionRequested {
+            native_request_id, ..
+        } = events.recv().await.unwrap()
+        else {
+            panic!("question");
+        };
+        let oversized = agent_domain::QuestionAnswer {
+            cancelled: false,
+            values: json!({"answer":"\\".repeat(40_000)}),
+        };
+        // Form size is valid; escaping the nested Hook reason exceeds its wire cap.
+        p.pending_questions.lock().unwrap()[&native_request_id]
+            .form
+            .validate(&oversized)
+            .unwrap();
+        assert!(
+            driver
+                .respond_to_question(&p.handle(), &native_request_id, oversized)
+                .await
+                .is_err()
+        );
+        assert!(
+            p.pending_questions
+                .lock()
+                .unwrap()
+                .contains_key(&native_request_id)
+        );
+        driver
+            .respond_to_question(
+                &p.handle(),
+                &native_request_id,
+                agent_domain::QuestionAnswer {
+                    cancelled: false,
+                    values: json!({"answer":"corrected answer"}),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(
+            response(socket).await["reason"]
+                .as_str()
+                .unwrap()
+                .contains("corrected answer")
+        );
+    }
+
+    #[tokio::test]
+    async fn cleanup_proof_requires_positive_confirmation_without_sending_stop() {
+        let (mut p, _) = process();
+        let (sender, receiver) = tokio::sync::watch::channel(None);
+        Arc::get_mut(&mut p).unwrap().cleanup = receiver;
+        sender.send_replace(Some(Err("not confirmed".into())));
+        let mut proof = Box::pin(p.confirmed());
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(25), &mut proof)
+                .await
+                .is_err()
+        );
+        assert!(!*p.closing.borrow());
+        sender.send_replace(Some(Ok(())));
+        tokio::time::timeout(std::time::Duration::from_secs(1), &mut proof)
+            .await
+            .unwrap();
+        drop(proof);
+        let (lost, _) = process(); // This fixture's cleanup sender is already gone.
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(25), lost.confirmed())
+                .await
+                .is_err()
+        );
+        assert!(!*lost.closing.borrow());
+    }
+
+    #[tokio::test]
+    async fn setup_rejection_still_waits_for_an_already_retiring_original_scope() {
+        let (mut p, _) = process();
+        let (sender, receiver) = tokio::sync::watch::channel(None);
+        Arc::get_mut(&mut p).unwrap().cleanup = receiver;
+        p.closing.send_replace(true);
+        let driver = driver_with(&p);
+        driver
+            .processes
+            .lock()
+            .await
+            .insert("local-handle".into(), p.clone());
+        let mut opening = tokio::spawn({
+            let driver = driver.clone();
+            async move { driver.resume_session("parent", "/private-fixture").await }
+        });
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(25), &mut opening)
+                .await
+                .is_err()
+        );
+        assert!(driver.processes.lock().await.contains_key("local-handle"));
+        sender.send_replace(Some(Ok(())));
+        assert!(matches!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), opening)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(DriverError::CapabilityUnavailable(_))
+        ));
+        assert!(driver.processes.lock().await.is_empty());
+    }
+
     #[test]
     fn verification_cache_key_changes_with_workspace_and_hook_configuration() {
         let workspace = tempfile::tempdir().unwrap();
@@ -639,7 +1024,7 @@ mod tests {
 
     #[tokio::test]
     async fn hook_directory_lives_until_native_process_finishes() {
-        let (p, _events) = process().await;
+        let (p, _events) = process();
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().to_owned();
         std::fs::write(path.join("hook"), "fixture").unwrap();
@@ -651,13 +1036,14 @@ mod tests {
             command: "fixture".into(),
             listener,
         };
-        bridge.start(&p);
+        let server = bridge.start(&p);
         tokio::task::yield_now().await;
         assert!(
             path.join("hook").exists(),
             "starting the server must retain Hook files"
         );
         p.finished.store(true, Ordering::Release);
+        server.await.unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(3), async {
             while path.exists() {
                 tokio::time::sleep(std::time::Duration::from_millis(20)).await;
@@ -670,7 +1056,7 @@ mod tests {
     #[tokio::test]
     async fn tool_waits_for_explicit_approval_and_accepts_native_session_alias() {
         for decision in ["allow_once", "deny"] {
-            let (p, mut events) = process().await;
+            let (p, mut events) = process();
             let reply = request(&p, "secret", "parent").await;
             let event = tokio::time::timeout(std::time::Duration::from_secs(2), events.recv())
                 .await
@@ -701,9 +1087,7 @@ mod tests {
                 .insert("local-handle".into(), p.clone());
             driver
                 .respond_to_interaction(
-                    &SessionHandle {
-                        native_session_id: "parent".into(),
-                    },
+                    &driver.current_session_handle("parent").await.unwrap(),
                     &native_request_id,
                     decision,
                 )
@@ -720,9 +1104,7 @@ mod tests {
             assert!(
                 driver
                     .respond_to_interaction(
-                        &SessionHandle {
-                            native_session_id: "parent".into()
-                        },
+                        &driver.current_session_handle("parent").await.unwrap(),
                         &native_request_id,
                         decision
                     )
@@ -733,7 +1115,7 @@ mod tests {
     }
     #[tokio::test]
     async fn child_requires_registration_and_cannot_be_approved_after_parent_ends() {
-        let (p, mut events) = process().await;
+        let (p, mut events) = process();
         assert_eq!(
             request(&p, "secret", "child").await.await.unwrap()["decision"],
             "deny"
@@ -759,7 +1141,7 @@ mod tests {
     }
     #[tokio::test]
     async fn rejects_foreign_session_bad_token_and_cancelled_approval() {
-        let (p, mut events) = process().await;
+        let (p, mut events) = process();
         for (token, session) in [("wrong", "parent"), ("secret", "foreign")] {
             assert_eq!(
                 request(&p, token, session).await.await.unwrap()["decision"],

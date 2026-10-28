@@ -1,6 +1,6 @@
 //! A control acknowledgement is not proof that a requested model/effort took effect.
 use super::{
-    DriverError, Ordering, PROBE_TIMEOUT, SessionProcess, Value, json, lifecycle, oneshot,
+    DriverError, NativeAttempt, Ordering, PROBE_TIMEOUT, SessionProcess, Value, json, oneshot,
 };
 
 fn readable(value: &Value) -> bool {
@@ -89,11 +89,11 @@ impl SessionProcess {
                 "cannot configure an active Claude turn".into(),
             ));
         }
+        let mut attempt = NativeAttempt::new(self);
         let before = match self.read_selection().await {
             Ok(state) => state,
             Err(error) => {
-                self.closing.store(true, Ordering::Release);
-                let _ = self.commands.send(lifecycle::Command::Close);
+                self.request_close();
                 return Err(error);
             }
         };
@@ -103,6 +103,7 @@ impl SessionProcess {
             )
             .await;
         if apply.is_ok() && self.verify_selection(model, thinking).await.is_ok() {
+            attempt.confirm();
             return Ok(());
         }
         // Restore explicit native state, then verify the rollback too. If the native
@@ -117,10 +118,10 @@ impl SessionProcess {
                 .await
                 .is_ok_and(|state| selection(&state) == selection(&before));
         if restored {
+            attempt.confirm();
             Err(DriverError::Protocol("selection_rejected".into()))
         } else {
-            self.closing.store(true, Ordering::Release);
-            let _ = self.commands.send(lifecycle::Command::Close);
+            self.request_close();
             Err(DriverError::Protocol("selection_unverifiable".into()))
         }
     }

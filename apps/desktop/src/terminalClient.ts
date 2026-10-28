@@ -19,13 +19,15 @@ export const terminalEnded = (info: TerminalInfo) => info.status === "exited" ||
 // service drains the PTY regardless of whether any view is attached.
 export function followTerminal(info: TerminalInfo, receive: (event: TerminalOutput) => void): TerminalConnection {
   let detached = false;
+  const expectedId = info.id, expectedEpoch = info.epoch;
   receive({ kind: "state", info });
   void (async () => {
     let cursor = 0, state = "";
     try {
       while (!detached) {
-        const batch = await invoke<OutputBatch>("core_terminal_read", { id: info.id, after: cursor });
+        const batch = await invoke<OutputBatch>("core_terminal_read", { id: expectedId, after: cursor });
         if (detached) return;
+        if (batch.info.id !== expectedId || batch.info.epoch !== expectedEpoch) throw new Error("终端身份已变化，请重新连接后确认");
         if (batch.gap) receive({ kind: "gap" });
         if (batch.bytes.length) receive({ kind: "data", bytes: batch.bytes });
         cursor = batch.next;
@@ -38,7 +40,7 @@ export function followTerminal(info: TerminalInfo, receive: (event: TerminalOutp
       if (!detached) receive({ kind: "disconnected", error: String(error) });
     }
   })();
-  return { id: info.id, detach: () => { detached = true; } };
+  return { id: expectedId, detach: () => { detached = true; } };
 }
 export const terminalClient = {
   open: async (projectId: string, directoryIndex: number, cols: number, rows: number,
@@ -53,8 +55,8 @@ export const terminalClient = {
     followTerminal(await invoke<TerminalInfo>("core_terminal_get", { id }), receive),
   list: (projectId: string) => invoke<TerminalInfo[]>("core_terminal_list", { projectId }),
   get: (id: string) => invoke<TerminalInfo>("core_terminal_get", { id }),
-  write: (id: string, bytes: number[]) => invoke<void>("core_terminal_write", { id, bytes }),
+  input: (id: string, request: Record<string, unknown>) => invoke<unknown>("core_terminal_input", { request: { ...request, terminalId: id } }),
   resize: (id: string, cols: number, rows: number) => invoke<void>("core_terminal_resize", { id, cols, rows }),
-  close: (id: string) => invoke<void>("core_terminal_close", { id }),
+  close: (id: string, expectedEpoch: string) => invoke<void>("core_terminal_close", { id, expectedEpoch }),
 };
 export type TerminalApi = typeof terminalClient;

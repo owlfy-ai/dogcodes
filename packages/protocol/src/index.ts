@@ -548,7 +548,9 @@ export interface TurnSubmission {
 export type CommandInvalidation = { status: "accepted"; acknowledgement: CommandReceipt } | { status: "invalidated" };
 
 /** Frozen send input shared by local clients; submission is only a derived checkpoint. */
+export type ActorRef = {kind:"local_user"} | {kind:"system_recovery"} | {kind:"paired_device";id:string};
 export interface SubmissionIntent {
+  actor?: ActorRef;
   schemaVersion: 1;
   operationId: string;
   scope: string;

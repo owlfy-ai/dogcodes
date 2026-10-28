@@ -428,6 +428,15 @@ impl SubmissionIntents {
         core: &Arc<Core>,
         call: SubmissionIntentCall,
     ) -> Result<Value, String> {
+        self.call_as(core, call, agent_protocol::ActorRef::LocalUser)
+            .await
+    }
+    pub async fn call_as(
+        &self,
+        core: &Arc<Core>,
+        call: SubmissionIntentCall,
+        actor: agent_protocol::ActorRef,
+    ) -> Result<Value, String> {
         // One daemon owns the journal. No per-project writer lock or UI ownership.
         let _guard = self.gate.lock().await;
         match call {
@@ -482,6 +491,7 @@ impl SubmissionIntents {
                             project_id,
                             target,
                             *input,
+                            actor,
                         )
                         .await?;
                         if let Some(resolution) = core
@@ -648,6 +658,7 @@ impl SubmissionIntents {
 
 /// Builds the immutable intent from the service's own view of the task, so no
 /// client has to derive versions, context packages or creation identities.
+#[allow(clippy::too_many_arguments)]
 async fn freeze(
     core: &Arc<Core>,
     operation_id: CommandId,
@@ -656,6 +667,7 @@ async fn freeze(
     project_id: agent_domain::ProjectId,
     target: agent_domain::ExecutorRef,
     input: agent_protocol::submission::SubmissionInput,
+    actor: agent_protocol::ActorRef,
 ) -> Result<SubmissionIntent, String> {
     canonical(&operation_id)?;
     let snapshot = core.bootstrap().await.map_err(|e| e.to_string())?;
@@ -704,6 +716,7 @@ async fn freeze(
             stream_version: 0,
         });
     let intent = SubmissionIntent {
+        actor: (actor != agent_protocol::ActorRef::LocalUser).then_some(actor),
         schema_version: 1,
         operation_id,
         scope,
@@ -905,6 +918,7 @@ mod tests {
         )))
         .await;
         let intent = SubmissionIntent {
+            actor: None,
             schema_version: 1,
             operation_id: CommandId::new(),
             scope: "draft:original".into(),
@@ -1835,6 +1849,7 @@ mod tests {
             intent.task.project_id.clone(),
             intent.target.clone(),
             intent.input.clone(),
+            agent_protocol::ActorRef::LocalUser,
         )
         .await
         .unwrap();
@@ -1883,6 +1898,7 @@ mod tests {
             second.task.project_id.clone(),
             second.target.clone(),
             second.input.clone(),
+            agent_protocol::ActorRef::LocalUser,
         )
         .await
         .unwrap();

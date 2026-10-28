@@ -20,9 +20,6 @@ impl AgentDriver for Reviewer {
     fn driver_version(&self) -> &'static str {
         "test"
     }
-    fn supports_readonly_chat(&self) -> bool {
-        true
-    }
     async fn create_review_session(
         &self,
         directory: &str,
@@ -256,6 +253,37 @@ fn get(s: &Setup) -> RepairCall {
 }
 fn submitted(entry: &RepairEntry) -> bool {
     matches!(entry.state, RepairState::Submitted { .. })
+}
+
+#[tokio::test]
+async fn paired_repair_keeps_its_actor_and_old_records_default_to_local() {
+    let s = setup().await;
+    let actor = ActorRef::PairedDevice(agent_domain::DeviceId::new());
+    let operation = CommandId::new();
+    let value =
+        s.f.control
+            .repairs
+            .call_as(&s.f.core, start(&s, &operation, None), actor.clone())
+            .await
+            .unwrap();
+    let entry: RepairEntry = serde_json::from_value(value).unwrap();
+    assert_eq!(entry.intent.actor, actor);
+    assert_eq!(
+        submit_envelope(&entry.intent, entry.intent.base_version).actor,
+        actor
+    );
+    let persisted = call(&s.f.client, get(&s)).await.unwrap().unwrap();
+    assert_eq!(persisted.intent.actor, actor);
+    let mut legacy = serde_json::to_value(entry).unwrap();
+    legacy["intent"].as_object_mut().unwrap().remove("actor");
+    assert_eq!(
+        serde_json::from_value::<RepairEntry>(legacy)
+            .unwrap()
+            .intent
+            .actor,
+        ActorRef::LocalUser
+    );
+    idle(&s.f, &s.task).await;
 }
 
 #[tokio::test]

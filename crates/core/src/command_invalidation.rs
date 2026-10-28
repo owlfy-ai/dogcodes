@@ -20,8 +20,10 @@ impl Core {
         &self,
         envelope: &CommandEnvelope<CoreCommand>,
     ) -> Result<Option<CommandInvalidation>, CoreError> {
-        if envelope.actor != ActorRef::LocalUser
-            || envelope.expected_stream_version.is_none()
+        if !matches!(
+            envelope.actor,
+            ActorRef::LocalUser | ActorRef::PairedDevice(_)
+        ) || envelope.expected_stream_version.is_none()
             || !matches!(
                 envelope.payload,
                 CoreCommand::CreateTask(_)
@@ -104,9 +106,12 @@ impl Core {
                 ));
             }
         };
-        if envelope.actor != ActorRef::LocalUser {
+        if !matches!(
+            envelope.actor,
+            ActorRef::LocalUser | ActorRef::PairedDevice(_)
+        ) {
             return Err(CoreError::InvalidArgument(
-                "only the local user may retire a task submission".into(),
+                "only an authenticated user may retire a task submission".into(),
             ));
         }
         let original_version = envelope

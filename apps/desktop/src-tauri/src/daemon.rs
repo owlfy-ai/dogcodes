@@ -1,5 +1,6 @@
 //! Versioned local desktop RPC. Execution ownership stays in the service.
 mod access;
+mod remote;
 mod review_watch;
 mod startup;
 mod workspace;
@@ -89,6 +90,9 @@ impl CoreClient {
                 _directory: None,
             }),
         ))
+    }
+    pub async fn remote_control(&self, call: Value) -> Result<Value, String> {
+        self.call("remote_control", call).await
     }
     async fn connect(&self, method: &str, args: Value) -> Result<TcpStream, String> {
         let directory = match self {
@@ -225,8 +229,35 @@ impl CoreClient {
     ) -> Result<crate::terminal_host::OutputBatch, String> {
         self.call("terminal_read", json!((id, after))).await
     }
-    pub async fn terminal_write(&self, id: &str, bytes: Vec<u8>) -> Result<(), String> {
-        self.call("terminal_write", json!((id, bytes))).await
+    pub async fn terminal_input(&self, window: &str, request: Value) -> Result<Value, String> {
+        // A busy old Core remains reachable for approvals/output. Never fall
+        // back to its unsequenced writer when the new window protocol is absent.
+        let caps: Value = self.call("ping", json!([])).await?;
+        if caps["terminalInputWindowProtocol"] != 1 {
+            return Err("后台仍在运行旧版本，当前输入已暂停；输出仍可查看，请在任务安全结束后重新打开应用。".into());
+        }
+        self.call("terminal_input", json!((window, request))).await
+    }
+    #[cfg(test)]
+    async fn terminal_write(&self, id: &str, bytes: Vec<u8>) -> Result<(), String> {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        let info = self.terminal_get(id).await?;
+        let source = self
+            .terminal_input(
+                "main",
+                json!({"type":"inspect","terminalId":id,"expectedEpoch":info.epoch}),
+            )
+            .await?;
+        let stream = uuid::Uuid::new_v4().to_string();
+        let opened=self.terminal_input("main",json!({"type":"open","terminalId":id,"expectedEpoch":info.epoch,"streamId":stream,"expectedRevision":source["revision"]})).await?;
+        if opened["state"] != "ready" {
+            return Err("test terminal input not ready".into());
+        }
+        let applied=self.terminal_input("main",json!({"type":"write","terminalId":id,"expectedEpoch":info.epoch,"streamId":stream,"revision":opened["revision"],"sequence":"1","data":STANDARD.encode(bytes)})).await?;
+        if applied["state"] != "applied" {
+            return Err("test input was not confirmed".into());
+        }
+        Ok(())
     }
     pub async fn terminal_resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), String> {
         self.call("terminal_resize", json!((id, cols, rows))).await
@@ -234,8 +265,18 @@ impl CoreClient {
     pub async fn terminal_stop(
         &self,
         id: &str,
+        expected_epoch: &str,
     ) -> Result<crate::terminal_host::TerminalInfo, String> {
-        self.call("terminal_stop", json!(id)).await
+        let info: crate::terminal_host::TerminalInfo = self
+            .call(
+                "terminal_stop",
+                json!({"terminalId": id, "expectedEpoch": expected_epoch}),
+            )
+            .await?;
+        if info.id != id || info.epoch != expected_epoch {
+            return Err("终端身份已变化，未关闭新的终端；请刷新后确认".into());
+        }
+        Ok(info)
     }
     pub async fn subagent_history(
         &self,
@@ -814,7 +855,9 @@ async fn dispatch(core: &Arc<Core>, method: &str, args: Value) -> Result<Value, 
             )
             .map_err(|e| e.to_string())
         }
-        "ping" => Ok(json!({"version":VERSION,"pid":std::process::id()})),
+        "ping" => {
+            Ok(json!({"version":VERSION,"pid":std::process::id(),"terminalInputWindowProtocol":1}))
+        }
         "bootstrap" => {
             let (): () = serde_json::from_value(args).map_err(|e| e.to_string())?;
             let result = core.bootstrap().await.map_err(|e| e.to_string())?;
@@ -1154,6 +1197,7 @@ async fn read_frame<T: DeserializeOwned>(stream: &mut TcpStream) -> Result<T, St
     serde_json::from_slice(&bytes).map_err(|e| e.to_string())
 }
 struct ServiceControl {
+    remote: Arc<remote::RemoteHost>,
     submissions: crate::submission_intents::SubmissionIntents,
     attachments: Arc<crate::attachment_service::AttachmentStore>,
     review: crate::review::ReviewHost,
@@ -1176,6 +1220,7 @@ impl ServiceControl {
             crate::project_runs::ProjectRunHost::new(directory.join("project-runs"));
         project_runs.changes = changes.clone();
         Self {
+            remote: Arc::new(remote::RemoteHost::new(directory.join("remote"))),
             submissions: crate::submission_intents::SubmissionIntents::new(
                 directory.join("submission-intents"),
             ),
@@ -1258,23 +1303,12 @@ async fn dispatch_service(
     if method == "execute" {
         let (envelope,): (CommandEnvelope<CoreCommand>,) =
             serde_json::from_value(args.clone()).map_err(|e| e.to_string())?;
-        if let CoreCommand::DeleteTask(command) = &envelope.payload {
-            let task = command.task_id.to_string();
-            let _guard = control.review.gate.lock().await;
-            let result = dispatch(core, method, args).await;
-            if result.is_ok()
-                || core.bootstrap().await.is_ok_and(|snapshot| {
-                    !snapshot.tasks.iter().any(|t| t.task_id.as_str() == task)
-                })
-            {
-                control.review.forget_task(&task)?;
-                control.repairs.forget_task(&task)?;
-                control
-                    .submissions
-                    .reconcile_deleted(core, Some(&command.task_id))
-                    .await?;
-            }
-            return result;
+        if matches!(&envelope.payload, CoreCommand::DeleteTask(_)) {
+            let mut envelope = envelope;
+            // This boundary is the desktop RPC; remote callers use their own
+            // authenticated actor and call the shared cleanup service directly.
+            envelope.actor = ActorRef::LocalUser;
+            return execute_task_delete(core, control, envelope).await;
         }
         if matches!(envelope.payload, CoreCommand::UpdateProject(_)) {
             scope_guard = Some(control.review.gate.lock().await);
@@ -1321,6 +1355,36 @@ async fn dispatch_service(
     Ok(result)
 }
 
+async fn execute_task_delete(
+    core: &Arc<Core>,
+    control: &ServiceControl,
+    envelope: CommandEnvelope<CoreCommand>,
+) -> Result<Value, String> {
+    let CoreCommand::DeleteTask(command) = &envelope.payload else {
+        return Err("task deletion required".into());
+    };
+    let task = command.task_id.clone();
+    let _guard = control.review.gate.lock().await;
+    let result = core
+        .execute(envelope)
+        .await
+        .map_err(|error| error.to_string());
+    if result.is_ok()
+        || core
+            .bootstrap()
+            .await
+            .is_ok_and(|snapshot| !snapshot.tasks.iter().any(|current| current.task_id == task))
+    {
+        control.review.forget_task(task.as_str())?;
+        control.repairs.forget_task(task.as_str())?;
+        control
+            .submissions
+            .reconcile_deleted(core, Some(&task))
+            .await?;
+    }
+    serde_json::to_value(result?).map_err(|error| error.to_string())
+}
+
 fn executable_build() -> Result<String, String> {
     let metadata = std::fs::metadata(std::env::current_exe().map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
@@ -1344,6 +1408,14 @@ async fn serve_connection(
     if request.version != VERSION || request.token != *token {
         return Err("unauthorized service connection".into());
     }
+    if request.method == "remote_control" {
+        let result = control
+            .remote
+            .clone()
+            .call(&core, &control, request.args)
+            .await;
+        return write_frame(&mut stream, &result).await;
+    }
     // Only classified methods are served; see access.rs.
     if access::method_access(&request.method).is_none() {
         return write_frame(
@@ -1360,6 +1432,8 @@ async fn serve_connection(
             && workspace.is_ok()
             && !control.terminals.has_active()
             && !control.project_runs.has_active()
+            && !control.remote.has_active_sessions()
+            && !core.has_active_auxiliary_operations()
             && !core.has_active_reviews().await
             && !core
                 .bootstrap()
@@ -1707,6 +1781,11 @@ async fn run_service(directory: PathBuf) -> Result<(), String> {
         }
     }
     let control = Arc::new(ServiceControl::new(&directory));
+    remote::restore(
+        control.remote.clone(),
+        core.clone(),
+        Arc::downgrade(&control),
+    );
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| e.to_string())?;
@@ -1799,12 +1878,33 @@ pub(crate) fn record_frontend_startup(directory: &Path, stage: &str, elapsed_ms:
     }
 }
 
+#[cfg(feature = "remote-acceptance")]
+pub fn run_remote_acceptance_if_requested() -> bool {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) != Some("--remote-acceptance") {
+        return false;
+    }
+    let result = (|| {
+        let service = args.get(2).ok_or("missing service")?.clone();
+        let directory = PathBuf::from(args.get(3).ok_or("missing directory")?);
+        tokio::runtime::Runtime::new()
+            .map_err(|e| e.to_string())?
+            .block_on(remote::acceptance_run(service, directory))
+    })();
+    if let Err(error) = result {
+        eprintln!("isolated remote acceptance: {error}");
+        std::process::exit(1);
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     mod primary_admission_tests;
     mod remote_client_tests;
     mod repair_tests;
     mod review_tests;
+    mod thought_history_tests;
     use super::*;
     use agent_core::CoreRepository;
     use agent_domain::ProjectId;
@@ -2501,6 +2601,174 @@ mod tests {
         assert!(f.client.execute(project()).await.is_err());
         assert!(f.core.bootstrap().await.unwrap().projects.is_empty());
     }
+
+    #[tokio::test]
+    async fn terminal_input_rejects_busy_old_core_before_sending_any_mutation() {
+        let directory = tempfile::tempdir().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = Endpoint {
+            version: VERSION,
+            address: listener.local_addr().unwrap(),
+            token: uuid::Uuid::new_v4().to_string(),
+            pid: std::process::id(),
+            build: "old-input-protocol".into(),
+        };
+        std::fs::write(
+            directory.path().join("service.json"),
+            serde_json::to_vec(&endpoint).unwrap(),
+        )
+        .unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request: Request = read_frame(&mut socket).await.unwrap();
+            assert_eq!(request.method, "ping");
+            assert_eq!(request.token, endpoint.token);
+            write_frame(
+                &mut socket,
+                &Ok::<_, String>(json!({"version":VERSION,"pid":1})),
+            )
+            .await
+            .unwrap();
+            // A second connection would carry a mutation to this old service.
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), listener.accept())
+                    .await
+                    .is_err()
+            );
+        });
+        let client = CoreClient::Remote(directory.path().into());
+        let error = client
+            .terminal_input("main", json!({"type":"write","terminalId":"not-sent"}))
+            .await
+            .unwrap_err();
+        assert!(error.contains("旧版本"));
+        server.await.unwrap();
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn terminal_input_rpc_windows_and_phone_share_cas_without_replaying_old_bytes() {
+        use crate::terminal_host::LaunchIntent;
+        use agent_protocol::CreateTask;
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        let f = fixture().await;
+        let project_id = ProjectId::new();
+        let task = TaskId::new();
+        f.client
+            .execute(CommandEnvelope::local(CoreCommand::RegisterProject(
+                RegisterProject {
+                    project_id: project_id.clone(),
+                    display_name: "Input fixture".into(),
+                    path: f.directory.path().to_string_lossy().into_owned(),
+                    additional_directories: vec![],
+                },
+            )))
+            .await
+            .unwrap();
+        f.client
+            .execute(CommandEnvelope::local(CoreCommand::CreateTask(
+                CreateTask {
+                    task_id: task.clone(),
+                    project_id: project_id.clone(),
+                    title: "Input".into(),
+                    preferred_executor: ExecutorRef {
+                        provider_id: agent_domain::ProviderId::parse("fake").unwrap(),
+                        installation_id: None,
+                    },
+                },
+            )))
+            .await
+            .unwrap();
+        let info=f.client.terminal_start(LaunchIntent{project_launch:None,operation_id:uuid::Uuid::new_v4().to_string(),project_id:project_id.to_string(),directory_index:0,task_id:Some(task.to_string()),command_id:None,label:"isolated input".into(),cwd:f.directory.path().into(),command:Some("stty -echo; printf 'READY\\n'; read text; printf 'INPUT:%s\\n' \"$text\"; sleep 60".into()),cols:80,rows:24}).await.unwrap();
+        let mut cursor = 0;
+        let mut bytes = Vec::new();
+        tokio::time::timeout(Duration::from_secs(8), async {
+            while !String::from_utf8_lossy(&bytes).contains("READY") {
+                let batch = f.client.terminal_read(&info.id, cursor).await.unwrap();
+                cursor = batch.next;
+                bytes.extend(batch.bytes);
+            }
+        })
+        .await
+        .unwrap();
+        let inspect = json!({"type":"inspect","terminalId":info.id,"expectedEpoch":info.epoch});
+        assert!(
+            f.client
+                .terminal_input("unknown-window", inspect.clone())
+                .await
+                .is_err()
+        );
+        let opening = |revision: &str, stream: &str| json!({"type":"open","terminalId":info.id,"expectedEpoch":info.epoch,"expectedRevision":revision,"streamId":stream});
+        let writing = |opened: &Value, sequence: &str, data: &[u8]| json!({"type":"write","terminalId":info.id,"expectedEpoch":info.epoch,"revision":opened["revision"],"streamId":opened["streamId"],"sequence":sequence,"data":STANDARD.encode(data)});
+        let first = f
+            .client
+            .terminal_input("main", opening("0", &uuid::Uuid::new_v4().to_string()))
+            .await
+            .unwrap();
+        let a = writing(&first, "1", b"A");
+        let applied = f.client.terminal_input("main", a.clone()).await.unwrap();
+        assert_eq!(applied["state"], "applied");
+        assert_eq!(
+            f.client.terminal_input("main", a.clone()).await.unwrap(),
+            applied
+        );
+        let review = format!("review-{task}");
+        assert!(f.client.terminal_input(&review, a).await.is_err());
+        let second = f
+            .client
+            .terminal_input(&review, opening("1", &uuid::Uuid::new_v4().to_string()))
+            .await
+            .unwrap();
+        f.client
+            .terminal_input(&review, writing(&second, "1", b"B"))
+            .await
+            .unwrap();
+        assert!(
+            f.client
+                .terminal_input("main", writing(&first, "2", b"BAD-main"))
+                .await
+                .is_err()
+        );
+        let actor = ActorRef::PairedDevice(agent_domain::DeviceId::new());
+        let third = remote::remote_call(
+            &f.core,
+            &f.control,
+            "terminal_input",
+            opening("2", &uuid::Uuid::new_v4().to_string()),
+            actor.clone(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            f.client
+                .terminal_input(&review, writing(&second, "2", b"BAD-review"))
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            f.client.terminal_input("main", inspect).await.unwrap()["owned"],
+            false
+        );
+        remote::remote_call(
+            &f.core,
+            &f.control,
+            "terminal_input",
+            writing(&third, "1", b"C\n"),
+            actor,
+        )
+        .await
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(8), async {
+            while !String::from_utf8_lossy(&bytes).contains("INPUT:ABC") {
+                let batch = f.client.terminal_read(&info.id, cursor).await.unwrap();
+                cursor = batch.next;
+                bytes.extend(batch.bytes);
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("BAD-"));
+        f.client.terminal_stop(&info.id, &info.epoch).await.unwrap();
+    }
     #[cfg(unix)]
     #[tokio::test]
     async fn terminal_host_rpc_disconnect_reconnect_and_idle_retirement() {
@@ -2580,6 +2848,13 @@ mod tests {
                 .await
                 .unwrap(),
         );
+        let retired_write = "terminal_write";
+        assert!(
+            other
+                .call::<Value>(retired_write, json!((&info.id, b"must-not-write".to_vec())))
+                .await
+                .is_err()
+        );
         other.terminal_resize(&info.id, 100, 30).await.unwrap();
         other
             .terminal_write(&info.id, b"answer\n".to_vec())
@@ -2594,7 +2869,17 @@ mod tests {
         })
         .await
         .unwrap();
-        other.terminal_stop(&info.id).await.unwrap();
+        assert!(
+            other
+                .terminal_stop(&info.id, "obsolete-core")
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            other.terminal_get(&info.id).await.unwrap().status,
+            TerminalStatus::Running
+        );
+        other.terminal_stop(&info.id, &info.epoch).await.unwrap();
         tokio::time::timeout(Duration::from_secs(8), async {
             loop {
                 let batch = other.terminal_read(&info.id, cursor).await.unwrap();
@@ -2748,6 +3033,7 @@ mod tests {
             shutting_down: tokio::sync::Notify::new(),
             allow_shutdown: tokio::sync::Notify::new(),
             starts: std::sync::atomic::AtomicUsize::new(0),
+            prompts: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
@@ -2759,6 +3045,7 @@ mod tests {
         shutting_down: tokio::sync::Notify,
         allow_shutdown: tokio::sync::Notify,
         starts: std::sync::atomic::AtomicUsize,
+        prompts: std::sync::atomic::AtomicUsize,
     }
     #[async_trait::async_trait]
     impl driver_api::AgentDriver for ReadonlyTestDriver {
@@ -2767,9 +3054,6 @@ mod tests {
         }
         fn driver_version(&self) -> &'static str {
             "test"
-        }
-        fn supports_readonly_chat(&self) -> bool {
-            true
         }
         async fn create_review_session(
             &self,
@@ -2784,24 +3068,32 @@ mod tests {
         ) -> Result<driver_api::SessionHandle, driver_api::DriverError> {
             panic!("readonly test driver must not start a coding session")
         }
-        async fn create_chat_session(
+        async fn create_selected_session(
+            &self,
+            request: driver_api::SessionRequest,
+            _: Option<&str>,
+            _: Option<&str>,
+        ) -> Result<driver_api::SessionHandle, driver_api::DriverError> {
+            self.create_analysis_session(&request.working_directory)
+                .await
+        }
+        async fn create_analysis_session(
             &self,
             _: &str,
-            _: &[String],
         ) -> Result<driver_api::SessionHandle, driver_api::DriverError> {
             self.starts
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             self.starting.notify_one();
             self.allow_start.notified().await;
-            Ok(driver_api::SessionHandle {
-                native_session_id: "fake_chat".into(),
-            })
+            Ok(driver_api::SessionHandle::new("fake_auxiliary".into()))
         }
         async fn prompt(
             &self,
             handle: &driver_api::SessionHandle,
             request: driver_api::PromptRequest,
         ) -> Result<driver_api::DriverEventStream, driver_api::DriverError> {
+            self.prompts
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
             driver_api::AgentDriver::prompt(&self.fake, handle, request).await
         }
         async fn interrupt(
@@ -2817,6 +3109,64 @@ mod tests {
             self.shutting_down.notify_one();
             self.allow_shutdown.notified().await;
             Ok(())
+        }
+    }
+    #[tokio::test]
+    async fn abandoned_auxiliary_startup_and_original_cleanup_prevent_early_core_retirement() {
+        for summary in [false, true] {
+            let f = fixture().await;
+            let driver = readonly_test_driver(&f.core).await;
+            f.core.register_driver(driver.clone()).await;
+            let core = f.core.clone();
+            let executor = driver.executor.clone();
+            let caller = tokio::spawn(async move {
+                if summary {
+                    core.summarize_commit(executor, "private diff".into(), Some("en"))
+                        .await
+                } else {
+                    core.analyze_project_commands(executor, "private packet".into())
+                        .await
+                }
+            });
+            tokio::time::timeout(Duration::from_secs(3), driver.starting.notified())
+                .await
+                .unwrap();
+            caller.abort();
+            assert!(caller.await.unwrap_err().is_cancelled());
+            assert!(f.core.has_active_auxiliary_operations());
+            assert!(
+                !f.client
+                    .call::<bool>("retire_if_idle", json!([]))
+                    .await
+                    .unwrap()
+            );
+            driver.allow_start.notify_one();
+            tokio::time::timeout(Duration::from_secs(3), driver.shutting_down.notified())
+                .await
+                .unwrap();
+            assert!(f.core.has_active_auxiliary_operations());
+            assert!(
+                !f.client
+                    .call::<bool>("retire_if_idle", json!([]))
+                    .await
+                    .unwrap()
+            );
+            assert_eq!(driver.starts.load(std::sync::atomic::Ordering::Acquire), 1);
+            assert_eq!(driver.prompts.load(std::sync::atomic::Ordering::Acquire), 0);
+            driver.allow_shutdown.notify_one();
+            tokio::time::timeout(Duration::from_secs(3), async {
+                while f.core.has_active_auxiliary_operations() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(
+                f.client
+                    .call::<bool>("retire_if_idle", json!([]))
+                    .await
+                    .unwrap()
+            );
         }
     }
     #[tokio::test]

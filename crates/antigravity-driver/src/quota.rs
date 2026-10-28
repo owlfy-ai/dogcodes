@@ -2,7 +2,6 @@
 use super::{
     AntigravityDriver, Classified, DriverError, ENV_ALLOWLIST, ExecutorRef, FRAME_LIMIT, Stdio,
     Value, async_trait, auth_backoff_kind, classify, is_transport_error, record_auth_failure,
-    spawn_guard,
 };
 use driver_api::{QuotaProvider, QuotaSnapshot, QuotaWindow};
 use tokio::io::AsyncReadExt;
@@ -128,7 +127,7 @@ impl QuotaProvider for AntigravityDriver {
                 return Err(DriverError::NotConfigured(kind.into()));
             }
             // Never race native credential refresh with an active session.
-            let _slot = spawn_guard().try_lock_owned().map_err(|_| {
+            let slot = self.spawn.clone().try_lock_owned().map_err(|_| {
                 DriverError::Disconnected("agy session is active; quota refresh deferred".into())
             })?;
             let mut command = tokio::process::Command::new(&self.executable);
@@ -145,28 +144,7 @@ impl QuotaProvider for AntigravityDriver {
                 }
             }
             agent_runtime::apply_proxy_environment(&mut command);
-            let mut child = command
-                .spawn()
-                .map_err(|_| DriverError::Disconnected("agy quota spawn failed".into()))?;
-            let stdout = child
-                .stdout
-                .take()
-                .ok_or_else(|| DriverError::Disconnected("agy quota stdout missing".into()))?;
-            let mut bytes = Vec::new();
-            stdout
-                .take((FRAME_LIMIT + 1) as u64)
-                .read_to_end(&mut bytes)
-                .await
-                .map_err(|_| DriverError::Disconnected("agy quota read failed".into()))?;
-            if bytes.len() > FRAME_LIMIT {
-                return Err(DriverError::Protocol(
-                    "agy quota output exceeds limit".into(),
-                ));
-            }
-            let status = child
-                .wait()
-                .await
-                .map_err(|_| DriverError::Disconnected("agy quota wait failed".into()))?;
+            let (bytes, status) = query(command, super::SpawnSlot { _guard: slot }).await?;
             let mut windows = None;
             let mut success = false;
             for line in bytes.split(|byte| *byte == b'\n') {
@@ -183,7 +161,7 @@ impl QuotaProvider for AntigravityDriver {
                         "quota_network_error".into(),
                     ));
                 }
-                if let Some(Classified::AuthFailure(kind)) =
+                if let Some(Classified::AuthFailure(kind, _)) =
                     classify(&String::from_utf8_lossy(line))
                 {
                     record_auth_failure(kind).await;
@@ -225,11 +203,81 @@ impl QuotaProvider for AntigravityDriver {
     }
 }
 
+// The UI observer may time out or disappear. The owned worker keeps the
+// original helper and its shared auth slot through positive OS retirement.
+async fn query(
+    command: tokio::process::Command,
+    slot: super::SpawnSlot,
+) -> Result<(Vec<u8>, std::process::ExitStatus), DriverError> {
+    let (_observer, mut cancelled) = tokio::sync::oneshot::channel::<()>();
+    tokio::spawn(async move {
+        let abandoned = || DriverError::Disconnected("agy quota caller left".into());
+        if cancelled.try_recv() == Err(tokio::sync::oneshot::error::TryRecvError::Closed) {
+            return Err(abandoned());
+        }
+        let mut child = agent_runtime::OwnedChild::spawn(command)
+            .map_err(|_| DriverError::Disconnected("agy quota spawn failed".into()))?;
+        let result = tokio::select! {
+            biased;
+            _ = &mut cancelled => Err(abandoned()),
+            result = tokio::time::timeout(QUOTA_TIMEOUT, async {
+                let stdout = child
+                    .stdout
+                    .take()
+                    .ok_or_else(|| DriverError::Disconnected("agy quota stdout missing".into()))?;
+                let mut bytes = Vec::new();
+                stdout
+                    .take((FRAME_LIMIT + 1) as u64)
+                    .read_to_end(&mut bytes)
+                    .await
+                    .map_err(|_| DriverError::Disconnected("agy quota read failed".into()))?;
+                if bytes.len() > FRAME_LIMIT {
+                    return Err(DriverError::Protocol(
+                        "agy quota output exceeds limit".into(),
+                    ));
+                }
+                let status = child
+                    .wait()
+                    .await
+                    .map_err(|_| DriverError::Disconnected("agy quota wait failed".into()))?;
+                Ok((bytes, status))
+            }) => result.map_err(|_| DriverError::CapabilityUnavailable("quota_timeout".into())),
+        };
+        let mut delay = 1;
+        while child.terminate().await.is_err() {
+            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+            delay = (delay * 2).min(30);
+        }
+        drop(slot);
+        result?
+    })
+    .await
+    .map_err(|_| DriverError::Disconnected("agy quota worker ended without a result".into()))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use driver_api::SessionResumeCapability;
     use serde_json::json;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancelled_quota_helper_retires_its_tree_and_releases_auth_promptly() {
+        let (root, executable) = crate::metadata_tests::fixture();
+        let lock = crate::SpawnLock::default();
+        let slot = crate::SpawnSlot {
+            _guard: lock.clone().lock_owned().await,
+        };
+        let mut command = tokio::process::Command::new(executable);
+        command
+            .arg("--print=/usage")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        let work = tokio::spawn(async move { query(command, slot).await });
+        crate::metadata_tests::cancelled(root.path(), work, lock).await;
+    }
 
     #[test]
     fn account_rejections_clear_cached_quota_even_on_manual_refresh() {
@@ -284,8 +332,7 @@ mod tests {
 
     #[tokio::test]
     async fn active_session_returns_stale_cache_without_waiting_or_spawning() {
-        let _active = super::super::acquire_spawn_slot().await;
-        let driver = AntigravityDriver::new(
+        let mut driver = AntigravityDriver::new(
             "antigravity",
             "ins_01ARZ3NDEKTSV4RRFFQ69G5FAV",
             "/nonexistent/agy".into(),
@@ -293,6 +340,8 @@ mod tests {
             SessionResumeCapability::Supported,
         )
         .unwrap();
+        driver.spawn = super::super::SpawnLock::default();
+        let _active = super::super::acquire_spawn_slot(&driver.spawn).await;
         let stale = QuotaSnapshot {
             session_usage: None,
             stale_after_unix_ms: 1,

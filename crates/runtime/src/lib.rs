@@ -2,6 +2,7 @@
 
 mod electron;
 mod proxy;
+pub use process_scope::OwnedChild;
 
 pub use electron::electron_node_executable;
 pub use proxy::apply_proxy_environment;
@@ -123,8 +124,16 @@ pub enum ProcessError {
 }
 
 pub async fn run_bounded(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessError> {
-    let output = run_bounded_bytes(spec).await?;
-    Ok(ProcessOutput {
+    run_bounded_bytes(spec).await.map(text_output)
+}
+
+/// Agent probes share the Core-owned process lifetime, including host crashes.
+pub async fn run_scoped_bounded(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessError> {
+    run_bytes(spec, None, true).await.map(text_output)
+}
+
+fn text_output(output: ProcessBytesOutput) -> ProcessOutput {
+    ProcessOutput {
         exit_code: output.exit_code,
         success: output.success,
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
@@ -132,7 +141,7 @@ pub async fn run_bounded(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessErr
         stdout_truncated: output.stdout_truncated,
         stderr_truncated: output.stderr_truncated,
         elapsed_millis: output.elapsed_millis,
-    })
+    }
 }
 
 pub async fn run_bounded_bytes(spec: &ProcessSpec) -> Result<ProcessBytesOutput, ProcessError> {
@@ -144,6 +153,14 @@ pub async fn run_bounded_bytes(spec: &ProcessSpec) -> Result<ProcessBytesOutput,
 pub async fn run_bounded_bytes_with_input(
     spec: &ProcessSpec,
     input: Option<&[u8]>,
+) -> Result<ProcessBytesOutput, ProcessError> {
+    run_bytes(spec, input, false).await
+}
+
+async fn run_bytes(
+    spec: &ProcessSpec,
+    input: Option<&[u8]>,
+    scoped: bool,
 ) -> Result<ProcessBytesOutput, ProcessError> {
     spec.validate()?;
     if input.is_some_and(|bytes| bytes.len() > 1024 * 1024) {
@@ -184,21 +201,21 @@ pub async fn run_bounded_bytes_with_input(
         command.env("PATH", path);
     }
 
-    let mut child = command
-        .spawn()
-        .map_err(|error| ProcessError::Spawn(error.to_string()))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| ProcessError::Io("stdout pipe was not created".into()))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| ProcessError::Io("stderr pipe was not created".into()))?;
+    let mut child = if scoped {
+        OwnedChild::spawn(command).map(Process::Scoped)
+    } else {
+        command.spawn().map(Process::Direct)
+    }
+    .map_err(|error| ProcessError::Spawn(error.to_string()))?;
+    let (stdin, stdout, stderr) = match &mut child {
+        Process::Direct(child) => (child.stdin.take(), child.stdout.take(), child.stderr.take()),
+        Process::Scoped(child) => (child.stdin.take(), child.stdout.take(), child.stderr.take()),
+    };
+    let stdout = stdout.ok_or_else(|| ProcessError::Io("stdout pipe was not created".into()))?;
+    let stderr = stderr.ok_or_else(|| ProcessError::Io("stderr pipe was not created".into()))?;
     let stdout_task = tokio::spawn(read_capped(stdout, spec.stdout_limit));
     let stderr_task = tokio::spawn(read_capped(stderr, spec.stderr_limit));
 
-    let stdin = child.stdin.take();
     let execution = async {
         let writer = async {
             if let Some(mut stdin) = stdin {
@@ -213,7 +230,7 @@ pub async fn run_bounded_bytes_with_input(
     let status = if let Ok(result) = timeout(spec.timeout, execution).await {
         result.map_err(|error| ProcessError::Io(error.to_string()))?
     } else {
-        let _ = child.kill().await;
+        let _ = child.terminate().await;
         let _ = child.wait().await;
         return Err(ProcessError::TimedOut {
             timeout_millis: millis(spec.timeout),
@@ -222,6 +239,27 @@ pub async fn run_bounded_bytes_with_input(
     let stdout = join_reader(stdout_task).await?;
     let stderr = join_reader(stderr_task).await?;
     Ok(output(status, stdout, stderr, started_at.elapsed()))
+}
+
+// Generic commands retain their original lifetime (e.g. external terminal
+// launchers); only managed Agent probes opt into the Core-owned boundary.
+enum Process {
+    Direct(tokio::process::Child),
+    Scoped(OwnedChild),
+}
+impl Process {
+    async fn wait(&mut self) -> std::io::Result<ExitStatus> {
+        match self {
+            Self::Direct(child) => child.wait().await,
+            Self::Scoped(child) => child.wait().await,
+        }
+    }
+    async fn terminate(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Direct(child) => child.kill().await,
+            Self::Scoped(child) => child.terminate().await,
+        }
+    }
 }
 
 async fn read_capped<R>(mut reader: R, limit: usize) -> Result<CappedBytes, std::io::Error>
@@ -316,6 +354,23 @@ mod tests {
         ));
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn managed_probe_preserves_bounded_output_and_its_deadline() {
+        let mut spec = ProcessSpec::probe("/bin/echo".into(), vec!["managed probe".into()]);
+        spec.stdout_limit = 7;
+        let output = run_scoped_bounded(&spec).await.unwrap();
+        assert!(output.success);
+        assert_eq!(output.stdout, "managed");
+        assert!(output.stdout_truncated);
+        spec.executable = "/bin/sleep".into();
+        spec.args = vec!["5".into()];
+        spec.timeout = Duration::from_millis(30);
+        assert!(matches!(
+            run_scoped_bounded(&spec).await,
+            Err(ProcessError::TimedOut { .. })
+        ));
+    }
     #[cfg(unix)]
     #[tokio::test]
     async fn executes_structured_argv_without_a_shell() {

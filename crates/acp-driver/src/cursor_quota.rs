@@ -107,24 +107,25 @@ async fn access_token() -> Result<String, DriverError> {
     )?;
     let token = match source {
         CredentialSource::Keychain => {
-            let output = tokio::time::timeout(
-                Duration::from_secs(5),
-                tokio::process::Command::new("/usr/bin/security")
-                    .args([
-                        "find-generic-password",
-                        "-s",
-                        "cursor-access-token",
-                        "-a",
-                        "cursor-user",
-                        "-w",
-                    ])
-                    .stdin(std::process::Stdio::null())
-                    .kill_on_drop(true)
-                    .output(),
-            )
-            .await
-            .map_err(|_| login_required())?
-            .map_err(|_| login_required())?;
+            let mut command = tokio::process::Command::new("/usr/bin/security");
+            command
+                .args([
+                    "find-generic-password",
+                    "-s",
+                    "cursor-access-token",
+                    "-a",
+                    "cursor-user",
+                    "-w",
+                ])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null());
+            let child = agent_runtime::OwnedChild::spawn(command).map_err(|_| login_required())?;
+            let output =
+                tokio::time::timeout(Duration::from_secs(5), child.wait_with_output(64 * 1024))
+                    .await
+                    .map_err(|_| login_required())?
+                    .map_err(|_| login_required())?;
             if !output.status.success() {
                 return Err(login_required());
             }

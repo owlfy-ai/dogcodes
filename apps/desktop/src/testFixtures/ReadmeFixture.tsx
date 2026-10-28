@@ -91,7 +91,7 @@ const connect = async (receive: (event: TerminalOutput) => void) => {
   receive({ kind: "data", bytes: [...new TextEncoder().encode("\r\n  VITE  ready in 184 ms\r\n\r\n  ➜  Local:   http://localhost:5173/\r\n  ➜  press h + enter to show help\r\n")] });
   return { id: terminal.id, detach: () => {} };
 };
-projectRunClient.restore = (): RunProcess => ({ id: terminal.id, stop: readOnly, api: { ...terminalClient, open: async (_project, _index, _cols, _rows, receive) => connect(receive), attach: async (_id, receive) => connect(receive), write: readOnly, close: readOnly, resize: async () => {} } });
+projectRunClient.restore = (): RunProcess => ({ id: terminal.id, stop: readOnly, api: { ...terminalClient, open: async (_project, _index, _cols, _rows, receive) => connect(receive), attach: async (_id, receive) => connect(receive), input: readOnly, close: readOnly, resize: async () => {} } });
 
 // An allowlist of in-memory reads only. No requests reach a desktop service.
 let callback = 0;

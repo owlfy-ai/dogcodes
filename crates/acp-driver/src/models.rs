@@ -58,7 +58,7 @@ fn config<'a>(value: &'a Value, category: &str) -> Option<&'a Value> {
     value["configOptions"].as_array()?.iter().find(|c| {
         c["category"] == category
             || c["id"] == category
-            || (category == "thought_level" && c["category"] == "thought_level")
+            || (category == "thought_level" && c["id"] == "effortLevel")
     })
 }
 pub(super) fn model_config(value: &Value) -> Option<&Value> {
@@ -72,7 +72,16 @@ pub(super) fn catalog(value: &Value) -> ModelCatalog {
             .into_iter()
             .filter_map(|row| {
                 let id = row["value"].as_str()?;
-                Some(ModelOption::new(id, row["name"].as_str().unwrap_or(id)))
+                let mut model = ModelOption::new(id, row["name"].as_str().unwrap_or(id));
+                let meta = &row["_meta"]["kiro"];
+                if id != "auto" && meta["hasEffort"] != false {
+                    model.thinking_options = kiro_options(&meta["effortLevels"]);
+                    model.default_thinking = meta["defaultEffortLevel"]
+                        .as_str()
+                        .filter(|id| model.thinking_options.iter().any(|o| o.id == *id))
+                        .map(Into::into);
+                }
+                Some(model)
             })
             .collect();
         if let Some(thought) = config(value, "thought_level")
@@ -82,10 +91,34 @@ pub(super) fn catalog(value: &Value) -> ModelCatalog {
                 .find(|m| Some(&m.id) == catalog.default_model.as_ref())
         {
             model.thinking_options = driver_api::models::options(&thought["options"]);
-            model.default_thinking = thought["currentValue"].as_str().map(Into::into);
+            model.default_thinking = thought["currentValue"]
+                .as_str()
+                .filter(|id| model.thinking_options.iter().any(|o| o.id == *id))
+                .map(Into::into);
+            // Kiro's automatic routing never accepts an effort selection.
+            if model.id == "auto" && thought["id"] == "effortLevel" {
+                model.thinking_options.clear();
+                model.default_thinking = None;
+            }
         }
     }
     catalog
+}
+fn kiro_options(value: &Value) -> Vec<driver_api::ThinkingOption> {
+    let normalized: Vec<_> = value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|option| {
+            option
+                .as_str()
+                .map_or_else(|| option.clone(), |id| json!({"value":id,"name":id}))
+        })
+        .collect();
+    let mut options = driver_api::models::options(&json!(normalized));
+    let mut seen = std::collections::HashSet::new();
+    options.retain(|o| seen.insert(o.id.clone()));
+    options
 }
 pub(super) async fn select(
     connection: &ConnectionTo<Agent>,
@@ -112,6 +145,15 @@ pub(super) async fn select(
             }
         }
         if let Some(thinking) = thinking {
+            let selected_catalog = catalog(&updated);
+            if !selected_catalog.models.iter().any(|m| {
+                Some(&m.id) == selected_catalog.default_model.as_ref()
+                    && m.thinking_options.iter().any(|o| o.id == thinking)
+            }) {
+                return Err(DriverError::CapabilityUnavailable(
+                    "此模型不支持所选思考强度".into(),
+                ));
+            }
             let thought = config(&updated, "thought_level").ok_or_else(|| {
                 DriverError::CapabilityUnavailable("此模型没有思考强度选项".into())
             })?;
@@ -195,8 +237,125 @@ pub(super) async fn session_request(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{AcpDriver, AcpLaunch};
     use driver_api::{AgentDriver, SessionRequest, SessionResumeCapability};
+    fn kiro(model: &str) -> Value {
+        json!({"configOptions":[{"id":"model","currentValue":model,"options":[
+            {"value":"adjustable","name":"Adjustable","_meta":{"kiro":{"hasEffort":true,"effortLevels":["low","high","max","low"],"defaultEffortLevel":"max"}}},
+            {"value":"fixed","_meta":{"kiro":{"hasEffort":false,"effortLevels":["high"]}}},
+            {"value":"auto"}
+        ]},{"id":"effortLevel","currentValue":"high","options":[{"value":"low"},{"value":"high"}]}]})
+    }
+    #[test]
+    fn kiro_effort_is_model_specific_and_current_options_are_authoritative() {
+        let state = kiro("adjustable");
+        let c = catalog(&state);
+        assert_eq!(
+            c.models[0]
+                .thinking_options
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            ["low", "high"]
+        );
+        assert_eq!(c.models[0].default_thinking.as_deref(), Some("high"));
+        assert!(c.models[1].thinking_options.is_empty());
+        assert!(c.models[2].thinking_options.is_empty());
+        let mut template = state;
+        template["configOptions"].as_array_mut().unwrap().pop();
+        let c = catalog(&template);
+        assert_eq!(c.models[0].thinking_options.len(), 3);
+        assert_eq!(c.models[0].default_thinking.as_deref(), Some("max"));
+        assert!(catalog(&kiro("auto")).models[2].thinking_options.is_empty());
+    }
+    #[tokio::test]
+    async fn kiro_selection_refreshes_effort_and_requires_native_confirmation() {
+        use crate::{Agent, ByteStreams, Client, Responder, on_receive_request};
+        use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+        let (client, agent) = tokio::io::duplex(64 * 1024);
+        let (cr, cw) = tokio::io::split(client);
+        let (ar, aw) = tokio::io::split(agent);
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed = calls.clone();
+        let server = tokio::spawn(async move {
+            Agent
+                .builder()
+                .on_receive_request(
+                    async move |request: agent_client_protocol::UntypedMessage,
+                                responder: Responder<Value>,
+                                _connection| {
+                        let params = request.params;
+                        observed.lock().unwrap().push(params.clone());
+                        let mut next = kiro(
+                            params["value"]
+                                .as_str()
+                                .filter(|_| params["configId"] == "model")
+                                .unwrap_or("adjustable"),
+                        );
+                        if params["value"] == "low" {
+                            next["configOptions"][1]["currentValue"] = json!("low");
+                        }
+                        if params["value"] == "high" {
+                            next["configOptions"][1]["currentValue"] = json!("low");
+                        }
+                        if params["value"] == "fixed" {
+                            next["configOptions"].as_array_mut().unwrap().pop();
+                        }
+                        responder.respond(next)
+                    },
+                    on_receive_request!(),
+                )
+                .connect_with(
+                    ByteStreams::new(aw.compat_write(), ar.compat()),
+                    async |_| std::future::pending::<Result<(), crate::AcpError>>().await,
+                )
+                .await
+        });
+        Client
+            .builder()
+            .connect_with(
+                ByteStreams::new(cw.compat_write(), cr.compat()),
+                async |connection| {
+                    let id = SessionId::new("s");
+                    let state = select(
+                        &connection,
+                        &kiro("auto"),
+                        &id,
+                        Some("adjustable"),
+                        Some("low"),
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(
+                        catalog(&state).models[0].default_thinking.as_deref(),
+                        Some("low")
+                    );
+                    assert!(matches!(
+                        select(&connection, &state, &id, Some("fixed"), Some("high")).await,
+                        Err(DriverError::CapabilityUnavailable(_))
+                    ));
+                    assert!(matches!(
+                        select(&connection, &state, &id, None, Some("max")).await,
+                        Err(DriverError::CapabilityUnavailable(_))
+                    ));
+                    // The fixture intentionally refuses the high setting; a successful RPC is insufficient.
+                    let mut low = kiro("adjustable");
+                    low["configOptions"][1]["currentValue"] = json!("low");
+                    assert!(matches!(
+                        select(&connection, &low, &id, None, Some("high")).await,
+                        Err(DriverError::Protocol(_))
+                    ));
+                    let requested = calls.lock().unwrap();
+                    assert_eq!(requested[0]["configId"], "model");
+                    assert_eq!(requested[1]["configId"], "effortLevel");
+                    Ok::<_, crate::AcpError>(())
+                },
+            )
+            .await
+            .unwrap();
+        server.abort();
+    }
     #[tokio::test]
     #[ignore = "reads local ACP catalogs, creates only a metadata session without a model turn"]
     async fn local_model_catalog() {

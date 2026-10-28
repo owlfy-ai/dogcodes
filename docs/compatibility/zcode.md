@@ -4,7 +4,36 @@
 > [`../implementation/beta-agent-acceptance.md`](../implementation/beta-agent-acceptance.md) 为准；
 > 本文只维护 ZCode 协议事实与能力边界。
 
-更新日期：2026-09-07（文本流校准完成，真实 Turn 通过）
+更新日期：2026-10-20（原生账号权益、模型目录及冷恢复）
+
+## 原生账号与套餐
+
+当前版本读取安装包内置 Provider 注册表、ZCode Desktop 的本地账号、所选连接和套餐权益，
+通过 `provider/updateAccountConfig` 交给原生 CLI。模型列表来自原生
+`settings.model.available`，不在 dog.codes 中维护固定模型名单。
+
+- 个人 Coding Plan：支持 BigModel 与 Z.AI；使用对应账号的个人套餐密钥查询订阅，
+  仅当前选择的个人连接可以响应 `interaction/requestProviderRuntimeHeaders`。
+  不借用其他账号、团队套餐或自定义 Provider 的密钥，不触发 Start Plan 验证。
+- Start Plan：按官方 balance 的有效套餐和模型能力提供权益；运行时使用原生 JWT。
+  官方配置要求验证时打开默认浏览器的临时本机验证页，使用官方 SDK，用户完成后继续任务。
+  该页不含 JWT/API key；取消任务会关闭等待中的验证服务。
+- 团队 Coding Plan 尚未接入，不推断其授权。
+- 模型查询会重新核实套餐；其他会话操作短暂复用 30 秒结果，凭据回调再次检查账号、
+  密钥和当前连接。读取过程跨越账号切换时丢弃结果。超时不会当作已授权。
+- 原生账号、配置文件均只读；账号凭据仅在本机子进程管道间传递，不进入 UI、远程网关或日志。
+  已移除旧 CLI 配置的转换、加载和运行时回填；只读取客户端原生 Provider 注册表及账号凭据。
+  额度查询同样使用当前原生个人套餐连接，账号变化时丢弃旧账号的额度缓存。
+- 新版 CLI 使用 `persistence: deferred` 草稿查询模型，关闭时核实 deferred 状态，
+  不为查询模型生成持久会话。需重新启动后台 Core 才能加载更新后的 Rust Driver。
+
+本机验证已发现个人套餐的 GLM-5.3、GLM-5.3-Flash，并确认每个模型只出现一次，通过原生模型选择和凭据回调；
+没有调用真实模型。Start Plan 的权益、验证回调和取消路径使用隔离测试验证，
+尚未用实际 Start Plan 账号完成付费模型任务或真实浏览器验证。
+
+回归命令：`node --test crates/zcode-driver/src/*.test.cjs`、
+`cargo test -p zcode-driver --lib --locked`。本机只读账号验收：
+`cargo test -p zcode-driver account::tests::local_account_model_catalog -- --ignored --nocapture`。
 
 ## 当前结论：Driver 已接入 Beta；真实文本流验收通过
 
@@ -17,34 +46,6 @@
 - 协议：`zcode.cjs app-server` 是 **JSON-RPC 变体**（NDJSON；有 `id/method/params/result/
   error` 与 -3260x 错误码，但**拒绝 `jsonrpc` 版本字段**——发送即 zod 校验错误）。服务端会
   **反向发起请求**，客户端必须应答否则 Turn 阻塞。
-
-## 登录解法（实测，2026-09-07 最终版）
-
-CLI 路径要求 `~/.zcode/cli/config.json`（显式模型供应商）；桌面 App 用**另一份**
-`~/.zcode/v2/config.json` + `credentials.json`（0600，OAuth），二者默认不共享。
-
-**直接复制 v2 → cli 不可行**：v2 provider 条目含 `enabled/source/apiKeyRequired` 等字段，
-触发 strict schema 静默拒绝（整个文件被丢弃，`session/create` 仍报 Model config missing）。
-
-**可行解法**：写**最小 config**，从 v2 provider 条目中提取必要字段（含 `options.apiKey`）：
-
-```json
-{
-  "model": "bigmodel-coding-plan/GLM-5.3-Flash",
-  "provider": {
-    "bigmodel-coding-plan": {
-      "name": "BigModel - Coding Plan",
-      "kind": "anthropic",
-      "options": { "apiKey": "<从 v2 复制>", "baseURL": "https://open.bigmodel.cn/api/anthropic" },
-      "models": { "GLM-5.3-Flash": {} }
-    }
-  }
-}
-```
-
-顶层 `model` 是 `"provider/model"` 格式字符串（或 `{main: "...", lite: "..."}` 对象）。
-凭据 `~/.zcode/v2/credentials.json` 被 CLI 共享读取，无需额外复制。API key 只在本机
-两个配置文件之间复制，Hub 不解析不外传。
 
 ## 协议事实（全部实测）
 
@@ -149,11 +150,24 @@ Agent 一直在等待 MCP 认证头，不会超时也不会报错，事件流静
   `ApproveOnce / ApprovePersistent / Reject`，挂起反向请求直到 Hub `respond_to_interaction`；
   不接受 Hub 自造 option。MCP auth 请求仍以空对象应答（防 Turn 阻塞）。
 - context：终态后 `session/read` 读取 projection。
-- resume：跨进程 `session/resume` 控制面重挂载已通过；上下文回忆闭环完成前仍不提升 capability。
+- resume：0.16.9 原生跨进程恢复已通过隔离验收，标记 Supported；其他版本仍为 Unknown。
+  请求带原生 workspace 和历史 MCP，恢复后核对会话身份、规范化工作目录及空闲状态，
+  再设置模型/思考强度并订阅。并发恢复复用同一结果，不接管原生正在运行的任务。
+  完整模型目录保留自 resume 快照；session/read 只含当前模型时不覆盖目录。
+  只有明确的原生 session_not_found 才映射为会话不存在，连接/协议异常保留原分类。
+  不恢复旧 CLI 配置转换或运行时回填，也不自动迁移已被旧 Core 标记 Detached 的映射。
+
+## 2026-10-20 原生冷恢复验收
+
+`cargo test -p zcode-driver --lib resume_tests::installed_native_cold_resume --locked -- --ignored --nocapture`
+在 macOS 安装的 0.16.9 上运行：使用临时 HOME、原生 v2 测试 Provider 和 loopback 模型服务，
+完成第一轮后销毁 Driver，新进程并发恢复同一个 session，再发第二轮。
+本地模型服务实际收到第一轮的用户与 Assistant 历史；不存在的会话返回 SessionMissing。
+无真实账号/配置改动，无付费模型调用。此验收不代替 Windows 或实际套餐模型的验收。
 
 ## 未完成
 
-- 审批 deny/allow 最终闭环与跨进程上下文回忆尚需在供应商模型恢复后复验。本轮实现后供应商在
+- 审批 deny/allow 最终闭环与实际套餐模型的跨进程上下文回忆仍需单独复验。早期验收时供应商在
   首次模型请求返回稳定错误码 `1308`（官方定义为使用额度已达上限，见
   <https://docs.bigmodel.cn/cn/api/api-code>）；控制面、选项形状和 resume 重挂载不受影响。
 - 2026-09-08 真实复验确认 1308 映射为 `TurnQuotaExhausted`；Core 仅持久化稳定

@@ -133,13 +133,15 @@ impl Core {
                 "expected an approval response".into(),
             ));
         };
-        if envelope.actor != ActorRef::LocalUser
-            || envelope.expected_stream_version.is_none()
+        if !matches!(
+            envelope.actor,
+            ActorRef::LocalUser | ActorRef::PairedDevice(_)
+        ) || envelope.expected_stream_version.is_none()
             || command.approval_id.trim().is_empty()
             || command.requested_at_sequence == 0
         {
             return Err(CoreError::InvalidArgument(
-                "approval source, local actor and original version are required".into(),
+                "approval source, authenticated actor and original version are required".into(),
             ));
         }
         let operation_id = CommandId::parse(envelope.idempotency_key.clone()).map_err(|_| {

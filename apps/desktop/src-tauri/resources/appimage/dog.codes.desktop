@@ -1,0 +1,8 @@
+[Desktop Entry]
+Categories=Development;
+Name=dog.codes
+Exec=dogcodes-appimage
+StartupWMClass=desktop
+Icon=desktop
+Terminal=false
+Type=Application

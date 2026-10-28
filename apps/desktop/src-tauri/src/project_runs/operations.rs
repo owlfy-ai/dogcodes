@@ -64,6 +64,9 @@ pub struct RunOperation {
     pub generation: String,
     pub status: String,
     pub error: Option<String>,
+    /// Included on reads so remote clients verify the frozen original intent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<serde_json::Value>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct Receipt {
@@ -121,6 +124,7 @@ impl StoredCatalog {
                     generation: self.generation.clone(),
                     status: status.into(),
                     error: None,
+                    request: None,
                 },
             },
         );
@@ -143,5 +147,26 @@ impl StoredCatalog {
             receipt.result.status = status.into();
             receipt.result.error.clone_from(&error);
         }
+    }
+    pub fn interrupt_analysis(&mut self, status: &str, message: &str) -> bool {
+        let mut changed = false;
+        for directory in &mut self.directories {
+            if directory.status == "analyzing" {
+                directory.status = "error".into();
+                directory.error = Some(message.into());
+                changed = true;
+            }
+        }
+        let generation = self.generation.clone();
+        for receipt in self
+            .operations
+            .values_mut()
+            .filter(|r| r.result.generation == generation && r.result.status == "running")
+        {
+            receipt.result.status = status.into();
+            receipt.result.error = Some(message.into());
+            changed = true;
+        }
+        changed
     }
 }

@@ -32,7 +32,8 @@ fn conflict() -> CoreError {
 /// Original target, content, identities and version fences remain bound.
 pub fn normalize(mut intent: SubmissionIntent) -> Result<SubmissionIntent, CoreError> {
     let task = &intent.task;
-    if intent.schema_version != 1
+    if matches!(intent.actor, Some(agent_protocol::ActorRef::SystemRecovery))
+        || intent.schema_version != 1
         || intent.scope.trim().is_empty()
         || intent.scope.len() > 4096
         || chrono::DateTime::parse_from_rfc3339(&intent.requested_at).is_err()
@@ -141,8 +142,17 @@ pub fn intent_start_fingerprint(intent: &SubmissionIntent) -> Result<String, Cor
         &intent.input,
     )
 }
-fn envelope(id: &CommandId, version: u64, payload: CoreCommand) -> CommandEnvelope<CoreCommand> {
+fn envelope(
+    intent: &SubmissionIntent,
+    id: &CommandId,
+    version: u64,
+    payload: CoreCommand,
+) -> CommandEnvelope<CoreCommand> {
     let mut envelope = CommandEnvelope::local(payload);
+    envelope.actor = intent
+        .actor
+        .clone()
+        .unwrap_or(agent_protocol::ActorRef::LocalUser);
     envelope.command_id = id.clone();
     envelope.idempotency_key = id.to_string();
     envelope.expected_stream_version = Some(version);
@@ -152,6 +162,7 @@ fn envelope(id: &CommandId, version: u64, payload: CoreCommand) -> CommandEnvelo
 pub fn stage_command(intent: &SubmissionIntent) -> Option<CommandEnvelope<CoreCommand>> {
     if let Some(creation) = &intent.creation {
         Some(envelope(
+            intent,
             &creation.operation_id,
             0,
             CoreCommand::CreateTask(CreateTask {
@@ -164,6 +175,7 @@ pub fn stage_command(intent: &SubmissionIntent) -> Option<CommandEnvelope<CoreCo
     } else {
         intent.context.as_ref().map(|context| {
             envelope(
+                intent,
                 &context.operation_id,
                 intent.task.stream_version,
                 CoreCommand::ConfirmContextPackage(ConfirmContextPackage {
@@ -178,6 +190,7 @@ pub fn stage_command(intent: &SubmissionIntent) -> Option<CommandEnvelope<CoreCo
 #[must_use]
 pub fn submission_command(intent: &SubmissionIntent, version: u64) -> CommandEnvelope<CoreCommand> {
     envelope(
+        intent,
         &intent.operation_id,
         version,
         CoreCommand::SubmitTurn(SubmitTurn {

@@ -102,11 +102,13 @@ impl SqliteStore {
 mod startup_tests;
 
 /// On-disk format of the database, stored in `PRAGMA user_version`. Bump it only
-/// together with a migration. A build refuses a database with a newer format
-/// instead of reading or changing it, so downgrading never damages user data.
+/// when the schema changes. Pre-release builds initialize only an empty store;
+/// they do not adopt or upgrade an existing database with another format.
 pub const STORE_FORMAT_VERSION: i64 = 1;
 /// Error text identifying a database written by a newer format.
 pub const NEWER_FORMAT_ERROR: &str = "database written by a newer dogcodes version";
+pub const UNSUPPORTED_FORMAT_ERROR: &str =
+    "database format is unsupported; no data migration is provided";
 
 fn check_format(connection: &Connection) -> Result<i64, RepositoryError> {
     let format: i64 = connection
@@ -115,7 +117,22 @@ fn check_format(connection: &Connection) -> Result<i64, RepositoryError> {
     if format > STORE_FORMAT_VERSION {
         return Err(RepositoryError::Unavailable(NEWER_FORMAT_ERROR.into()));
     }
+    if format != STORE_FORMAT_VERSION && (format != 0 || has_user_objects(connection)?) {
+        return Err(RepositoryError::Unavailable(
+            UNSUPPORTED_FORMAT_ERROR.into(),
+        ));
+    }
     Ok(format)
+}
+
+fn has_user_objects(connection: &Connection) -> Result<bool, RepositoryError> {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name NOT LIKE 'sqlite_%')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(storage_error)
 }
 
 fn check_database(connection: &Connection) -> Result<(), RepositoryError> {
@@ -145,31 +162,19 @@ fn check_database_with_budget(
     Ok(())
 }
 
-// Initialize an empty database. Existing data is never rewritten; format changes
-// need an explicit migration together with a STORE_FORMAT_VERSION bump.
+// Initialize an empty database. Existing current-format stores receive no DDL,
+// backfill, version adoption or projection repair on open.
 fn initialize_schema(connection: &mut Connection) -> Result<(), RepositoryError> {
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(storage_error)?;
     let format = check_format(&transaction)?;
-    let has_tables: bool = transaction.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%')",
-        [], |row| row.get(0),
-    ).map_err(storage_error)?;
-    if !has_tables {
+    if format == 0 {
         transaction.execute_batch(SCHEMA).map_err(storage_error)?;
-    }
-    // Databases created before the stamp share format 1; recording it changes no data.
-    if format < STORE_FORMAT_VERSION {
         transaction
             .pragma_update(None, "user_version", STORE_FORMAT_VERSION)
             .map_err(storage_error)?;
     }
-    // Additive indexes also apply to existing databases; projections need no rebuild.
-    transaction.execute_batch(
-        "CREATE INDEX IF NOT EXISTS events_task_type_sequence ON events(stream_type, stream_id, event_type, sequence);
-         CREATE INDEX IF NOT EXISTS events_kind_task_sequence ON events(stream_type, event_type, stream_id, sequence);"
-    ).map_err(storage_error)?;
     transaction.commit().map_err(storage_error)
 }
 
@@ -2209,12 +2214,13 @@ fn apply_projection(
             transaction
                 .execute(
                     "UPDATE agent_session_maps SET last_seen_sequence = ?1, last_used_at = ?2
-                     WHERE task_id = ?3 AND provider_id = ?4 AND status = 'active'",
+                     WHERE task_id = ?3 AND provider_id = ?4 AND installation_key = ?5 AND status = 'active'",
                     params![
                         to_i64(event.sequence)?,
                         completed_at.timestamp_millis(),
                         task_id,
                         executor.provider_id.to_string(),
+                        executor.installation_id.as_deref().unwrap_or_default(),
                     ],
                 )
                 .map_err(storage_error)?;
@@ -2276,12 +2282,13 @@ fn apply_projection(
                     .map_err(storage_error)?;
             }
             if event.payload.get("failureKind").and_then(Value::as_str) != Some("quota_exhausted") {
-                let text = agent_core::turn_failure_message(
+                let text = driver_api::failure::turn_failure_text(
                     event
                         .payload
                         .get("failureKind")
                         .and_then(Value::as_str)
                         .unwrap_or("unknown"),
+                    event.payload.get("agentError").and_then(Value::as_str),
                 );
                 transaction.execute(
                     "INSERT INTO timeline_items(item_id, task_id, turn_id, kind, text, provider_id, sequence, occurred_at)
@@ -2292,16 +2299,21 @@ fn apply_projection(
                         to_i64(event.sequence)?, event.occurred_at.timestamp_millis()],
                 ).map_err(storage_error)?;
             }
-            let status = if event.payload["sessionReusable"] == true
-                && matches!(
-                    event.payload["failureKind"].as_str(),
-                    Some("interrupted" | "autonomous_turn_busy" | "selection_rejected")
-                ) {
-                "active"
-            } else {
-                "detached"
-            };
-            update_active_session_checkpoint(transaction, event, status)?;
+            // No native admission means neither liveness nor the native
+            // history checkpoint changed. In particular, do not advance its
+            // delivery cursor over a user prompt that was never sent.
+            if event.payload["nativeSessionUntouched"] != true {
+                let status = if event.payload["sessionReusable"] == true
+                    && matches!(
+                        event.payload["failureKind"].as_str(),
+                        Some("interrupted" | "autonomous_turn_busy" | "selection_rejected")
+                    ) {
+                    "active"
+                } else {
+                    "detached"
+                };
+                update_active_session_checkpoint(transaction, event, status)?;
+            }
             clear_active_run(transaction, event)?;
         }
         _ => {
@@ -2452,13 +2464,14 @@ fn update_active_session_checkpoint(
         transaction
             .execute(
                 "UPDATE agent_session_maps SET last_seen_sequence = ?1, last_used_at = ?2,
-                    status = ?3 WHERE task_id = ?4 AND provider_id = ?5 AND status = 'active'",
+                    status = ?3 WHERE task_id = ?4 AND provider_id = ?5 AND installation_key = ?6 AND status = 'active'",
                 params![
                     to_i64(event.sequence)?,
                     event.occurred_at.timestamp_millis(),
                     status,
                     event.stream.stream_id,
                     executor.provider_id.to_string(),
+                    executor.installation_id.as_deref().unwrap_or_default(),
                 ],
             )
             .map_err(storage_error)?;
@@ -3058,6 +3071,9 @@ CREATE TABLE command_dedup(
   created_at INTEGER NOT NULL
 );
 
+CREATE INDEX events_task_type_sequence ON events(stream_type, stream_id, event_type, sequence);
+CREATE INDEX events_kind_task_sequence ON events(stream_type, event_type, stream_id, sequence);
+
 CREATE TABLE artifact_blobs(
   payload_sha256 TEXT PRIMARY KEY,
   byte_length INTEGER NOT NULL,
@@ -3398,9 +3414,7 @@ mod tests {
             &self,
             _request: SessionRequest,
         ) -> Result<SessionHandle, DriverError> {
-            Ok(SessionHandle {
-                native_session_id: "interruptible-session".into(),
-            })
+            Ok(SessionHandle::new("interruptible-session".into()))
         }
 
         async fn prompt(
@@ -3490,9 +3504,7 @@ mod tests {
             &self,
             _request: SessionRequest,
         ) -> Result<SessionHandle, DriverError> {
-            Ok(SessionHandle {
-                native_session_id: "approval-session".into(),
-            })
+            Ok(SessionHandle::new("approval-session".into()))
         }
 
         async fn prompt(
@@ -3712,9 +3724,7 @@ mod tests {
             _model: Option<&str>,
             _thinking: Option<&str>,
         ) -> Result<SessionHandle, DriverError> {
-            Ok(SessionHandle {
-                native_session_id: id.to_owned(),
-            })
+            Ok(SessionHandle::new(id.to_owned()))
         }
         fn executor(&self) -> &ExecutorRef {
             &self.executor
@@ -3732,9 +3742,7 @@ mod tests {
             &self,
             _request: SessionRequest,
         ) -> Result<SessionHandle, DriverError> {
-            Ok(SessionHandle {
-                native_session_id: "scripted-session".into(),
-            })
+            Ok(SessionHandle::new("scripted-session".into()))
         }
 
         async fn prompt(
@@ -3885,12 +3893,22 @@ mod tests {
                 .items
                 .is_empty()
         );
-        for actor in [
-            ActorRef::SystemRecovery,
-            ActorRef::PairedDevice(agent_domain::DeviceId::new()),
-        ] {
-            assert!(core.read_artifact(&actor, &request).await.is_err());
-        }
+        assert!(
+            core.read_artifact(&ActorRef::SystemRecovery, &request)
+                .await
+                .is_err()
+        );
+        // A paired owner has the same task-scoped artifact access as the PC UI.
+        let paired = ActorRef::PairedDevice(agent_domain::DeviceId::new());
+        assert_eq!(
+            serde_json::to_value(core.read_artifact(&paired, &request).await.unwrap()).unwrap(),
+            serde_json::to_value(
+                core.read_artifact(&ActorRef::LocalUser, &request)
+                    .await
+                    .unwrap()
+            )
+            .unwrap()
+        );
         request.task_id = other_task;
         assert!(matches!(
             core.read_artifact(&ActorRef::LocalUser, &request).await,
@@ -5102,7 +5120,12 @@ mod tests {
             run_id: active.run_id,
         }));
         cancel.expected_stream_version = Some(task.stream_version);
-        core.execute(cancel).await.unwrap();
+        let accepted = core.execute(cancel.clone()).await.unwrap();
+        // Resending the same stop after a lost reply returns the original receipt.
+        assert_eq!(
+            core.execute(cancel.clone()).await.unwrap().command_id,
+            accepted.command_id
+        );
 
         let events = tokio::time::timeout(std::time::Duration::from_secs(1), async {
             loop {
@@ -5326,16 +5349,20 @@ mod tests {
     async fn classified_failures_show_actionable_text_without_native_secrets() {
         for (reason, expected, message) in [
             (
-                "Claude Code 身份验证失败 secret-token",
+                "Claude Code 身份验证失败 Bearer secret-token",
                 "authentication_failed",
                 "登录或认证失败",
             ),
             (
-                "NOT NULL constraint failed: session_message.seq secret-path",
+                "NOT NULL constraint failed: session_message.seq password=secret-path",
                 "database_incompatible",
                 "版本不兼容",
             ),
-            ("request timed out secret-host", "agent_timeout", "响应超时"),
+            (
+                "request timed out api_key=secret-host",
+                "agent_timeout",
+                "响应超时",
+            ),
             (
                 "driver_not_configured",
                 "driver_not_configured",
@@ -5369,13 +5396,19 @@ mod tests {
                 .find(|e| e.event_type == "turn.failed")
                 .unwrap();
             assert_eq!(failure.payload["failureKind"], expected);
+            // The agent's own error text is kept for the user, minus secrets.
             assert!(!serde_json::to_string(&events).unwrap().contains("secret-"));
             let timeline = core.timeline(&task_id).await.unwrap();
-            assert!(
-                timeline
-                    .iter()
-                    .any(|item| item.kind == "turn.failed" && item.text.contains(message))
-            );
+            let failed = timeline
+                .iter()
+                .find(|item| item.kind == "turn.failed")
+                .unwrap();
+            assert!(failed.text.contains(message));
+            if reason != expected {
+                let visible = reason.split_whitespace().next().unwrap();
+                assert!(failed.text.contains(visible), "{}", failed.text);
+                assert!(failure.payload["agentError"].is_string(), "{reason}");
+            }
             store.rebuild_projections().unwrap();
             assert_eq!(timeline, core.timeline(&task_id).await.unwrap());
         }
@@ -5479,11 +5512,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn structured_activity_preserves_order_fields_and_discards_thought_text() {
+    async fn structured_activity_preserves_order_fields_and_published_thought_history() {
         let store = Arc::new(SqliteStore::open_in_memory().unwrap());
         let core = Arc::new(Core::new(store.clone()));
         fixture_installations::register(&core, store.as_ref(), Arc::new(ScriptedDriver::new("scripted",vec![
-            DriverEvent::Presentation{item_id:"thought".into(),data:json!({"type":"thought","delta":"private-display-fragment","status":"running"})},
+            DriverEvent::Presentation{item_id:"thought".into(),data:json!({"type":"thought","delta":"published-display-fragment","status":"running"})},
             DriverEvent::TextDelta{item_id:"message".into(),text:"Before".into()},
             DriverEvent::Presentation{item_id:"read".into(),data:json!({"type":"tool","name":"Read","status":"running","input":{"file_path":"file.txt"}})},
             DriverEvent::ToolStarted{item_id:"read".into(),tool_name:"Read".into(),summary:"old".into()},
@@ -5517,15 +5550,23 @@ mod tests {
         assert!(messages[0].sequence < tool.sequence && tool.sequence < messages[1].sequence);
         let events = core.sync_events(0, 1000).await.unwrap();
         assert!(
-            !serde_json::to_string(&events)
+            serde_json::to_string(&events)
                 .unwrap()
-                .contains("private-display-fragment")
+                .contains("published-display-fragment")
         );
         assert!(
-            !serde_json::to_string(&timeline)
+            serde_json::to_string(&timeline)
                 .unwrap()
-                .contains("private-display-fragment")
+                .contains("published-display-fragment")
         );
+        let thought = timeline
+            .iter()
+            .filter(|item| item.kind == "activity")
+            .map(|item| serde_json::from_str::<Value>(&item.text).unwrap())
+            .find(|value| value["type"] == "thought")
+            .unwrap();
+        assert_eq!(thought["status"], "completed");
+        assert_eq!(thought["text"], "published-display-fragment");
         store.rebuild_projections().unwrap();
         assert_eq!(core.timeline(&task).await.unwrap(), timeline);
     }

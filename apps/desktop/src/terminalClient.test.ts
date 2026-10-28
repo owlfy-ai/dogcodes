@@ -36,3 +36,30 @@ it("reattaches an already accepted launch even if the original response was lost
   expect(invoke).not.toHaveBeenCalledWith("core_terminal_open", expect.anything());
   expect(connection.id).toBe("one");
 });
+
+it("closes only the observed epoch and never queries a replacement target", async () => {
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  await terminalClient.close(info.id, info.epoch);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("core_terminal_close", { id: info.id, expectedEpoch: info.epoch });
+});
+it.each([{ id: "other" }, { epoch: "next-core" }])("rejects output from another terminal target before displaying bytes: %j", async changed => {
+  vi.mocked(invoke).mockResolvedValue({ info: { ...info, ...changed }, bytes: [65], from: 0, next: 1, gap: true });
+  const receive = vi.fn(); const connection = followTerminal(info, receive);
+  await flush(); connection.detach();
+  expect(receive.mock.calls.map(([event]) => event.kind)).toEqual(["state", "disconnected"]);
+  expect(invoke).toHaveBeenCalledTimes(1);
+});
+
+it("freezes the stream target before sharing the initial info with the view", async () => {
+  const shared = { ...info };
+  vi.mocked(invoke).mockImplementation(async () => ({ info: shared, bytes: [65], from: 0, next: 1, gap: false }));
+  const kinds: string[] = [];
+  const connection = followTerminal(shared, event => {
+    kinds.push(event.kind);
+    if (event.kind === "state") { shared.epoch = "replacement"; shared.id = "replacement"; }
+  });
+  await flush(); connection.detach();
+  expect(kinds).toEqual(["state", "disconnected"]);
+  expect(connection.id).toBe(info.id);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("core_terminal_read", { id: info.id, after: 0 });
+});

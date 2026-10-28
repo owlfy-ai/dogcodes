@@ -1217,26 +1217,25 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn fake_updater_executes_without_shell_and_reports_failure() {
-        use std::os::unix::fs::PermissionsExt;
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("agent with spaces");
         let marker = tmp.path().join("updated");
-        std::fs::write(
+        // A fixed executable avoids Linux ETXTBSY when another test forks
+        // while a temporary script is open for writing. Keep the spaced path.
+        std::os::unix::fs::symlink(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake-updater"),
             &path,
-            format!(
-                "#!/bin/sh\nprintf updated > '{}'\nprintf 'account-private-output'\n",
-                marker.display()
-            ),
         )
         .unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         let i = installation_for("grok", &path, "1.0.0");
         let s = install_spec(&i, &Plan::Native("test"), "1.1.0").unwrap();
         assert_eq!(s.args, vec!["update"]);
-        assert!(command(s).await.is_ok());
+        let result = command(s).await;
+        assert!(result.is_ok(), "{result:?}");
         assert!(marker.is_file());
-        std::fs::write(&path, "#!/bin/sh\nprintf 'private-token' >&2\nexit 1\n").unwrap();
-        let error = command(spec(&path, vec![], true)).await.unwrap_err();
+        let error = command(spec(&path, vec!["fail".into()], true))
+            .await
+            .unwrap_err();
         assert!(!error.contains("private-token"));
         assert!(error.contains("退出码 1"));
     }

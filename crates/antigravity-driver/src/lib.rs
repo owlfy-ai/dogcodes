@@ -23,6 +23,7 @@ use std::{
 };
 
 use agent_domain::{ExecutorRef, InstallationId, ProviderId};
+use agent_runtime::OwnedChild as Child;
 use async_trait::async_trait;
 use driver_api::{
     AgentDriver, ContextDelivery, ContextDeliveryKind, DriverError, DriverEvent, DriverEventStream,
@@ -32,14 +33,18 @@ use driver_api::{
 use futures::StreamExt;
 use serde_json::{Value, json};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin},
-    sync::mpsc,
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    process::ChildStdin,
+    sync::{mpsc, oneshot},
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
 pub mod approval_bridge;
+mod catalog;
 mod quota;
+mod session_open;
 mod session_usage;
+mod sessions;
+use sessions::{Startup, stale_scope};
 
 /// Per-line frame cap; `tool_info` payloads can be large but never unbounded.
 const FRAME_LIMIT: usize = 2 * 1024 * 1024;
@@ -90,8 +95,10 @@ fn auth_backoff_state() -> std::sync::Arc<tokio::sync::Mutex<AuthBackoffState>> 
 
 const AGY_BACKOFF_MAX: u32 = 4;
 
-async fn acquire_spawn_slot() -> tokio::sync::OwnedMutexGuard<()> {
-    spawn_guard().lock_owned().await
+type SpawnLock = std::sync::Arc<tokio::sync::Mutex<()>>;
+
+async fn acquire_spawn_slot(lock: &SpawnLock) -> tokio::sync::OwnedMutexGuard<()> {
+    lock.clone().lock_owned().await
 }
 
 /// Waives the spawn guard for the duration of a process's *whole* lifetime:
@@ -101,9 +108,15 @@ struct SpawnSlot {
     _guard: tokio::sync::OwnedMutexGuard<()>,
 }
 
-async fn enter_spawn_slot() -> Result<SpawnSlot, DriverError> {
+async fn enter_spawn_slot(lock: &SpawnLock) -> Result<SpawnSlot, DriverError> {
     let started = std::time::Instant::now();
-    let guard = acquire_spawn_slot().await;
+    let guard = tokio::time::timeout(std::time::Duration::from_secs(8), acquire_spawn_slot(lock))
+        .await
+        .map_err(|_| {
+            DriverError::CapabilityUnavailable(
+                "Antigravity 上一个进程仍在运行或清理，请稍后重试".into(),
+            )
+        })?;
     eprintln!(
         "antigravity timing stage=spawn_lock elapsed_ms={}",
         started.elapsed().as_millis()
@@ -166,8 +179,8 @@ enum Classified {
     /// `step_update` describing a `tool` step transition.
     Tool { name: String, completed: bool },
     /// `result` carrying an account/eligibility error: distinct from a normal
-    /// failure so the backoff can engage without leaking the vendor text.
-    AuthFailure(&'static str),
+    /// failure so the backoff can engage. Carries the kind and agy's own text.
+    AuthFailure(&'static str, String),
     /// `result`: the authoritative per-turn terminal.
     Terminal(DriverEvent),
     /// Anything recognized but not mapped (`subagent_info`, checkpoints).
@@ -266,8 +279,13 @@ fn classify(line: &str) -> Option<Classified> {
                     } else {
                         "access_denied"
                     },
+                    error.to_owned(),
                 ));
             }
+            let error = result
+                .get("error")
+                .and_then(Value::as_str)
+                .filter(|error| !error.trim().is_empty());
             Some(Classified::Terminal(match status {
                 Some("SUCCESS" | "WAITING") => DriverEvent::TurnCompleted {
                     summary: "Antigravity turn completed".into(),
@@ -275,8 +293,17 @@ fn classify(line: &str) -> Option<Classified> {
                 Some("INTERRUPTED" | "CANCELED") => DriverEvent::TurnInterrupted {
                     summary: "Antigravity turn was interrupted".into(),
                 },
+                // Keep agy's own error text so the user sees what it reported.
+                // Transport errors wrapped in "Eligibility check failed" are
+                // connection failures, not account rejections.
                 _ => DriverEvent::TurnFailed {
-                    reason: "Antigravity turn ended with an error result".into(),
+                    reason: match error {
+                        Some(error) if is_transport_error(error) => {
+                            driver_api::failure::with_detail("agent_connection_failed", error)
+                        }
+                        Some(error) => error.to_owned(),
+                        None => "Antigravity turn ended with an error result".into(),
+                    },
                 },
             }))
         }
@@ -289,6 +316,11 @@ struct PendingQuestion {
     sender: tokio::sync::oneshot::Sender<agent_domain::QuestionAnswer>,
 }
 struct SessionProcess {
+    scope: std::sync::Mutex<SessionHandle>,
+    turn: std::sync::Mutex<Option<uuid::Uuid>>,
+    started: std::sync::Mutex<Option<uuid::Uuid>>,
+    model: Option<String>,
+    admission: tokio::sync::Mutex<()>,
     usage: std::sync::Mutex<Option<driver_api::usage::SessionUsageSnapshot>>,
     usage_log: Option<tempfile::TempDir>,
     pending_questions: std::sync::Mutex<HashMap<String, PendingQuestion>>,
@@ -296,10 +328,16 @@ struct SessionProcess {
     permission_mode: Option<String>,
     approval_children: std::sync::Mutex<std::collections::HashSet<String>>,
     pending_approvals: std::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
+    seen_hooks: std::sync::Mutex<std::collections::HashSet<(String, u64)>>,
     native_id: std::sync::Mutex<Option<String>>,
     /// Keeps the global spawn guard held until this process ends: the auth
     /// refresh races are per-process-lifetime, not per-spawn-call.
-    _spawn_slot: SpawnSlot,
+    closing: tokio::sync::watch::Sender<bool>,
+    cleanup: tokio::sync::watch::Receiver<Option<Result<(), String>>>,
+    background: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>,
+    lifecycle: std::sync::Mutex<()>,
+    stop_requested: AtomicBool,
+    input_failed: AtomicBool,
     // Drop the pipe to deliver EOF; AsyncWrite::shutdown alone does not close
     // this handle, leaving the native process and global spawn slot alive.
     stdin: tokio::sync::Mutex<Option<ChildStdin>>,
@@ -309,23 +347,92 @@ struct SessionProcess {
     finished: Arc<AtomicBool>,
 }
 
+struct InputFrame<'a> {
+    process: &'a SessionProcess,
+    complete: bool,
+}
+impl Drop for InputFrame<'_> {
+    fn drop(&mut self) {
+        if !self.complete {
+            self.process.fail_input();
+        }
+    }
+}
+
 impl SessionProcess {
+    fn fail_input(&self) {
+        let _lifecycle = self.lifecycle.lock().expect("session lifecycle");
+        if !self.stop_requested.load(Ordering::Acquire) {
+            self.input_failed.store(true, Ordering::Release);
+        }
+        self.closing.send_replace(true);
+    }
+    #[cfg(all(test, unix))]
+    async fn close(&self) -> Result<(), DriverError> {
+        self.close_if(false).await
+    }
+    #[cfg(all(test, unix))]
+    async fn close_if(&self, only_idle: bool) -> Result<(), DriverError> {
+        self.request_close(&self.handle(), only_idle, false)?;
+        self.wait_closed().await
+    }
+    async fn wait_closed(&self) -> Result<(), DriverError> {
+        let mut cleanup = self.cleanup.clone();
+        tokio::time::timeout(std::time::Duration::from_secs(8), async {
+            loop {
+                if let Some(result) = cleanup.borrow_and_update().clone() {
+                    return result.map_err(DriverError::Disconnected);
+                }
+                cleanup.changed().await.map_err(|_| {
+                    DriverError::Disconnected(
+                        "Antigravity cleanup actor ended without confirmation".into(),
+                    )
+                })?;
+            }
+        })
+        .await
+        .map_err(|_| DriverError::Disconnected("Antigravity process shutdown timed out".into()))?
+    }
     async fn send_line(&self, value: &Value) -> Result<(), DriverError> {
-        let mut stdin = self.stdin.lock().await;
-        let stdin = stdin
-            .as_mut()
-            .ok_or_else(|| DriverError::Disconnected("Antigravity stdin is closed".into()))?;
-        async {
+        if *self.closing.borrow() {
+            return Err(DriverError::Disconnected(
+                "Antigravity session is closing".into(),
+            ));
+        }
+        let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            let mut stdin = self.stdin.lock().await;
+            if *self.closing.borrow() {
+                return Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
+            }
+            let stdin = stdin
+                .as_mut()
+                .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::BrokenPipe))?;
+            let mut frame = InputFrame {
+                process: self,
+                complete: false,
+            };
             stdin.write_all(value.to_string().as_bytes()).await?;
             stdin.write_all(b"\n").await?;
-            stdin.flush().await
+            stdin.flush().await?;
+            frame.complete = true;
+            Ok::<_, std::io::Error>(())
+        })
+        .await;
+        if matches!(result, Ok(Ok(()))) {
+            Ok(())
+        } else {
+            self.fail_input();
+            Err(DriverError::Disconnected(
+                "Antigravity input failed; cleanup continues".into(),
+            ))
         }
-        .await
-        .map_err(|_| DriverError::Disconnected("Antigravity stdin is closed".into()))
     }
 }
 
 pub struct AntigravityDriver {
+    admission: tokio::sync::Mutex<()>,
+    stopping: tokio::sync::watch::Sender<bool>,
+    retired: std::sync::Mutex<HashMap<String, sessions::Retired>>,
     models: tokio::sync::Mutex<Vec<(String, String)>>,
     quota_cache: tokio::sync::Mutex<Option<driver_api::QuotaSnapshot>>,
     executor: ExecutorRef,
@@ -333,26 +440,35 @@ pub struct AntigravityDriver {
     native_version: Option<String>,
     resume_capability: SessionResumeCapability,
     processes: tokio::sync::Mutex<HashMap<String, Arc<SessionProcess>>>,
+    /// The process-wide spawn lock; tests give each driver its own so they
+    /// can run in parallel without sharing one machine-wide credential chain.
+    spawn: SpawnLock,
+}
+
+impl Drop for AntigravityDriver {
+    fn drop(&mut self) {
+        self.stopping.send_replace(true);
+    }
 }
 
 impl AntigravityDriver {
     async fn retire_idle_sessions(&self) -> Result<(), DriverError> {
-        let mut processes = self.processes.lock().await;
-        if processes
-            .values()
-            .any(|process| process.turn_active.load(Ordering::Acquire))
-        {
-            return Err(DriverError::CapabilityUnavailable(
-                "Antigravity 已有运行中的会话".into(),
-            ));
+        let processes: Vec<_> = {
+            let map = self.processes.lock().await;
+            if map.values().any(|p| p.turn_active.load(Ordering::Acquire)) {
+                return Err(DriverError::CapabilityUnavailable(
+                    "Antigravity 已有运行中的会话".into(),
+                ));
+            }
+            map.iter()
+                .map(|(key, p)| (key.clone(), p.clone(), p.handle()))
+                .collect()
+        };
+        for (key, process, handle) in processes {
+            process.request_close(&handle, true, false)?;
+            process.confirmed().await;
+            self.remove_retired(&key, &process, &handle).await;
         }
-        for process in processes.values() {
-            process.pending_approvals.lock().expect("approvals").clear();
-            process.pending_questions.lock().expect("questions").clear();
-            process.finished.store(true, Ordering::Release);
-            process.stdin.lock().await.take();
-        }
-        processes.clear();
         Ok(())
     }
     /// Creates a driver for one concrete installation. `resume_capability`
@@ -365,6 +481,9 @@ impl AntigravityDriver {
         resume_capability: SessionResumeCapability,
     ) -> Result<Self, agent_domain::DomainError> {
         Ok(Self {
+            admission: tokio::sync::Mutex::new(()),
+            stopping: tokio::sync::watch::channel(false).0,
+            retired: std::sync::Mutex::new(HashMap::new()),
             models: tokio::sync::Mutex::new(vec![]),
             quota_cache: tokio::sync::Mutex::new(None),
             executor: ExecutorRef {
@@ -381,6 +500,7 @@ impl AntigravityDriver {
             native_version,
             resume_capability,
             processes: tokio::sync::Mutex::new(HashMap::new()),
+            spawn: spawn_guard(),
         })
     }
 
@@ -394,6 +514,13 @@ impl AntigravityDriver {
     /// Returns [`DriverError::NotConfigured`] when the executable cannot start
     /// and [`DriverError::Protocol`] when the handshake times out.
     pub async fn probe_ready(executable: &std::path::Path) -> Result<(), DriverError> {
+        Self::probe_ready_with(executable, &spawn_guard()).await
+    }
+
+    async fn probe_ready_with(
+        executable: &std::path::Path,
+        lock: &SpawnLock,
+    ) -> Result<(), DriverError> {
         // Backed-off auth failures return immediately; every probe touches
         // the shared credential chain and must not retry in a loop.
         if let Some(kind) = auth_backoff_kind().await {
@@ -401,7 +528,25 @@ impl AntigravityDriver {
         }
         // The slot is held for the whole process lifetime: the auth refresh
         // at startup is exactly the raced write this guard prevents.
-        let _slot = enter_spawn_slot().await;
+        let slot = enter_spawn_slot(lock).await?;
+        let executable = executable.to_path_buf();
+        // Native cleanup/auth exclusion outlives a cancelled readiness caller.
+        let (_observer, cancelled) = oneshot::channel::<()>();
+        tokio::spawn(async move { Self::probe_owned(&executable, slot, cancelled).await })
+            .await
+            .map_err(|_| {
+                DriverError::Disconnected("Antigravity readiness actor ended unexpectedly".into())
+            })?
+    }
+    async fn probe_owned(
+        executable: &std::path::Path,
+        slot: SpawnSlot,
+        mut cancelled: oneshot::Receiver<()>,
+    ) -> Result<(), DriverError> {
+        let abandoned = || DriverError::Disconnected("Antigravity readiness caller left".into());
+        if cancelled.try_recv() == Err(oneshot::error::TryRecvError::Closed) {
+            return Err(abandoned());
+        }
         let spawn_started = std::time::Instant::now();
         let mut child = spawn(
             &AntigravityLaunch {
@@ -423,12 +568,34 @@ impl AntigravityDriver {
             .take()
             .ok_or_else(|| DriverError::Disconnected("agy stdout is unavailable".into()))?;
         // Closing stdin asks the CLI to finish the (empty) session and exit
-        // on its own; the child is then reaped, never killed mid-flight.
+        // on its own; a stuck CLI is terminated within its owned process scope.
         drop(stdin);
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
-        let outcome = tokio::time::timeout(PROBE_TIMEOUT, reader.read_line(&mut line)).await;
-        let _ = child.wait().await;
+        let outcome = tokio::select! {
+            biased;
+            _ = &mut cancelled => None,
+            result = tokio::time::timeout(PROBE_TIMEOUT, reader.read_line(&mut line)) => Some(result),
+        };
+        drop(reader);
+        let closed = tokio::time::timeout(std::time::Duration::from_secs(2), child.wait()).await;
+        if !matches!(closed, Ok(Ok(_))) && child.terminate().await.is_err() {
+            // The probe caller may leave, but auth exclusion must remain until
+            // this original scope has actually exited.
+            tokio::spawn(async move {
+                let _slot = slot;
+                while child.terminate().await.is_err() {
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                }
+            });
+            return Err(DriverError::Disconnected(
+                "Antigravity probe cleanup remains pending".into(),
+            ));
+        }
+        drop(slot);
+        let Some(outcome) = outcome else {
+            return Err(abandoned());
+        };
         match outcome {
             // Any well-formed NDJSON line proves the protocol surface works.
             Ok(Ok(0)) => Err(DriverError::Protocol(
@@ -439,7 +606,7 @@ impl AntigravityDriver {
                     Err(DriverError::Protocol(
                         "agy did not emit a JSON event line".into(),
                     ))
-                } else if let Some(Classified::AuthFailure(kind)) = classify(line.trim_end()) {
+                } else if let Some(Classified::AuthFailure(kind, _)) = classify(line.trim_end()) {
                     // The very first event already reports an account problem.
                     record_auth_failure(kind).await;
                     Err(DriverError::NotConfigured(kind.into()))
@@ -578,7 +745,7 @@ fn spawn_workspace(
     if let Some(bridge) = bridge {
         bridge.configure(&mut command);
     }
-    command.spawn().map_err(|error| {
+    Child::spawn(command).map_err(|error| {
         if matches!(error.kind(), std::io::ErrorKind::NotFound) {
             DriverError::NotConfigured("agy executable is missing".into())
         } else {
@@ -587,43 +754,141 @@ fn spawn_workspace(
     })
 }
 
-async fn run_session(mut child: Child, process: Arc<SessionProcess>) {
-    let startup_clock = std::time::Instant::now();
-    let mut first_text_seen = false;
-    let Some(stdout) = child.stdout.take() else {
-        process.pending_approvals.lock().expect("approvals").clear();
-        process.pending_questions.lock().expect("questions").clear();
-        process.finished.store(true, Ordering::Release);
-        return;
-    };
-    if let Some(stderr) = child.stderr.take() {
-        // Drain stderr so a chatty CLI can never block on a full pipe; the
-        // content is diagnostics-only and is deliberately not retained.
+async fn run_session(
+    mut child: Child,
+    process: Arc<SessionProcess>,
+    slot: SpawnSlot,
+    mut closing: tokio::sync::watch::Receiver<bool>,
+    completed: tokio::sync::watch::Sender<Option<Result<(), String>>>,
+) {
+    let stderr = child.stderr.take().map(|mut stderr| {
         tokio::spawn(async move {
             use tokio::io::AsyncReadExt;
-            let mut stderr = stderr;
-            let mut sink = [0_u8; 4096];
-            while let Ok(read) = stderr.read(&mut sink).await {
-                if read == 0 {
+            let mut bytes = [0u8; 4096];
+            while let Ok(n) = stderr.read(&mut bytes).await {
+                if n == 0 {
                     break;
                 }
             }
-        });
+        })
+    });
+    let reader = child.stdout.take().map(|stdout| {
+        let process = process.clone();
+        tokio::spawn(stream_session(stdout, process))
+    });
+    let requested = tokio::select! {
+        ()=async{if let Some(reader)=&reader{while !reader.is_finished(){tokio::time::sleep(std::time::Duration::from_millis(10)).await;}}}=>*closing.borrow(),
+        ()=async{while !*closing.borrow_and_update(){if closing.changed().await.is_err(){break;}}}=>true,
+        _=child.wait()=>*closing.borrow(),
+    };
+    {
+        let _lifecycle = process.lifecycle.lock().expect("session lifecycle");
+        process.closing.send_replace(true);
     }
+    process.pending_approvals.lock().expect("approvals").clear();
+    process.pending_questions.lock().expect("questions").clear();
+    // Never wait for a blocked pipe writer before requesting native shutdown.
+    if let Ok(mut stdin) = process.stdin.try_lock() {
+        stdin.take();
+    }
+    let natural = tokio::time::timeout(std::time::Duration::from_secs(2), child.wait()).await;
+    if !matches!(natural, Ok(Ok(_))) {
+        let mut delay = 1;
+        loop {
+            match child.terminate().await {
+                Ok(()) => break,
+                Err(_) => {
+                    completed.send_replace(Some(Err(
+                        "Antigravity process shutdown remains unconfirmed".into(),
+                    )));
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+            delay = (delay * 2).min(30);
+        }
+    }
+    process.stdin.lock().await.take();
+    if let Some(mut reader) = reader
+        && tokio::time::timeout(std::time::Duration::from_secs(1), &mut reader)
+            .await
+            .is_err()
+    {
+        reader.abort();
+        let _ = reader.await;
+    }
+    let active = process.turn_active.swap(false, Ordering::AcqRel);
+    if let Some(updates) = process.updates.lock().expect("updates sink").take()
+        && active
+    {
+        let terminal = if requested && !process.input_failed.load(Ordering::Acquire) {
+            DriverEvent::TurnInterrupted {
+                summary: "Antigravity session closing".into(),
+            }
+        } else {
+            DriverEvent::TurnFailed {
+                reason: "Antigravity stream ended unexpectedly".into(),
+            }
+        };
+        let _ = updates.send(terminal);
+    }
+    if let Some(stderr) = stderr {
+        stderr.abort();
+        let _ = stderr.await;
+    }
+    let tasks = std::mem::take(&mut *process.background.lock().expect("background tasks"));
+    for task in tasks {
+        let _ = task.await;
+    }
+    process.pending_approvals.lock().expect("approvals").clear();
+    process.pending_questions.lock().expect("questions").clear();
+    drop(slot);
+    process.finished.store(true, Ordering::Release);
+    completed.send_replace(Some(Ok(())));
+}
+
+async fn stream_session(stdout: tokio::process::ChildStdout, process: Arc<SessionProcess>) {
+    let startup_clock = std::time::Instant::now();
+    let mut first_text_seen = false;
     let mut reader = BufReader::new(stdout);
-    let mut line = String::new();
     let mut permission_denied = false;
     let mut has_answer = false;
     loop {
-        line.clear();
-        match reader.read_line(&mut line).await {
+        let mut bytes = Vec::new();
+        match (&mut reader)
+            .take(FRAME_LIMIT as u64 + 1)
+            .read_until(b'\n', &mut bytes)
+            .await
+        {
             Ok(0) | Err(_) => break,
+            Ok(_) if bytes.len() > FRAME_LIMIT => break,
             Ok(_) => {}
         }
-        if line.len() > FRAME_LIMIT {
+        let Ok(line) = String::from_utf8(bytes) else {
             break;
-        }
+        };
         if let Ok(raw) = serde_json::from_str::<Value>(&line) {
+            let id = match raw["event"].as_str() {
+                Some("init") => raw["conversation_id"].as_str(),
+                Some("step_update") => raw
+                    .pointer("/step_update/conversation_id")
+                    .and_then(Value::as_str),
+                Some("result") => raw
+                    .pointer("/result/conversation_id")
+                    .and_then(Value::as_str),
+                _ => None,
+            };
+            if let Some(id) = id {
+                let Ok(bound) = process.observe_native(id) else {
+                    break;
+                };
+                if bound
+                    && let Some(updates) = process.updates.lock().expect("updates sink").as_ref()
+                {
+                    let _ = updates.send(DriverEvent::SessionReady {
+                        native_session_id: id.into(),
+                    });
+                }
+            }
             session_usage::observe(&mut process.usage.lock().expect("usage"), &raw);
             if let Some(error) = raw.pointer("/step_update/tool_info/error") {
                 let text = error.to_string().to_ascii_lowercase();
@@ -661,29 +926,17 @@ async fn run_session(mut child: Child, process: Arc<SessionProcess>) {
         let Some(classified) = classify(line.trim_end()) else {
             continue;
         };
+        // A long-lived CLI emits init only once. A subsequent fast turn may
+        // finish before the prompt writer gets polled again.
+        process.mark_started();
         match classified {
             Classified::Started { conversation_id } => {
                 eprintln!(
                     "antigravity timing stage=native_init elapsed_ms={}",
                     startup_clock.elapsed().as_millis()
                 );
-                process
-                    .native_id
-                    .lock()
-                    .expect("native id")
-                    .clone_from(&conversation_id);
-                if let Some(updates) = process.updates.lock().expect("updates sink").as_ref() {
-                    let _ = updates.send(DriverEvent::TurnStarted {
-                        native_turn_id: None,
-                    });
-                    if let Some(conversation_id) = &conversation_id {
-                        // The vendor conversation id is the durable resume
-                        // handle; surface it so the hub records the identity.
-                        let _ = updates.send(DriverEvent::SessionReady {
-                            native_session_id: conversation_id.clone(),
-                        });
-                    }
-                }
+                let _ = conversation_id;
+                process.mark_started();
             }
             Classified::Text(text) => {
                 if !first_text_seen {
@@ -704,19 +957,29 @@ async fn run_session(mut child: Child, process: Arc<SessionProcess>) {
             Classified::Tool { name, completed } => {
                 let _ = (name, completed); /* Structured step metadata emitted above. */
             }
-            Classified::AuthFailure(kind) => {
-                // Count toward the backoff; report a stable, non-leaking
-                // terminal to the stream.
+            Classified::AuthFailure(kind, error) => {
+                // Count toward the backoff; report the stable kind together
+                // with agy's own error text.
                 record_auth_failure(kind).await;
+                let _gate = process.lifecycle.lock().expect("session lifecycle");
                 if let Some(updates) = process.updates.lock().expect("updates sink").take() {
                     let _ = updates.send(DriverEvent::TurnFailed {
-                        reason: kind.into(),
+                        reason: driver_api::failure::with_detail(kind, &error),
                     });
                 }
                 process.turn_active.store(false, Ordering::Release);
+                process.turn.lock().expect("turn scope").take();
+                process.pending_approvals.lock().expect("approvals").clear();
+                process.pending_questions.lock().expect("questions").clear();
             }
             Classified::Terminal(driver_event) => {
-                let terminal = if process.interrupt_requested.load(Ordering::Acquire)
+                let _gate = process.lifecycle.lock().expect("session lifecycle");
+                let terminal = if process.input_failed.load(Ordering::Acquire) {
+                    DriverEvent::TurnFailed {
+                        reason: "Antigravity input failed before the turn completed".into(),
+                    }
+                } else if (process.interrupt_requested.load(Ordering::Acquire)
+                    || process.stop_requested.load(Ordering::Acquire))
                     && matches!(driver_event, DriverEvent::TurnCompleted { .. })
                 {
                     DriverEvent::TurnInterrupted {
@@ -736,6 +999,7 @@ async fn run_session(mut child: Child, process: Arc<SessionProcess>) {
                     let _ = updates.send(terminal);
                 }
                 process.turn_active.store(false, Ordering::Release);
+                process.turn.lock().expect("turn scope").take();
                 process.pending_approvals.lock().expect("approvals").clear();
                 process.pending_questions.lock().expect("questions").clear();
                 process.interrupt_requested.store(false, Ordering::Release);
@@ -744,23 +1008,32 @@ async fn run_session(mut child: Child, process: Arc<SessionProcess>) {
         }
     }
     // EOF closes any active turn with a stable, non-leaking reason.
+    let _gate = process.lifecycle.lock().expect("session lifecycle");
+    process.turn.lock().expect("turn scope").take();
+    let active = process.turn_active.swap(false, Ordering::AcqRel);
     if let Some(updates) = process.updates.lock().expect("updates sink").take() {
-        let _ = updates.send(if process.turn_active.load(Ordering::Acquire) {
-            DriverEvent::TurnFailed {
-                reason: "Antigravity stream ended before the turn completed".into(),
-            }
-        } else {
-            DriverEvent::TurnCompleted {
-                summary: "Antigravity session closed".into(),
-            }
-        });
+        let _ = updates.send(
+            if active
+                && !process.input_failed.load(Ordering::Acquire)
+                && (process.interrupt_requested.load(Ordering::Acquire)
+                    || process.stop_requested.load(Ordering::Acquire))
+            {
+                DriverEvent::TurnInterrupted {
+                    summary: "Antigravity session closing".into(),
+                }
+            } else if active {
+                DriverEvent::TurnFailed {
+                    reason: "Antigravity stream ended before the turn completed".into(),
+                }
+            } else {
+                DriverEvent::TurnCompleted {
+                    summary: "Antigravity session closed".into(),
+                }
+            },
+        );
     }
     process.pending_approvals.lock().expect("approvals").clear();
     process.pending_questions.lock().expect("questions").clear();
-    process.finished.store(true, Ordering::Release);
-    // Reap instead of kill: the session already saw EOF on stdout, so the CLI
-    // is exiting on its own; killing here would race its final token persist.
-    let _ = child.wait().await;
 }
 
 /// The documented input shape: one NDJSON `user` event per prompt; context
@@ -854,18 +1127,8 @@ impl AgentDriver for AntigravityDriver {
         model: Option<&str>,
         thinking: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
-        if self.resume_capability() != SessionResumeCapability::Supported {
-            return Err(DriverError::CapabilityUnavailable(
-                "native conversation resume unavailable".into(),
-            ));
-        }
-        // Relaunch with the new configuration but resume the same native history.
-        self.shutdown(SessionHandle {
-            native_session_id: id.to_owned(),
-        })
-        .await?;
-        self.resume_selected_session(id, request, model, thinking)
-            .await
+        let native = model.map(|m| thinking.map_or_else(|| m.to_owned(), |e| format!("{m}-{e}")));
+        self.open(request, Some(id), native.as_deref(), true).await
     }
 
     async fn resume_selected_session(
@@ -880,64 +1143,16 @@ impl AgentDriver for AntigravityDriver {
             .await
     }
     async fn available_models(&self) -> Result<Vec<String>, DriverError> {
-        use tokio::io::AsyncReadExt;
         let mut cache = self.models.lock().await;
         if !cache.is_empty() {
             return Ok(cache.iter().map(|(id, _)| id.clone()).collect());
         }
-        let _slot = spawn_guard().try_lock_owned().map_err(|_| {
-            DriverError::CapabilityUnavailable("请在 Agent 空闲时加载模型目录".into())
-        })?;
-        let result = tokio::time::timeout(PROBE_TIMEOUT, async {
-            let mut command = tokio::process::Command::new(&self.executable);
-            command
-                .arg("models")
-                .env_clear()
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .kill_on_drop(true);
-            for key in ENV_ALLOWLIST {
-                if let Some(value) = std::env::var_os(key) {
-                    command.env(key, value);
-                }
-            }
-            agent_runtime::apply_proxy_environment(&mut command);
-            let fail = || DriverError::Protocol("native model catalog unavailable".into());
-            let mut child = command.spawn().map_err(|_| fail())?;
-            let mut bytes = Vec::new();
-            child
-                .stdout
-                .take()
-                .ok_or_else(fail)?
-                .take(65537)
-                .read_to_end(&mut bytes)
-                .await
-                .map_err(|_| fail())?;
-            if bytes.len() > 65536 || !child.wait().await.map_err(|_| fail())?.success() {
-                return Err(fail());
-            }
-            let models: Vec<(String, String)> = String::from_utf8_lossy(&bytes)
-                .lines()
-                .filter_map(|line| {
-                    line.split_once('\t')
-                        .map(|(id, label)| (id.to_owned(), label.trim().to_owned()))
-                })
-                .filter(|(id, _)| {
-                    !id.is_empty()
-                        && id.len() <= 200
-                        && id
-                            .bytes()
-                            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
-                })
-                .collect();
-            if models.is_empty() {
-                return Err(fail());
-            }
-            Ok(models)
-        })
-        .await
-        .map_err(|_| DriverError::Disconnected("model catalog timed out".into()))??;
+        let slot = SpawnSlot {
+            _guard: self.spawn.clone().try_lock_owned().map_err(|_| {
+                DriverError::CapabilityUnavailable("请在 Agent 空闲时加载模型目录".into())
+            })?,
+        };
+        let result = catalog::read(self.executable.clone(), slot).await?;
         *cache = result;
         Ok(cache.iter().map(|(id, _)| id.clone()).collect())
     }
@@ -1010,203 +1225,37 @@ impl AgentDriver for AntigravityDriver {
         request: SessionRequest,
         model: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
-        let mut request = request;
-        if request
-            .permission_mode
-            .as_deref()
-            .is_none_or(|mode| mode == "configured")
-        {
-            request.permission_mode = Some("desktop-approvals".into());
-        }
-        self.retire_idle_sessions().await?;
-        let spawn_slot = enter_spawn_slot().await?;
-        let bridge = Some(approval_bridge::Bridge::prepare(&self.executable, &request).await?);
-        let spawn_started = std::time::Instant::now();
-        let usage_log = tempfile::Builder::new()
-            .prefix("dogcodes-agy-usage-")
-            .tempdir()
-            .ok();
-        let mut child = spawn_workspace(
-            &AntigravityLaunch {
-                executable: self.executable.clone(),
-            },
-            None,
-            model,
-            Some(&request),
-            bridge.as_ref(),
-            usage_log
-                .as_ref()
-                .map(|dir| dir.path().join("session.log"))
-                .as_deref(),
-        )?;
-        eprintln!(
-            "antigravity timing stage=process_spawn elapsed_ms={}",
-            spawn_started.elapsed().as_millis()
-        );
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| DriverError::Disconnected("agy stdin is unavailable".into()))?;
-        // The conversation id arrives in events; the handle uses a locally
-        // generated id until then, matching the recorded process map key.
-        let session_key = format!("agy_{}", uuid_like_id());
-        let process = Arc::new(SessionProcess {
-            usage: std::sync::Mutex::new(None),
-            usage_log,
-            workspace_instruction: workspace_instruction(&request),
-            permission_mode: request.permission_mode.clone(),
-            pending_approvals: std::sync::Mutex::new(HashMap::new()),
-            pending_questions: std::sync::Mutex::new(HashMap::new()),
-            approval_children: std::sync::Mutex::new(std::collections::HashSet::new()),
-            native_id: std::sync::Mutex::new(None),
-            _spawn_slot: spawn_slot,
-            stdin: tokio::sync::Mutex::new(Some(stdin)),
-            updates: std::sync::Mutex::new(None),
-            turn_active: AtomicBool::new(false),
-            interrupt_requested: AtomicBool::new(false),
-            finished: Arc::new(AtomicBool::new(false)),
-        });
-        self.processes
-            .lock()
-            .await
-            .insert(session_key.clone(), Arc::clone(&process));
-        if let Some(bridge) = bridge {
-            bridge.start(&process);
-        }
-        tokio::spawn(run_session(child, Arc::clone(&process)));
-        Ok(SessionHandle {
-            native_session_id: session_key,
-        })
+        self.open(request, None, model, false).await
     }
 
-    async fn resume_session(
-        &self,
-        native_session_id: &str,
-        working_directory: &str,
-    ) -> Result<SessionHandle, DriverError> {
-        self.resume_session_with_model(native_session_id, working_directory, None)
-            .await
+    async fn resume_session(&self, id: &str, cwd: &str) -> Result<SessionHandle, DriverError> {
+        self.resume_session_with_model(id, cwd, None).await
     }
-
     async fn resume_session_with_model(
         &self,
-        native_session_id: &str,
-        working_directory: &str,
+        id: &str,
+        cwd: &str,
         model: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
         self.resume_workspace_session(
-            native_session_id,
+            id,
             SessionRequest {
                 history_mcp: None,
                 permission_mode: None,
-                working_directory: working_directory.into(),
+                working_directory: cwd.into(),
                 additional_directories: vec![],
             },
             model,
         )
         .await
     }
-
     async fn resume_workspace_session(
         &self,
-        native_session_id: &str,
-        workspace: SessionRequest,
+        id: &str,
+        request: SessionRequest,
         model: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
-        let mut workspace = workspace;
-        if workspace
-            .permission_mode
-            .as_deref()
-            .is_none_or(|mode| mode == "configured")
-        {
-            workspace.permission_mode = Some("desktop-approvals".into());
-        }
-        {
-            let mut processes = self.processes.lock().await;
-            let key = processes
-                .iter()
-                .find(|(key, process)| {
-                    !process.finished.load(Ordering::Acquire)
-                        && process.permission_mode == workspace.permission_mode
-                        && process.workspace_instruction == workspace_instruction(&workspace)
-                        && (key.as_str() == native_session_id
-                            || process.native_id.lock().expect("native id").as_deref()
-                                == Some(native_session_id))
-                })
-                .map(|(key, _)| key.clone());
-            if let Some(key) = key {
-                if key != native_session_id {
-                    let process = processes.remove(&key).expect("existing process");
-                    processes.insert(native_session_id.to_owned(), process);
-                }
-                return Ok(SessionHandle {
-                    native_session_id: native_session_id.to_owned(),
-                });
-            }
-        }
-        self.retire_idle_sessions().await?;
-        if self.resume_capability != SessionResumeCapability::Supported {
-            return Err(DriverError::CapabilityUnavailable(
-                "agy --conversation resume has not been runtime verified".into(),
-            ));
-        }
-        // The conversation id is the agy-reported UUID; the local handle key
-        // stays the same so the process map remains consistent.
-        let spawn_slot = enter_spawn_slot().await?;
-        let bridge = Some(approval_bridge::Bridge::prepare(&self.executable, &workspace).await?);
-        let spawn_started = std::time::Instant::now();
-        let usage_log = tempfile::Builder::new()
-            .prefix("dogcodes-agy-usage-")
-            .tempdir()
-            .ok();
-        let mut child = spawn_workspace(
-            &AntigravityLaunch {
-                executable: self.executable.clone(),
-            },
-            Some(native_session_id),
-            model,
-            Some(&workspace),
-            bridge.as_ref(),
-            usage_log
-                .as_ref()
-                .map(|dir| dir.path().join("session.log"))
-                .as_deref(),
-        )?;
-        eprintln!(
-            "antigravity timing stage=process_spawn elapsed_ms={}",
-            spawn_started.elapsed().as_millis()
-        );
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| DriverError::Disconnected("agy stdin is unavailable".into()))?;
-        let process = Arc::new(SessionProcess {
-            usage: std::sync::Mutex::new(None),
-            usage_log,
-            workspace_instruction: workspace_instruction(&workspace),
-            permission_mode: workspace.permission_mode.clone(),
-            pending_approvals: std::sync::Mutex::new(HashMap::new()),
-            pending_questions: std::sync::Mutex::new(HashMap::new()),
-            approval_children: std::sync::Mutex::new(std::collections::HashSet::new()),
-            native_id: std::sync::Mutex::new(Some(native_session_id.to_owned())),
-            _spawn_slot: spawn_slot,
-            stdin: tokio::sync::Mutex::new(Some(stdin)),
-            updates: std::sync::Mutex::new(None),
-            turn_active: AtomicBool::new(false),
-            interrupt_requested: AtomicBool::new(false),
-            finished: Arc::new(AtomicBool::new(false)),
-        });
-        self.processes
-            .lock()
-            .await
-            .insert(native_session_id.to_owned(), Arc::clone(&process));
-        if let Some(bridge) = bridge {
-            bridge.start(&process);
-        }
-        tokio::spawn(run_session(child, Arc::clone(&process)));
-        Ok(SessionHandle {
-            native_session_id: native_session_id.to_owned(),
-        })
+        self.open(request, Some(id), model, false).await
     }
 
     async fn prompt(
@@ -1214,37 +1263,40 @@ impl AgentDriver for AntigravityDriver {
         handle: &SessionHandle,
         request: HubPromptRequest,
     ) -> Result<DriverEventStream, DriverError> {
-        let process = self
-            .processes
-            .lock()
-            .await
-            .iter()
-            .find(|(key, p)| {
-                key.as_str() == handle.native_session_id
-                    || p.native_id.lock().expect("native id").as_deref()
-                        == Some(handle.native_session_id.as_str())
-            })
-            .map(|(_, p)| Arc::clone(p))
-            .ok_or_else(|| {
-                DriverError::SessionMissing("no live agy process for this session".into())
-            })?;
-        if process
-            .turn_active
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return Err(DriverError::CapabilityUnavailable(
-                "this agy session already has an active turn".into(),
-            ));
-        }
-        process.approval_children.lock().expect("children").clear();
+        let process = self.process_for(handle).await?;
+        let _admission = process.admission.lock().await;
         let (event_tx, event_rx) = mpsc::unbounded_channel();
-        if let Some(id) = process.native_id.lock().expect("native id").as_ref() {
-            let _ = event_tx.send(DriverEvent::SessionReady {
-                native_session_id: id.clone(),
-            });
+        {
+            let _lifecycle = process.lifecycle.lock().expect("session lifecycle");
+            process.validate_scope(handle)?;
+            if *process.closing.borrow() || process.finished.load(Ordering::Acquire) {
+                return Err(DriverError::Disconnected(
+                    "Antigravity session is closing".into(),
+                ));
+            }
+            if process
+                .turn_active
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
+                return Err(DriverError::CapabilityUnavailable(
+                    "this agy session already has an active turn".into(),
+                ));
+            }
+            *process.turn.lock().expect("turn scope") = Some(uuid::Uuid::new_v4());
+            *process.started.lock().expect("started turn") = None;
+            process.approval_children.lock().expect("children").clear();
+            if let Some(id) = process.native_id.lock().expect("native id").as_ref() {
+                let _ = event_tx.send(DriverEvent::SessionReady {
+                    native_session_id: id.clone(),
+                });
+            }
+            *process.updates.lock().expect("updates sink") = Some(event_tx);
         }
-        *process.updates.lock().expect("updates sink") = Some(event_tx);
+        let mut dispatch = Startup {
+            process: process.clone(),
+            claimed: false,
+        };
         let mut event = user_event(&request.context, &request.prompt);
         let blocks = event["message"]["content"]
             .as_array_mut()
@@ -1267,12 +1319,16 @@ impl AgentDriver for AntigravityDriver {
                 json!({"type": "text", "text": format!("{}\nClarification questions: ask_question is connected to dogcodes through a Hook. The actual user answer is returned in the Hook reason while the native auto-skip is blocked. Treat it as the user response, and do not retry just because the tool was blocked.", process.workspace_instruction)}),
             );
         if let Err(error) = process.send_line(&event).await {
+            let _gate = process.lifecycle.lock().expect("session lifecycle");
             *process.updates.lock().expect("updates sink") = None;
             process.turn_active.store(false, Ordering::Release);
+            process.turn.lock().expect("turn scope").take();
             return Err(error);
         }
         let stream: DriverEventStream =
             Box::pin(UnboundedReceiverStream::new(event_rx).map(Ok::<_, DriverError>));
+        process.mark_started();
+        dispatch.claimed = true;
         Ok(stream)
     }
 
@@ -1282,23 +1338,20 @@ impl AgentDriver for AntigravityDriver {
         request_id: &str,
         answer: agent_domain::QuestionAnswer,
     ) -> Result<(), DriverError> {
-        let process = self
-            .processes
-            .lock()
-            .await
-            .iter()
-            .find(|(key, p)| {
-                key.as_str() == handle.native_session_id
-                    || p.native_id.lock().expect("native id").as_deref()
-                        == Some(handle.native_session_id.as_str())
-            })
-            .map(|(_, p)| Arc::clone(p))
-            .ok_or_else(|| DriverError::SessionMissing("Question session closed".into()))?;
+        let process = self.process_for(handle).await?;
+        let _gate = process.lifecycle.lock().expect("session lifecycle");
+        process.validate_scope(handle)?;
+        if *process.closing.borrow() || !process.turn_active.load(Ordering::Acquire) {
+            return Err(DriverError::Protocol(
+                "Antigravity interaction is no longer active".into(),
+            ));
+        }
         let mut pending = process.pending_questions.lock().expect("questions");
         let q = pending
             .get(request_id)
             .ok_or_else(|| DriverError::Protocol("Question expired".into()))?;
         q.form.validate(&answer).map_err(DriverError::Protocol)?;
+        approval_bridge::validate_answer(&answer)?;
         pending
             .remove(request_id)
             .expect("pending question")
@@ -1316,18 +1369,14 @@ impl AgentDriver for AntigravityDriver {
         if !["allow_once", "deny"].contains(&option_id) {
             return Err(DriverError::Protocol("未知审批选项".into()));
         }
-        let process = self
-            .processes
-            .lock()
-            .await
-            .iter()
-            .find(|(key, p)| {
-                key.as_str() == handle.native_session_id
-                    || p.native_id.lock().expect("native id").as_deref()
-                        == Some(handle.native_session_id.as_str())
-            })
-            .map(|(_, p)| Arc::clone(p))
-            .ok_or_else(|| DriverError::SessionMissing("审批会话已结束".into()))?;
+        let process = self.process_for(handle).await?;
+        let _gate = process.lifecycle.lock().expect("session lifecycle");
+        process.validate_scope(handle)?;
+        if *process.closing.borrow() || !process.turn_active.load(Ordering::Acquire) {
+            return Err(DriverError::Protocol(
+                "Antigravity interaction is no longer active".into(),
+            ));
+        }
         let sender = process
             .pending_approvals
             .lock()
@@ -1340,46 +1389,48 @@ impl AgentDriver for AntigravityDriver {
     }
 
     async fn interrupt(&self, handle: &SessionHandle) -> Result<(), DriverError> {
-        let process = self
-            .processes
+        let process = self.process_for(handle).await?;
+        process.request_close(handle, false, true)?;
+        process.wait_closed().await
+    }
+
+    async fn current_session_handle(&self, id: &str) -> Option<SessionHandle> {
+        self.find(id).await.map(|(_, process)| process.handle())
+    }
+
+    async fn shutdown_proof(
+        &self,
+        handle: &SessionHandle,
+    ) -> Option<driver_api::SessionShutdownProof> {
+        if let Some((_, process)) = self.find(&handle.native_session_id).await {
+            process.validate_scope(handle).ok()?;
+            return Some(Box::pin(async move { process.confirmed().await }));
+        }
+        self.retired
             .lock()
-            .await
-            .iter()
-            .find(|(key, p)| {
-                key.as_str() == handle.native_session_id
-                    || p.native_id.lock().expect("native id").as_deref()
-                        == Some(handle.native_session_id.as_str())
-            })
-            .map(|(_, p)| Arc::clone(p))
-            .ok_or_else(|| DriverError::SessionMissing("no live agy process".into()))?;
-        // Closing stdin ends the session after the current turn; the terminal
-        // result is then remapped to TurnInterrupted.
-        process.interrupt_requested.store(true, Ordering::Release);
-        process.pending_approvals.lock().expect("approvals").clear();
-        process.pending_questions.lock().expect("questions").clear();
-        process.stdin.lock().await.take();
-        Ok(())
+            .expect("retired scopes")
+            .get(&handle.native_session_id)
+            .filter(|old| old.handle.same_scope(handle))
+            .map(|_| Box::pin(async {}) as driver_api::SessionShutdownProof)
     }
 
     async fn shutdown(&self, handle: SessionHandle) -> Result<(), DriverError> {
-        let process = {
-            let mut processes = self.processes.lock().await;
-            let key = processes
-                .iter()
-                .find(|(key, process)| {
-                    key.as_str() == handle.native_session_id
-                        || process.native_id.lock().expect("native id").as_deref()
-                            == Some(handle.native_session_id.as_str())
-                })
-                .map(|(key, _)| key.clone());
-            key.and_then(|key| processes.remove(&key))
+        let Some((key, process)) = self.find(&handle.native_session_id).await else {
+            return if self
+                .retired
+                .lock()
+                .expect("retired scopes")
+                .get(&handle.native_session_id)
+                .is_some_and(|old| old.handle.same_scope(&handle))
+            {
+                Ok(())
+            } else {
+                Err(stale_scope())
+            };
         };
-        if let Some(process) = process {
-            process.pending_approvals.lock().expect("approvals").clear();
-            process.pending_questions.lock().expect("questions").clear();
-            process.finished.store(true, Ordering::Release);
-            process.stdin.lock().await.take();
-        }
+        process.request_close(&handle, false, false)?;
+        process.wait_closed().await?;
+        self.remove_retired(&key, &process, &handle).await;
         Ok(())
     }
 }
@@ -1396,6 +1447,12 @@ fn uuid_like_id() -> String {
     format!("{now:x}-{count:x}")
 }
 
+#[cfg(all(test, unix))]
+mod cleanup_tests;
+#[cfg(all(test, unix))]
+mod metadata_tests;
+#[cfg(all(test, unix))]
+mod scope_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1452,23 +1509,41 @@ mod tests {
         // credential backoff (e.g. profile-picture TLS timeouts during login).
         for cause in ["TLS handshake timeout", "context deadline exceeded", "EOF"] {
             let event = json!({"event":"result","result":{"status":"ERROR","error":format!("Eligibility check failed: failed to get profile picture: {cause}")}});
-            assert!(matches!(
-                classify(&event.to_string()),
-                Some(Classified::Terminal(DriverEvent::TurnFailed { .. }))
-            ));
+            let Some(Classified::Terminal(DriverEvent::TurnFailed { reason })) =
+                classify(&event.to_string())
+            else {
+                panic!("transport failure must stay a turn failure");
+            };
+            assert_eq!(
+                driver_api::failure::split_turn_failure(&reason).0,
+                Some("agent_connection_failed")
+            );
         }
+        // Any other error result keeps agy's own text for the user.
+        let error =
+            "FAILED_PRECONDITION (code 400): User location is not supported for the API use.";
+        let event = json!({"event":"result","result":{"status":"ERROR","error":error}});
+        let Some(Classified::Terminal(DriverEvent::TurnFailed { reason })) =
+            classify(&event.to_string())
+        else {
+            panic!("error result must fail the turn");
+        };
+        assert_eq!(
+            driver_api::failure::split_turn_failure(&reason),
+            (None, Some(error))
+        );
         // Eligibility/auth errors are their own classification for backoff.
         assert!(matches!(
             classify(
                 r#"{"event":"result","result":{"status":"ERROR","error":"authentication required"}}"#
             ),
-            Some(Classified::AuthFailure("authentication_failed"))
+            Some(Classified::AuthFailure("authentication_failed", _))
         ));
         assert!(matches!(
             classify(
                 r#"{"event":"result","result":{"status":"ERROR","error":"Eligibility check failed"}}"#,
             ),
-            Some(Classified::AuthFailure("access_denied"))
+            Some(Classified::AuthFailure("access_denied", _))
         ));
         assert!(matches!(
             classify(r#"{"event":"result","result":{"status":"INTERRUPTED"}}"#,),
@@ -1520,7 +1595,7 @@ mod tests {
     }
 
     #[cfg(unix)]
-    fn write_fake_agy(directory: &std::path::Path) -> PathBuf {
+    pub(super) fn write_fake_agy(directory: &std::path::Path) -> PathBuf {
         use std::os::unix::fs::PermissionsExt;
 
         let script = directory.join("agy");
@@ -1545,7 +1620,7 @@ while IFS= read -r line; do
       printf '%s\n' '{"event":"init","conversation_id":"conv-fixture","init":{"cwd":"/tmp","tools":[],"permission_mode":"request-review"}}'
       printf '%s\n' '{"event":"step_update","step_update":{"step_type":"agent_response","state":"ACTIVE","text_delta":"streamed"}}'
       printf '%s\n' '{"event":"step_update","step_update":{"step_type":"agent_response","state":"DONE"}}'
-      printf '%s\n' '{"event":"result","result":{"conversation_id":"conv-1","status":"SUCCESS","response":"streamed"}}'
+      printf '%s\n' '{"event":"result","result":{"conversation_id":"conv-fixture","status":"SUCCESS","response":"streamed"}}'
       ;;
   esac
 done
@@ -1557,15 +1632,23 @@ done
     }
 
     #[cfg(unix)]
-    fn test_driver(executable: PathBuf) -> AntigravityDriver {
-        AntigravityDriver::new(
+    pub(super) fn test_driver(executable: PathBuf) -> AntigravityDriver {
+        test_driver_with(executable, SpawnLock::default())
+    }
+
+    /// Fixtures share a spawn lock only when a test is about that lock.
+    #[cfg(unix)]
+    pub(super) fn test_driver_with(executable: PathBuf, lock: SpawnLock) -> AntigravityDriver {
+        let mut driver = AntigravityDriver::new(
             "antigravity",
             &agent_domain::InstallationId::new().to_string(),
             executable,
             Some("1.1.26".into()),
             SessionResumeCapability::Unknown,
         )
-        .unwrap()
+        .unwrap();
+        driver.spawn = lock;
+        driver
     }
 
     #[cfg(unix)]

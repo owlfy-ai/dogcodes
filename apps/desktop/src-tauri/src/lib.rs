@@ -57,6 +57,14 @@ use tauri::{Emitter, Manager, ipc::Channel};
 use tokio::sync::{broadcast::error::RecvError, oneshot};
 use zcode_driver::ZcodeDriver;
 
+#[tauri::command]
+async fn core_remote_control(
+    state: tauri::State<'_, DesktopState>,
+    call: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    state.core.remote_control(call).await
+}
+
 struct DesktopState {
     core: Arc<daemon::CoreClient>,
     subscriptions: Mutex<HashMap<String, oneshot::Sender<()>>>,
@@ -1192,6 +1200,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            core_remote_control,
             external_links::open_website,
             agent_login::open_agent_login,
             attachments::core_save_attachment,
@@ -1209,7 +1218,7 @@ pub fn run() {
             terminal::core_terminal_list,
             terminal::core_terminal_get,
             terminal::core_terminal_read,
-            terminal::core_terminal_write,
+            terminal::core_terminal_input,
             terminal::core_terminal_resize,
             terminal::core_terminal_close,
             #[cfg(feature = "review-acceptance")]

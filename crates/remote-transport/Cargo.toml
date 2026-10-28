@@ -1,0 +1,24 @@
+[package]
+name = "dogcodes-remote-transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+webrtc = { version = "=0.21.1", features = ["turn-stream"] }
+# The sans-I/O core under webrtc: media engine, interceptors (GCC, NACK, TWCC).
+rtc = "=0.21.1"
+tokio.workspace = true
+async-trait.workspace = true
+bytes = "1"
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+dogcodes-endpoint = { path = "../remote-endpoint", default-features = false }
+# examples/video_loopback.rs drives the real encoder through the track.
+dogcodes-remote-desktop = { path = "../remote-desktop" }
+
+[lints]
+workspace = true

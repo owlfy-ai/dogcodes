@@ -3,17 +3,32 @@
 //! The adapter owns one bounded stdio process per native Thread. It never reads Codex credential
 //! files or accepts API keys. Authentication remains entirely inside the user's Codex runtime.
 
+#[cfg(all(test, unix))]
+mod cleanup_tests;
 #[cfg(test)]
 mod fault_recovery_tests;
+mod lifecycle;
+mod metadata;
+#[cfg(all(test, unix))]
+mod metadata_tests;
+mod session_scope;
+use session_scope::{
+    ResidentSession, Scope, ScopedCommand, SessionSender, next_command, stale_scope,
+};
 mod live_usage;
 mod request_failure;
 mod request_usage;
 mod rollout_usage;
+#[cfg(test)]
+mod transport_recovery_tests;
 use std::{
     collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
     process::Stdio,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 
@@ -28,9 +43,8 @@ use driver_api::{
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin, ChildStdout, Command},
-    sync::{Mutex, mpsc, oneshot},
-    task::JoinHandle,
+    process::{ChildStdin, Command},
+    sync::{Mutex, mpsc, oneshot, watch},
     time::timeout,
 };
 use tokio_stream::wrappers::ReceiverStream;
@@ -276,9 +290,19 @@ pub struct CodexDriver {
     executor: ExecutorRef,
     executable: PathBuf,
     native_agent_version: String,
-    sessions: Arc<Mutex<BTreeMap<String, mpsc::Sender<SessionCommand>>>>,
+    sessions: Arc<Mutex<BTreeMap<String, ResidentSession>>>,
+    stopping: watch::Sender<bool>,
+    retired_handles: std::sync::Mutex<BTreeMap<String, SessionHandle>>,
     restore_gates: std::sync::Mutex<HashMap<String, Arc<Mutex<()>>>>,
     quota: Arc<QuotaState>,
+    catalog_probe: Arc<Mutex<()>>,
+    history_probe: Arc<Mutex<()>>,
+}
+
+impl Drop for CodexDriver {
+    fn drop(&mut self) {
+        self.stopping.send_replace(true);
+    }
 }
 
 impl CodexDriver {
@@ -301,9 +325,27 @@ impl CodexDriver {
             executable,
             native_agent_version,
             sessions: Arc::new(Mutex::new(BTreeMap::new())),
+            stopping: watch::channel(false).0,
+            retired_handles: std::sync::Mutex::new(BTreeMap::new()),
             restore_gates: std::sync::Mutex::new(HashMap::new()),
             quota: Arc::new(QuotaState::default()),
+            catalog_probe: Arc::new(Mutex::new(())),
+            history_probe: Arc::new(Mutex::new(())),
         })
+    }
+
+    async fn remove_closed_session(&self, id: &str, sender: &ResidentSession) {
+        let mut sessions = self.sessions.lock().await;
+        if sessions
+            .get(id)
+            .is_some_and(|current| current.commands.same_channel(&sender.commands))
+            && let Some(retired) = sessions.remove(id)
+        {
+            self.retired_handles
+                .lock()
+                .expect("Codex retired scopes")
+                .insert(id.into(), retired.handle());
+        }
     }
 
     /// Performs initialize + account/read without starting a Thread or model Turn.
@@ -318,7 +360,7 @@ impl CodexDriver {
             exchange.result.get("account").is_some_and(Value::is_object)
                 || exchange.result.get("requiresOpenaiAuth") == Some(&Value::Bool(false))
         });
-        connection.shutdown().await;
+        connection.shutdown().await?;
         match result {
             Ok(_) if ready => Ok(()),
             Ok(exchange) => Err(DriverError::NotConfigured(
@@ -346,9 +388,7 @@ impl CodexDriver {
         let mut connection = Connection::spawn(&self.executable).await?;
         connection.quota = Some(Arc::clone(&self.quota));
         let full_review = request.permission_mode.as_deref() == Some("hub-review");
-        let chat = request.permission_mode.as_deref() == Some("hub-chat");
-        let analysis =
-            chat || full_review || request.permission_mode.as_deref() == Some("hub-analysis");
+        let analysis = full_review || request.permission_mode.as_deref() == Some("hub-analysis");
         connection.full_review = full_review;
         connection.analysis_only = analysis;
         let mut config = question_session_config(request.history_mcp.as_ref(), thinking);
@@ -369,7 +409,7 @@ impl CodexDriver {
                     value
                 }
                 _ => {
-                    connection.shutdown().await;
+                    connection.shutdown().await?;
                     return Err(stable_error(
                         "cannot verify isolated analysis configuration",
                     ));
@@ -388,7 +428,7 @@ impl CodexDriver {
                             })
                         }))
                 {
-                    connection.shutdown().await;
+                    connection.shutdown().await?;
                     return Err(stable_error(
                         "cannot safely override inherited analysis tools",
                     ));
@@ -434,7 +474,7 @@ impl CodexDriver {
         let exchange = match exchange {
             Ok(exchange) => exchange,
             Err(error) => {
-                connection.shutdown().await;
+                connection.shutdown().await?;
                 return Err(error);
             }
         };
@@ -446,23 +486,23 @@ impl CodexDriver {
             .filter(|value| !value.is_empty())
             .map(str::to_owned);
         let Some(native_session_id) = native_session_id else {
-            connection.shutdown().await;
+            connection.shutdown().await?;
             return Err(stable_error("codex thread/start response is invalid"));
         };
         connection.thread_id.clone_from(&native_session_id);
         self.quota
             .observe_thread(&native_session_id, &exchange.result);
         connection.quota = Some(Arc::clone(&self.quota));
-        self.install_session(native_session_id.clone(), connection)
-            .await?;
-        Ok(SessionHandle { native_session_id })
+        self.install_session(native_session_id, connection).await
     }
 
     async fn install_session(
         &self,
         native_session_id: String,
         connection: Connection,
-    ) -> Result<(), DriverError> {
+    ) -> Result<SessionHandle, DriverError> {
+        let handle = SessionHandle::scoped(native_session_id.clone());
+        let scope = Arc::new(std::sync::Mutex::new(handle.clone()));
         let (sender, receiver) = mpsc::channel(4);
         let mut sessions = self.sessions.lock().await;
         if sessions
@@ -471,51 +511,40 @@ impl CodexDriver {
         {
             return Err(stable_error("codex session is already active"));
         }
-        sessions.insert(native_session_id, sender);
+        if let Some(old) = sessions.get(&native_session_id)
+            && let Some(native) = &old.native
+        {
+            native.request_close();
+            native.closed().await?;
+        }
+        connection.native.observe_owner(self.stopping.subscribe());
+        sessions.insert(
+            native_session_id,
+            ResidentSession {
+                commands: sender,
+                native: Some(connection.native.clone()),
+                scope: scope.clone(),
+            },
+        );
         drop(sessions);
-        tokio::spawn(session_actor(connection, receiver));
-        Ok(())
+        tokio::spawn(session_actor(connection, receiver, scope));
+        Ok(handle)
     }
 
-    async fn command_sender(
-        &self,
-        native_session_id: &str,
-    ) -> Result<mpsc::Sender<SessionCommand>, DriverError> {
-        self.sessions
-            .lock()
-            .await
-            .get(native_session_id)
-            .cloned()
-            .ok_or_else(|| DriverError::SessionMissing("codex session is not active".into()))
+    async fn command_sender(&self, handle: &SessionHandle) -> Result<SessionSender, DriverError> {
+        let sessions = self.sessions.lock().await;
+        let resident = sessions
+            .get(&handle.native_session_id)
+            .ok_or_else(|| DriverError::SessionMissing("codex session is not active".into()))?;
+        if !resident.handle().same_scope(handle) {
+            return Err(stale_scope());
+        }
+        Ok(resident.sender_for(handle.clone()))
     }
 }
 
 #[async_trait]
 impl AgentDriver for CodexDriver {
-    fn supports_readonly_chat(&self) -> bool {
-        true
-    }
-    fn allows_readonly_chat_tool(&self, name: &str) -> bool {
-        // Commands remain under the session's immutable read-only sandbox.
-        matches!(name, "command_execution" | "terminal" | "image_view")
-    }
-    async fn create_chat_session(
-        &self,
-        directory: &str,
-        additional: &[String],
-    ) -> Result<SessionHandle, DriverError> {
-        self.open_thread(
-            &SessionRequest {
-                working_directory: directory.into(),
-                additional_directories: additional.to_vec(),
-                history_mcp: None,
-                permission_mode: Some("hub-chat".into()),
-            },
-            None,
-            None,
-        )
-        .await
-    }
     fn supports_readonly_analysis(&self) -> bool {
         true
     }
@@ -590,18 +619,9 @@ impl AgentDriver for CodexDriver {
     }
 
     async fn read_subagent(&self, id: &str) -> Result<Vec<Value>, DriverError> {
-        let mut connection = Connection::spawn(&self.executable).await?;
-        let result = connection
-            .request("thread/read", json!({"threadId":id,"includeTurns":true}))
-            .await;
-        connection.shutdown().await;
-        let exchange = result?;
+        let history = metadata::read_history(self, id).await?;
         let mut output = Vec::new();
-        if let Some(turns) = exchange
-            .result
-            .pointer("/thread/turns")
-            .and_then(Value::as_array)
-        {
+        if let Some(turns) = history.pointer("/thread/turns").and_then(Value::as_array) {
             for turn in turns {
                 if let Some(items) = turn["items"].as_array() {
                     for item in items {
@@ -621,8 +641,7 @@ impl AgentDriver for CodexDriver {
                 }
             }
         }
-        if let Some(turn) = exchange
-            .result
+        if let Some(turn) = history
             .pointer("/thread/turns")
             .and_then(Value::as_array)
             .and_then(|turns| turns.last())
@@ -633,10 +652,7 @@ impl AgentDriver for CodexDriver {
     }
 
     async fn model_catalog(&self) -> Result<driver_api::ModelCatalog, DriverError> {
-        let mut connection = Connection::spawn(&self.executable).await?;
-        let result = connection.model_catalog().await;
-        connection.shutdown().await;
-        result
+        metadata::read(self).await
     }
     async fn create_selected_session(
         &self,
@@ -680,7 +696,7 @@ impl AgentDriver for CodexDriver {
             .resume_selected_session(id, request, model, thinking)
             .await?;
         let (response, reply) = oneshot::channel();
-        self.command_sender(id)
+        self.command_sender(&session)
             .await?
             .send(SessionCommand::Configure {
                 model: model.map(str::to_owned),
@@ -717,21 +733,27 @@ impl AgentDriver for CodexDriver {
         let _restoring = gate.lock().await;
         let existing = self.sessions.lock().await.get(native_session_id).cloned();
         if let Some(sender) = existing {
+            let lease = sender.sender();
+            let next_scope = SessionHandle::scoped(native_session_id.into());
             if !sender.is_closed() {
                 let (response, received) = oneshot::channel();
-                if sender
-                    .send(SessionCommand::CheckReady { response })
+                if lease
+                    .send(SessionCommand::CheckReady {
+                        response,
+                        next_scope: next_scope.clone(),
+                    })
                     .await
                     .is_ok()
                 {
                     match timeout(SHUTDOWN_TIMEOUT, received).await {
                         Ok(Ok(Ok(()))) => {
-                            return Ok(SessionHandle {
-                                native_session_id: native_session_id.into(),
-                            });
+                            return Ok(next_scope);
                         }
                         Ok(Ok(Err(DriverError::CapabilityUnavailable(reason)))) => {
                             return Err(DriverError::CapabilityUnavailable(reason));
+                        }
+                        Ok(Ok(Err(error @ DriverError::SessionIncompatible(_)))) => {
+                            return Err(error);
                         }
                         Err(_) => {
                             return Err(DriverError::Disconnected(
@@ -742,7 +764,11 @@ impl AgentDriver for CodexDriver {
                     }
                 }
             }
-            self.sessions.lock().await.remove(native_session_id);
+            if let Some(native) = &sender.native {
+                native.request_close();
+                native.closed().await?;
+            }
+            self.remove_closed_session(native_session_id, &sender).await;
         }
         let mut connection = Connection::spawn(&self.executable).await?;
         let exchange = connection
@@ -751,13 +777,13 @@ impl AgentDriver for CodexDriver {
         let exchange = match exchange {
             Ok(exchange) => exchange,
             Err(DriverError::Protocol(_)) => {
-                connection.shutdown().await;
+                connection.shutdown().await?;
                 return Err(DriverError::SessionMissing(
                     "codex native session could not be resumed".into(),
                 ));
             }
             Err(error) => {
-                connection.shutdown().await;
+                connection.shutdown().await?;
                 return Err(error);
             }
         };
@@ -768,13 +794,13 @@ impl AgentDriver for CodexDriver {
             .and_then(Value::as_str)
             .map(str::to_owned);
         let Some(resumed_id) = resumed_id else {
-            connection.shutdown().await;
+            connection.shutdown().await?;
             return Err(DriverError::SessionIncompatible(
                 "codex resume response is invalid".into(),
             ));
         };
         if resumed_id != native_session_id {
-            connection.shutdown().await;
+            connection.shutdown().await?;
             return Err(DriverError::SessionIncompatible(
                 "codex resumed a different native session".into(),
             ));
@@ -784,10 +810,7 @@ impl AgentDriver for CodexDriver {
             .observe_thread(native_session_id, &exchange.result);
         connection.quota = Some(Arc::clone(&self.quota));
         self.install_session(native_session_id.into(), connection)
-            .await?;
-        Ok(SessionHandle {
-            native_session_id: native_session_id.into(),
-        })
+            .await
     }
 
     async fn prompt(
@@ -795,7 +818,7 @@ impl AgentDriver for CodexDriver {
         handle: &SessionHandle,
         request: PromptRequest,
     ) -> Result<DriverEventStream, DriverError> {
-        let sender = self.command_sender(&handle.native_session_id).await?;
+        let sender = self.command_sender(handle).await?;
         let (response_tx, response_rx) = oneshot::channel();
         sender
             .send(SessionCommand::Prompt {
@@ -811,7 +834,7 @@ impl AgentDriver for CodexDriver {
     }
 
     async fn interrupt(&self, handle: &SessionHandle) -> Result<(), DriverError> {
-        let sender = self.command_sender(&handle.native_session_id).await?;
+        let sender = self.command_sender(handle).await?;
         let (response_tx, response_rx) = oneshot::channel();
         sender
             .send(SessionCommand::Interrupt {
@@ -830,7 +853,7 @@ impl AgentDriver for CodexDriver {
         request_id: &str,
         answer: agent_domain::QuestionAnswer,
     ) -> Result<(), DriverError> {
-        let sender = self.command_sender(&handle.native_session_id).await?;
+        let sender = self.command_sender(handle).await?;
         let (response, response_rx) = oneshot::channel();
         sender
             .send(SessionCommand::Answer {
@@ -851,7 +874,7 @@ impl AgentDriver for CodexDriver {
         native_request_id: &str,
         option_id: &str,
     ) -> Result<(), DriverError> {
-        let sender = self.command_sender(&handle.native_session_id).await?;
+        let sender = self.command_sender(handle).await?;
         let (response_tx, response_rx) = oneshot::channel();
         sender
             .send(SessionCommand::Approve {
@@ -866,25 +889,88 @@ impl AgentDriver for CodexDriver {
             .map_err(|_| DriverError::Disconnected("codex session actor stopped".into()))?
     }
 
+    async fn current_session_handle(&self, id: &str) -> Option<SessionHandle> {
+        self.sessions
+            .lock()
+            .await
+            .get(id)
+            .map(ResidentSession::handle)
+    }
+
+    async fn shutdown_proof(
+        &self,
+        handle: &SessionHandle,
+    ) -> Option<driver_api::SessionShutdownProof> {
+        let sessions = self.sessions.lock().await;
+        if let Some(resident) = sessions.get(&handle.native_session_id) {
+            if !resident.handle().same_scope(handle) {
+                return None;
+            }
+            let native = resident.native.clone()?;
+            return Some(Box::pin(async move { native.confirmed().await }));
+        }
+        self.retired_handles
+            .lock()
+            .expect("Codex retired scopes")
+            .get(&handle.native_session_id)
+            .filter(|retired| retired.same_scope(handle))
+            .map(|_| Box::pin(async {}) as driver_api::SessionShutdownProof)
+    }
+
     async fn shutdown(&self, handle: SessionHandle) -> Result<(), DriverError> {
-        let sender = self.sessions.lock().await.remove(&handle.native_session_id);
-        let Some(sender) = sender else {
-            return Ok(());
+        // Capture authority and native resources once. A cancelled/timed-out
+        // observer must not mistake map absence or a replacement for retirement.
+        let resident = {
+            let sessions = self.sessions.lock().await;
+            if let Some(resident) = sessions.get(&handle.native_session_id) {
+                if !resident.handle().same_scope(&handle) {
+                    return Err(stale_scope());
+                }
+                resident.clone()
+            } else {
+                return if self
+                    .retired_handles
+                    .lock()
+                    .expect("Codex retired scopes")
+                    .get(&handle.native_session_id)
+                    .is_some_and(|retired| retired.same_scope(&handle))
+                {
+                    Ok(())
+                } else {
+                    Err(stale_scope())
+                };
+            }
         };
         let (response_tx, response_rx) = oneshot::channel();
-        if sender
+        let sent = resident
+            .sender_for(handle.clone())
             .send(SessionCommand::Shutdown {
                 response: response_tx,
             })
             .await
-            .is_err()
-        {
-            return Ok(());
+            .is_ok();
+        if sent {
+            match timeout(SHUTDOWN_TIMEOUT, response_rx).await {
+                Ok(Ok(result)) => result?,
+                Ok(Err(_)) if resident.native.is_some() => {}
+                Ok(Err(_)) => {
+                    return Err(DriverError::Disconnected(
+                        "codex session actor stopped without shutdown confirmation".into(),
+                    ));
+                }
+                Err(_) => return Err(DriverError::Disconnected("codex shutdown timed out".into())),
+            }
+        } else if resident.native.is_none() {
+            return Err(DriverError::Disconnected(
+                "codex native exit remains unconfirmed".into(),
+            ));
         }
-        timeout(SHUTDOWN_TIMEOUT, response_rx)
-            .await
-            .map_err(|_| DriverError::Disconnected("codex shutdown timed out".into()))?
-            .map_err(|_| DriverError::Disconnected("codex session actor stopped".into()))?;
+        if let Some(native) = &resident.native {
+            native.request_close();
+            native.closed().await?;
+        }
+        self.remove_closed_session(&handle.native_session_id, &resident)
+            .await;
         Ok(())
     }
 }
@@ -1008,12 +1094,22 @@ impl QuotaProvider for CodexDriver {
         // Serialize quota pulls onto one dedicated app-server connection; a
         // broken connection is dropped and respawned on the next attempt.
         let mut guard = self.quota.connection.lock().await;
+        if let Some(original) = guard.as_mut()
+            && original.native.stopping()
+        {
+            if let Err(error) = original.shutdown().await {
+                return self.quota.quota_failure(stale_snapshot, error);
+            }
+            *guard = None;
+        }
         if guard.is_none() {
-            let mut connection = match Connection::spawn(&self.executable).await {
+            let connection = match Connection::spawn(&self.executable).await {
                 Ok(connection) => connection,
                 Err(error) => return self.quota.quota_failure(stale_snapshot, error),
             };
-            connection.quota = Some(Arc::clone(&self.quota));
+            // This helper is already owned by QuotaState. Pointing back to it
+            // would retain both the cache and native CLI after Driver Drop.
+            connection.native.observe_owner(self.stopping.subscribe());
             *guard = Some(connection);
         }
         let connection = guard.as_mut().unwrap();
@@ -1023,8 +1119,13 @@ impl QuotaProvider for CodexDriver {
         let exchange = match exchange {
             Ok(exchange) => exchange,
             Err(error) => {
-                *guard = None;
-                return self.quota.quota_failure(stale_snapshot, error);
+                let cleanup = connection.shutdown().await;
+                if cleanup.is_ok() {
+                    *guard = None;
+                }
+                return self
+                    .quota
+                    .quota_failure(stale_snapshot, cleanup.err().unwrap_or(error));
             }
         };
         for frame in &exchange.interleaved {
@@ -1065,6 +1166,7 @@ impl QuotaProvider for CodexDriver {
 
 enum SessionCommand {
     CheckReady {
+        next_scope: SessionHandle,
         response: oneshot::Sender<Result<(), DriverError>>,
     },
     Answer {
@@ -1091,30 +1193,39 @@ enum SessionCommand {
         response: oneshot::Sender<Result<(), DriverError>>,
     },
     Shutdown {
-        response: oneshot::Sender<()>,
+        response: oneshot::Sender<Result<(), DriverError>>,
     },
 }
 
 enum ActorControl {
     Continue,
     Stop,
-    Shutdown(oneshot::Sender<()>),
+    Shutdown(oneshot::Sender<Result<(), DriverError>>),
 }
 
-async fn session_actor(mut connection: Connection, mut commands: mpsc::Receiver<SessionCommand>) {
+async fn session_actor(
+    mut connection: Connection,
+    mut commands: mpsc::Receiver<ScopedCommand>,
+    scope: Scope,
+) {
     let mut shutdown_response = None;
-    while let Some(command) = commands.recv().await {
+    while let Some(command) = next_command(&mut commands, &scope).await {
         match command {
-            SessionCommand::CheckReady { response } => {
-                if matches!(connection.child.try_wait(), Ok(None)) {
-                    let _ = response.send(Ok(()));
-                } else {
+            SessionCommand::CheckReady {
+                response,
+                next_scope,
+            } => {
+                if connection.native.stopping() {
                     // Confirm cleanup before allowing the caller to restore this identity.
-                    connection.shutdown().await;
+                    let _ = connection.shutdown().await;
                     let _ = response.send(Err(DriverError::Disconnected(
                         "codex idle process exited".into(),
                     )));
                     break;
+                }
+                let mut current = scope.lock().expect("Codex session scope");
+                if response.send(Ok(())).is_ok() {
+                    *current = next_scope;
                 }
             }
             SessionCommand::Configure {
@@ -1126,11 +1237,18 @@ async fn session_actor(mut connection: Connection, mut commands: mpsc::Receiver<
                 let _ = response.send(result);
             }
             SessionCommand::Prompt { request, response } => {
+                if response.is_closed() {
+                    continue;
+                }
                 let (events_tx, events_rx) = mpsc::channel(64);
                 match start_turn(&mut connection, request).await {
                     Ok(started) => {
-                        let _ = response.send(Ok(events_rx));
-                        match run_turn(&mut connection, &mut commands, &events_tx, started).await {
+                        if response.send(Ok(events_rx)).is_err() {
+                            break;
+                        }
+                        match run_turn(&mut connection, &mut commands, &scope, &events_tx, started)
+                            .await
+                        {
                             ActorControl::Continue => {}
                             ActorControl::Stop => break,
                             ActorControl::Shutdown(response) => {
@@ -1161,9 +1279,11 @@ async fn session_actor(mut connection: Connection, mut commands: mpsc::Receiver<
             }
         }
     }
-    connection.shutdown().await;
-    if let Some(response) = shutdown_response {
-        let _ = response.send(());
+    let cleanup = connection.shutdown().await;
+    if cleanup.is_ok()
+        && let Some(response) = shutdown_response
+    {
+        let _ = response.send(Ok(()));
     }
 }
 
@@ -1171,6 +1291,42 @@ struct StartedTurn {
     native_turn_id: String,
     working_directory: PathBuf,
     interleaved: Vec<IncomingFrame>,
+}
+
+#[derive(Default)]
+struct InterruptWaiters(Vec<oneshot::Sender<Result<(), DriverError>>>);
+impl InterruptWaiters {
+    fn finish(&mut self, result: Result<(), DriverError>) {
+        for response in self.0.drain(..) {
+            let _ = response.send(result.clone());
+        }
+    }
+}
+impl Drop for InterruptWaiters {
+    fn drop(&mut self) {
+        self.finish(Err(DriverError::Disconnected(
+            "Codex interruption has no confirmed terminal event".into(),
+        )));
+    }
+}
+/// A terminal `turn/completed` for this turn. The mapper ends the turn on any
+/// such frame, so identities only disqualify it when present and different:
+/// a frame without them (older app-server) still confirms the stop.
+fn confirms_turn(frame: &IncomingFrame, thread_id: &str, turn_id: &str) -> bool {
+    let IncomingFrame::Notification { method, params } = frame else {
+        return false;
+    };
+    let thread = params["threadId"].as_str();
+    let turn = params["turn"]["id"]
+        .as_str()
+        .or_else(|| params["turnId"].as_str());
+    method == "turn/completed"
+        && thread.is_none_or(|thread| thread == thread_id)
+        && turn.is_none_or(|turn| turn == turn_id)
+        && matches!(
+            params["turn"]["status"].as_str(),
+            Some("completed" | "interrupted" | "failed")
+        )
 }
 
 async fn start_turn(
@@ -1261,11 +1417,19 @@ async fn start_turn(
 
 async fn run_turn(
     connection: &mut Connection,
-    commands: &mut mpsc::Receiver<SessionCommand>,
+    commands: &mut mpsc::Receiver<ScopedCommand>,
+    scope: &Scope,
     events: &mpsc::Sender<Result<DriverEvent, DriverError>>,
     started: StartedTurn,
 ) -> ActorControl {
     let mut terminal = false;
+    let mut verified_terminal = false;
+    let mut interrupts = InterruptWaiters::default();
+    let mut stop_deadline = None;
+    #[cfg(test)]
+    let stop_timeout = connection.stop_timeout;
+    #[cfg(not(test))]
+    let stop_timeout = REQUEST_TIMEOUT;
     let mut pending_approvals: HashMap<String, Value> = HashMap::new();
     let mut next_approval_id = 1_u64;
     let mut file_changes = file_approval::FileChanges::new(
@@ -1279,6 +1443,7 @@ async fn run_turn(
         }))
         .await;
     for frame in started.interleaved {
+        verified_terminal |= confirms_turn(&frame, &connection.thread_id, &started.native_turn_id);
         terminal |= handle_frame(
             connection,
             events,
@@ -1291,7 +1456,7 @@ async fn run_turn(
     }
     while !terminal {
         tokio::select! {
-            command = commands.recv() => match command {
+            command = next_command(commands, scope) => match command {
                 Some(SessionCommand::Answer {native_request_id,answer,response}) => {
                     let result = if let Some(pending)=pending_approvals.get(&native_request_id).filter(|p|p.get("questionId").is_some()) {
                         match driver_api::questions::native_form("codex", &pending["params"]).and_then(|form|form.validate(&answer)) {
@@ -1334,6 +1499,9 @@ async fn run_turn(
                     let _ = response.send(result);
                 }
                 Some(SessionCommand::Interrupt { response }) => {
+                    interrupts.0.push(response);
+                    if stop_deadline.is_some() { continue; }
+                    stop_deadline=Some(tokio::time::Instant::now()+stop_timeout);
                     let thread_id = connection.thread_id.clone();
                     let result = connection.request(
                         "turn/interrupt",
@@ -1342,6 +1510,7 @@ async fn run_turn(
                     match result {
                         Ok(exchange) => {
                             for frame in exchange.interleaved {
+                                verified_terminal |= confirms_turn(&frame,&connection.thread_id,&started.native_turn_id);
                                 terminal |= handle_frame(
                                     connection,
                                     events,
@@ -1352,17 +1521,18 @@ async fn run_turn(
                                 )
                                 .await;
                             }
-                            let _ = response.send(Ok(()));
                         }
                         Err(error) => {
-                            let _ = response.send(Err(error));
+                            interrupts.finish(Err(error));
+                            connection.native.request_close();
+                            return ActorControl::Stop;
                         }
                     }
                 }
                 Some(SessionCommand::Configure { response, .. }) => {
                     let _ = response.send(Err(DriverError::Protocol("cannot configure an active codex turn".into())));
                 }
-                Some(SessionCommand::CheckReady { response }) => {
+                Some(SessionCommand::CheckReady { response, .. }) => {
                     let _ = response.send(Err(DriverError::CapabilityUnavailable("codex turn is already active".into())));
                 }
                 Some(SessionCommand::Shutdown { response }) => {
@@ -1377,6 +1547,7 @@ async fn run_turn(
             },
             frame = connection.transport.read_frame() => match frame {
                 Ok(frame) => {
+                    verified_terminal |= confirms_turn(&frame,&connection.thread_id,&started.native_turn_id);
                     terminal |= handle_frame(
                         connection,
                         events,
@@ -1391,8 +1562,24 @@ async fn run_turn(
                     let _ = events.send(Err(error)).await;
                     return ActorControl::Stop;
                 }
-            }
+            },
+            ()=async { if let Some(deadline)=stop_deadline {tokio::time::sleep_until(deadline).await;} else {std::future::pending::<()>().await;} }=>{
+                connection.native.request_close();
+                interrupts.finish(Err(DriverError::Disconnected("Codex stop did not receive a terminal event in time".into())));
+                let _=events.send(Err(DriverError::Disconnected("Codex stop was not confirmed; closing the original worker".into()))).await;
+                return ActorControl::Stop;
+            },
+            ()=events.closed()=>{
+                connection.native.request_close();
+                return ActorControl::Stop;
+            },
         }
+    }
+    if !interrupts.0.is_empty() {
+        if !verified_terminal {
+            return ActorControl::Stop;
+        }
+        interrupts.finish(Ok(()));
     }
     ActorControl::Continue
 }
@@ -1653,9 +1840,18 @@ fn codex_failed_turn(params: &Value) -> DriverEvent {
         DriverError::QuotaExhausted { resets_at_unix } => {
             DriverEvent::TurnQuotaExhausted { resets_at_unix }
         }
-        failure => DriverEvent::TurnFailed {
-            reason: driver_api::failure::user_message(driver_api::failure::kind(&failure)).into(),
-        },
+        failure => {
+            let kind = driver_api::failure::kind(&failure);
+            let message = [error, &error["data"], &error["data"]["error"]]
+                .into_iter()
+                .find_map(|value| value["message"].as_str().or_else(|| value.as_str()));
+            DriverEvent::TurnFailed {
+                reason: message.map_or_else(
+                    || driver_api::failure::turn_failed_reason(&failure),
+                    |message| driver_api::failure::with_detail(kind, message),
+                ),
+            }
+        }
     }
 }
 
@@ -1736,12 +1932,19 @@ struct Connection {
     live_usage: live_usage::LiveUsage,
     analysis_only: bool,
     full_review: bool,
-    child: Child,
+    native: Arc<lifecycle::NativeProcess>,
     quota: Option<Arc<QuotaState>>,
-    transport: JsonlTransport<ChildStdout, ChildStdin>,
-    stderr_task: JoinHandle<()>,
+    transport: JsonlTransport<tokio::io::DuplexStream, ChildStdin>,
     thread_id: String,
     selection: Option<(String, Option<String>)>,
+    #[cfg(test)]
+    stop_timeout: Duration,
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        self.native.request_close();
+    }
 }
 
 impl Connection {
@@ -1803,6 +2006,12 @@ impl Connection {
     }
 
     async fn spawn(executable: &Path) -> Result<Self, DriverError> {
+        let mut connection = Self::create(executable)?;
+        connection.initialize().await?;
+        Ok(connection)
+    }
+
+    fn create(executable: &Path) -> Result<Self, DriverError> {
         let mut command = Command::new(executable);
         command
             .args(["app-server", "--listen", "stdio://"])
@@ -1824,34 +2033,27 @@ impl Connection {
             }
         }
         agent_runtime::apply_proxy_environment(&mut command);
-        let mut child = command
-            .spawn()
+        let child = agent_runtime::OwnedChild::spawn(command)
             .map_err(|_| DriverError::Disconnected("codex app-server could not start".into()))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| stable_error("codex stdin is unavailable"))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| stable_error("codex stdout is unavailable"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| stable_error("codex stderr is unavailable"))?;
-        let stderr_task = tokio::spawn(drain_stderr(stderr));
-        let mut connection = Self {
+        let (native, stdout, stdin) = lifecycle::NativeProcess::start(child)?;
+        let mut transport = JsonlTransport::new(stdout, stdin);
+        transport.native = Some(native.clone());
+        Ok(Self {
             live_usage: live_usage::LiveUsage::default(),
             analysis_only: false,
             full_review: false,
-            child,
+            native,
             quota: None,
-            transport: JsonlTransport::new(stdout, stdin),
-            stderr_task,
+            transport,
             thread_id: String::new(),
             selection: None,
-        };
-        let exchange = connection
+            #[cfg(test)]
+            stop_timeout: REQUEST_TIMEOUT,
+        })
+    }
+
+    async fn initialize(&mut self) -> Result<(), DriverError> {
+        let exchange = self
             .request(
                 "initialize",
                 json!({
@@ -1867,23 +2069,20 @@ impl Connection {
         let exchange = match exchange {
             Ok(exchange) => exchange,
             Err(error) => {
-                connection.shutdown().await;
+                self.shutdown().await?;
                 return Err(error);
             }
         };
         if !exchange.result.is_object() {
-            connection.shutdown().await;
+            self.shutdown().await?;
             return Err(stable_error("codex initialize response is invalid"));
         }
-        let initialized = connection
-            .transport
-            .send_notification("initialized", None)
-            .await;
+        let initialized = self.transport.send_notification("initialized", None).await;
         if let Err(error) = initialized {
-            connection.shutdown().await;
+            self.shutdown().await?;
             return Err(error);
         }
-        Ok(connection)
+        Ok(())
     }
 
     async fn request(&mut self, method: &str, params: Value) -> Result<Exchange, DriverError> {
@@ -1892,10 +2091,12 @@ impl Connection {
             .map_err(|_| DriverError::Disconnected("codex request timed out".into()))?
     }
 
-    async fn shutdown(&mut self) {
-        let _ = self.child.kill().await;
-        let _ = self.child.wait().await;
-        self.stderr_task.abort();
+    async fn shutdown(&mut self) -> Result<(), DriverError> {
+        self.transport.writer.take();
+        self.native.request_close();
+        // A bounded waiter may fail, but registry/native ownership survives it.
+        // Only the independent supervisor publishes actual exit confirmation.
+        self.native.closed().await
     }
 }
 
@@ -1919,8 +2120,27 @@ enum IncomingFrame {
 
 struct JsonlTransport<R, W> {
     reader: BufReader<R>,
-    writer: W,
+    read_buffer: Vec<u8>,
+    writer: Option<W>,
     next_request_id: u64,
+    broken: Arc<AtomicBool>,
+    native: Option<Arc<lifecycle::NativeProcess>>,
+}
+
+struct IoFence {
+    broken: Arc<AtomicBool>,
+    native: Option<Arc<lifecycle::NativeProcess>>,
+    complete: bool,
+}
+impl Drop for IoFence {
+    fn drop(&mut self) {
+        if !self.complete {
+            self.broken.store(true, Ordering::Release);
+            if let Some(native) = &self.native {
+                native.request_close();
+            }
+        }
+    }
 }
 
 impl<R, W> JsonlTransport<R, W>
@@ -1931,8 +2151,19 @@ where
     fn new(reader: R, writer: W) -> Self {
         Self {
             reader: BufReader::new(reader),
-            writer,
+            read_buffer: Vec::with_capacity(8 * 1024),
+            writer: Some(writer),
             next_request_id: 1,
+            broken: Arc::new(AtomicBool::new(false)),
+            native: None,
+        }
+    }
+
+    fn fence(&self) -> IoFence {
+        IoFence {
+            broken: self.broken.clone(),
+            native: self.native.clone(),
+            complete: false,
         }
     }
 
@@ -1941,12 +2172,14 @@ where
         self.next_request_id = self.next_request_id.saturating_add(1);
         self.send_value(&json!({ "id": id, "method": method, "params": params }))
             .await?;
+        let mut pending = self.fence();
         let mut interleaved = Vec::new();
         loop {
             let raw = self.read_value().await?;
             if raw.get("id") == Some(&Value::from(id))
                 && (raw.get("result").is_some() || raw.get("error").is_some())
             {
+                pending.complete = true;
                 if let Some(error) = raw.get("error") {
                     return Err(request_failure::map(error));
                 }
@@ -1963,7 +2196,11 @@ where
     }
 
     async fn read_frame(&mut self) -> Result<IncomingFrame, DriverError> {
-        classify_frame(self.read_value().await?)
+        let result = self.read_value().await.and_then(classify_frame);
+        if result.is_err() {
+            drop(self.fence());
+        }
+        result
     }
 
     async fn send_notification(
@@ -1989,6 +2226,13 @@ where
     }
 
     async fn send_value(&mut self, value: &Value) -> Result<(), DriverError> {
+        if self.broken.load(Ordering::Acquire)
+            || self.native.as_ref().is_some_and(|native| native.stopping())
+        {
+            return Err(DriverError::Disconnected(
+                "Codex transport is closing".into(),
+            ));
+        }
         let bytes =
             serde_json::to_vec(value).map_err(|_| stable_error("cannot encode Codex frame"))?;
         if bytes.len() > MAX_RPC_FRAME_BYTES {
@@ -1996,22 +2240,37 @@ where
                 "outbound Codex frame exceeds configured limit",
             ));
         }
-        self.writer
-            .write_all(&bytes)
-            .await
-            .map_err(|_| DriverError::Disconnected("codex transport write failed".into()))?;
-        self.writer
-            .write_all(b"\n")
-            .await
-            .map_err(|_| DriverError::Disconnected("codex transport write failed".into()))?;
-        self.writer
-            .flush()
-            .await
-            .map_err(|_| DriverError::Disconnected("codex transport write failed".into()))
+        let mut frame = self.fence();
+        let writer = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| stable_error("Codex stdin is closed"))?;
+        timeout(REQUEST_TIMEOUT, async {
+            writer.write_all(&bytes).await?;
+            writer.write_all(b"\n").await?;
+            writer.flush().await
+        })
+        .await
+        .map_err(|_| DriverError::Disconnected("Codex transport write timed out".into()))?
+        .map_err(|_| DriverError::Disconnected("codex transport write failed".into()))?;
+        frame.complete = true;
+        Ok(())
     }
 
     async fn read_value(&mut self) -> Result<Value, DriverError> {
-        let mut bytes = Vec::with_capacity(8 * 1024);
+        let result = self.read_value_inner().await;
+        if result.is_err() {
+            drop(self.fence());
+        }
+        result
+    }
+
+    async fn read_value_inner(&mut self) -> Result<Value, DriverError> {
+        if self.broken.load(Ordering::Acquire) {
+            return Err(DriverError::Disconnected(
+                "Codex transport is closing".into(),
+            ));
+        }
         loop {
             let available = self
                 .reader
@@ -2023,13 +2282,14 @@ where
             }
             let newline = available.iter().position(|byte| *byte == b'\n');
             let count = newline.unwrap_or(available.len());
-            if bytes.len().saturating_add(count) > MAX_RPC_FRAME_BYTES {
+            if self.read_buffer.len().saturating_add(count) > MAX_RPC_FRAME_BYTES {
                 return Err(stable_error("inbound Codex frame exceeds configured limit"));
             }
-            bytes.extend_from_slice(&available[..count]);
+            self.read_buffer.extend_from_slice(&available[..count]);
             let consumed = count + usize::from(newline.is_some());
             self.reader.consume(consumed);
             if newline.is_some() {
+                let bytes = std::mem::take(&mut self.read_buffer);
                 return serde_json::from_slice(&bytes)
                     .map_err(|_| stable_error("Codex emitted invalid JSON"));
             }
@@ -2081,6 +2341,29 @@ fn stable_error(message: &str) -> DriverError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_stop_is_confirmed_by_this_turn_or_an_unlabelled_terminal_event() {
+        let frame = |params: serde_json::Value| super::IncomingFrame::Notification {
+            method: "turn/completed".into(),
+            params,
+        };
+        let confirms = |params| super::confirms_turn(&frame(params), "thread", "turn");
+        assert!(confirms(
+            serde_json::json!({"threadId":"thread","turn":{"id":"turn","status":"interrupted"}})
+        ));
+        assert!(confirms(
+            serde_json::json!({"turn":{"status":"interrupted"}})
+        ));
+        assert!(!confirms(
+            serde_json::json!({"threadId":"other","turn":{"id":"turn","status":"interrupted"}})
+        ));
+        assert!(!confirms(
+            serde_json::json!({"threadId":"thread","turn":{"id":"older","status":"completed"}})
+        ));
+        assert!(!confirms(
+            serde_json::json!({"threadId":"thread","turn":{"id":"turn","status":"inProgress"}})
+        ));
+    }
     #[test]
     fn missing_file_approval_scope_is_explicit_and_does_not_copy_extensions() {
         let summary = super::file_change_approval_summary(
@@ -2311,7 +2594,7 @@ mod tests {
             .send_value(&json!({"text": "x".repeat(MAX_RPC_FRAME_BYTES)}))
             .await;
         assert!(matches!(result, Err(DriverError::Protocol(_))));
-        assert!(transport.writer.is_empty());
+        assert!(transport.writer.as_ref().unwrap().is_empty());
 
         let oversized = vec![b'x'; MAX_RPC_FRAME_BYTES + 1];
         let mut transport = JsonlTransport::new(oversized.as_slice(), tokio::io::sink());
@@ -2698,5 +2981,132 @@ mod manual_quota_refresh_tests {
         drop(binary);
         assert!(driver.read_quota_with_refresh(None, true).await.is_err());
         assert_eq!(driver.quota.snapshot_for(None), Some(snapshot));
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    fn driver() -> Arc<CodexDriver> {
+        Arc::new(
+            CodexDriver::new(
+                &std::env::current_exe().unwrap(),
+                "fixture".into(),
+                "fixture".into(),
+            )
+            .unwrap(),
+        )
+    }
+    fn resident() -> (
+        ResidentSession,
+        mpsc::Receiver<ScopedCommand>,
+        SessionHandle,
+    ) {
+        let (commands, receiver) = mpsc::channel(4);
+        let handle = SessionHandle::scoped("fixture-session".into());
+        (
+            ResidentSession {
+                commands,
+                native: None,
+                scope: Arc::new(std::sync::Mutex::new(handle.clone())),
+            },
+            receiver,
+            handle,
+        )
+    }
+    #[tokio::test]
+    async fn cancelled_shutdown_retains_the_original_actor_until_confirmed() {
+        let driver = driver();
+        let (resident, mut actor, handle) = resident();
+        driver
+            .sessions
+            .lock()
+            .await
+            .insert(handle.native_session_id.clone(), resident);
+        let first_driver = driver.clone();
+        let original_handle = handle.clone();
+        let first = tokio::spawn(async move { first_driver.shutdown(original_handle).await });
+        let SessionCommand::Shutdown {
+            response: original_ack,
+        } = actor.recv().await.unwrap().command
+        else {
+            panic!("expected shutdown");
+        };
+        first.abort();
+        assert!(first.await.unwrap_err().is_cancelled());
+        assert!(
+            driver
+                .sessions
+                .lock()
+                .await
+                .contains_key(&handle.native_session_id)
+        );
+        let retry_driver = driver.clone();
+        let retry_handle = handle.clone();
+        let retry = tokio::spawn(async move { retry_driver.shutdown(retry_handle).await });
+        let SessionCommand::Shutdown {
+            response: confirmed_ack,
+        } = actor.recv().await.unwrap().command
+        else {
+            panic!("expected original actor retry");
+        };
+        assert!(!retry.is_finished());
+        confirmed_ack.send(Ok(())).unwrap();
+        retry.await.unwrap().unwrap();
+        assert!(
+            !driver
+                .sessions
+                .lock()
+                .await
+                .contains_key(&handle.native_session_id)
+        );
+        assert!(original_ack.send(Ok(())).is_err());
+        // Only an actual confirmed, scoped receipt makes repeated close safe.
+        driver.shutdown(handle.clone()).await.unwrap();
+        assert!(
+            driver
+                .shutdown(SessionHandle::new(handle.native_session_id))
+                .await
+                .is_err()
+        );
+    }
+    #[tokio::test]
+    async fn late_shutdown_confirmation_does_not_remove_a_replacement_actor() {
+        let driver = driver();
+        let (original, mut actor, handle) = resident();
+        driver
+            .sessions
+            .lock()
+            .await
+            .insert(handle.native_session_id.clone(), original);
+        let closing_driver = driver.clone();
+        let original_handle = handle.clone();
+        let closing = tokio::spawn(async move { closing_driver.shutdown(original_handle).await });
+        let SessionCommand::Shutdown { response } = actor.recv().await.unwrap().command else {
+            panic!("expected shutdown");
+        };
+        let (replacement, _replacement_actor, replacement_handle) = resident();
+        let replacement_commands = replacement.commands.clone();
+        driver
+            .sessions
+            .lock()
+            .await
+            .insert(handle.native_session_id.clone(), replacement);
+        response.send(Ok(())).unwrap();
+        closing.await.unwrap().unwrap();
+        assert!(
+            driver.sessions.lock().await[&handle.native_session_id]
+                .commands
+                .same_channel(&replacement_commands)
+        );
+        assert!(driver.shutdown(handle.clone()).await.is_err());
+        assert!(driver.shutdown_proof(&handle).await.is_none());
+        assert!(
+            driver
+                .current_session_handle(&handle.native_session_id)
+                .await
+                .unwrap()
+                .same_scope(&replacement_handle)
+        );
     }
 }

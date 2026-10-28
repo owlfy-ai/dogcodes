@@ -52,7 +52,7 @@ fn prompt(path: &Path, text: &str) -> PromptRequest {
 async fn idle_process_death_and_closed_registration_restore_once_and_continue() {
     let (dir, driver) = setup();
     let session = driver.create_session(workspace(dir.path())).await.unwrap();
-    let original = driver.command_sender("s").await.unwrap();
+    let original = driver.command_sender(&session).await.unwrap();
     let pid = std::fs::read_to_string(dir.path().join("starts.jsonl")).unwrap();
     assert!(
         std::process::Command::new("/bin/kill")
@@ -61,30 +61,16 @@ async fn idle_process_death_and_closed_registration_restore_once_and_continue() 
             .unwrap()
             .success()
     );
-    tokio::time::timeout(Duration::from_secs(3), async {
-        loop {
-            let (response, received) = oneshot::channel();
-            if original
-                .send(SessionCommand::CheckReady { response })
-                .await
-                .is_err()
-            {
-                break;
-            }
-            if received.await.is_err() || original.is_closed() {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .unwrap();
+    let native = driver.sessions.lock().await["s"].native.clone().unwrap();
+    native.closed().await.unwrap();
     let (a, b) = tokio::join!(
         driver.resume_selected_session("s", workspace(dir.path()), None, None),
         driver.resume_selected_session("s", workspace(dir.path()), None, None)
     );
-    a.unwrap();
-    b.unwrap();
+    let a = a.unwrap();
+    let b = b.unwrap();
+    let session = driver.current_session_handle("s").await.unwrap();
+    assert!(a.same_scope(&session) || b.same_scope(&session));
     assert_eq!(
         std::fs::read_to_string(dir.path().join("starts.jsonl"))
             .unwrap()
@@ -92,7 +78,7 @@ async fn idle_process_death_and_closed_registration_restore_once_and_continue() 
             .count(),
         2
     );
-    let current = driver.command_sender("s").await.unwrap();
+    let current = driver.command_sender(&session).await.unwrap();
     assert!(!current.same_channel(&original));
     let mut events = driver
         .prompt(&session, prompt(dir.path(), "continue"))
@@ -106,10 +92,15 @@ async fn idle_process_death_and_closed_registration_restore_once_and_continue() 
         completed |= matches!(event.unwrap(), DriverEvent::TurnCompleted { .. });
     }
     assert!(completed);
+    let closed_registration = driver.sessions.lock().await["s"].clone();
     driver.shutdown(session.clone()).await.unwrap();
     // A dead actor can still have a persisted registration; presence alone is not liveness.
-    driver.sessions.lock().await.insert("s".into(), current);
     driver
+        .sessions
+        .lock()
+        .await
+        .insert("s".into(), closed_registration);
+    let session = driver
         .resume_selected_session("s", workspace(dir.path()), None, None)
         .await
         .unwrap();
@@ -126,7 +117,7 @@ async fn idle_process_death_and_closed_registration_restore_once_and_continue() 
 async fn refresh_during_execution_does_not_replace_the_active_native_process() {
     let (dir, driver) = setup();
     let session = driver.create_session(workspace(dir.path())).await.unwrap();
-    let original = driver.command_sender("s").await.unwrap();
+    let original = driver.command_sender(&session).await.unwrap();
     let _events = driver
         .prompt(&session, prompt(dir.path(), "hold"))
         .await
@@ -137,7 +128,7 @@ async fn refresh_during_execution_does_not_replace_the_active_native_process() {
             .await,
         Err(DriverError::CapabilityUnavailable(_))
     ));
-    assert!(original.same_channel(&driver.command_sender("s").await.unwrap()));
+    assert!(original.same_channel(&driver.command_sender(&session).await.unwrap()));
     assert_eq!(
         std::fs::read_to_string(dir.path().join("starts.jsonl"))
             .unwrap()

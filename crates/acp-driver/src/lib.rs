@@ -10,16 +10,26 @@
 //! native options, or cancellation closes the request. Native session modes
 //! are discovered independently of models and applied before prompt dispatch.
 
+mod auxiliary;
+#[cfg(all(test, unix))]
+mod cleanup_tests;
+mod codebuddy_question;
 mod grok_usage;
+mod lifecycle;
+mod metadata;
+#[cfg(all(test, unix))]
+mod metadata_tests;
 mod opencode_models;
 #[cfg(test)]
 mod recovery_tests;
 mod request_usage;
 mod session_usage;
+mod sessions;
+mod turn;
 
 use std::{
-    collections::HashMap,
-    path::PathBuf,
+    collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
     process::Stdio,
     sync::{
         Arc,
@@ -30,11 +40,12 @@ use std::{
 use agent_client_protocol::schema::ProtocolVersion;
 #[allow(unused_imports)]
 use agent_client_protocol::schema::v1::{
-    AgentCapabilities, AgentResponse, CancelNotification, ClientRequest, ContentBlock,
-    ContentChunk, ExtRequest, ExtResponse, InitializeRequest, InitializeResponse,
-    LoadSessionRequest, NewSessionRequest, PermissionOption, PermissionOptionKind, PromptRequest,
-    PromptResponse, RequestPermissionOutcome, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionId, SessionNotification, SessionUpdate, StopReason, TextContent, ToolCallStatus,
+    AgentCapabilities, AgentResponse, CancelNotification, ClientRequest, CloseSessionRequest,
+    CloseSessionResponse, ContentBlock, ContentChunk, ExtRequest, ExtResponse, InitializeRequest,
+    InitializeResponse, LoadSessionRequest, NewSessionRequest, PermissionOption,
+    PermissionOptionKind, PromptRequest, PromptResponse, RequestPermissionOutcome,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
+    SessionUpdate, StopReason, TextContent, ToolCallStatus,
 };
 use agent_client_protocol::{
     Agent, ByteStreams, Client, ConnectionTo, Error as AcpError, Responder,
@@ -98,7 +109,34 @@ fn now_unix_ms() -> i64 {
 
 /// Use the CLI's loopback management endpoint without opening a browser.
 /// No model turn is sent. All reads are bounded and credentials stay in memory.
-async fn read_kimi_web_usage(executable: &PathBuf) -> Result<serde_json::Value, DriverError> {
+async fn read_kimi_web_usage(
+    executable: &Path,
+    permit: tokio::sync::OwnedMutexGuard<()>,
+) -> Result<serde_json::Value, DriverError> {
+    let executable = executable.to_path_buf();
+    let (mut reply, result) = oneshot::channel();
+    tokio::spawn(async move {
+        let _permit = permit;
+        if reply.is_closed() {
+            return;
+        }
+        match read_kimi_web_usage_owned(&executable, &mut reply).await {
+            Ok(Some(value)) => {
+                let _ = reply.send(Ok(value));
+            }
+            Err(error) => {
+                let _ = reply.send(Err(error));
+            }
+            Ok(None) => {}
+        }
+    });
+    result.await.map_err(|_| driver_error_from_channel())?
+}
+
+async fn read_kimi_web_usage_owned(
+    executable: &Path,
+    reply: &mut oneshot::Sender<Result<serde_json::Value, DriverError>>,
+) -> Result<Option<serde_json::Value>, DriverError> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
     let mut command = tokio::process::Command::new(executable);
     command
@@ -114,11 +152,14 @@ async fn read_kimi_web_usage(executable: &PathBuf) -> Result<serde_json::Value, 
         }
     }
     agent_runtime::apply_proxy_environment(&mut command);
-    let mut child = command
-        .spawn()
+    let mut child = agent_runtime::OwnedChild::spawn(command)
         .map_err(|_| DriverError::Disconnected("Kimi usage server could not start".into()))?;
-    let result = async {
-        let stdout = child.stdout.take().ok_or_else(driver_error_from_channel)?;
+    let stdout = child.stdout.take();
+    // The temporary web helper has no stdin-driven shutdown. Terminate its
+    // owned scope directly instead of waiting for an EOF it cannot observe.
+    let process = lifecycle::Process::start_with_grace(child, None, std::time::Duration::ZERO);
+    let query = async {
+        let stdout = stdout.ok_or_else(driver_error_from_channel)?;
         // Bound the entire banner, including a malicious/malformed unterminated line.
         let mut reader = BufReader::new(stdout.take(65_536));
         let endpoint = tokio::time::timeout(std::time::Duration::from_secs(15), async {
@@ -154,12 +195,19 @@ async fn read_kimi_web_usage(executable: &PathBuf) -> Result<serde_json::Value, 
         .await
         .map_err(|_| DriverError::Disconnected("Kimi usage server startup timed out".into()))??;
         fetch_kimi_usage(endpoint.0, &endpoint.1).await
+    };
+    let result = tokio::select! {
+        biased;
+        () = reply.closed() => None,
+        result = query => Some(result),
+    };
+    process.control.request_close();
+    // Keep this helper's admission until its original OS scope is proven
+    // gone, even when the observer or a cleanup observation times out.
+    while process.control.closed().await.is_err() {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
-    .await;
-    // Explicitly reap on success/error; kill_on_drop also handles cancelled reads.
-    let _ = child.kill().await;
-    let _ = child.wait().await;
-    result
+    result.transpose()
 }
 
 async fn fetch_kimi_usage(port: u16, token: &str) -> Result<serde_json::Value, DriverError> {
@@ -343,7 +391,7 @@ fn prompt_terminal(
         }
         Err(DriverError::CapabilityUnavailable(reason)) => DriverEvent::TurnFailed { reason },
         Err(error) => DriverEvent::TurnFailed {
-            reason: driver_api::failure::user_message(driver_api::failure::kind(&error)).into(),
+            reason: driver_api::failure::turn_failed_reason(&error),
         },
     }
 }
@@ -353,6 +401,7 @@ type Updates = Arc<std::sync::Mutex<Option<mpsc::UnboundedSender<DriverEvent>>>>
 impl ConnectionHandle {
     fn unavailable(&self) -> bool {
         self.finished.load(Ordering::Acquire)
+            || self.native.as_ref().is_some_and(|native| native.stopping())
             || self.commands.is_closed()
             || self.cancels.is_closed()
     }
@@ -369,6 +418,7 @@ impl ConnectionHandle {
             commands,
             cancels,
             finished: Arc::clone(&self.finished),
+            native: self.native.clone(),
         }
     }
 }
@@ -407,17 +457,26 @@ enum Command {
         additional_directories: Vec<PathBuf>,
         reply: oneshot::Sender<Result<SessionId, DriverError>>,
     },
+    CloseSession {
+        session_id: String,
+        reply: oneshot::Sender<Result<(), DriverError>>,
+    },
+    ForgetSession {
+        session_id: String,
+        reply: oneshot::Sender<()>,
+    },
     Prompt {
         session_id: SessionId,
         blocks: Vec<ContentBlock>,
         image_compatibility: bool,
         reply: oneshot::Sender<Result<StopReason, DriverError>>,
+        turn: Option<Arc<turn::Turn>>,
     },
     ReadGrokBilling {
         reply: oneshot::Sender<Result<serde_json::Value, DriverError>>,
     },
     ReadKiroContext {
-        session_id: String,
+        scope: auxiliary::Call,
         reply: oneshot::Sender<Result<serde_json::Value, DriverError>>,
     },
     ReadKiroUsage {
@@ -425,12 +484,14 @@ enum Command {
     },
 }
 
+#[derive(Clone)]
 struct ConnectionHandle {
     codebuddy_cwd: Option<PathBuf>,
     cursor_force: bool,
     commands: mpsc::UnboundedSender<Command>,
-    cancels: mpsc::UnboundedSender<SessionId>,
+    cancels: mpsc::UnboundedSender<Arc<turn::Turn>>,
     finished: Arc<AtomicBool>,
+    native: Option<Arc<lifecycle::Control>>,
 }
 
 /// One outstanding vendor `session/request_permission` request: the SDK
@@ -454,6 +515,17 @@ type PendingQuestions = Arc<std::sync::Mutex<HashMap<String, PendingQuestion>>>;
 struct Shared {
     launch: AcpLaunch,
     connection: tokio::sync::Mutex<Option<ConnectionHandle>>,
+    lifecycle: std::sync::Mutex<()>,
+    setup: Arc<tokio::sync::Mutex<()>>,
+    metadata: Arc<tokio::sync::Mutex<()>>,
+    setup_in_progress: AtomicBool,
+    native_close: AtomicBool,
+    pending_auxiliary: Arc<std::sync::atomic::AtomicUsize>,
+    sessions: std::sync::Mutex<HashMap<String, Arc<sessions::Resident>>>,
+    active_session: std::sync::Mutex<Option<String>>,
+    latest_turn: std::sync::Mutex<Option<Arc<turn::Turn>>>,
+    closed_sessions: std::sync::Mutex<HashSet<String>>,
+    retired_handles: std::sync::Mutex<HashMap<String, SessionHandle>>,
     turn_active: AtomicBool,
     approval_rejected: AtomicBool,
     interrupt_requested: AtomicBool,
@@ -463,6 +535,86 @@ struct Shared {
     questions: PendingQuestions,
     activity: Arc<std::sync::Mutex<activity::Activities>>,
     quota: Arc<AcpQuotaState>,
+}
+
+impl Shared {
+    // Unlike a permission decision, terminal progress is still valid while
+    // interrupting. Explicitly retired sessions may never route to a new sink.
+    fn accepts_update(&self, session: Option<&str>) -> bool {
+        if session.is_none() && self.pending_auxiliary.load(Ordering::Acquire) > 0 {
+            return false;
+        }
+        self.active_session
+            .lock()
+            .expect("active session")
+            .as_deref()
+            .is_some_and(|active| {
+                session.is_none_or(|session| session == active)
+                    && !self
+                        .closed_sessions
+                        .lock()
+                        .expect("closed sessions")
+                        .contains(active)
+            })
+    }
+    // Called under lifecycle so admission, stopping, settlement and a response
+    // cannot race. Vendors without a question session id bind to the sole turn.
+    fn validate_interaction(&self, session: Option<&str>) -> Result<(), DriverError> {
+        if session.is_none() && self.pending_auxiliary.load(Ordering::Acquire) > 0 {
+            return Err(DriverError::CapabilityUnavailable(
+                "ACP interaction has no session identity during a pending query".into(),
+            ));
+        }
+        let active = self.active_session.lock().expect("active session");
+        if active.as_deref().is_none_or(|active| {
+            session.is_some_and(|session| session != active)
+                || self
+                    .closed_sessions
+                    .lock()
+                    .expect("closed sessions")
+                    .contains(active)
+        }) {
+            return Err(DriverError::SessionMissing(
+                "ACP interaction session is not active".into(),
+            ));
+        }
+        if self.interrupt_requested.load(Ordering::Acquire) {
+            return Err(DriverError::CapabilityUnavailable(
+                "ACP session is stopping".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn cancel_interactions(&self, session: &str) {
+        let permissions = {
+            let mut pending = self
+                .pending_permissions
+                .lock()
+                .expect("pending permissions");
+            let ids: Vec<_> = pending
+                .iter()
+                .filter(|(_, value)| value.session_id == session)
+                .map(|(id, _)| id.clone())
+                .collect();
+            ids.into_iter()
+                .filter_map(|id| pending.remove(&id))
+                .collect::<Vec<_>>()
+        };
+        for pending in permissions {
+            let _ = pending.responder.respond(RequestPermissionResponse::new(
+                RequestPermissionOutcome::Cancelled,
+            ));
+        }
+        // Dropping a question responder resolves the tracked vendor bridge as
+        // cancelled. Never manufacture an allow or a user answer when stopping.
+        self.questions
+            .lock()
+            .expect("questions")
+            .retain(|_, question| {
+                !question.session_id.is_empty() && question.session_id != session
+            });
+    }
 }
 
 #[derive(Default)]
@@ -549,9 +701,60 @@ pub struct AcpDriver {
     native_version: Option<String>,
     resume_capability: SessionResumeCapability,
     shared: Arc<Shared>,
+    stopping: tokio::sync::watch::Sender<bool>,
+    #[cfg(test)]
+    stop_timeout: std::time::Duration,
+    #[cfg(test)]
+    metadata_timeout: std::time::Duration,
+}
+
+impl Drop for AcpDriver {
+    fn drop(&mut self) {
+        self.stopping.send_replace(true);
+    }
 }
 
 impl AcpDriver {
+    async fn configured_session(
+        &self,
+        connection: ConnectionHandle,
+        command: Command,
+        response: oneshot::Receiver<Result<SessionId, DriverError>>,
+        permit: tokio::sync::OwnedMutexGuard<()>,
+    ) -> Result<SessionHandle, DriverError> {
+        let target = match &command {
+            Command::LoadSession { session_id, .. } => Some(session_id.to_string()),
+            _ => None,
+        };
+        {
+            let _gate = self.shared.lifecycle.lock().expect("ACP lifecycle");
+            self.no_pending_stop()?;
+            self.shared.setup_available()?;
+            self.shared.setup_in_progress.store(true, Ordering::Release);
+            if connection.commands.send(command).is_err() {
+                self.shared
+                    .setup_in_progress
+                    .store(false, Ordering::Release);
+                return Err(driver_error_from_channel());
+            }
+        }
+        sessions::finish_setup(self.shared.clone(), connection, response, permit, target).await
+    }
+    fn no_pending_stop(&self) -> Result<(), DriverError> {
+        if self
+            .shared
+            .latest_turn
+            .lock()
+            .expect("ACP turn")
+            .as_ref()
+            .is_some_and(|turn| turn.stop_pending())
+        {
+            return Err(DriverError::CapabilityUnavailable(
+                "ACP stop is still awaiting confirmation".into(),
+            ));
+        }
+        Ok(())
+    }
     /// Creates a driver for one concrete installation. `resume_capability` must
     /// come from a real `initialize` handshake (`probe_ready`), never from docs.
     pub fn new(
@@ -574,10 +777,26 @@ impl AcpDriver {
             },
             native_version,
             resume_capability,
+            stopping: tokio::sync::watch::channel(false).0,
+            #[cfg(test)]
+            stop_timeout: std::time::Duration::from_secs(10),
+            #[cfg(test)]
+            metadata_timeout: std::time::Duration::from_secs(30),
             shared: Arc::new(Shared {
                 activity: Arc::new(std::sync::Mutex::new(activity::Activities::default())),
                 launch,
                 connection: tokio::sync::Mutex::new(None),
+                lifecycle: std::sync::Mutex::new(()),
+                setup: Arc::new(tokio::sync::Mutex::new(())),
+                metadata: Arc::new(tokio::sync::Mutex::new(())),
+                setup_in_progress: AtomicBool::new(false),
+                native_close: AtomicBool::new(false),
+                pending_auxiliary: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                sessions: std::sync::Mutex::new(HashMap::new()),
+                active_session: std::sync::Mutex::new(None),
+                latest_turn: std::sync::Mutex::new(None),
+                closed_sessions: std::sync::Mutex::new(HashSet::new()),
+                retired_handles: std::sync::Mutex::new(HashMap::new()),
                 turn_active: AtomicBool::new(false),
                 approval_rejected: AtomicBool::new(false),
                 interrupt_requested: AtomicBool::new(false),
@@ -619,9 +838,9 @@ impl AcpDriver {
         .map_err(|_| DriverError::Disconnected("ACP readiness probe timed out".into()))??;
         driver.native_version = if provider_id == "deepseek-harness" {
             // DSH reports the ACP module version (0.0.1), not the CLI release.
-            driver.native_version.or(report.native_version)
+            driver.native_version.take().or(report.native_version)
         } else {
-            report.native_version.or(driver.native_version)
+            report.native_version.or(driver.native_version.take())
         };
         driver.resume_capability = report.resume_capability;
         Ok(driver)
@@ -666,15 +885,9 @@ impl AcpDriver {
                 }),
         )
         .await;
-        // The transport connection closed when the probe future finished, so
-        // the agent exits on its own; reap instead of killing (kills can race
-        // the shared auth/token stores some agents maintain on shutdown).
-        if tokio::time::timeout(std::time::Duration::from_secs(5), child.wait())
-            .await
-            .is_err()
-        {
-            let _ = child.kill().await;
-        }
+        // Native EOF gets a grace period, but only the original scope's exit
+        // proof lets this temporary probe report readiness.
+        child.kill().await?;
         let probe =
             probe.map_err(|_| DriverError::Disconnected("ACP readiness probe timed out".into()))?;
         match probe {
@@ -753,6 +966,40 @@ impl AcpDriver {
         } else {
             false
         };
+        if self.shared.setup_in_progress.load(Ordering::Acquire)
+            && guard.as_ref().is_some_and(|existing| {
+                existing.unavailable()
+                    || existing.cursor_force != force
+                    || existing.codebuddy_cwd != codebuddy_cwd
+                    || self.shared.reconnect_required.load(Ordering::Acquire)
+            })
+        {
+            return Err(DriverError::CapabilityUnavailable(
+                "ACP configuration is still being confirmed; cannot rebuild its connection".into(),
+            ));
+        }
+        if let Some(existing) = guard.as_ref()
+            && !existing.unavailable()
+            && (existing.cursor_force != force
+                || existing.codebuddy_cwd != codebuddy_cwd
+                || self.shared.reconnect_required.load(Ordering::Acquire))
+            && self
+                .shared
+                .sessions
+                .lock()
+                .expect("ACP sessions")
+                .values()
+                .filter(|resident| {
+                    Arc::ptr_eq(&resident.epoch, &existing.finished) && !resident.is_closing()
+                })
+                .count()
+                > 1
+        {
+            return Err(DriverError::CapabilityUnavailable(
+                "Other ACP sessions still own this connection; close them before rebuilding it"
+                    .into(),
+            ));
+        }
         if guard.as_ref().is_some_and(|c| {
             c.unavailable()
                 || c.cursor_force != force
@@ -763,8 +1010,11 @@ impl AcpDriver {
             let finished = Arc::clone(&old.finished);
             // A timeout/cancel must not let the next restore spawn over an unconfirmed exit.
             *guard = Some(old.cleanup_marker());
+            if let Some(native) = &old.native {
+                native.request_close();
+            }
             drop(old);
-            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            tokio::time::timeout(std::time::Duration::from_secs(10), async {
                 while !finished.load(Ordering::Acquire) {
                     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
                 }
@@ -782,8 +1032,10 @@ impl AcpDriver {
                 commands: existing.commands.clone(),
                 cancels: existing.cancels.clone(),
                 finished: Arc::clone(&existing.finished),
+                native: existing.native.clone(),
             });
         }
+        self.shared.native_close.store(false, Ordering::Release);
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (cancel_tx, cancel_rx) = mpsc::unbounded_channel();
         let finished = Arc::new(AtomicBool::new(false));
@@ -797,6 +1049,9 @@ impl AcpDriver {
             codebuddy_cwd.as_deref(),
             Some(self.shared.quota.stderr_tail.clone()),
         )?;
+        child.control.observe_owner(self.stopping.subscribe());
+        let native = child.control.clone();
+        let background = lifecycle::Tasks::new();
         if self.executor.provider_id.as_str() == "grok" {
             self.shared
                 .quota
@@ -806,18 +1061,26 @@ impl AcpDriver {
                 .reset_connection();
         }
         let shared = ConnectionTasks {
+            owner: Some(Arc::downgrade(&self.shared)),
             updates: Arc::clone(&self.shared.updates),
             pending: Arc::clone(&self.shared.pending_permissions),
             questions: Arc::clone(&self.shared.questions),
             activity: self.shared.activity.clone(),
             quota: Arc::clone(&self.shared.quota),
-            next_permission_id: std::sync::atomic::AtomicU64::new(1),
+            background: background.clone(),
         };
         let finished_flag = Arc::clone(&finished);
+        let pending = self.shared.pending_permissions.clone();
+        let questions = self.shared.questions.clone();
         tokio::spawn(async move {
-            run_connection(transport, command_rx, cancel_rx, shared).await;
-            let _ = child.kill().await;
-            let _ = child.wait().await;
+            let mut client = tokio::spawn(run_connection(transport, command_rx, cancel_rx, shared));
+            tokio::select! {_= &mut client=>{},()=child.control.closing()=>{client.abort();let _=client.await;}}
+            background.shutdown().await;
+            pending.lock().expect("pending permissions").clear();
+            questions.lock().expect("questions").clear();
+            while child.kill().await.is_err() {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
             finished_flag.store(true, Ordering::Release);
         });
         let handle = ConnectionHandle {
@@ -826,6 +1089,7 @@ impl AcpDriver {
             commands: command_tx,
             cancels: cancel_tx,
             finished: Arc::clone(&finished),
+            native: Some(native.clone()),
         };
         *guard = Some(ConnectionHandle {
             codebuddy_cwd,
@@ -833,6 +1097,7 @@ impl AcpDriver {
             commands: handle.commands.clone(),
             cancels: handle.cancels.clone(),
             finished: Arc::clone(&finished),
+            native: Some(native),
         });
         self.shared
             .reconnect_required
@@ -842,12 +1107,13 @@ impl AcpDriver {
 }
 
 struct ConnectionTasks {
+    owner: Option<std::sync::Weak<Shared>>,
     updates: Updates,
     pending: PendingPermissions,
     questions: PendingQuestions,
     activity: Arc<std::sync::Mutex<activity::Activities>>,
     quota: Arc<AcpQuotaState>,
-    next_permission_id: std::sync::atomic::AtomicU64,
+    background: Arc<lifecycle::Tasks>,
 }
 
 pub struct ProbeReport {
@@ -891,17 +1157,16 @@ async fn initialize(connection: &ConnectionTo<Agent>) -> Result<InitializeRespon
     Ok(initialized)
 }
 
-type AgentTransport =
-    ByteStreams<Compat<tokio::process::ChildStdin>, Compat<tokio::process::ChildStdout>>;
+type AgentTransport = ByteStreams<Compat<lifecycle::Input>, Compat<lifecycle::Output>>;
 
-fn spawn_agent(launch: &AcpLaunch) -> Result<(tokio::process::Child, AgentTransport), DriverError> {
+fn spawn_agent(launch: &AcpLaunch) -> Result<(lifecycle::Process, AgentTransport), DriverError> {
     spawn_agent_in(launch, None, None)
 }
 fn spawn_agent_in(
     launch: &AcpLaunch,
     cwd: Option<&std::path::Path>,
     stderr_tail: Option<StderrTail>,
-) -> Result<(tokio::process::Child, AgentTransport), DriverError> {
+) -> Result<(lifecycle::Process, AgentTransport), DriverError> {
     let mut command = tokio::process::Command::new(&launch.executable);
     command
         .args(&launch.args)
@@ -922,7 +1187,7 @@ fn spawn_agent_in(
     if let Some(path) = agent_runtime::installed_node_path(&launch.executable) {
         command.env("PATH", path);
     }
-    let mut child = command.spawn().map_err(|error| {
+    let mut child = agent_runtime::OwnedChild::spawn(command).map_err(|error| {
         if matches!(error.kind(), std::io::ErrorKind::NotFound) {
             DriverError::NotConfigured("ACP agent executable is missing".into())
         } else {
@@ -937,7 +1202,7 @@ fn spawn_agent_in(
         .stdout
         .take()
         .ok_or_else(|| DriverError::Disconnected("agent stdout is unavailable".into()))?;
-    if let Some(stderr) = child.stderr.take() {
+    let stderr = child.stderr.take().map(|stderr| {
         // Drain stderr so a chatty agent can never block on a full pipe; the
         // content is diagnostics-only and is never persisted. Error lines are
         // kept briefly in memory to sharpen failure classification.
@@ -965,11 +1230,21 @@ fn spawn_agent_in(
             if let Some(tail) = &stderr_tail {
                 tail.record(&String::from_utf8_lossy(&pending));
             }
-        });
-    }
+        })
+    });
+    let process = lifecycle::Process::start(child, stderr);
+    let input = lifecycle::Input {
+        inner: stdin,
+        control: process.control.clone(),
+    };
+    let output = lifecycle::Output {
+        inner: stdout,
+        control: process.control.clone(),
+        line_bytes: 0,
+    };
     Ok((
-        child,
-        ByteStreams::new(stdin.compat_write(), stdout.compat()),
+        process,
+        ByteStreams::new(input.compat_write(), output.compat()),
     ))
 }
 
@@ -979,36 +1254,47 @@ async fn run_connection(
         impl futures::AsyncRead + Send + 'static,
     >,
     mut commands: mpsc::UnboundedReceiver<Command>,
-    mut cancels: mpsc::UnboundedReceiver<SessionId>,
+    mut cancels: mpsc::UnboundedReceiver<Arc<turn::Turn>>,
     tasks: ConnectionTasks,
 ) {
     let permission_tasks = ConnectionTasks {
+        owner: tasks.owner.clone(),
         updates: Arc::clone(&tasks.updates),
         pending: Arc::clone(&tasks.pending),
         questions: Arc::clone(&tasks.questions),
         activity: tasks.activity.clone(),
         quota: Arc::clone(&tasks.quota),
-        next_permission_id: std::sync::atomic::AtomicU64::new(1),
+        background: tasks.background.clone(),
     };
     let command_quota = Arc::clone(&tasks.quota);
     let vendor_quota = Arc::clone(&tasks.quota);
     let vendor_updates = Arc::clone(&tasks.updates);
+    let vendor_owner = tasks.owner.clone();
     let cursor_updates = Arc::clone(&tasks.updates);
     let cursor_activity = tasks.activity.clone();
+    let cursor_owner = tasks.owner.clone();
     let session_states = Arc::new(std::sync::Mutex::new(
         session_state::SessionStates::default(),
     ));
     let update_states = Arc::clone(&session_states);
     let questions = Arc::clone(&tasks.questions);
+    let question_owner = tasks.owner.clone();
     let question_updates = Arc::clone(&tasks.updates);
+    let vendor_background = tasks.background.clone();
+    let question_background = tasks.background.clone();
+    let command_background = tasks.background.clone();
+    let command_owner = tasks.owner.clone();
     let result = Client
         .builder()
         .on_receive_notification(
             async move |notification: SessionNotification, _connection| {
+                let owner = tasks.owner.as_ref().and_then(std::sync::Weak::upgrade);
+                let _gate = owner.as_ref().map(|owner| owner.lifecycle.lock().expect("ACP lifecycle"));
                 update_states.lock().expect("session states").observe(&serde_json::to_value(&notification).unwrap_or_default());
                 tasks.quota.observe_usage(&notification);
                 let raw = serde_json::to_value(&notification).unwrap_or_default();
                 let records = tasks.quota.observe_live_grok(&raw);
+                if tasks.owner.is_some() && owner.as_ref().is_none_or(|owner| !owner.accepts_update(Some(notification.session_id.0.as_ref()))) { return Ok(()); }
                 if let Some(updates) = tasks.updates.lock().expect("updates sink").as_ref() {
                     for request in records { let _ = updates.send(DriverEvent::UsageRecorded { request }); }
                     let raw=serde_json::to_value(&notification).unwrap_or_default();
@@ -1025,6 +1311,14 @@ async fn run_connection(
             async move |request: agent_client_protocol::schema::v1::RequestPermissionRequest,
                         responder: Responder<RequestPermissionResponse>,
                         connection| {
+                let owner = permission_tasks.owner.as_ref().and_then(std::sync::Weak::upgrade);
+                let _gate = owner.as_ref().map(|owner| owner.lifecycle.lock().expect("ACP lifecycle"));
+                if permission_tasks.owner.is_some() && owner.as_ref().is_none_or(|owner| {
+                    owner.validate_interaction(Some(request.session_id.0.as_ref())).is_err()
+                }) {
+                    responder.respond(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled))?;
+                    return Ok(agent_client_protocol::Handled::Yes);
+                }
                 let raw=serde_json::to_value(&request).unwrap_or_default();
                 if raw["toolCall"]["_meta"]["codebuddy.ai/toolName"]=="AskUserQuestion" {
                     let params=raw["toolCall"]["rawInput"].clone();
@@ -1035,19 +1329,20 @@ async fn run_connection(
                         let delivered=permission_tasks.updates.lock().expect("updates").as_ref().is_some_and(|u|u.send(DriverEvent::QuestionRequested{native_request_id:id.clone(),form}).is_ok());
                         if !delivered{permission_tasks.questions.lock().expect("questions").remove(&id);}
                         let pending=Arc::clone(&permission_tasks.questions);
-                        let updates=Arc::clone(&permission_tasks.updates);
-                        tokio::spawn(async move {
+                        let bridge=owner.as_ref().and_then(codebuddy_question::Bridge::capture);
+                        permission_tasks.background.spawn(async move {
                             let answer=receiver.await.unwrap_or(agent_domain::QuestionAnswer{cancelled:true,values:serde_json::Value::Null});
                             pending.lock().expect("questions").remove(&id);
                             let native=driver_api::questions::native_answer("codebuddy",&params,&answer);
                             let mut payload=serde_json::json!({"sessionId":request.session_id,"toolCallId":request.tool_call.tool_call_id,"decision":if answer.cancelled{"deny"}else{"allow"}});
                             if !answer.cancelled{payload["answers"]=native["answers"].clone();}
-                            let resolution=models::raw(&connection,"_codebuddy.ai/resolveInterruption",payload).await;
-                            if !resolution.as_ref().is_ok_and(|value|value["resolved"]==true)
-                                && let Some(updates)=updates.lock().expect("updates").as_ref(){
-                                    let _=updates.send(DriverEvent::ProtocolWarning{message:"CodeBuddy did not confirm delivery of the question answer".into()});
-                                    let _=updates.send(DriverEvent::QuestionClosed{native_request_id:id.clone()});
-                                }
+                            let request=agent_client_protocol::UntypedMessage::new("_codebuddy.ai/resolveInterruption",payload).ok();
+                            let sent=bridge.as_ref().and_then(|bridge|request.and_then(|request|bridge.with_current(||connection.send_request(request))));
+                            if let Some(sent)=sent {
+                                let resolved=tokio::time::timeout(std::time::Duration::from_secs(15),sent.block_task()).await
+                                    .is_ok_and(|result|result.is_ok_and(|value|value["resolved"]==true));
+                                if !resolved && let Some(bridge)=&bridge {bridge.delivery_failed(id.clone());}
+                            }
                             let _=responder.respond(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled));
                         });
                         return Ok(agent_client_protocol::Handled::Yes);
@@ -1056,12 +1351,7 @@ async fn run_connection(
                 // Surface the vendor request verbatim and park the responder;
                 // the hub answers through respond_to_interaction with one of
                 // the vendor option ids. No auto-approval path exists.
-                let native_request_id = format!(
-                    "acp-perm-{}",
-                    permission_tasks
-                        .next_permission_id
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                );
+                let native_request_id = format!("acp-perm-{}", uuid_question_id());
                 let options = map_permission_options(&request.options);
                 permission_tasks
                     .pending
@@ -1110,6 +1400,9 @@ async fn run_connection(
             on_receive_request!(),
         )
         .on_receive_notification(async move |message: agent_client_protocol::UntypedMessage, connection| {
+            let owner = vendor_owner.as_ref().and_then(std::sync::Weak::upgrade);
+            let _gate = owner.as_ref().map(|owner| owner.lifecycle.lock().expect("ACP lifecycle"));
+            if vendor_owner.is_some() && owner.as_ref().is_none_or(|owner| !owner.accepts_update(message.params["sessionId"].as_str())) { return Ok(()); }
             if message.method == "_x.ai/session_notification" {
                 session_usage::observe_grok(&vendor_quota.usage, &message.params);
                 let records = vendor_quota.observe_live_grok(&message.params);
@@ -1119,18 +1412,23 @@ async fn run_connection(
                 let update = message.params.get("update").unwrap_or(&message.params);
                 if update["sessionUpdate"] == "response_completed" {
                     let query = vendor_quota.grok_usage.lock().expect("grok usage").cost_query(message.params["sessionId"].as_str().unwrap_or(""));
-                    if let Some(query) = query {
-                        let quota = Arc::clone(&vendor_quota);
-                        let connection = connection.clone();
-                        tokio::spawn(async move {
-                            let Ok(request) = agent_client_protocol::UntypedMessage::new("_x.ai/session/usage", serde_json::json!({"sessionId":query.session})) else { return; };
-                            if let Ok(Ok(value)) = tokio::time::timeout(std::time::Duration::from_secs(2), connection.send_request(request).block_task()).await {
-                                let total = quota.grok_usage.lock().expect("grok usage").apply_cost(&query, &value);
-                                if let Some(session_cost_usd) = total {
-                                    quota.usage.merge(&query.session, driver_api::usage::SessionUsageSnapshot {session_cost_usd:Some(session_cost_usd),..Default::default()});
+                    if let (Some(query),Some(owner))=(query,owner.as_ref())
+                        && let Some(scope)=auxiliary::Call::acquire(owner,&query.session,None) {
+                            let connection=connection.clone();
+                            vendor_background.spawn(async move {
+                                let Ok(request)=agent_client_protocol::UntypedMessage::new("_x.ai/session/usage",serde_json::json!({"sessionId":query.session})) else{return;};
+                                let deadline=std::time::Instant::now()+std::time::Duration::from_secs(2);
+                                let read=async {connection.send_request(request).block_task().await.map_err(|_|driver_error_from_channel())};
+                                if let Ok(value)=scope.wait(read).await
+                                    && std::time::Instant::now()<deadline {
+                                        scope.with_current(|shared| {
+                                            let total=shared.quota.grok_usage.lock().expect("grok usage").apply_cost(&query,&value);
+                                            if let Some(session_cost_usd)=total {
+                                                shared.quota.usage.merge(&query.session,driver_api::usage::SessionUsageSnapshot{session_cost_usd:Some(session_cost_usd),..Default::default()});
+                                            }
+                                        });
                                 }
-                            }
-                        });
+                            });
                     }
                 }
             }
@@ -1149,6 +1447,14 @@ async fn run_connection(
                 _ => None,
             };
             if let Some(provider) = provider {
+                let owner = question_owner.as_ref().and_then(std::sync::Weak::upgrade);
+                let _gate = owner.as_ref().map(|owner| owner.lifecycle.lock().expect("ACP lifecycle"));
+                let session_id = message.params["sessionId"].as_str().filter(|id| !id.is_empty());
+                if question_owner.is_some() && owner.as_ref().is_none_or(|owner| owner.validate_interaction(session_id).is_err()) {
+                    let cancelled = agent_domain::QuestionAnswer { cancelled: true, values: serde_json::Value::Null };
+                    responder.respond(driver_api::questions::native_answer(provider, &message.params, &cancelled))?;
+                    return Ok(agent_client_protocol::Handled::Yes);
+                }
                 let Ok(form) = driver_api::questions::native_form(provider, &message.params) else { responder.respond_with_internal_error("Unsupported question form")?; return Ok(agent_client_protocol::Handled::Yes); };
                 let request_id=format!("acp-question-{}", uuid_question_id());
                 let session_id=message.params["sessionId"].as_str().unwrap_or("").to_owned();
@@ -1157,7 +1463,7 @@ async fn run_connection(
                 let delivered=question_updates.lock().expect("updates").as_ref().is_some_and(|updates|updates.send(DriverEvent::QuestionRequested{native_request_id:request_id.clone(),form}).is_ok());
                 if !delivered { questions.lock().expect("questions").remove(&request_id); }
                 let pending=Arc::clone(&questions);
-                tokio::spawn(async move {
+                question_background.spawn(async move {
                     let answer=receiver.await.unwrap_or(agent_domain::QuestionAnswer{cancelled:true,values:serde_json::Value::Null});
                     pending.lock().expect("questions").remove(&request_id);
                     let _=responder.respond(driver_api::questions::native_answer(provider,&message.params,&answer));
@@ -1165,6 +1471,12 @@ async fn run_connection(
                 return Ok(agent_client_protocol::Handled::Yes);
             }
             if message.method != "cursor/task" { responder.respond_with_internal_error("Unsupported client method")?; return Ok(agent_client_protocol::Handled::Yes); }
+            let owner=cursor_owner.as_ref().and_then(std::sync::Weak::upgrade);
+            let _gate=owner.as_ref().map(|owner|owner.lifecycle.lock().expect("ACP lifecycle"));
+            if cursor_owner.is_some() && owner.as_ref().is_none_or(|owner|!owner.accepts_update(message.params["sessionId"].as_str())) {
+                responder.respond(serde_json::json!({"outcome":{"outcome":"rejected","reason":"Task session is not active"}}))?;
+                return Ok(agent_client_protocol::Handled::Yes);
+            }
             let (reply, event) = cursor_activity.lock().expect("activity").cursor_task(&message.params);
             if let (Some(updates), Some(event)) = (cursor_updates.lock().expect("updates").as_ref(), event) { let _ = updates.send(event); }
             responder.respond(reply)?;
@@ -1173,6 +1485,9 @@ async fn run_connection(
         .connect_with(transport, async move |connection| {
             let initialized = tokio::time::timeout(std::time::Duration::from_secs(45), initialize(&connection))
                 .await.map_err(|_| AcpError::internal_error())??;
+            if let Some(owner) = command_owner.as_ref().and_then(std::sync::Weak::upgrade) {
+                owner.native_close.store(initialized.agent_capabilities.session_capabilities.close.is_some(), Ordering::Release);
+            }
             let mut initial_models = serde_json::to_value(&initialized).unwrap_or_default();
             if models::has_kiro_template(&initial_models) {
                 let template = models::kiro_template(&connection).await.map_err(|_| AcpError::internal_error())?;
@@ -1183,17 +1498,17 @@ async fn run_connection(
                 tokio::select! {
                     command = commands.recv() => {
                         let Some(command) = command else { break };
-                        if matches!(command, Command::Prompt { .. } | Command::ReadGrokBilling { .. } | Command::ReadKiroUsage { .. } | Command::ReadKiroContext { .. }) {
+                        if matches!(command, Command::CloseSession { .. } | Command::Prompt { .. } | Command::ReadGrokBilling { .. } | Command::ReadKiroUsage { .. } | Command::ReadKiroContext { .. }) {
                             // Prompts run on their own task so session/cancel
                             // stays responsive while a turn is in flight.
-                            tokio::spawn(handle_command(connection.clone(), command, multi_root, initial_models.clone(), Arc::clone(&session_states), Arc::clone(&command_quota)));
+                            command_background.spawn(handle_command(connection.clone(), command, multi_root, initial_models.clone(), Arc::clone(&session_states), Arc::clone(&command_quota)));
                         } else {
                             handle_command(connection.clone(), command, multi_root, initial_models.clone(), Arc::clone(&session_states), Arc::clone(&command_quota)).await;
                         }
                     }
                     cancel = cancels.recv() => {
-                        let Some(session_id) = cancel else { break };
-                        connection.send_notification(CancelNotification::new(session_id))?;
+                        let Some(turn) = cancel else { break };
+                        turn.cancel_on(&connection)?;
                     }
                 }
             }
@@ -1250,6 +1565,23 @@ async fn handle_command(
     quota: Arc<AcpQuotaState>,
 ) {
     match command {
+        Command::CloseSession { session_id, reply } => {
+            let result: Result<CloseSessionResponse, _> = connection
+                .send_request(CloseSessionRequest::new(SessionId::new(session_id)))
+                .block_task()
+                .await;
+            let _ =
+                reply.send(result.map(|_| ()).map_err(|error| {
+                    map_session_error(&error, "agent rejected session/close", None)
+                }));
+        }
+        Command::ForgetSession { session_id, reply } => {
+            session_states
+                .lock()
+                .expect("session states")
+                .forget(&session_id);
+            let _ = reply.send(());
+        }
         Command::ProbeReady { mut reply } => {
             let pending = async {
                 let initialized: InitializeResponse =
@@ -1293,6 +1625,9 @@ async fn handle_command(
             let _ = reply.send(result);
         }
         Command::PermissionCatalog { workspace, reply } => {
+            if reply.is_closed() {
+                return;
+            }
             let result=async {
                 let directory=tempfile::tempdir().map_err(|_|DriverError::Protocol("无法创建权限探测目录".into()))?;
                 let state=models::session_request(&connection,"session/new",serde_json::json!({"cwd":workspace.as_deref().unwrap_or(directory.path()),"mcpServers":[]}),Some(&quota.stderr_tail)).await?;
@@ -1305,6 +1640,9 @@ async fn handle_command(
             workspace,
             reply,
         } => {
+            if reply.is_closed() {
+                return;
+            }
             let initial = models::catalog(&initial_models);
             let result = if model.is_none() && workspace.is_none() && !initial.models.is_empty() {
                 Ok(initial)
@@ -1527,6 +1865,7 @@ async fn handle_command(
             blocks,
             image_compatibility,
             reply,
+            turn,
         } => {
             if blocks
                 .iter()
@@ -1548,7 +1887,32 @@ async fn handle_command(
                 return;
             };
             let stderr = quota.stderr_tail.begin_request();
-            let response = connection.send_request(request).block_task().await;
+            let pending = if let Some(turn) = &turn {
+                let mut dispatch = turn.dispatch.lock().expect("ACP prompt dispatch");
+                if dispatch.cancel_requested {
+                    let _ = reply.send(Ok(StopReason::Cancelled));
+                    return;
+                }
+                let pending = connection.send_request(request);
+                dispatch.sent = true;
+                pending
+            } else {
+                connection.send_request(request)
+            };
+            let response = if let Some(turn) = &turn {
+                tokio::select! {
+                    biased;
+                    () = turn.closed_natively() => {
+                        // session/close confirms all work was cancelled even
+                        // when the agent never answers the old prompt request.
+                        let _ = reply.send(Ok(StopReason::Cancelled));
+                        return;
+                    }
+                    response = pending.block_task() => response,
+                }
+            } else {
+                pending.block_task().await
+            };
             if let Ok(done) = &response {
                 let raw = serde_json::to_value(done).unwrap_or_default();
                 quota.usage.merge(
@@ -1589,14 +1953,14 @@ async fn handle_command(
             }
             let _ = reply.send(result);
         }
-        Command::ReadKiroContext {
-            session_id,
-            mut reply,
-        } => {
+        Command::ReadKiroContext { scope, reply } => {
+            if reply.is_closed() || scope.with_current(|_| ()).is_none() {
+                return;
+            }
             let read = async {
                 let request = agent_client_protocol::UntypedMessage::new(
                     "_kiro/session/context",
-                    serde_json::json!({"sessionId":session_id,"subcommand":"show"}),
+                    serde_json::json!({"sessionId":scope.session(),"subcommand":"show"}),
                 )
                 .map_err(|_| driver_error_from_channel())?;
                 connection
@@ -1605,7 +1969,9 @@ async fn handle_command(
                     .await
                     .map_err(|_| driver_error_from_channel())
             };
-            tokio::select! { result = read => { let _ = reply.send(result); }, () = reply.closed() => {} }
+            // Once sent, caller cancellation cannot drop native ownership.
+            let result = scope.wait(read).await;
+            let _ = reply.send(result);
         }
         Command::ReadKiroUsage { mut reply } => {
             // Account query needs no session and must not wait for a model turn.
@@ -1817,24 +2183,17 @@ impl AgentDriver for AcpDriver {
         &self,
         workspace: Option<&str>,
     ) -> Result<driver_api::PermissionCatalog, DriverError> {
-        if self.shared.turn_active.load(Ordering::Acquire) {
-            return Err(DriverError::CapabilityUnavailable(
-                "请在 Agent 空闲时读取权限策略".into(),
-            ));
-        }
         if self.executor.provider_id.as_str() == "cursor" {
             return Ok(permissions::cursor_catalog());
         }
-        let connection = self.ensure_connection().await?;
-        let (reply, response) = oneshot::channel();
-        connection
-            .commands
-            .send(Command::PermissionCatalog {
+        let workspace = workspace.map(str::to_owned);
+        let scope_workspace = workspace.clone();
+        let mut catalog = self
+            .metadata(scope_workspace, move |reply| Command::PermissionCatalog {
                 workspace: workspace.map(Into::into),
                 reply,
             })
-            .map_err(|_| driver_error_from_channel())?;
-        let mut catalog = response.await.map_err(|_| driver_error_from_channel())??;
+            .await?;
         if self.executor.provider_id.as_str() == "kimi" {
             permissions::kimi_labels(&mut catalog);
         }
@@ -1881,22 +2240,16 @@ impl AgentDriver for AcpDriver {
         model: Option<&str>,
         workspace: Option<&str>,
     ) -> Result<driver_api::ModelCatalog, DriverError> {
-        if self.shared.turn_active.load(Ordering::Acquire) {
-            return Err(DriverError::CapabilityUnavailable(
-                "请在 Agent 空闲时读取模型目录".into(),
-            ));
-        }
-        let connection = self.ensure_connection().await?;
-        let (reply, response) = oneshot::channel();
-        connection
-            .commands
-            .send(Command::Catalog {
-                model: model.map(Into::into),
+        let model = model.map(str::to_owned);
+        let workspace = workspace.map(str::to_owned);
+        let scope_workspace = workspace.clone();
+        let mut catalog = self
+            .metadata(scope_workspace, move |reply| Command::Catalog {
+                model,
                 workspace: workspace.map(Into::into),
                 reply,
             })
-            .map_err(|_| driver_error_from_channel())?;
-        let mut catalog = response.await.map_err(|_| driver_error_from_channel())??;
+            .await?;
         if self.executor.provider_id.as_str() == "opencode" {
             opencode_models::filter_retired(&mut catalog);
         }
@@ -1908,6 +2261,9 @@ impl AgentDriver for AcpDriver {
         model: Option<&str>,
         thinking: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
+        let permit = self.shared.setup.clone().lock_owned().await;
+        self.no_pending_stop()?;
+        self.shared.setup_available()?;
         let connection = self
             .ensure_workspace_connection(
                 if self.executor.provider_id.as_str() == "cursor" {
@@ -1919,31 +2275,26 @@ impl AgentDriver for AcpDriver {
             )
             .await?;
         let (reply_tx, reply_rx) = oneshot::channel();
-        connection
-            .commands
-            .send(Command::NewSession {
-                history_mcp: request.history_mcp.clone(),
-                grok: self.executor.provider_id.as_str() == "grok",
-                permission_mode: if self.executor.provider_id.as_str() == "cursor" {
-                    None
-                } else {
-                    request.permission_mode.clone()
-                },
-                model: model.map(Into::into),
-                thinking: thinking.map(Into::into),
-                cwd: PathBuf::from(&request.working_directory),
-                additional_directories: request
-                    .additional_directories
-                    .iter()
-                    .map(PathBuf::from)
-                    .collect(),
-                reply: reply_tx,
-            })
-            .map_err(|_| driver_error_from_channel())?;
-        let session_id = reply_rx.await.map_err(|_| driver_error_from_channel())??;
-        Ok(SessionHandle {
-            native_session_id: session_id.0.to_string(),
-        })
+        let command = Command::NewSession {
+            history_mcp: request.history_mcp.clone(),
+            grok: self.executor.provider_id.as_str() == "grok",
+            permission_mode: if self.executor.provider_id.as_str() == "cursor" {
+                None
+            } else {
+                request.permission_mode.clone()
+            },
+            model: model.map(Into::into),
+            thinking: thinking.map(Into::into),
+            cwd: PathBuf::from(&request.working_directory),
+            additional_directories: request
+                .additional_directories
+                .iter()
+                .map(PathBuf::from)
+                .collect(),
+            reply: reply_tx,
+        };
+        self.configured_session(connection, command, reply_rx, permit)
+            .await
     }
 
     async fn resume_session(
@@ -1980,6 +2331,21 @@ impl AgentDriver for AcpDriver {
         model: Option<&str>,
         thinking: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
+        let permit = self.shared.setup.clone().lock_owned().await;
+        self.no_pending_stop()?;
+        self.shared.setup_available()?;
+        if self
+            .shared
+            .sessions
+            .lock()
+            .expect("ACP sessions")
+            .get(native_session_id)
+            .is_some_and(|resident| resident.is_closing())
+        {
+            return Err(DriverError::CapabilityUnavailable(
+                "ACP session retirement is still pending".into(),
+            ));
+        }
         if self.resume_capability != SessionResumeCapability::Supported {
             return Err(DriverError::CapabilityUnavailable(
                 "this agent did not advertise ACP session/load".into(),
@@ -1999,32 +2365,41 @@ impl AgentDriver for AcpDriver {
             )
             .await?;
         let (reply_tx, reply_rx) = oneshot::channel();
-        connection
-            .commands
-            .send(Command::LoadSession {
-                history_mcp: workspace.history_mcp.clone(),
-                grok: self.executor.provider_id.as_str() == "grok",
-                permission_mode: if self.executor.provider_id.as_str() == "cursor" {
-                    None
-                } else {
-                    workspace.permission_mode.clone()
-                },
-                model: model.map(Into::into),
-                thinking: thinking.map(Into::into),
-                session_id: SessionId::new(native_session_id),
-                cwd,
-                additional_directories: workspace
-                    .additional_directories
-                    .iter()
-                    .map(PathBuf::from)
-                    .collect(),
-                reply: reply_tx,
-            })
-            .map_err(|_| driver_error_from_channel())?;
-        let session_id = reply_rx.await.map_err(|_| driver_error_from_channel())??;
-        Ok(SessionHandle {
-            native_session_id: session_id.0.to_string(),
-        })
+        let command = Command::LoadSession {
+            history_mcp: workspace.history_mcp.clone(),
+            grok: self.executor.provider_id.as_str() == "grok",
+            permission_mode: if self.executor.provider_id.as_str() == "cursor" {
+                None
+            } else {
+                workspace.permission_mode.clone()
+            },
+            model: model.map(Into::into),
+            thinking: thinking.map(Into::into),
+            session_id: SessionId::new(native_session_id),
+            cwd,
+            additional_directories: workspace
+                .additional_directories
+                .iter()
+                .map(PathBuf::from)
+                .collect(),
+            reply: reply_tx,
+        };
+        self.configured_session(connection, command, reply_rx, permit)
+            .await
+    }
+
+    async fn current_session_handle(&self, native_session_id: &str) -> Option<SessionHandle> {
+        let _gate = self.shared.lifecycle.lock().expect("ACP lifecycle");
+        if self.shared.reconnect_required.load(Ordering::Acquire) {
+            return None;
+        }
+        self.shared
+            .sessions
+            .lock()
+            .expect("ACP sessions")
+            .get(native_session_id)
+            .filter(|r| !r.is_closing() && !r.epoch.load(Ordering::Acquire))
+            .map(|r| r.handle.clone())
     }
 
     async fn prompt(
@@ -2032,25 +2407,120 @@ impl AgentDriver for AcpDriver {
         handle: &SessionHandle,
         request: HubPromptRequest,
     ) -> Result<DriverEventStream, DriverError> {
-        let attachment_blocks =
-            attachment_blocks(self.executor.provider_id.as_str(), &request.attachments).await?;
-        let connection = self.ensure_connection().await?;
-        if self
-            .shared
-            .turn_active
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
+        let _setup = self.shared.setup.lock().await;
         {
-            return Err(DriverError::CapabilityUnavailable(
-                "this ACP connection already has an active turn".into(),
+            let _gate = self.shared.lifecycle.lock().expect("ACP lifecycle");
+            self.shared.validate_handle(handle)?;
+        }
+        if !self
+            .shared
+            .sessions
+            .lock()
+            .expect("ACP sessions")
+            .contains_key(&handle.native_session_id)
+        {
+            return Err(DriverError::SessionMissing(
+                "Create or restore the ACP session before sending".into(),
             ));
         }
-        self.shared
-            .approval_rejected
-            .store(false, Ordering::Release);
-        self.shared
-            .interrupt_requested
-            .store(false, Ordering::Release);
+        if self
+            .shared
+            .closed_sessions
+            .lock()
+            .expect("closed sessions")
+            .contains(&handle.native_session_id)
+        {
+            return Err(DriverError::SessionMissing(
+                "ACP session was closed; restore it before sending".into(),
+            ));
+        }
+        let attachment_blocks =
+            attachment_blocks(self.executor.provider_id.as_str(), &request.attachments).await?;
+        let connection = self
+            .shared
+            .connection
+            .lock()
+            .await
+            .as_ref()
+            .filter(|c| !c.unavailable())
+            .cloned()
+            .ok_or_else(driver_error_from_channel)?;
+        let (current_turn, completed) = {
+            let _gate = self.shared.lifecycle.lock().expect("ACP lifecycle");
+            self.shared.validate_handle(handle)?;
+            self.no_pending_stop()?;
+            self.shared.prompt_available()?;
+            if connection.unavailable() {
+                return Err(driver_error_from_channel());
+            }
+            let resident = {
+                let sessions = self.shared.sessions.lock().expect("ACP sessions");
+                sessions
+                    .get(&handle.native_session_id)
+                    .cloned()
+                    .ok_or_else(|| DriverError::SessionMissing("ACP session was retired".into()))?
+            };
+            if !Arc::ptr_eq(&resident.epoch, &connection.finished) || resident.is_closing() {
+                return Err(DriverError::SessionIncompatible(
+                    "Restore the ACP session on the current connection before sending".into(),
+                ));
+            }
+            if self
+                .shared
+                .latest_turn
+                .lock()
+                .expect("ACP turn")
+                .as_ref()
+                .is_some_and(|turn| {
+                    turn.failed_stop()
+                        || (turn.session == handle.native_session_id
+                            && !Arc::ptr_eq(&turn.epoch, &connection.finished))
+                })
+            {
+                return Err(DriverError::SessionIncompatible(
+                    "Restore the ACP session after its original connection stopped".into(),
+                ));
+            }
+            if self
+                .shared
+                .closed_sessions
+                .lock()
+                .expect("closed sessions")
+                .contains(&handle.native_session_id)
+            {
+                return Err(DriverError::SessionMissing(
+                    "ACP session was closed; restore it before sending".into(),
+                ));
+            }
+            if self
+                .shared
+                .turn_active
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
+                return Err(DriverError::CapabilityUnavailable(
+                    "this ACP connection already has an active turn".into(),
+                ));
+            }
+            *self.shared.active_session.lock().expect("active session") =
+                Some(handle.native_session_id.clone());
+            self.shared
+                .approval_rejected
+                .store(false, Ordering::Release);
+            self.shared
+                .interrupt_requested
+                .store(false, Ordering::Release);
+            let (turn, completed) = turn::Turn::new(
+                handle.native_session_id.clone(),
+                connection.finished.clone(),
+                connection.native.clone(),
+                connection.cancels.clone(),
+                Arc::downgrade(&self.shared),
+            );
+            *resident.turn.lock().expect("ACP session turn") = Some(turn.clone());
+            *self.shared.latest_turn.lock().expect("ACP turn") = Some(turn.clone());
+            (turn, completed)
+        };
         self.shared
             .activity
             .lock()
@@ -2085,6 +2555,7 @@ impl AgentDriver for AcpDriver {
         if connection
             .commands
             .send(Command::Prompt {
+                turn: Some(current_turn.clone()),
                 session_id: SessionId::new(handle.native_session_id.as_str()),
                 blocks,
                 image_compatibility: grok_image_compatibility(
@@ -2095,12 +2566,22 @@ impl AgentDriver for AcpDriver {
             })
             .is_err()
         {
+            let _gate = self.shared.lifecycle.lock().expect("ACP lifecycle");
             if let Some(sink) = self.shared.updates.lock().expect("updates sink").take() {
                 let _ = sink.send(DriverEvent::TurnFailed {
                     reason: "ACP agent connection is closed".into(),
                 });
             }
             self.shared.turn_active.store(false, Ordering::Release);
+            self.shared
+                .active_session
+                .lock()
+                .expect("active session")
+                .take();
+            self.shared
+                .reconnect_required
+                .store(true, Ordering::Release);
+            current_turn.finish(&completed, Err(driver_error_from_channel()));
             return Err(driver_error_from_channel());
         }
 
@@ -2114,7 +2595,14 @@ impl AgentDriver for AcpDriver {
             let result = reply_rx
                 .await
                 .unwrap_or_else(|_| Err(driver_error_from_channel()));
+            let _gate = shared.lifecycle.lock().expect("ACP lifecycle");
+            let settled = result.as_ref().map(|_| ()).map_err(Clone::clone);
+            let retiring = current_turn.retiring.load(Ordering::Acquire);
+            if result.is_err() && !retiring {
+                shared.reconnect_required.store(true, Ordering::Release);
+            }
             if is_codebuddy
+                && !retiring
                 && (!matches!(result, Ok(StopReason::EndTurn))
                     || shared.interrupt_requested.load(Ordering::Acquire))
             {
@@ -2149,7 +2637,9 @@ impl AgentDriver for AcpDriver {
                 .expect("pending permissions")
                 .clear();
             let sink = shared.updates.lock().expect("updates sink").take();
+            current_turn.finish(&completed, settled);
             shared.turn_active.store(false, Ordering::Release);
+            shared.active_session.lock().expect("active session").take();
             if let Some(sink) = sink {
                 for event in shared.activity.lock().expect("activity").finish() {
                     let _ = sink.send(event);
@@ -2180,23 +2670,67 @@ impl AgentDriver for AcpDriver {
     }
 
     async fn interrupt(&self, handle: &SessionHandle) -> Result<(), DriverError> {
-        self.shared
-            .interrupt_requested
-            .store(true, Ordering::Release);
-        if self.executor.provider_id.as_str() == "codebuddy" {
-            // Also cover a cancel arriving just after the prompt response.
+        #[cfg(test)]
+        let timeout = self.stop_timeout;
+        #[cfg(not(test))]
+        let timeout = std::time::Duration::from_secs(10);
+        let receipt = {
+            let _gate = self.shared.lifecycle.lock().expect("ACP lifecycle");
+            self.shared.validate_handle(handle)?;
+            let turn = self
+                .shared
+                .latest_turn
+                .lock()
+                .expect("ACP turn")
+                .clone()
+                .ok_or_else(|| {
+                    DriverError::CapabilityUnavailable("ACP has no turn to stop".into())
+                })?;
+            if turn.session != handle.native_session_id {
+                return Err(DriverError::SessionMissing(
+                    "ACP stop does not target the active session".into(),
+                ));
+            }
+            if self.shared.setup_in_progress.load(Ordering::Acquire)
+                || !self
+                    .shared
+                    .sessions
+                    .lock()
+                    .expect("ACP sessions")
+                    .get(&handle.native_session_id)
+                    .is_some_and(|resident| {
+                        !resident.is_closing()
+                            && Arc::ptr_eq(&resident.epoch, &turn.epoch)
+                            && resident
+                                .turn
+                                .lock()
+                                .expect("ACP session turn")
+                                .as_ref()
+                                .is_some_and(|current| Arc::ptr_eq(current, &turn))
+                    })
+                || self
+                    .shared
+                    .closed_sessions
+                    .lock()
+                    .expect("closed sessions")
+                    .contains(&handle.native_session_id)
+            {
+                return Err(DriverError::SessionMissing(
+                    "ACP stop no longer owns the original session".into(),
+                ));
+            }
             self.shared
-                .reconnect_required
+                .interrupt_requested
                 .store(true, Ordering::Release);
-        }
-        let guard = self.shared.connection.lock().await;
-        let Some(connection) = guard.as_ref() else {
-            return Err(driver_error_from_channel());
+            self.shared.cancel_interactions(&handle.native_session_id);
+            if self.executor.provider_id.as_str() == "codebuddy" {
+                self.shared
+                    .reconnect_required
+                    .store(true, Ordering::Release);
+            }
+            turn.stop(timeout)
         };
-        connection
-            .cancels
-            .send(SessionId::new(handle.native_session_id.as_str()))
-            .map_err(|_| driver_error_from_channel())
+        turn::wait(receipt, timeout + std::time::Duration::from_secs(1)).await
     }
 
     async fn respond_to_question(
@@ -2205,6 +2739,10 @@ impl AgentDriver for AcpDriver {
         request_id: &str,
         answer: agent_domain::QuestionAnswer,
     ) -> Result<(), DriverError> {
+        let _gate = self.shared.lifecycle.lock().expect("ACP lifecycle");
+        self.shared.validate_handle(handle)?;
+        self.shared
+            .validate_interaction(Some(&handle.native_session_id))?;
         let mut pending = self.shared.questions.lock().expect("questions");
         let question = pending
             .get(request_id)
@@ -2226,44 +2764,43 @@ impl AgentDriver for AcpDriver {
 
     async fn respond_to_interaction(
         &self,
-        _handle: &SessionHandle,
+        handle: &SessionHandle,
         native_request_id: &str,
         option_id: &str,
     ) -> Result<(), DriverError> {
-        let pending = self
+        let _gate = self.shared.lifecycle.lock().expect("ACP lifecycle");
+        self.shared.validate_handle(handle)?;
+        self.shared
+            .validate_interaction(Some(&handle.native_session_id))?;
+        let mut permissions = self
             .shared
             .pending_permissions
             .lock()
-            .expect("pending permissions")
-            .remove(native_request_id)
-            .ok_or_else(|| {
-                DriverError::CapabilityUnavailable(
-                    "this approval request is no longer pending".into(),
-                )
-            })?;
-        // Only option ids the agent itself offered may be answered.
+            .expect("pending permissions");
+        let pending = permissions.get(native_request_id).ok_or_else(|| {
+            DriverError::CapabilityUnavailable("this approval request is no longer pending".into())
+        })?;
+        if pending.session_id != handle.native_session_id {
+            return Err(DriverError::SessionMissing(
+                "ACP approval session mismatch".into(),
+            ));
+        }
+        // Validate before removal: a wrong session/option must not consume the
+        // legitimate pending request, including concurrent response attempts.
         let Some(option) = pending
             .options
             .iter()
             .find(|option| option.option_id.0.as_ref() == option_id)
         else {
-            self.shared
-                .pending_permissions
-                .lock()
-                .expect("pending permissions")
-                .insert(
-                    native_request_id.to_owned(),
-                    PendingPermission {
-                        responder: pending.responder,
-                        options: pending.options,
-                        session_id: pending.session_id,
-                        tool_call_id: pending.tool_call_id,
-                    },
-                );
             return Err(DriverError::CapabilityUnavailable(
                 "unknown approval option id".into(),
             ));
         };
+        let option = option.clone();
+        let pending = permissions
+            .remove(native_request_id)
+            .expect("checked approval");
+        drop(permissions);
         if matches!(
             option.kind,
             PermissionOptionKind::RejectOnce | PermissionOptionKind::RejectAlways
@@ -2287,9 +2824,44 @@ impl AgentDriver for AcpDriver {
             .map_err(|_| DriverError::Disconnected("ACP agent connection is closed".into()))
     }
 
-    async fn shutdown(&self, _handle: SessionHandle) -> Result<(), DriverError> {
-        *self.shared.connection.lock().await = None;
-        Ok(())
+    async fn shutdown_proof(
+        &self,
+        handle: &SessionHandle,
+    ) -> Option<driver_api::SessionShutdownProof> {
+        let resident = {
+            let _gate = self.shared.lifecycle.lock().expect("ACP lifecycle");
+            self.shared
+                .sessions
+                .lock()
+                .expect("ACP sessions")
+                .get(&handle.native_session_id)
+                .filter(|r| r.handle.same_scope(handle))
+                .cloned()?
+        };
+        Some(Box::pin(async move {
+            loop {
+                if resident.shutdown_confirmed() {
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        }))
+    }
+
+    async fn shutdown(&self, handle: SessionHandle) -> Result<(), DriverError> {
+        let permit = self.shared.setup.clone().lock_owned().await;
+        {
+            let _gate = self.shared.lifecycle.lock().expect("ACP lifecycle");
+            self.shared.validate_close_handle(&handle)?;
+        }
+        #[cfg(test)]
+        let timeout = self.stop_timeout;
+        #[cfg(not(test))]
+        let timeout = std::time::Duration::from_secs(10);
+        let receipt =
+            sessions::begin_close(self.shared.clone(), &handle.native_session_id, timeout).await?;
+        drop(permit);
+        turn::wait(receipt, std::time::Duration::from_secs(10)).await
     }
 }
 
@@ -2477,7 +3049,15 @@ fn parse_kimi_web_quota(payload: &serde_json::Value) -> Result<Vec<QuotaWindow>,
 
 impl AcpDriver {
     async fn read_kimi_web_quota_windows(&self) -> Result<Vec<QuotaWindow>, DriverError> {
-        let payload = read_kimi_web_usage(&self.shared.launch.executable).await?;
+        let permit = tokio::time::timeout(
+            std::time::Duration::from_secs(45),
+            self.shared.metadata.clone().lock_owned(),
+        )
+        .await
+        .map_err(|_| {
+            DriverError::CapabilityUnavailable("上一项账户额度查询仍在结束，请稍后重试".into())
+        })?;
+        let payload = read_kimi_web_usage(&self.shared.launch.executable, permit).await?;
         parse_kimi_web_quota(&payload)
     }
 
@@ -2515,46 +3095,18 @@ impl QuotaProvider for AcpDriver {
         &self,
         id: &str,
     ) -> Option<driver_api::usage::SessionUsageSnapshot> {
-        if self.executor.provider_id.as_str() == "kiro"
-            && !self.shared.turn_active.load(Ordering::Acquire)
-        {
-            // Use only an existing connection. Reading usage must never create a conversation.
-            let commands = self
-                .shared
-                .connection
-                .lock()
-                .await
-                .as_ref()
-                .map(|c| c.commands.clone());
-            if let Some(commands) = commands {
-                let (reply, receiver) = oneshot::channel();
-                if commands
-                    .send(Command::ReadKiroContext {
-                        session_id: id.into(),
-                        reply,
-                    })
-                    .is_ok()
-                    && let Ok(Ok(Ok(value))) =
-                        tokio::time::timeout(std::time::Duration::from_secs(2), receiver).await
-                {
-                    self.shared.quota.observe_kiro_context(id, &value);
-                }
-            }
+        let target = auxiliary::Snapshot::capture(&self.shared, id);
+        if self.executor.provider_id.as_str() == "kiro" {
+            self.refresh_kiro_context(id).await;
         }
-        let directory = self
-            .shared
-            .quota
-            .directories
-            .lock()
-            .unwrap()
-            .get(id)
-            .cloned();
+        let directory = target.directory.clone();
         if let Some(directory) = directory
             && !(self.executor.provider_id.as_str() == "grok"
                 && self.shared.turn_active.load(Ordering::Acquire))
         {
             let provider = self.executor.provider_id.to_string();
             let session = id.to_owned();
+            let before = self.shared.quota.usage.get(Some(id));
             if let Ok(Some(usage)) = tokio::task::spawn_blocking(move || {
                 let old = session_usage::read_native(&provider, &directory, &session);
                 if provider == "codebuddy" {
@@ -2574,28 +3126,36 @@ impl QuotaProvider for AcpDriver {
             .await
             {
                 let mut usage = usage;
-                if self.executor.provider_id.as_str() == "grok" {
-                    let live = self
-                        .shared
-                        .quota
-                        .usage
-                        .get(Some(id))
-                        .and_then(|s| s.request_usage);
-                    if let Some(report) = usage.request_usage.take() {
-                        usage.request_usage = Some(
-                            self.shared
-                                .quota
-                                .grok_usage
-                                .lock()
-                                .expect("grok usage")
-                                .reconcile(id, report, live.as_ref()),
-                        );
+                target.apply(&self.shared, || {
+                    // A live push or newer read wins over this older file snapshot.
+                    if self.shared.quota.usage.get(Some(id)) != before {
+                        return;
                     }
-                }
-                self.shared.quota.usage.merge(id, usage);
+                    if self.executor.provider_id.as_str() == "grok" {
+                        let live = self
+                            .shared
+                            .quota
+                            .usage
+                            .get(Some(id))
+                            .and_then(|s| s.request_usage);
+                        if let Some(report) = usage.request_usage.take() {
+                            usage.request_usage = Some(
+                                self.shared
+                                    .quota
+                                    .grok_usage
+                                    .lock()
+                                    .expect("grok usage")
+                                    .reconcile(id, report, live.as_ref()),
+                            );
+                        }
+                    }
+                    self.shared.quota.usage.merge(id, usage);
+                })?;
             }
         }
-        let mut usage = self.shared.quota.usage.get(Some(id)).unwrap_or_default();
+        let mut usage = target.apply(&self.shared, || {
+            self.shared.quota.usage.get(Some(id)).unwrap_or_default()
+        })?;
         if usage.request_usage.is_none() {
             usage.request_usage = Some(driver_api::usage::RequestUsageReport::unavailable(
                 match self.executor.provider_id.as_str() {
@@ -2651,13 +3211,11 @@ impl QuotaProvider for AcpDriver {
         }
         let result = tokio::time::timeout(std::time::Duration::from_secs(27), async {
             if self.executor.provider_id.as_str() == "kiro" {
-                let connection = self.ensure_connection().await?;
-                let (reply, receiver) = oneshot::channel();
-                connection
-                    .commands
-                    .send(Command::ReadKiroUsage { reply })
-                    .map_err(|_| driver_error_from_channel())?;
-                let payload = receiver.await.map_err(|_| driver_error_from_channel())??;
+                let payload = self
+                    .isolated_query("账户额度", None, |reply| Command::ReadKiroUsage {
+                        reply,
+                    })
+                    .await?;
                 return kiro_quota::parse(&payload);
             }
             if self.executor.provider_id.as_str() == "cursor" {
@@ -2671,14 +3229,10 @@ impl QuotaProvider for AcpDriver {
                         KIMI_OAUTH_USAGE_PARSER_VERSION,
                     )
                 } else {
-                    let connection = self.ensure_connection().await?;
-                    let read_once = || async {
-                        let (reply, receiver) = oneshot::channel();
-                        connection
-                            .commands
-                            .send(Command::ReadGrokBilling { reply })
-                            .map_err(|_| driver_error_from_channel())?;
-                        receiver.await.map_err(|_| driver_error_from_channel())?
+                    let read_once = || {
+                        self.isolated_query("账户额度", None, |reply| {
+                            Command::ReadGrokBilling { reply }
+                        })
                     };
                     let billing = if let Ok(value) = read_once().await {
                         value
@@ -2800,7 +3354,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn acp_failure_categories_survive_prompt_terminal_without_vendor_text() {
+    fn acp_failure_categories_survive_prompt_terminal() {
         for (message, expected) in [
             (
                 "Failed to authenticate secret-token",
@@ -2820,8 +3374,12 @@ mod tests {
             let error = AcpError::new(-32_000, message);
             let mapped = map_session_error(&error, "ACP prompt rejected", None);
             let terminal = prompt_terminal(Err(mapped), false, false, false);
-            assert!(
-                matches!(terminal, DriverEvent::TurnFailed { reason } if reason == driver_api::failure::user_message(expected))
+            let DriverEvent::TurnFailed { reason } = terminal else {
+                panic!("expected a failed turn");
+            };
+            assert_eq!(
+                driver_api::failure::split_turn_failure(&reason).0,
+                Some(expected)
             );
         }
     }
@@ -2988,6 +3546,7 @@ mod tests {
                         for turn in 0..2 {
                             let (reply, response) = oneshot::channel();
                             handle_command(connection.clone(), Command::Prompt {
+                            turn: None,
                                 session_id: SessionId::new("stderr-test"),
                                 blocks: vec![ContentBlock::Text(TextContent::new("probe"))],
                                 image_compatibility: false,
@@ -3492,12 +4051,13 @@ mod tests {
                 let (commands_tx, commands_rx) = mpsc::unbounded_channel();
                 let (_cancel_tx, cancel_rx) = mpsc::unbounded_channel();
                 let tasks = ConnectionTasks {
+                    owner: None,
+                    background: lifecycle::Tasks::new(),
                     activity: Arc::new(std::sync::Mutex::new(activity::Activities::default())),
                     updates: Arc::clone(&updates),
                     pending: Arc::new(std::sync::Mutex::new(HashMap::new())),
                     questions: Arc::new(std::sync::Mutex::new(HashMap::new())),
                     quota: Arc::new(AcpQuotaState::default()),
-                    next_permission_id: std::sync::atomic::AtomicU64::new(1),
                 };
                 let observed_quota = Arc::clone(&tasks.quota);
                 tokio::spawn(async move {
@@ -3545,6 +4105,7 @@ mod tests {
                 let (prompt_reply, prompt_reply_rx) = oneshot::channel();
                 commands_tx
                     .send(Command::Prompt {
+                        turn: None,
                         image_compatibility: false,
                         session_id: session_id.clone(),
                         blocks: vec![
@@ -4253,9 +4814,10 @@ mod attachment_tests {
     }
 }
 
-fn uuid_question_id() -> u64 {
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-    NEXT.fetch_add(1, Ordering::Relaxed)
+fn uuid_question_id() -> String {
+    // Approval/question ids outlive individual connections in UI/recovery
+    // records. A resetting connection or process counter can alias a new one.
+    agent_domain::InstallationId::new().to_string()
 }
 
 #[cfg(test)]

@@ -14,6 +14,7 @@ Cursor 的订阅页分别显示 Cursor Models（Cursor Grok、Composer）和 Oth
 - 欢迎页、额度详情分别显示两个每月额度池；紧凑主圆环代表 Cursor Models，并明确标注名称，不计算跨组总额。
 - 账期重置使用 `billingCycleEnd` 的毫秒时间戳（兼容数字字符串），转换为协议要求的 Unix 秒；缺失或非法时间保持未知。额度按模型池展示，不因单池用尽封锁整个 Agent。
 - HTTPS 请求支持环境/系统代理，禁止重定向，单请求 10 秒超时、响应上限 1 MiB。401/403 使缓存额度失效并提示重新登录；套餐名称查询失败不丢弃有效额度。保留现有刷新合并和缓存策略。
+- 合并 `remote-control` 后，macOS Keychain 查询沿用统一 `OwnedChild` 进程作用域，限制输出为 64 KiB，取消和超时均由 supervisor 完成退出清理。已移除旧 TUI 专用的目录状态、终端夹具和测试；额度查询不再启动 Cursor Agent 进程。
 
 ## 验证
 

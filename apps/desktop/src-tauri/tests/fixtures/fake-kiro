@@ -1,0 +1,12 @@
+#!/bin/sh
+case "$*" in
+  'settings app.beta --format json')
+    if [ -f "$0.beta" ]; then printf 'true\n'; else printf 'null\n'; fi
+    ;;
+  'debug get-index stable')
+    cat "$0.index.json"
+    printf '\n'
+    ;;
+  'update --non-interactive') printf '2.25.0' > "$0.updated" ;;
+  *) exit 9 ;;
+esac

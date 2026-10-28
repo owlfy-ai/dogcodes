@@ -213,15 +213,15 @@ pub(super) mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn check_is_read_only_and_update_uses_noninteractive_native_command() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
+        let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let dir = tempfile::tempdir_in(&assets).unwrap();
         let executable = fixture_app(dir.path());
         let payload = json!({"supported":[package()],"versions":[{"version":"2.25.0","packages":[package()]}], "historyPadding":"x".repeat(70 * 1024)});
-        let script = format!(
-            "#!/bin/sh\ncase \"$*\" in\n'settings app.beta --format json') echo null;;\n'debug get-index stable') printf '%s\\n' '{payload}';;\n'update --non-interactive') printf '2.25.0' > \"$0.updated\";;\n*) exit 9;;\nesac\n"
-        );
-        std::fs::write(&executable, script).unwrap();
-        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Fixed inode: no just-written executable is inherited by another
+        // parallel fixture's fork. Only private payload/state files change.
+        std::fs::remove_file(&executable).unwrap();
+        std::fs::hard_link(assets.join("fake-kiro"), &executable).unwrap();
+        std::fs::write(executable.with_extension("index.json"), payload.to_string()).unwrap();
         let i = installation_for("kiro", &executable, "2.24.1");
         let p = plan(&i);
         let checked = inspect(&i, &p).await.unwrap();
@@ -232,7 +232,7 @@ pub(super) mod tests {
             .await
             .unwrap();
         assert_eq!(std::fs::read_to_string(marker).unwrap(), "2.25.0");
-        std::fs::write(&executable, "#!/bin/sh\necho true\n").unwrap();
+        std::fs::write(executable.with_extension("beta"), "true").unwrap();
         assert!(inspect(&i, &p).await.unwrap_err().contains("测试频道"));
     }
 

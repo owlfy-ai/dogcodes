@@ -145,9 +145,7 @@ for line in sys.stdin:
         ));
         // Native idle is not enough: Core must first finish its durable terminal.
         assert!(driver.prompt(&session, request()).await.is_err());
-        driver
-            .acknowledge_autonomous_turn(&session.native_session_id)
-            .await;
+        driver.acknowledge_autonomous_turn(&session).await;
         let mut next = driver.prompt(&session, request()).await.unwrap();
         assert!(matches!(
             next.next().await.unwrap().unwrap(),
@@ -180,9 +178,7 @@ for line in sys.stdin:
             autonomous.next().await.unwrap().unwrap(),
             DriverEvent::TurnCompleted { .. }
         ));
-        driver
-            .acknowledge_autonomous_turn(&session.native_session_id)
-            .await;
+        driver.acknowledge_autonomous_turn(&session).await;
         driver.shutdown(session).await.unwrap();
     }
 }

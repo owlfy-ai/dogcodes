@@ -28,7 +28,7 @@ mockIPC(async (command, args) => {
   return null;
 }, { shouldMockEvents: true });
 const historyClient = { queryHistory: async (query: HistoryQuery): Promise<HistoryPage> => { await waitForRead(); return ({ items: [], nextCursor: query.text === "next" && !query.afterSequence ? 1000 : null, throughSequence: 42, coverage: "fixture" }); } } as unknown as CoreClient;
-const terminalApi: TerminalApi = { list: async () => [], get: async () => { throw new Error("验收终端不存在"); }, attach: async () => { throw new Error("验收终端不存在"); }, open: async () => { await waitForRead(); return { id: crypto.randomUUID(), detach() {} }; }, write: async () => {}, resize: async () => {}, close: async () => {} };
+const terminalApi: TerminalApi = { list: async () => [], get: async () => { throw new Error("验收终端不存在"); }, attach: async () => { throw new Error("验收终端不存在"); }, open: async () => { await waitForRead(); return { id: crypto.randomUUID(), detach() {} }; }, input: async () => {}, resize: async () => {}, close: async () => {} };
 const scenarios = { files: "文件搜索", "no-directory": "文件树无目录", terminal: "终端（关闭全部标签）", "terminal-no-directory": "终端无目录", history: "历史及搜索", markdown: "空 Markdown" };
 function Fixture() {
   const [scenario, setScenario] = useState<keyof typeof scenarios>("no-directory");

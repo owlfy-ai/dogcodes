@@ -9,6 +9,7 @@ pub(crate) struct Dialog {
     pub form: QuestionForm,
 }
 pub(crate) struct Turn {
+    pub id: uuid::Uuid,
     pub sender: mpsc::UnboundedSender<Result<DriverEvent, DriverError>>,
     pub interrupted: bool,
     pub dialogs: HashMap<String, Dialog>,
@@ -19,6 +20,7 @@ pub(crate) struct Turn {
 impl Turn {
     pub fn new(sender: mpsc::UnboundedSender<Result<DriverEvent, DriverError>>) -> Self {
         Self {
+            id: uuid::Uuid::new_v4(),
             sender,
             interrupted: false,
             dialogs: HashMap::new(),

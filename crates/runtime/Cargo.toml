@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+process-scope = { path = "../process-scope" }
 proxy-watch = { version = "0.1.0", default-features = false, features = ["linux-gnome", "linux-kde"] }
 serde.workspace = true
 thiserror.workspace = true

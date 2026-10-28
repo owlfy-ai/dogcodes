@@ -143,6 +143,8 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 ## Get started
 
+The macOS app requires **macOS 12.3 or later** for ScreenCaptureKit.
+
 For now, run from source. Install **Rust 1.97.1**, **Node.js 22+**, **pnpm 11**, and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/). Clone or download this repository, then run these commands from its root:
 
 ```bash
