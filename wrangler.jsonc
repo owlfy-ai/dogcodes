@@ -1,0 +1,8 @@
+{
+  // The dog.codes website: static files served straight from ./website, no build step.
+  "name": "dogcodes",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./website"
+  }
+}
