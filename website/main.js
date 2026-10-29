@@ -1,4 +1,6 @@
-// dog.codes website — interactive demos and EN/中文 copy. No build step, no dependencies.
+// dog.codes website — interactive demos and multilingual copy. No build step, no dependencies.
+// English lives in index.html (data-i18n) and below (dyn, ph); every other language is a pack in
+// ./i18n/<code>.js, loaded on demand: { name, short, htmlLang, ui, dyn, when, runs, os, ph }.
 // Set these once the public repository exists.
 const SITE = {
   github: 'https://github.com/owlfy-ai/dogcodes',
@@ -23,62 +25,6 @@ const $ = (s, el = document) => el.querySelector(s);
 const sleep = ms => new Promise(r => setTimeout(r, reduced ? Math.min(ms, 60) : ms));
 
 /* ---------------- Copy ---------------- */
-const ZH = {
-  'nav.features': '功能', 'nav.download': '下载', 'nav.get': '下载',
-  'hero.badge': '开源', 'hero.eyebrow': '12 种 Coding Agent · 一个桌面工作台',
-  'hero.title1': '把每一个', 'hero.title2': 'Coding Agent', 'hero.title3': '召集到一处。',
-  'hero.lede': '同一个对话里，从 Claude Code 中途交给 Codex 接着做；所有额度一目了然；让一个 Agent 审查另一个；任何项目一键运行——用的都是你已经付费的订阅。',
-  'hero.download': '下载 macOS 版', 'hero.star': '在 GitHub 上 Star', 'hero.meta1': '免费 · Apache-2.0', 'hero.meta3': '本地优先',
-  'app.new': '新建对话', 'app.projects': '项目', 'app.t1': '添加接口限流', 'app.t2': '修复不稳定的支付测试', 'app.t3': '迁移到 Postgres 17', 'app.t4': '审查鉴权中间件',
-  'app.ph': '让 Coding Agent 帮你……', 'app.quota': '额度', 'app.reset1': '2 小时 14 分后重置', 'app.reset2': '周一 09:00 重置', 'app.reset3': '4 小时 02 分后重置', 'app.reset4': '11 月 4 日重置',
-  'agents.title': '<span class="nb">支持你已经在用的</span> <span class="nb">Coding Agent。</span>',
-  'agents.sub': '已接入 12 种 Coding Agent，通过官方命令行工具和你现有的登录使用。可用模型、审批与用量数据因 Agent 而异。', 'agents.note': '更多 Agent 陆续接入中。',
-  'handoff.title': '<span class="nb">换 Agent，</span><span class="nb">不换对话。</span>',
-  'handoff.sub': '随时更换执行当前对话的 Agent，dog.codes 自动交接上下文——不用复制粘贴，也不用重新解释。',
-  'handoff.p1': '把每项工作交给最适合的 Agent：一个负责设计，另一个补全细节。',
-  'handoff.p2': '额度用完了？换另一个 Agent 接着做，无需重新说明需求。',
-  'handoff.p3': '接手的 Agent 还能通过内置历史工具查阅之前的对话，是真正接着做。',
-  'handoff.try': '试试看——选择下一个 Agent：',
-  'quota.title': '<span class="nb">每份额度、</span><span class="nb">每次重置，</span><span class="nb">一眼看清。</span>',
-  'quota.sub': '12 种 Agent 的剩余额度、重置时间与版本集中呈现。据此安排工作，把每一份 token 用足，任何 Agent 都能一键升级。',
-  'acc.t1': '沿用你现有的订阅', 'acc.p1': 'dog.codes 调用你已登录的官方命令行工具——Claude Code、Codex、Cursor 等。无需额外账号，也没有额外的 API 账单。',
-  'acc.t2': '自动发现', 'acc.p2': '启动时自动检测已安装的 Agent 及登录状态，未安装的提供官方安装入口。',
-  'acc.t3': '本地优先', 'acc.p3': '数据留在你的电脑上，不经过中转服务器。Agent 启动时只拿到必要的环境变量，你的其他密钥不会外泄。',
-  'review.title': '<span class="nb">让一个 Agent</span> <span class="nb">审查另一个。</span>',
-  'review.sub': '指定另一个 Agent、另一个模型审查刚修改的代码。全新上下文，没有共同的盲点。也可做安全与性能分析。',
-  'review.p1': '问题按高、中、低优先级分级。', 'review.p2': '选出要改的问题，一键开始修复。', 'review.p3': '修复交回主 Agent，并附上审查报告——上下文不断档。',
-  'review.reviewing': '正在审查', 'review.fix': '开始修复 →',
-  'review.f1': '限流键忽略了 X-Forwarded-For，所有经代理的客户端共用一个桶。',
-  'review.f2': 'Redis 调用没有超时，一个慢节点会拖住所有请求。',
-  'review.f3': '魔法数字 60 应改为具名常量。',
-  'fork.title': '<span class="nb">分叉思路，</span><span class="nb">让 Agent 赛跑。</span>',
-  'fork.sub': '从任意一轮分叉出新对话，交给另一个 Agent。原对话不受影响；worktree 让每种方案的代码彼此隔离。',
-  'fork.p1': '让多个 Agent 尝试同一项任务。', 'fork.p2': '并排比较结果，保留最好的那一个。',
-  'fork.l1': '第 1 轮', 'fork.l2': '第 2 轮', 'fork.l3': '从这里分叉', 'fork.a': '方案 A', 'fork.b': '方案 B', 'fork.keep': '✓ 采用这版',
-  'git.title': '<span class="nb">Git，</span><span class="nb">就按你的习惯来。</span>',
-  'git.sub': '高度贴近 VS Code 的侧边栏：暂存、取消暂存、丢弃、忽略、提交、提交并推送——树状或列表视图随意切换。',
-  'git.p1': '指定任一 Agent 一键生成提交说明，并可选择语言。', 'git.ph': '提交说明……', 'git.gen': '用 Kimi 生成',
-  'run.title': '<span class="nb">再也不用</span><span class="nb">记启动命令。</span>',
-  'run.sub': 'dog.codes 分析每个项目的运行与调试方式，把命令和脚本变成可点击的启动项。',
-  'run.p1': '不用再找终端——点一下启动，随时查看输出，用完就停。', 'run.p2': '常用项可以置顶，重新分析也会保留。', 'run.idle': '点击任意启动项的 ▶',
-  'more.title': '<span class="nb">值得天天用的</span><span class="nb">每一处细节。</span>',
-  'remote.title': '<span class="nb">出门不必带电脑，</span><span class="nb">Agent 照常干活。</span>',
-  'remote.sub': '电脑在家开着，Agent 照常运行。你在外面，用手机就能接续对话、批准操作、提交代码，必要时还能直接接管整块屏幕。',
-  'remote.note': '电脑需保持开机，dog.codes 保持打开（最小化也可以）。',
-  'remote.lab1': '在家，持续工作', 'remote.lab2': '握在手里',
-  'remote.st1': '扫一次二维码', 'remote.st2': '离开办公桌', 'remote.st3': '随时随地指挥 Agent',
-  'remote.c1t': '扫码一次，全程私密。', 'remote.c1p': '配对只需扫一次二维码，之后全程端到端加密。可配对多台电脑、查看在线状态，随时撤销某部手机。',
-  'remote.c2t': '同样的会话，同样的 Agent。', 'remote.c2p': '手机只是看向你电脑上已有会话的一扇窗——历史、分叉、额度都在。代码和 Agent 始终留在你的电脑上。',
-  'remote.c4t': '审批权始终在你手里。', 'remote.c4p': 'Agent 仍然会先询问再动手。每个请求在你批准后，都会先与电脑上原本的运行核对，才会生效。',
-  'more.t1': '多目录项目', 'more.p1': '前端、后端、文档分散在不同目录？一个会话全部交给 Agent——即便 Agent 本身不支持多目录。', 'more.tree': '三个目录，同一个会话',
-  'more.t2': '关掉窗口，任务照跑。', 'more.p2': 'Agent、终端、项目命令都在后台服务中运行。重新打开即回到原处，进度分毫不差，每次提交和推送都只执行一次。', 'more.daemon': '仍在后台运行',
-  'more.t3': '每一轮的用量明细', 'more.p3': '每一轮的 token 用量、上下文占用、缓存命中与缓存用量——清楚知道 token 花在了哪里。',
-  'more.lin': '输入', 'more.lcache': '缓存命中', 'more.lout': '输出',
-  'more.t4': '属于你，而不是我们', 'more.p4': 'Apache-2.0 开源。无需 dog.codes 账号。', 'more.k1': '数据留在你的电脑', 'more.k2': '沿用你现有的登录', 'more.k3': '每一行源码都可查看',
-  'cta.title': '<span class="nb">把你的 Agent</span> <span class="nb">召集起来。</span>', 'cta.sub': '免费、开源、本地优先。带上你已有的 Agent 和订阅。', 'cta.copy': '复制',
-  'cta.small': '也可以从源码构建——参见 <a data-link="github" href="#">README</a>。Agent 对话使用所选 Agent 的账号与额度。',
-  'foot.fine': '© dog.codes contributors · Apache-2.0。文中产品名称、标志与商标归其各自所有者，仅用于标识兼容的工具，不代表任何背书。',
-};
 const DYN = {
   en: {
     u1: 'Add rate limiting to the checkout API — 100 req/min per client.',
@@ -94,46 +40,68 @@ const DYN = {
       ['Now extract refunds. They must stay idempotent.', 'Reused the ledger client from the last turn. Refunds extracted with a request-id guard.'],
       ['Wire all three into the gateway and run the suite.', 'Ledger extracted, all 3 services wired into the gateway. 118 tests passed — ready for review.'],
     ],
-    reset: 'resets in', resetOn: 'resets', upgrade: 'Upgrade', upgraded: 'Updated', week: 'weekly', h5: '5-hour', month: 'monthly',
-  },
-  zh: {
-    u1: '给结账接口加限流——每个客户端每分钟 100 次。',
-    c1: '方案：在 Redis 中用令牌桶，按客户端区分。开始编写中间件。', c1t: '<b>编辑</b> middleware/ratelimit.ts  +64 −3',
-    h1: 'Claude Code 额度用尽 → 已交给 Codex 接续 · 已附上下文',
-    x1: '接着上面的方案继续。中间件已就位——现在补测试并接入配置。', x1t: '<b>运行</b> pnpm test  ✓ 42 项通过',
-    you: '你', sel: n => `已选 ${n} 项`, findings: n => `${n} 个问题`, fixing: '修复中…', fixed: '✓ 已修复 · 可重新审查',
-    sent: (n, a) => `<b>→ 已发送给 Claude Code：</b>修复 Codex 审查发现的 ${n} 个问题。${a}<br/>已附审查报告。`,
-    handTo: (name, turns) => `已交给 ${name} · 附 ${turns} 轮上下文`,
-    start: ['把支付模块拆分成更小的服务。', '拆成三个服务——计费、退款、账本。接口草案已写在 docs/payment.md。'],
-    rounds: [
-      ['按这个方案先实现计费服务。', '已读取第 2 轮的方案。计费服务已按起草的接口实现，新增 14 个测试。'],
-      ['接着拆出退款服务，必须保持幂等。', '复用了上一轮的账本客户端。退款服务已拆出，并加上请求 ID 校验。'],
-      ['把三个服务接入网关，跑一遍完整测试。', '账本已拆出，3 个服务都已接入网关。118 项测试通过，可以进入审查。'],
-    ],
-    reset: '后重置', resetOn: '重置', upgrade: '升级', upgraded: '已更新', week: '每周', h5: '5 小时', month: '每月',
+    reset: c => `resets in ${c}`, resetOn: w => `resets ${w}`, upgrade: 'Upgrade', upgraded: 'Updated', week: 'weekly', h5: '5-hour', month: 'monthly',
   },
 };
 let lang = 'en';
 const D = () => DYN[lang];
 const EN = new Map();
+const EN_META = { title: document.title, desc: document.querySelector('meta[name="description"]').content };
+const OS_EN = { mobile: 'Get the desktop app', desktop: n => `Download for ${n}` };
+const WHEN_EN = ['Mon 09:00', 'Nov 4', 'Oct 23', 'Fri 22:00'];
+const RUNS_EN = ['Dev server', 'Tests', 'Debug API', 'Build'];
+const LANGS = [
+  ['en', 'English', 'EN', 'en'], ['zh-CN', '简体中文', '简中', 'zh-CN'], ['zh-TW', '繁體中文', '繁中', 'zh-TW'], ['ja', '日本語', '日本語', 'ja'],
+  ['ko', '한국어', '한국어', 'ko'], ['es', 'Español', 'ES', 'es'], ['fr', 'Français', 'FR', 'fr'], ['de', 'Deutsch', 'DE', 'de'], ['pt-BR', 'Português (BR)', 'PT', 'pt-BR'],
+];
+const packs = new Map();
+let pack = { ui: {}, when: WHEN_EN, runs: RUNS_EN, os: OS_EN };
+async function loadPack(code) {
+  if (code === 'en') return { ui: {}, when: WHEN_EN, runs: RUNS_EN, os: OS_EN };
+  if (!packs.has(code)) {
+    const m = (await import(`./i18n/${code}.js`)).default;
+    // Anything a pack leaves out falls back to English.
+    packs.set(code, { ...m, dyn: { ...DYN.en, ...m.dyn }, ph: { ...PH.en, ...m.ph }, when: m.when || WHEN_EN, runs: m.runs || RUNS_EN, os: { ...OS_EN, ...m.os } });
+  }
+  return packs.get(code);
+}
+// Pick the best supported language for the browser's preference list.
+function detectLanguage() {
+  for (const l of navigator.languages?.length ? navigator.languages : [navigator.language || 'en']) {
+    const t = l.toLowerCase();
+    if (/^zh-(tw|hk|mo|hant)/.test(t)) return 'zh-TW';
+    if (t.startsWith('zh')) return 'zh-CN';
+    if (t === 'pt-br' || t.startsWith('pt')) return 'pt-BR';
+    const base = t.split('-')[0];
+    if (LANGS.some(x => x[0] === base)) return base;
+    if (base === 'en') return 'en';
+  }
+  return 'en';
+}
+const COMMIT_LANG = { 'zh-CN': 'zh', 'zh-TW': 'zh', ja: 'ja' };
 
-function applyLanguage(next) {
-  lang = next;
-  document.documentElement.lang = next === 'zh' ? 'zh-CN' : 'en';
-  document.querySelectorAll('[data-i18n]').forEach(el => {
-    const key = el.dataset.i18n;
+async function applyLanguage(next) {
+  if (!LANGS.some(x => x[0] === next)) next = 'en';
+  const loaded = await loadPack(next).catch(() => null);
+  if (!loaded) { if (next !== 'en') return applyLanguage('en'); return; }
+  pack = loaded; lang = next;
+  if (!DYN[next]) DYN[next] = loaded.dyn;
+  if (!PH[next]) PH[next] = loaded.ph;
+  const entry = LANGS.find(x => x[0] === next);
+  document.documentElement.lang = entry[3];
+  const t = key => (next !== 'en' && pack.ui[key]) || EN.get(key);
+  document.querySelectorAll('[data-i18n],[data-i18n-html]').forEach(el => {
+    const key = el.dataset.i18n || el.dataset.i18nHtml;
     if (!EN.has(key)) EN.set(key, el.innerHTML);
-    el.innerHTML = next === 'zh' && ZH[key] ? ZH[key] : EN.get(key);
+    el.innerHTML = t(key);
   });
-  document.querySelectorAll('[data-i18n-html]').forEach(el => {
-    const key = el.dataset.i18nHtml;
-    if (!EN.has(key)) EN.set(key, el.innerHTML);
-    el.innerHTML = next === 'zh' && ZH[key] ? ZH[key] : EN.get(key);
-  });
-  document.querySelectorAll('.lang button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === next)));
+  document.title = (next !== 'en' && pack.ui['meta.title']) || EN_META.title;
+  document.querySelector('meta[name="description"]').content = (next !== 'en' && pack.ui['meta.desc']) || EN_META.desc;
+  $('#lang-cur').textContent = entry[2];
+  document.querySelectorAll('#lang-list button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.lang === next)));
   try { localStorage.setItem('dogcodes.site.lang', next); } catch { /* storage is optional */ }
   wireLinks(); osButton(); resetHandoff(); renderRemote(); renderQuota(); renderRuns(); countFindings();
-  setCommitLanguage(next === 'zh' ? 'zh' : 'en');
+  setCommitLanguage(COMMIT_LANG[next] || 'en');
 }
 
 function wireLinks() {
@@ -146,13 +114,13 @@ function osButton() {
   const label = $('#hero-download span');
   // Phones and tablets are not install targets: offer the platform cards instead.
   if (/Android|iPhone|iPad|iPod/i.test(ua)) {
-    label.textContent = lang === 'zh' ? '下载桌面版' : 'Get the desktop app';
+    label.textContent = pack.os.mobile;
     $('#hero-download').href = '#download';
     return;
   }
   const os = /Windows/i.test(ua) ? 'win' : /Mac/i.test(ua) ? 'mac' : /Linux|X11/i.test(ua) ? 'linux' : 'mac';
   const names = { mac: 'macOS', win: 'Windows', linux: 'Linux' };
-  label.textContent = lang === 'zh' ? `下载 ${names[os]} 版` : `Download for ${names[os]}`;
+  label.textContent = pack.os.desktop(names[os]);
   $('#hero-download').href = SITE.releases;
   document.querySelectorAll('.dl a').forEach(a => a.classList.toggle('primary', a.dataset.os === os));
 }
@@ -278,25 +246,6 @@ const PH = {
     s6: { head: 'Run', running: 'running', h: 'Checkout', field: 'Card number', pay: 'Pay $49', paid: '✓ Payment received' },
     s7: { head: 'Remote desktop', tools: ['Keyboard', 'Right-click', '⌘ Cmd', 'Paste'] },
   },
-  zh: {
-    pc: 'MacBook · 在线',
-    rail: [
-      ['接续电脑上的对话，或发起新对话', '打开电脑上的任意对话继续聊，也可以新建会话：选择 Agent、模型和思考强度。'],
-      ['批准权限请求，回答 Agent 的问题', '权限请求和 Agent 的提问会推送到手机。点一下批准或作答，Agent 立刻继续。'],
-      ['随时随地审查、提交代码', '查看项目各个目录的改动，勾选暂存，让 AI 写好提交说明，再提交并推送。'],
-      ['直接选电脑里的目录创建项目', '浏览电脑上的目录，选一个就能创建项目，不必坐回桌前。'],
-      ['在电脑终端里执行命令', '在手机上打开电脑的终端，执行任意命令——跑的就是你电脑上的真实 Shell。'],
-      ['运行项目，在手机上看网页效果', '在电脑上启动开发服务，手机里直接打开正在运行的网页应用——看到的就是真实页面，而不是截图。'],
-      ['需要整块屏幕？开启远程桌面', '在手机上接管电脑：点按、拖动、滚动、输入，还能粘贴文字和图片。'],
-    ],
-    s1: { head: '会话', rows: [['Claude Code', '添加接口限流', '运行中'], ['Codex', '修复不稳定的支付测试', '2 分钟前'], ['Grok Build', '迁移到 Postgres 17', '1 小时前']], agent: 'Agent', model: '模型', effort: '强度', modelV: 'Opus', effortV: '高', input: '描述任务……', go: '开始会话' },
-    s2: { head: '添加接口限流', q: '限流器应该使用哪种存储？', opts: ['Redis', '内存'], ap: 'Claude Code 想运行', deny: '拒绝', ok: '批准', done: '✓ 已在手机上批准', reply: '42 项测试通过，可以进入审查。' },
-    s3: { head: '改动', chip: '3 个目录', msg: 'feat: 把支付拆分为计费、退款、账本', push: '提交并推送', done: '✓ 已推送到 origin/main' },
-    s4: { head: '添加项目', path: 'MacBook › Workspace', repo: 'Git 仓库', btn: '创建项目', ok: '✓ 项目已创建' },
-    s5: { head: '终端', in: '输入命令' },
-    s6: { head: '运行', running: '运行中', h: '结账', field: '卡号', pay: '支付 ¥49', paid: '✓ 支付成功' },
-    s7: { head: '远程桌面', tools: ['键盘', '右键', '⌘ 键', '粘贴'] },
-  },
 };
 const FOLDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
 const head = (title, p) => `<div class="sc-head"><b>${title}</b><span class="sc-chip">${p.pc}</span></div>`;
@@ -339,7 +288,7 @@ function showScene(i) {
   remTimer = setTimeout(next, 7500);
 }
 function renderRemote() {
-  const p = PH[lang === 'zh' ? 'zh' : 'en'];
+  const p = PH[lang];
   $('#rem-rail').innerHTML = p.rail.map(([t, d], i) => `<button type="button" class="rem-item" data-i="${i}" data-n="${i + 1}"><h3>${t}</h3><p>${d}</p><i></i></button>`).join('');
   $('#rem-screens').innerHTML = remScenes(p).join('');
   $('#rem-rail').classList.remove('hold');
@@ -354,14 +303,14 @@ $('#rem-rail').addEventListener('click', e => {
 /* ---------------- Quota grid ---------------- */
 const QUOTA = [
   { a: 'Claude Code', p: 62, w: 'h5', secs: 2 * 3600 + 14 * 60 + 8, v: '2.1.301', nv: '2.1.304' },
-  { a: 'Codex', p: 76, w: 'week', on: 'Mon 09:00', onZh: '周一 09:00', v: '0.47.0', nv: '0.48.1' },
-  { a: 'Cursor', p: 86, w: 'month', on: 'Nov 4', onZh: '11 月 4 日', v: '1.7.52' },
+  { a: 'Codex', p: 76, w: 'week', wi: 0, v: '0.47.0', nv: '0.48.1' },
+  { a: 'Cursor', p: 86, w: 'month', wi: 1, v: '1.7.52' },
   { a: 'Kimi Code', p: 91, w: 'h5', secs: 4 * 3600 + 2 * 60 + 41, v: '0.9.3', nv: '0.9.5' },
-  { a: 'Antigravity', p: 99, w: 'week', on: 'Oct 23', onZh: '10 月 23 日', v: '1.12.0' },
-  { a: 'ZCode', p: 0, w: 'week', on: 'Fri 22:00', onZh: '周五 22:00', v: '0.6.2' },
+  { a: 'Antigravity', p: 99, w: 'week', wi: 2, v: '1.12.0' },
+  { a: 'ZCode', p: 0, w: 'week', wi: 3, v: '0.6.2' },
 ];
 const clock = s => `${Math.floor(s / 3600)}h ${String(Math.floor(s / 60) % 60).padStart(2, '0')}m ${String(s % 60).padStart(2, '0')}s`;
-const resetText = (q, d) => q.secs != null ? (lang === 'zh' ? `${clock(q.secs)} ${d.reset}` : `${d.reset} ${clock(q.secs)}`) : (lang === 'zh' ? `${q.onZh} ${d.resetOn}` : `${d.resetOn} ${q.on}`);
+const resetText = (q, d) => (q.secs != null ? d.reset(clock(q.secs)) : d.resetOn(pack.when[q.wi]));
 function renderQuota() {
   const d = D();
   $('#quota-grid').innerHTML = QUOTA.map((q, i) => `<div class="card qcard spot reveal ${['', 'd1', 'd2'][i % 3]}" data-i="${i}">
@@ -450,14 +399,14 @@ async function generateCommit() {
 
 /* ---------------- Run demo ---------------- */
 const RUNS = [
-  { name: 'Dev server', zh: '开发服务器', cmd: 'pnpm dev', pin: true, out: ['<span class="dim">$ pnpm dev</span>', '  VITE v7.3.6  ready in 412 ms', '  ➜ Local:   <span class="url">http://localhost:5173/</span>', '<span class="ok">✓</span> api proxy → :8080', '<span class="dim">watching for changes…</span>'] },
-  { name: 'Tests', zh: '运行测试', cmd: 'pnpm test', out: ['<span class="dim">$ pnpm test</span>', ' ✓ ratelimit.test.ts (12)', ' ✓ checkout.test.ts (30)', ' Test Files  2 passed', '<span class="ok">✓ 42 passed</span> in 1.84s'] },
-  { name: 'Debug API', zh: '调试 API', cmd: 'go run ./cmd/api --debug', out: ['<span class="dim">$ go run ./cmd/api --debug</span>', 'debug: loading config/limits.yaml', 'debug: redis connected (2 ms)', '<span class="ok">listening</span> on <span class="url">:8080</span>', 'GET /checkout 200 3.1ms'] },
-  { name: 'Build', zh: '构建', cmd: 'pnpm build', out: ['<span class="dim">$ pnpm build</span>', 'transforming… 1,284 modules', 'dist/index.html      0.46 kB', 'dist/assets/index.js  212.4 kB │ gzip: 68.1 kB', '<span class="ok">✓ built in 4.71s</span>'] },
+  { name: 'Dev server', cmd: 'pnpm dev', pin: true, out: ['<span class="dim">$ pnpm dev</span>', '  VITE v7.3.6  ready in 412 ms', '  ➜ Local:   <span class="url">http://localhost:5173/</span>', '<span class="ok">✓</span> api proxy → :8080', '<span class="dim">watching for changes…</span>'] },
+  { name: 'Tests', cmd: 'pnpm test', out: ['<span class="dim">$ pnpm test</span>', ' ✓ ratelimit.test.ts (12)', ' ✓ checkout.test.ts (30)', ' Test Files  2 passed', '<span class="ok">✓ 42 passed</span> in 1.84s'] },
+  { name: 'Debug API', cmd: 'go run ./cmd/api --debug', out: ['<span class="dim">$ go run ./cmd/api --debug</span>', 'debug: loading config/limits.yaml', 'debug: redis connected (2 ms)', '<span class="ok">listening</span> on <span class="url">:8080</span>', 'GET /checkout 200 3.1ms'] },
+  { name: 'Build', cmd: 'pnpm build', out: ['<span class="dim">$ pnpm build</span>', 'transforming… 1,284 modules', 'dist/index.html      0.46 kB', 'dist/assets/index.js  212.4 kB │ gzip: 68.1 kB', '<span class="ok">✓ built in 4.71s</span>'] },
 ];
 let runToken = 0;
 function renderRuns() {
-  $('#run-list').innerHTML = RUNS.map((r, i) => `<div class="run-item" data-r="${i}"><button class="play" type="button" aria-label="Run ${r.name}"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9-5.5-9-5.5Z"/></svg></button><div><b>${lang === 'zh' ? r.zh : r.name}</b><code>${r.cmd}</code></div>${r.pin ? '<span class="pin">📌</span>' : ''}</div>`).join('');
+  $('#run-list').innerHTML = RUNS.map((r, i) => `<div class="run-item" data-r="${i}"><button class="play" type="button" aria-label="Run ${r.name}"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9-5.5-9-5.5Z"/></svg></button><div><b>${pack.runs[i]}</b><code>${r.cmd}</code></div>${r.pin ? '<span class="pin">📌</span>' : ''}</div>`).join('');
 }
 async function runEntry(i) {
   const token = ++runToken, term = $('#term');
@@ -500,7 +449,8 @@ buildAgents(); buildAgentGrid(); renderFiles(); renderTurns();
 document.querySelectorAll('[data-i18n],[data-i18n-html]').forEach(el => EN.set(el.dataset.i18n || el.dataset.i18nHtml, el.innerHTML));
 let saved = null;
 try { saved = localStorage.getItem('dogcodes.site.lang'); } catch { /* optional */ }
-applyLanguage(saved || (/^zh/i.test(navigator.language) ? 'zh' : 'en'));
+if (saved === 'zh') saved = 'zh-CN';
+await applyLanguage(saved || detectLanguage());
 
 observe(document.querySelectorAll('.reveal'));
 observe([$('#stage'), $('#fork-card'), $('#quota-grid'), $('#turns')]);
@@ -510,7 +460,15 @@ const nav = $('#nav');
 const syncNav = () => nav.classList.toggle('scrolled', scrollY > 20);
 addEventListener('scroll', syncNav, { passive: true });
 syncNav(); // a restored scroll position must not leave the nav transparent
-document.querySelectorAll('.lang button').forEach(b => b.addEventListener('click', () => applyLanguage(b.dataset.lang)));
+// Language menu: a button that opens a list of every supported language.
+const langBtn = $('#lang-btn'), langList = $('#lang-list');
+langList.innerHTML = LANGS.map(([code, name]) => `<li><button type="button" role="menuitemradio" data-lang="${code}" aria-checked="false" lang="${code}">${name}</button></li>`).join('');
+langList.querySelector(`[data-lang="${lang}"]`)?.setAttribute('aria-checked', 'true');
+const setMenu = open => { langList.hidden = !open; langBtn.setAttribute('aria-expanded', String(open)); };
+langBtn.addEventListener('click', e => { e.stopPropagation(); setMenu(langList.hidden); });
+langList.addEventListener('click', e => { const b = e.target.closest('button'); if (b) { setMenu(false); applyLanguage(b.dataset.lang); } });
+document.addEventListener('click', () => setMenu(false));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { setMenu(false); langBtn.focus(); } });
 $('#handoff-switch').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { pausedUntil = Date.now() + 12000; handOff(b.dataset.a); } });
 $('#quota-grid').addEventListener('click', e => {
   const b = e.target.closest('[data-up]'); if (!b || b.classList.contains('done')) return;
