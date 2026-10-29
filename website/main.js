@@ -62,14 +62,14 @@ const ZH = {
   'run.sub': 'dog.codes 分析每个项目的运行与调试方式，把命令和脚本变成可点击的启动项。',
   'run.p1': '不用再找终端——点一下启动，随时查看输出，用完就停。', 'run.p2': '常用项可以置顶，重新分析也会保留。', 'run.idle': '点击任意启动项的 ▶',
   'more.title': '<span class="nb">值得天天用的</span><span class="nb">每一处细节。</span>',
-  'remote.title': '<span class="nb">Agent 在电脑上干活，</span><span class="nb">手机上随时指挥。</span>',
-  'remote.sub': '用二维码配对一次手机。无论身在何处，都能发起会话、审批操作、回答 Agent 的提问——代码和 Agent 始终留在你的电脑上。',
-  'remote.p1': '发起会话，选择 Agent、模型和思考强度，实时查看流式输出。',
-  'remote.p2': '审批请求和 Agent 的提问都会送到手机，需要你时还会推送通知。',
-  'remote.p3': '查看 Diff、提交推送，运行项目命令、打开终端，还能预览正在运行的网页应用。',
+  'remote.title': '<span class="nb">出门不必带电脑，</span><span class="nb">Agent 照常干活。</span>',
+  'remote.sub': '电脑在家开着，Agent 照常运行。你在外面，用手机就能接续对话、批准操作、提交代码，必要时还能直接接管整块屏幕。',
+  'remote.note': '电脑需保持开机，dog.codes 保持打开（最小化也可以）。',
+  'remote.lab1': '在家，持续工作', 'remote.lab2': '握在手里',
+  'remote.st1': '扫一次二维码', 'remote.st2': '离开办公桌', 'remote.st3': '随时随地指挥 Agent',
   'remote.c1t': '扫码一次，全程私密。', 'remote.c1p': '配对只需扫一次二维码，之后全程端到端加密。可配对多台电脑、查看在线状态，随时撤销某部手机。',
   'remote.c2t': '同样的会话，同样的 Agent。', 'remote.c2p': '手机只是看向你电脑上已有会话的一扇窗——历史、分叉、额度都在。代码和 Agent 始终留在你的电脑上。',
-  'remote.c3t': '需要动手时，远程桌面。', 'remote.c3p': '任务需要真实屏幕时，直接在手机上查看电脑画面，点按、拖动、输入或粘贴文字和图片。',
+  'remote.c4t': '审批权始终在你手里。', 'remote.c4p': 'Agent 仍然会先询问再动手。每个请求在你批准后，都会先与电脑上原本的运行核对，才会生效。',
   'more.t1': '多目录项目', 'more.p1': '前端、后端、文档分散在不同目录？一个会话全部交给 Agent——即便 Agent 本身不支持多目录。', 'more.tree': '三个目录，同一个会话',
   'more.t2': '关掉窗口，任务照跑。', 'more.p2': 'Agent、终端、项目命令都在后台服务中运行。重新打开即回到原处，进度分毫不差，每次提交和推送都只执行一次。', 'more.daemon': '仍在后台运行',
   'more.t3': '每一轮的用量明细', 'more.p3': '每一轮的 token 用量、上下文占用、缓存命中与缓存用量——清楚知道 token 花在了哪里。',
@@ -94,11 +94,6 @@ const DYN = {
       ['Now extract refunds. They must stay idempotent.', 'Reused the ledger client from the last turn. Refunds extracted with a request-id guard.'],
       ['Wire all three into the gateway and run the suite.', 'Ledger extracted, all 3 services wired into the gateway. 118 tests passed — ready for review.'],
     ],
-    ph: {
-      pc: 'MacBook · online', u: 'Add rate limiting to the checkout API.', c: 'Plan: token bucket in Redis, per client. Writing the middleware.',
-      toastT: 'Approval needed', toastS: 'Claude Code wants to run pnpm test', q: 'Claude Code wants to run a command on your computer.',
-      deny: 'Deny', ok: 'Approve', approved: '✓ Approved from your phone', done: '42 tests passed. Rate limiting is ready for review.', hint: 'Message Claude Code…',
-    },
     reset: 'resets in', resetOn: 'resets', upgrade: 'Upgrade', upgraded: 'Updated', week: 'weekly', h5: '5-hour', month: 'monthly',
   },
   zh: {
@@ -115,11 +110,6 @@ const DYN = {
       ['接着拆出退款服务，必须保持幂等。', '复用了上一轮的账本客户端。退款服务已拆出，并加上请求 ID 校验。'],
       ['把三个服务接入网关，跑一遍完整测试。', '账本已拆出，3 个服务都已接入网关。118 项测试通过，可以进入审查。'],
     ],
-    ph: {
-      pc: 'MacBook · 在线', u: '给结账接口加限流。', c: '方案：在 Redis 中用令牌桶，按客户端区分。开始编写中间件。',
-      toastT: '需要审批', toastS: 'Claude Code 想运行 pnpm test', q: 'Claude Code 想在你的电脑上运行一条命令。',
-      deny: '拒绝', ok: '批准', approved: '✓ 已在手机上批准', done: '42 项测试通过，限流已可进入审查。', hint: '给 Claude Code 发消息……',
-    },
     reset: '后重置', resetOn: '重置', upgrade: '升级', upgraded: '已更新', week: '每周', h5: '5 小时', month: '每月',
   },
 };
@@ -142,7 +132,7 @@ function applyLanguage(next) {
   });
   document.querySelectorAll('.lang button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === next)));
   try { localStorage.setItem('dogcodes.site.lang', next); } catch { /* storage is optional */ }
-  wireLinks(); osButton(); resetHandoff(); phoneLoop(); renderQuota(); renderRuns(); countFindings();
+  wireLinks(); osButton(); resetHandoff(); renderRemote(); renderQuota(); renderRuns(); countFindings();
   setCommitLanguage(next === 'zh' ? 'zh' : 'en');
 }
 
@@ -267,50 +257,99 @@ async function autoHandoff() {
   }
 }
 
-/* ---------------- Phone remote demo ---------------- */
-let phoneRun = 0, phoneVisible = false;
-new IntersectionObserver(([e]) => { phoneVisible = e.isIntersecting; }, { threshold: 0.3 }).observe($('.phone'));
-async function phoneLoop() {
-  const run = ++phoneRun, alive = () => run === phoneRun;
-  const d = D().ph, feed = $('#ph-feed'), approve = $('#ph-approve'), toast = $('#ph-toast'), ok = $('#ph-ok');
-  const paint = () => {
-    feed.innerHTML = ''; approve.classList.remove('show'); toast.classList.remove('show');
-    $('#ph-pc').textContent = d.pc; $('#ph-hint').textContent = d.hint;
-    $('#ph-toast-t').textContent = d.toastT; $('#ph-toast-s').textContent = d.toastS;
-    $('#ph-ap-q').textContent = d.q; $('#ph-deny').textContent = d.deny; ok.textContent = d.ok;
-  };
-  paint();
-  if (reduced) {
-    feed.insertAdjacentHTML('beforeend', userMessage(d.u) + message('Claude Code', d.c) + `<div class="tool">${d.approved}</div>` + message('Claude Code', d.done));
-    return;
-  }
-  while (alive()) {
-    while (!phoneVisible && alive()) await sleep(400);
-    if (!alive()) return;
-    paint();
-    await sleep(700);
-    feed.insertAdjacentHTML('beforeend', userMessage(d.u));
-    await sleep(900);
-    feed.insertAdjacentHTML('beforeend', message('Claude Code', ''));
-    await typeInto(feed.lastElementChild.querySelector('.text'), d.c, 16);
-    await sleep(800);
-    if (!alive()) return;
-    toast.classList.add('show');
-    await sleep(1700);
-    toast.classList.remove('show'); approve.classList.add('show');
-    await sleep(2300);
-    if (!alive()) return;
-    ok.classList.add('tap');
-    await sleep(320);
-    ok.classList.remove('tap'); approve.classList.remove('show');
-    feed.insertAdjacentHTML('beforeend', `<div class="tool">${d.approved}</div>`);
-    await sleep(900);
-    feed.insertAdjacentHTML('beforeend', message('Claude Code', ''));
-    await typeInto(feed.lastElementChild.querySelector('.text'), d.done, 16);
-    await sleep(4800);
-    while (feed.children.length > 6) feed.firstElementChild.remove();
-  }
+/* ---------------- Phone remote chapter ---------------- */
+const PH = {
+  en: {
+    pc: 'MacBook · online',
+    rail: [
+      ['Pick up a PC conversation, or start a new one', 'Open any conversation from your computer and carry on — or start a fresh session: choose the agent, model and thinking effort.'],
+      ['Approve actions, answer questions', 'Permission requests and agent questions arrive on your phone with a push notification. One tap and the agent keeps going.'],
+      ['Review and commit from anywhere', 'See what changed across every project folder, stage files, let AI write the commit message, then commit and push.'],
+      ['Create a project from your PC’s folders', 'Browse the directories on your computer and add one as a project — no need to sit back down at your desk.'],
+      ['Run commands in your PC’s terminal', 'Open a terminal on your computer from the phone and run any command. It is the real shell on your machine.'],
+      ['Run the project, see the web app on your phone', 'Start the dev server on your computer and open the running web app right on the phone — the real page, not a screenshot.'],
+      ['Need the whole screen? Start remote desktop', 'Take control of your computer from the phone: tap, drag, scroll, type, and paste text or images.'],
+    ],
+    s1: { head: 'Sessions', rows: [['Claude Code', 'Add rate limiting', 'running'], ['Codex', 'Fix flaky payment test', '2 min ago'], ['Grok Build', 'Migrate to Postgres 17', '1 h ago']], agent: 'Agent', model: 'Model', effort: 'Effort', modelV: 'Opus', effortV: 'High', input: 'Describe the task…', go: 'Start session' },
+    s2: { head: 'Add rate limiting', q: 'Which store should the rate limiter use?', opts: ['Redis', 'In-memory'], ap: 'Claude Code wants to run', deny: 'Deny', ok: 'Approve', done: '✓ Approved from your phone', reply: '42 tests passed. Ready for review.' },
+    s3: { head: 'Changes', chip: '3 folders', msg: 'feat: split payment into billing, refunds, ledger', push: 'Commit & push', done: '✓ Pushed to origin/main' },
+    s4: { head: 'Add project', path: 'MacBook › Workspace', repo: 'git repo', btn: 'Create project', ok: '✓ Project created' },
+    s5: { head: 'Terminal', in: 'Type a command' },
+    s6: { head: 'Run', running: 'running', h: 'Checkout', field: 'Card number', pay: 'Pay $49', paid: '✓ Payment received' },
+    s7: { head: 'Remote desktop', tools: ['Keyboard', 'Right-click', '⌘ Cmd', 'Paste'] },
+  },
+  zh: {
+    pc: 'MacBook · 在线',
+    rail: [
+      ['接续电脑上的对话，或发起新对话', '打开电脑上的任意对话继续聊，也可以新建会话：选择 Agent、模型和思考强度。'],
+      ['批准权限请求，回答 Agent 的问题', '权限请求和 Agent 的提问会推送到手机。点一下批准或作答，Agent 立刻继续。'],
+      ['随时随地审查、提交代码', '查看项目各个目录的改动，勾选暂存，让 AI 写好提交说明，再提交并推送。'],
+      ['直接选电脑里的目录创建项目', '浏览电脑上的目录，选一个就能创建项目，不必坐回桌前。'],
+      ['在电脑终端里执行命令', '在手机上打开电脑的终端，执行任意命令——跑的就是你电脑上的真实 Shell。'],
+      ['运行项目，在手机上看网页效果', '在电脑上启动开发服务，手机里直接打开正在运行的网页应用——看到的就是真实页面，而不是截图。'],
+      ['需要整块屏幕？开启远程桌面', '在手机上接管电脑：点按、拖动、滚动、输入，还能粘贴文字和图片。'],
+    ],
+    s1: { head: '会话', rows: [['Claude Code', '添加接口限流', '运行中'], ['Codex', '修复不稳定的支付测试', '2 分钟前'], ['Grok Build', '迁移到 Postgres 17', '1 小时前']], agent: 'Agent', model: '模型', effort: '强度', modelV: 'Opus', effortV: '高', input: '描述任务……', go: '开始会话' },
+    s2: { head: '添加接口限流', q: '限流器应该使用哪种存储？', opts: ['Redis', '内存'], ap: 'Claude Code 想运行', deny: '拒绝', ok: '批准', done: '✓ 已在手机上批准', reply: '42 项测试通过，可以进入审查。' },
+    s3: { head: '改动', chip: '3 个目录', msg: 'feat: 把支付拆分为计费、退款、账本', push: '提交并推送', done: '✓ 已推送到 origin/main' },
+    s4: { head: '添加项目', path: 'MacBook › Workspace', repo: 'Git 仓库', btn: '创建项目', ok: '✓ 项目已创建' },
+    s5: { head: '终端', in: '输入命令' },
+    s6: { head: '运行', running: '运行中', h: '结账', field: '卡号', pay: '支付 ¥49', paid: '✓ 支付成功' },
+    s7: { head: '远程桌面', tools: ['键盘', '右键', '⌘ 键', '粘贴'] },
+  },
+};
+const FOLDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const head = (title, p) => `<div class="sc-head"><b>${title}</b><span class="sc-chip">${p.pc}</span></div>`;
+function remScenes(p) {
+  const a = p.s1, b = p.s2, g = p.s3, d = p.s4, t = p.s5, r = p.s6, k = p.s7;
+  const files = [['M', 'src/payment/billing.ts', '+64', '−3'], ['A', 'src/payment/refunds.ts', '+88', '−0'], ['M', 'docs/payment.md', '+12', '−2']];
+  return [
+    `<div class="sc-body">${a.rows.map((x, i) => `<div class="s1-row${i === 0 ? ' hl' : ''}">${mini(x[0])}<div><b>${x[1]}</b><small>${x[0]}</small></div><em>${x[2]}</em></div>`).join('')}
+      <div class="s1-sheet"><div class="s1-fields"><div><small>${a.agent}</small><b>Claude Code</b></div><div><small>${a.model}</small><b>${a.modelV}</b></div><div><small>${a.effort}</small><b>${a.effortV}</b></div></div><div class="s1-input">${a.input}</div><div class="btn-lime-s s1-go">${a.go}</div></div></div>`,
+    `<div class="sc-body"><div class="sc-card s2-q"><p>${b.q}</p><div class="s2-opts"><span class="pick">${b.opts[0]}</span><span>${b.opts[1]}</span></div></div>
+      <div class="sc-card s2-ap"><div>${b.ap}</div><code>pnpm test</code><div class="s2-btns"><span class="btn-ghost-s">${b.deny}</span><span class="btn-lime-s">${b.ok}</span></div></div>
+      <div class="tool s2-done">${b.done}</div><div class="s2-reply">${message('Claude Code', b.reply)}</div></div>`,
+    `<div class="sc-body">${files.map(f => `<div class="s3-file"><i></i><span>${f[1]}</span><u>${f[2]}</u><s>${f[3]}</s></div>`).join('')}
+      <div class="sc-lbl">AI</div><div class="s3-msg"><span class="s3-type">${g.msg}</span></div><div style="flex:1"></div>
+      <div class="s3-done">${g.done}</div><div class="btn-lime-s s3-push">${g.push}</div></div>`,
+    `<div class="sc-body"><div class="s4-path">${d.path}</div>${['checkout-service', 'api-gateway', 'docs-site'].map((n, i) => `<div class="s4-dir${i === 0 ? ' sel' : ''}">${FOLDER}<b>${n}</b>${i < 2 ? `<small>${d.repo}</small>` : ''}</div>`).join('')}
+      <div style="flex:1"></div><div class="s4-ok">${d.ok}</div><div class="btn-lime-s s4-create">${d.btn}</div></div>`,
+    `<div class="sc-body"><div class="s5-term"><div><span class="p">$</span> git pull --rebase</div><div class="dim">Already up to date.</div><div><span class="p">$</span> pnpm test</div><div class="ok">✓ 42 tests passed</div><div><span class="p">$</span> pnpm build</div><div class="ok">✓ built in 1.8s</div></div><div class="s5-in">${t.in}<i>↑</i></div></div>`,
+    `<div class="sc-body"><div class="s6-run"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12-7.5z"/></svg><b>dev server · :5173</b><em>${r.running}</em></div>
+      <div class="s6-browser"><div class="s6-url">localhost:5173</div><div class="s6-page"><h4>${r.h}</h4><div class="s6-field">${r.field}</div><div class="s6-pay">${r.pay}</div><div class="s6-paid">${r.paid}</div></div></div></div>`,
+    `<div class="sc-body"><div class="s7-screen"><div class="s7-menu"><i></i><span>Cursor</span><span>File</span><span>Edit</span></div>
+      <div class="s7-win"><div class="bar"><i></i><i></i><i></i></div><div class="code"><span class="b" style="width:46%"></span><span style="width:78%"></span><span class="l" style="width:62%"></span><span style="width:54%"></span><span class="o" style="width:70%"></span><span style="width:38%"></span><span class="l" style="width:58%"></span></div></div>
+      <div class="s7-dock"><i></i><i></i><i></i><i></i></div><div class="s7-ripple"></div>
+      <svg class="s7-cursor" viewBox="0 0 18 18"><path d="M2 1.5v13l3.5-3.2 2.4 5.2 2.2-1-2.4-5.1H13z" fill="#fff" stroke="#000" stroke-width="1.2" stroke-linejoin="round"/></svg></div>
+      <div class="s7-tools">${k.tools.map(x => `<span>${x}</span>`).join('')}</div></div>`,
+  ].map((body, i) => `<div class="sc" data-i="${i}">${head(p['s' + (i + 1)].head, p)}${body}</div>`);
 }
+let remIdx = 0, remTimer = 0, remHoldUntil = 0, remVisible = false;
+new IntersectionObserver(([e]) => { remVisible = e.isIntersecting; }, { threshold: 0.25 }).observe($('.phone-stage'));
+function showScene(i) {
+  remIdx = i;
+  document.querySelectorAll('.sc').forEach(el => el.classList.toggle('on', Number(el.dataset.i) === i));
+  document.querySelectorAll('.rem-item').forEach(el => el.classList.toggle('on', Number(el.dataset.i) === i));
+  clearTimeout(remTimer);
+  if (reduced) return;
+  const next = () => {
+    if (!remVisible || Date.now() < remHoldUntil) { remTimer = setTimeout(next, 1000); return; }
+    showScene((remIdx + 1) % PH[lang].rail.length);
+  };
+  remTimer = setTimeout(next, 7500);
+}
+function renderRemote() {
+  const p = PH[lang === 'zh' ? 'zh' : 'en'];
+  $('#rem-rail').innerHTML = p.rail.map(([t, d], i) => `<button type="button" class="rem-item" data-i="${i}" data-n="${i + 1}"><h3>${t}</h3><p>${d}</p><i></i></button>`).join('');
+  $('#rem-screens').innerHTML = remScenes(p).join('');
+  $('#rem-rail').classList.remove('hold');
+  showScene(Math.min(remIdx, p.rail.length - 1));
+}
+$('#rem-rail').addEventListener('click', e => {
+  const b = e.target.closest('.rem-item'); if (!b) return;
+  remHoldUntil = Date.now() + 25000; $('#rem-rail').classList.add('hold');
+  showScene(Number(b.dataset.i));
+});
 
 /* ---------------- Quota grid ---------------- */
 const QUOTA = [
