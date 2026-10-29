@@ -116,6 +116,56 @@
   </div>
 </section>
 
+<!-- ================= REMOTE ================= -->
+<section class="sec dark rem-sec" id="remote">
+  <div class="wrap">
+    <div class="split rem-split">
+      <div class="sec-head reveal">
+        <span class="kicker">phone remote</span>
+        <h2 data-i18n="remote.title">Your agents keep working. Your phone keeps command.</h2>
+        <p class="sub" data-i18n="remote.sub">Pair your phone once with a QR code. Start sessions, approve actions and answer questions from anywhere — the code and the agents never leave your computer.</p>
+        <ul class="points">
+          <li data-i18n="remote.p1">Start a session, pick the agent, model and thinking effort, and watch the output stream in live.</li>
+          <li data-i18n="remote.p2">Approvals and agent questions reach your phone, and push notifications tell you when something needs you.</li>
+          <li data-i18n="remote.p3">Review diffs, commit and push, run project commands, open terminals and preview the running web app.</li>
+        </ul>
+      </div>
+      <div class="phone-stage reveal d1">
+        <div class="phone" aria-hidden="true">
+          <div class="phone-notch"></div>
+          <div class="phone-toast" id="ph-toast"><img src="assets/logo.png" alt="" /><div><b id="ph-toast-t"></b><span id="ph-toast-s"></span></div></div>
+          <div class="phone-head"><b id="ph-title">checkout-service</b><span class="phone-pc" id="ph-pc"></span></div>
+          <div class="phone-feed" id="ph-feed"></div>
+          <div class="phone-approve" id="ph-approve">
+            <div class="ap-q" id="ph-ap-q"></div>
+            <code id="ph-ap-cmd">pnpm test</code>
+            <div class="ap-btns"><span class="ap-deny" id="ph-deny"></span><span class="ap-ok" id="ph-ok"></span></div>
+          </div>
+          <div class="phone-bar"><span id="ph-hint"></span><i>↑</i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rem-grid">
+      <div class="card rem-card spot reveal">
+        <span class="rem-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3m4 0v4h-4m-3-1v1"/></svg></span>
+        <h3 data-i18n="remote.c1t">Scan once. Stay private.</h3>
+        <p data-i18n="remote.c1p">Pairing is a one-time QR scan, then the link is end-to-end encrypted. Pair several computers, see which are online, and revoke a phone any time.</p>
+      </div>
+      <div class="card rem-card spot reveal d1">
+        <span class="rem-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4"/></svg></span>
+        <h3 data-i18n="remote.c2t">Same sessions, same agents.</h3>
+        <p data-i18n="remote.c2p">The phone is a window onto the sessions already running on your computer — history, forks and quotas included. Your code and your agents stay on your computer.</p>
+      </div>
+      <div class="card rem-card spot reveal d2">
+        <span class="rem-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+        <h3 data-i18n="remote.c3t">Remote desktop, when you need hands.</h3>
+        <p data-i18n="remote.c3p">When a task needs the real screen, view your computer from the phone and tap, drag, type or paste text and images.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ================= QUOTA ================= -->
 <section class="sec dark" id="quota">
   <div class="wrap">

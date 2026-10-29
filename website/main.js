@@ -62,6 +62,14 @@ const ZH = {
   'run.sub': 'dog.codes 分析每个项目的运行与调试方式，把命令和脚本变成可点击的启动项。',
   'run.p1': '不用再找终端——点一下启动，随时查看输出，用完就停。', 'run.p2': '常用项可以置顶，重新分析也会保留。', 'run.idle': '点击任意启动项的 ▶',
   'more.title': '<span class="nb">值得天天用的</span><span class="nb">每一处细节。</span>',
+  'remote.title': '<span class="nb">Agent 在电脑上干活，</span><span class="nb">手机上随时指挥。</span>',
+  'remote.sub': '用二维码配对一次手机。无论身在何处，都能发起会话、审批操作、回答 Agent 的提问——代码和 Agent 始终留在你的电脑上。',
+  'remote.p1': '发起会话，选择 Agent、模型和思考强度，实时查看流式输出。',
+  'remote.p2': '审批请求和 Agent 的提问都会送到手机，需要你时还会推送通知。',
+  'remote.p3': '查看 Diff、提交推送，运行项目命令、打开终端，还能预览正在运行的网页应用。',
+  'remote.c1t': '扫码一次，全程私密。', 'remote.c1p': '配对只需扫一次二维码，之后全程端到端加密。可配对多台电脑、查看在线状态，随时撤销某部手机。',
+  'remote.c2t': '同样的会话，同样的 Agent。', 'remote.c2p': '手机只是看向你电脑上已有会话的一扇窗——历史、分叉、额度都在。代码和 Agent 始终留在你的电脑上。',
+  'remote.c3t': '需要动手时，远程桌面。', 'remote.c3p': '任务需要真实屏幕时，直接在手机上查看电脑画面，点按、拖动、输入或粘贴文字和图片。',
   'more.t1': '多目录项目', 'more.p1': '前端、后端、文档分散在不同目录？一个会话全部交给 Agent——即便 Agent 本身不支持多目录。', 'more.tree': '三个目录，同一个会话',
   'more.t2': '关掉窗口，任务照跑。', 'more.p2': 'Agent、终端、项目命令都在后台服务中运行。重新打开即回到原处，进度分毫不差，每次提交和推送都只执行一次。', 'more.daemon': '仍在后台运行',
   'more.t3': '每一轮的用量明细', 'more.p3': '每一轮的 token 用量、上下文占用、缓存命中与缓存用量——清楚知道 token 花在了哪里。',
@@ -86,6 +94,11 @@ const DYN = {
       ['Now extract refunds. They must stay idempotent.', 'Reused the ledger client from the last turn. Refunds extracted with a request-id guard.'],
       ['Wire all three into the gateway and run the suite.', 'Ledger extracted, all 3 services wired into the gateway. 118 tests passed — ready for review.'],
     ],
+    ph: {
+      pc: 'MacBook · online', u: 'Add rate limiting to the checkout API.', c: 'Plan: token bucket in Redis, per client. Writing the middleware.',
+      toastT: 'Approval needed', toastS: 'Claude Code wants to run pnpm test', q: 'Claude Code wants to run a command on your computer.',
+      deny: 'Deny', ok: 'Approve', approved: '✓ Approved from your phone', done: '42 tests passed. Rate limiting is ready for review.', hint: 'Message Claude Code…',
+    },
     reset: 'resets in', resetOn: 'resets', upgrade: 'Upgrade', upgraded: 'Updated', week: 'weekly', h5: '5-hour', month: 'monthly',
   },
   zh: {
@@ -102,6 +115,11 @@ const DYN = {
       ['接着拆出退款服务，必须保持幂等。', '复用了上一轮的账本客户端。退款服务已拆出，并加上请求 ID 校验。'],
       ['把三个服务接入网关，跑一遍完整测试。', '账本已拆出，3 个服务都已接入网关。118 项测试通过，可以进入审查。'],
     ],
+    ph: {
+      pc: 'MacBook · 在线', u: '给结账接口加限流。', c: '方案：在 Redis 中用令牌桶，按客户端区分。开始编写中间件。',
+      toastT: '需要审批', toastS: 'Claude Code 想运行 pnpm test', q: 'Claude Code 想在你的电脑上运行一条命令。',
+      deny: '拒绝', ok: '批准', approved: '✓ 已在手机上批准', done: '42 项测试通过，限流已可进入审查。', hint: '给 Claude Code 发消息……',
+    },
     reset: '后重置', resetOn: '重置', upgrade: '升级', upgraded: '已更新', week: '每周', h5: '5 小时', month: '每月',
   },
 };
@@ -124,7 +142,7 @@ function applyLanguage(next) {
   });
   document.querySelectorAll('.lang button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === next)));
   try { localStorage.setItem('dogcodes.site.lang', next); } catch { /* storage is optional */ }
-  wireLinks(); osButton(); resetHandoff(); renderQuota(); renderRuns(); countFindings();
+  wireLinks(); osButton(); resetHandoff(); phoneLoop(); renderQuota(); renderRuns(); countFindings();
   setCommitLanguage(next === 'zh' ? 'zh' : 'en');
 }
 
@@ -246,6 +264,51 @@ async function autoHandoff() {
     if (!visible || handing || Date.now() < pausedUntil) continue;
     if (step >= D().rounds.length) { await sleep(1500); resetHandoff(); continue; }
     await handOff(HANDOFF[(HANDOFF.indexOf(current) + 1) % HANDOFF.length]);
+  }
+}
+
+/* ---------------- Phone remote demo ---------------- */
+let phoneRun = 0, phoneVisible = false;
+new IntersectionObserver(([e]) => { phoneVisible = e.isIntersecting; }, { threshold: 0.3 }).observe($('.phone'));
+async function phoneLoop() {
+  const run = ++phoneRun, alive = () => run === phoneRun;
+  const d = D().ph, feed = $('#ph-feed'), approve = $('#ph-approve'), toast = $('#ph-toast'), ok = $('#ph-ok');
+  const paint = () => {
+    feed.innerHTML = ''; approve.classList.remove('show'); toast.classList.remove('show');
+    $('#ph-pc').textContent = d.pc; $('#ph-hint').textContent = d.hint;
+    $('#ph-toast-t').textContent = d.toastT; $('#ph-toast-s').textContent = d.toastS;
+    $('#ph-ap-q').textContent = d.q; $('#ph-deny').textContent = d.deny; ok.textContent = d.ok;
+  };
+  paint();
+  if (reduced) {
+    feed.insertAdjacentHTML('beforeend', userMessage(d.u) + message('Claude Code', d.c) + `<div class="tool">${d.approved}</div>` + message('Claude Code', d.done));
+    return;
+  }
+  while (alive()) {
+    while (!phoneVisible && alive()) await sleep(400);
+    if (!alive()) return;
+    paint();
+    await sleep(700);
+    feed.insertAdjacentHTML('beforeend', userMessage(d.u));
+    await sleep(900);
+    feed.insertAdjacentHTML('beforeend', message('Claude Code', ''));
+    await typeInto(feed.lastElementChild.querySelector('.text'), d.c, 16);
+    await sleep(800);
+    if (!alive()) return;
+    toast.classList.add('show');
+    await sleep(1700);
+    toast.classList.remove('show'); approve.classList.add('show');
+    await sleep(2300);
+    if (!alive()) return;
+    ok.classList.add('tap');
+    await sleep(320);
+    ok.classList.remove('tap'); approve.classList.remove('show');
+    feed.insertAdjacentHTML('beforeend', `<div class="tool">${d.approved}</div>`);
+    await sleep(900);
+    feed.insertAdjacentHTML('beforeend', message('Claude Code', ''));
+    await typeInto(feed.lastElementChild.querySelector('.text'), d.done, 16);
+    await sleep(4800);
+    while (feed.children.length > 6) feed.firstElementChild.remove();
   }
 }
 
