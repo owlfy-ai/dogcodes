@@ -396,6 +396,7 @@ fn parse(value: &Value, now: i64, plan: Option<String>) -> Option<QuotaSnapshot>
         return None;
     }
     Some(QuotaSnapshot {
+        balances: Vec::new(),
         session_usage: None,
         windows,
         context: None,

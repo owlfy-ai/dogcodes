@@ -482,6 +482,7 @@ export interface SessionUsageSnapshot {
 export interface QuotaSnapshot {
   sessionUsage?: SessionUsageSnapshot | null;
   windows: QuotaWindow[];
+  balances?: Array<{ label: string; amount: number; currency: string }>;
   context?: ContextUsageSnapshot | null;
   collectedAtUnixMs: number;
   staleAfterUnixMs: number;

@@ -32,7 +32,7 @@ export function createQuotaRefresh(
         const views = await bounded(force ? client.quotaSnapshots(taskId, id, true) : client.quotaSnapshots(taskId, id), quotaRequestTimeoutMs(providerId));
         const matching = views.filter(view => view.installationId === id);
         if (active) for (const view of matching) update(withLastReading(view));
-        return matching.some(view => !!view.quota?.windows.length && !view.diagnostic);
+        return matching.some(view => (!!view.quota?.windows.length || !!view.quota?.balances?.length) && !view.diagnostic);
       } catch { return false; } // Preserve the last reading and its original timestamp.
     })();
     pending.set(id, request);

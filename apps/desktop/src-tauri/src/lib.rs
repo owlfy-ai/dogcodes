@@ -1641,8 +1641,27 @@ async fn scan_discovered_agents(
     Ok(())
 }
 
-/// Runs the ACP initialize handshake for every discovered installation of an
-/// `acp` provider and registers a driver when the agent really speaks v1.
+/// Provider accounts can be read even when model/session readiness fails.
+async fn register_provider_account_monitor(
+    core: &Core,
+    installation: &agent_protocol::InstallationSummary,
+    session: Option<Arc<dyn driver_api::QuotaProvider>>,
+) -> bool {
+    let Ok(provider_id) = agent_domain::ProviderId::parse(&installation.provider_id) else {
+        return false;
+    };
+    let executor = ExecutorRef {
+        provider_id,
+        installation_id: Some(installation.installation_id.to_string()),
+    };
+    let Some(monitor) = provider_quota::AccountMonitor::new(executor, session) else {
+        return false;
+    };
+    core.register_quota_provider(Arc::new(monitor)).await;
+    true
+}
+
+/// Probe the native ACP control plane before registering an execution driver.
 async fn register_ready_acp_drivers(
     core: Arc<Core>,
     manifest: &ProviderManifest,
@@ -1656,6 +1675,7 @@ async fn register_ready_acp_drivers(
             && discovered_paths.contains(&installation.executable)
             && installation.status != InstallationStatus::UnsupportedVersion
     }) {
+        register_provider_account_monitor(&core, installation, None).await;
         let mut launch = acp_driver::AcpLaunch {
             executable: std::path::PathBuf::from(&installation.executable),
             args: manifest.discovery.launch_args.clone(),
@@ -1712,7 +1732,9 @@ async fn register_probed_acp_driver(
             let driver = Arc::new(driver);
             core.register_driver(driver.clone()).await;
             // Native account queries do not submit model prompts.
-            core.register_quota_provider(driver).await;
+            if !register_provider_account_monitor(core, installation, Some(driver.clone())).await {
+                core.register_quota_provider(driver).await;
+            }
             if installation.status != InstallationStatus::Ready {
                 record_readiness(
                     core,
@@ -1760,6 +1782,7 @@ async fn register_ready_pi_drivers(
             && paths.contains(&i.executable)
             && i.status != InstallationStatus::UnsupportedVersion
     }) {
+        register_provider_account_monitor(&core, installation, None).await;
         let started = std::time::Instant::now();
         let executable = std::path::PathBuf::from(&installation.executable);
         let result = pi_driver::PiDriver::probe_ready(&executable).await;
@@ -1772,7 +1795,7 @@ async fn register_ready_pi_drivers(
                 ) {
                     let driver = Arc::new(driver);
                     core.register_driver(driver.clone()).await;
-                    core.register_quota_provider(driver).await;
+                    register_provider_account_monitor(&core, installation, Some(driver)).await;
                 }
                 (InstallationStatus::Ready, None)
             }
@@ -2135,6 +2158,41 @@ fn is_missing_from_successful_scan(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn provider_account_monitors_register_before_an_execution_driver_is_ready() {
+        let core = Arc::new(Core::new(Arc::new(SqliteStore::open_in_memory().unwrap())));
+        for provider in ["opencode", "pi", "deepseek-harness", "codebuddy"] {
+            let mut command = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
+                RecordInstallationProbe {
+                    provider_id: provider.into(),
+                    executable: format!("/fixture/{provider}"),
+                    fingerprint: "account-monitor-fixture".into(),
+                    status: InstallationStatus::NotConfigured,
+                    version: Some("1.0.0".into()),
+                    version_text: None,
+                    diagnostic: None,
+                    elapsed_millis: 0,
+                },
+            ));
+            command.actor = ActorRef::SystemRecovery;
+            core.execute(command).await.unwrap();
+            let installation = core
+                .bootstrap()
+                .await
+                .unwrap()
+                .installations
+                .into_iter()
+                .find(|i| i.provider_id == provider)
+                .unwrap();
+            assert_eq!(
+                register_provider_account_monitor(&core, &installation, None).await,
+                provider != "codebuddy"
+            );
+        }
+        // Monitoring does not grant model readiness or register an execution process.
+        assert!(core.registered_executors().await.is_empty());
+    }
 
     #[cfg(unix)]
     #[tokio::test]

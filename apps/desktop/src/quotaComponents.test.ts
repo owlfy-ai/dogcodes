@@ -19,6 +19,39 @@ const quota: NonNullable<QuotaSnapshotView["quota"]> = {
 };
 
 describe("quota components", () => {
+  it("shows OpenCode Go's three windows while keeping other model providers usable", () => {
+    const go = { ...quota, context: null, staleAfterUnixMs: Date.now() + 60_000, windows: [
+      { id: "opencode-go-rolling", scope: "OpenCode Go", windowMinutes: 300, usedPercent: 12.5 },
+      { id: "opencode-go-weekly", scope: "OpenCode Go", windowMinutes: 10080, usedPercent: 100 },
+      { id: "opencode-go-monthly", scope: "OpenCode Go", windowMinutes: 0, usedPercent: 47 },
+    ] };
+    const html = renderToStaticMarkup(createElement(components.QuotaPanel, {
+      management: true, views: [{ providerId: "opencode", installationId: "ins_go", quota: go }],
+      installations: [{ providerId: "opencode", installationId: "ins_go", version: "2.1.2" }],
+    }));
+    for (const value of ["OpenCode Go · 5 小时", "OpenCode Go · 每周", "OpenCode Go · 每月", "87.5%", "53%", "已用尽"]) expect(html).toContain(value);
+    const picker = renderToStaticMarkup(createElement(AgentQuotaRing, { providerId: "opencode", quota: go }));
+    expect(picker).toContain("5 小时剩余额度 87.5%");
+    expect(picker).not.toContain("额度已用尽");
+  });
+
+  it("shows separate supplier currencies, including zero balances, without synthetic percentages", () => {
+    const money = { ...quota, windows: [], context: null, balances: [
+      { label: "DeepSeek API", amount: 0, currency: "CNY" },
+      { label: "relay", amount: 12.3456, currency: "USD" },
+    ] };
+    const html = renderToStaticMarkup(createElement(components.QuotaPanel, {
+      management: true, views: [{ providerId: "pi", installationId: "ins_pi", quota: money }],
+      installations: [{ providerId: "pi", installationId: "ins_pi", status: "not_configured", version: "0.87.0" }],
+    }));
+    for (const value of ["供应商余额", "DeepSeek API", "CNY", "0.00", "USD", "12.3456"]) expect(html).toContain(value);
+    expect(html).not.toContain('role="progressbar"');
+    expect(html).not.toContain("暂无额度读数");
+    const ring = renderToStaticMarkup(createElement(components.QuotaRing, { providerId: "pi", quota: money }));
+    expect(ring).toContain("2 个供应商余额"); expect(ring).not.toContain("额度暂无读数");
+    expect(renderToStaticMarkup(createElement(AgentQuotaRing, { providerId: "pi", quota: money }))).toContain("余额");
+  });
+
   it("shows ZCode account balances even when model execution is not configured", () => {
     const html = renderToStaticMarkup(createElement(components.QuotaPanel, {
       management: true,

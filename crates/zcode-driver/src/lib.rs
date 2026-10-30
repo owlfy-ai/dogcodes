@@ -1878,6 +1878,7 @@ impl QuotaProvider for ZcodeDriver {
                 .cloned()
         });
         Ok(QuotaSnapshot {
+            balances: Vec::new(),
             session_usage: None,
             windows: vec![],
             context,

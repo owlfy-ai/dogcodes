@@ -70,6 +70,7 @@ pub(super) fn parse(payload: &serde_json::Value) -> Result<QuotaSnapshot, Driver
     }
     let now = now_unix_ms();
     Ok(QuotaSnapshot {
+        balances: Vec::new(),
         session_usage: None,
         windows: vec![QuotaWindow {
             scope: Some("套餐内（Kiro）".into()),

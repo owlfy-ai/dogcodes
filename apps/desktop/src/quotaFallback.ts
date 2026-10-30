@@ -16,6 +16,9 @@ function readings(): Record<string, QuotaSnapshot> {
 /** Remember a successful reading, or stand in the last one while it cannot be refreshed. */
 export function withLastReading(view: QuotaSnapshotView): QuotaSnapshotView {
   const quota = view.quota;
+  // Provider API credentials can rotate without changing installationId. These readings
+  // are cached with credential identity in Rust; never restore another account in the UI.
+  if (["opencode", "pi", "deepseek-harness"].includes(view.providerId)) return view;
   if (quota?.windows.length && !view.diagnostic) {
     if (quota.confidence === "demo") return view;
     const stored = readings();

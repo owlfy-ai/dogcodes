@@ -1927,6 +1927,7 @@ impl QuotaProvider for ClaudeDriver {
             collected_at_unix_ms
         };
         Ok(QuotaSnapshot {
+            balances: Vec::new(),
             session_usage: None,
             windows,
             context,

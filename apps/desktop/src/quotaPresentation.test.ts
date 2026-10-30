@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { antigravityQuotaForModel, primaryQuotaWindow, quotaIsExhausted, quotaIsStale, remainingPercent, quotaNativeResetLabel, nativeResetDisplay, quotaPlanLabel, quotaWindowLabel, ringQuotaWindow } from "./quotaPresentation";
+import { antigravityQuotaForModel, primaryQuotaWindow, quotaIsExhausted, quotaIsStale, remainingPercent, quotaNativeResetLabel, nativeResetDisplay, quotaPlanLabel, quotaWindowLabel, ringQuotaWindow, formatProviderBalance } from "./quotaPresentation";
 
 describe("quota presentation", () => {
+  it("does not gate OpenCode's other providers on Go quota or turn wallet balances into percentages", () => {
+    const q = { windows: [
+      { id: "opencode-go-monthly", scope: "OpenCode Go", windowMinutes: 0, usedPercent: 100 },
+      { id: "opencode-go-rolling", scope: "OpenCode Go", windowMinutes: 300, usedPercent: 100 },
+    ], collectedAtUnixMs: 1000, staleAfterUnixMs: 2000, source: "provider_api", confidence: "provider_reported", parserVersion: "test" };
+    expect(ringQuotaWindow(q.windows, "opencode")?.windowMinutes).toBe(300);
+    expect(quotaWindowLabel(0, "opencode-go-monthly")).toBe("每月");
+    expect(quotaIsExhausted(q, 1500)).toBe(false);
+    expect(quotaIsExhausted({ ...q, windows: [], balances: [{ label: "DeepSeek", amount: 0, currency: "CNY" }] }, 1500)).toBe(false);
+    expect(formatProviderBalance(0, "USD")).toContain("0.00");
+    expect(formatProviderBalance(0.0000001, "USD")).toBe("USD <0.000001");
+  });
   it("shows Kiro's included allowance without blocking bonus or paid usage", () => {
     // The reset year follows the current one so the same-year display never
     // flips the year on; the exact date shape is the OS locale's choice.
