@@ -311,6 +311,11 @@
 .welcome-status.ready { color: var(--w-ready); background: color-mix(in srgb, var(--w-ready) 13%, transparent); }
 .welcome-status.warning, .welcome-status.third-party { color: var(--w-warning); background: color-mix(in srgb, var(--w-warning) 13%, transparent); }
 
+.welcome-provider-balances { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--w-border); border-radius: 14px; background: var(--w-surface-quiet); }
+.welcome-provider-balance { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 13px; }
+.welcome-provider-balance > span { min-width: 0; overflow-wrap: anywhere; }
+.welcome-provider-balance > strong { flex: none; font-weight: 600; font-variant-numeric: tabular-nums; }
+.welcome-provider-balances > small { color: var(--w-muted); font-size: 11px; line-height: 1.5; }
 .welcome-card-quotas { flex: 1; display: flex; flex-direction: column; gap: 8px; padding: 12px 0 10px; }
 .welcome-rings { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr)); gap: 8px; }
 .welcome-window {

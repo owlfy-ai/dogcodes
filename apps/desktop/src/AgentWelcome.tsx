@@ -2,7 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { userFacingError } from "./userFacingError";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { BootstrapSnapshot, CoreClient, InstallationSummary, QuotaSnapshotView, QuotaWindow } from "@dogcodes/protocol";
-import { quotaScopeLabel, quotaColor, quotaIsStale, quotaNativeResetLabel, quotaWindowHasReset, quotaWindowLabel, formatResetTime, remainingPercent } from "./quotaPresentation";
+import { quotaScopeLabel, quotaColor, quotaIsStale, quotaNativeResetLabel, quotaWindowHasReset, quotaWindowLabel, formatResetTime, remainingPercent, formatProviderBalance } from "./quotaPresentation";
 import { quotaRequestTimeoutMs } from "./quotaRefresh";
 import { quotaShowsLastReading, withLastReading } from "./quotaFallback";
 import { AgentLogin, agentAccountIssue, needsAgentLogin } from "./AgentLogin";
@@ -23,7 +23,11 @@ export const supportedAgents = [
   { id: "deepseek-harness", installUrl: "https://github.com/deepseek-ai/deepseek-harness#run", name: "DeepSeek Harness", login: "在 DeepSeek Harness 中配置模型服务" },
   { id: "kiro", installUrl: "https://kiro.dev/downloads/", name: "Kiro", login: "kiro-cli login" },
 ] as const;
-const withoutQuota = new Set(["codebuddy", "pi", "opencode", "deepseek-harness"]);
+const withoutQuota = new Set(["codebuddy"]);
+const independentAccounts = new Set(["pi", "opencode", "deepseek-harness"]);
+const canReadQuota = (installation: InstallationSummary) => !withoutQuota.has(installation.providerId)
+  && (installation.status === "ready" || (independentAccounts.has(installation.providerId)
+    && installation.status !== "unsupported_version"));
 
 type Reading = { installation: InstallationSummary; view?: QuotaSnapshotView; pending?: boolean; failed?: boolean; observedAt?: number };
 export function welcomeStatus(reading?: Reading): { label: string; tone: string; detail: string } {
@@ -49,6 +53,8 @@ export function welcomeStatus(reading?: Reading): { label: string; tone: string;
     return { label: "额度查询超时", tone: "warning", detail: "原生连接已就绪，但额度查询超时。请稍后重新检测。" };
   if (view?.diagnostic === "claude_quota_custom_provider")
     return { label: "第三方模型", tone: "third-party", detail: "原生连接已通过；自定义服务凭证及额度尚未验证。" };
+  if (view?.diagnostic === "opencode_go_not_configured")
+    return { label: i.status === "ready" ? "连接就绪" : "Go 未配置", tone: i.status === "ready" ? "ready" : "warning", detail: "未配置 OpenCode Go API Key；连接 Go 订阅后可查询其额度。" };
   // Authentication is an observation made when this run receives its response.
   // Expiring a quota reading later is not a new authentication failure.
   if (i.status === "ready" && view?.quota?.windows.length
@@ -57,8 +63,16 @@ export function welcomeStatus(reading?: Reading): { label: string; tone: string;
     return { label: "已登录", tone: "ready", detail: quotaIsStale(view.quota.staleAfterUnixMs)
       ? "本轮检测时授权有效 · 额度读数已过期，可重新检测"
       : "原生连接已通过 · 账户额度已验证" };
+  if (i.status === "ready" && view?.quota?.balances?.length
+    && !quotaIsStale(view.quota.staleAfterUnixMs, reading.observedAt ?? Date.now())
+    && view.quota.confidence === "provider_reported")
+    return { label: "余额已验证", tone: "ready", detail: quotaIsStale(view.quota.staleAfterUnixMs)
+      ? "本轮供应商余额已验证 · 读数已过期，可重新检测"
+      : "原生连接已通过 · 供应商余额已验证" };
   if (withoutQuota.has(i.providerId) && i.status === "ready")
     return { label: "连接就绪", tone: "ready", detail: "原生会话检测已通过 · 暂不支持额度查询" };
+  if (independentAccounts.has(i.providerId) && i.status === "ready" && !failed)
+    return { label: "连接就绪", tone: "ready", detail: "原生会话检测已通过 · 当前未取得可查询的供应商余额或订阅额度。" };
   return { label: failed ? "检测失败" : "授权待确认", tone: "warning", detail: "未取得有效账户读数。请检查网络或原生登录状态后重试。" };
 }
 
@@ -142,9 +156,9 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
           const installations = snapshot.installations.filter(i => i.providerId === agent.id);
           detectedRef.current?.(agent.id, snapshot);
           setReadings(previous => [...previous.filter(r => r.installation.providerId !== agent.id),
-            ...installations.map(installation => ({ installation, pending: installation.status === "ready" && !withoutQuota.has(installation.providerId) }))]);
+            ...installations.map(installation => ({ installation, pending: canReadQuota(installation) }))]);
           setPendingAgents(previous => previous.filter(id => id !== agent.id));
-          await Promise.all(installations.filter(i => i.status === "ready" && !withoutQuota.has(i.providerId)).map(async installation => {
+          await Promise.all(installations.filter(canReadQuota).map(async installation => {
             let view: QuotaSnapshotView | undefined;
             let failed = false;
             try {
@@ -217,9 +231,12 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
     const groups = [...new Set(displayWindows.map(w => w.scope ?? ""))];
     // A reading that could not be refreshed is shown greyed with its time, never as current.
     const outdated = !scanning && displayWindows.length > 0 && quotaShowsLastReading(reading?.view?.diagnostic);
-    const busy = scanning || state.label === "验证授权中";
+    const busy = scanning || Boolean(reading?.pending);
     const emptyMessage = scanning || reading?.pending ? "正在等待检测结果" : failed ? "检测未完成，请重新检测"
-      : withoutQuota.has(agent.id) ? "不支持查询剩余额度" : "暂无可用额度读数";
+      : withoutQuota.has(agent.id) ? "暂未接入账户额度查询"
+      : reading?.view?.diagnostic === "opencode_go_not_configured" ? "未配置 OpenCode Go API Key，连接 Go 订阅后可查询额度"
+      : independentAccounts.has(agent.id) ? (reading?.failed ? "额度检测失败，请重新检测" : state.tone === "warning" ? state.detail : "当前未取得可查询的供应商余额或订阅额度")
+      : "暂无可用额度读数";
     return <article className={`welcome-agent-card ${state.tone}${busy ? " busy" : ""}`} key={agent.id} aria-label={agent.name} style={{ "--stagger": index } as CSSProperties}>
       <header>
         <span className="welcome-agent-icon">{renderIcon(agent.id)}</span>
@@ -231,10 +248,18 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
         </span>
       </header>
       <div className={`welcome-card-quotas${outdated ? " outdated" : ""}`}>
-        {!scanning && displayWindows.length ? groups.map(group => <section key={group} aria-label={quotaScopeLabel(group) || "账户额度"}>
+        {!scanning && (displayWindows.length > 0 || !!quota?.balances?.length) ? <>
+          {groups.map(group => <section key={group} aria-label={quotaScopeLabel(group) || "账户额度"}>
           <div className="welcome-rings">{displayWindows.filter(w => (w.scope ?? "") === group)
             .map(w => <WindowRing key={w.id} window={w} quota={quota} scope={agent.id !== "antigravity" ? quotaScopeLabel(group) : ""} />)}</div>
-        </section>) : <div className={`welcome-empty-quota${busy ? " loading" : ""}`}>
+          </section>)}
+          {!!quota?.balances?.length && <section className="welcome-provider-balances" aria-label="供应商余额">
+            {quota.balances.map(balance => <div className="welcome-provider-balance" key={`${balance.label}:${balance.currency}`}>
+              <span>{balance.label}</span><strong>{formatProviderBalance(balance.amount, balance.currency)}</strong>
+            </div>)}
+            <small>{quotaIsStale(quota.staleAfterUnixMs) ? "读数已过期，可重新检测 · " : ""}更新于 {new Date(quota.collectedAtUnixMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small>
+          </section>}
+        </> : <div className={`welcome-empty-quota${busy ? " loading" : ""}`}>
           {busy && <span className="welcome-skeleton" aria-hidden="true"><i /><i /></span>}
           <p>{emptyMessage}</p>
         </div>}
