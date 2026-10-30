@@ -13,8 +13,6 @@
 
 dog.codes은 코딩 에이전트, 대화, 코드 변경 사항, 프로젝트 실행 명령을 하나의 데스크톱 앱에 모아 줍니다. 한 에이전트로 기능을 구현하고 다른 에이전트로 검토한 뒤, 같은 작업 공간에서 프로젝트를 실행하고 커밋을 준비하세요. 자리를 비울 때는 휴대폰으로 모든 것을 지휘할 수 있습니다.
 
-**개발 프리뷰 · macOS 우선.** 설치 패키지와 릴리스 검증을 준비 중입니다. 현재 소스에서 실행할 수 있으며 Windows 검증은 아직 완료되지 않았습니다. iOS·Android용 휴대폰 앱은 개발 중이며 아직 앱 스토어에 출시되지 않았습니다.
-
 [공식 사이트](https://dog.codes) · [기능](#features) · [휴대폰 원격 제어](#phone) · [시작하기](#getting-started)
 
 ## 지원 에이전트
@@ -68,7 +66,6 @@ dog.codes은 코딩 에이전트, 대화, 코드 변경 사항, 프로젝트 실
 - 휴대폰은 가능하면 직접 연결하고, 그렇지 않으면 암호화된 트래픽만 전달하는 dog.codes 중계 서비스를 거칩니다.
 - 컴퓨터는 켜 둔 채 dog.codes를 열어 두거나 최소화해 두세요. 작업이나 원격 세션이 진행 중일 때는 dog.codes가 컴퓨터의 자동 절전을 막을 수 있으며, 이 옵션은 끌 수 있습니다.
 - 원격 데스크톱은 macOS, Windows, Linux(X11 및 Wayland) 컴퓨터를 지원하며, 필요한 화면·입력 권한은 운영 체제가 요청합니다.
-- 상태: 휴대폰 앱(iOS·Android)은 개발 중이며 아직 앱 스토어에 출시되지 않았습니다. 원격 데스크톱과 푸시 알림의 실기기 검증은 아직 진행 중입니다.
 
 <a id="features"></a>
 
@@ -178,7 +175,7 @@ dog.codes은 코딩 에이전트, 대화, 코드 변경 사항, 프로젝트 실
 
 **dog.codes는 11개 언어를 지원합니다 — English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский, Italiano. 시스템 언어를 따르게 할 수도 있습니다.**
 
-**오픈 소스 · 무료 · 크로스 플랫폼**: Apache-2.0 라이선스, macOS·Windows·Linux용으로 만들어졌으며 macOS를 우선 검증하고 있습니다.
+**오픈 소스 · 무료 · 크로스 플랫폼**: Apache-2.0 라이선스, macOS·Windows·Linux용으로 만들어졌습니다.
 
 <a id="getting-started"></a>
 
@@ -213,6 +210,6 @@ pnpm check
 
 ## 자세히 알아보기
 
-Pull Request 전에 [CONTRIBUTING.md](../../CONTRIBUTING.md)를 읽고, 보안 문제는 [SECURITY.md](../../SECURITY.md)에 따라 비공개로 제보해 주세요. 구현 및 릴리스 진행 상황은 [현재 작업 목록](../../docs/CURRENT_WORK.md), 원클릭 실행은 [프로젝트 실행 문서](../../docs/implementation/project-run-capabilities-2026-10-14.md)를 참고하세요.
+Pull Request 전에 [CONTRIBUTING.md](../../CONTRIBUTING.md)를 읽고, 보안 문제는 [SECURITY.md](../../SECURITY.md)에 따라 비공개로 제보해 주세요.
 
-페이지 구성은 [codex-host](https://github.com/BytePioneer-AI/codex-host)를 참고했습니다. 에이전트 아이콘은 저장소의 기존 자료를 사용합니다. [출처 및 고지](../../apps/desktop/src/assets/licenses/README.md)를 확인하세요. 제품 이름과 상표는 각 소유자에게 속합니다.
+에이전트 아이콘은 저장소의 기존 자료를 사용합니다. [출처 및 고지](../../apps/desktop/src/assets/licenses/README.md)를 확인하세요. 제품 이름과 상표는 각 소유자에게 속합니다.

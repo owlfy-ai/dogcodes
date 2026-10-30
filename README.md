@@ -13,8 +13,6 @@
 
 dog.codes brings your coding agents, conversations, code changes, and project commands into one desktop app. Let one agent implement a feature, ask another to review it, then run the project and prepare a commit—all from the same workspace. When you step away from your desk, command it all from your phone.
 
-**Development preview · macOS first.** Installers and release validation are still in progress. You can try the app from source today; Windows validation is pending. The phone app for iOS and Android is in development and not yet in the app stores.
-
 [Website](https://dog.codes) · [Features](#features) · [Phone remote](#phone) · [Get started](#getting-started)
 
 ## Supported agents
@@ -68,7 +66,6 @@ Pair a phone once and run everything below from anywhere. Your code and your age
 - The phone connects directly when it can and falls back to the dog.codes relay service, which only forwards encrypted traffic.
 - Your computer stays on with dog.codes open or minimized. While work or a remote session is active, dog.codes can keep the computer from sleeping automatically; you can turn this off.
 - Remote desktop works with macOS, Windows and Linux (X11 and Wayland) computers; your operating system asks for the screen and input permissions it requires.
-- Status: the phone app (iOS and Android) is in development and not yet in the app stores. Real-device validation of remote desktop and push notifications is still in progress.
 
 <a id="features"></a>
 
@@ -178,7 +175,7 @@ Only one desktop instance runs at a time; opening it again focuses the existing 
 
 **Use dog.codes in 11 languages — English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский and Italiano — or follow your system language.**
 
-**Open source · Free · Cross-platform**: licensed under Apache-2.0, built for macOS, Windows, and Linux — with macOS validated first.
+**Open source · Free · Cross-platform**: licensed under Apache-2.0, built for macOS, Windows, and Linux.
 
 <a id="getting-started"></a>
 
@@ -219,6 +216,6 @@ Core is a child process owned by the desktop, started from the same installed bu
 
 ## Project details
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, and report security issues privately as described in [SECURITY.md](SECURITY.md). See the [current status](docs/CURRENT_WORK.md) for implementation and release progress, and the [project run notes](docs/implementation/project-run-capabilities-2026-10-14.md) for the one-click command workflow.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, and report security issues privately as described in [SECURITY.md](SECURITY.md).
 
-Presentation inspired by [codex-host](https://github.com/BytePioneer-AI/codex-host). Agent icons reuse the assets already included in this repository; see [icon provenance and notices](apps/desktop/src/assets/licenses/README.md). Product names and marks belong to their respective owners.
+Agent icons reuse the assets already included in this repository; see [icon provenance and notices](apps/desktop/src/assets/licenses/README.md). Product names and marks belong to their respective owners.

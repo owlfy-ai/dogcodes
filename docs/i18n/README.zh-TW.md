@@ -13,8 +13,6 @@
 
 dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令整合在同一個桌面應用程式。讓一個 Agent 實作功能，換另一個審查，再執行專案、準備提交，都能在同一個工作空間完成。離開辦公桌後，還能用手機繼續指揮這一切。
 
-**開發預覽版 · macOS 優先。** 安裝套件與發布驗證仍在準備中，目前可從原始碼執行；Windows 尚待驗證。手機端（iOS 與 Android）正在開發中，尚未上架應用程式商店。
-
 [官網](https://dog.codes) · [功能](#features) · [手機遙控](#phone) · [開始使用](#getting-started)
 
 ## 支援的 Agent
@@ -68,7 +66,6 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 - 手機能直連時直連，否則回退到 dog.codes 中繼服務，中繼只轉送加密資料。
 - 電腦需保持開機，dog.codes 保持開啟或最小化。有任務或遠端工作階段進行時，dog.codes 可以防止電腦自動睡眠，也可以關閉此選項。
 - 遠端桌面支援 macOS、Windows 和 Linux（X11 與 Wayland）電腦；系統會要求所需的螢幕與輸入權限。
-- 狀態：手機端（iOS 與 Android）正在開發中，尚未上架應用程式商店；遠端桌面與推播通知的真機驗證仍在進行。
 
 <a id="features"></a>
 
@@ -178,7 +175,7 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 
 **dog.codes 提供 11 種介面語言——English、简体中文、繁體中文、日本語、한국어、Español、Français、Deutsch、Português (Brasil)、Русский 和 Italiano——也可以跟隨系統語言。**
 
-**開源 · 免費 · 跨平台**：Apache-2.0 授權，面向 macOS、Windows 和 Linux 建置，目前優先驗證 macOS。
+**開源 · 免費 · 跨平台**：Apache-2.0 授權，面向 macOS、Windows 和 Linux 建置。
 
 <a id="getting-started"></a>
 
@@ -213,6 +210,6 @@ pnpm check
 
 ## 更多資訊
 
-提交 Pull Request 前請閱讀 [CONTRIBUTING.md](../../CONTRIBUTING.md)；安全問題請依 [SECURITY.md](../../SECURITY.md) 私下回報。功能與發布進度請見[目前工作清單](../../docs/CURRENT_WORK.md)；一鍵執行的能力請見[專案執行說明](../../docs/implementation/project-run-capabilities-2026-10-14.md)。
+提交 Pull Request 前請閱讀 [CONTRIBUTING.md](../../CONTRIBUTING.md)；安全問題請依 [SECURITY.md](../../SECURITY.md) 私下回報。
 
-頁面呈現參考 [codex-host](https://github.com/BytePioneer-AI/codex-host)。Agent 圖示沿用儲存庫現有素材，來源與聲明請見[圖示說明](../../apps/desktop/src/assets/licenses/README.md)。產品名稱及商標屬於各自擁有者。
+Agent 圖示沿用儲存庫現有素材，來源與聲明請見[圖示說明](../../apps/desktop/src/assets/licenses/README.md)。產品名稱及商標屬於各自擁有者。

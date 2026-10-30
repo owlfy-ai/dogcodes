@@ -13,8 +13,6 @@
 
 dog.codes vereint Coding-Agenten, Gespräche, Codeänderungen und Projektbefehle in einer Desktop-App. Lass einen Agenten eine Funktion umsetzen und einen anderen den Code prüfen. Anschließend kannst du das Projekt starten und einen Commit vorbereiten – alles im selben Arbeitsbereich. Wenn du den Schreibtisch verlässt, steuerst du alles vom Smartphone aus.
 
-**Entwicklungsvorschau · macOS zuerst.** Installationspakete und Release-Prüfungen sind noch in Arbeit. Du kannst die App bereits aus dem Quellcode starten; die Prüfung unter Windows steht noch aus. Die Smartphone-App für iOS und Android ist in Entwicklung und noch nicht in den App-Stores verfügbar.
-
 [Website](https://dog.codes) · [Funktionen](#features) · [Smartphone-Fernsteuerung](#phone) · [Erste Schritte](#getting-started)
 
 ## Unterstützte Agenten
@@ -68,7 +66,6 @@ Koppel ein Smartphone einmal und erledige alles Folgende von überall. Dein Code
 - Das Smartphone verbindet sich direkt, wenn es kann, und weicht sonst auf den dog.codes-Relay-Dienst aus, der nur verschlüsselten Datenverkehr weiterleitet.
 - Dein Computer bleibt eingeschaltet, mit dog.codes geöffnet oder minimiert. Solange Arbeit oder eine Remote-Sitzung aktiv ist, kann dog.codes den automatischen Ruhezustand des Computers verhindern; das lässt sich abschalten.
 - Remote-Desktop funktioniert mit macOS-, Windows- und Linux-Computern (X11 und Wayland); dein Betriebssystem fragt die benötigten Bildschirm- und Eingabeberechtigungen ab.
-- Status: Die Smartphone-App (iOS und Android) ist in Entwicklung und noch nicht in den App-Stores. Die Validierung von Remote-Desktop und Push-Benachrichtigungen auf echten Geräten läuft noch.
 
 <a id="features"></a>
 
@@ -178,7 +175,7 @@ Es läuft nur eine App-Instanz; ein erneuter Start fokussiert das vorhandene Fen
 
 **Nutze dog.codes in 11 Sprachen – English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский und Italiano – oder folge deiner Systemsprache.**
 
-**Open Source · Kostenlos · Plattformübergreifend**: unter Apache-2.0 lizenziert, für macOS, Windows und Linux gebaut – zuerst wird macOS validiert.
+**Open Source · Kostenlos · Plattformübergreifend**: unter Apache-2.0 lizenziert, für macOS, Windows und Linux gebaut.
 
 <a id="getting-started"></a>
 
@@ -213,6 +210,6 @@ pnpm check
 
 ## Weitere Informationen
 
-Lies vor einem Pull Request [CONTRIBUTING.md](../../CONTRIBUTING.md); Sicherheitslücken meldest du vertraulich wie in [SECURITY.md](../../SECURITY.md) beschrieben. Den Implementierungs- und Release-Stand findest du in der [aktuellen Aufgabenliste](../../docs/CURRENT_WORK.md). Die [Hinweise zur Projektausführung](../../docs/implementation/project-run-capabilities-2026-10-14.md) erläutern den Start per Klick.
+Lies vor einem Pull Request [CONTRIBUTING.md](../../CONTRIBUTING.md); Sicherheitslücken meldest du vertraulich wie in [SECURITY.md](../../SECURITY.md) beschrieben.
 
-Die Seitengestaltung orientiert sich an [codex-host](https://github.com/BytePioneer-AI/codex-host). Die Agenten-Icons stammen aus den bereits vorhandenen Ressourcen dieses Repositorys; siehe [Herkunft und Hinweise](../../apps/desktop/src/assets/licenses/README.md). Produktnamen und Marken gehören ihren jeweiligen Inhabern.
+Die Agenten-Icons stammen aus den bereits vorhandenen Ressourcen dieses Repositorys; siehe [Herkunft und Hinweise](../../apps/desktop/src/assets/licenses/README.md). Produktnamen und Marken gehören ihren jeweiligen Inhabern.

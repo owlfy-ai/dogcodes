@@ -13,8 +13,6 @@
 
 dog.codes réunit vos agents de programmation, conversations, modifications de code et commandes de projet dans une application de bureau. Faites implémenter une fonctionnalité par un agent, demandez une revue à un autre, puis lancez le projet et préparez un commit depuis le même espace. Quand vous quittez votre bureau, pilotez tout depuis votre téléphone.
 
-**Version de développement · macOS en priorité.** Les installateurs et la validation de la publication sont en préparation. Vous pouvez déjà lancer l’application depuis les sources ; la validation sous Windows reste à faire. L’app mobile pour iOS et Android est en cours de développement et n’est pas encore dans les boutiques d’applications.
-
 [Site web](https://dog.codes) · [Fonctionnalités](#features) · [Pilotage mobile](#phone) · [Premiers pas](#getting-started)
 
 ## Agents pris en charge
@@ -68,7 +66,6 @@ Appairez un téléphone une seule fois et faites tout ce qui suit de n’importe
 - Le téléphone se connecte directement quand c’est possible, sinon il passe par le service de relais dog.codes, qui ne fait que transmettre du trafic chiffré.
 - Votre ordinateur reste allumé avec dog.codes ouvert ou réduit. Tant qu’un travail ou une session à distance est actif, dog.codes peut empêcher la mise en veille automatique ; vous pouvez le désactiver.
 - Le bureau à distance fonctionne avec les ordinateurs macOS, Windows et Linux (X11 et Wayland) ; votre système d’exploitation demande les autorisations d’écran et de saisie nécessaires.
-- État : l’app mobile (iOS et Android) est en cours de développement et n’est pas encore dans les boutiques. La validation sur appareils réels du bureau à distance et des notifications push est toujours en cours.
 
 <a id="features"></a>
 
@@ -178,7 +175,7 @@ Une seule instance peut fonctionner ; un nouveau lancement active la fenêtre ex
 
 **Utilisez dog.codes en 11 langues — English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский et Italiano — ou suivez la langue de votre système.**
 
-**Open source · Gratuit · Multiplateforme** : sous licence Apache-2.0, conçu pour macOS, Windows et Linux, avec macOS validé en premier.
+**Open source · Gratuit · Multiplateforme** : sous licence Apache-2.0, conçu pour macOS, Windows et Linux.
 
 <a id="getting-started"></a>
 
@@ -213,6 +210,6 @@ pnpm check
 
 ## En savoir plus
 
-Lisez [CONTRIBUTING.md](../../CONTRIBUTING.md) avant d’ouvrir une pull request ; signalez les failles de sécurité en privé comme indiqué dans [SECURITY.md](../../SECURITY.md). Consultez l’[état du projet](../../docs/CURRENT_WORK.md) pour l’avancement et les [notes sur l’exécution](../../docs/implementation/project-run-capabilities-2026-10-14.md) pour le lancement des commandes en un clic.
+Lisez [CONTRIBUTING.md](../../CONTRIBUTING.md) avant d’ouvrir une pull request ; signalez les failles de sécurité en privé comme indiqué dans [SECURITY.md](../../SECURITY.md).
 
-Présentation inspirée de [codex-host](https://github.com/BytePioneer-AI/codex-host). Les icônes reprennent les ressources déjà présentes dans le dépôt ; voir leur [provenance et les mentions associées](../../apps/desktop/src/assets/licenses/README.md). Les noms et marques appartiennent à leurs titulaires respectifs.
+Les icônes reprennent les ressources déjà présentes dans le dépôt ; voir leur [provenance et les mentions associées](../../apps/desktop/src/assets/licenses/README.md). Les noms et marques appartiennent à leurs titulaires respectifs.

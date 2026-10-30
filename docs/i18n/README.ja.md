@@ -13,8 +13,6 @@
 
 dog.codes は、コーディングエージェント、会話、コードの変更、プロジェクトの実行コマンドをまとめるデスクトップアプリです。ひとつのエージェントで実装し、別のエージェントでレビュー。そのままプロジェクトを実行してコミットを準備できます。席を離れても、スマートフォンからすべてを指揮できます。
 
-**開発プレビュー · macOS を優先。** インストーラーとリリース検証は準備中です。現在はソースから実行でき、Windows の検証は未完了です。iOS / Android 向けのスマートフォンアプリは開発中で、まだアプリストアには公開されていません。
-
 [公式サイト](https://dog.codes) · [機能](#features) · [スマートフォン操作](#phone) · [はじめる](#getting-started)
 
 ## 対応エージェント
@@ -68,7 +66,6 @@ dog.codes は、コーディングエージェント、会話、コードの変�
 - スマートフォンは可能なら直接接続し、できない場合は dog.codes の中継サービスを経由します。中継は暗号化された通信を転送するだけです。
 - コンピューターは電源を入れたまま、dog.codes を開いた（または最小化した）状態にしてください。作業やリモートセッション中は、dog.codes が自動スリープを防げます（オフにもできます）。
 - リモートデスクトップは macOS、Windows、Linux（X11 / Wayland）のコンピューターに対応します。必要な画面・入力の権限は OS が確認します。
-- 状況：スマートフォンアプリ（iOS / Android）は開発中で、まだアプリストアには公開されていません。リモートデスクトップとプッシュ通知の実機検証は進行中です。
 
 <a id="features"></a>
 
@@ -178,7 +175,7 @@ dog.codes は、コーディングエージェント、会話、コードの変�
 
 **dog.codes は 11 言語に対応しています — English、简体中文、繁體中文、日本語、한국어、Español、Français、Deutsch、Português (Brasil)、Русский、Italiano。システムの言語に合わせることもできます。**
 
-**オープンソース · 無料 · クロスプラットフォーム**：Apache-2.0 ライセンス。macOS、Windows、Linux 向けに構築し、まず macOS を検証しています。
+**オープンソース · 無料 · クロスプラットフォーム**：Apache-2.0 ライセンス。macOS、Windows、Linux 向けに構築しています。
 
 <a id="getting-started"></a>
 
@@ -213,6 +210,6 @@ pnpm check
 
 ## 詳しい情報
 
-プルリクエストの前に [CONTRIBUTING.md](../../CONTRIBUTING.md) を読み、セキュリティ問題は [SECURITY.md](../../SECURITY.md) の手順で非公開に報告してください。実装とリリースの進捗は[作業一覧](../../docs/CURRENT_WORK.md)、ワンクリック実行の詳細は[プロジェクト実行メモ](../../docs/implementation/project-run-capabilities-2026-10-14.md)を参照してください。
+プルリクエストの前に [CONTRIBUTING.md](../../CONTRIBUTING.md) を読み、セキュリティ問題は [SECURITY.md](../../SECURITY.md) の手順で非公開に報告してください。
 
-ページ構成は [codex-host](https://github.com/BytePioneer-AI/codex-host) を参考にしています。エージェントのアイコンにはリポジトリ内の既存素材を使用しています。[出典と表記](../../apps/desktop/src/assets/licenses/README.md)をご確認ください。製品名と商標は各権利者に帰属します。
+エージェントのアイコンにはリポジトリ内の既存素材を使用しています。[出典と表記](../../apps/desktop/src/assets/licenses/README.md)をご確認ください。製品名と商標は各権利者に帰属します。
