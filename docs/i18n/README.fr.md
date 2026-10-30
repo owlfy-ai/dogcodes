@@ -39,34 +39,6 @@ Connectez les agents que vous utilisez déjà. Les 12 intégrations ci-dessous s
 
 <!-- Capture à venir: ../../docs/images/readme/overview.png -->
 
-<a id="phone"></a>
-
-## Pilotez vos agents depuis votre téléphone
-
-**Laissez le portable à la maison. Vos agents continuent de travailler sur votre ordinateur pendant que votre téléphone garde la main.**
-
-Appairez un téléphone une seule fois et faites tout ce qui suit de n’importe où. Votre code et vos agents restent sur votre ordinateur.
-
-<!-- Capture à venir: ../../docs/images/readme/phone-remote.png -->
-
-- **Reprenez ou démarrez des conversations.** Reprenez n’importe quelle conversation de votre ordinateur ou lancez-en une nouvelle : choisissez l’agent, le modèle et le niveau de raisonnement, suivez la sortie en direct, puis recherchez, épinglez, archivez ou bifurquez des sessions.
-- **Approuvez et répondez.** Les demandes d’autorisation et les questions des agents arrivent sur votre téléphone avec des notifications push ; un appui et l’agent continue. Chaque approbation est vérifiée par rapport à l’exécution d’origine sur votre ordinateur.
-- **Relisez et validez.** Consultez les changements de chaque dossier du projet, indexez des fichiers, faites écrire le message de commit par un agent, puis validez, poussez, tirez ou synchronisez. Parcourez l’historique des commits et comparez des branches en lecture seule.
-- **Ajoutez des projets depuis votre PC.** Parcourez les dossiers de votre ordinateur et ajoutez-en un comme projet sans retourner à votre bureau.
-- **Exécutez des commandes dans le terminal de votre PC.** Ouvrez des terminaux dans n’importe quel dossier du projet et travaillez dans le vrai shell de votre ordinateur.
-- **Lancez le projet, voyez-le sur votre téléphone.** Démarrez les entrées de lancement sur votre ordinateur et ouvrez l’app web en cours d’exécution directement sur le téléphone.
-- **Parcourez les fichiers et envoyez des pièces jointes.** Lisez les fichiers du projet et joignez fichiers et images à vos messages.
-- **Bureau à distance au besoin.** Affichez l’écran de votre ordinateur et touchez, glissez, faites défiler, pincez, saisissez ou collez du texte et des images, avec une qualité qui s’adapte au réseau.
-
-<!-- Capture à venir: ../../docs/images/readme/remote-desktop.png -->
-
-### Comment ça se connecte
-
-- Un seul scan de QR code, sans compte. La liaison est chiffrée de bout en bout. Appairez plusieurs ordinateurs, voyez lesquels sont en ligne et révoquez un téléphone à tout moment depuis l’app de bureau.
-- Le téléphone se connecte directement quand c’est possible, sinon il passe par le service de relais dog.codes, qui ne fait que transmettre du trafic chiffré.
-- Votre ordinateur reste allumé avec dog.codes ouvert ou réduit. Tant qu’un travail ou une session à distance est actif, dog.codes peut empêcher la mise en veille automatique ; vous pouvez le désactiver.
-- Le bureau à distance fonctionne avec les ordinateurs macOS, Windows et Linux (X11 et Wayland) ; votre système d’exploitation demande les autorisations d’écran et de saisie nécessaires.
-
 <a id="features"></a>
 
 ## Fonctionnalités
@@ -176,6 +148,34 @@ Une seule instance peut fonctionner ; un nouveau lancement active la fenêtre ex
 **Utilisez dog.codes en 11 langues — English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский et Italiano — ou suivez la langue de votre système.**
 
 **Open source · Gratuit · Multiplateforme** : sous licence Apache-2.0, conçu pour macOS, Windows et Linux.
+
+<a id="phone"></a>
+
+## Pilotez vos agents depuis votre téléphone
+
+**Laissez le portable à la maison. Vos agents continuent de travailler sur votre ordinateur pendant que votre téléphone garde la main.**
+
+Appairez un téléphone une seule fois et faites tout ce qui suit de n’importe où. Votre code et vos agents restent sur votre ordinateur.
+
+<!-- Capture à venir: ../../docs/images/readme/phone-remote.png -->
+
+- **Reprenez ou démarrez des conversations.** Reprenez n’importe quelle conversation de votre ordinateur ou lancez-en une nouvelle : choisissez l’agent, le modèle et le niveau de raisonnement, suivez la sortie en direct, puis recherchez, épinglez, archivez ou bifurquez des sessions.
+- **Approuvez et répondez.** Les demandes d’autorisation et les questions des agents arrivent sur votre téléphone avec des notifications push ; un appui et l’agent continue. Chaque approbation est vérifiée par rapport à l’exécution d’origine sur votre ordinateur.
+- **Relisez et validez.** Consultez les changements de chaque dossier du projet, indexez des fichiers, faites écrire le message de commit par un agent, puis validez, poussez, tirez ou synchronisez. Parcourez l’historique des commits et comparez des branches en lecture seule.
+- **Ajoutez des projets depuis votre PC.** Parcourez les dossiers de votre ordinateur et ajoutez-en un comme projet sans retourner à votre bureau.
+- **Exécutez des commandes dans le terminal de votre PC.** Ouvrez des terminaux dans n’importe quel dossier du projet et travaillez dans le vrai shell de votre ordinateur.
+- **Lancez le projet, voyez-le sur votre téléphone.** Démarrez les entrées de lancement sur votre ordinateur et ouvrez l’app web en cours d’exécution directement sur le téléphone.
+- **Parcourez les fichiers et envoyez des pièces jointes.** Lisez les fichiers du projet et joignez fichiers et images à vos messages.
+- **Bureau à distance au besoin.** Affichez l’écran de votre ordinateur et touchez, glissez, faites défiler, pincez, saisissez ou collez du texte et des images, avec une qualité qui s’adapte au réseau.
+
+<!-- Capture à venir: ../../docs/images/readme/remote-desktop.png -->
+
+### Comment ça se connecte
+
+- Un seul scan de QR code, sans compte. La liaison est chiffrée de bout en bout. Appairez plusieurs ordinateurs, voyez lesquels sont en ligne et révoquez un téléphone à tout moment depuis l’app de bureau.
+- Le téléphone se connecte directement quand c’est possible, sinon il passe par le service de relais dog.codes, qui ne fait que transmettre du trafic chiffré.
+- Votre ordinateur reste allumé avec dog.codes ouvert ou réduit. Tant qu’un travail ou une session à distance est actif, dog.codes peut empêcher la mise en veille automatique ; vous pouvez le désactiver.
+- Le bureau à distance fonctionne avec les ordinateurs macOS, Windows et Linux (X11 et Wayland) ; votre système d’exploitation demande les autorisations d’écran et de saisie nécessaires.
 
 <a id="getting-started"></a>
 

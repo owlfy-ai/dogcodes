@@ -39,34 +39,6 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 
 <!-- Captura de tela pendente: ../../docs/images/readme/overview.png -->
 
-<a id="phone"></a>
-
-## Comande seus agentes pelo celular
-
-**Deixe o notebook em casa. Seus agentes continuam trabalhando no seu computador enquanto o celular mantém o comando.**
-
-Pareie um celular uma única vez e faça tudo abaixo de qualquer lugar. Seu código e seus agentes ficam no seu computador.
-
-<!-- Captura de tela pendente: ../../docs/images/readme/phone-remote.png -->
-
-- **Continue ou inicie conversas.** Retome qualquer conversa do seu computador ou comece uma nova: escolha agente, modelo e nível de raciocínio, acompanhe a saída ao vivo e pesquise, fixe, arquive ou ramifique sessões.
-- **Aprove e responda.** Pedidos de permissão e perguntas dos agentes chegam ao celular com notificações push; um toque e o agente segue em frente. Cada aprovação é conferida com a execução original no seu computador.
-- **Revise e faça commit.** Veja as mudanças em cada pasta do projeto, prepare arquivos, peça a um agente que escreva a mensagem do commit e então confirme, envie, baixe ou sincronize. Navegue pelo histórico de commits e compare branches em modo somente leitura.
-- **Adicione projetos a partir do PC.** Navegue pelas pastas do seu computador e adicione uma como projeto sem voltar para a mesa.
-- **Execute comandos no terminal do PC.** Abra terminais em qualquer pasta do projeto e trabalhe no shell de verdade do seu computador.
-- **Execute o projeto e veja no celular.** Inicie as entradas de execução no computador e abra o app web em execução direto no celular.
-- **Navegue por arquivos e envie anexos.** Leia os arquivos do projeto e anexe arquivos e imagens às suas mensagens.
-- **Área de trabalho remota quando precisar.** Veja a tela do seu computador e toque, arraste, role, faça pinça, digite ou cole texto e imagens, com qualidade que se adapta à rede.
-
-<!-- Captura de tela pendente: ../../docs/images/readme/remote-desktop.png -->
-
-### Como a conexão funciona
-
-- Escaneie um QR code uma vez, sem precisar de conta. A conexão é criptografada de ponta a ponta. Pareie vários computadores, veja quais estão on-line e revogue um celular quando quiser pelo app de desktop.
-- O celular se conecta diretamente quando pode e, se não der, usa o serviço de retransmissão do dog.codes, que apenas encaminha tráfego criptografado.
-- Seu computador precisa ficar ligado, com o dog.codes aberto ou minimizado. Enquanto houver trabalho ou uma sessão remota ativa, o dog.codes pode impedir que o computador entre em suspensão automática; você pode desativar isso.
-- A área de trabalho remota funciona com computadores macOS, Windows e Linux (X11 e Wayland); o sistema operacional pede as permissões de tela e entrada necessárias.
-
 <a id="features"></a>
 
 ## Recursos
@@ -176,6 +148,34 @@ Apenas uma instância é executada; abrir novamente traz a janela existente para
 **Use o dog.codes em 11 idiomas — English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский e Italiano — ou siga o idioma do sistema.**
 
 **Código aberto · Grátis · Multiplataforma**: licenciado sob Apache-2.0, feito para macOS, Windows e Linux.
+
+<a id="phone"></a>
+
+## Comande seus agentes pelo celular
+
+**Deixe o notebook em casa. Seus agentes continuam trabalhando no seu computador enquanto o celular mantém o comando.**
+
+Pareie um celular uma única vez e faça tudo abaixo de qualquer lugar. Seu código e seus agentes ficam no seu computador.
+
+<!-- Captura de tela pendente: ../../docs/images/readme/phone-remote.png -->
+
+- **Continue ou inicie conversas.** Retome qualquer conversa do seu computador ou comece uma nova: escolha agente, modelo e nível de raciocínio, acompanhe a saída ao vivo e pesquise, fixe, arquive ou ramifique sessões.
+- **Aprove e responda.** Pedidos de permissão e perguntas dos agentes chegam ao celular com notificações push; um toque e o agente segue em frente. Cada aprovação é conferida com a execução original no seu computador.
+- **Revise e faça commit.** Veja as mudanças em cada pasta do projeto, prepare arquivos, peça a um agente que escreva a mensagem do commit e então confirme, envie, baixe ou sincronize. Navegue pelo histórico de commits e compare branches em modo somente leitura.
+- **Adicione projetos a partir do PC.** Navegue pelas pastas do seu computador e adicione uma como projeto sem voltar para a mesa.
+- **Execute comandos no terminal do PC.** Abra terminais em qualquer pasta do projeto e trabalhe no shell de verdade do seu computador.
+- **Execute o projeto e veja no celular.** Inicie as entradas de execução no computador e abra o app web em execução direto no celular.
+- **Navegue por arquivos e envie anexos.** Leia os arquivos do projeto e anexe arquivos e imagens às suas mensagens.
+- **Área de trabalho remota quando precisar.** Veja a tela do seu computador e toque, arraste, role, faça pinça, digite ou cole texto e imagens, com qualidade que se adapta à rede.
+
+<!-- Captura de tela pendente: ../../docs/images/readme/remote-desktop.png -->
+
+### Como a conexão funciona
+
+- Escaneie um QR code uma vez, sem precisar de conta. A conexão é criptografada de ponta a ponta. Pareie vários computadores, veja quais estão on-line e revogue um celular quando quiser pelo app de desktop.
+- O celular se conecta diretamente quando pode e, se não der, usa o serviço de retransmissão do dog.codes, que apenas encaminha tráfego criptografado.
+- Seu computador precisa ficar ligado, com o dog.codes aberto ou minimizado. Enquanto houver trabalho ou uma sessão remota ativa, o dog.codes pode impedir que o computador entre em suspensão automática; você pode desativar isso.
+- A área de trabalho remota funciona com computadores macOS, Windows e Linux (X11 e Wayland); o sistema operacional pede as permissões de tela e entrada necessárias.
 
 <a id="getting-started"></a>
 

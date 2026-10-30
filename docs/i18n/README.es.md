@@ -39,34 +39,6 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 
 <!-- Captura pendiente: ../../docs/images/readme/overview.png -->
 
-<a id="phone"></a>
-
-## Dirige tus agentes desde el móvil
-
-**Deja el portátil en casa. Tus agentes siguen trabajando en tu ordenador mientras tu móvil sigue al mando.**
-
-Empareja un móvil una sola vez y haz todo lo que sigue desde cualquier lugar. Tu código y tus agentes se quedan en tu ordenador.
-
-<!-- Captura pendiente: ../../docs/images/readme/phone-remote.png -->
-
-- **Continúa o inicia conversaciones.** Retoma cualquier conversación de tu ordenador o empieza una nueva: elige agente, modelo y nivel de razonamiento, mira la salida en directo y busca, fija, archiva o bifurca sesiones.
-- **Aprueba y responde.** Las solicitudes de permiso y las preguntas de los agentes llegan al móvil con notificaciones push; un toque y el agente continúa. Cada aprobación se comprueba con la ejecución original en tu ordenador.
-- **Revisa y confirma.** Consulta los cambios de cada carpeta del proyecto, prepara archivos, deja que un agente escriba el mensaje del commit y luego confirma, sube, descarga o sincroniza. Explora el historial de commits y compara ramas en modo de solo lectura.
-- **Añade proyectos desde tu PC.** Explora las carpetas de tu ordenador y añade una como proyecto sin volver a sentarte en el escritorio.
-- **Ejecuta comandos en la terminal de tu PC.** Abre terminales en cualquier carpeta del proyecto y trabaja en el shell real de tu ordenador.
-- **Ejecuta el proyecto y míralo en el móvil.** Inicia las entradas de lanzamiento en tu ordenador y abre la app web en ejecución directamente en el móvil.
-- **Explora archivos y envía adjuntos.** Lee los archivos del proyecto y adjunta archivos e imágenes a tus mensajes.
-- **Escritorio remoto cuando lo necesites.** Mira la pantalla de tu ordenador y toca, arrastra, desplázate, pellizca, escribe o pega texto e imágenes, con una calidad que se adapta a la red.
-
-<!-- Captura pendiente: ../../docs/images/readme/remote-desktop.png -->
-
-### Cómo se conecta
-
-- Escaneas un código QR una vez y no hace falta cuenta. La conexión va cifrada de extremo a extremo. Empareja varios ordenadores, comprueba cuáles están en línea y revoca un móvil cuando quieras desde la app de escritorio.
-- El móvil se conecta directamente cuando puede y, si no, recurre al servicio de retransmisión de dog.codes, que solo reenvía tráfico cifrado.
-- Tu ordenador debe seguir encendido con dog.codes abierto o minimizado. Mientras haya trabajo o una sesión remota activa, dog.codes puede evitar que el ordenador entre en suspensión automática; puedes desactivarlo.
-- El escritorio remoto funciona con ordenadores macOS, Windows y Linux (X11 y Wayland); tu sistema operativo te pedirá los permisos de pantalla y entrada que necesita.
-
 <a id="features"></a>
 
 ## Funciones
@@ -176,6 +148,34 @@ Solo se ejecuta una instancia; abrirla de nuevo enfoca la ventana existente. Si 
 **Usa dog.codes en 11 idiomas — English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский e Italiano — o sigue el idioma de tu sistema.**
 
 **Código abierto · Gratis · Multiplataforma**: con licencia Apache-2.0, creado para macOS, Windows y Linux.
+
+<a id="phone"></a>
+
+## Dirige tus agentes desde el móvil
+
+**Deja el portátil en casa. Tus agentes siguen trabajando en tu ordenador mientras tu móvil sigue al mando.**
+
+Empareja un móvil una sola vez y haz todo lo que sigue desde cualquier lugar. Tu código y tus agentes se quedan en tu ordenador.
+
+<!-- Captura pendiente: ../../docs/images/readme/phone-remote.png -->
+
+- **Continúa o inicia conversaciones.** Retoma cualquier conversación de tu ordenador o empieza una nueva: elige agente, modelo y nivel de razonamiento, mira la salida en directo y busca, fija, archiva o bifurca sesiones.
+- **Aprueba y responde.** Las solicitudes de permiso y las preguntas de los agentes llegan al móvil con notificaciones push; un toque y el agente continúa. Cada aprobación se comprueba con la ejecución original en tu ordenador.
+- **Revisa y confirma.** Consulta los cambios de cada carpeta del proyecto, prepara archivos, deja que un agente escriba el mensaje del commit y luego confirma, sube, descarga o sincroniza. Explora el historial de commits y compara ramas en modo de solo lectura.
+- **Añade proyectos desde tu PC.** Explora las carpetas de tu ordenador y añade una como proyecto sin volver a sentarte en el escritorio.
+- **Ejecuta comandos en la terminal de tu PC.** Abre terminales en cualquier carpeta del proyecto y trabaja en el shell real de tu ordenador.
+- **Ejecuta el proyecto y míralo en el móvil.** Inicia las entradas de lanzamiento en tu ordenador y abre la app web en ejecución directamente en el móvil.
+- **Explora archivos y envía adjuntos.** Lee los archivos del proyecto y adjunta archivos e imágenes a tus mensajes.
+- **Escritorio remoto cuando lo necesites.** Mira la pantalla de tu ordenador y toca, arrastra, desplázate, pellizca, escribe o pega texto e imágenes, con una calidad que se adapta a la red.
+
+<!-- Captura pendiente: ../../docs/images/readme/remote-desktop.png -->
+
+### Cómo se conecta
+
+- Escaneas un código QR una vez y no hace falta cuenta. La conexión va cifrada de extremo a extremo. Empareja varios ordenadores, comprueba cuáles están en línea y revoca un móvil cuando quieras desde la app de escritorio.
+- El móvil se conecta directamente cuando puede y, si no, recurre al servicio de retransmisión de dog.codes, que solo reenvía tráfico cifrado.
+- Tu ordenador debe seguir encendido con dog.codes abierto o minimizado. Mientras haya trabajo o una sesión remota activa, dog.codes puede evitar que el ordenador entre en suspensión automática; puedes desactivarlo.
+- El escritorio remoto funciona con ordenadores macOS, Windows y Linux (X11 y Wayland); tu sistema operativo te pedirá los permisos de pantalla y entrada que necesita.
 
 <a id="getting-started"></a>
 

@@ -39,34 +39,6 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 
 <!-- Screenshot folgt: ../../docs/images/readme/overview.png -->
 
-<a id="phone"></a>
-
-## Steuere deine Agents vom Smartphone aus
-
-**Lass den Laptop zu Hause. Deine Agents arbeiten auf deinem Computer weiter, während dein Smartphone das Kommando behält.**
-
-Koppel ein Smartphone einmal und erledige alles Folgende von überall. Dein Code und deine Agents bleiben auf deinem Computer.
-
-<!-- Screenshot folgt: ../../docs/images/readme/phone-remote.png -->
-
-- **Gespräche fortsetzen oder neu starten.** Nimm jedes Gespräch von deinem Computer wieder auf oder starte ein neues: Agent, Modell und Denkaufwand wählen, die Ausgabe live mitverfolgen und Sitzungen suchen, anheften, archivieren oder verzweigen.
-- **Freigeben und antworten.** Berechtigungsanfragen und Rückfragen der Agents erreichen dein Smartphone mit Push-Benachrichtigungen; ein Tipp, und der Agent macht weiter. Jede Freigabe wird mit dem ursprünglichen Lauf auf deinem Computer abgeglichen.
-- **Prüfen und committen.** Sieh die Änderungen in jedem Projektordner, stage Dateien, lass einen Agent die Commit-Nachricht schreiben und committe, pushe, pulle oder synchronisiere dann. Durchsuche den Commit-Verlauf und vergleiche Branches schreibgeschützt.
-- **Projekte aus den Ordnern deines PCs hinzufügen.** Durchsuche die Ordner deines Computers und füge einen als Projekt hinzu, ohne dich wieder an den Schreibtisch zu setzen.
-- **Befehle im Terminal deines PCs ausführen.** Öffne Terminals in jedem Projektordner und arbeite in der echten Shell deines Computers.
-- **Projekt starten, auf dem Smartphone ansehen.** Starte die Startpunkte auf deinem Computer und öffne die laufende Web-App direkt auf dem Smartphone.
-- **Dateien ansehen und Anhänge senden.** Lies Projektdateien und hänge Dateien und Bilder an deine Nachrichten an.
-- **Remote-Desktop bei Bedarf.** Sieh dir den Bildschirm deines Computers an und tippe, ziehe, scrolle, zoome per Pinch, gib Text ein oder füge Text und Bilder ein – mit einer Qualität, die sich dem Netzwerk anpasst.
-
-<!-- Screenshot folgt: ../../docs/images/readme/remote-desktop.png -->
-
-### So verbindet es sich
-
-- Einmal einen QR-Code scannen, ein Konto ist nicht nötig. Die Verbindung ist Ende-zu-Ende-verschlüsselt. Koppel mehrere Computer, sieh, welche online sind, und widerrufe ein Smartphone jederzeit in der Desktop-App.
-- Das Smartphone verbindet sich direkt, wenn es kann, und weicht sonst auf den dog.codes-Relay-Dienst aus, der nur verschlüsselten Datenverkehr weiterleitet.
-- Dein Computer bleibt eingeschaltet, mit dog.codes geöffnet oder minimiert. Solange Arbeit oder eine Remote-Sitzung aktiv ist, kann dog.codes den automatischen Ruhezustand des Computers verhindern; das lässt sich abschalten.
-- Remote-Desktop funktioniert mit macOS-, Windows- und Linux-Computern (X11 und Wayland); dein Betriebssystem fragt die benötigten Bildschirm- und Eingabeberechtigungen ab.
-
 <a id="features"></a>
 
 ## Funktionen
@@ -176,6 +148,34 @@ Es läuft nur eine App-Instanz; ein erneuter Start fokussiert das vorhandene Fen
 **Nutze dog.codes in 11 Sprachen – English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский und Italiano – oder folge deiner Systemsprache.**
 
 **Open Source · Kostenlos · Plattformübergreifend**: unter Apache-2.0 lizenziert, für macOS, Windows und Linux gebaut.
+
+<a id="phone"></a>
+
+## Steuere deine Agents vom Smartphone aus
+
+**Lass den Laptop zu Hause. Deine Agents arbeiten auf deinem Computer weiter, während dein Smartphone das Kommando behält.**
+
+Koppel ein Smartphone einmal und erledige alles Folgende von überall. Dein Code und deine Agents bleiben auf deinem Computer.
+
+<!-- Screenshot folgt: ../../docs/images/readme/phone-remote.png -->
+
+- **Gespräche fortsetzen oder neu starten.** Nimm jedes Gespräch von deinem Computer wieder auf oder starte ein neues: Agent, Modell und Denkaufwand wählen, die Ausgabe live mitverfolgen und Sitzungen suchen, anheften, archivieren oder verzweigen.
+- **Freigeben und antworten.** Berechtigungsanfragen und Rückfragen der Agents erreichen dein Smartphone mit Push-Benachrichtigungen; ein Tipp, und der Agent macht weiter. Jede Freigabe wird mit dem ursprünglichen Lauf auf deinem Computer abgeglichen.
+- **Prüfen und committen.** Sieh die Änderungen in jedem Projektordner, stage Dateien, lass einen Agent die Commit-Nachricht schreiben und committe, pushe, pulle oder synchronisiere dann. Durchsuche den Commit-Verlauf und vergleiche Branches schreibgeschützt.
+- **Projekte aus den Ordnern deines PCs hinzufügen.** Durchsuche die Ordner deines Computers und füge einen als Projekt hinzu, ohne dich wieder an den Schreibtisch zu setzen.
+- **Befehle im Terminal deines PCs ausführen.** Öffne Terminals in jedem Projektordner und arbeite in der echten Shell deines Computers.
+- **Projekt starten, auf dem Smartphone ansehen.** Starte die Startpunkte auf deinem Computer und öffne die laufende Web-App direkt auf dem Smartphone.
+- **Dateien ansehen und Anhänge senden.** Lies Projektdateien und hänge Dateien und Bilder an deine Nachrichten an.
+- **Remote-Desktop bei Bedarf.** Sieh dir den Bildschirm deines Computers an und tippe, ziehe, scrolle, zoome per Pinch, gib Text ein oder füge Text und Bilder ein – mit einer Qualität, die sich dem Netzwerk anpasst.
+
+<!-- Screenshot folgt: ../../docs/images/readme/remote-desktop.png -->
+
+### So verbindet es sich
+
+- Einmal einen QR-Code scannen, ein Konto ist nicht nötig. Die Verbindung ist Ende-zu-Ende-verschlüsselt. Koppel mehrere Computer, sieh, welche online sind, und widerrufe ein Smartphone jederzeit in der Desktop-App.
+- Das Smartphone verbindet sich direkt, wenn es kann, und weicht sonst auf den dog.codes-Relay-Dienst aus, der nur verschlüsselten Datenverkehr weiterleitet.
+- Dein Computer bleibt eingeschaltet, mit dog.codes geöffnet oder minimiert. Solange Arbeit oder eine Remote-Sitzung aktiv ist, kann dog.codes den automatischen Ruhezustand des Computers verhindern; das lässt sich abschalten.
+- Remote-Desktop funktioniert mit macOS-, Windows- und Linux-Computern (X11 und Wayland); dein Betriebssystem fragt die benötigten Bildschirm- und Eingabeberechtigungen ab.
 
 <a id="getting-started"></a>
 

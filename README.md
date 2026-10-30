@@ -39,34 +39,6 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 <!-- Screenshot placeholder: docs/images/readme/overview.png -->
 
-<a id="phone"></a>
-
-## Command your agents from your phone
-
-**Leave the laptop at home. Your agents keep working on your computer while your phone keeps command.**
-
-Pair a phone once and run everything below from anywhere. Your code and your agents stay on your computer.
-
-<!-- Screenshot placeholder: docs/images/readme/phone-remote.png -->
-
-- **Continue or start conversations.** Pick up any conversation from your computer, or start a new one — choose the agent, model and thinking effort, watch the output stream in live, and search, pin, archive or fork sessions.
-- **Approve and answer.** Permission requests and agent questions reach your phone with push notifications; one tap and the agent carries on. Every approval is checked against the original run on your computer.
-- **Review and commit.** See the changes in every project folder, stage files, have an agent write the commit message, then commit, push, pull or sync. Browse commit history and compare branches read-only.
-- **Add projects from your PC.** Browse the folders on your computer and add one as a project without sitting back down at your desk.
-- **Run commands in your PC’s terminal.** Open terminals in any project folder and work in the real shell of your computer.
-- **Run the project, see it on your phone.** Start the launch entries on your computer and open the running web app right on the phone.
-- **Browse files and send attachments.** Read project files, and attach files and images to your messages.
-- **Remote desktop when you need it.** View your computer’s screen and tap, drag, scroll, pinch, type, or paste text and images — with quality that adapts to the network.
-
-<!-- Screenshot placeholder: docs/images/readme/remote-desktop.png -->
-
-### How it connects
-
-- Scan a QR code once; no account is needed. The link is end-to-end encrypted. Pair several computers, see which are online, and revoke a phone at any time from the desktop app.
-- The phone connects directly when it can and falls back to the dog.codes relay service, which only forwards encrypted traffic.
-- Your computer stays on with dog.codes open or minimized. While work or a remote session is active, dog.codes can keep the computer from sleeping automatically; you can turn this off.
-- Remote desktop works with macOS, Windows and Linux (X11 and Wayland) computers; your operating system asks for the screen and input permissions it requires.
-
 <a id="features"></a>
 
 ## Features
@@ -176,6 +148,34 @@ Only one desktop instance runs at a time; opening it again focuses the existing 
 **Use dog.codes in 11 languages — English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский and Italiano — or follow your system language.**
 
 **Open source · Free · Cross-platform**: licensed under Apache-2.0, built for macOS, Windows, and Linux.
+
+<a id="phone"></a>
+
+## Command your agents from your phone
+
+**Leave the laptop at home. Your agents keep working on your computer while your phone keeps command.**
+
+Pair a phone once and run everything below from anywhere. Your code and your agents stay on your computer.
+
+<!-- Screenshot placeholder: docs/images/readme/phone-remote.png -->
+
+- **Continue or start conversations.** Pick up any conversation from your computer, or start a new one — choose the agent, model and thinking effort, watch the output stream in live, and search, pin, archive or fork sessions.
+- **Approve and answer.** Permission requests and agent questions reach your phone with push notifications; one tap and the agent carries on. Every approval is checked against the original run on your computer.
+- **Review and commit.** See the changes in every project folder, stage files, have an agent write the commit message, then commit, push, pull or sync. Browse commit history and compare branches read-only.
+- **Add projects from your PC.** Browse the folders on your computer and add one as a project without sitting back down at your desk.
+- **Run commands in your PC’s terminal.** Open terminals in any project folder and work in the real shell of your computer.
+- **Run the project, see it on your phone.** Start the launch entries on your computer and open the running web app right on the phone.
+- **Browse files and send attachments.** Read project files, and attach files and images to your messages.
+- **Remote desktop when you need it.** View your computer’s screen and tap, drag, scroll, pinch, type, or paste text and images — with quality that adapts to the network.
+
+<!-- Screenshot placeholder: docs/images/readme/remote-desktop.png -->
+
+### How it connects
+
+- Scan a QR code once; no account is needed. The link is end-to-end encrypted. Pair several computers, see which are online, and revoke a phone at any time from the desktop app.
+- The phone connects directly when it can and falls back to the dog.codes relay service, which only forwards encrypted traffic.
+- Your computer stays on with dog.codes open or minimized. While work or a remote session is active, dog.codes can keep the computer from sleeping automatically; you can turn this off.
+- Remote desktop works with macOS, Windows and Linux (X11 and Wayland) computers; your operating system asks for the screen and input permissions it requires.
 
 <a id="getting-started"></a>
 
