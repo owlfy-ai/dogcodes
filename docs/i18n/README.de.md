@@ -5,17 +5,17 @@
 
 # dog.codes
 
-**Deine Coding-Agenten. Ein gemeinsamer Arbeitsbereich.**
+**Alle Coding-Agents. Ein Arbeitsbereich. Von überall steuerbar.**
 
 <a href="../../README.md">English</a> · <a href="../../docs/i18n/README.zh-CN.md">简体中文</a> · <a href="../../docs/i18n/README.zh-TW.md">繁體中文</a> · <a href="../../docs/i18n/README.ja.md">日本語</a> · <a href="../../docs/i18n/README.ko.md">한국어</a> · <a href="../../docs/i18n/README.es.md">Español</a> · <a href="../../docs/i18n/README.fr.md">Français</a> · <strong>Deutsch</strong> · <a href="../../docs/i18n/README.pt-BR.md">Português (Brasil)</a>
 
 </div>
 
-dog.codes vereint Coding-Agenten, Gespräche, Codeänderungen und Projektbefehle in einer Desktop-App. Lass einen Agenten eine Funktion umsetzen und einen anderen den Code prüfen. Anschließend kannst du das Projekt starten und einen Commit vorbereiten – alles im selben Arbeitsbereich.
+dog.codes vereint Coding-Agenten, Gespräche, Codeänderungen und Projektbefehle in einer Desktop-App. Lass einen Agenten eine Funktion umsetzen und einen anderen den Code prüfen. Anschließend kannst du das Projekt starten und einen Commit vorbereiten – alles im selben Arbeitsbereich. Wenn du den Schreibtisch verlässt, steuerst du alles vom Smartphone aus.
 
-**Entwicklungsvorschau · macOS zuerst.** Installationspakete und Release-Prüfungen sind noch in Arbeit. Du kannst die App bereits aus dem Quellcode starten; die Prüfung unter Windows steht noch aus.
+**Entwicklungsvorschau · macOS zuerst.** Installationspakete und Release-Prüfungen sind noch in Arbeit. Du kannst die App bereits aus dem Quellcode starten; die Prüfung unter Windows steht noch aus. Die Smartphone-App für iOS und Android ist in Entwicklung und noch nicht in den App-Stores verfügbar.
 
-[Website](https://dog.codes) · [Funktionen](#features) · [Erste Schritte](#getting-started)
+[Website](https://dog.codes) · [Funktionen](#features) · [Smartphone-Fernsteuerung](#phone) · [Erste Schritte](#getting-started)
 
 ## Unterstützte Agenten
 
@@ -40,6 +40,35 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 ## Alles an einem Ort
 
 <!-- Screenshot folgt: ../../docs/images/readme/overview.png -->
+
+<a id="phone"></a>
+
+## Steuere deine Agents vom Smartphone aus
+
+**Lass den Laptop zu Hause. Deine Agents arbeiten auf deinem Computer weiter, während dein Smartphone das Kommando behält.**
+
+Koppel ein Smartphone einmal und erledige alles Folgende von überall. Dein Code und deine Agents bleiben auf deinem Computer.
+
+<!-- Screenshot folgt: ../../docs/images/readme/phone-remote.png -->
+
+- **Gespräche fortsetzen oder neu starten.** Nimm jedes Gespräch von deinem Computer wieder auf oder starte ein neues: Agent, Modell und Denkaufwand wählen, die Ausgabe live mitverfolgen und Sitzungen suchen, anheften, archivieren oder verzweigen.
+- **Freigeben und antworten.** Berechtigungsanfragen und Rückfragen der Agents erreichen dein Smartphone mit Push-Benachrichtigungen; ein Tipp, und der Agent macht weiter. Jede Freigabe wird mit dem ursprünglichen Lauf auf deinem Computer abgeglichen.
+- **Prüfen und committen.** Sieh die Änderungen in jedem Projektordner, stage Dateien, lass einen Agent die Commit-Nachricht schreiben und committe, pushe, pulle oder synchronisiere dann. Durchsuche den Commit-Verlauf und vergleiche Branches schreibgeschützt.
+- **Projekte aus den Ordnern deines PCs hinzufügen.** Durchsuche die Ordner deines Computers und füge einen als Projekt hinzu, ohne dich wieder an den Schreibtisch zu setzen.
+- **Befehle im Terminal deines PCs ausführen.** Öffne Terminals in jedem Projektordner und arbeite in der echten Shell deines Computers.
+- **Projekt starten, auf dem Smartphone ansehen.** Starte die Startpunkte auf deinem Computer und öffne die laufende Web-App direkt auf dem Smartphone.
+- **Dateien ansehen und Anhänge senden.** Lies Projektdateien und hänge Dateien und Bilder an deine Nachrichten an.
+- **Remote-Desktop bei Bedarf.** Sieh dir den Bildschirm deines Computers an und tippe, ziehe, scrolle, zoome per Pinch, gib Text ein oder füge Text und Bilder ein – mit einer Qualität, die sich dem Netzwerk anpasst.
+
+<!-- Screenshot folgt: ../../docs/images/readme/remote-desktop.png -->
+
+### So verbindet es sich
+
+- Einmal einen QR-Code scannen, ein Konto ist nicht nötig. Die Verbindung ist Ende-zu-Ende-verschlüsselt. Koppel mehrere Computer, sieh, welche online sind, und widerrufe ein Smartphone jederzeit in der Desktop-App.
+- Das Smartphone verbindet sich direkt, wenn es kann, und weicht sonst auf den dog.codes-Relay-Dienst aus, der nur verschlüsselten Datenverkehr weiterleitet.
+- Dein Computer bleibt eingeschaltet, mit dog.codes geöffnet oder minimiert. Solange Arbeit oder eine Remote-Sitzung aktiv ist, kann dog.codes den automatischen Ruhezustand des Computers verhindern; das lässt sich abschalten.
+- Remote-Desktop funktioniert mit macOS-, Windows- und Linux-Computern (X11 und Wayland); dein Betriebssystem fragt die benötigten Bildschirm- und Eingabeberechtigungen ab.
+- Status: Die Smartphone-App (iOS und Android) ist in Entwicklung und noch nicht in den App-Stores. Die Validierung von Remote-Desktop und Push-Benachrichtigungen auf echten Geräten läuft noch.
 
 <a id="features"></a>
 
@@ -70,7 +99,7 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 **dog.codes steuert die offiziellen CLIs, die du installiert und bei denen du angemeldet bist – Claude Code, Codex, Cursor und weitere – mit deinen eigenen Plänen.**
 
 - Kein eigenes dog.codes-Konto und kein zusätzlicher API-Kauf: Die Pläne, für die du schon zahlst, funktionieren weiter.
-- Local-first: Deine Daten bleiben auf deinem Rechner und laufen über keinen Relay-Server.
+- Lokal zuerst: Dein Code, deine Gespräche und deine Zugangsdaten bleiben auf deinem Computer. Die optionale Smartphone-Verbindung ist Ende-zu-Ende-verschlüsselt, das Relay sieht deine Daten also nie.
 - Agenten erhalten nur die Umgebungsvariablen, die sie brauchen – deine übrigen Geheimnisse bleiben verborgen.
 
 <!-- Screenshot folgt: ../../docs/images/readme/accounts.png -->
@@ -120,12 +149,13 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 
 <!-- Screenshot folgt: ../../docs/images/readme/multi-folder.png -->
 
-### Fenster zu – die Arbeit läuft weiter
+### Minimieren und weiterarbeiten
 
-**Agentenläufe, Terminals und Projektbefehle übernimmt ein Hintergrunddienst; das Schließen des Fensters oder eines Panels unterbricht sie nicht.**
+**Aufgaben, Terminals, Projektbefehle und Telefonverbindungen laufen weiter, solange dog.codes geöffnet oder minimiert ist. Das Schließen des Hauptfensters beendet Core und seine Arbeit.**
 
-- Öffnest du dog.codes erneut, verbindet es sich wieder mit denselben Terminals und Ausgaben.
-- Nach einem Verbindungsabbruch oder unerwarteten Beenden siehst du, was mit deiner letzten Aktion wirklich passiert ist – nichts wird doppelt committet oder gepusht.
+Es läuft nur eine App-Instanz; ein erneuter Start fokussiert das vorhandene Fenster. Aktive Arbeit erfordert eine Bestätigung vor dem Beenden. Unterbrochene Befehle werden nicht automatisch erneut gesendet.
+
+- Solange Aufgaben, Prüfungen, Läufe, Terminals oder Remote-Sitzungen aktiv sind, kann dog.codes verhindern, dass dein Computer automatisch in den Ruhezustand geht (abschaltbar). Es kann nicht verhindern, dass du den Deckel schließt oder den Bildschirm sperrst.
 
 <!-- Screenshot folgt: ../../docs/images/readme/background.png -->
 
@@ -137,7 +167,18 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 
 <!-- Screenshot folgt: ../../docs/images/readme/turn-usage.png -->
 
-**Open Source · Kostenlos · Plattformübergreifend**: Apache-2.0-Lizenz, für Windows, macOS und Linux.
+### Jedes Senden, Committen und Pushen passiert nur einmal
+
+**dog.codes protokolliert jede Operation vor der Ausführung und prüft das Ergebnis, bevor es erneut versucht.**
+
+- Schließt die App oder bricht die Verbindung mitten in einer Operation ab, prüft sie, was tatsächlich geschehen ist, statt zu raten – keine doppelten Nachrichten, Commits oder Pushes.
+- Unterbrochene Befehle werden nie automatisch erneut ausgeführt.
+
+### Die Oberfläche in deiner Sprache
+
+**Nutze dog.codes in 11 Sprachen – English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский und Italiano – oder folge deiner Systemsprache.**
+
+**Open Source · Kostenlos · Plattformübergreifend**: unter Apache-2.0 lizenziert, für macOS, Windows und Linux gebaut – zuerst wird macOS validiert.
 
 <a id="getting-started"></a>
 
@@ -154,6 +195,7 @@ pnpm desktop:dev
 2. Öffne dog.codes, verbinde einen verfügbaren Agenten und füge Projektordner hinzu.
 3. Starte ein Gespräch, wähle Agent und Modell und beschreibe die Aufgabe.
 4. Öffne den Ausführungsbereich, um Projektbefehle zu finden, oder prüfe Änderungen und starte ein Review.
+5. Um deine Agents vom Smartphone aus zu steuern, öffne in der Desktop-App **Smartphone verbinden** und scanne den Kopplungscode mit der Smartphone-App.
 
 Gespräche, Projektanalysen, Reviews und die Erstellung von Commit-Nachrichten verwenden das Konto des gewählten Agenten und können dessen Kontingent verbrauchen.
 

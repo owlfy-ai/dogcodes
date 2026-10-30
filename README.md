@@ -5,17 +5,17 @@
 
 # dog.codes
 
-**Your coding agents. One workspace.**
+**Every coding agent. One workspace. Command it from anywhere.**
 
 <strong>English</strong> · <a href="docs/i18n/README.zh-CN.md">简体中文</a> · <a href="docs/i18n/README.zh-TW.md">繁體中文</a> · <a href="docs/i18n/README.ja.md">日本語</a> · <a href="docs/i18n/README.ko.md">한국어</a> · <a href="docs/i18n/README.es.md">Español</a> · <a href="docs/i18n/README.fr.md">Français</a> · <a href="docs/i18n/README.de.md">Deutsch</a> · <a href="docs/i18n/README.pt-BR.md">Português (Brasil)</a>
 
 </div>
 
-dog.codes brings your coding agents, conversations, code changes, and project commands into one desktop app. Let one agent implement a feature, ask another to review it, then run the project and prepare a commit—all from the same workspace.
+dog.codes brings your coding agents, conversations, code changes, and project commands into one desktop app. Let one agent implement a feature, ask another to review it, then run the project and prepare a commit—all from the same workspace. When you step away from your desk, command it all from your phone.
 
-**Development preview · macOS first.** Installers and release validation are still in progress. You can try the app from source today; Windows validation is pending.
+**Development preview · macOS first.** Installers and release validation are still in progress. You can try the app from source today; Windows validation is pending. The phone app for iOS and Android is in development and not yet in the app stores.
 
-[Website](https://dog.codes) · [Features](#features) · [Get started](#getting-started)
+[Website](https://dog.codes) · [Features](#features) · [Phone remote](#phone) · [Get started](#getting-started)
 
 ## Supported agents
 
@@ -40,6 +40,35 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 ## One place to work
 
 <!-- Screenshot placeholder: docs/images/readme/overview.png -->
+
+<a id="phone"></a>
+
+## Command your agents from your phone
+
+**Leave the laptop at home. Your agents keep working on your computer while your phone keeps command.**
+
+Pair a phone once and run everything below from anywhere. Your code and your agents stay on your computer.
+
+<!-- Screenshot placeholder: docs/images/readme/phone-remote.png -->
+
+- **Continue or start conversations.** Pick up any conversation from your computer, or start a new one — choose the agent, model and thinking effort, watch the output stream in live, and search, pin, archive or fork sessions.
+- **Approve and answer.** Permission requests and agent questions reach your phone with push notifications; one tap and the agent carries on. Every approval is checked against the original run on your computer.
+- **Review and commit.** See the changes in every project folder, stage files, have an agent write the commit message, then commit, push, pull or sync. Browse commit history and compare branches read-only.
+- **Add projects from your PC.** Browse the folders on your computer and add one as a project without sitting back down at your desk.
+- **Run commands in your PC’s terminal.** Open terminals in any project folder and work in the real shell of your computer.
+- **Run the project, see it on your phone.** Start the launch entries on your computer and open the running web app right on the phone.
+- **Browse files and send attachments.** Read project files, and attach files and images to your messages.
+- **Remote desktop when you need it.** View your computer’s screen and tap, drag, scroll, pinch, type, or paste text and images — with quality that adapts to the network.
+
+<!-- Screenshot placeholder: docs/images/readme/remote-desktop.png -->
+
+### How it connects
+
+- Scan a QR code once; no account is needed. The link is end-to-end encrypted. Pair several computers, see which are online, and revoke a phone at any time from the desktop app.
+- The phone connects directly when it can and falls back to the dog.codes relay service, which only forwards encrypted traffic.
+- Your computer stays on with dog.codes open or minimized. While work or a remote session is active, dog.codes can keep the computer from sleeping automatically; you can turn this off.
+- Remote desktop works with macOS, Windows and Linux (X11 and Wayland) computers; your operating system asks for the screen and input permissions it requires.
+- Status: the phone app (iOS and Android) is in development and not yet in the app stores. Real-device validation of remote desktop and push notifications is still in progress.
 
 <a id="features"></a>
 
@@ -70,7 +99,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 **dog.codes drives the official CLIs you have installed and signed in to — Claude Code, Codex, Cursor, and more — using your own plans.**
 
 - No separate dog.codes account or extra API purchase: the plans you already pay for keep working.
-- Local-first: your data stays on your computer and never passes through a relay server.
+- Local-first: your code, conversations and credentials stay on your computer. The optional phone link is end-to-end encrypted, so the relay never sees your data.
 - Agents are launched with only the environment they need, so your other secrets are not exposed to them.
 
 <!-- Screenshot placeholder: docs/images/readme/accounts.png -->
@@ -120,12 +149,13 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 <!-- Screenshot placeholder: docs/images/readme/multi-folder.png -->
 
-### Close the window, the work keeps going
+### Keep working while minimized
 
-**Agent runs, terminals, and project commands are handled by a background service, so closing the window or a panel never interrupts them.**
+**Tasks, terminals, project commands and phone connections keep running while dog.codes is open or minimized. Closing the main window or quitting stops Core and its work.**
 
-- Reopen dog.codes and it reconnects to the same terminals and output.
-- After a lost connection or an unexpected exit, you can see what actually happened to your last operation — nothing is committed or pushed twice.
+Only one desktop instance runs at a time; opening it again focuses the existing window. Active work requires confirmation before quitting. Interrupted commands are never replayed automatically.
+
+- While tasks, reviews, runs, terminals or remote sessions are active, dog.codes can keep your computer from sleeping automatically (you can turn this off). It cannot prevent you from closing the lid or locking the screen.
 
 <!-- Screenshot placeholder: docs/images/readme/background.png -->
 
@@ -137,7 +167,18 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 <!-- Screenshot placeholder: docs/images/readme/turn-usage.png -->
 
-**Open source · Free · Cross-platform**: licensed under Apache-2.0, for Windows, macOS, and Linux.
+### Every send, commit and push happens once
+
+**dog.codes records each operation before running it and checks the outcome before retrying.**
+
+- If the app closes or a connection drops mid-operation, it verifies what actually happened instead of guessing — no duplicated messages, commits or pushes.
+- Interrupted commands are never replayed automatically.
+
+### The interface in your language
+
+**Use dog.codes in 11 languages — English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский and Italiano — or follow your system language.**
+
+**Open source · Free · Cross-platform**: licensed under Apache-2.0, built for macOS, Windows, and Linux — with macOS validated first.
 
 <a id="getting-started"></a>
 
@@ -156,6 +197,7 @@ pnpm desktop:dev
 2. Open dog.codes, connect an available agent, and add your project folders.
 3. Start a conversation, choose an agent and model, and describe the work.
 4. Open the Run panel to discover project commands, or inspect changes and request a review.
+5. To command your agents from a phone, open **Connect phone** in the desktop app and scan the pairing code with the phone app.
 
 Agent conversations, project analysis, reviews, and commit-message generation use the selected agent’s account and may consume its quota.
 
@@ -168,6 +210,10 @@ pnpm check
 ```
 
 `pnpm dev` opens a browser-only UI demo with a fake adapter. Use `pnpm desktop:dev` for real agents and project commands.
+
+On macOS, `pnpm desktop:dev` uses `APPLE_SIGNING_IDENTITY` from the environment or Git-ignored `release/.env.local`, falling back to `bundle.macOS.signingIdentity` in `release/tauri.signing.local.json`. Use an installed certificate's full identity, such as `Developer ID Application: Name (TEAMID)`. Each build and Rust hot reload is signed before launch with the same identity and the DogCodes application identifier, preserving Keychain authorization across rebuilds. The first launch after switching from ad-hoc signing may need **Always Allow** once for the remote identity. Without a configured certificate, development uses the default ad-hoc signature. Run `pnpm test:desktop-dev` to check the launcher; set `DOGCODES_TEST_SIGNING_IDENTITY` to an installed identity to include the isolated macOS signing integration test.
+
+Core is a child process owned by the desktop, started from the same installed build. **Restart background now** in the bottom-left preferences menu restarts it after confirmation.
 
 </details>
 
