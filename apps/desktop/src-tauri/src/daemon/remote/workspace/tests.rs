@@ -306,7 +306,7 @@ async fn only_workspace_allowlisted_methods_and_paired_actors_are_admitted() {
         "project_run_open",
         "scan_agent",
         "remote_control",
-        "retire_if_idle",
+        "is_idle",
         "workspace_lease",
         "attachment_save",
     ] {
@@ -950,17 +950,30 @@ async fn command_execution_and_receipts_keep_the_same_authenticated_actor() {
 
 #[tokio::test]
 async fn preview_uses_fixed_loopback_target_and_tunnels_websocket_without_replay() {
+    preview_loopback_http_and_websocket("127.0.0.1:0").await;
+}
+
+#[tokio::test]
+async fn preview_supports_ipv6_only_http_and_websocket_services() {
+    preview_loopback_http_and_websocket("[::1]:0").await;
+}
+
+async fn preview_loopback_http_and_websocket(address: &str) {
     use base64::Engine;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let f = Fixture::new().await;
     let previews = super::super::preview::Host::default();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = tokio::net::TcpListener::bind(address).await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let server = tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
         let mut request = vec![0; 8192];
         let size = socket.read(&mut request).await.unwrap();
-        assert!(String::from_utf8_lossy(&request[..size]).starts_with("GET /index?a=1 HTTP/1.1"));
+        let request = String::from_utf8_lossy(&request[..size]);
+        assert!(request.starts_with("GET /index?a=1 HTTP/1.1"));
+        assert!(request.contains(&format!("host: localhost:{port}\r\n")));
+        assert!(request.contains(&format!("origin: http://localhost:{port}\r\n")));
+        assert!(request.contains(&format!("referer: http://localhost:{port}/\r\n")));
         socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nContent-Type: text/html\r\nConnection: close\r\n\r\npreview").await.unwrap();
     });
     let lease = previews
@@ -986,7 +999,9 @@ async fn preview_uses_fixed_loopback_target_and_tunnels_websocket_without_replay
         .call(
             &f.core,
             "preview_http",
-            json!({"previewId":id,"path":"/index?a=1"}),
+            json!({"previewId":id,"path":"/index?a=1","headers":{
+                "origin":"http://127.0.0.1:12345", "referer":"http://127.0.0.1:12345/phone"
+            }}),
         )
         .await
         .unwrap();
@@ -998,7 +1013,7 @@ async fn preview_uses_fixed_loopback_target_and_tunnels_websocket_without_replay
         b"preview"
     );
     server.await.unwrap();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = tokio::net::TcpListener::bind(address).await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let server = tokio::spawn(async move {
         use futures_util::{SinkExt, StreamExt};
@@ -1092,6 +1107,15 @@ async fn preview_redirects_keep_the_selected_target_and_preserve_other_destinati
             "/nested/%E4%B8%AD".to_owned(),
         ),
         (format!("//localhost:{port}/next"), "/next".to_owned()),
+        (format!("http://[::1]:{port}/ipv6"), "/ipv6".to_owned()),
+        (
+            format!("//[::1]:{port}/ipv6-relative"),
+            "/ipv6-relative".to_owned(),
+        ),
+        (
+            format!("http://[::2]:{port}/outside"),
+            format!("http://[::2]:{port}/outside"),
+        ),
         (
             "../relative?next=1".to_owned(),
             "../relative?next=1".to_owned(),
@@ -1171,4 +1195,67 @@ async fn preview_redirects_keep_the_selected_target_and_preserve_other_destinati
         .call(&f.core, "preview_close", json!(id))
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn preview_does_not_replay_a_failed_post_on_the_other_loopback_family() {
+    use tokio::io::AsyncReadExt;
+    let f = Fixture::new().await;
+    let previews = super::super::preview::Host::default();
+    let ipv6 = tokio::net::TcpListener::bind("[::1]:0").await.unwrap();
+    let port = ipv6.local_addr().unwrap().port();
+    let ipv4 = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))
+        .await
+        .unwrap();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = ipv6.accept().await.unwrap();
+        let mut request = Vec::new();
+        loop {
+            let mut chunk = [0; 1024];
+            let n = socket.read(&mut chunk).await.unwrap();
+            assert!(n > 0, "the POST must reach the IPv6 service");
+            request.extend_from_slice(&chunk[..n]);
+            assert!(request.len() <= 8192);
+            if request.ends_with(b"one-write") {
+                break;
+            }
+        }
+        assert!(request.starts_with(b"POST /write HTTP/1.1\r\n"));
+        drop(socket); // The write arrived, but its response is lost.
+        assert!(
+            tokio::time::timeout(Duration::from_millis(500), ipv6.accept())
+                .await
+                .is_err(),
+            "the POST must not be replayed to the IPv6 service"
+        );
+    });
+    let lease = previews
+        .call(
+            &f.core,
+            "preview_open",
+            json!({"taskId":f.task,"port":port}),
+        )
+        .await
+        .unwrap();
+    let result = tokio::time::timeout(
+        Duration::from_secs(5),
+        previews.call(
+            &f.core,
+            "preview_http",
+            json!({
+                "previewId":lease["previewId"],"path":"/write","method":"POST",
+                "body":base64::engine::general_purpose::STANDARD.encode(b"one-write")
+            }),
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(result.unwrap_err().contains("未重发请求"));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(500), ipv4.accept())
+            .await
+            .is_err(),
+        "a lost response must not replay the POST to the IPv4 service"
+    );
+    server.await.unwrap();
 }

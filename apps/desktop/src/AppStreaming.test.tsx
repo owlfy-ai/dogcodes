@@ -147,10 +147,19 @@ it("refreshes lifecycle changes and keeps deltas received during a slow canonica
   expect(vi.mocked(client.bootstrap).mock.calls.length).toBeGreaterThan(initialBootstraps);
   expect(client.pendingApprovals).toHaveBeenCalledTimes(2);
 });
-it("reveals an incoming text burst over successive frames without extra reads", async () => {
-  await deliver([event(1, "message.delta", "前文")]);
+it.each(["message.delta", "activity.updated"])("reveals a %s text burst over successive frames without extra reads", async type => {
+  const textEvent = (offset: number, text: string) => {
+    const update = event(offset, type, text);
+    if (type === "activity.updated") {
+      update.source = { kind: "driver", providerId: "kimi" };
+      update.payload = { taskId: snapshot.tasks[0].taskId, turnId: "trn_stream", itemId: "message:kimi-session:segment-1",
+        data: { type: "message", sessionId: "kimi-session", textDelta: text } };
+    }
+    return update;
+  };
+  await deliver([textEvent(1, "前文")]);
   const reads = vi.mocked(client.timelineSnapshot!).mock.calls.length;
-  await deliver([event(2, "message.delta", "一二三四五六七八")]);
+  await deliver([textEvent(2, "一二三四五六七八")]);
   expect(host.querySelector(".assistant-message")?.textContent).toBe("前文");
   await act(async () => vi.advanceTimersByTimeAsync(16));
   expect(host.querySelector(".assistant-message")?.textContent).toBe("前文一");

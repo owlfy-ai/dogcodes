@@ -264,6 +264,40 @@ const expectSubmittedLayout = (prompt: string) => {
   expect(visible(".user-message").filter(node => node.textContent === prompt)).toHaveLength(1);
 };
 
+it("keeps the sent conversation visible while the accepted task waits for a slow bootstrap refresh", async () => {
+  vi.useFakeTimers();
+  await click(button("新建对话"));
+  const bootstrap = client.bootstrap.bind(client);
+  const start = client.submissionStart.bind(client);
+  let finishRefresh!: () => void;
+  let acceptedTaskId!: string;
+  vi.spyOn(client, "submissionStart").mockImplementationOnce(async request => {
+    const result = await start(request);
+    expect(result.state).toBe("closed");
+    if (result.state === "closed") acceptedTaskId = result.resolution.taskId;
+    const wait = new Promise<void>(resolve => { finishRefresh = resolve; });
+    vi.spyOn(client, "bootstrap").mockImplementation(async () => { await wait; return bootstrap(); });
+    return result;
+  });
+  await typePrompt("平滑发送新任务");
+  await send();
+  await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+  expect(acceptedTaskId).toBeTruthy();
+  expectSubmittedLayout("平滑发送新任务");
+  const composer = element.querySelector(".composer-dock textarea");
+  await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+  expectSubmittedLayout("平滑发送新任务");
+  expect(element.querySelector(".composer-dock textarea")).toBe(composer);
+  await act(async () => finishRefresh());
+  expectSubmittedLayout("平滑发送新任务");
+  expect(element.querySelector(".composer-dock textarea")).toBe(composer);
+  expect(element.querySelector(".history-row.active .task")?.closest(".history-row")?.textContent).toContain("平滑发送新任务");
+  // A later draft must not inherit the previous draft's accepted prompt.
+  await click(button("新建对话"));
+  expect(element.querySelector(".welcome-stage")).not.toBeNull();
+  expect(visible(".user-message")).toHaveLength(0);
+});
+
 it("keeps the sent layout through task creation, empty history, acknowledgement and delayed canonical history", async () => {
   vi.useFakeTimers();
   await click(button("新建对话"));

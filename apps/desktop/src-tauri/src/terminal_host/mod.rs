@@ -333,8 +333,8 @@ impl Default for TerminalHost {
         }
     }
 }
-impl Drop for TerminalHost {
-    fn drop(&mut self) {
+impl TerminalHost {
+    pub(crate) fn shutdown(&self) {
         if let Ok(sessions) = self.sessions.lock() {
             for session in sessions.values() {
                 if let Ok(mut process) = session.process.lock()
@@ -344,6 +344,12 @@ impl Drop for TerminalHost {
                 }
             }
         }
+    }
+}
+
+impl Drop for TerminalHost {
+    fn drop(&mut self) {
+        self.shutdown();
     }
 }
 

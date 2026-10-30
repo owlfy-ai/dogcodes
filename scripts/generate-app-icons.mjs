@@ -27,10 +27,10 @@ try {
   ]) {
     copyFileSync(join(standard, name), join(icons, name));
   }
-  copyFileSync(join(standard, "icon.png"), join(root, "website/assets/logo.png"));
+  // Website marks have transparent backgrounds and are maintained separately.
 
   // ICNS is displayed as-is in the Dock. Give macOS a rounded tile with
-  // transparent padding while keeping the website and other OS icons square.
+  // transparent padding while keeping the other OS icons square.
   const png = readFileSync(source).toString("base64");
   const macosSource = join(output, "macos-icon.svg");
   writeFileSync(macosSource, `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="1024" viewBox="0 0 1024 1024">

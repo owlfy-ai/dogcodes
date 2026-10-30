@@ -315,10 +315,20 @@ fn project_picker_start(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
 }
 
 #[tauri::command]
-fn restart_application(window: tauri::WebviewWindow) -> Result<(), String> {
+async fn restart_application(window: tauri::WebviewWindow) -> Result<(), String> {
     require_main_artifact_window(window.label())?;
-    // The independent service retains ownership of running tasks.
-    window.app_handle().restart();
+    let app = window.app_handle().clone();
+    if let Some(service) = app.try_state::<Arc<daemon::lifecycle::BackgroundService>>() {
+        let service = service.inner().clone();
+        tokio::task::spawn_blocking(move || service.shutdown())
+            .await
+            .map_err(|_| "background stop failed")?;
+    }
+    app.state::<daemon::lifecycle::ExitControl>()
+        .approved
+        .store(true, std::sync::atomic::Ordering::Release);
+    app.request_restart();
+    Ok(())
 }
 
 // Reveal only after the frontend has painted its themed shell.
@@ -1026,20 +1036,48 @@ fn send_event(
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-/// Starts the desktop UI and connects to the independently owned Core service.
+/// Starts one desktop instance and its owned Core child process.
 ///
 /// # Panics
 ///
 /// Panics when Tauri cannot initialize or run the platform event loop.
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default().manage(daemon::lifecycle::ExitControl::default());
+    #[cfg(not(feature = "review-acceptance"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+    builder
         .manage(agent_updates::AgentUpdates::default())
         .manage(workspace_browser::WorkspaceWatchers::default())
         .on_window_event(|window, event| {
+            if window.label() == "main"
+                && let tauri::WindowEvent::CloseRequested { api, .. } = event
+            {
+                api.prevent_close();
+                daemon::lifecycle::request_exit(window.app_handle());
+            }
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 window
                     .state::<workspace_browser::WorkspaceWatchers>()
                     .close_window(window.label());
+                if window.label() == "main" {
+                    service_diagnostics::record("desktop_window_destroyed", "stopping owned Core");
+                    if let Some(service) =
+                        window.try_state::<Arc<daemon::lifecycle::BackgroundService>>()
+                    {
+                        service.shutdown();
+                    }
+                    window
+                        .state::<daemon::lifecycle::ExitControl>()
+                        .approved
+                        .store(true, std::sync::atomic::Ordering::Release);
+                    window.app_handle().exit(0);
+                }
             }
         })
         .on_page_load(|window, payload| {
@@ -1072,11 +1110,12 @@ pub fn run() {
                     }
                     None => app_data,
                 };
+                service_diagnostics::install(&app_data);
                 app.manage(service_diagnostics::DiagnosticDirectory(app_data.clone()));
                 app.manage(StartupExportGate(tokio::sync::Mutex::new(())));
-                if let Ok(core) =
-                    tauri::async_runtime::block_on(daemon::start_or_connect(&app_data))
-                {
+                let service = Arc::new(daemon::lifecycle::BackgroundService::new(app_data.clone()));
+                app.manage(service.clone());
+                if let Ok(core) = tauri::async_runtime::block_on(service.start()) {
                     app.manage(StartupFailure(None));
                     app.manage(StartupStatus::Ready);
                     app.manage(DesktopState {
@@ -1268,6 +1307,8 @@ pub fn run() {
             core_register_local_project,
             core_update_local_project,
             restart_application,
+            daemon::lifecycle::core_service_restart,
+            daemon::lifecycle::desktop_close_labels,
             show_main_window,
             core_startup_status,
             core_startup_diagnostics,
@@ -1321,8 +1362,27 @@ pub fn run() {
             core_subscribe,
             core_unsubscribe
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to run dogcodes desktop");
+        .build(tauri::generate_context!())
+        .expect("failed to build dogcodes desktop")
+        .run(|app, event| match event {
+            tauri::RunEvent::ExitRequested { api, code, .. }
+                if code != Some(tauri::RESTART_EXIT_CODE)
+                    && !app
+                        .state::<daemon::lifecycle::ExitControl>()
+                        .approved
+                        .load(std::sync::atomic::Ordering::Acquire) =>
+            {
+                api.prevent_exit();
+                daemon::lifecycle::request_exit(app);
+            }
+            tauri::RunEvent::Exit => {
+                if let Some(service) = app.try_state::<Arc<daemon::lifecycle::BackgroundService>>()
+                {
+                    service.shutdown();
+                }
+            }
+            _ => {}
+        });
 }
 
 async fn ensure_initial_conversation(core: Arc<Core>, scratch_path: std::path::PathBuf) {

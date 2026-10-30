@@ -91,6 +91,7 @@ it("shows observed request totals without merging native counters or filling mis
   expect(text).toContain("已记录模型请求2 次");
   expect(text).toContain("请求 · 输入（含缓存）300");
   expect(text).not.toContain("请求 · 输出");
-  expect(text).toContain("不代表完整会话");
+  expect(text).not.toContain("请求统计范围");
+  expect(text).not.toContain("不代表完整会话");
   expect(text).toContain("会话 · 输入9,000");
 });

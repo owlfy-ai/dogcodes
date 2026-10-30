@@ -235,6 +235,9 @@ impl Transfers {
                 }
                 (Vec::new(), size, hash.to_string())
             };
+            if size == 0 && kind == "text" {
+                return Err("剪贴板没有文字".into());
+            }
             if size == 0
                 || size
                     > if kind == "image" {

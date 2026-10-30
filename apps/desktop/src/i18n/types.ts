@@ -51,6 +51,15 @@ export interface TranslationDict {
     zoomOut: string;
     actualSize: string;
   };
+  backgroundService: {
+    closeTitle: string;
+    closeWarning: string;
+    closeConfirm: string;
+    restart: string;
+    confirmTitle: string;
+    warning: string;
+    failed: string;
+  };
   languages: Record<UiLanguage, string>;
   nav: {
     newConversation: string;
@@ -145,6 +154,7 @@ export interface TranslationDict {
     stepOpen: string;
     stepScan: string;
     service: string;
+    serviceUpdateRequired: string;
     connected: string;
     disconnected: string;
     connecting: string;

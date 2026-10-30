@@ -1,4 +1,5 @@
 import { RemoteDevices } from "./RemoteDevices";
+import { invoke } from "@tauri-apps/api/core";
 import { AttachmentUploadRecovery } from "./AttachmentUploadRecovery";
 import {
   type UiLanguage,
@@ -214,6 +215,7 @@ function PreferencesMenu({
   onLanguage,
   onTheme,
   onScale,
+  onRestartCore,
   anchorRef,
   popoverRef,
 }: {
@@ -228,6 +230,7 @@ function PreferencesMenu({
   onLanguage: (value: UiLanguage) => void;
   onTheme: (value: UiTheme) => void;
   onScale: (value: ScaleAction) => void;
+  onRestartCore: () => void;
 }) {
   const labels = getPreferenceLabels(language);
   const modifier = isMacPlatform() ? "⌘" : "Ctrl";
@@ -300,6 +303,10 @@ function PreferencesMenu({
         <PreferencesIcon kind="scale" /><span>{labels.scale}</span><span aria-hidden="true">›</span>
       </button>
       {optionMenu}
+      {"__TAURI_INTERNALS__" in window && <button type="button" role="menuitem" className="background-service-menuitem" onClick={onRestartCore}>
+        <svg className="preferences-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M16 9a6 6 0 1 0-1 4M16 4v5h-5" /></svg>
+        <span>{t("backgroundService.restart", undefined, resolveLanguage(language))}</span>
+      </button>}
     </div>,
     document.body,
   );
@@ -368,7 +375,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const [newSessionModel, setNewSessionModel] = useState<{ key: string; model: string | null; thinking: string | null } | null>(null);
   const submittedSelections = useRef(new Map<TaskId, typeof newSessionModel>());
   const [sending, setSending] = useState(false);
-  const [pendingSubmission, setPendingSubmission] = useState<{taskId: TaskId; providerId: string; operationId?: string; acceptedSequence?: number; message: TimelineItem} | null>(null);
+  const [pendingSubmission, setPendingSubmission] = useState<{scope: string; taskId: TaskId; providerId: string; operationId?: string; acceptedSequence?: number; message: TimelineItem} | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalLoaded, setTerminalLoaded] = useState(false);
@@ -410,6 +417,25 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const [preferencesSection, setPreferencesSection] = useState<PreferencesSection>(null);
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>(() => readPreference("dogcodes.ui.language", "system"));
   const resolvedLang = resolveLanguage(uiLanguage);
+  const native = "__TAURI_INTERNALS__" in window;
+  useEffect(() => {
+    if (!native) return;
+    void invoke("desktop_close_labels", { labels: {
+      title: t("backgroundService.closeTitle", undefined, resolvedLang),
+      warning: t("backgroundService.closeWarning", undefined, resolvedLang),
+      confirm: t("backgroundService.closeConfirm", undefined, resolvedLang),
+      cancel: t("common.cancel", undefined, resolvedLang),
+    } }).catch(() => {});
+  }, [native, resolvedLang]);
+  const restartBackground = () => {
+    setPreferencesOpen(false); setPreferencesSection(null);
+    void invoke("core_service_restart", { labels: {
+      title: t("backgroundService.confirmTitle", undefined, resolvedLang),
+      warning: t("backgroundService.warning", undefined, resolvedLang),
+      confirm: t("backgroundService.restart", undefined, resolvedLang),
+      cancel: t("common.cancel", undefined, resolvedLang),
+    }, failure: t("backgroundService.failed", undefined, resolvedLang) }).catch(() => {});
+  };
   const labels = getPreferenceLabels(uiLanguage);
   const [uiTheme, setUiTheme] = useState<UiTheme>(() => readPreference("dogcodes.ui.theme", "system"));
   const [uiScale, setUiScale] = useState(() => parseUiScale(readPreference("dogcodes.ui.scale", "100")));
@@ -875,7 +901,11 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     const timer = setInterval(() => refreshSessionUsage.current(executor.installationId!, executor.providerId), 5_000);
     return () => clearInterval(timer);
   }, [selectedTask?.taskId, !!selectedTask?.activePrimaryRun, selectedTask?.preferredExecutor.installationId, selectedTask?.preferredExecutor.providerId]);
-  const selectedSubmission = pendingSubmission?.taskId === selectedTask?.taskId ? pendingSubmission : null;
+  // Acceptance assigns the real task ID before bootstrap can select it. Keep
+  // the prompt attached to its draft throughout that handoff, including slow
+  // refreshes, without carrying it into a later draft with a different scope.
+  const selectedSubmission = pendingSubmission && (pendingSubmission.taskId === selectedTask?.taskId
+    || (!selectedTaskId && pendingSubmission.scope === newDraftScope.current)) ? pendingSubmission : null;
   const submittedMessage = selectedSubmission ? timeline.find(item => item.taskId === selectedSubmission.taskId
     && item.kind === "user_message" && item.sequence === selectedSubmission.acceptedSequence) : undefined;
   // Keep the local prompt until the canonical timeline catches up, even if the
@@ -982,7 +1012,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     switchBusy.current = true;
     setSending(true);
     const optimisticId = `pending-${ulid()}`;
-    setPendingSubmission({ taskId: selectedTask.taskId, providerId: selectedTask.preferredExecutor.providerId,
+    setPendingSubmission({ scope, taskId: selectedTask.taskId, providerId: selectedTask.preferredExecutor.providerId,
       message: { itemId: optimisticId, taskId: selectedTask.taskId, turnId: null,
         kind: "user_message", text: prompt, providerId: null, sequence: 0, occurredAt: new Date().toISOString(),
         attachments: attachments.items.map(item => ({ name: item.name, path: item.path ?? "", mimeType: "application/octet-stream" })) } });
@@ -1169,6 +1199,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             onLanguage={(next) => { setUiLanguage(next); setPreferencesOpen(false); setPreferencesSection(null); }}
             onTheme={(next) => { setUiTheme(next); setPreferencesOpen(false); setPreferencesSection(null); }}
             onScale={action => setUiScale(current => adjustUiScale(current, action))}
+            onRestartCore={restartBackground}
           />
         </div>
       </aside>

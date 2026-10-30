@@ -1,5 +1,6 @@
 //! Versioned local desktop RPC. Execution ownership stays in the service.
 mod access;
+pub(crate) mod lifecycle;
 mod remote;
 mod review_watch;
 mod startup;
@@ -25,27 +26,25 @@ use agent_protocol::{
 use driver_api::{ModelCatalog, PermissionCatalog};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
+#[cfg(test)]
+use std::process::Stdio;
 use std::{
     path::{Path, PathBuf},
-    process::Stdio,
     time::Duration,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
-// This is the compatibility boundary, not the executable's build identity.
-// Bump it when changing existing RPC arguments, replies or semantics incompatibly:
-// an updated desktop may reconnect to a compatible service that still owns work.
+// Local RPC compatibility boundary; incompatible clients fail closed.
 const VERSION: u32 = 1;
 const MAX_FRAME: usize = 64 * 1024 * 1024;
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct Endpoint {
     version: u32,
     address: std::net::SocketAddr,
     token: String,
     pid: u32,
-    build: String,
 }
 #[derive(Serialize, Deserialize)]
 struct Request {
@@ -1220,7 +1219,9 @@ impl ServiceControl {
             crate::project_runs::ProjectRunHost::new(directory.join("project-runs"));
         project_runs.changes = changes.clone();
         Self {
-            remote: Arc::new(remote::RemoteHost::new(directory.join("remote"))),
+            remote: Arc::new(remote::RemoteHost::for_default_service(
+                directory.join("remote"),
+            )),
             submissions: crate::submission_intents::SubmissionIntents::new(
                 directory.join("submission-intents"),
             ),
@@ -1385,16 +1386,22 @@ async fn execute_task_delete(
     serde_json::to_value(result?).map_err(|error| error.to_string())
 }
 
-fn executable_build() -> Result<String, String> {
-    let metadata = std::fs::metadata(std::env::current_exe().map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
-    let modified = metadata
-        .modified()
-        .map_err(|e| e.to_string())?
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
-        .as_nanos();
-    Ok(format!("{}:{modified}", metadata.len()))
+async fn service_idle(core: &Core, control: &ServiceControl) -> Result<bool, String> {
+    let workspace = core.try_workspace_mutation();
+    Ok(!control.startup_work.active()
+        && workspace.is_ok()
+        && !control.terminals.has_active()
+        && !control.project_runs.has_active()
+        && !control.remote.has_active_sessions()
+        && !core.has_active_auxiliary_operations()
+        && !core.has_active_reviews().await
+        && !core
+            .bootstrap()
+            .await
+            .map_err(|e| e.to_string())?
+            .tasks
+            .iter()
+            .any(|t| t.active_primary_run.is_some()))
 }
 async fn serve_connection(
     core: Arc<Core>,
@@ -1408,14 +1415,6 @@ async fn serve_connection(
     if request.version != VERSION || request.token != *token {
         return Err("unauthorized service connection".into());
     }
-    if request.method == "remote_control" {
-        let result = control
-            .remote
-            .clone()
-            .call(&core, &control, request.args)
-            .await;
-        return write_frame(&mut stream, &result).await;
-    }
     // Only classified methods are served; see access.rs.
     if access::method_access(&request.method).is_none() {
         return write_frame(
@@ -1424,38 +1423,24 @@ async fn serve_connection(
         )
         .await;
     }
-    if request.method == "retire_if_idle" {
-        // Exclude new commands while checking execution and workspace ownership.
-        let _requests = control.requests.write().await;
-        let workspace = core.try_workspace_mutation();
-        let idle = !control.startup_work.active()
-            && workspace.is_ok()
-            && !control.terminals.has_active()
-            && !control.project_runs.has_active()
-            && !control.remote.has_active_sessions()
-            && !core.has_active_auxiliary_operations()
-            && !core.has_active_reviews().await
-            && !core
-                .bootstrap()
-                .await
-                .map_err(|e| e.to_string())?
-                .tasks
-                .iter()
-                .any(|t| t.active_primary_run.is_some());
-        if idle {
-            control
-                .stopping
-                .store(true, std::sync::atomic::Ordering::Release);
-        }
-        let result = write_frame(&mut stream, &Ok::<_, String>(idle)).await;
-        if idle {
-            control.shutdown.notify_one();
-        }
-        return result;
+    if request.method == "is_idle" {
+        let idle = match control.requests.try_write() {
+            Ok(_guard) => service_idle(&core, &control).await?,
+            Err(_) => false,
+        };
+        return write_frame(&mut stream, &Ok::<_, String>(idle)).await;
     }
     let request_guard = control.requests.read().await;
     if control.stopping.load(std::sync::atomic::Ordering::Acquire) {
         return Err("service is restarting while idle".into());
+    }
+    if request.method == "remote_control" {
+        let result = control
+            .remote
+            .clone()
+            .call(&core, &control, request.args)
+            .await;
+        return write_frame(&mut stream, &result).await;
     }
     if request.method == "workspace_lease" {
         let guard = core.try_workspace_mutation().map_err(|e| e.to_string());
@@ -1646,81 +1631,12 @@ impl Drop for StartupTiming {
     }
 }
 
-pub async fn start_or_connect(directory: &Path) -> Result<Arc<CoreClient>, String> {
-    std::fs::create_dir_all(directory).map_err(|e| e.to_string())?;
-    let _startup = StartupTiming::new(directory, "desktop.connect_core");
-    let client = Arc::new(CoreClient::Remote(directory.to_owned()));
-    let probe = StartupTiming::new(directory, "desktop.probe_existing_core");
-    let existing = matches!(
-        tokio::time::timeout(
-            Duration::from_secs(2),
-            client.call::<Value>("ping", json!([]))
-        )
-        .await,
-        Ok(Ok(_))
-    );
-    drop(probe);
-    if existing {
-        let endpoint: Endpoint = serde_json::from_slice(
-            &std::fs::read(directory.join("service.json")).map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| e.to_string())?;
-        if endpoint.build == executable_build()? {
-            return Ok(client);
-        }
-        // Prefer the new build when idle, but keep a compatible service reachable
-        // while it owns work. Refusing to retire is a normal lifecycle state, not
-        // a connection failure; hiding the UI would also hide its live approvals.
-        let _retirement = StartupTiming::new(directory, "desktop.retire_old_core");
-        if !client.call::<bool>("retire_if_idle", json!([])).await? {
-            let _reuse = StartupTiming::new(directory, "desktop.reuse_busy_compatible_core");
-            return Ok(client);
-        }
-        for _ in 0..100 {
-            if let Ok(lease) = acquire_host_lease(directory) {
-                drop(lease);
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    }
-    let _launch = StartupTiming::new(directory, "desktop.launch_and_wait_core");
-    let mut command =
-        std::process::Command::new(std::env::current_exe().map_err(|e| e.to_string())?);
-    command
-        .arg("--core-service")
-        .arg(directory)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    // The child detaches its entire session before starting any native agents.
-    // A separate process group alone still inherits the dev terminal: a child
-    // opening /dev/tty can stop the whole service group with SIGTTIN/SIGTTOU.
-    let mut child = command.spawn().map_err(|e| e.to_string())?;
-    // Reap without owning execution lifetime. Dropping a std Child does not terminate it.
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    for _ in 0..150 {
-        if matches!(
-            tokio::time::timeout(
-                Duration::from_secs(2),
-                client.call::<Value>("ping", json!([]))
-            )
-            .await,
-            Ok(Ok(_))
-        ) {
-            return Ok(client);
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    Err("后台服务未启动，请查看启动诊断".into())
-}
-
 #[must_use]
 pub fn run_if_requested() -> bool {
     let mut args = std::env::args_os().skip(1);
-    if args.next().as_deref() != Some(std::ffi::OsStr::new("--core-service")) {
+    let mode = args.next();
+    let owned = mode.as_deref() == Some(std::ffi::OsStr::new("--core-child"));
+    if !owned && mode.as_deref() != Some(std::ffi::OsStr::new("--core-service")) {
         return false;
     }
     let Some(directory) = args.next() else {
@@ -1736,7 +1652,7 @@ pub fn run_if_requested() -> bool {
     }
     let result = tokio::runtime::Runtime::new()
         .map_err(|error| error.to_string())
-        .and_then(|runtime| runtime.block_on(run_service(directory)));
+        .and_then(|runtime| runtime.block_on(run_service(directory, owned)));
     match result {
         Err(error) => {
             crate::service_diagnostics::record("failed", &error);
@@ -1746,7 +1662,7 @@ pub fn run_if_requested() -> bool {
     }
     true
 }
-async fn run_service(directory: PathBuf) -> Result<(), String> {
+async fn run_service(directory: PathBuf, owned: bool) -> Result<(), String> {
     use std::io::Write;
     let startup = StartupTiming::new(&directory, "service.start_to_ready");
     let _lease = acquire_host_lease(&directory)
@@ -1781,6 +1697,9 @@ async fn run_service(directory: PathBuf) -> Result<(), String> {
         }
     }
     let control = Arc::new(ServiceControl::new(&directory));
+    if owned {
+        watch_parent(std::io::stdin(), control.clone());
+    }
     remote::restore(
         control.remote.clone(),
         core.clone(),
@@ -1795,7 +1714,6 @@ async fn run_service(directory: PathBuf) -> Result<(), String> {
         address: listener.local_addr().map_err(|e| e.to_string())?,
         token: (*token).clone(),
         pid: std::process::id(),
-        build: executable_build()?,
     };
     let mut file = tempfile::NamedTempFile::new_in(&directory).map_err(|e| e.to_string())?;
     file.write_all(&serde_json::to_vec(&endpoint).map_err(|e| e.to_string())?)
@@ -1833,7 +1751,20 @@ async fn run_service(directory: PathBuf) -> Result<(), String> {
         "ready",
         "local service accepting requests; startup maintenance may still be running",
     );
-    accept_connections(core, listener, token, control).await
+    let result = accept_connections(core, listener, token, control.clone()).await;
+    // PTYs have separate process groups; stop them before runtime teardown.
+    control.terminals.shutdown();
+    result
+}
+fn watch_parent<R: std::io::Read + Send + 'static>(mut parent: R, control: Arc<ServiceControl>) {
+    std::thread::spawn(move || {
+        let mut byte = [0];
+        while matches!(parent.read(&mut byte), Ok(n) if n > 0) {}
+        control
+            .stopping
+            .store(true, std::sync::atomic::Ordering::Release);
+        control.shutdown.notify_one();
+    });
 }
 async fn accept_connections(
     core: Arc<Core>,
@@ -1955,7 +1886,6 @@ mod tests {
             address: listener.local_addr().unwrap(),
             token: uuid::Uuid::new_v4().to_string(),
             pid: std::process::id(),
-            build: executable_build().unwrap(),
         };
         std::fs::write(
             dir.path().join("service.json"),
@@ -2371,54 +2301,66 @@ mod tests {
         assert!(f.client.bootstrap().await.is_ok());
     }
     #[tokio::test]
-    async fn rebuilt_desktop_reconnects_without_interrupting_busy_compatible_service() {
+    async fn idle_probe_does_not_retire_a_live_core() {
         let f = fixture().await;
-        let path = f.directory.path().join("service.json");
-        let mut endpoint: Endpoint =
-            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        endpoint.build = "previous-build".into();
-        std::fs::write(&path, serde_json::to_vec(&endpoint).unwrap()).unwrap();
-        let (release, waiting) = tokio::sync::oneshot::channel::<()>();
-        let work = f.control.startup_work.spawn(async move {
-            waiting.await.unwrap();
-        });
-
-        let client =
-            tokio::time::timeout(Duration::from_secs(3), start_or_connect(f.directory.path()))
-                .await
-                .unwrap()
-                .expect("busy compatible service must not prevent the desktop from opening");
-        client.bootstrap().await.unwrap();
-        assert!(!work.is_finished());
+        assert!(f.client.call::<bool>("is_idle", json!([])).await.unwrap());
         assert!(!f.worker.is_finished());
+        let work = f.control.startup_work.spawn(std::future::pending::<()>());
+        assert!(!f.client.call::<bool>("is_idle", json!([])).await.unwrap());
+        assert!(f.client.bootstrap().await.is_ok());
+        work.abort();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn losing_the_desktop_parent_stops_even_a_busy_core() {
+        let f = fixture().await;
+        let work = f.control.startup_work.spawn(std::future::pending::<()>());
+        let (parent, reader) = std::os::unix::net::UnixStream::pair().unwrap();
+        watch_parent(reader, f.control.clone());
+        assert!(!f.worker.is_finished());
+        drop(parent);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !f.worker.is_finished() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
         assert!(
-            !f.control
+            f.control
                 .stopping
                 .load(std::sync::atomic::Ordering::Acquire)
         );
-        let unchanged: Endpoint = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        assert_eq!(unchanged.pid, endpoint.pid);
-        assert_eq!(unchanged.token, endpoint.token);
-        assert_eq!(unchanged.build, "previous-build");
-        assert!(
-            std::fs::read_to_string(f.directory.path().join("startup-timing.log"))
-                .unwrap()
-                .contains("desktop.reuse_busy_compatible_core")
-        );
+        work.abort();
+    }
 
-        release.send(()).unwrap();
-        work.await.unwrap();
-        // Reuse does not pin the service forever: normal idle retirement still works.
+    #[tokio::test]
+    async fn removed_upgrade_methods_cannot_stop_the_core() {
+        let f = fixture().await;
+        for method in ["retire_if_idle", "shutdown_now"] {
+            assert!(f.client.call::<bool>(method, json!([])).await.is_err());
+        }
+        assert!(f.client.bootstrap().await.is_ok());
+        assert!(!f.worker.is_finished());
+    }
+
+    #[tokio::test]
+    async fn stopping_core_rejects_new_remote_control_requests() {
+        let f = fixture().await;
+        f.control
+            .stopping
+            .store(true, std::sync::atomic::Ordering::Release);
         assert!(
-            client
-                .call::<bool>("retire_if_idle", json!([]))
+            f.client
+                .remote_control(json!({ "type": "status" }))
                 .await
-                .unwrap()
+                .is_err()
         );
     }
 
     #[tokio::test]
-    async fn client_rejects_incompatible_endpoint_even_when_build_matches() {
+    async fn client_rejects_incompatible_local_protocol() {
         let f = fixture().await;
         let path = f.directory.path().join("service.json");
         let mut endpoint: Endpoint =
@@ -2436,7 +2378,7 @@ mod tests {
         );
     }
     #[tokio::test]
-    async fn startup_maintenance_keeps_queries_responsive_and_prevents_early_retirement() {
+    async fn startup_maintenance_keeps_queries_responsive_and_reports_busy() {
         let f = fixture().await;
         let root = f.directory.path().join("submission-intents");
         std::fs::create_dir(&root).unwrap();
@@ -2452,12 +2394,7 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(3), async {
             f.client.call::<Value>("ping", json!([])).await.unwrap();
             f.client.bootstrap().await.unwrap();
-            assert!(
-                !f.client
-                    .call::<bool>("retire_if_idle", json!([]))
-                    .await
-                    .unwrap()
-            );
+            assert!(!f.client.call::<bool>("is_idle", json!([])).await.unwrap());
         })
         .await
         .unwrap();
@@ -2469,12 +2406,9 @@ mod tests {
             std::fs::read(root.join("unrecognized.json")).unwrap(),
             b"keep original"
         );
-        assert!(
-            f.client
-                .call::<bool>("retire_if_idle", json!([]))
-                .await
-                .unwrap()
-        );
+        assert!(f.client.call::<bool>("is_idle", json!([])).await.unwrap());
+        assert!(!f.worker.is_finished());
+        watch_parent(std::io::empty(), f.control.clone());
         tokio::time::timeout(Duration::from_secs(3), async {
             while !f.worker.is_finished() {
                 tokio::task::yield_now().await;
@@ -2539,12 +2473,7 @@ mod tests {
             f.client.submission_intents(query.clone()).await.unwrap()["state"],
             "pending"
         );
-        assert!(
-            !f.client
-                .call::<bool>("retire_if_idle", json!([]))
-                .await
-                .unwrap()
-        );
+        assert!(!f.client.call::<bool>("is_idle", json!([])).await.unwrap());
         release.send(()).unwrap();
         cleanup.await.unwrap().unwrap();
         assert!(matches!(
@@ -2566,23 +2495,13 @@ mod tests {
         .unwrap();
         assert!(!bytes.contains("private startup fixture"));
         assert!(!f.control.startup_work.active());
-        assert!(
-            f.client
-                .call::<bool>("retire_if_idle", json!([]))
-                .await
-                .unwrap()
-        );
+        assert!(f.client.call::<bool>("is_idle", json!([])).await.unwrap());
     }
     #[tokio::test]
-    async fn idle_retirement_respects_workspace_ownership_and_closes_command_gate() {
+    async fn idle_probe_respects_workspace_ownership_and_keeps_command_gate_open() {
         let f = fixture().await;
         let lease = f.client.try_workspace_mutation().await.unwrap();
-        assert!(
-            !f.client
-                .call::<bool>("retire_if_idle", json!([]))
-                .await
-                .unwrap()
-        );
+        assert!(!f.client.call::<bool>("is_idle", json!([])).await.unwrap());
         assert!(f.client.bootstrap().await.is_ok());
         drop(lease);
         tokio::time::timeout(Duration::from_secs(3), async {
@@ -2592,14 +2511,9 @@ mod tests {
         })
         .await
         .unwrap();
-        assert!(
-            f.client
-                .call::<bool>("retire_if_idle", json!([]))
-                .await
-                .unwrap()
-        );
-        assert!(f.client.execute(project()).await.is_err());
-        assert!(f.core.bootstrap().await.unwrap().projects.is_empty());
+        assert!(f.client.call::<bool>("is_idle", json!([])).await.unwrap());
+        assert!(f.client.execute(project()).await.is_ok());
+        assert_eq!(f.core.bootstrap().await.unwrap().projects.len(), 1);
     }
 
     #[tokio::test]
@@ -2611,7 +2525,6 @@ mod tests {
             address: listener.local_addr().unwrap(),
             token: uuid::Uuid::new_v4().to_string(),
             pid: std::process::id(),
-            build: "old-input-protocol".into(),
         };
         std::fs::write(
             directory.path().join("service.json"),
@@ -2771,7 +2684,7 @@ mod tests {
     }
     #[cfg(unix)]
     #[tokio::test]
-    async fn terminal_host_rpc_disconnect_reconnect_and_idle_retirement() {
+    async fn terminal_host_rpc_disconnect_reconnect_and_busy_detection() {
         use crate::terminal_host::{LaunchIntent, TerminalStatus};
         let f = fixture().await;
         let project_id = ProjectId::new();
@@ -2831,12 +2744,7 @@ mod tests {
             std::fs::read(f.directory.path().join("rpc-count")).unwrap(),
             b"x"
         );
-        assert!(
-            !other
-                .call::<bool>("retire_if_idle", json!([]))
-                .await
-                .unwrap()
-        );
+        assert!(!other.call::<bool>("is_idle", json!([])).await.unwrap());
         assert_eq!(
             other.terminal_list(&intent.project_id).await.unwrap().len(),
             1
@@ -2899,12 +2807,7 @@ mod tests {
             std::fs::read(f.directory.path().join("rpc-count")).unwrap(),
             b"x"
         );
-        assert!(
-            other
-                .call::<bool>("retire_if_idle", json!([]))
-                .await
-                .unwrap()
-        );
+        assert!(other.call::<bool>("is_idle", json!([])).await.unwrap());
     }
 
     #[tokio::test]
@@ -3134,23 +3037,13 @@ mod tests {
             caller.abort();
             assert!(caller.await.unwrap_err().is_cancelled());
             assert!(f.core.has_active_auxiliary_operations());
-            assert!(
-                !f.client
-                    .call::<bool>("retire_if_idle", json!([]))
-                    .await
-                    .unwrap()
-            );
+            assert!(!f.client.call::<bool>("is_idle", json!([])).await.unwrap());
             driver.allow_start.notify_one();
             tokio::time::timeout(Duration::from_secs(3), driver.shutting_down.notified())
                 .await
                 .unwrap();
             assert!(f.core.has_active_auxiliary_operations());
-            assert!(
-                !f.client
-                    .call::<bool>("retire_if_idle", json!([]))
-                    .await
-                    .unwrap()
-            );
+            assert!(!f.client.call::<bool>("is_idle", json!([])).await.unwrap());
             assert_eq!(driver.starts.load(std::sync::atomic::Ordering::Acquire), 1);
             assert_eq!(driver.prompts.load(std::sync::atomic::Ordering::Acquire), 0);
             driver.allow_shutdown.notify_one();
@@ -3161,12 +3054,7 @@ mod tests {
             })
             .await
             .unwrap();
-            assert!(
-                f.client
-                    .call::<bool>("retire_if_idle", json!([]))
-                    .await
-                    .unwrap()
-            );
+            assert!(f.client.call::<bool>("is_idle", json!([])).await.unwrap());
         }
     }
     #[tokio::test]

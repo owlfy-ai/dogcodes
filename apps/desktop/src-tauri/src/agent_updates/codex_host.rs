@@ -5,6 +5,7 @@ use std::path::Path;
 
 // Verified against codexSparkleFeedUrl in the production desktop's package metadata.
 const FEED: &str = "https://persistent.oaistatic.com/codex-app-prod/appcast.xml";
+const BUNDLE_ID: &str = "com.openai.codex";
 
 #[derive(Deserialize)]
 struct Appcast {
@@ -35,6 +36,19 @@ fn plist_string(info: &plist::Value, key: &str) -> Option<String> {
         .get(key)?
         .as_string()
         .map(str::to_owned)
+}
+
+pub(super) fn desktop_app(executable: &Path) -> Option<&Path> {
+    // New desktop layouts nest CodexCLI.app inside the owning desktop bundle.
+    // Identify the desktop by its bundle ID, not the nearest .app or its name.
+    executable.ancestors().find(|app| {
+        app.extension().is_some_and(|v| v == "app")
+            && plist::Value::from_file(app.join("Contents/Info.plist"))
+                .ok()
+                .and_then(|info| plist_string(&info, "CFBundleIdentifier"))
+                .as_deref()
+                == Some(BUNDLE_ID)
+    })
 }
 
 fn system_version(value: &str) -> Option<Vec<u64>> {
@@ -86,7 +100,7 @@ fn latest_release(xml: &str, arch: &str, os: &str) -> Result<String, String> {
 pub(super) async fn inspect(app: &Path, mut out: AgentUpdate) -> Result<AgentUpdate, String> {
     let info = plist::Value::from_file(app.join("Contents/Info.plist"))
         .map_err(|_| "无法读取 Codex 桌面应用版本")?;
-    if plist_string(&info, "CFBundleIdentifier").as_deref() != Some("com.openai.codex") {
+    if plist_string(&info, "CFBundleIdentifier").as_deref() != Some(BUNDLE_ID) {
         return Err("此 Codex 由其他宿主应用提供，请在原应用内检查更新".into());
     }
     let current =
@@ -166,19 +180,36 @@ mod tests {
     #[tokio::test]
     #[ignore = "read-only check of installed Codex desktop and official feed"]
     async fn live_codex_desktop_check() {
-        let app = Path::new("/Applications/ChatGPT.app");
-        let i = super::super::tests::installation_for(
-            "codex",
-            &app.join("Contents/Resources/codex"),
-            "0.155.0-alpha.2.6",
-        );
-        let result = super::super::inspect(&i, &super::super::plan(&i))
-            .await
-            .unwrap();
-        assert_eq!(result.status, "managed");
-        assert!(!result.can_upgrade);
-        assert_ne!(result.current_version, i.version);
-        assert!(result.latest_version.is_some());
-        println!("{}", serde_json::to_string(&result).unwrap());
+        let mut checked = 0;
+        for app in ["/Applications/ChatGPT.app", "/Applications/Codex.app"] {
+            for relative in [
+                "Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+                "Contents/Resources/codex-cli/bin/codex",
+                "Contents/Resources/codex",
+            ] {
+                let executable = Path::new(app).join(relative);
+                if !executable.is_file() {
+                    continue;
+                }
+                let actual = super::super::command(super::super::spec(
+                    &executable,
+                    vec!["--version".into()],
+                    false,
+                ))
+                .await
+                .unwrap();
+                let version = super::super::version(&actual).unwrap().to_string();
+                let i = super::super::tests::installation_for("codex", &executable, &version);
+                let result = super::super::AgentUpdates::default().check(&i, true).await;
+                println!("{relative}: {}", serde_json::to_string(&result).unwrap());
+                assert_eq!(result.status, "managed");
+                assert!(!result.can_upgrade);
+                assert_ne!(result.current_version, i.version);
+                assert_eq!(result.desktop_version, result.current_version);
+                assert!(result.latest_version.is_some());
+                checked += 1;
+            }
+        }
+        assert!(checked > 0, "no installed Codex desktop CLI found");
     }
 }

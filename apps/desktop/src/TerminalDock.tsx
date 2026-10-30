@@ -11,7 +11,6 @@ import { terminalInput, type TerminalInputState } from "./terminalInput";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import "./terminal.css";
-import { FolderIcon } from "./ProjectHoverCard";
 import { useI18n } from "./i18n";
 
 export function TerminalPane({ projectId, directoryIndex, visible, api, resourceId, operationId, onResource, onStatus }: {
@@ -201,7 +200,7 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
 }) {
   const { t } = useI18n();
   const [opened, setOpened] = useState(open);
-  type Tab = { id: string; directoryIndex: number; ordinal: number; resourceId?: string; status?: TerminalStatus; epoch?: string; hidden?: boolean; closed?: boolean };
+  type Tab = { id: string; directoryIndex: number; ordinal: number; resourceId?: string; status?: TerminalStatus; epoch?: string; closed?: boolean };
   const [selected, setSelected] = useState("");
   const [tabs, setTabs] = useState<Tab[]>([]);
   const latestTabs = useRef(tabs);
@@ -209,8 +208,8 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [closeError, setCloseError] = useState("");
-  const [closing, setClosing] = useState(false);
-  const closingRequest = useRef(false);
+  const [closing, setClosing] = useState<string[]>([]);
+  const closingRequests = useRef(new Set<string>());
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [refresh, setRefresh] = useState(0);
@@ -244,13 +243,10 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
   const rememberStatus = useCallback((tabId: string, status: TerminalStatus, epoch: string) => {
     setTabs(current => current.map(tab => tab.id === tabId && (tab.status !== status || tab.epoch !== epoch) ? { ...tab, status, epoch } : tab));
   }, []);
-  const visibleTabs = tabs.filter(tab => !tab.hidden);
-  const hiddenTabs = tabs.filter(tab => tab.hidden && !tab.closed);
-  const hasTerminalMenu = directories.length > 1 || hiddenTabs.length > 0;
+  const visibleTabs = tabs.filter(tab => !tab.closed);
   useEffect(() => {
     if (!visibleTabs.some(tab => tab.id === selected)) setSelected(visibleTabs[0]?.id ?? "");
   }, [tabs, selected]);
-  const [menuOpen, setMenuOpen] = useState(false);
   const addControl = useRef<HTMLDivElement>(null);
   const tabList = useRef<HTMLDivElement>(null);
   const directoryName = (index: number) => directories[index]?.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "工作区";
@@ -258,55 +254,40 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
     const id = crypto.randomUUID();
     setTabs(current => [...current, { id, directoryIndex, ordinal: Math.max(0, ...current.filter(tab => tab.directoryIndex === directoryIndex).map(tab => tab.ordinal)) + 1 }]);
     setSelected(id);
-    setMenuOpen(false);
   };
   const requestTerminal = () => {
-    if (!directories.length && !hiddenTabs.length) return;
-    if (!hasTerminalMenu) addTab(0);
-    else setMenuOpen(value => !value);
+    if (!loaded || !directories.length) return;
+    const directoryIndex = visibleTabs.find(tab => tab.id === selected)?.directoryIndex ?? 0;
+    addTab(directories[directoryIndex] ? directoryIndex : 0);
   };
-  const closeTab = (id: string, closed = false) => {
-    const visible = latestTabs.current.filter(tab => !tab.hidden);
+  const removeTab = (id: string) => {
+    const visible = latestTabs.current.filter(tab => !tab.closed);
     const index = visible.findIndex(tab => tab.id === id);
     const remaining = visible.filter(tab => tab.id !== id);
-    setTabs(current => current.map(tab => tab.id === id ? { ...tab, hidden: true, closed } : tab));
+    // Keep its identity so a stale inventory cannot restore a stopped terminal.
+    setTabs(current => current.map(tab => tab.id === id ? { ...tab, closed: true } : tab));
     setSelected(current => current === id ? remaining[Math.min(index, remaining.length - 1)]?.id ?? "" : current);
     if (!remaining.length) addControl.current?.querySelector("button")?.focus();
   };
-  const currentTerminal = visibleTabs.find(tab => tab.id === selected);
-  const closeCurrentTerminal = async () => {
-    const tab = currentTerminal;
-    if (!tab?.resourceId || !tab.status || closingRequest.current) return;
-    closingRequest.current = true; setClosing(true); setCloseError("");
+  const closeTab = async (id: string) => {
+    const tab = latestTabs.current.find(tab => tab.id === id && !tab.closed);
+    if (!tab?.resourceId || !tab.epoch || closingRequests.current.has(id)) return;
+    closingRequests.current.add(id); setClosing(current => [...current, id]); setCloseError("");
     try {
-      if (!tab.epoch) throw new Error("终端身份尚未确认，请连接后再关闭");
       await api.close(tab.resourceId, tab.epoch);
       if (!mounted.current) return;
-      closeTab(tab.id, true);
-      if (!latestTabs.current.some(item => !item.hidden && item.id !== tab.id)) onClose();
+      removeTab(tab.id);
     } catch (cause) {
-      if (mounted.current) setCloseError(userFacingError(cause, "无法关闭当前终端，请重试。"));
+      if (mounted.current) setCloseError(userFacingError(cause, "无法关闭终端，请重试。"));
     } finally {
-      closingRequest.current = false;
-      if (mounted.current) setClosing(false);
+      closingRequests.current.delete(id);
+      if (mounted.current) setClosing(current => current.filter(item => item !== id));
     }
   };
   const tabLabel = (tab: typeof tabs[number]) => directoryName(tab.directoryIndex) + (tab.ordinal > 1 ? ` · ${tab.ordinal}` : "");
-  useEffect(() => { if (!open) setMenuOpen(false); }, [open]);
   useEffect(() => {
     tabList.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }, [selected, open]);
-  useEffect(() => {
-    if (!menuOpen) return;
-    addControl.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
-    const outside = (event: PointerEvent) => { if (!addControl.current?.contains(event.target as Node)) setMenuOpen(false); };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { setMenuOpen(false); addControl.current?.querySelector("button")?.focus(); }
-    };
-    document.addEventListener("pointerdown", outside);
-    document.addEventListener("keydown", escape);
-    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
-  }, [menuOpen]);
   const [height, setHeight] = useState(260);
   const drag = useRef<{ y: number; height: number } | null>(null);
   useEffect(() => { if (open) setOpened(true); }, [open]);
@@ -328,35 +309,18 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
             tabList.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
           }
         }} tabIndex={selected === tab.id ? 0 : -1}>{tabLabel(tab)}</button>
-        <button className="terminal-tab-close" aria-label={`${t("terminal.closeTerminal")} ${tabLabel(tab)}`} data-tooltip={t("terminal.hideOutput")} onClick={() => closeTab(tab.id)}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button>
+        <button className="terminal-tab-close" aria-label={`${t("terminal.closeTerminal")} ${tabLabel(tab)}`} data-tooltip={t("terminal.closeTerminal")} disabled={closing.includes(tab.id) || !tab.resourceId || !tab.epoch} aria-busy={closing.includes(tab.id)} onClick={() => void closeTab(tab.id)}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button>
       </div>)}
     </div>
     <div className="terminal-add-control" ref={addControl}>
-      <button className="terminal-add" aria-label={t("terminal.newTerminal")} data-tooltip={t("terminal.newTerminal")} disabled={(!directories.length && !hiddenTabs.length) || !loaded}
-        aria-haspopup={hasTerminalMenu ? "menu" : undefined} aria-expanded={hasTerminalMenu ? menuOpen : undefined}
+      <button className="terminal-add" aria-label={t("terminal.newTerminal")} data-tooltip={t("terminal.newTerminal")} disabled={!directories.length || !loaded}
         onClick={requestTerminal}>+</button>
-      {menuOpen && <div className="terminal-directory-menu" role="menu" aria-label="选择终端目录" onKeyDown={e => {
-        if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-        e.preventDefault();
-        const items = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
-        const index = items.indexOf(document.activeElement as HTMLButtonElement);
-        items[(index + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
-      }}>
-        {hiddenTabs.length > 0 && <><span>已有终端</span>{hiddenTabs.map(tab => <button key={tab.id} role="menuitem" onClick={() => {
-          setTabs(current => current.map(item => item.id === tab.id ? { ...item, hidden: false } : item));
-          setSelected(tab.id); setMenuOpen(false);
-        }}><FolderIcon />{tabLabel(tab)}</button>)}</>}
-        <span>{hiddenTabs.length ? "新建终端" : "选择终端目录"}</span>
-        {directories.map((_, index) => <button key={index} role="menuitem" onClick={() => addTab(index)}>
-          <FolderIcon />{hiddenTabs.length ? `新建 ${directoryName(index)}` : directoryName(index)}
-        </button>)}
-      </div>}
     </div>
-    <button className="terminal-close" aria-label="关闭当前终端" data-tooltip={closing ? "正在关闭当前终端…" : "关闭当前终端"} disabled={closing || !currentTerminal?.resourceId || !currentTerminal.status} onClick={() => void closeCurrentTerminal()}>×</button></header>
+    <button className="terminal-close" aria-label={t("header.collapseTerminal")} data-tooltip={t("header.collapseTerminal")} onClick={onClose}>×</button></header>
     <div className="terminal-panes">{closeError && <InlineError>{closeError}</InlineError>}{loadError && <InlineError onRetry={() => setRefresh(n => n + 1)}>{loadError}</InlineError>}
     {!loaded && !loadError && <LoadingStatus>正在查询后台终端…</LoadingStatus>}
     {loaded && visibleTabs.length === 0 && <div className="terminal-empty"><ReviewEmptyState kind="terminal" compact title={directories.length ? "暂无终端" : "尚未关联项目目录"}
       description={directories.length ? "新建终端，在项目目录中运行命令。" : "先为项目添加目录，再创建终端。"}
-      action={directories.length ? <button type="button" className="review-empty-action" aria-haspopup={hasTerminalMenu ? "menu" : undefined} aria-expanded={hasTerminalMenu ? menuOpen : undefined} onClick={requestTerminal}>新建终端</button> : onEditProject && <button type="button" className="review-empty-action" onClick={onEditProject}>添加项目目录</button>} /></div>}{visibleTabs.map(tab => <TerminalPane key={tab.id} operationId={tab.id} resourceId={tab.resourceId} onResource={id => rememberResource(tab.id, id)} onStatus={(status, epoch) => rememberStatus(tab.id, status, epoch)} projectId={projectId} directoryIndex={tab.directoryIndex} visible={open && selected === tab.id} api={api} />)}</div>
+      action={directories.length ? <button type="button" className="review-empty-action" onClick={requestTerminal}>新建终端</button> : onEditProject && <button type="button" className="review-empty-action" onClick={onEditProject}>添加项目目录</button>} /></div>}{visibleTabs.map(tab => <TerminalPane key={tab.id} operationId={tab.id} resourceId={tab.resourceId} onResource={id => rememberResource(tab.id, id)} onStatus={(status, epoch) => rememberStatus(tab.id, status, epoch)} projectId={projectId} directoryIndex={tab.directoryIndex} visible={open && selected === tab.id} api={api} />)}</div>
   </section>;
 }

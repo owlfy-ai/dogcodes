@@ -23,17 +23,11 @@
 .remote-steps { display: grid; gap: 10px; margin: 0 0 22px; padding: 0; list-style: none; counter-reset: remote-step; }
 .remote-steps li { display: flex; align-items: flex-start; gap: 9px; line-height: 1.6; counter-increment: remote-step; }
 .remote-steps li::before { content: counter(remote-step); display: grid; place-items: center; flex: none; width: 21px; height: 21px; border: 1px solid var(--line); border-radius: 50%; color: var(--muted); font-size: .6875rem; }
-.remote-service-label { display: block; margin-bottom: 7px; font-size: .75rem; font-weight: 550; }
-.remote-service-input { box-sizing: border-box; width: 100%; min-width: 0; padding: 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-raised); color: inherit; font: inherit; font-size: .75rem; }
-.remote-service-input:focus-visible { outline: 2px solid var(--muted); outline-offset: 2px; }
-.remote-service-input:disabled { color: var(--muted); opacity: 1; }
 .remote-connection { display: flex; align-items: center; gap: 6px; margin: 9px 0 0; color: var(--muted); font-size: .6875rem; line-height: 1.5; }
 .remote-connection > span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
 .remote-connection.connected { color: inherit; }
 .remote-connection.connected > span { background: #639e57; }
 .remote-connection.disconnected > span { background: #c35b4a; }
-.remote-page .remote-primary { width: 100%; margin-top: 16px; min-height: 40px; padding: 10px 14px; border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: 9px; background: CanvasText; color: Canvas; font-weight: 550; }
-.remote-primary:hover:not(:disabled) { opacity: .85; }
 .remote-trust-note { display: flex; align-items: flex-start; gap: 7px; margin: 15px 0 0; color: var(--muted); font-size: .6875rem; line-height: 1.65; }
 .remote-trust-note svg { width: 15px; height: 18px; }
 .remote-qr-panel { display: flex; align-items: center; justify-content: center; flex-direction: column; min-width: 0; min-height: 305px; padding: 22px 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel-raised); text-align: center; }

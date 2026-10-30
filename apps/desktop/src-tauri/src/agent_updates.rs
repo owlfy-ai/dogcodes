@@ -115,6 +115,16 @@ fn package(provider: &str) -> Option<&'static str> {
         _ => None,
     }
 }
+fn host_app<'a>(provider: &str, executable: &'a Path) -> Option<&'a Path> {
+    if provider == "codex"
+        && let Some(app) = codex_host::desktop_app(executable)
+    {
+        return Some(app);
+    }
+    executable
+        .ancestors()
+        .find(|p| p.extension().is_some_and(|v| v == "app"))
+}
 fn plan(i: &InstallationSummary) -> Plan {
     let path = Path::new(&i.executable);
     let Ok(real) = path.canonicalize() else {
@@ -126,10 +136,7 @@ fn plan(i: &InstallationSummary) -> Plan {
         return Plan::Native("Kiro CLI 原生更新器");
     }
     // Bundled packages belong to their host, even when they contain node_modules.
-    if let Some(app) = real
-        .ancestors()
-        .find(|p| p.extension().is_some_and(|v| v == "app"))
-    {
+    if let Some(app) = host_app(&i.provider_id, &real) {
         return Plan::Host(app.into());
     }
     if i.provider_id == "pi" && new_agents::pi_managed_root(&real).is_some() {
@@ -202,12 +209,6 @@ fn plan(i: &InstallationSummary) -> Plan {
             }
             return Plan::Unsupported;
         }
-    }
-    if let Some(app) = real
-        .ancestors()
-        .find(|p| p.extension().is_some_and(|v| v == "app"))
-    {
-        return Plan::Host(app.into());
     }
     match i.provider_id.as_str() {
         "cursor" => Plan::Native("Cursor CLI"),
@@ -305,9 +306,7 @@ fn desktop_version(i: &InstallationSummary) -> Option<String> {
         return None;
     }
     let executable = Path::new(&i.executable).canonicalize().ok()?;
-    let app = executable
-        .ancestors()
-        .find(|p| p.extension().is_some_and(|v| v == "app"))?;
+    let app = host_app(&i.provider_id, &executable)?;
     let info = plist::Value::from_file(app.join("Contents/Info.plist")).ok()?;
     info.as_dictionary()?
         .get("CFBundleShortVersionString")?
@@ -1010,6 +1009,57 @@ mod tests {
         assert!(state.execution_lease(&client).await.is_err());
         drop(held_by_another_operation);
         assert!(state.execution_lease(&client).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn nested_codex_cli_uses_desktop_host_and_tracks_its_version() {
+        let root = tempfile::tempdir().unwrap();
+        // Resolve the host by bundle identity, even if the user renamed the app.
+        let app = root.path().join("Renamed.app");
+        let cli_app = app.join("Contents/Resources/codex-cli/CodexCLI.app");
+        let nested = cli_app.join("Contents/MacOS/codex");
+        let launcher = app.join("Contents/Resources/codex-cli/bin/codex");
+        let legacy = app.join("Contents/Resources/codex");
+        for executable in [&nested, &launcher, &legacy] {
+            std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
+            std::fs::write(executable, "same CLI").unwrap();
+        }
+        let write_info = |bundle: &Path, id: &str, version: Option<&str>| {
+            let mut info = plist::Dictionary::new();
+            info.insert("CFBundleIdentifier".into(), plist::Value::String(id.into()));
+            if let Some(version) = version {
+                info.insert(
+                    "CFBundleShortVersionString".into(),
+                    plist::Value::String(version.into()),
+                );
+            }
+            plist::Value::Dictionary(info)
+                .to_file_xml(bundle.join("Contents/Info.plist"))
+                .unwrap();
+        };
+        write_info(&cli_app, "com.openai.codex.cli", None);
+        write_info(&app, "com.openai.codex", Some("26.1023.50603"));
+        let host = app.canonicalize().unwrap();
+        for executable in [&nested, &launcher, &legacy] {
+            let i = installation_for("codex", executable, "0.165.0-alpha.1.2");
+            let p = plan(&i);
+            assert!(matches!(&p, Plan::Host(path) if path == &host), "{p:?}");
+            assert_eq!(base(&i).desktop_version.as_deref(), Some("26.1023.50603"));
+            assert!(install_spec(&i, &p, "26.1027.30824").is_err());
+        }
+        let i = installation_for("codex", &nested, "0.165.0-alpha.1.2");
+        let cache = AgentUpdates::default();
+        let mut failed = base(&i);
+        failed.status = "error".into();
+        cache.save(&i, failed).await;
+        assert!(cache.cached(&i, false).await.is_some());
+        write_info(&app, "com.openai.codex", Some("26.1027.30824"));
+        assert!(cache.cached(&i, false).await.is_none());
+        assert_eq!(base(&i).desktop_version.as_deref(), Some("26.1027.30824"));
+
+        // A different host must not gain access to the official Codex updater.
+        write_info(&app, "com.example.other", Some("1.0.0"));
+        assert!(matches!(plan(&i), Plan::Host(path) if path == cli_app.canonicalize().unwrap()));
     }
 
     #[tokio::test]

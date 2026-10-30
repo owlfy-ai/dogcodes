@@ -39,7 +39,6 @@ export function ContextUsageRing({ quota }: { quota: QuotaSnapshot | null; provi
   const report = usage.requestUsage;
   if (report && report.records.length > 0) {
     rows.push(["已记录模型请求", `${tokens(report.records.length)} 次${report.truncated ? "（部分）" : ""}`]);
-    rows.push(["请求统计范围", "已取得的请求，不代表完整会话"]);
     for (const [key, label] of [["inputTokens", "请求 · 输入（含缓存）"], ["outputTokens", "请求 · 输出（含推理）"]] as const) {
       const values = report.records.map(record => record[key]);
       const total = values.reduce<number>((sum, value) => sum + (valid(value) ? value : 0), 0);

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "tauri": "tauri",
-    "desktop:dev": "tauri dev",
+    "desktop:dev": "node ../../scripts/desktop-dev.mjs",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run"

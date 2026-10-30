@@ -5,6 +5,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::time::Instant;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
@@ -57,6 +58,15 @@ struct Http {
 }
 fn get_method() -> String {
     "GET".into()
+}
+// Vite and other dev servers may bind only ::1 for localhost. Pin both
+// candidates to loopback instead of trusting DNS/hosts or widening the bind.
+// Address fallback happens while establishing TCP, before any request is sent.
+fn loopback_addresses(port: u16) -> [SocketAddr; 2] {
+    [
+        SocketAddr::from((Ipv6Addr::LOCALHOST, port)),
+        SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
+    ]
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -114,7 +124,7 @@ fn preview_location(value: &str, port: u16) -> String {
         return value.to_owned();
     };
     if target.scheme() != "http"
-        || !matches!(target.host_str(), Some("127.0.0.1" | "localhost"))
+        || !matches!(target.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"))
         || target.port_or_known_default() != Some(port)
         || !target.username().is_empty()
         || target.password().is_some()
@@ -230,9 +240,10 @@ impl Host {
                     return Err("预览请求过大".into());
                 }
                 let port = self.target(core, &request.preview_id).await?;
-                let origin = format!("http://127.0.0.1:{port}");
+                let origin = format!("http://localhost:{port}");
                 let client = reqwest::Client::builder()
                     .no_proxy()
+                    .resolve_to_addrs("localhost", &loopback_addresses(port))
                     .retry(reqwest::retry::never())
                     .redirect(reqwest::redirect::Policy::none())
                     .timeout(Duration::from_secs(30))
@@ -318,12 +329,12 @@ impl Host {
                 // Do not acquire targets while holding webs (preview_open uses the opposite order).
                 drop(webs);
                 let port = self.target(core, &request.preview_id).await?;
-                let mut call = format!("ws://127.0.0.1:{port}{}", request.path)
+                let mut call = format!("ws://localhost:{port}{}", request.path)
                     .into_client_request()
                     .map_err(failure)?;
                 call.headers_mut().insert(
                     "Origin",
-                    format!("http://127.0.0.1:{port}")
+                    format!("http://localhost:{port}")
                         .parse()
                         .map_err(failure)?,
                 );
@@ -335,7 +346,7 @@ impl Host {
                 }
                 let stream = tokio::time::timeout(
                     Duration::from_secs(5),
-                    tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)),
+                    tokio::net::TcpStream::connect(loopback_addresses(port).as_slice()),
                 )
                 .await
                 .map_err(|_| "项目 WebSocket 连接超时")?

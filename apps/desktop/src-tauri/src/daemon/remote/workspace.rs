@@ -27,7 +27,7 @@ pub(super) const STREAMS: &[&str] = &["workspace_watch", "review_watch", "projec
 
 pub(super) fn capabilities() -> Value {
     json!({
-        "version": 1, "workspaceMethods": METHODS, "workspaceStreams": STREAMS,
+        "version": 1, "platform": std::env::consts::OS, "workspaceMethods": METHODS, "workspaceStreams": STREAMS,
         "commandRecoveryMethods":["command_receipt"],
         "terminalLaunchRecovery": true, "terminalStopEpoch": true, "terminalInputStreams":true, "runOperationRequest": true,
         "businessMethods": super::business::METHODS,

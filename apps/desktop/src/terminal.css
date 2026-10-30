@@ -31,10 +31,6 @@
 
 .terminal-add-control { position: relative; flex-shrink: 0; }
 .terminal-toolbar .terminal-add, .terminal-toolbar .terminal-close { width: 28px; height: 28px; padding: 0; line-height: 1; font-size: calc(20px * var(--ui-scale, 1)); }
-.terminal-directory-menu { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 10; width: 220px; max-width: 65vw; max-height: 240px; overflow-y: auto; padding: 6px; border: 1px solid var(--terminal-border); border-radius: 9px; background: var(--terminal-bg); box-shadow: 0 8px 28px #0003; }
-.terminal-directory-menu > span { display: block; padding: 6px 9px; font-size: calc(11px * var(--ui-scale, 1)); opacity: .6; }
-.terminal-directory-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 9px; text-align: left; overflow: hidden; text-overflow: ellipsis; }
-.terminal-directory-menu button:focus-visible { outline: 2px solid #779cc5; outline-offset: -2px; background: #8882; }
 
 .terminal-tab { display: flex; align-items: center; flex-shrink: 0; border: 1px solid transparent; border-radius: 6px; }
 .terminal-tab[data-selected="true"] { background: #8882; border-color: var(--terminal-border); }

@@ -99,6 +99,26 @@ fn failure(e: impl std::fmt::Debug) -> String {
     format!("远程连接失败：{e:?}")
 }
 impl RemoteHost {
+    pub fn for_default_service(directory: PathBuf) -> Self {
+        let legacy = directory.join("config.json");
+        // Preserve an existing online identity in place. A different server's
+        // routing credentials and device grants stay in their original directory;
+        // the online service starts a separate registration and pairing book.
+        // Unreadable legacy configuration still fails closed in initialize().
+        let keep_legacy = legacy.exists()
+            && std::fs::read(&legacy)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Config>(&bytes).ok())
+                .is_none_or(|config| {
+                    config.service.trim_end_matches('/') == "https://global.dog.codes"
+                });
+        Self::new(if keep_legacy {
+            directory
+        } else {
+            directory.join("services").join("global.dog.codes")
+        })
+    }
+
     pub fn new(directory: PathBuf) -> Self {
         let power = Arc::new(power::Host::new(directory.join("power-policy.json")));
         let native = Arc::new(native::Host::new(power.clone(), directory.join("wayland")));
@@ -334,7 +354,27 @@ impl RemoteHost {
                         state.error = None;
                         state.listening = true;
                     }
-                    while let Some(Ok(message)) = ws.next().await {
+                    // The service pings every 20 s. After sleep or a network
+                    // change the old socket can stay half-open with no error,
+                    // and the phone cannot reach this computer until it re-dials.
+                    let mut probe = tokio::time::interval(LISTEN_PROBE);
+                    let mut last_seen = tokio::time::Instant::now();
+                    let mut clock = (std::time::SystemTime::now(), std::time::Instant::now());
+                    loop {
+                        let message = tokio::select! {
+                            message = ws.next() => message,
+                            _ = probe.tick() => {
+                                let wall = clock.0.elapsed().unwrap_or_default();
+                                let awake = clock.1.elapsed();
+                                clock = (std::time::SystemTime::now(), std::time::Instant::now());
+                                if listener_stale(last_seen.elapsed(), wall, awake) {
+                                    break;
+                                }
+                                continue;
+                            }
+                        };
+                        let Some(Ok(message)) = message else { break };
+                        last_seen = tokio::time::Instant::now();
                         match message {
                             Message::Text(text) => {
                                 if let Ok(v) = serde_json::from_str::<Value>(&text)
@@ -950,7 +990,15 @@ async fn decode_http(response: reqwest::Response) -> Result<Value, String> {
         response.json().await.map_err(|_| "接入服务响应无效".into())
     }
 }
+fn initialize_tls_provider() {
+    // HTTP and WebRTC enable different rustls providers. Tungstenite's default
+    // TLS connector needs an explicit process default when both are present.
+    // Keep a provider already selected by another component.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 async fn socket(service: &str, path: &str, token: &str) -> Result<Socket, String> {
+    initialize_tls_provider();
     let url = format!(
         "{}{path}",
         service
@@ -964,13 +1012,75 @@ async fn socket(service: &str, path: &str, token: &str) -> Result<Socket, String
             .parse()
             .map_err(|_| "invalid credential")?,
     );
-    tokio::time::timeout(Duration::from_secs(10), connect_async(request))
+    tokio::time::timeout(Duration::from_secs(10), race_families(request))
         .await
         .map_err(|_| "connection timeout")?
-        .map(|(ws, _)| Socket::Relay(Box::new(ws)))
-        .map_err(|_| "connection failed".into())
+        .map(|ws| Socket::Relay(Box::new(ws)))
+}
+
+/// Opens the WebSocket over IPv4 and IPv6 at once and keeps whichever
+/// finishes TLS and the upgrade first. Resolver order puts IPv6 first, yet on
+/// some networks IPv6 connects quickly and then crawls (seconds per round
+/// trip), so racing only the TCP connect would still pick the slow path.
+async fn race_families(
+    request: tokio_tungstenite::tungstenite::handshake::client::Request,
+) -> Result<WebSocket, String> {
+    let uri = request.uri().clone();
+    let port = uri
+        .port_u16()
+        .unwrap_or(if uri.scheme_str() == Some("wss") {
+            443
+        } else {
+            80
+        });
+    let addresses = match uri.host() {
+        Some(host) => tokio::net::lookup_host(format!("{host}:{port}"))
+            .await
+            .map(Iterator::collect::<Vec<_>>)
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
+    let first = |v6: bool| addresses.iter().copied().find(|a| a.is_ipv6() == v6);
+    let attempts: Vec<_> = [first(false), first(true)]
+        .into_iter()
+        .flatten()
+        .map(|address| {
+            let request = request.clone();
+            Box::pin(async move {
+                let tcp = tokio::net::TcpStream::connect(address)
+                    .await
+                    .map_err(|_| "connection failed".to_owned())?;
+                let _ = tcp.set_nodelay(true);
+                tokio_tungstenite::client_async_tls(request, tcp)
+                    .await
+                    .map(|(ws, _)| ws)
+                    .map_err(|_| "connection failed".to_owned())
+            })
+        })
+        .collect();
+    if attempts.is_empty() {
+        // Unresolvable here; let the library report it the usual way.
+        return connect_async(request)
+            .await
+            .map(|(ws, _)| ws)
+            .map_err(|_| "connection failed".into());
+    }
+    // The loser is dropped, which closes its socket.
+    futures_util::future::select_ok(attempts)
+        .await
+        .map(|(ws, _)| ws)
 }
 const HANDSHAKE_WAIT: Duration = Duration::from_secs(15);
+const LISTEN_PROBE: Duration = Duration::from_secs(5);
+/// More than two missed 20 s service pings.
+const LISTEN_SILENCE: Duration = Duration::from_secs(45);
+/// Wall time running ahead of awake time by this much means the Mac slept.
+const LISTEN_SLEEP_GAP: Duration = Duration::from_secs(10);
+/// Whether the listener socket must be re-dialed: the service has gone quiet,
+/// or the computer slept, after which the old TCP connection is usually dead.
+fn listener_stale(silent: Duration, wall: Duration, awake: Duration) -> bool {
+    silent > LISTEN_SILENCE || wall.saturating_sub(awake) > LISTEN_SLEEP_GAP
+}
 
 async fn receive(ws: &mut Socket, wait: Duration) -> Result<Vec<u8>, String> {
     tokio::time::timeout(wait, async {
@@ -1139,6 +1249,48 @@ fn parse_sequence(value: Option<&mut Value>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn websocket_tls_builder_supports_combined_http_and_webrtc_features() {
+        initialize_tls_provider();
+        let _ = rustls::ClientConfig::builder()
+            .with_root_certificates(rustls::RootCertStore::empty())
+            .with_no_client_auth();
+    }
+
+    #[test]
+    fn online_registration_does_not_reuse_another_servers_credentials_or_grants() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.json");
+        let original = json!({"service":"http://127.0.0.1:8787","hostId":"local-host","publicKey":"pinned-local-key"}).to_string();
+        std::fs::write(&path, &original).unwrap();
+        std::fs::write(directory.path().join("devices.json"), "local-pairing-book").unwrap();
+        let host = RemoteHost::for_default_service(directory.path().to_owned());
+        assert_eq!(
+            host.directory,
+            directory.path().join("services/global.dog.codes")
+        );
+        assert!(!host.directory.join("config.json").exists());
+        assert!(!host.directory.join("devices.json").exists());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), original);
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("devices.json")).unwrap(),
+            "local-pairing-book"
+        );
+    }
+
+    #[test]
+    fn existing_online_registration_and_unreadable_config_are_preserved() {
+        for original in [
+            json!({"service":"https://global.dog.codes","hostId":"online-host","publicKey":"pinned-online-key"}).to_string(),
+            "unreadable configuration".into(),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            std::fs::write(directory.path().join("config.json"), original).unwrap();
+            let host = RemoteHost::for_default_service(directory.path().to_owned());
+            assert_eq!(host.directory, directory.path());
+        }
+    }
     #[test]
     fn wire_sequences_are_strings_and_user_payloads_are_preserved() {
         let original = json!({"sequence":u64::MAX,"task":{"streamVersion":u64::MAX},"payload":{"sequence":42},"input":{"prompt":"123"}});
@@ -1147,6 +1299,35 @@ mod tests {
         assert_eq!(wire["task"]["streamVersion"], u64::MAX.to_string());
         assert_eq!(wire["payload"], original["payload"]);
         assert_eq!(wire["input"], original["input"]);
+    }
+    #[tokio::test]
+    async fn websocket_connects_over_whichever_family_answers() {
+        // Only IPv4 listens; "localhost" also resolves to ::1, which must not
+        // block or fail the connection.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
+            ws.send(Message::Text("hello".into())).await.unwrap();
+        });
+        let request = format!("ws://localhost:{port}/v1/test")
+            .into_client_request()
+            .unwrap();
+        let mut ws = race_families(request).await.unwrap();
+        assert_eq!(
+            ws.next().await.unwrap().unwrap(),
+            Message::Text("hello".into())
+        );
+    }
+    #[test]
+    fn listener_redials_after_silence_or_sleep() {
+        let s = Duration::from_secs;
+        assert!(!listener_stale(s(25), s(5), s(5)));
+        assert!(listener_stale(s(46), s(5), s(5)));
+        assert!(listener_stale(s(1), s(600), s(5)));
+        // A clock set backwards is not a sleep.
+        assert!(!listener_stale(s(1), s(0), s(5)));
     }
     #[test]
     fn host_name_is_display_only_and_bounded() {

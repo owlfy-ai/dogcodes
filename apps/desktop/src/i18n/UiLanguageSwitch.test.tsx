@@ -87,10 +87,11 @@ describe("UiLanguage switching across international languages", () => {
     expect(entries[2].getAttribute("aria-current")).toBe("page");
     expect(element.querySelector('[role="dialog"]')).toBeNull();
     expect(element.querySelector(".composer")).toBeNull();
-    await click(element.querySelector(".remote-primary")!);
+    expect(element.querySelector(".remote-primary")).toBeNull();
     const calls = () => vi.mocked(invoke).mock.calls.filter(([command]) => command === "core_remote_control")
       .map(([, args]) => (args as { call: { type: string; dialogId?: string } }).call);
     const invitation = calls().find(call => call.type === "invite")!;
+    expect(invitation).toBeDefined();
     await click(entries[2]);
     await act(async () => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
     expect(element.querySelector(".remote-page")).not.toBeNull();

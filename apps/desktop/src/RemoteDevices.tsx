@@ -15,6 +15,7 @@ type Status = {
   devices: { deviceId: string; publicKey: string; revoked: boolean }[];
 };
 type LocalError = "qrFailed" | "copyFailed";
+const SERVICE_ORIGIN = "https://global.dog.codes";
 
 function PairingIcon({ kind }: { kind: "qr" | "shield" | "copy" }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -29,19 +30,24 @@ export function RemoteDevices({ lang }: { lang?: ResolvedLanguage }) {
   const language = lang ?? resolvedLanguage;
   const tr = (key: string, params?: Record<string, string | number>) => t(`remoteDevices.${key}`, params, language);
   const descriptionId = useId();
-  const serviceId = useId();
   const dialogId = useRef("");
   const mounted = useRef(false);
-  const [service, setService] = useState("http://127.0.0.1:8787");
+  const requestBusy = useRef(false);
+  const requestRevision = useRef(0);
   const [status, setStatus] = useState<Status>();
   const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
+  const [statusError, setStatusError] = useState("");
   const [localError, setLocalError] = useState<LocalError>();
   const [qr, setQr] = useState("");
   const [copied, setCopied] = useState(false);
   const [time, setTime] = useState(Date.now());
 
   async function call(request: Record<string, unknown>) {
+    if (requestBusy.current) return;
+    requestBusy.current = true;
+    requestRevision.current += 1;
     setBusy(true);
     setError("");
     setLocalError(undefined);
@@ -51,6 +57,7 @@ export function RemoteDevices({ lang }: { lang?: ResolvedLanguage }) {
     } catch (cause) {
       if (mounted.current) setError(String(cause));
     } finally {
+      requestBusy.current = false;
       if (mounted.current) setBusy(false);
     }
   }
@@ -60,12 +67,45 @@ export function RemoteDevices({ lang }: { lang?: ResolvedLanguage }) {
     let closed = false;
     const id = crypto.randomUUID();
     dialogId.current = id;
+    let initialAttempted = false;
+    let expiredAttempt: string | undefined;
+    let producedInvitation: string | undefined;
+    const generate = async (expiredUri?: string) => {
+      if (closed || requestBusy.current) return;
+      initialAttempted = true;
+      expiredAttempt = expiredUri;
+      requestBusy.current = true;
+      requestRevision.current += 1;
+      setGenerating(true);
+      setError("");
+      setLocalError(undefined);
+      try {
+        const value = await invoke<Status>("core_remote_control", { call: { type: "invite", service: SERVICE_ORIGIN, dialogId: id } });
+        if (!closed) {
+          setStatus(value);
+          if (value.invitation) producedInvitation = value.invitation.uri;
+        }
+      } catch (cause) {
+        if (!closed) setError(String(cause));
+      } finally {
+        requestBusy.current = false;
+        if (!closed) setGenerating(false);
+      }
+    };
     const refresh = () => {
+      if (closed || requestBusy.current) return;
+      const revision = requestRevision.current;
       void invoke<Status>("core_remote_control", { call: { type: "status" } }).then(value => {
-        if (closed) return;
+        if (closed || revision !== requestRevision.current) return;
         setStatus(value);
-        if (value.service) setService(value.service);
-      }).catch(cause => { if (!closed) setError(String(cause)); });
+        setStatusError("");
+        if (value.service && value.service.replace(/\/+$/, "") !== SERVICE_ORIGIN) return;
+        const expiredUri = value.invitation && value.invitation.expiresAt * 1000 <= Date.now() ? value.invitation.uri : undefined;
+        const refreshKey = expiredUri ?? (!value.invitation && producedInvitation ? `missing:${producedInvitation}` : undefined);
+        if (!initialAttempted || (refreshKey && refreshKey !== expiredAttempt)) {
+          void generate(refreshKey);
+        }
+      }).catch(cause => { if (!closed && revision === requestRevision.current) setStatusError(String(cause)); });
     };
     refresh();
     const timer = setInterval(() => { refresh(); setTime(Date.now()); }, 1500);
@@ -101,10 +141,12 @@ export function RemoteDevices({ lang }: { lang?: ResolvedLanguage }) {
     }
   }
 
-  const active = status?.invitation && status.invitation.expiresAt * 1000 > time;
+  const serviceUpdateRequired = Boolean(status?.service && status.service.replace(/\/+$/, "") !== SERVICE_ORIGIN);
+  const active = !generating && !serviceUpdateRequired && status?.invitation && status.invitation.expiresAt * 1000 > time;
+  const expiredInvitation = !serviceUpdateRequired && status?.invitation && !active;
   const devices = status?.devices.filter(device => !device.revoked) ?? [];
-  const failure = error || status?.error;
-  const connection = status?.connected ? "connected" : failure ? "disconnected" : "connecting";
+  const failure = serviceUpdateRequired ? tr("serviceUpdateRequired") : error || statusError || status?.error;
+  const connection = failure ? "disconnected" : status?.connected ? "connected" : "connecting";
   const expiry = status?.invitation ? new Intl.DateTimeFormat(language, { hour: "numeric", minute: "2-digit" }).format(status.invitation.expiresAt * 1000) : "";
 
   return <section className="workspace remote-page" aria-label={tr("title")} aria-describedby={descriptionId}>
@@ -118,13 +160,7 @@ export function RemoteDevices({ lang }: { lang?: ResolvedLanguage }) {
           <h2>{tr("setupTitle")}</h2>
           <p className="remote-description">{tr("description")}</p>
           <ol className="remote-steps"><li>{tr("stepOpen")}</li><li>{tr("stepScan")}</li></ol>
-          <label className="remote-service-label" htmlFor={serviceId}>{tr("service")}</label>
-          <input id={serviceId} className="remote-service-input" value={service} disabled={busy || status?.configured || !status}
-            onChange={event => setService(event.target.value)} placeholder="https://…" spellCheck={false} autoCapitalize="none" autoComplete="off" />
           {status?.configured && <p className={`remote-connection ${connection}`} role="status"><span aria-hidden="true" />{tr(connection)}</p>}
-          <button className="remote-primary" type="button" disabled={busy || !status || !service.trim()} onClick={() => void call({ type: "invite", service })}>
-            <PairingIcon kind="qr" />{busy ? <LoadingStatus>{tr("processing")}</LoadingStatus> : tr(status?.invitation ? "regenerate" : "generate")}
-          </button>
           {!status && !failure && <LoadingStatus>{tr("loading")}</LoadingStatus>}
           <p className="remote-trust-note"><PairingIcon kind="shield" />{tr("trustNote")}</p>
         </div>
@@ -135,8 +171,10 @@ export function RemoteDevices({ lang }: { lang?: ResolvedLanguage }) {
             <small>{tr("expires", { time: expiry })}</small>
           </> : <>
             <div className="remote-qr-placeholder"><PairingIcon kind="qr" /></div>
-            <strong>{tr(status?.invitation && !active ? "expiredTitle" : "qrPlaceholder")}</strong>
-            <p>{tr(status?.invitation && !active ? "expired" : "qrHint")}</p>
+            {generating ? <LoadingStatus>{tr("processing")}</LoadingStatus> : <>
+              <strong>{tr(expiredInvitation ? "expiredTitle" : "qrPlaceholder")}</strong>
+              <p>{tr(expiredInvitation ? "expired" : "qrHint")}</p>
+            </>}
           </>}
           {active && <button className="remote-copy" type="button" onClick={() => void copyInvitation()}><PairingIcon kind="copy" /><span role="status">{tr(copied ? "copied" : "copy")}</span></button>}
         </div>
@@ -147,7 +185,7 @@ export function RemoteDevices({ lang }: { lang?: ResolvedLanguage }) {
         {devices.length ? <ul>{devices.map(device => <li className="remote-device" key={device.deviceId}>
           <span className="remote-device-icon"><SidebarNavIcon kind="phone" /></span>
           <div className="remote-device-identity"><strong>{tr("phone")}</strong><span>{device.publicKey.slice(0, 12)}</span></div>
-          <button className="remote-revoke" type="button" disabled={busy} aria-label={tr("revokeDevice", { id: device.publicKey.slice(0, 12) })}
+          <button className="remote-revoke" type="button" disabled={busy || generating} aria-label={tr("revokeDevice", { id: device.publicKey.slice(0, 12) })}
             onClick={() => void call({ type: "revoke", deviceId: device.deviceId })}>{tr("revoke")}</button>
         </li>)}</ul> : <p className="remote-empty">{tr(status ? "emptyDevices" : "loading")}</p>}
       </section>

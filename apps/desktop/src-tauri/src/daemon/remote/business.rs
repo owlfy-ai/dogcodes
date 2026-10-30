@@ -19,6 +19,7 @@ pub(super) const METHODS: &[&str] = &[
     "read_artifact",
     "review_repair",
     "register_project",
+    "update_project",
     "host_directories",
     "timeline_tail",
     "timeline_item",
@@ -64,6 +65,22 @@ pub(super) async fn call(
                 .await;
             }
             Ok(json!(result))
+        }
+        "update_project" => {
+            // Project scope changes take the same gates as the desktop path:
+            // a checked review scope cannot change midway through an operation.
+            parse_sequence(args.pointer_mut("/0/expectedStreamVersion"))?;
+            let (request,): (crate::project_registry::ProjectEdit,) =
+                serde_json::from_value(args).map_err(failure)?;
+            let project = request.project_id.clone();
+            {
+                let _projects = control.projects.lock().await;
+                let _scope = control.review.gate.lock().await;
+                crate::project_registry::update_as(core, request, actor).await?;
+            }
+            let _ =
+                crate::project_runs::schedule(&control.project_runs, core.clone(), project).await;
+            Ok(Value::Null)
         }
         "review_repair" => {
             parse_sequence(args.pointer_mut("/0/baseVersion"))?;

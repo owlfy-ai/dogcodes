@@ -98,21 +98,11 @@ it("adds and selects another independent terminal immediately for a single direc
   expect(api.close).not.toHaveBeenCalled();
 });
 
-it("waits for a directory choice and supports cancelling the menu without creating a session", async () => {
+it("creates directly in the selected terminal directory for a multi-directory project", async () => {
   const api = client();
   await act(async () => root.render(<TerminalDock projectId="project" directories={directories} open onClose={() => {}} api={api} />));
-  const add = element.querySelector('[aria-label="新建终端"]') as HTMLButtonElement;
-  await act(async () => add.click());
-  expect(api.open).toHaveBeenCalledTimes(2);
-  expect(element.querySelectorAll('[role="menuitem"]')).toHaveLength(2);
-  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-  expect(element.querySelector('[role="menu"]')).toBeNull();
-  expect(document.activeElement).toBe(add);
-  await act(async () => add.click());
-  await act(async () => document.body.dispatchEvent(new Event("pointerdown", { bubbles: true })));
-  expect(element.querySelector('[role="menu"]')).toBeNull();
-  await act(async () => add.click());
-  await act(async () => (element.querySelectorAll('[role="menuitem"]')[1] as HTMLButtonElement).click());
+  await act(async () => element.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1].click());
+  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="新建终端"]')!.click());
   expect(api.open).toHaveBeenCalledTimes(3);
   expect(vi.mocked(api.open).mock.calls[2].slice(0, 2)).toEqual(["project", 1]);
   expect(element.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("server · 2");
@@ -120,44 +110,43 @@ it("waits for a directory choice and supports cancelling the menu without creati
   expect(api.close).not.toHaveBeenCalled();
 });
 
-it("hides only the requested output and selects an adjacent tab without stopping", async () => {
+it("stops only the requested tab and preserves the selected terminal", async () => {
   const api = client();
   await act(async () => root.render(<TerminalDock projectId="project" directories={directories} open onClose={() => {}} api={api} />));
   await act(async () => (element.querySelector('[aria-label="关闭终端 server"]') as HTMLButtonElement).click());
-  expect(detach).toHaveBeenCalledExactlyOnceWith("session-1"); expect(api.close).not.toHaveBeenCalled();
-  expect(element.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("web");
-  await act(async () => (element.querySelector('[aria-label="新建终端"]') as HTMLButtonElement).click());
-  await act(async () => [...element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent === "新建 server")!.click());
-  await act(async () => (element.querySelector('[aria-label="关闭终端 server · 2"]') as HTMLButtonElement).click());
+  expect(api.close).toHaveBeenCalledExactlyOnceWith("session-1", "epoch");
+  expect(detach).toHaveBeenCalledExactlyOnceWith("session-1");
   expect(element.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("web");
   expect(terminals[0].dispose).not.toHaveBeenCalled();
+  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="新建终端"]')!.click());
+  expect(api.open).toHaveBeenCalledTimes(3);
+  expect(element.querySelector('[role="menu"]')).toBeNull();
 });
 
-it("allows closing the last tab and opening another without hiding the panel", async () => {
+it("allows stopping the last tab and creating another directly without hiding the panel", async () => {
   const api = client(), hide = vi.fn();
   await act(async () => root.render(<TerminalDock projectId="project" directories={["/project/web"]} open onClose={hide} api={api} />));
   await act(async () => (element.querySelector('[aria-label="关闭终端 web"]') as HTMLButtonElement).click());
-  expect(detach).toHaveBeenCalledExactlyOnceWith("session-0"); expect(api.close).not.toHaveBeenCalled();
+  expect(detach).toHaveBeenCalledExactlyOnceWith("session-0");
+  expect(api.close).toHaveBeenCalledExactlyOnceWith("session-0", "epoch");
   expect(element.querySelectorAll('[role="tab"]')).toHaveLength(0);
   expect(element.textContent).toContain("暂无终端");
   expect(hide).not.toHaveBeenCalled();
   await act(async () => (element.querySelector('[aria-label="新建终端"]') as HTMLButtonElement).click());
-  await act(async () => [...element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent === "新建 web")!.click());
   expect(api.open).toHaveBeenCalledTimes(2);
   expect(element.querySelectorAll('[role="tab"]')).toHaveLength(1);
+  expect(element.querySelector('[role="menu"]')).toBeNull();
 });
 
-it("opens the existing directory chooser from the empty state without starting a shell early", async () => {
+it("creates a fresh terminal directly from the empty state", async () => {
   const api = client();
   await act(async () => root.render(<TerminalDock projectId="project" directories={directories} open onClose={() => {}} api={api} />));
   for (const name of ["web", "server"]) await act(async () => (element.querySelector(`[aria-label="关闭终端 ${name}"]`) as HTMLButtonElement).click());
   expect(element.querySelector(".terminal-empty h3")?.textContent).toBe("暂无终端");
   await act(async () => element.querySelector<HTMLButtonElement>(".terminal-empty .review-empty-action")!.click());
-  expect(api.open).toHaveBeenCalledTimes(2);
-  expect(element.querySelectorAll('[role="menuitem"]')).toHaveLength(4);
-  await act(async () => (element.querySelectorAll('[role="menuitem"]')[3] as HTMLButtonElement).click());
   expect(api.open).toHaveBeenCalledTimes(3);
-  expect(vi.mocked(api.open).mock.calls[2].slice(0, 2)).toEqual(["project", 1]);
+  expect(vi.mocked(api.open).mock.calls[2].slice(0, 2)).toEqual(["project", 0]);
+  expect(element.querySelector('[role="menu"]')).toBeNull();
   expect(element.querySelector(".terminal-empty")).toBeNull();
 });
 
@@ -186,19 +175,18 @@ it.each(["success", "failure"])("stops the startup animation when opening settle
   } else expect(element.querySelector('.terminal-status')).toBeNull();
 });
 
-it("restores an existing background shell without opening another", async () => {
+it("restores a background shell and creates a fresh terminal after stopping it", async () => {
   const api = client(); vi.mocked(api.list).mockResolvedValue([info()]);
   await act(async () => root.render(<TerminalDock projectId="project" directories={directories} open onClose={() => {}} api={api} />));
   expect(api.attach).toHaveBeenCalledWith("existing", expect.any(Function));
   expect(api.open).not.toHaveBeenCalled();
   await act(async () => (element.querySelector('[aria-label="关闭终端 web"]') as HTMLButtonElement).click());
-  expect(detach).toHaveBeenCalledWith("existing"); expect(api.close).not.toHaveBeenCalled();
-  expect(element.querySelector('[aria-label="恢复后台终端"]')).toBeNull();
-  await act(async () => (element.querySelector('[aria-label="新建终端"]') as HTMLButtonElement).click());
-  await act(async () => (element.querySelector('[role="menuitem"]') as HTMLButtonElement).click());
-  expect(api.attach).toHaveBeenCalledTimes(2); expect(api.open).not.toHaveBeenCalled();
-  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="关闭当前终端"]')!.click());
+  expect(detach).toHaveBeenCalledWith("existing");
   expect(api.close).toHaveBeenCalledExactlyOnceWith("existing", "epoch");
+  await act(async () => (element.querySelector('[aria-label="新建终端"]') as HTMLButtonElement).click());
+  expect(api.attach).toHaveBeenCalledTimes(1);
+  expect(api.open).toHaveBeenCalledTimes(1);
+  expect(element.querySelector('[role="menu"]')).toBeNull();
 });
 
 it("does not create shells when the background inventory cannot be checked", async () => {
@@ -306,15 +294,18 @@ it("shows a friendly startup error instead of the raw exception, without a manua
 });
 
 
-it("reopens a newly created terminal by its remembered resource identity", async () => {
+it("uses a fresh launch identity after stopping a terminal and does not restore stale inventory", async () => {
   const api = client();
-  await act(async () => root.render(<TerminalDock projectId="project" directories={["/project/web"]} open onClose={() => {}} api={api} />));
+  const render = (open: boolean) => act(async () => root.render(<TerminalDock projectId="project" directories={["/project/web"]} open={open} onClose={() => {}} api={api} />));
+  await render(true);
   await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="关闭终端 web"]')!.click());
+  vi.mocked(api.list).mockResolvedValue([info("session-0")]);
+  await render(false); await render(true);
+  expect(element.querySelectorAll('[role="tab"]')).toHaveLength(0);
   await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="新建终端"]')!.click());
-  await act(async () => element.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click());
-  expect(api.attach).toHaveBeenCalledWith("session-0", expect.any(Function));
-  expect(api.open).toHaveBeenCalledTimes(1);
-  expect(api.close).not.toHaveBeenCalled();
+  expect(api.attach).not.toHaveBeenCalled();
+  expect(api.open).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(api.open).mock.calls[1][5]).not.toBe(vi.mocked(api.open).mock.calls[0][5]);
 });
 
 it("backs off reconnects to the same identity and pauses retries while hidden", async () => {
@@ -398,33 +389,48 @@ it("shows an unknown process without reconnecting or restarting it", async () =>
 });
 
 
-it("closes only the selected terminal through the toolbar cross", async () => {
+it("collapses through the toolbar cross and preserves every terminal on reopening", async () => {
   const api = client(), hide = vi.fn();
-  await act(async () => root.render(<TerminalDock projectId="project" directories={directories} open onClose={hide} api={api} />));
+  const render = (open: boolean) => act(async () => root.render(<TerminalDock projectId="project" directories={directories} open={open} onClose={hide} api={api} />));
+  await render(true);
   await act(async () => element.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1].click());
-  expect(element.querySelector(".terminal-controls")).toBeNull();
-  expect(element.querySelector('[aria-label="收起终端"]')).toBeNull();
-  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="关闭当前终端"]')!.click());
-  expect(api.close).toHaveBeenCalledExactlyOnceWith("session-1", "epoch");
-  expect(element.querySelectorAll('[role="tab"]')).toHaveLength(1);
-  expect(element.querySelector('[role="tab"]')?.textContent).toBe("web");
-  expect(terminals[0].dispose).not.toHaveBeenCalled();
-  expect(hide).not.toHaveBeenCalled();
+  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="收起终端"]')!.click());
+  expect(hide).toHaveBeenCalledTimes(1);
+  await render(false); await render(true);
+  expect(api.close).not.toHaveBeenCalled();
+  expect(detach).not.toHaveBeenCalled();
+  expect(api.open).toHaveBeenCalledTimes(2);
+  expect(element.querySelectorAll('[role="tab"]')).toHaveLength(2);
+  expect(element.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("server");
+  expect(terminals.every(terminal => terminal.dispose.mock.calls.length === 0)).toBe(true);
+});
+
+it("allows collapsing an empty panel or a panel whose terminal is still starting", async () => {
+  const api = client(), hide = vi.fn();
+  vi.mocked(api.open).mockImplementation(() => new Promise(() => {}));
+  await act(async () => root.render(<TerminalDock projectId="project" directories={["/project"]} open onClose={hide} api={api} />));
+  expect(element.querySelector<HTMLButtonElement>('[aria-label="关闭终端 project"]')!.disabled).toBe(true);
+  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="收起终端"]')!.click());
+  expect(hide).toHaveBeenCalledTimes(1);
+  expect(api.close).not.toHaveBeenCalled();
+  await act(async () => root.render(<TerminalDock key="empty" projectId="project" directories={[]} open onClose={hide} api={api} />));
+  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="收起终端"]')!.click());
+  expect(hide).toHaveBeenCalledTimes(2);
 });
 
 it("keeps the current terminal visible on close failure and allows retry", async () => {
   const api = client(), hide = vi.fn();
   vi.mocked(api.close).mockRejectedValueOnce(new Error("关闭失败"));
   await act(async () => root.render(<TerminalDock projectId="project" directories={["/project"]} open onClose={hide} api={api} />));
-  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="关闭当前终端"]')!.click());
+  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="关闭终端 project"]')!.click());
   expect(element.querySelectorAll('[role="tab"]')).toHaveLength(1);
   expect(element.querySelector('[role="alert"]')?.textContent).toContain("关闭失败");
   expect(hide).not.toHaveBeenCalled();
   expect(detach).not.toHaveBeenCalled();
-  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="关闭当前终端"]')!.click());
+  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="关闭终端 project"]')!.click());
   expect(api.close).toHaveBeenCalledTimes(2);
   expect(element.querySelectorAll('[role="tab"]')).toHaveLength(0);
-  expect(hide).toHaveBeenCalledTimes(1);
+  expect(hide).not.toHaveBeenCalled();
 });
 
 it("waits for close to finish and does not send duplicate close requests", async () => {
@@ -432,11 +438,29 @@ it("waits for close to finish and does not send duplicate close requests", async
   let finish!: () => void;
   vi.mocked(api.close).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
   await act(async () => root.render(<TerminalDock projectId="project" directories={["/project"]} open onClose={() => {}} api={api} />));
-  const close = element.querySelector<HTMLButtonElement>('[aria-label="关闭当前终端"]')!;
+  const close = element.querySelector<HTMLButtonElement>('[aria-label="关闭终端 project"]')!;
   await act(async () => { close.click(); close.click(); });
   expect(api.close).toHaveBeenCalledTimes(1);
   expect(close.disabled).toBe(true);
   expect(element.querySelectorAll('[role="tab"]')).toHaveLength(1);
   await act(async () => finish());
   expect(element.querySelectorAll('[role="tab"]')).toHaveLength(0);
+});
+
+it("stops different tabs independently while allowing the panel to collapse", async () => {
+  const api = client(), hide = vi.fn();
+  const finishes = new Map<string, () => void>();
+  vi.mocked(api.close).mockImplementation(id => new Promise(resolve => { finishes.set(id, resolve); }));
+  await act(async () => root.render(<TerminalDock projectId="project" directories={directories} open onClose={hide} api={api} />));
+  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="关闭终端 web"]')!.click());
+  await act(async () => element.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1].click());
+  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="关闭终端 server"]')!.click());
+  expect(vi.mocked(api.close).mock.calls).toEqual([["session-0", "epoch"], ["session-1", "epoch"]]);
+  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="收起终端"]')!.click());
+  expect(hide).toHaveBeenCalledTimes(1);
+  await act(async () => finishes.get("session-1")!());
+  expect(element.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("web");
+  await act(async () => finishes.get("session-0")!());
+  expect(element.querySelectorAll('[role="tab"]')).toHaveLength(0);
+  expect(hide).toHaveBeenCalledTimes(1);
 });

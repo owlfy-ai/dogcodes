@@ -167,6 +167,23 @@ pub async fn register_as(
 
 /// Callers must hold the service project gate and the review scope gate.
 pub async fn update(core: &Arc<Core>, request: ProjectEdit) -> Result<(), String> {
+    update_inner(core, request, None).await
+}
+
+/// [`update`] on behalf of a paired device, recorded as that device.
+pub async fn update_as(
+    core: &Arc<Core>,
+    request: ProjectEdit,
+    actor: ActorRef,
+) -> Result<(), String> {
+    update_inner(core, request, Some(actor)).await
+}
+
+async fn update_inner(
+    core: &Arc<Core>,
+    request: ProjectEdit,
+    actor: Option<ActorRef>,
+) -> Result<(), String> {
     let (path, additional_directories) =
         validate_directories(request.path, request.additional_directories).await?;
     let mut envelope = CommandEnvelope::local(CoreCommand::UpdateProject(RegisterProject {
@@ -176,6 +193,9 @@ pub async fn update(core: &Arc<Core>, request: ProjectEdit) -> Result<(), String
         additional_directories,
     }));
     envelope.expected_stream_version = Some(request.expected_stream_version);
+    if let Some(actor) = actor {
+        envelope.actor = actor;
+    }
     core.execute(envelope).await.map(|_| ()).map_err(|error| {
         let error = error.to_string();
         if error.contains("stream version conflict") {
