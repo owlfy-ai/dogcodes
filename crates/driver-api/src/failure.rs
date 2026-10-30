@@ -261,6 +261,7 @@ pub fn quota_diagnostic(error: &DriverError) -> &'static str {
             "quota_timeout" => return "quota_timeout",
             "quota_network_error" => return "quota_network_error",
             "quota_unavailable" => return "quota_unavailable",
+            "opencode_go_not_configured" => return "opencode_go_not_configured",
             "claude_quota_custom_provider" => return "claude_quota_custom_provider",
             "claude_quota_login_required" => return "claude_quota_login_required",
             "claude_quota_timeout" => return "claude_quota_timeout",

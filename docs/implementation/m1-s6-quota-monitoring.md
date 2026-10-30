@@ -1,5 +1,18 @@
 # M1-S6：订阅额度监控
 
+## 2026-10-30：OpenCode Go 和供应商余额
+
+- `provider-quota` 独立注册 OpenCode、Pi、DeepSeek Harness 账户监控，并组合已有 Driver 的会话用量和上下文读取；模型就绪失败也能查询账户，不创建对话、不发送模型输入。
+- OpenCode Go 使用官方 `GET https://opencode.ai/inference/go/v1/usage`，展示 rolling（5 小时）、weekly、monthly 的已用百分比和原生重置时间。月度按日历窗口标记，不假定 30 天。兼容旧 `auth.json` 的 `opencode-go`、新版 SQLite `credential` 表中的原生当前凭据，以及 `OPENCODE_GO_API_KEY` / `OPENCODE_API_KEY`。不拿 Zen 或 OAuth 凭据代替 Go Key。Go 窗口只描述 Go 供应商，不因其耗尽禁用 OpenCode 的其他供应商或额外余额。
+- Pi 从 `PI_CODING_AGENT_DIR`（默认 `~/.pi/agent`）的 `auth.json` / `models.json` 获取原厂 DeepSeek Key、自定义供应商 Key 和服务地址；DeepSeek Harness 支持 `DSH_HOME/.credentials.yaml` 的 API Key 引用、DeepSeek API Key 记录及继承的 `DEEPSEEK_API_KEY`。托管引用优先于环境；浏览器会话 grant 不作为 API Key。
+- DeepSeek 官方余额来自 `/user/balance`；Pi 自定义服务仅向配置的服务 origin 查询兼容 sub2api 的 `/v1/usage`。`QuotaSnapshot.balances` 单独携带供应商名称、金额、币种，不换算百分比、不合并不同钱包和币种、不推算订阅金额。零余额与未知、无限额度分别处理。
+- 每请求超时 10 秒、响应上限 1 MiB、禁止重定向。最多查询 8 个不同账户，单个供应商失败不丢弃其他已确认余额。成功缓存 60 秒，失败退避 15 秒，手动刷新绕过缓存；凭据和目的地址变化使缓存失效。账户读数不进入前端按 installationId 保存的旧额度回退，避免凭据切换后显示旧账户。
+- 仅复用本机已有凭据，不执行命令型 Key helper，不自动登录/续期，不记录凭据或上游原始错误。当前不覆盖任意 DSH 插件自定义的认证存储、Pi 的任意 OAuth 订阅或 OpenCode Console 的美元钱包。
+
+隔离验证覆盖三窗口解析、币种/零余额、旧版/新版 Go 凭据选择、账户切换、缓存/手动刷新、GET-only 查询、错误隔离、有界响应与会话用量保留。真实只读 DeepSeek Harness 余额查询已通过；本机 OpenCode 未配置 Go 凭据，Pi 未配置受支持的钱包，未声称它们完成了真实余额验收。
+
+参考：[OpenCode Go 官方接口及路径说明](https://github.com/anomalyco/opencode/issues/52227)、[DeepSeek 官方余额 API](https://api-docs.deepseek.com/zh-cn/api/get-user-balance/)。Pi 的供应商余额范围参考本地 codex-host `packages/adapters/pi/src/account-balance.ts`。
+
 ## 2026-09-11：订阅总览去重
 
 额度卡片按 provider 合并，优先 ready、有读数及较新版本，避免 Codex 桌面运行时与 CLI 重复展示同一订阅。侧栏计数按可用 provider 统计。执行实例列表和会话绑定保持独立，仍保留各实例读数供会话使用。回归覆盖乱序返回、旧版本有读数而新版本无读数、不可用安装、卡片渲染数量与版本选择。

@@ -8,6 +8,7 @@ members = [
   "crates/domain",
   "crates/protocol",
   "crates/driver-api",
+  "crates/provider-quota",
   "crates/codex-driver",
   "crates/acp-driver",
   "crates/claude-driver",

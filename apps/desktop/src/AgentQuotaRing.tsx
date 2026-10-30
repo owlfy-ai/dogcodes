@@ -1,6 +1,6 @@
 import { createContext } from "react";
 import type { QuotaSnapshotView } from "@dogcodes/protocol";
-import { ringQuotaWindow, quotaWindowHasReset, remainingPercent, quotaIsExhausted, quotaColor, quotaWindowLabel, formatResetTime, quotaNativeResetLabel } from "./quotaPresentation";
+import { ringQuotaWindow, quotaWindowHasReset, remainingPercent, quotaIsExhausted, quotaColor, quotaWindowLabel, formatResetTime, quotaNativeResetLabel, formatProviderBalance } from "./quotaPresentation";
 
 // Shared live readings also reach cached conversation pages through React context.
 export const AgentQuotaContext = createContext<QuotaSnapshotView[]>([]);
@@ -8,6 +8,10 @@ export const AgentQuotaContext = createContext<QuotaSnapshotView[]>([]);
 /** Compact, non-interactive quota indicator used inside Agent picker rows. */
 export function AgentQuotaRing({ quota, providerId }: { quota: QuotaSnapshotView["quota"]; providerId: string }) {
   const primary = ringQuotaWindow(quota?.windows ?? [], providerId);
+  if (!primary && quota?.balances?.length) {
+    const label = quota.balances.map(balance => `${balance.label}：${formatProviderBalance(balance.amount, balance.currency)}`).join("\n");
+    return <span className="agent-option-quota" data-tooltip={label} aria-label={label}>余额</span>;
+  }
   const primaryReset = primary ? quotaWindowHasReset(primary) : false;
   const remaining = primaryReset ? null : remainingPercent(primary?.usedPercent);
   const exhausted = providerId === "antigravity" ? remaining === 0 : quotaIsExhausted(quota);

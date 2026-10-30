@@ -51,6 +51,7 @@ zcode-driver = { path = "../../../crates/zcode-driver" }
 redaction = { path = "../../../crates/redaction" }
 agent-domain = { path = "../../../crates/domain" }
 driver-api = { path = "../../../crates/driver-api" }
+provider-quota = { path = "../../../crates/provider-quota" }
 agent-protocol = { path = "../../../crates/protocol" }
 agent-store = { path = "../../../crates/store" }
 agent-workspace = { path = "../../../crates/workspace" }

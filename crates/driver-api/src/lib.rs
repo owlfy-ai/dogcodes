@@ -198,12 +198,22 @@ pub struct ContextUsageSnapshot {
     pub cache_hit_rate_percent: Option<f64>,
 }
 
-/// A point-in-time quota reading. `windows` is sorted by `window_minutes`
-/// ascending, so the first entry is the most restrictive window.
+/// A provider-reported monetary balance. Different currencies/pools are never summed.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderBalance {
+    pub label: String,
+    pub amount: f64,
+    pub currency: String,
+}
+
+/// Account limits and monetary balances are separate from session spending.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuotaSnapshot {
     pub windows: Vec<QuotaWindow>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub balances: Vec<ProviderBalance>,
     pub context: Option<ContextUsageSnapshot>,
     #[serde(default)]
     pub session_usage: Option<usage::SessionUsageSnapshot>,
@@ -225,7 +235,7 @@ pub struct QuotaSnapshot {
 ///
 /// Reading quota is a control-plane operation: it must never submit a model
 /// prompt. Native credential reuse is permitted only for an explicitly
-/// authorized read-only adapter (currently Cursor and `ZCode`); credentials must
+/// authorized read-only adapter; credentials must
 /// never enter events, snapshots, logs, or persistence.
 #[async_trait]
 pub trait QuotaProvider: Send + Sync {

@@ -183,6 +183,7 @@ impl QuotaState {
                     let collected_at_unix_ms = now_unix_ms_i64();
                     self.record(
                         QuotaSnapshot {
+                            balances: Vec::new(),
                             session_usage: None,
                             windows: parsed.windows,
                             context: None,
@@ -1147,6 +1148,7 @@ impl QuotaProvider for CodexDriver {
         };
         let collected_at_unix_ms = now_unix_ms_i64();
         let snapshot = QuotaSnapshot {
+            balances: Vec::new(),
             session_usage: None,
             windows: parsed.windows,
             context: None,
@@ -2500,6 +2502,7 @@ mod tests {
         let collected_at_unix_ms = now_unix_ms_i64();
         state.record(
             QuotaSnapshot {
+                balances: Vec::new(),
                 session_usage: None,
                 windows: vec![QuotaWindow {
                     scope: None,
@@ -2964,6 +2967,7 @@ mod manual_quota_refresh_tests {
         )
         .unwrap();
         let snapshot = QuotaSnapshot {
+            balances: Vec::new(),
             session_usage: None,
             windows: vec![driver_api::QuotaWindow {
                 id: "5h".into(),

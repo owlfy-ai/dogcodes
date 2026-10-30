@@ -21,6 +21,9 @@
 .agent-card-identity h3 { font-size: calc(16px * var(--ui-scale, 1)); font-weight: 600; line-height: 1.4; margin: 0 0 4px; }
 .agent-card-identity > span { display: block; color: var(--muted); font-size: calc(12px * var(--ui-scale, 1)); line-height: 1.5; overflow-wrap: anywhere; }
 .agent-card-content { flex: 1; min-width: 0; }
+.agent-provider-balances { display: grid; gap: 12px; }
+.agent-provider-balances .agent-quota-label { margin-bottom: 0; }
+.quota-balance-indicator { color: var(--muted); font-size: calc(11px * var(--ui-scale, 1)); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .agent-quota-caption { margin-bottom: 12px; color: var(--muted); font-size: calc(11px * var(--ui-scale, 1)); }
 .agent-quota-windows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 24px; }
 .agent-quota-window:only-child { grid-column: 1 / -1; }

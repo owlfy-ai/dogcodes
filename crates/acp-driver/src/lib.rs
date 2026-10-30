@@ -3078,6 +3078,7 @@ impl AcpDriver {
         };
         let now = now_unix_ms();
         Ok(QuotaSnapshot {
+            balances: Vec::new(),
             session_usage: None,
             windows: vec![],
             context: Some(context),
@@ -3254,6 +3255,7 @@ impl QuotaProvider for AcpDriver {
                 };
             let now = now_unix_ms();
             Ok::<_, DriverError>(QuotaSnapshot {
+                balances: Vec::new(),
                 session_usage: None,
                 windows,
                 context: None,
@@ -3632,6 +3634,7 @@ mod tests {
             ),
         );
         state.record_account(QuotaSnapshot {
+            balances: Vec::new(),
             session_usage: None,
             windows: vec![],
             context: None,

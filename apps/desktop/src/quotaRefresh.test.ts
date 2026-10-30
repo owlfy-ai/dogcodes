@@ -3,6 +3,19 @@ import type { CoreClient, QuotaSnapshotView } from "@dogcodes/protocol";
 import { createQuotaRefresh } from "./quotaRefresh";
 
 describe("independent quota refresh", () => {
+  it("counts monetary provider balances as an available account reading", async () => {
+    const view: QuotaSnapshotView = { installationId: "ins_pi", providerId: "pi", quota: {
+      windows: [], balances: [{ label: "DeepSeek API", amount: 0, currency: "CNY" }],
+      collectedAtUnixMs: 1000, staleAfterUnixMs: 2000, source: "provider_api", confidence: "provider_reported", parserVersion: "test",
+    } };
+    const client = { bootstrap: async () => ({ installations: [{ providerId: "pi", installationId: "ins_pi", status: "ready" }] }), quotaSnapshots: async () => [view] } as unknown as CoreClient;
+    const update = vi.fn(), progress = vi.fn();
+    const reader = createQuotaRefresh(client, null, update, progress);
+    await reader.refreshNow();
+    expect(update).toHaveBeenCalledWith(view);
+    expect(progress.mock.lastCall?.[0]).toMatchObject({ unavailable: 0, completed: 1 });
+    reader.dispose();
+  });
   it("publishes fast providers without waiting for slow ones and deduplicates pending requests", async () => {
     let finish!: (views: QuotaSnapshotView[]) => void;
     const slow = new Promise<QuotaSnapshotView[]>(resolve => { finish = resolve; });

@@ -14,6 +14,13 @@ const view = (quota: QuotaSnapshot | null, diagnostic: string | null = null): Qu
 
 beforeEach(() => localStorage.clear());
 
+it("does not restore a provider account's old reading after credentials rotate", () => {
+  for (const providerId of ["opencode", "pi", "deepseek-harness"]) {
+    withLastReading({ ...view(reading(1_000, { source: "provider_api" })), providerId });
+    expect(withLastReading({ ...view(null, "quota_rate_limited"), providerId }).quota).toBeNull();
+  }
+});
+
 it("keeps the last successful reading while reads are rate limited, across restarts", () => {
   const good = view(reading(1_000, { context: { usedTokens: 1, windowTokens: 2 } as QuotaSnapshot["context"] }));
   expect(withLastReading(good)).toBe(good);

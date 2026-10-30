@@ -17,16 +17,23 @@ export function antigravityQuotaForModel(quota: QuotaSnapshot | null, model: str
 }
 
 export function quotaWindowLabel(minutes: number, windowId?: string): string {
+  if (windowId === "opencode-go-monthly") return "每月";
   if (hasNativeBillingDate(windowId)) return "每月";
   return QUOTA_WINDOW_LABELS[minutes] ?? `${minutes} 分钟`;
 }
 
 /** Overview rings use a named pool, never a synthetic total across model groups. */
 export function ringQuotaWindow(windows: QuotaWindow[], providerId?: string): QuotaWindow | null {
+  if (providerId === "opencode") return windows.find(window => window.id === "opencode-go-rolling") ?? primaryQuotaWindow(windows);
   if (providerId === "cursor") return windows.find(window => window.id === "cursor-models") ?? primaryQuotaWindow(windows);
   if (providerId !== "antigravity") return primaryQuotaWindow(windows);
   return windows.find(window => window.windowMinutes === 300
     && (window.scope === "Gemini Models" || window.id.startsWith("Gemini Models:"))) ?? null;
+}
+
+export function formatProviderBalance(amount: number, currency: string): string {
+  if (amount > 0 && amount < 0.000001) return `${currency} <0.000001`;
+  return new Intl.NumberFormat(undefined, { style: "currency", currency, currencyDisplay: "code", maximumFractionDigits: 6 }).format(amount);
 }
 
 export function remainingPercent(usedPercent: number | null | undefined): number | null {

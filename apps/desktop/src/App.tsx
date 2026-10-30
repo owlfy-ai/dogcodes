@@ -91,7 +91,7 @@ import { ConversationHistory } from "./ConversationHistory";
 const MemoConversationHistory = memo(ConversationHistory);
 import { timelineItemRole } from "./timelinePresentation";
 import { RequestEpoch, changeSelection } from "./requestEpoch";
-import { formatResetTime, quotaScopeLabel, quotaPlanLabel, quotaNativeResetLabel, nativeResetDisplay, antigravityQuotaForModel, ringQuotaWindow, quotaColor, quotaIsExhausted, quotaIsStale, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
+import { formatResetTime, formatProviderBalance, quotaScopeLabel, quotaPlanLabel, quotaNativeResetLabel, nativeResetDisplay, antigravityQuotaForModel, ringQuotaWindow, quotaColor, quotaIsExhausted, quotaIsStale, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
 import { createQuotaRefresh, type QuotaRefreshProgress } from "./quotaRefresh";
 import { useLoadingVisibility } from "./useLoadingVisibility";
 import { quotaShowsLastReading } from "./quotaFallback";
@@ -1424,6 +1424,7 @@ export function quotaDiagnostic(code?: string | null): string {
     case "quota_not_configured": return "Agent 尚未配置好，请检查原生客户端的模型、服务及运行环境。";
     case "quota_exhausted": return "当前 Agent 额度已用尽，请等待重置或切换 Agent。";
     case "quota_rate_limited": return "额度接口请求暂时受限，请稍后重试。";
+    case "opencode_go_not_configured": return "未配置 OpenCode Go 的 API Key。请在 OpenCode 中连接 Go 订阅后刷新；其他供应商的会话用量仍可读取。";
     case "claude_quota_custom_provider": return "Claude Code 当前使用自定义 API 服务，无法提供订阅额度监控。";
     case "claude_quota_login_required": return "未找到可用的 Claude 订阅授权，或授权已失效/缺少额度权限。请在 Claude Code 中使用订阅账号登录后重试；API Key 不提供此订阅额度。";
     case "claude_quota_transport_unavailable": return "额度查询需要本机 curl，目前无法启动。";
@@ -1444,6 +1445,13 @@ export function QuotaRing({ quota, providerId, diagnostic, turnQuotaExhausted = 
   const primary = ringQuotaWindow(quota?.windows ?? [], providerId);
   const primaryReset = primary ? quotaWindowHasReset(primary) : false;
   const remaining = primaryReset ? null : remainingPercent(primary?.usedPercent);
+  if (!primary && quota?.balances?.length) {
+    const rows = quota.balances.map(balance => [balance.label, formatProviderBalance(balance.amount, balance.currency)]);
+    const label = rows.map(row => row.join("：")).join("；");
+    return <span className="quota-balance-indicator" data-tooltip="供应商余额" data-tooltip-rows={JSON.stringify(rows)} aria-label={label}>
+      {rows.length === 1 ? rows[0][1] : `${rows.length} 个供应商余额`}
+    </span>;
+  }
   if (inline && remaining === null) return null;
   const stale = quota ? quotaIsStale(quota.staleAfterUnixMs) : false;
   const hasFreshReportedWindows = Boolean(
@@ -1479,8 +1487,9 @@ export function QuotaRing({ quota, providerId, diagnostic, turnQuotaExhausted = 
     const plan = quota?.planType && quota.planType !== "demo" ? quotaPlanLabel(quota) : null;
     if (plan) rows.push(["套餐", plan]);
     if (exhausted) rows.push(["状态", providerId === "antigravity" ? "Gemini 5 小时额度已用尽" : "额度已用尽"]);
-    if (!quota?.windows.length) rows.push(["状态", quotaDiagnostic(diagnostic)]);
+    if (!quota?.windows.length && !quota?.balances?.length) rows.push(["状态", quotaDiagnostic(diagnostic)]);
     else if (quotaShowsLastReading(diagnostic)) rows.push(["状态", `${quotaDiagnostic(diagnostic)}当前显示上次读数。`]);
+    for (const balance of quota?.balances ?? []) rows.push([balance.label, formatProviderBalance(balance.amount, balance.currency)]);
     for (const window of quota?.windows ?? []) {
       const label = [quotaScopeLabel(window.scope), quotaWindowLabel(window.windowMinutes, window.id)].filter(Boolean).join(" · ");
       const balance = remainingPercent(window.usedPercent);
@@ -1507,7 +1516,8 @@ export function QuotaRing({ quota, providerId, diagnostic, turnQuotaExhausted = 
         </header>
         {exhausted && <p className="quota-exhausted">{providerId === "antigravity" ? "Gemini 5 小时额度已用尽。" : "额度已用尽。请等待额度重置或切换其他 Agent。"}</p>}
         {!primary && quota?.windows.some((window) => window.scope) && <p>额度按模型组计算，当前模型组未确定，请查看下方分组读数。</p>}
-        {(!quota || quota.windows.length === 0) && <p>{diagnostic ? quotaDiagnostic(diagnostic) : "暂无订阅额度读数。部分 Agent 仅在对话后上报，或不提供此数据。"}</p>}
+        {(!quota || (quota.windows.length === 0 && !quota.balances?.length)) && <p>{diagnostic ? quotaDiagnostic(diagnostic) : "暂无订阅额度读数。部分 Agent 仅在对话后上报，或不提供此数据。"}</p>}
+        {quota?.balances?.map(balance => <div className="quota-row" key={`${balance.label}:${balance.currency}`}><span>{balance.label}</span><b>{formatProviderBalance(balance.amount, balance.currency)}</b></div>)}
         {quota?.windows.map((window) => {
           const remaining = remainingPercent(window.usedPercent);
           return (
@@ -1598,12 +1608,15 @@ export function QuotaPanel({
           <AgentIcon providerId={view.providerId} />
           <div className="agent-card-identity"><h3>{providerLabel(view.providerId)}</h3>
             {loginRequired ? <span className="agent-card-login-status">{accountIssue!.label}<AgentLogin installationId={view.installationId} name={loginAgent.name} /></span>
-              : <span>{accountIssue?.label ?? (quota ? quotaPlanLabel(quota) || "订阅额度" : "额度暂不可用")}</span>}
+              : <span>{accountIssue?.label ?? (quota ? quotaPlanLabel(quota) || (quota.balances?.length ? "供应商余额" : "订阅额度") : "额度暂不可用")}</span>}
           </div>
           {quota && <time className="agent-card-updated" dateTime={new Date(quota.collectedAtUnixMs).toISOString()} data-tooltip={new Date(quota.collectedAtUnixMs).toLocaleString()}>更新于 {new Date(quota.collectedAtUnixMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}
         </header>
         <div className="agent-card-content">
           {quota ? <>
+            {!!quota.balances?.length && <div className="agent-provider-balances" aria-label="供应商余额">
+              {quota.balances.map(balance => <div className="agent-quota-label" key={`${balance.label}:${balance.currency}`}><span>{balance.label}</span><strong>{formatProviderBalance(balance.amount, balance.currency)}</strong></div>)}
+            </div>}
             {quota.windows.length > 0 && <div className="agent-quota-caption">剩余额度</div>}
             <div className="agent-quota-windows">
               {quota.windows.map(window => {
@@ -1620,7 +1633,7 @@ export function QuotaPanel({
                 </div>;
               })}
             </div>
-            {(!quota.windows.length || quotaShowsLastReading(view.diagnostic)) && <p className="agent-quota-notice" data-outdated={quota.windows.length > 0 || undefined}>{quotaDiagnostic(view.diagnostic)}{quota.windows.length > 0 && "当前显示上次读数。"}</p>}
+            {((!quota.windows.length && !quota.balances?.length) || quotaShowsLastReading(view.diagnostic)) && <p className="agent-quota-notice" data-outdated={quota.windows.length > 0 || undefined}>{quotaDiagnostic(view.diagnostic)}{quota.windows.length > 0 && "当前显示上次读数。"}</p>}
             {quota.context && <div className="agent-context"><span>当前会话上下文</span><b>{quota.context.usedTokens.toLocaleString()} / {quota.context.windowTokens.toLocaleString()}</b>{quota.context.cacheHitRatePercent != null && <small>缓存命中 {quota.context.cacheHitRatePercent.toFixed(1)}%</small>}</div>}
           </> : <p className="agent-quota-notice">{quotaDiagnostic(view.diagnostic)}</p>}
         </div>
