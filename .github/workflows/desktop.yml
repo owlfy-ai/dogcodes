@@ -72,7 +72,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev file patchelf xdg-utils libssl-dev build-essential pkg-config nasm libclang-dev libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libpipewire-0.3-modules libspa-0.2-modules libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-bad libwayland-dev libegl-dev libgbm-dev libegl-mesa0 libgl1-mesa-dri libxkbcommon-dev coturn xvfb x11-utils x11-xserver-utils pipewire-bin wireplumber dbus-x11
+          # Select GStreamer's libunwind provider explicitly so APT replaces the
+          # conflicting LLVM libunwind development package on hosted runners.
+          sudo apt-get install -y libunwind-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev file patchelf xdg-utils libssl-dev build-essential pkg-config nasm libclang-dev libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libpipewire-0.3-modules libspa-0.2-modules libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-bad libwayland-dev libegl-dev libgbm-dev libegl-mesa0 libgl1-mesa-dri libxkbcommon-dev coturn xvfb x11-utils x11-xserver-utils pipewire-bin wireplumber dbus-x11
       - name: Compatible SPA build headers for the Linux baseline
         if: runner.os == 'Linux'
         run: |

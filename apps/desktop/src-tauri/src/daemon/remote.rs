@@ -319,59 +319,55 @@ impl RemoteHost {
                 let Some((config, secrets)) = credentials else {
                     break;
                 };
-                match socket(
+                if let Ok(mut ws) = socket(
                     &config.service,
                     &format!("/v1/hosts/{}/listen", config.host_id),
                     &secrets.token,
                 )
                 .await
                 {
-                    Ok(mut ws) => {
-                        {
-                            let mut state = host.state.lock().await;
-                            if !current_registration(&state, &config) {
-                                continue;
-                            }
-                            state.error = None;
-                            state.listening = true;
+                    {
+                        let mut state = host.state.lock().await;
+                        if !current_registration(&state, &config) {
+                            continue;
                         }
-                        while let Some(Ok(message)) = ws.next().await {
-                            match message {
-                                Message::Text(text) => {
-                                    if let Ok(v) = serde_json::from_str::<Value>(&text)
-                                        && let (Some(id), Some(ticket), Some(device), Some(control)) = (
-                                            v["sessionId"].as_str(),
-                                            v["hostTicket"].as_str(),
-                                            v["deviceId"].as_str(),
-                                            weak.upgrade(),
-                                        )
-                                    {
-                                        host.spawn_connection(
-                                            &core,
-                                            &control,
-                                            id.into(),
-                                            ticket.into(),
-                                            Some(device.into()),
-                                        );
-                                    }
+                        state.error = None;
+                        state.listening = true;
+                    }
+                    while let Some(Ok(message)) = ws.next().await {
+                        match message {
+                            Message::Text(text) => {
+                                if let Ok(v) = serde_json::from_str::<Value>(&text)
+                                    && let (Some(id), Some(ticket), Some(device), Some(control)) = (
+                                        v["sessionId"].as_str(),
+                                        v["hostTicket"].as_str(),
+                                        v["deviceId"].as_str(),
+                                        weak.upgrade(),
+                                    )
+                                {
+                                    host.spawn_connection(
+                                        &core,
+                                        &control,
+                                        id.into(),
+                                        ticket.into(),
+                                        Some(device.into()),
+                                    );
                                 }
-                                Message::Ping(v) => {
-                                    if ws.send(Message::Pong(v)).await.is_err() {
-                                        break;
-                                    }
-                                }
-                                Message::Close(_) => break,
-                                _ => {}
                             }
+                            Message::Ping(v) => {
+                                if ws.send(Message::Pong(v)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Message::Close(_) => break,
+                            _ => {}
                         }
                     }
-                    Err(_) => {
-                        let mut state = host.state.lock().await;
-                        if current_registration(&state, &config) {
-                            state.error = Some(
-                                "接入服务连接中断，正在重连；若配对失败，请重新生成二维码".into(),
-                            );
-                        }
+                } else {
+                    let mut state = host.state.lock().await;
+                    if current_registration(&state, &config) {
+                        state.error =
+                            Some("接入服务连接中断，正在重连；若配对失败，请重新生成二维码".into());
                     }
                 }
                 {
