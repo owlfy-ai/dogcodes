@@ -96,6 +96,7 @@ impl Connection {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
+        agent_runtime::apply_platform_environment(&mut command);
         // Use Pi's own auth store. Only explicitly named Pi/provider configuration
         // enters the subprocess; never forward the host's complete environment.
         for key in [
