@@ -1,5 +1,8 @@
 //! Manifest-driven discovery and bounded, credential-free installation probes.
 
+mod windows;
+pub use windows::windows_desktop_executables;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
@@ -91,6 +94,23 @@ impl ProviderManifest {
                     )));
                 }
             }
+        }
+        if let Some(script) = &self.discovery.bundled_script
+            && (script.as_os_str().is_empty()
+                || script
+                    .components()
+                    .any(|part| !matches!(part, std::path::Component::Normal(_)))
+                || self
+                    .discovery
+                    .env_overrides
+                    .get("ELECTRON_RUN_AS_NODE")
+                    .map(String::as_str)
+                    != Some("1"))
+        {
+            return Err(RegistryError::InvalidManifest(
+                "bundled script must be a resource-relative path run by Electron in Node mode"
+                    .into(),
+            ));
         }
         for path in self.discovery.user_paths.values().flatten() {
             if path.is_absolute()
@@ -199,6 +219,9 @@ pub struct DiscoverySpec {
     pub candidate_executables: Vec<String>,
     #[serde(default)]
     pub platform_paths: BTreeMap<Platform, Vec<PathBuf>>,
+    /// Node entry point relative to the discovered Electron resource directory.
+    #[serde(default)]
+    pub bundled_script: Option<PathBuf>,
     #[serde(default)]
     pub version_args: Vec<String>,
     /// Optional additional structured argv probe whose output must carry the
@@ -405,6 +428,9 @@ pub fn discover_executables(
             include_executable(&home.join(relative), &mut discovered)?;
         }
     }
+    for path in windows_desktop_executables(manifest.id.as_str(), context) {
+        include_executable(&path, &mut discovered)?;
+    }
     // GUI launches often omit shell-managed Node bins from PATH.
     if let Some(home) = &context.home_dir {
         for root in [".nvm/versions/node", ".nvm-arm/versions/node"] {
@@ -429,7 +455,7 @@ pub async fn probe_installation(
     let fingerprint = executable_fingerprint(&executable, &metadata);
     let spec = ProcessSpec {
         executable: executable.clone(),
-        args: manifest.discovery.version_args.clone(),
+        args: probe_args(manifest, &executable, &manifest.discovery.version_args)?,
         env_allowlist: manifest.discovery.env_allowlist.clone(),
         env_overrides: manifest
             .discovery
@@ -450,7 +476,7 @@ pub async fn probe_installation(
     } else {
         let identity_spec = ProcessSpec {
             executable: executable.clone(),
-            args: manifest.discovery.identity_args.clone(),
+            args: probe_args(manifest, &executable, &manifest.discovery.identity_args)?,
             env_allowlist: manifest.discovery.env_allowlist.clone(),
             env_overrides: manifest
                 .discovery
@@ -560,6 +586,23 @@ pub async fn probe_installation(
             elapsed_millis: manifest.discovery.timeout_millis,
         }),
     }
+}
+
+fn probe_args(
+    manifest: &ProviderManifest,
+    executable: &Path,
+    args: &[String],
+) -> Result<Vec<String>, RegistryError> {
+    let mut resolved = Vec::new();
+    if let Some(script) = &manifest.discovery.bundled_script {
+        let resources =
+            agent_runtime::electron_resources_directory(executable).ok_or_else(|| {
+                RegistryError::InvalidManifest("Electron resource directory unavailable".into())
+            })?;
+        resolved.push(resources.join(script).to_string_lossy().into_owned());
+    }
+    resolved.extend_from_slice(args);
+    Ok(resolved)
 }
 
 /// Returns the cache key for an installation's current executable image.
@@ -695,6 +738,105 @@ mod tests {
     const CODEX_MANIFEST: &str = include_str!("../../../drivers/manifests/codex.toml");
 
     #[test]
+    fn macos_user_installations_follow_a_relocated_unicode_home() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("外部磁盘/用户资料/中文 用户");
+        for (source, relative) in [
+            (
+                CODEX_MANIFEST,
+                "Applications/Codex.app/Contents/Resources/codex",
+            ),
+            (
+                include_str!("../../../drivers/manifests/claude-code.toml"),
+                ".local/bin/claude",
+            ),
+            (
+                include_str!("../../../drivers/manifests/grok.toml"),
+                ".grok/bin/grok",
+            ),
+            (
+                include_str!("../../../drivers/manifests/zcode.toml"),
+                "Applications/ZCode.app/Contents/MacOS/ZCode",
+            ),
+        ] {
+            let path = home.join(relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, []).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            let mut manifest = ProviderManifest::parse_toml(source).unwrap();
+            manifest.discovery.platform_paths.clear();
+            let context = DiscoveryContext {
+                platform: Platform::Macos,
+                path_entries: vec![],
+                home_dir: Some(home.clone()),
+            };
+            assert_eq!(
+                discover_executables(&manifest, &context).unwrap(),
+                vec![std::fs::canonicalize(path).unwrap()],
+                "{}",
+                manifest.id
+            );
+        }
+    }
+
+    #[test]
+    fn bundled_zcode_probes_follow_the_discovered_app_on_windows_and_macos() {
+        let manifest =
+            ProviderManifest::parse_toml(include_str!("../../../drivers/manifests/zcode.toml"))
+                .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        for (binary, script) in [
+            (
+                "Programs/ZCode/ZCode.exe",
+                "Programs/ZCode/resources/glm/zcode.cjs",
+            ),
+            (
+                "Applications/ZCode.app/Contents/MacOS/ZCode",
+                "Applications/ZCode.app/Contents/Resources/glm/zcode.cjs",
+            ),
+        ] {
+            let args = probe_args(
+                &manifest,
+                &root.path().join(binary),
+                &manifest.discovery.version_args,
+            )
+            .unwrap();
+            assert_eq!(Path::new(&args[0]), root.path().join(script));
+            assert_eq!(&args[1..], &["--version"]);
+        }
+        assert!(version_output_matches(
+            "zcode doctor\nversion: 0.17.0",
+            &manifest.discovery.version_output_markers
+        ));
+        assert!(version_output_matches(
+            "zcode-cli",
+            &manifest.discovery.version_output_markers
+        ));
+        assert!(!version_output_matches(
+            "unrelated 0.17.0",
+            &manifest.discovery.version_output_markers
+        ));
+    }
+
+    #[test]
+    fn bundled_script_cannot_escape_resources_or_launch_without_node_mode() {
+        let mut manifest =
+            ProviderManifest::parse_toml(include_str!("../../../drivers/manifests/zcode.toml"))
+                .unwrap();
+        for script in ["", "../unrelated.js", "/unrelated.js"] {
+            manifest.discovery.bundled_script = Some(script.into());
+            assert!(manifest.validate().is_err());
+        }
+        manifest.discovery.bundled_script = Some("glm/zcode.cjs".into());
+        manifest.discovery.env_overrides.clear();
+        assert!(manifest.validate().is_err());
+    }
+
+    #[test]
     fn manifest_paths_use_the_declared_platforms_rules() {
         for platform in [Platform::Macos, Platform::Linux] {
             assert!(platform.absolute_path(Path::new("/usr/local/bin/agent")));
@@ -703,6 +845,7 @@ mod tests {
         }
         for path in [
             r"C:\Tools\agent.exe",
+            r"D:\用户资料\中文 用户\.grok\bin\grok.exe",
             "C:/Tools/agent.exe",
             r"\\server\share\agent.exe",
         ] {

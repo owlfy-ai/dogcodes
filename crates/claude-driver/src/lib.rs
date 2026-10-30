@@ -803,6 +803,7 @@ fn spawn_selected(
     if let Some(directory) = working_directory {
         command.current_dir(directory);
     }
+    agent_runtime::apply_platform_environment(&mut command);
     for variable in ENV_ALLOWLIST {
         if let Ok(value) = std::env::var(variable) {
             command.env(variable, value);

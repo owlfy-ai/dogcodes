@@ -2,6 +2,38 @@ use std::path::{Path, PathBuf};
 
 use crate::ProcessError;
 
+/// Resource directory beside a Windows/Linux Electron executable or within a
+/// macOS app bundle. Resolve from the discovered installation, never a fixed app path.
+#[must_use]
+pub fn electron_resources_directory(executable: &Path) -> Option<PathBuf> {
+    // Electron's Node loader rejects verbatim script paths with EISDIR on
+    // Windows. Keep the executable identity canonical, but pass ordinary paths
+    // to its JavaScript entry point and bundled provider metadata.
+    #[cfg(windows)]
+    let normalized = {
+        let value = executable.to_str()?;
+        if let Some(tail) = value.strip_prefix(r"\\?\UNC\") {
+            PathBuf::from(format!(r"\\{tail}"))
+        } else if let Some(tail) = value.strip_prefix(r"\\?\")
+            && tail.as_bytes().get(1..3) == Some(b":\\")
+        {
+            PathBuf::from(tail)
+        } else {
+            executable.to_path_buf()
+        }
+    };
+    #[cfg(windows)]
+    let executable = normalized.as_path();
+    let parent = executable.parent()?;
+    if parent.file_name() == Some(std::ffi::OsStr::new("MacOS"))
+        && parent.parent()?.file_name() == Some(std::ffi::OsStr::new("Contents"))
+    {
+        Some(parent.parent()?.join("Resources"))
+    } else {
+        Some(parent.join("resources"))
+    }
+}
+
 /// Run bundled Node scripts with Electron's background helper. Even in Node
 /// mode, the main macOS executable registers as a regular Dock application.
 /// Keep the original main executable as the installation identity.
@@ -93,5 +125,51 @@ mod tests {
             electron_node_executable(Path::new("/usr/bin/node")).unwrap(),
             Path::new("/usr/bin/node")
         );
+    }
+}
+
+#[cfg(test)]
+mod resource_tests {
+    use super::*;
+
+    #[test]
+    #[cfg(windows)]
+    fn node_script_paths_do_not_retain_windows_verbatim_prefixes() {
+        for (binary, expected) in [
+            (
+                r"\\?\C:\Programs\ZCode\ZCode.exe",
+                r"C:\Programs\ZCode\resources",
+            ),
+            (
+                r"\\?\D:\用户资料\张 三\本地应用\ZCode\ZCode.exe",
+                r"D:\用户资料\张 三\本地应用\ZCode\resources",
+            ),
+            (
+                r"\\?\UNC\server\share\ZCode\ZCode.exe",
+                r"\\server\share\ZCode\resources",
+            ),
+        ] {
+            assert_eq!(
+                electron_resources_directory(Path::new(binary)),
+                Some(PathBuf::from(expected))
+            );
+        }
+    }
+
+    #[test]
+    fn resolves_resources_from_each_installation_layout() {
+        let root = std::env::temp_dir().join("迁移主目录/中文 用户/dogcodes-electron-layout");
+        for (binary, resources) in [
+            ("Programs/ZCode/ZCode.exe", "Programs/ZCode/resources"),
+            (
+                "Applications/ZCode.app/Contents/MacOS/ZCode",
+                "Applications/ZCode.app/Contents/Resources",
+            ),
+        ] {
+            assert_eq!(
+                electron_resources_directory(&root.join(binary)),
+                Some(root.join(resources))
+            );
+        }
     }
 }

@@ -8,15 +8,10 @@ runtime_kind = "external_process"
 # The CLI ships inside the desktop app as a Node script; the app's own
 # Electron binary runs it in node mode, so no system Node.js is required.
 candidate_executables = ["ZCode"]
-version_args = [
-  "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs",
-  "--version",
-]
-identity_args = [
-  "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs",
-  "doctor",
-]
-version_output_markers = ["zcode-cli"]
+bundled_script = "glm/zcode.cjs"
+version_args = ["--version"]
+identity_args = ["doctor"]
+version_output_markers = ["zcode-cli", "zcode doctor"]
 env_allowlist = ["PATH"]
 timeout_millis = 5000
 output_limit_bytes = 65536
@@ -28,6 +23,9 @@ ELECTRON_RUN_AS_NODE = "1"
 macos = ["/Applications/ZCode.app/Contents/MacOS/ZCode"]
 windows = []
 linux = []
+
+[discovery.user_paths]
+macos = ["Applications/ZCode.app/Contents/MacOS/ZCode"]
 
 [supported_versions]
 denylist = []

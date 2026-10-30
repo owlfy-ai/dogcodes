@@ -1175,6 +1175,7 @@ fn spawn_agent_in(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    agent_runtime::apply_platform_environment(&mut command);
     for variable in ENV_ALLOWLIST {
         if let Ok(value) = std::env::var(variable) {
             command.env(variable, value);

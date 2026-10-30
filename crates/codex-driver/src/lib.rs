@@ -2020,6 +2020,7 @@ impl Connection {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        agent_runtime::apply_platform_environment(&mut command);
         for name in [
             "PATH",
             "HOME",

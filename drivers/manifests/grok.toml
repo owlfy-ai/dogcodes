@@ -22,7 +22,7 @@ linux = []
 
 [discovery.user_paths]
 macos = [".local/bin/grok", ".grok/bin/grok"]
-windows = []
+windows = [".grok/bin/grok.exe", ".local/bin/grok.exe"]
 linux = [".local/bin/grok", ".grok/bin/grok"]
 
 [supported_versions]

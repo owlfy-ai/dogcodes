@@ -149,6 +149,7 @@ impl Account {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
+        agent_runtime::apply_platform_environment(&mut command);
         for key in ENV_ALLOWLIST.iter().chain(ACCOUNT_ENV) {
             if let Some(value) = std::env::var_os(key) {
                 command.env(key, value);

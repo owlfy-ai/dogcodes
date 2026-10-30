@@ -24,7 +24,7 @@ linux = ["/usr/local/bin/claude", "/usr/bin/claude"]
 
 [discovery.user_paths]
 macos = [".local/bin/claude"]
-windows = []
+windows = [".local/bin/claude.exe"]
 linux = [".local/bin/claude"]
 
 [supported_versions]

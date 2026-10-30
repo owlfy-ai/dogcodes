@@ -73,7 +73,7 @@ async fn shell_commands(context: &DiscoveryContext) -> Option<Commands> {
 
 // Only the macOS directory lookup awaits; other platforms rely on SHELL.
 #[cfg_attr(not(target_os = "macos"), allow(clippy::unused_async))]
-pub(crate) async fn user_shell(context: &DiscoveryContext) -> Option<PathBuf> {
+pub(crate) async fn user_shell(_context: &DiscoveryContext) -> Option<PathBuf> {
     if let Some(shell) = std::env::var_os("SHELL")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
@@ -84,15 +84,21 @@ pub(crate) async fn user_shell(context: &DiscoveryContext) -> Option<PathBuf> {
     // the configured login shell rather than assuming zsh or the app's PATH.
     #[cfg(target_os = "macos")]
     {
-        let account = context.home_dir.as_ref()?.file_name()?.to_str()?;
+        // A relocated/localized home folder need not match the account's short
+        // name. Query the effective user instead of deriving it from HOME.
+        let identity = run_bounded(&ProcessSpec::probe(
+            PathBuf::from("/usr/bin/id"),
+            vec!["-un".into()],
+        ))
+        .await
+        .ok()?;
+        if !identity.success {
+            return None;
+        }
+        let record = directory_user_record(&identity.stdout)?;
         let spec = ProcessSpec::probe(
             PathBuf::from("/usr/bin/dscl"),
-            vec![
-                ".".into(),
-                "-read".into(),
-                format!("/Users/{account}"),
-                "UserShell".into(),
-            ],
+            vec![".".into(), "-read".into(), record, "UserShell".into()],
         );
         let result = run_bounded(&spec).await.ok()?;
         if result.success {
@@ -105,9 +111,18 @@ pub(crate) async fn user_shell(context: &DiscoveryContext) -> Option<PathBuf> {
                 .filter(|path| path.is_absolute());
         }
     }
-    #[cfg(not(target_os = "macos"))]
-    let _ = context;
     None
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn directory_user_record(identity: &str) -> Option<String> {
+    // /Users is the dscl record namespace, not a filesystem home directory.
+    let account = identity.trim();
+    (!account.is_empty()
+        && !matches!(account, "." | "..")
+        && !account.contains('/')
+        && !account.chars().any(char::is_control))
+    .then(|| format!("/Users/{account}"))
 }
 
 async fn probe_shell(context: &DiscoveryContext) -> Option<Commands> {
@@ -244,6 +259,11 @@ fn select_executable(
             return Ok(Some(path));
         }
     }
+    for path in agent_registry::windows_desktop_executables(manifest.id.as_str(), context) {
+        if let Some(path) = canonical_executable(&path) {
+            return Ok(Some(path));
+        }
+    }
     // DeepSeek Harness is commonly used via npx, as in codex-host. Reuse an
     // already cached, named package without invoking npx or installing anything.
     // A real terminal/global installation always wins over this fallback.
@@ -352,6 +372,42 @@ pub(crate) async fn preferred_executable(
 mod tests {
     use super::*;
     use agent_registry::Platform;
+    #[test]
+    fn shell_command_records_preserve_unicode_and_spaces_in_installation_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("迁移主目录/中文 用户/bin/claude");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, []).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let names = vec!["claude".into()];
+        let commands = parse_commands(
+            &format!("\0DOGCODES_COMMAND\0claude\0{}\0", path.display()),
+            &names,
+        )
+        .unwrap();
+        assert_eq!(
+            commands["claude"],
+            Resolution::Executable(std::fs::canonicalize(path).unwrap())
+        );
+    }
+    #[test]
+    fn directory_account_lookup_uses_the_reported_identity_without_assuming_a_home_folder() {
+        assert_eq!(
+            directory_user_record("short-account\n"),
+            Some("/Users/short-account".into())
+        );
+        assert_eq!(
+            directory_user_record("中文用户\n"),
+            Some("/Users/中文用户".into())
+        );
+        for value in ["", "..", "/Volumes/迁移目录/张三", "user\nother"] {
+            assert!(directory_user_record(value).is_none());
+        }
+    }
     #[tokio::test]
     #[cfg(unix)]
     async fn opencode_shared_database_uses_compatible_desktop_runtime() {

@@ -1,10 +1,12 @@
 //! Bounded, structured child-process execution for agent probes and runtimes.
 
 mod electron;
+mod environment;
 mod proxy;
 pub use process_scope::OwnedChild;
 
-pub use electron::electron_node_executable;
+pub use electron::{electron_node_executable, electron_resources_directory};
+pub use environment::apply_platform_environment;
 pub use proxy::apply_proxy_environment;
 
 use std::{
@@ -191,6 +193,7 @@ async fn run_bytes(
     if let Some(cwd) = &spec.cwd {
         command.current_dir(cwd);
     }
+    apply_platform_environment(&mut command);
     for name in &spec.env_allowlist {
         if let Some(value) = std::env::var_os(name) {
             command.env(name, value);

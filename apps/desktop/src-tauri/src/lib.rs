@@ -24,6 +24,7 @@ mod terminal_installation;
 mod turn_review;
 mod turn_timing;
 mod turn_undo;
+mod window_geometry;
 mod workspace_browser;
 mod workspace_service;
 
@@ -1096,6 +1097,11 @@ pub fn run() {
         })
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main")
+                && let Err(error) = window_geometry::fit_to_work_area(&window)
+            {
+                eprintln!("could not fit main window to screen: {error}");
+            }
             #[cfg(not(feature = "review-acceptance"))]
             {
                 let app_data = app.path().app_data_dir()?;
@@ -2008,12 +2014,13 @@ async fn register_ready_zcode_drivers(
         let started = std::time::Instant::now();
         // The manifest probes the app binary; the driver additionally needs
         // the bundled CLI script next to it.
-        let cli_script = installation
-            .executable
-            .replace("Contents/MacOS/ZCode", "Contents/Resources/glm/zcode.cjs");
+        let app_binary = std::path::PathBuf::from(&installation.executable);
+        let Some(resources) = agent_runtime::electron_resources_directory(&app_binary) else {
+            continue;
+        };
         let launch = zcode_driver::ZcodeLaunch {
-            app_binary: std::path::PathBuf::from(&installation.executable),
-            cli_script: std::path::PathBuf::from(&cli_script),
+            app_binary,
+            cli_script: resources.join("glm/zcode.cjs"),
         };
         // The personal account's monitor GET does not need a model catalog or
         // an app-server session. Keep it available when model readiness fails.

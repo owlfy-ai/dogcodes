@@ -455,6 +455,7 @@ impl Connection {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        agent_runtime::apply_platform_environment(&mut command);
         let account = account::Account::new(launch);
         if account.is_some() {
             command.args(["--stdio", "--surface", "desktop"]);
