@@ -219,7 +219,7 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
     const outdated = !scanning && displayWindows.length > 0 && quotaShowsLastReading(reading?.view?.diagnostic);
     const busy = scanning || state.label === "验证授权中";
     const emptyMessage = scanning || reading?.pending ? "正在等待检测结果" : failed ? "检测未完成，请重新检测"
-      : withoutQuota.has(agent.id) ? "暂未接入账户额度查询" : "暂无可用额度读数";
+      : withoutQuota.has(agent.id) ? "不支持查询剩余额度" : "暂无可用额度读数";
     return <article className={`welcome-agent-card ${state.tone}${busy ? " busy" : ""}`} key={agent.id} aria-label={agent.name} style={{ "--stagger": index } as CSSProperties}>
       <header>
         <span className="welcome-agent-icon">{renderIcon(agent.id)}</span>

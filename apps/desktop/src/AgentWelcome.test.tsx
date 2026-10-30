@@ -120,7 +120,7 @@ describe("welcome scan workflow", () => {
     await mount({ scanAgent: async (id: string) => ({ installations: ids.includes(id) ? [{ ...installation, providerId: id, installationId: id }] : [] }), quotaSnapshots } as unknown as CoreClient);
     expect(quotaSnapshots).not.toHaveBeenCalled();
     expect(container.querySelector('[aria-label="Pi"]')?.textContent).toContain("连接就绪");
-    expect(container.querySelector('[aria-label="Pi"]')?.textContent).toContain("暂未接入账户额度查询");
+    expect(container.querySelector('[aria-label="Pi"]')?.textContent).toContain("不支持查询剩余额度");
   });
   it("displays Cursor Models and Other Models as separate monthly allowances", async () => {
     const cursor = { ...installation, providerId: "cursor", installationId: "ins_cursor" };
