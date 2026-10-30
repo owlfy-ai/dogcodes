@@ -411,9 +411,9 @@ pub fn discover_executables(
             continue;
         }
         for candidate in &manifest.discovery.candidate_executables {
-            include_executable(&directory.join(candidate), &mut discovered)?;
-            #[cfg(windows)]
-            include_executable(&directory.join(format!("{candidate}.exe")), &mut discovered)?;
+            for path in command_paths(directory, candidate, context.platform) {
+                include_executable(&path, &mut discovered)?;
+            }
         }
     }
     if let Some(paths) = manifest.discovery.platform_paths.get(&context.platform) {
@@ -445,6 +445,19 @@ pub fn discover_executables(
         }
     }
     Ok(discovered.into_iter().collect())
+}
+
+/// Windows npm installs ship a POSIX script beside a native `.cmd` launcher.
+/// Prefer executable Windows launchers over that extensionless shell script.
+#[must_use]
+pub fn command_paths(directory: &Path, name: &str, platform: Platform) -> Vec<PathBuf> {
+    if platform == Platform::Windows && Path::new(name).extension().is_none() {
+        return ["exe", "cmd", "bat", "com"]
+            .into_iter()
+            .map(|extension| directory.join(format!("{name}.{extension}")))
+            .collect();
+    }
+    vec![directory.join(name)]
 }
 
 pub async fn probe_installation(

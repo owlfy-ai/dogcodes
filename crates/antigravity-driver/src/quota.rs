@@ -138,6 +138,7 @@ impl QuotaProvider for AntigravityDriver {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null())
                 .kill_on_drop(true);
+            agent_runtime::apply_platform_environment(&mut command);
             for variable in ENV_ALLOWLIST {
                 if let Some(value) = agent_runtime::inherited_variable(variable) {
                     command.env(variable, value);

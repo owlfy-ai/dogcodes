@@ -736,6 +736,7 @@ fn spawn_workspace(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    agent_runtime::apply_platform_environment(&mut command);
     for variable in ENV_ALLOWLIST {
         if let Some(value) = agent_runtime::inherited_variable(variable) {
             command.env(variable, value);
@@ -1802,6 +1803,22 @@ done
         AntigravityDriver::probe_ready(&wrapper)
             .await
             .expect("fake cli should pass the event-surface probe");
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn windows_probe_preserves_native_profile_and_system_locations() {
+        let directory = tempfile::tempdir().unwrap();
+        let wrapper = directory.path().join("agy-probe.cmd");
+        std::fs::write(
+            &wrapper,
+            "@echo off\r\nif not defined SystemRoot exit /b 41\r\nif not defined USERPROFILE exit /b 42\r\nif not defined LOCALAPPDATA exit /b 43\r\nif not defined APPDATA exit /b 44\r\necho {\"event\":\"init\",\"init\":{}}\r\n",
+        )
+        .unwrap();
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        AntigravityDriver::probe_ready_with(&wrapper, &lock)
+            .await
+            .expect("native readiness needs Windows system/profile directories after env_clear");
     }
 
     #[cfg(unix)]

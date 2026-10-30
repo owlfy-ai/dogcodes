@@ -280,6 +280,7 @@ impl Bridge {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+        agent_runtime::apply_platform_environment(&mut cmd);
         for key in ENV_ALLOWLIST {
             if let Some(value) = agent_runtime::inherited_variable(key) {
                 cmd.env(key, value);

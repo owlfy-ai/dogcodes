@@ -19,6 +19,7 @@ pub(super) async fn read(
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+        agent_runtime::apply_platform_environment(&mut command);
         for key in ENV_ALLOWLIST {
             if let Some(value) = agent_runtime::inherited_variable(key) {
                 command.env(key, value);

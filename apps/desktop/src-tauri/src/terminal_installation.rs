@@ -262,12 +262,10 @@ fn select_executable(
                 if !directory.is_absolute() {
                     continue;
                 }
-                if let Some(path) = canonical_executable(&directory.join(name)) {
-                    return Ok(Some(path));
-                }
-                #[cfg(windows)]
-                if let Some(path) = canonical_executable(&directory.join(format!("{name}.exe"))) {
-                    return Ok(Some(path));
+                for path in agent_registry::command_paths(directory, name, context.platform) {
+                    if let Some(path) = canonical_executable(&path) {
+                        return Ok(Some(path));
+                    }
                 }
             }
         }
@@ -306,14 +304,50 @@ fn select_executable(
     // already cached, named package without invoking npx or installing anything.
     // A real terminal/global installation always wins over this fallback.
     if manifest.id.as_str() == "deepseek-harness" {
-        return Ok(context.home_dir.as_deref().and_then(cached_deepseek));
+        return Ok(cached_deepseek(
+            &deepseek_cache_roots(context),
+            context.platform,
+        ));
     }
     Ok(None)
 }
 
-fn cached_deepseek(home: &Path) -> Option<PathBuf> {
-    let mut candidates = std::fs::read_dir(home.join(".npm/_npx"))
-        .ok()?
+fn deepseek_cache_roots(context: &DiscoveryContext) -> Vec<PathBuf> {
+    let Some(home) = context.home_dir.as_deref() else {
+        return vec![];
+    };
+    let current_user = agent_registry::home_directory().as_deref() == Some(home);
+    let mut roots = Vec::new();
+    if current_user
+        && let Some(cache) = std::env::var_os("npm_config_cache")
+            .or_else(|| std::env::var_os("NPM_CONFIG_CACHE"))
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+    {
+        roots.push(cache);
+    }
+    if context.platform == agent_registry::Platform::Windows {
+        let local = current_user
+            .then(|| std::env::var_os("LOCALAPPDATA"))
+            .flatten()
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| home.join("AppData/Local"));
+        roots.push(local.join("npm-cache"));
+    }
+    roots.push(home.join(".npm"));
+    roots
+}
+
+fn cached_deepseek(roots: &[PathBuf], platform: agent_registry::Platform) -> Option<PathBuf> {
+    let mut candidates = roots
+        .iter()
+        .flat_map(|root| {
+            std::fs::read_dir(root.join("_npx"))
+                .into_iter()
+                .flatten()
+                .take(256)
+        })
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let package = entry.path().join("node_modules/@deepseek-ai/dsh");
@@ -327,7 +361,14 @@ fn cached_deepseek(home: &Path) -> Option<PathBuf> {
             if manifest["name"] != "@deepseek-ai/dsh" {
                 return None;
             }
-            let executable = canonical_executable(&package.join("lib/bin.js"))?;
+            let script = canonical_executable(&package.join("lib/bin.js"))?;
+            let executable = if platform == agent_registry::Platform::Windows {
+                // Windows cannot directly execute the JavaScript entry point.
+                // Reuse npm's existing launcher and its selected Node runtime.
+                canonical_executable(&entry.path().join("node_modules/.bin/dsh.cmd"))?
+            } else {
+                script
+            };
             Some((metadata.modified().ok()?, executable))
         })
         .collect::<Vec<_>>();
@@ -535,14 +576,15 @@ mod tests {
             r#"{"name":"unrelated-package"}"#,
         )
         .unwrap();
-        assert!(cached_deepseek(dir.path()).is_none());
+        let roots = [dir.path().join(".npm")];
+        assert!(cached_deepseek(&roots, Platform::Macos).is_none());
         std::fs::write(
             package.join("package.json"),
             r#"{"name":"@deepseek-ai/dsh"}"#,
         )
         .unwrap();
         assert_eq!(
-            cached_deepseek(dir.path()),
+            cached_deepseek(&roots, Platform::Macos),
             Some(std::fs::canonicalize(&cached).unwrap())
         );
         let manifest = ProviderManifest::parse_toml(include_str!(
@@ -562,12 +604,115 @@ mod tests {
             Some(preferred)
         );
     }
-    #[cfg(unix)]
     fn executable(path: &Path) {
-        use std::os::unix::fs::PermissionsExt;
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, "#!/bin/sh\nexit 0\n").unwrap();
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+
+    #[test]
+    fn windows_deepseek_uses_native_npm_launchers_and_local_appdata_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("迁移主目录/中文 用户");
+        let cache = home.join("AppData/Local/npm-cache/_npx/hash/node_modules");
+        let package = cache.join("@deepseek-ai/dsh");
+        executable(&package.join("lib/bin.js"));
+        std::fs::write(
+            package.join("package.json"),
+            r#"{"name":"@deepseek-ai/dsh"}"#,
+        )
+        .unwrap();
+        let context = DiscoveryContext {
+            platform: Platform::Windows,
+            path_entries: vec![],
+            home_dir: Some(home),
+        };
+        let manifest = ProviderManifest::parse_toml(include_str!(
+            "../../../../drivers/manifests/deepseek-harness.toml"
+        ))
+        .unwrap();
+        // The JavaScript file alone is not runnable on Windows.
+        assert!(
+            select_executable(&manifest, &context, None)
+                .unwrap()
+                .is_none()
+        );
+        let cached = cache.join(".bin/dsh.cmd");
+        executable(&cached);
+        assert_eq!(
+            select_executable(&manifest, &context, None).unwrap(),
+            Some(std::fs::canonicalize(&cached).unwrap())
+        );
+        let bin = dir.path().join("自定义 npm 安装/bin");
+        executable(&bin.join("dsh"));
+        let command = bin.join("dsh.cmd");
+        executable(&command);
+        let context = DiscoveryContext {
+            path_entries: vec![bin],
+            ..context
+        };
+        assert_eq!(
+            select_executable(&manifest, &context, None).unwrap(),
+            Some(std::fs::canonicalize(&command).unwrap())
+        );
+        assert_eq!(
+            agent_registry::discover_executables(&manifest, &context).unwrap(),
+            vec![std::fs::canonicalize(command).unwrap()]
+        );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "uses installed Windows DeepSeek/Antigravity CLIs; no model calls"]
+    async fn local_windows_deepseek_and_antigravity_discovery_and_readiness() {
+        for source in [
+            include_str!("../../../../drivers/manifests/deepseek-harness.toml"),
+            include_str!("../../../../drivers/manifests/antigravity.toml"),
+        ] {
+            let manifest = ProviderManifest::parse_toml(source).unwrap();
+            let path = preferred_executable(&manifest, &DiscoveryContext::from_current_process())
+                .await
+                .unwrap()
+                .expect("installed CLI should be discovered");
+            let report = agent_registry::probe_installation(&manifest, path.clone())
+                .await
+                .unwrap();
+            assert_eq!(
+                report.status,
+                agent_registry::InstallationStatus::Installed,
+                "{report:?}"
+            );
+            eprintln!("{}: installed {:?}", manifest.id, report.version);
+            let result = if manifest.id.as_str() == "antigravity" {
+                antigravity_driver::AntigravityDriver::probe_ready(&path).await
+            } else {
+                acp_driver::AcpDriver::connect_ready(
+                    manifest.id.as_str(),
+                    &agent_domain::InstallationId::new().to_string(),
+                    acp_driver::AcpLaunch {
+                        executable: path,
+                        args: manifest.discovery.launch_args,
+                    },
+                    report.version.map(|version| version.to_string()),
+                )
+                .await
+                .map(drop)
+            };
+            match result {
+                Ok(()) => eprintln!("{}: native readiness passed", manifest.id),
+                Err(driver_api::DriverError::NotConfigured(reason)) => {
+                    eprintln!(
+                        "{}: explicit native account/configuration issue: {reason}",
+                        manifest.id
+                    );
+                }
+                Err(error) => panic!("{} readiness failed: {error:?}", manifest.id),
+            }
+        }
     }
     #[test]
     #[cfg(unix)]

@@ -14,7 +14,9 @@ version_args = ["--version"]
 identity_args = ["models"]
 version_output_markers = ["gemini"]
 env_allowlist = ["PATH"]
-timeout_millis = 3000
+# `models` performs a native catalog lookup; a normal Windows cold start can
+# take five seconds before it prints the product signature.
+timeout_millis = 10000
 output_limit_bytes = 65536
 
 [discovery.platform_paths]
