@@ -70,6 +70,68 @@ async function mount(client: CoreClient) {
   await act(async () => root!.render(<AgentWelcome client={client} onContinue={() => {}} renderIcon={() => null} />));
 }
 describe("welcome scan workflow", () => {
+  it.each(["pi", "deepseek-harness"])("queries %s supplier balances and preserves zero and distinct currencies", async providerId => {
+    const native = { ...installation, providerId, installationId: `ins_${providerId}` };
+    const q: QuotaSnapshot = { ...quota(), windows: [], balances: [
+      { label: "DeepSeek API", amount: 0, currency: "USD" },
+      { label: "DeepSeek API", amount: 321.5, currency: "CNY" },
+    ] };
+    const quotaSnapshots = vi.fn(async () => [{ providerId, installationId: native.installationId, quota: q }]);
+    await mount({ scanAgent: async (id: string) => ({ installations: id === providerId ? [native] : [] }), quotaSnapshots } as unknown as CoreClient);
+    expect(quotaSnapshots).toHaveBeenCalledWith(null, native.installationId);
+    const card = container.querySelector(`[aria-label="${providerId === "pi" ? "Pi" : "DeepSeek Harness"}"]`)!;
+    for (const value of ["余额已验证", "DeepSeek API", "USD", "0.00", "CNY", "321.50", "更新于"]) expect(card.textContent).toContain(value);
+    expect(card.querySelector('[aria-label="供应商余额"]')).not.toBeNull();
+    expect(card.querySelectorAll(".welcome-ring")).toHaveLength(0);
+    expect(card.textContent).not.toContain("暂未接入");
+  });
+
+  it("queries OpenCode Go and displays all three quota windows", async () => {
+    const native = { ...installation, providerId: "opencode", installationId: "ins_opencode" };
+    const q = { ...quota(), windows: [
+      { id: "opencode-go-rolling", scope: "OpenCode Go", windowMinutes: 300, usedPercent: 12.5 },
+      { id: "opencode-go-weekly", scope: "OpenCode Go", windowMinutes: 10080, usedPercent: 46 },
+      { id: "opencode-go-monthly", scope: "OpenCode Go", windowMinutes: 0, usedPercent: 47 },
+    ] };
+    const quotaSnapshots = vi.fn(async () => [{ providerId: "opencode", installationId: native.installationId, quota: q }]);
+    await mount({ scanAgent: async (id: string) => ({ installations: id === "opencode" ? [native] : [] }), quotaSnapshots } as unknown as CoreClient);
+    const card = container.querySelector('[aria-label="OpenCode"]')!;
+    expect(quotaSnapshots).toHaveBeenCalledWith(null, "ins_opencode");
+    for (const value of ["已登录", "5小时剩余", "每周剩余", "每月剩余", "54%", "53%"]) expect(card.textContent).toContain(value);
+    expect(card.querySelectorAll(".welcome-ring")).toHaveLength(3);
+    expect(card.textContent).not.toContain("暂未接入");
+  });
+
+  it.each(["pi", "deepseek-harness", "opencode"])("queries independent %s accounts even before model readiness", async providerId => {
+    const native = { ...installation, providerId, installationId: `ins_${providerId}`, status: "not_configured" as const };
+    const q = { ...quota(), windows: [], balances: [{ label: "provider", amount: 12.5, currency: "USD" }] };
+    const quotaSnapshots = vi.fn(async () => [{ providerId, installationId: native.installationId, quota: q }]);
+    await mount({ scanAgent: async (id: string) => ({ installations: id === providerId ? [native] : [] }), quotaSnapshots } as unknown as CoreClient);
+    expect(quotaSnapshots).toHaveBeenCalledWith(null, native.installationId);
+    const card = container.querySelector(`[aria-label="${supportedAgents.find(agent => agent.id === providerId)!.name}"]`)!;
+    expect(card.textContent).toContain("12.50");
+    expect(card.querySelector(".welcome-status")?.textContent).toBe("未配置");
+  });
+
+  it("shows missing Go credentials and unavailable Pi balances instead of an obsolete unsupported message", async () => {
+    const quotaSnapshots = vi.fn(async (_: unknown, id: string) => [{ providerId: id, installationId: id, quota: null,
+      diagnostic: id === "opencode" ? "opencode_go_not_configured" : "quota_unavailable" }]);
+    await mount({ scanAgent: async (id: string) => ({ installations: ["opencode", "pi", "codebuddy"].includes(id) ? [{ ...installation, providerId: id, installationId: id }] : [] }), quotaSnapshots } as unknown as CoreClient);
+    const go = container.querySelector('[aria-label="OpenCode"]')!;
+    expect(go.textContent).toContain("未配置 OpenCode Go API Key");
+    expect(go.textContent).not.toContain("暂未接入");
+    expect(container.querySelector('[aria-label="Pi"]')?.textContent).toContain("当前未取得可查询的供应商余额");
+    expect(container.querySelector('[aria-label="CodeBuddy"]')?.textContent).toContain("暂未接入账户额度查询");
+    expect(quotaSnapshots).not.toHaveBeenCalledWith(null, "codebuddy");
+  });
+
+  it("does not verify stale supplier balances or invent subscription windows", () => {
+    const native = { ...installation, providerId: "pi" };
+    const q = { ...quota(), windows: [], balances: [{ label: "DeepSeek API", amount: 0, currency: "CNY" }] };
+    expect(welcomeStatus({ installation: native, view: { ...view(q), providerId: "pi" } }).label).toBe("余额已验证");
+    expect(welcomeStatus({ installation: native, view: { ...view(q), providerId: "pi" }, observedAt: q.staleAfterUnixMs + 1 }).label).toBe("连接就绪");
+  });
+
   it("waits for Antigravity cold quota startup and then confirms login", async () => {
     vi.useFakeTimers();
     const anti = { ...installation, providerId: "antigravity" };
@@ -114,13 +176,13 @@ describe("welcome scan workflow", () => {
     expect(card().hasAttribute("aria-disabled")).toBe(false);
     expect(card().textContent).toContain("未配置");
   });
-  it("does not wait for unsupported quota queries on new native agents", async () => {
-    const ids = ["pi", "opencode", "deepseek-harness"];
+  it("does not wait for unsupported CodeBuddy account quota queries", async () => {
+    const ids = ["codebuddy"];
     const quotaSnapshots = vi.fn();
     await mount({ scanAgent: async (id: string) => ({ installations: ids.includes(id) ? [{ ...installation, providerId: id, installationId: id }] : [] }), quotaSnapshots } as unknown as CoreClient);
     expect(quotaSnapshots).not.toHaveBeenCalled();
-    expect(container.querySelector('[aria-label="Pi"]')?.textContent).toContain("连接就绪");
-    expect(container.querySelector('[aria-label="Pi"]')?.textContent).toContain("暂未接入账户额度查询");
+    expect(container.querySelector('[aria-label="CodeBuddy"]')?.textContent).toContain("连接就绪");
+    expect(container.querySelector('[aria-label="CodeBuddy"]')?.textContent).toContain("暂未接入账户额度查询");
   });
   it("displays Cursor Models and Other Models as separate monthly allowances", async () => {
     const cursor = { ...installation, providerId: "cursor", installationId: "ins_cursor" };
