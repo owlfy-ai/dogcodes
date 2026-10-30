@@ -1,0 +1,181 @@
+{
+  "language": "en",
+  "kind": "UI-based feature illustrations",
+  "tool": "Built-in image_gen",
+  "scenario": "Ledger: invoice filters, CSV export, code review, tests and commits",
+  "status": "English review set; other languages await user acceptance",
+  "layout": "Desktop first (upper-left), corresponding phone second (lower-right)",
+  "assets": [
+    {
+      "file": "overview.png",
+      "title": "One place to work",
+      "source_image": "exec-8b46c012-9825-44c6-8c24-6fa28966f054.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "c47372423a10d224e80347fb594eb703fe37793c933423e114094f85d041e68b"
+    },
+    {
+      "file": "switch-agent.png",
+      "title": "Hand off work between agents seamlessly",
+      "source_image": "exec-05b7e07d-9c94-4db6-b3ae-5a7cca916a7c.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "f43797adba964265bb355486550bf7ff546f9ab83a0610ddd91adf19687d99cd"
+    },
+    {
+      "file": "usage.png",
+      "title": "Know your quota and usage at a glance",
+      "source_image": "exec-e8ccc5b5-97ef-4483-b087-e60dd7202159.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "557de1925029ff1dda08c81f6824592ccb28f0c0d0f1d2205e8e6dd7fffe7b5f"
+    },
+    {
+      "file": "accounts.png",
+      "title": "Use the subscriptions you already have",
+      "source_image": "exec-60dee8f0-5dcc-4b3d-a4ec-a91296260e68.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "29a594e7372d4c5a0b64201a5bfa2ebef60572dbfd3f1c5dc14f77e189ef0f3c"
+    },
+    {
+      "file": "review-fix.png",
+      "title": "Cross-agent code review and repair",
+      "source_image": "exec-00fe98ed-c478-4a7b-979a-f6db4c34f4ac.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "856ce4d3b824117566839a21e2bb07b4412799ddeafdf9690c233bec8043140e"
+    },
+    {
+      "file": "fork.png",
+      "title": "Fork across agents and compare approaches",
+      "source_image": "exec-77d177b2-9ba0-4021-a5ae-368d7057b68c.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "fcb7b70edb1bdd6392a1386007dd9ea752fe18e96e409668542738dea4508a21"
+    },
+    {
+      "file": "git-changes.png",
+      "title": "Git management that feels familiar",
+      "source_image": "exec-e1b22b5e-fda3-41cd-bac1-ad958bb09b3d.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "9e190a39b85cb42c6505f6f46f5afe3e8b2f7ddb90f0077bb9a3f619066ab05e"
+    },
+    {
+      "file": "run-project.png",
+      "title": "Discover how to run a project",
+      "source_image": "exec-ae9ec2ea-ee26-4273-b598-f82344d516d9.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "882cf8ed98826679000ff7e56831efc89acafd676c8f63ad55c81bd77e5887a9"
+    },
+    {
+      "file": "multi-folder.png",
+      "title": "Multi-folder projects",
+      "source_image": "exec-a4de4b6a-ed21-4be8-bc31-fd9396e2d82a.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "b7b1429c3766a82a67e1be9914584c603af54324d372a86ad44f0b0da38745d5"
+    },
+    {
+      "file": "background.png",
+      "title": "Keep working while minimized",
+      "source_image": "exec-c1de7490-7084-4788-978f-e31631f1e02e.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "6ca1d51dac2e325f5fcbbfd056222d862b5e6bed9a53be84a6e3d0f805fe5016"
+    },
+    {
+      "file": "turn-usage.png",
+      "title": "Per-turn usage, crystal clear",
+      "source_image": "exec-9a86a4ec-cd17-4131-a5e8-fe2a36eb578e.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "0599c40f9ac352627cb20210f317f1ddb4a2dbdcaf73b317bf98b2768312cd10"
+    },
+    {
+      "file": "reliable-operations.png",
+      "title": "Every send, commit and push happens once",
+      "source_image": "exec-d5823fe8-d713-424d-8597-ba6650e2ba1e.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "fa0ec65da7897dc850b1acda5c9566ca078ca82862fb62b5bd745bf8a438a102"
+    },
+    {
+      "file": "languages.png",
+      "title": "The interface in your language",
+      "source_image": "exec-315f700b-2613-4b6e-a057-9b9133af404e.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "d7e775af11e00d6d657d6360648e5e0349352bacb6b48f8e098194505fa0dd9b"
+    },
+    {
+      "file": "phone-remote.png",
+      "title": "Command your agents from your phone",
+      "source_image": "exec-0194a768-fbda-4ed2-8aee-9784821bae66.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "7b338b281ca8775836c5f3496dba37862404f182aea47bf27cde26b6561edc1f"
+    },
+    {
+      "file": "remote-desktop.png",
+      "title": "Remote desktop when you need it",
+      "source_image": "exec-dd1b2d86-0bf9-4e7d-bd6e-dd3234280c9e.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "806b5cda7a3b5e051e02cd15e469122b0cd53d2d3f1766f358c6a744d2a5967e"
+    },
+    {
+      "file": "permissions.png",
+      "title": "Approve permissions and answer questions",
+      "source_image": "exec-5a331fb9-0cd0-4d40-859d-a6b0a662f0b1.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "b98a76356653d8f09996dae2e856a315da92b9d4e17ca03cf59fedceed7f2a54"
+    },
+    {
+      "file": "terminal.png",
+      "title": "Run commands in your PC terminal",
+      "source_image": "exec-7eb9e723-887e-4593-b47d-24604cecfb84.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "6d96cd799fb3616e0881cbfc2aed588a27a992413a592f826eb4388913ea40b9"
+    },
+    {
+      "file": "files-attachments.png",
+      "title": "Browse files and send attachments",
+      "source_image": "exec-67ca866e-40fa-499f-bc0f-9722455c3e64.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "6bc4e186e5a0e3bc66c760aa5feb32af7e72b22afea6f225d9ed292e773d537f"
+    },
+    {
+      "file": "add-project.png",
+      "title": "Add projects from your computer",
+      "source_image": "exec-608a29eb-8f59-4341-8d08-ea7be62b67bf.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "aba8023449cec3b1d1f3a4425114598e4b497174cab8132c9c1d8cdeb855a4ca"
+    }
+  ]
+}

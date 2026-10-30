@@ -1,4 +1,4 @@
-<!-- Keep feature scope aligned across README.md and docs/i18n/. Screenshots are shared PNG files. -->
+<!-- English feature illustrations live in docs/images/readme/en/. Other language artwork awaits review. -->
 <div align="center">
 
 <img src="apps/desktop/src-tauri/icons/128x128@2x.png" alt="dog.codes" width="96" height="96" />
@@ -37,7 +37,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 ## One place to work
 
-<!-- Screenshot placeholder: docs/images/readme/overview.png -->
+![One place to work — desktop first, phone where available](docs/images/readme/en/overview.png)
 
 <a id="features"></a>
 
@@ -51,7 +51,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 - When one agent runs out of quota, another picks up the work without you restating the requirements.
 - The previous conversation travels with the handoff, and the new agent can look up earlier turns through built-in history tools — it truly continues instead of starting over.
 
-<!-- Screenshot placeholder: docs/images/readme/switch-agent.png -->
+![Hand off work between agents seamlessly — desktop first, phone where available](docs/images/readme/en/switch-agent.png)
 
 ### Know your quota and usage at a glance
 
@@ -61,7 +61,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 - Manage agent versions in one place and upgrade with a single click.
 - Installed agents are discovered automatically, along with their sign-in status.
 
-<!-- Screenshot placeholder: docs/images/readme/usage.png -->
+![Know your quota and usage at a glance — desktop first, phone where available](docs/images/readme/en/usage.png)
 
 ### Use the subscriptions you already have
 
@@ -71,7 +71,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 - Local-first: your code, conversations and credentials stay on your computer. The optional phone link is end-to-end encrypted, so the relay never sees your data.
 - Agents are launched with only the environment they need, so your other secrets are not exposed to them.
 
-<!-- Screenshot placeholder: docs/images/readme/accounts.png -->
+![Use the subscriptions you already have — desktop first, phone where available](docs/images/readme/en/accounts.png)
 
 ### Cross-agent code review and repair
 
@@ -81,7 +81,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 - Findings are ranked high, medium, and low; select the ones you want and start the repair with one click.
 - The repair goes back to the main agent together with the review report and selected findings, keeping the context intact.
 
-<!-- Screenshot placeholder: docs/images/readme/review-fix.png -->
+![Cross-agent code review and repair — desktop first, phone where available](docs/images/readme/en/review-fix.png)
 
 ### Fork across agents and compare approaches
 
@@ -90,7 +90,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 - With worktrees, the code changes of each approach stay isolated from one another.
 - Let different agents each produce a version of the same task, then keep the best one.
 
-<!-- Screenshot placeholder: docs/images/readme/fork.png -->
+![Fork across agents and compare approaches — desktop first, phone where available](docs/images/readme/en/fork.png)
 
 ### Git management that feels familiar
 
@@ -99,7 +99,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 - Stage, unstage, discard, ignore, Commit, and Commit & Push, with tree and list views.
 - Have any agent write the commit message with one click, in the language you choose.
 
-<!-- Screenshot placeholder: docs/images/readme/git-changes.png -->
+![Git management that feels familiar — desktop first, phone where available](docs/images/readme/en/git-changes.png)
 
 ### Discover how to run a project, then run it in one click
 
@@ -108,7 +108,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 - No more remembering each project's start command or opening a terminal just to launch it — one click runs it.
 - Output is collected in one place so you can check it any time.
 
-<!-- Screenshot placeholder: docs/images/readme/run-project.png -->
+![Discover how to run a project — desktop first, phone where available](docs/images/readme/en/run-project.png)
 
 ### Multi-folder projects
 
@@ -116,7 +116,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 - Even agents without native multi-folder support can work on multi-folder projects through dog.codes.
 
-<!-- Screenshot placeholder: docs/images/readme/multi-folder.png -->
+![Multi-folder projects — desktop first, phone where available](docs/images/readme/en/multi-folder.png)
 
 ### Keep working while minimized
 
@@ -126,7 +126,7 @@ Only one desktop instance runs at a time; opening it again focuses the existing 
 
 - While tasks, reviews, runs, terminals or remote sessions are active, dog.codes can keep your computer from sleeping automatically (you can turn this off). It cannot prevent you from closing the lid or locking the screen.
 
-<!-- Screenshot placeholder: docs/images/readme/background.png -->
+![Keep working while minimized — desktop first, phone where available](docs/images/readme/en/background.png)
 
 ### Per-turn usage, crystal clear
 
@@ -134,7 +134,7 @@ Only one desktop instance runs at a time; opening it again focuses the existing 
 
 - Understand exactly what the current conversation and each turn consumed, and where your tokens went.
 
-<!-- Screenshot placeholder: docs/images/readme/turn-usage.png -->
+![Per-turn usage, crystal clear — desktop first, phone where available](docs/images/readme/en/turn-usage.png)
 
 ### Every send, commit and push happens once
 
@@ -143,9 +143,13 @@ Only one desktop instance runs at a time; opening it again focuses the existing 
 - If the app closes or a connection drops mid-operation, it verifies what actually happened instead of guessing — no duplicated messages, commits or pushes.
 - Interrupted commands are never replayed automatically.
 
+![Every send, commit and push happens once — desktop first, phone where available](docs/images/readme/en/reliable-operations.png)
+
 ### The interface in your language
 
 **Use dog.codes in 11 languages — English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский and Italiano — or follow your system language.**
+
+![The interface in your language — desktop first, phone where available](docs/images/readme/en/languages.png)
 
 **Open source · Free · Cross-platform**: licensed under Apache-2.0, built for macOS, Windows, and Linux.
 
@@ -157,18 +161,39 @@ Only one desktop instance runs at a time; opening it again focuses the existing 
 
 Pair a phone once and run everything below from anywhere. Your code and your agents stay on your computer.
 
-<!-- Screenshot placeholder: docs/images/readme/phone-remote.png -->
+![Command your agents from your phone — desktop first, phone where available](docs/images/readme/en/phone-remote.png)
 
 - **Continue or start conversations.** Pick up any conversation from your computer, or start a new one — choose the agent, model and thinking effort, watch the output stream in live, and search, pin, archive or fork sessions.
+
+  ![Hand off work between agents seamlessly — desktop first, phone where available](docs/images/readme/en/switch-agent.png)
+
 - **Approve and answer.** Permission requests and agent questions reach your phone with push notifications; one tap and the agent carries on. Every approval is checked against the original run on your computer.
+
+  ![Approve permissions and answer questions — desktop first, phone where available](docs/images/readme/en/permissions.png)
+
 - **Review and commit.** See the changes in every project folder, stage files, have an agent write the commit message, then commit, push, pull or sync. Browse commit history and compare branches read-only.
+
+  ![Git management that feels familiar — desktop first, phone where available](docs/images/readme/en/git-changes.png)
+
 - **Add projects from your PC.** Browse the folders on your computer and add one as a project without sitting back down at your desk.
+
+  ![Add projects from your computer — desktop first, phone where available](docs/images/readme/en/add-project.png)
+
 - **Run commands in your PC’s terminal.** Open terminals in any project folder and work in the real shell of your computer.
+
+  ![Run commands in your PC terminal — desktop first, phone where available](docs/images/readme/en/terminal.png)
+
 - **Run the project, see it on your phone.** Start the launch entries on your computer and open the running web app right on the phone.
+
+  ![Discover how to run a project — desktop first, phone where available](docs/images/readme/en/run-project.png)
+
 - **Browse files and send attachments.** Read project files, and attach files and images to your messages.
+
+  ![Browse files and send attachments — desktop first, phone where available](docs/images/readme/en/files-attachments.png)
+
 - **Remote desktop when you need it.** View your computer’s screen and tap, drag, scroll, pinch, type, or paste text and images — with quality that adapts to the network.
 
-<!-- Screenshot placeholder: docs/images/readme/remote-desktop.png -->
+![Remote desktop when you need it — desktop first, phone where available](docs/images/readme/en/remote-desktop.png)
 
 ### How it connects
 
