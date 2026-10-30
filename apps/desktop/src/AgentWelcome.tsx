@@ -148,27 +148,55 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
     const current = () => mounted.current && generation.current === runId;
     setPendingAgents(supportedAgents.map(a => a.id)); setFailedAgents([]);
     setReadings([]); setFailureDetails({}); setRefreshing(true); setError(null);
+    const pendingReads = new Map<string, Promise<void>>();
+    const scanned = new Set<string>();
+    const readQuota = (installation: InstallationSummary): Promise<void> => {
+      const id = installation.installationId;
+      const pending = pendingReads.get(id);
+      if (pending) return pending;
+      const request = (async () => {
+        let view: QuotaSnapshotView | undefined;
+        let failed = false;
+        try {
+          const found = (await awaitDetection(client.quotaSnapshots(null, id), controller.signal, quotaRequestTimeoutMs(installation.providerId)))
+            .find(v => v.installationId === id && v.providerId === installation.providerId);
+          view = found && withLastReading(found);
+          failed = !found;
+        } catch { failed = true; }
+        const observedAt = Date.now();
+        if (current()) setReadings(previous => previous.map(r => r.installation.installationId === id ? { ...r, view, failed, observedAt, pending: false } : r));
+      })();
+      pendingReads.set(id, request);
+      void request.finally(() => pendingReads.delete(id));
+      return request;
+    };
+    // Account APIs do not depend on a successful model/session handshake. Read
+    // known installations while discovery runs, including when a scan is blocked.
+    const accounts = (async () => {
+      if (!client.bootstrap) return;
+      try {
+        const snapshot = await awaitDetection(client.bootstrap(), controller.signal, 35_000);
+        if (!current()) return;
+        const installations = snapshot.installations.filter(i => independentAccounts.has(i.providerId)
+          && canReadQuota(i) && !scanned.has(i.providerId));
+        setReadings(previous => [...previous, ...installations.filter(i => !previous.some(r => r.installation.installationId === i.installationId))
+          .map(installation => ({ installation, pending: true }))]);
+        await Promise.all(installations.map(readQuota));
+      } catch { /* Discovery still supplies installations when bootstrap fails. */ }
+    })();
     try {
-      await Promise.all(supportedAgents.map(async agent => {
+      await Promise.all([accounts, ...supportedAgents.map(async agent => {
         try {
           const snapshot = await awaitDetection(client.scanAgent(agent.id), controller.signal, 100_000);
           if (!current()) return;
           const installations = snapshot.installations.filter(i => i.providerId === agent.id);
+          scanned.add(agent.id);
           detectedRef.current?.(agent.id, snapshot);
           setReadings(previous => [...previous.filter(r => r.installation.providerId !== agent.id),
-            ...installations.map(installation => ({ installation, pending: canReadQuota(installation) }))]);
+            ...installations.map(installation => ({ ...previous.find(r => r.installation.installationId === installation.installationId), installation, pending: canReadQuota(installation) }))]);
           setPendingAgents(previous => previous.filter(id => id !== agent.id));
-          await Promise.all(installations.filter(canReadQuota).map(async installation => {
-            let view: QuotaSnapshotView | undefined;
-            let failed = false;
-            try {
-              const found = (await awaitDetection(client.quotaSnapshots(null, installation.installationId), controller.signal, quotaRequestTimeoutMs(installation.providerId))).find(v => v.installationId === installation.installationId && v.providerId === installation.providerId);
-              view = found && withLastReading(found);
-            }
-            catch { failed = true; }
-            const observedAt = Date.now();
-            if (current()) setReadings(previous => previous.map(r => r.installation.installationId === installation.installationId ? { ...r, view, failed, observedAt, pending: false } : r));
-          }));
+          await Promise.all(installations.filter(canReadQuota).map(readQuota));
+          if (current()) setReadings(previous => previous.map(r => r.installation.providerId === agent.id ? { ...r, pending: false } : r));
         } catch (cause) {
           if (current()) {
             setFailureDetails(previous => ({ ...previous, [agent.id]: userFacingError(cause, "暂时无法确认安装，请重新检测。") }));
@@ -177,7 +205,7 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
             setError("部分 Agent 检测失败，可重试。若有正在运行的对话，请等待其完成；其余卡片不受影响。");
           }
         }
-      }));
+      })]);
     } finally {
       if (current()) { busy.current = false; activeRun.current = null; setRefreshing(false); }
     }
@@ -202,7 +230,7 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
   const orderedAgents = [...supportedAgents].sort((left, right) => installationRank(left.id) - installationRank(right.id));
   const cards = orderedAgents.map(agent => {
     const reading = readings.find(r => r.installation.providerId === agent.id);
-    const scanning = pendingAgents.includes(agent.id);
+    const scanning = pendingAgents.includes(agent.id) && !reading;
     const failed = failedAgents.includes(agent.id);
     const uninstalled = !reading && !scanning && !failed;
     const state = scanning ? { label: "检测中", tone: "muted", detail: "正在检测安装、登录与连接状态…" }

@@ -70,6 +70,56 @@ async function mount(client: CoreClient) {
   await act(async () => root!.render(<AgentWelcome client={client} onContinue={() => {}} renderIcon={() => null} />));
 }
 describe("welcome scan workflow", () => {
+  it("reads DeepSeek balances before a slow connection scan and retains them when it finishes", async () => {
+    const native = { ...installation, providerId: "deepseek-harness", installationId: "ins_dsh" };
+    const q = { ...quota(), windows: [], balances: [{ label: "DeepSeek API", amount: 12.34, currency: "CNY" }] };
+    let release!: (snapshot: BootstrapSnapshot) => void;
+    const scan = new Promise<BootstrapSnapshot>(resolve => { release = resolve; });
+    const quotaSnapshots = vi.fn(async () => [{ providerId: native.providerId, installationId: native.installationId, quota: q }]);
+    await mount({ bootstrap: async () => ({ installations: [native] }), scanAgent: async (id: string) => id === native.providerId ? scan : { installations: [] }, quotaSnapshots } as unknown as CoreClient);
+    const card = () => container.querySelector('[aria-label="DeepSeek Harness"]')!;
+    expect(card().textContent).toContain("12.34");
+    expect(card().textContent).toContain("余额已验证");
+    expect(card().textContent).not.toContain("正在等待检测结果");
+    await act(async () => release({ installations: [native] } as BootstrapSnapshot));
+    expect(card().textContent).toContain("12.34");
+  });
+
+  it("shows an independent account balance even when a live conversation blocks rescanning", async () => {
+    const native = { ...installation, providerId: "deepseek-harness", installationId: "ins_dsh" };
+    await mount({ bootstrap: async () => ({ installations: [native] }),
+      scanAgent: async () => { throw new Error("请等待当前对话完成后重新检测 Agent"); },
+      quotaSnapshots: async () => [{ providerId: native.providerId, installationId: native.installationId,
+        quota: { ...quota(), windows: [], balances: [{ label: "DeepSeek API", amount: 0, currency: "USD" }] } }],
+    } as unknown as CoreClient);
+    const card = container.querySelector('[aria-label="DeepSeek Harness"]')!;
+    expect(card.textContent?.replace(/\s/g, " ")).toContain("USD 0.00");
+    expect(card.querySelector('[aria-label="供应商余额"]')).not.toBeNull();
+  });
+
+  it("retries an absent account monitor after the connection scan registers it", async () => {
+    const native = { ...installation, providerId: "deepseek-harness", installationId: "ins_dsh" };
+    let release!: (snapshot: BootstrapSnapshot) => void;
+    const scan = new Promise<BootstrapSnapshot>(resolve => { release = resolve; });
+    const quotaSnapshots = vi.fn().mockResolvedValueOnce([]).mockResolvedValue([{ providerId: native.providerId, installationId: native.installationId,
+      quota: { ...quota(), windows: [], balances: [{ label: "DeepSeek API", amount: 12, currency: "CNY" }] } }]);
+    await mount({ bootstrap: async () => ({ installations: [native] }), scanAgent: async (id: string) => id === native.providerId ? scan : { installations: [] }, quotaSnapshots } as unknown as CoreClient);
+    expect(container.querySelector('[aria-label="DeepSeek Harness"]')?.textContent).toContain("额度检测失败");
+    await act(async () => release({ installations: [native] } as BootstrapSnapshot));
+    expect(container.querySelector('[aria-label="DeepSeek Harness"]')?.textContent).toContain("12.00");
+    expect(quotaSnapshots).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not restore a removed installation from a late bootstrap", async () => {
+    let release!: (snapshot: BootstrapSnapshot) => void;
+    const bootstrap = new Promise<BootstrapSnapshot>(resolve => { release = resolve; });
+    const quotaSnapshots = vi.fn();
+    await mount({ bootstrap: () => bootstrap, scanAgent: async () => ({ installations: [] }), quotaSnapshots } as unknown as CoreClient);
+    await act(async () => release({ installations: [{ ...installation, providerId: "deepseek-harness" }] } as BootstrapSnapshot));
+    expect(container.querySelector('[aria-label="DeepSeek Harness"]')?.textContent).toContain("未安装");
+    expect(quotaSnapshots).not.toHaveBeenCalled();
+  });
+
   it.each(["pi", "deepseek-harness"])("queries %s supplier balances and preserves zero and distinct currencies", async providerId => {
     const native = { ...installation, providerId, installationId: `ins_${providerId}` };
     const q: QuotaSnapshot = { ...quota(), windows: [], balances: [
@@ -181,8 +231,8 @@ describe("welcome scan workflow", () => {
     const quotaSnapshots = vi.fn();
     await mount({ scanAgent: async (id: string) => ({ installations: ids.includes(id) ? [{ ...installation, providerId: id, installationId: id }] : [] }), quotaSnapshots } as unknown as CoreClient);
     expect(quotaSnapshots).not.toHaveBeenCalled();
-    expect(container.querySelector('[aria-label="Pi"]')?.textContent).toContain("连接就绪");
-    expect(container.querySelector('[aria-label="Pi"]')?.textContent).toContain("不支持查询剩余额度");
+    expect(container.querySelector('[aria-label="CodeBuddy"]')?.textContent).toContain("连接就绪");
+    expect(container.querySelector('[aria-label="CodeBuddy"]')?.textContent).toContain("暂未接入账户额度查询");
   });
   it("displays Cursor Models and Other Models as separate monthly allowances", async () => {
     const cursor = { ...installation, providerId: "cursor", installationId: "ins_cursor" };
