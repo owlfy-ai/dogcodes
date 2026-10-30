@@ -25,6 +25,16 @@ pub fn windows_desktop_executables(provider: &str, context: &DiscoveryContext) -
     };
     let local = data_dir("LOCALAPPDATA", "AppData/Local");
     match provider {
+        "cursor" => {
+            // `agent` is also installed by Grok Build. Only use Cursor's
+            // provider-specific launcher, including the native Windows .cmd
+            // shim that selects its bundled runtime/version.
+            ["cursor-agent.exe", "cursor-agent.cmd"]
+                .into_iter()
+                .map(|name| local.join("cursor-agent").join(name))
+                .filter(|path| path.is_file())
+                .collect()
+        }
         "zcode" => {
             let binary = local.join("Programs/ZCode/ZCode.exe");
             if binary.is_file()
@@ -101,6 +111,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn cursor_and_grok_keep_distinct_installations_when_agent_is_shadowed() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("中文 用户");
+        let grok = file(&home, ".grok/bin/grok.exe");
+        file(&home, ".grok/bin/agent.exe");
+        let cursor = file(&home, "AppData/Local/cursor-agent/cursor-agent.cmd");
+        let context = DiscoveryContext {
+            platform: Platform::Windows,
+            path_entries: vec![home.join(".grok/bin")],
+            home_dir: Some(home),
+        };
+        for (source, expected) in [
+            (
+                include_str!("../../../drivers/manifests/cursor.toml"),
+                cursor,
+            ),
+            (include_str!("../../../drivers/manifests/grok.toml"), grok),
+        ] {
+            let manifest = crate::ProviderManifest::parse_toml(source).unwrap();
+            assert!(
+                !manifest
+                    .discovery
+                    .candidate_executables
+                    .iter()
+                    .any(|name| name == "agent")
+            );
+            assert_eq!(
+                crate::discover_executables(&manifest, &context).unwrap(),
+                vec![std::fs::canonicalize(expected).unwrap()]
+            );
+        }
+    }
+
+    #[test]
     #[cfg(windows)]
     fn discovers_unicode_home_and_redirected_application_data() {
         // Run with child-only environment overrides; never mutate the test
@@ -126,6 +170,10 @@ mod tests {
                     include_str!("../../../drivers/manifests/grok.toml"),
                     "迁移主目录/中文 用户/.grok/bin/grok.exe",
                 ),
+                (
+                    include_str!("../../../drivers/manifests/kimi.toml"),
+                    "迁移主目录/中文 用户/.kimi-code/bin/kimi.exe",
+                ),
             ] {
                 let manifest = crate::ProviderManifest::parse_toml(source).unwrap();
                 assert_eq!(
@@ -140,6 +188,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         for relative in [
             "迁移主目录/中文 用户/.grok/bin/grok.exe",
+            "迁移主目录/中文 用户/.kimi-code/bin/kimi.exe",
             "重定向Local/OpenAI/Codex/bin/hash/codex.exe",
             "重定向Local/Programs/ZCode/ZCode.exe",
             "重定向Local/Programs/ZCode/resources/glm/zcode.cjs",
@@ -172,6 +221,11 @@ mod tests {
         let path = root.join(relative);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, []).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
         path
     }
 

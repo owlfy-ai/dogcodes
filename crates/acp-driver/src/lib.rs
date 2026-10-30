@@ -146,6 +146,7 @@ async fn read_kimi_web_usage_owned(
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    agent_runtime::apply_platform_environment(&mut command);
     for variable in ENV_ALLOWLIST {
         if let Ok(value) = std::env::var(variable) {
             command.env(variable, value);

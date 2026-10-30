@@ -23,7 +23,7 @@ linux = []
 
 [discovery.user_paths]
 macos = [".kimi-code/bin/kimi"]
-windows = []
+windows = [".kimi-code/bin/kimi.exe"]
 linux = [".kimi-code/bin/kimi"]
 
 [supported_versions]

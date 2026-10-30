@@ -453,6 +453,7 @@ pub async fn probe_installation(
 ) -> Result<InstallationProbe, RegistryError> {
     let metadata = std::fs::metadata(&executable)?;
     let fingerprint = executable_fingerprint(&executable, &metadata);
+    let timeout_millis = installation_probe_timeout(manifest.discovery.timeout_millis, &executable);
     let spec = ProcessSpec {
         executable: executable.clone(),
         args: probe_args(manifest, &executable, &manifest.discovery.version_args)?,
@@ -464,7 +465,7 @@ pub async fn probe_installation(
             .map(|(name, value)| (name.clone(), std::ffi::OsString::from(value)))
             .collect(),
         cwd: None,
-        timeout: Duration::from_millis(manifest.discovery.timeout_millis),
+        timeout: Duration::from_millis(timeout_millis),
         stdout_limit: manifest.discovery.output_limit_bytes,
         stderr_limit: manifest.discovery.output_limit_bytes,
     };
@@ -485,7 +486,7 @@ pub async fn probe_installation(
                 .map(|(name, value)| (name.clone(), std::ffi::OsString::from(value)))
                 .collect(),
             cwd: None,
-            timeout: Duration::from_millis(manifest.discovery.timeout_millis),
+            timeout: Duration::from_millis(timeout_millis),
             stdout_limit: manifest.discovery.output_limit_bytes,
             stderr_limit: manifest.discovery.output_limit_bytes,
         };
@@ -526,7 +527,7 @@ pub async fn probe_installation(
                     version: None,
                     version_text: None,
                     diagnostic: Some(safe_process_diagnostic(&error)),
-                    elapsed_millis: manifest.discovery.timeout_millis,
+                    elapsed_millis: timeout_millis,
                 });
             }
         }
@@ -583,9 +584,29 @@ pub async fn probe_installation(
             version: None,
             version_text: None,
             diagnostic: Some(safe_process_diagnostic(&error)),
-            elapsed_millis: manifest.discovery.timeout_millis,
+            elapsed_millis: timeout_millis,
         }),
     }
+}
+
+fn installation_probe_timeout(requested: u64, executable: &Path) -> u64 {
+    // Native Windows launchers can start cmd, PowerShell and a bundled Node
+    // runtime before answering --version. Keep those cold starts bounded while
+    // leaving native executables and other platforms on their declared budget.
+    #[cfg(windows)]
+    if requested > 0
+        && executable
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| {
+                value.eq_ignore_ascii_case("cmd") || value.eq_ignore_ascii_case("bat")
+            })
+    {
+        return requested.max(8000);
+    }
+    #[cfg(not(windows))]
+    let _ = executable;
+    requested
 }
 
 fn probe_args(
@@ -736,6 +757,24 @@ mod tests {
     use super::*;
 
     const CODEX_MANIFEST: &str = include_str!("../../../drivers/manifests/codex.toml");
+
+    #[test]
+    #[cfg(windows)]
+    fn batch_launcher_startup_budget_does_not_change_native_or_longer_probe_limits() {
+        assert_eq!(
+            installation_probe_timeout(3000, Path::new("cursor-agent.CMD")),
+            8000
+        );
+        assert_eq!(
+            installation_probe_timeout(3000, Path::new("kimi.exe")),
+            3000
+        );
+        assert_eq!(
+            installation_probe_timeout(12000, Path::new("cursor-agent.cmd")),
+            12000
+        );
+        assert_eq!(installation_probe_timeout(0, Path::new("invalid.cmd")), 0);
+    }
 
     #[test]
     fn macos_user_installations_follow_a_relocated_unicode_home() {

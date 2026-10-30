@@ -23,6 +23,21 @@ const SCRIPT: &str = concat!(
     "\naccountMain();"
 );
 
+#[cfg(windows)]
+fn configure_helper_source(
+    command: &mut Command,
+    source: &str,
+) -> std::io::Result<tempfile::NamedTempFile> {
+    use std::io::Write;
+    let mut script = tempfile::Builder::new()
+        .prefix("dogcodes-zcode-account-")
+        .suffix(".cjs")
+        .tempfile()?;
+    script.write_all(source.as_bytes())?;
+    command.arg(script.path());
+    Ok(script)
+}
+
 const ACCOUNT_ENV: &[&str] = &[
     "ZCODE_CREDENTIAL_SECRET",
     "ZCODE_DATA_BASE_DIR",
@@ -140,9 +155,15 @@ impl Account {
         let mut command = Command::new(
             agent_runtime::electron_node_executable(&self.launch.app_binary).map_err(|_| fail())?,
         );
+        // The embedded helper exceeds Windows' command-line limit. Store only
+        // its static source in a private temporary file; account input/output
+        // continues to travel over pipes, and the worker retains the file until
+        // its original process scope has physically exited.
+        #[cfg(windows)]
+        let helper_script = configure_helper_source(&mut command, SCRIPT).map_err(|_| fail())?;
+        #[cfg(not(windows))]
+        command.arg("-e").arg(SCRIPT);
         command
-            .arg("-e")
-            .arg(SCRIPT)
             .env_clear()
             .env("ELECTRON_RUN_AS_NODE", "1")
             .stdin(Stdio::piped())
@@ -160,6 +181,8 @@ impl Account {
         // disappears. The caller never receives account data before scope exit.
         let (observer, mut abandoned) = tokio::sync::oneshot::channel::<()>();
         let result = tokio::spawn(async move {
+            #[cfg(windows)]
+            let _helper_script = helper_script;
             // Admission belongs to the original helper through physical exit,
             // even after the caller releases its cache guard by cancellation.
             let _permit = permit;
@@ -304,6 +327,22 @@ impl Connection {
 mod tests {
     use super::*;
     use driver_api::{AgentDriver, SessionResumeCapability};
+
+    #[cfg(windows)]
+    #[test]
+    fn large_helper_source_stays_out_of_the_windows_command_line_and_is_removed() {
+        let source = format!("/*{}*/\n", "fixture".repeat(8000));
+        let mut command = Command::new("unused.exe");
+        let helper = configure_helper_source(&mut command, &source).unwrap();
+        let path = helper.path().to_path_buf();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), source);
+        let arguments = command.as_std().get_args().collect::<Vec<_>>();
+        assert_eq!(arguments.len(), 1);
+        assert_eq!(std::path::Path::new(arguments[0]), path);
+        assert!(arguments[0].to_string_lossy().encode_utf16().count() < 32767);
+        drop(helper);
+        assert!(!path.exists());
+    }
 
     #[cfg(unix)]
     fn fixture(ack: &str) -> (tempfile::TempDir, Connection) {

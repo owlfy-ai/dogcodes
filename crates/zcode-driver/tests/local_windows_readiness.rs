@@ -16,6 +16,10 @@ async fn local_zcode_reports_readiness_or_an_explicit_account_requirement() {
     match zcode_driver::ZcodeDriver::probe_ready(&launch).await {
         Ok(()) => eprintln!("ZCode: native protocol and model readiness passed"),
         Err(driver_api::DriverError::NotConfigured(reason)) => {
+            assert!(
+                std::env::var_os("DOGCODES_EXPECT_ZCODE_READY").is_none(),
+                "ZCode remains not configured after native login: {reason}"
+            );
             eprintln!("ZCode: installed, account/model configuration required: {reason}");
         }
         Err(error) => panic!("ZCode readiness failed: {error:?}"),
