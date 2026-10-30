@@ -118,16 +118,6 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 
 <!-- Captura pendiente: ../../docs/images/readme/multi-folder.png -->
 
-### El trabajo continúa al minimizar
-
-**Las tareas, terminales, comandos del proyecto y conexiones del teléfono continúan mientras dog.codes esté abierto o minimizado. Cerrar la ventana principal detiene Core y su trabajo.**
-
-Solo se ejecuta una instancia; abrirla de nuevo enfoca la ventana existente. Si hay trabajo activo, se pide confirmación antes de salir. Los comandos interrumpidos no se reenvían automáticamente.
-
-- Mientras haya tareas, revisiones, ejecuciones, terminales o sesiones remotas activas, dog.codes puede evitar que tu ordenador se suspenda automáticamente (puedes desactivarlo). No puede impedir que cierres la tapa o bloquees la pantalla.
-
-<!-- Captura pendiente: ../../docs/images/readme/background.png -->
-
 ### Uso por turno, con total claridad
 
 **Consulta el consumo de tokens, la ocupación de contexto, los aciertos de caché y el uso de caché de cada turno.**
@@ -135,17 +125,6 @@ Solo se ejecuta una instancia; abrirla de nuevo enfoca la ventana existente. Si 
 - Entiende con detalle lo que consumieron la conversación actual y cada turno, y en qué se fueron tus tokens.
 
 <!-- Captura pendiente: ../../docs/images/readme/turn-usage.png -->
-
-### Cada envío, commit y push ocurre una sola vez
-
-**dog.codes registra cada operación antes de ejecutarla y comprueba el resultado antes de reintentar.**
-
-- Si la app se cierra o se corta la conexión a mitad de una operación, verifica qué ocurrió realmente en lugar de adivinar: sin mensajes, commits ni pushes duplicados.
-- Los comandos interrumpidos nunca se reejecutan automáticamente.
-
-### La interfaz en tu idioma
-
-**Usa dog.codes en 11 idiomas — English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский e Italiano — o sigue el idioma de tu sistema.**
 
 **Código abierto · Gratis · Multiplataforma**: con licencia Apache-2.0, creado para macOS, Windows y Linux.
 

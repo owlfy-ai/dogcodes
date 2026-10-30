@@ -118,16 +118,6 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 
 <!-- Screenshot folgt: ../../docs/images/readme/multi-folder.png -->
 
-### Minimieren und weiterarbeiten
-
-**Aufgaben, Terminals, Projektbefehle und Telefonverbindungen laufen weiter, solange dog.codes geöffnet oder minimiert ist. Das Schließen des Hauptfensters beendet Core und seine Arbeit.**
-
-Es läuft nur eine App-Instanz; ein erneuter Start fokussiert das vorhandene Fenster. Aktive Arbeit erfordert eine Bestätigung vor dem Beenden. Unterbrochene Befehle werden nicht automatisch erneut gesendet.
-
-- Solange Aufgaben, Prüfungen, Läufe, Terminals oder Remote-Sitzungen aktiv sind, kann dog.codes verhindern, dass dein Computer automatisch in den Ruhezustand geht (abschaltbar). Es kann nicht verhindern, dass du den Deckel schließt oder den Bildschirm sperrst.
-
-<!-- Screenshot folgt: ../../docs/images/readme/background.png -->
-
 ### Verbrauch pro Runde, glasklar
 
 **Sieh für jede Runde Token-Verbrauch, Kontextbelegung, Cache-Treffer und Cache-Nutzung.**
@@ -135,17 +125,6 @@ Es läuft nur eine App-Instanz; ein erneuter Start fokussiert das vorhandene Fen
 - Verstehe genau, was die aktuelle Unterhaltung und jede Runde verbraucht haben und wofür deine Tokens draufgingen.
 
 <!-- Screenshot folgt: ../../docs/images/readme/turn-usage.png -->
-
-### Jedes Senden, Committen und Pushen passiert nur einmal
-
-**dog.codes protokolliert jede Operation vor der Ausführung und prüft das Ergebnis, bevor es erneut versucht.**
-
-- Schließt die App oder bricht die Verbindung mitten in einer Operation ab, prüft sie, was tatsächlich geschehen ist, statt zu raten – keine doppelten Nachrichten, Commits oder Pushes.
-- Unterbrochene Befehle werden nie automatisch erneut ausgeführt.
-
-### Die Oberfläche in deiner Sprache
-
-**Nutze dog.codes in 11 Sprachen – English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский und Italiano – oder folge deiner Systemsprache.**
 
 **Open Source · Kostenlos · Plattformübergreifend**: unter Apache-2.0 lizenziert, für macOS, Windows und Linux gebaut.
 

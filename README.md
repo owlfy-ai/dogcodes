@@ -118,16 +118,6 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 ![Multi-folder projects — desktop first, phone where available](docs/images/readme/en/multi-folder.png)
 
-### Keep working while minimized
-
-**Tasks, terminals, project commands and phone connections keep running while dog.codes is open or minimized. Closing the main window or quitting stops Core and its work.**
-
-Only one desktop instance runs at a time; opening it again focuses the existing window. Active work requires confirmation before quitting. Interrupted commands are never replayed automatically.
-
-- While tasks, reviews, runs, terminals or remote sessions are active, dog.codes can keep your computer from sleeping automatically (you can turn this off). It cannot prevent you from closing the lid or locking the screen.
-
-![Keep working while minimized — desktop first, phone where available](docs/images/readme/en/background.png)
-
 ### Per-turn usage, crystal clear
 
 **See the token usage, context occupancy, cache hits, and cache usage of every turn.**
@@ -135,21 +125,6 @@ Only one desktop instance runs at a time; opening it again focuses the existing 
 - Understand exactly what the current conversation and each turn consumed, and where your tokens went.
 
 ![Per-turn usage, crystal clear — desktop first, phone where available](docs/images/readme/en/turn-usage.png)
-
-### Every send, commit and push happens once
-
-**dog.codes records each operation before running it and checks the outcome before retrying.**
-
-- If the app closes or a connection drops mid-operation, it verifies what actually happened instead of guessing — no duplicated messages, commits or pushes.
-- Interrupted commands are never replayed automatically.
-
-![Every send, commit and push happens once — desktop first, phone where available](docs/images/readme/en/reliable-operations.png)
-
-### The interface in your language
-
-**Use dog.codes in 11 languages — English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский and Italiano — or follow your system language.**
-
-![The interface in your language — desktop first, phone where available](docs/images/readme/en/languages.png)
 
 **Open source · Free · Cross-platform**: licensed under Apache-2.0, built for macOS, Windows, and Linux.
 

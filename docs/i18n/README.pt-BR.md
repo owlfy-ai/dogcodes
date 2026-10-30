@@ -118,16 +118,6 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 
 <!-- Captura de tela pendente: ../../docs/images/readme/multi-folder.png -->
 
-### Minimize e continue trabalhando
-
-**Tarefas, terminais, comandos do projeto e conexões do celular continuam enquanto dog.codes estiver aberto ou minimizado. Fechar a janela principal encerra o Core e seu trabalho.**
-
-Apenas uma instância é executada; abrir novamente traz a janela existente para frente. Trabalho ativo exige confirmação antes de sair. Comandos interrompidos nunca são reenviados automaticamente.
-
-- Enquanto houver tarefas, revisões, execuções, terminais ou sessões remotas ativas, o dog.codes pode impedir que o computador entre em suspensão automática (você pode desativar). Ele não impede que você feche a tampa ou bloqueie a tela.
-
-<!-- Captura de tela pendente: ../../docs/images/readme/background.png -->
-
 ### Uso por turno, com toda a clareza
 
 **Veja o consumo de tokens, a ocupação de contexto, os acertos de cache e o uso de cache de cada turno.**
@@ -135,17 +125,6 @@ Apenas uma instância é executada; abrir novamente traz a janela existente para
 - Entenda em detalhe o que a conversa atual e cada turno consumiram, e para onde foram seus tokens.
 
 <!-- Captura de tela pendente: ../../docs/images/readme/turn-usage.png -->
-
-### Cada envio, commit e push acontece uma única vez
-
-**O dog.codes registra cada operação antes de executá-la e confere o resultado antes de tentar de novo.**
-
-- Se o app fechar ou a conexão cair no meio de uma operação, ele verifica o que realmente aconteceu em vez de adivinhar: sem mensagens, commits ou pushes duplicados.
-- Comandos interrompidos nunca são reexecutados automaticamente.
-
-### A interface no seu idioma
-
-**Use o dog.codes em 11 idiomas — English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский e Italiano — ou siga o idioma do sistema.**
 
 **Código aberto · Grátis · Multiplataforma**: licenciado sob Apache-2.0, feito para macOS, Windows e Linux.
 

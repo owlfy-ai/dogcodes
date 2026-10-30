@@ -88,15 +88,6 @@
       "sha256": "b7b1429c3766a82a67e1be9914584c603af54324d372a86ad44f0b0da38745d5"
     },
     {
-      "file": "background.png",
-      "title": "Keep working while minimized",
-      "source_image": "exec-c1de7490-7084-4788-978f-e31631f1e02e.png",
-      "width": 1536,
-      "height": 1024,
-      "mode": "RGB",
-      "sha256": "6ca1d51dac2e325f5fcbbfd056222d862b5e6bed9a53be84a6e3d0f805fe5016"
-    },
-    {
       "file": "turn-usage.png",
       "title": "Per-turn usage, crystal clear",
       "source_image": "exec-9a86a4ec-cd17-4131-a5e8-fe2a36eb578e.png",
@@ -104,24 +95,6 @@
       "height": 1024,
       "mode": "RGB",
       "sha256": "0599c40f9ac352627cb20210f317f1ddb4a2dbdcaf73b317bf98b2768312cd10"
-    },
-    {
-      "file": "reliable-operations.png",
-      "title": "Every send, commit and push happens once",
-      "source_image": "exec-d5823fe8-d713-424d-8597-ba6650e2ba1e.png",
-      "width": 1536,
-      "height": 1024,
-      "mode": "RGB",
-      "sha256": "fa0ec65da7897dc850b1acda5c9566ca078ca82862fb62b5bd745bf8a438a102"
-    },
-    {
-      "file": "languages.png",
-      "title": "The interface in your language",
-      "source_image": "exec-315f700b-2613-4b6e-a057-9b9133af404e.png",
-      "width": 1536,
-      "height": 1024,
-      "mode": "RGB",
-      "sha256": "d7e775af11e00d6d657d6360648e5e0349352bacb6b48f8e098194505fa0dd9b"
     },
     {
       "file": "phone-remote.png",

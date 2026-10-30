@@ -118,16 +118,6 @@ Connectez les agents que vous utilisez déjà. Les 12 intégrations ci-dessous s
 
 <!-- Capture à venir: ../../docs/images/readme/multi-folder.png -->
 
-### Le travail continue en fenêtre réduite
-
-**Les tâches, terminaux, commandes du projet et connexions au téléphone continuent tant que dog.codes reste ouvert ou réduit. Fermer la fenêtre principale arrête Core et son travail.**
-
-Une seule instance peut fonctionner ; un nouveau lancement active la fenêtre existante. Les travaux actifs nécessitent une confirmation avant de quitter. Les commandes interrompues ne sont pas renvoyées automatiquement.
-
-- Tant que des tâches, relectures, exécutions, terminaux ou sessions à distance sont actifs, dog.codes peut empêcher la mise en veille automatique de votre ordinateur (désactivable). Il ne peut pas vous empêcher de fermer l’écran ou de verrouiller la session.
-
-<!-- Capture à venir: ../../docs/images/readme/background.png -->
-
 ### Consommation par tour, en toute clarté
 
 **Consultez la consommation de tokens, l'occupation du contexte, les succès de cache et l'utilisation du cache de chaque tour.**
@@ -135,17 +125,6 @@ Une seule instance peut fonctionner ; un nouveau lancement active la fenêtre ex
 - Comprenez précisément ce qu'ont consommé la conversation en cours et chaque tour, et où sont passés vos tokens.
 
 <!-- Capture à venir: ../../docs/images/readme/turn-usage.png -->
-
-### Chaque envoi, commit et push n’a lieu qu’une seule fois
-
-**dog.codes enregistre chaque opération avant de l’exécuter et vérifie le résultat avant de réessayer.**
-
-- Si l’app se ferme ou si la connexion tombe en pleine opération, elle vérifie ce qui s’est réellement passé au lieu de deviner : pas de messages, commits ou pushes en double.
-- Les commandes interrompues ne sont jamais rejouées automatiquement.
-
-### L’interface dans votre langue
-
-**Utilisez dog.codes en 11 langues — English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Português (Brasil), Русский et Italiano — ou suivez la langue de votre système.**
 
 **Open source · Gratuit · Multiplateforme** : sous licence Apache-2.0, conçu pour macOS, Windows et Linux.
 
