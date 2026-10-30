@@ -630,3 +630,5 @@ h1, h2 { text-wrap: balance; }
 :is(:lang(es), :lang(fr), :lang(pt-BR)) :is(.hero p.lede, .sub, .points li) { hyphens: manual; }
 /* Long Japanese/Korean phrases may wrap on narrow screens instead of forcing a sideways scroll */
 @media (max-width: 720px) { :is(:lang(ja), :lang(ko)) .nb { white-space: normal; } }
+
+.brand .dot { font-style: normal; color: var(--lime); }
