@@ -51,7 +51,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 - When one agent runs out of quota, another picks up the work without you restating the requirements.
 - The previous conversation travels with the handoff, and the new agent can look up earlier turns through built-in history tools — it truly continues instead of starting over.
 
-![Hand off work between agents seamlessly — desktop first, phone where available](docs/images/readme/en/switch-agent.png)
+![Hand off work between agents seamlessly — desktop](docs/images/readme/en/switch-agent.png)
 
 ### Know your quota and usage at a glance
 
@@ -61,7 +61,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 - Manage agent versions in one place and upgrade with a single click.
 - Installed agents are discovered automatically, along with their sign-in status.
 
-![Know your quota and usage at a glance — desktop first, phone where available](docs/images/readme/en/usage.png)
+![Know your quota and usage at a glance — desktop](docs/images/readme/en/usage.png)
 
 ### Use the subscriptions you already have
 
@@ -71,7 +71,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 - Local-first: your code, conversations and credentials stay on your computer. The optional phone link is end-to-end encrypted, so the relay never sees your data.
 - Agents are launched with only the environment they need, so your other secrets are not exposed to them.
 
-![Use the subscriptions you already have — desktop first, phone where available](docs/images/readme/en/accounts.png)
+![Use the subscriptions you already have — desktop](docs/images/readme/en/accounts.png)
 
 ### Cross-agent code review and repair
 
@@ -81,7 +81,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 - Findings are ranked high, medium, and low; select the ones you want and start the repair with one click.
 - The repair goes back to the main agent together with the review report and selected findings, keeping the context intact.
 
-![Cross-agent code review and repair — desktop first, phone where available](docs/images/readme/en/review-fix.png)
+![Cross-agent code review and repair — desktop](docs/images/readme/en/review-fix.png)
 
 ### Fork across agents and compare approaches
 
@@ -90,7 +90,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 - With worktrees, the code changes of each approach stay isolated from one another.
 - Let different agents each produce a version of the same task, then keep the best one.
 
-![Fork across agents and compare approaches — desktop first, phone where available](docs/images/readme/en/fork.png)
+![Fork across agents and compare approaches — desktop](docs/images/readme/en/fork.png)
 
 ### Git management that feels familiar
 
@@ -99,7 +99,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 - Stage, unstage, discard, ignore, Commit, and Commit & Push, with tree and list views.
 - Have any agent write the commit message with one click, in the language you choose.
 
-![Git management that feels familiar — desktop first, phone where available](docs/images/readme/en/git-changes.png)
+![Git management that feels familiar — desktop](docs/images/readme/en/git-changes.png)
 
 ### Discover how to run a project, then run it in one click
 
@@ -108,7 +108,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 - No more remembering each project's start command or opening a terminal just to launch it — one click runs it.
 - Output is collected in one place so you can check it any time.
 
-![Discover how to run a project — desktop first, phone where available](docs/images/readme/en/run-project.png)
+![Discover how to run a project — desktop](docs/images/readme/en/run-project.png)
 
 ### Multi-folder projects
 
@@ -116,7 +116,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 - Even agents without native multi-folder support can work on multi-folder projects through dog.codes.
 
-![Multi-folder projects — desktop first, phone where available](docs/images/readme/en/multi-folder.png)
+![Multi-folder projects — desktop](docs/images/readme/en/multi-folder.png)
 
 ### Per-turn usage, crystal clear
 
@@ -124,7 +124,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 - Understand exactly what the current conversation and each turn consumed, and where your tokens went.
 
-![Per-turn usage, crystal clear — desktop first, phone where available](docs/images/readme/en/turn-usage.png)
+![Per-turn usage, crystal clear — desktop](docs/images/readme/en/turn-usage.png)
 
 **Open source · Free · Cross-platform**: licensed under Apache-2.0, built for macOS, Windows, and Linux.
 
@@ -140,7 +140,7 @@ Pair a phone once and run everything below from anywhere. Your code and your age
 
 - **Continue or start conversations.** Pick up any conversation from your computer, or start a new one — choose the agent, model and thinking effort, watch the output stream in live, and search, pin, archive or fork sessions.
 
-  ![Hand off work between agents seamlessly — desktop first, phone where available](docs/images/readme/en/switch-agent.png)
+  ![Hand off work between agents seamlessly — desktop first, phone where available](docs/images/readme/en/switch-agent-phone.png)
 
 - **Approve and answer.** Permission requests and agent questions reach your phone with push notifications; one tap and the agent carries on. Every approval is checked against the original run on your computer.
 
@@ -148,7 +148,7 @@ Pair a phone once and run everything below from anywhere. Your code and your age
 
 - **Review and commit.** See the changes in every project folder, stage files, have an agent write the commit message, then commit, push, pull or sync. Browse commit history and compare branches read-only.
 
-  ![Git management that feels familiar — desktop first, phone where available](docs/images/readme/en/git-changes.png)
+  ![Git management that feels familiar — desktop first, phone where available](docs/images/readme/en/git-changes-phone.png)
 
 - **Add projects from your PC.** Browse the folders on your computer and add one as a project without sitting back down at your desk.
 
@@ -160,7 +160,7 @@ Pair a phone once and run everything below from anywhere. Your code and your age
 
 - **Run the project, see it on your phone.** Start the launch entries on your computer and open the running web app right on the phone.
 
-  ![Discover how to run a project — desktop first, phone where available](docs/images/readme/en/run-project.png)
+  ![Discover how to run a project — desktop first, phone where available](docs/images/readme/en/run-project-phone.png)
 
 - **Browse files and send attachments.** Read project files, and attach files and images to your messages.
 

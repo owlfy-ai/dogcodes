@@ -4,7 +4,7 @@
   "tool": "Built-in image_gen",
   "scenario": "Ledger: invoice filters, CSV export, code review, tests and commits",
   "status": "English review set; other languages await user acceptance",
-  "layout": "Desktop first (upper-left), corresponding phone second (lower-right)",
+  "layout": "Nine Features images show desktop only; overview and phone-remote illustrations retain desktop and phone views.",
   "assets": [
     {
       "file": "overview.png",
@@ -13,88 +13,98 @@
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "c47372423a10d224e80347fb594eb703fe37793c933423e114094f85d041e68b"
+      "sha256": "c47372423a10d224e80347fb594eb703fe37793c933423e114094f85d041e68b",
+      "layout": "Desktop first, corresponding phone second"
     },
     {
       "file": "switch-agent.png",
       "title": "Hand off work between agents seamlessly",
-      "source_image": "exec-05b7e07d-9c94-4db6-b3ae-5a7cca916a7c.png",
+      "source_image": "exec-ef8a069d-2c64-493e-8b18-7c3f1b307cac.png",
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "f43797adba964265bb355486550bf7ff546f9ab83a0610ddd91adf19687d99cd"
+      "sha256": "c56157e2ecfaaadd3f01f14b1807f3c1dfec3c3e664f8cd21a6fe17ecc1285eb",
+      "layout": "Desktop only; complete centered app window"
     },
     {
       "file": "usage.png",
       "title": "Know your quota and usage at a glance",
-      "source_image": "exec-e8ccc5b5-97ef-4483-b087-e60dd7202159.png",
+      "source_image": "exec-00df7646-e81e-4727-9661-5bc07077cff2.png",
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "557de1925029ff1dda08c81f6824592ccb28f0c0d0f1d2205e8e6dd7fffe7b5f"
+      "sha256": "dd3ed3e38b997e7757e3fa5bb52f4a72344626de7bff9807d944f4f589b7461b",
+      "layout": "Desktop only; complete centered app window"
     },
     {
       "file": "accounts.png",
       "title": "Use the subscriptions you already have",
-      "source_image": "exec-60dee8f0-5dcc-4b3d-a4ec-a91296260e68.png",
+      "source_image": "exec-424d113a-ae75-42b5-a81c-02d7a1da0455.png",
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "29a594e7372d4c5a0b64201a5bfa2ebef60572dbfd3f1c5dc14f77e189ef0f3c"
+      "sha256": "49365f10b1843e88729fcdaedb6e51c9ff4502ae2aa81c99dec9fdb522bc1521",
+      "layout": "Desktop only; complete centered app window"
     },
     {
       "file": "review-fix.png",
       "title": "Cross-agent code review and repair",
-      "source_image": "exec-00fe98ed-c478-4a7b-979a-f6db4c34f4ac.png",
+      "source_image": "exec-7714c169-b9c1-46dc-99da-902b94632e67.png",
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "856ce4d3b824117566839a21e2bb07b4412799ddeafdf9690c233bec8043140e"
+      "sha256": "9ae85a605761bc76e3ed041d6e2dcf225284215f2919d7511fcf8bcfb000de1f",
+      "layout": "Desktop only; complete centered app window"
     },
     {
       "file": "fork.png",
       "title": "Fork across agents and compare approaches",
-      "source_image": "exec-77d177b2-9ba0-4021-a5ae-368d7057b68c.png",
+      "source_image": "exec-0d8a8b2d-d635-4add-b581-97e4912906ce.png",
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "fcb7b70edb1bdd6392a1386007dd9ea752fe18e96e409668542738dea4508a21"
+      "sha256": "8c41d44ffb30fe9386b3851b1b69eab8e2de9133a04f99abb368f67d6a4c2573",
+      "layout": "Desktop only; complete centered app window"
     },
     {
       "file": "git-changes.png",
       "title": "Git management that feels familiar",
-      "source_image": "exec-e1b22b5e-fda3-41cd-bac1-ad958bb09b3d.png",
+      "source_image": "exec-86d91023-d962-4584-9525-07de3add7d56.png",
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "9e190a39b85cb42c6505f6f46f5afe3e8b2f7ddb90f0077bb9a3f619066ab05e"
+      "sha256": "071b772ae551b492f4f72eba63eaf8a166706a5192835c9908815b0241aa9d6a",
+      "layout": "Desktop only; complete centered app window"
     },
     {
       "file": "run-project.png",
       "title": "Discover how to run a project",
-      "source_image": "exec-ae9ec2ea-ee26-4273-b598-f82344d516d9.png",
+      "source_image": "exec-05aaf10f-e057-4974-a44c-bcf015ebb573.png",
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "882cf8ed98826679000ff7e56831efc89acafd676c8f63ad55c81bd77e5887a9"
+      "sha256": "dc061f28bfaf12ee1839993ef9b94df2bbf50865133713e5836a6f3c8df9ffcb",
+      "layout": "Desktop only; complete centered app window"
     },
     {
       "file": "multi-folder.png",
       "title": "Multi-folder projects",
-      "source_image": "exec-a4de4b6a-ed21-4be8-bc31-fd9396e2d82a.png",
+      "source_image": "exec-7a88b2e8-364d-4756-ba70-ed06694a3bbf.png",
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "b7b1429c3766a82a67e1be9914584c603af54324d372a86ad44f0b0da38745d5"
+      "sha256": "e648d7dc36830fbc360eb280fa07b8ac554522138a1ccbe17c6ed972879c9be3",
+      "layout": "Desktop only; complete centered app window"
     },
     {
       "file": "turn-usage.png",
       "title": "Per-turn usage, crystal clear",
-      "source_image": "exec-9a86a4ec-cd17-4131-a5e8-fe2a36eb578e.png",
+      "source_image": "exec-8fcda54f-5415-43e3-a982-0057803aad07.png",
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "0599c40f9ac352627cb20210f317f1ddb4a2dbdcaf73b317bf98b2768312cd10"
+      "sha256": "fffcae5172f0b33a6dd362debdeedce9f486eb06aa0f8860358862184fcfc916",
+      "layout": "Desktop only; complete centered app window"
     },
     {
       "file": "phone-remote.png",
@@ -103,7 +113,8 @@
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "7b338b281ca8775836c5f3496dba37862404f182aea47bf27cde26b6561edc1f"
+      "sha256": "7b338b281ca8775836c5f3496dba37862404f182aea47bf27cde26b6561edc1f",
+      "layout": "Desktop first, corresponding phone second"
     },
     {
       "file": "remote-desktop.png",
@@ -112,7 +123,8 @@
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "806b5cda7a3b5e051e02cd15e469122b0cd53d2d3f1766f358c6a744d2a5967e"
+      "sha256": "806b5cda7a3b5e051e02cd15e469122b0cd53d2d3f1766f358c6a744d2a5967e",
+      "layout": "Desktop first, corresponding phone second"
     },
     {
       "file": "permissions.png",
@@ -121,7 +133,8 @@
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "b98a76356653d8f09996dae2e856a315da92b9d4e17ca03cf59fedceed7f2a54"
+      "sha256": "b98a76356653d8f09996dae2e856a315da92b9d4e17ca03cf59fedceed7f2a54",
+      "layout": "Desktop first, corresponding phone second"
     },
     {
       "file": "terminal.png",
@@ -130,7 +143,8 @@
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "6d96cd799fb3616e0881cbfc2aed588a27a992413a592f826eb4388913ea40b9"
+      "sha256": "6d96cd799fb3616e0881cbfc2aed588a27a992413a592f826eb4388913ea40b9",
+      "layout": "Desktop first, corresponding phone second"
     },
     {
       "file": "files-attachments.png",
@@ -139,7 +153,8 @@
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "6bc4e186e5a0e3bc66c760aa5feb32af7e72b22afea6f225d9ed292e773d537f"
+      "sha256": "6bc4e186e5a0e3bc66c760aa5feb32af7e72b22afea6f225d9ed292e773d537f",
+      "layout": "Desktop first, corresponding phone second"
     },
     {
       "file": "add-project.png",
@@ -148,7 +163,38 @@
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "aba8023449cec3b1d1f3a4425114598e4b497174cab8132c9c1d8cdeb855a4ca"
+      "sha256": "aba8023449cec3b1d1f3a4425114598e4b497174cab8132c9c1d8cdeb855a4ca",
+      "layout": "Desktop first, corresponding phone second"
+    },
+    {
+      "file": "switch-agent-phone.png",
+      "title": "Continue conversations from your phone",
+      "source_image": "exec-05b7e07d-9c94-4db6-b3ae-5a7cca916a7c.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "f43797adba964265bb355486550bf7ff546f9ab83a0610ddd91adf19687d99cd",
+      "layout": "Desktop first, corresponding phone second"
+    },
+    {
+      "file": "git-changes-phone.png",
+      "title": "Review and commit from your phone",
+      "source_image": "exec-e1b22b5e-fda3-41cd-bac1-ad958bb09b3d.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "9e190a39b85cb42c6505f6f46f5afe3e8b2f7ddb90f0077bb9a3f619066ab05e",
+      "layout": "Desktop first, corresponding phone second"
+    },
+    {
+      "file": "run-project-phone.png",
+      "title": "Run and preview from your phone",
+      "source_image": "exec-ae9ec2ea-ee26-4273-b598-f82344d516d9.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "882cf8ed98826679000ff7e56831efc89acafd676c8f63ad55c81bd77e5887a9",
+      "layout": "Desktop first, corresponding phone second"
     }
   ]
 }

@@ -121,39 +121,39 @@
     },
     {
       "name": "switch-agent",
-      "file": "exec-05b7e07d-9c94-4db6-b3ae-5a7cca916a7c.png"
+      "file": "exec-ef8a069d-2c64-493e-8b18-7c3f1b307cac.png"
     },
     {
       "name": "usage",
-      "file": "exec-e8ccc5b5-97ef-4483-b087-e60dd7202159.png"
+      "file": "exec-00df7646-e81e-4727-9661-5bc07077cff2.png"
     },
     {
       "name": "accounts",
-      "file": "exec-60dee8f0-5dcc-4b3d-a4ec-a91296260e68.png"
+      "file": "exec-424d113a-ae75-42b5-a81c-02d7a1da0455.png"
     },
     {
       "name": "review-fix",
-      "file": "exec-00fe98ed-c478-4a7b-979a-f6db4c34f4ac.png"
+      "file": "exec-7714c169-b9c1-46dc-99da-902b94632e67.png"
     },
     {
       "name": "fork",
-      "file": "exec-77d177b2-9ba0-4021-a5ae-368d7057b68c.png"
+      "file": "exec-0d8a8b2d-d635-4add-b581-97e4912906ce.png"
     },
     {
       "name": "git-changes",
-      "file": "exec-e1b22b5e-fda3-41cd-bac1-ad958bb09b3d.png"
+      "file": "exec-86d91023-d962-4584-9525-07de3add7d56.png"
     },
     {
       "name": "run-project",
-      "file": "exec-ae9ec2ea-ee26-4273-b598-f82344d516d9.png"
+      "file": "exec-05aaf10f-e057-4974-a44c-bcf015ebb573.png"
     },
     {
       "name": "multi-folder",
-      "file": "exec-a4de4b6a-ed21-4be8-bc31-fd9396e2d82a.png"
+      "file": "exec-7a88b2e8-364d-4756-ba70-ed06694a3bbf.png"
     },
     {
       "name": "turn-usage",
-      "file": "exec-9a86a4ec-cd17-4131-a5e8-fe2a36eb578e.png"
+      "file": "exec-8fcda54f-5415-43e3-a982-0057803aad07.png"
     },
     {
       "name": "phone-remote",
@@ -178,6 +178,52 @@
     {
       "name": "add-project",
       "file": "exec-608a29eb-8f59-4341-8d08-ea7be62b67bf.png"
+    },
+    {
+      "name": "switch-agent-phone",
+      "file": "exec-05b7e07d-9c94-4db6-b3ae-5a7cca916a7c.png"
+    },
+    {
+      "name": "git-changes-phone",
+      "file": "exec-e1b22b5e-fda3-41cd-bac1-ad958bb09b3d.png"
+    },
+    {
+      "name": "run-project-phone",
+      "file": "exec-ae9ec2ea-ee26-4273-b598-f82344d516d9.png"
     }
-  ]
+  ],
+  "desktopOnlyRevision": {
+    "tool": "Built-in image_gen",
+    "targets": [
+      "switch-agent",
+      "accounts",
+      "usage",
+      "review-fix",
+      "fork",
+      "git-changes",
+      "run-project",
+      "multi-folder",
+      "turn-usage"
+    ],
+    "prompt": "Use case: precise-object-edit. Edit target: supplied dog.codes English feature illustration. Remove the entire PHONE mockup on the right, including its frame, screen, shadow and PHONE label. Produce ONLY the existing DESKTOP app window, centered horizontally and vertically on the same clean white backdrop, at landscape 1536x1024. Enlarge the desktop uniformly to occupy about 94% of canvas width, preserving its COMPLETE outer frame, corners, sidebar, central content and right panel. Restore the small area at the desktop's right edge previously obscured by the phone using the existing desktop panel content, with no new controls. Remove the outside DESKTOP label too, leaving generous even minimal white margins. CRITICAL: Preserve exactly the current desktop interface architecture, existing feature being demonstrated, English conversation, code, agent names, supported controls, icons, original light gray/white palette and restrained green accents. Keep text crisp and readable. Do NOT add mobile UI, a phone, tablet, people, laptop hardware, marketing headline, decorative graphics, new features, watermark or new dialogs. This is a faithful layout edit of the desktop already in the image, not a redesign.",
+    "corrections": [
+      {
+        "name": "switch-agent",
+        "instruction": "Restore the original Select next turn Agent popup: Claude Code 76%, Codex 52%, Cursor 37%, Kimi Code 28%, Grok Build 19%; preserve desktop-only framing."
+      },
+      {
+        "name": "fork",
+        "instruction": "Restore the original Fork conversation menu with current workspace and new worktree options; preserve desktop-only framing."
+      },
+      {
+        "name": "turn-usage",
+        "instruction": "Restore the original Turn usage popup with duration, tokens, cache, reasoning, requests and generation speed; preserve desktop-only framing."
+      }
+    ],
+    "preservedPhoneVariants": [
+      "switch-agent-phone.png",
+      "git-changes-phone.png",
+      "run-project-phone.png"
+    ]
+  }
 }
