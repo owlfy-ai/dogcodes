@@ -2029,7 +2029,7 @@ impl Connection {
             "LOCALAPPDATA",
             "APPDATA",
         ] {
-            if let Some(value) = std::env::var_os(name) {
+            if let Some(value) = agent_runtime::inherited_variable(name) {
                 command.env(name, value);
             }
         }

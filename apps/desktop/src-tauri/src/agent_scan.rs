@@ -11,6 +11,31 @@ pub(crate) struct ScanCoordinator {
     running: Arc<Mutex<HashMap<String, watch::Receiver<Outcome>>>>,
 }
 impl ScanCoordinator {
+    /// An explicit rescan must not return a probe started before installation.
+    /// Wait for that probe's side effects to settle, then start/share a fresh one.
+    pub(crate) async fn run_fresh(
+        &self,
+        key: String,
+        probe: impl Future<Output = Result<(), String>> + Send + 'static,
+    ) -> Result<(), String> {
+        let current = self
+            .running
+            .lock()
+            .expect("scan registry")
+            .get(&key)
+            .cloned();
+        if let Some(mut receiver) = current {
+            loop {
+                if receiver.borrow_and_update().is_some() {
+                    break;
+                }
+                if receiver.changed().await.is_err() {
+                    break;
+                }
+            }
+        }
+        self.run(key, probe).await
+    }
     pub(crate) async fn run(
         &self,
         key: String,
@@ -50,6 +75,35 @@ impl ScanCoordinator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn explicit_rescan_waits_for_an_old_probe_then_returns_a_fresh_result() {
+        let coordinator = Arc::new(ScanCoordinator::default());
+        let (release, wait) = tokio::sync::oneshot::channel();
+        let old = {
+            let coordinator = coordinator.clone();
+            tokio::spawn(async move {
+                coordinator
+                    .run("kimi".into(), async {
+                        wait.await.unwrap();
+                        Err("not installed before the installer finished".into())
+                    })
+                    .await
+            })
+        };
+        while coordinator.running.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+        let fresh = coordinator.run_fresh("kimi".into(), async { Ok(()) });
+        tokio::pin!(fresh);
+        tokio::select! {
+            biased;
+            _ = &mut fresh => panic!("must not race the old scan's writes"),
+            () = std::future::ready(()) => {}
+        }
+        release.send(()).unwrap();
+        assert!(old.await.unwrap().is_err());
+        assert_eq!(fresh.await, Ok(()));
+    }
     #[tokio::test]
     async fn shares_running_probe_but_starts_new_probe_after_completion() {
         let coordinator = Arc::new(ScanCoordinator::default());

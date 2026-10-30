@@ -17,5 +17,8 @@ core-foundation = "0.9"
 plist = "1.10"
 system-configuration = "0.7"
 
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+
 [lints]
 workspace = true

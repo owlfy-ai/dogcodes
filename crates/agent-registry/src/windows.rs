@@ -151,7 +151,13 @@ mod tests {
         // runner's global environment or require a real alternate user account.
         if let Some(root) = std::env::var_os("DOGCODES_TEST_DISCOVERY_ROOT") {
             let root = PathBuf::from(root);
-            let context = DiscoveryContext::from_current_process();
+            // Keep this filesystem fixture independent of real registered PATH
+            // entries; refreshing the OS PATH is tested in agent-runtime.
+            let context = DiscoveryContext {
+                platform: Platform::Windows,
+                path_entries: vec![],
+                home_dir: home_directory(),
+            };
             assert_eq!(context.home_dir, Some(root.join("迁移主目录/中文 用户")));
             for (source, relative) in [
                 (

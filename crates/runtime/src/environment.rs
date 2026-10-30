@@ -1,5 +1,19 @@
 use tokio::process::Command;
 
+/// Copy only an explicitly requested variable, refreshing Windows PATH so a
+/// newly discovered CLI and its helpers receive the same installation context.
+#[must_use]
+pub fn inherited_variable(name: &str) -> Option<std::ffi::OsString> {
+    if name == "PATH" {
+        return crate::current_path();
+    }
+    #[cfg(windows)]
+    if name.eq_ignore_ascii_case("PATH") {
+        return crate::current_path();
+    }
+    std::env::var_os(name)
+}
+
 /// Restore Windows OS/profile locations after `env_clear`, without inheriting
 /// credentials or unrelated application settings. Call before adapter overrides.
 pub fn apply_platform_environment(command: &mut Command) {

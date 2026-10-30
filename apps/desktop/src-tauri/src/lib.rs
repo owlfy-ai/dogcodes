@@ -1468,7 +1468,7 @@ async fn scan_builtin_agents(core: Arc<Core>, app: Option<tauri::AppHandle>) {
         let core = Arc::clone(&core);
         let app = app.clone();
         scans.spawn(async move {
-            let _ = scan_builtin_agent(core, source).await;
+            let _ = scan_builtin_agent(core, source, false).await;
             if let Some(app) = app {
                 let _ = app.emit("quota-provider-ready", ());
             }
@@ -1492,22 +1492,29 @@ const BUILTIN_AGENT_MANIFESTS: &[&str] = &[
     include_str!("../../../../drivers/manifests/kiro.toml"),
 ];
 
-async fn scan_builtin_agent(core: Arc<Core>, source: &'static str) -> Result<(), String> {
+async fn scan_builtin_agent(
+    core: Arc<Core>,
+    source: &'static str,
+    fresh: bool,
+) -> Result<(), String> {
     static SCANS: std::sync::OnceLock<agent_scan::ScanCoordinator> = std::sync::OnceLock::new();
     let manifest =
         ProviderManifest::parse_toml(source).map_err(|_| "invalid agent manifest".to_string())?;
     let key = format!("{:p}:{}", Arc::as_ptr(&core), manifest.id);
-    SCANS
-        .get_or_init(Default::default)
-        .run(key, async move {
-            tokio::time::timeout(
-                std::time::Duration::from_secs(90),
-                Box::pin(scan_builtin_agent_inner(core, source)),
-            )
-            .await
-            .map_err(|_| "agent detection timed out".to_string())?
-        })
+    let coordinator = SCANS.get_or_init(Default::default);
+    let probe = async move {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(90),
+            Box::pin(scan_builtin_agent_inner(core, source)),
+        )
         .await
+        .map_err(|_| "agent detection timed out".to_string())?
+    };
+    if fresh {
+        coordinator.run_fresh(key, probe).await
+    } else {
+        coordinator.run(key, probe).await
+    }
 }
 
 async fn scan_builtin_agent_inner(core: Arc<Core>, source: &str) -> Result<(), String> {

@@ -805,7 +805,7 @@ fn spawn_selected(
     }
     agent_runtime::apply_platform_environment(&mut command);
     for variable in ENV_ALLOWLIST {
-        if let Ok(value) = std::env::var(variable) {
+        if let Some(value) = agent_runtime::inherited_variable(variable) {
             command.env(variable, value);
         }
     }

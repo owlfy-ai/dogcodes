@@ -20,7 +20,7 @@ pub(super) async fn read(
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         for key in ENV_ALLOWLIST {
-            if let Some(value) = std::env::var_os(key) {
+            if let Some(value) = agent_runtime::inherited_variable(key) {
                 command.env(key, value);
             }
         }

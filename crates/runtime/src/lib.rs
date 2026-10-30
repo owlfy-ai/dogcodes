@@ -2,11 +2,13 @@
 
 mod electron;
 mod environment;
+mod path_environment;
 mod proxy;
 pub use process_scope::OwnedChild;
 
 pub use electron::{electron_node_executable, electron_resources_directory};
-pub use environment::apply_platform_environment;
+pub use environment::{apply_platform_environment, inherited_variable};
+pub use path_environment::{current_path, record_shell_path};
 pub use proxy::apply_proxy_environment;
 
 use std::{
@@ -195,7 +197,7 @@ async fn run_bytes(
     }
     apply_platform_environment(&mut command);
     for name in &spec.env_allowlist {
-        if let Some(value) = std::env::var_os(name) {
+        if let Some(value) = inherited_variable(name) {
             command.env(name, value);
         }
     }
@@ -474,7 +476,7 @@ pub fn installed_node_path(executable: &std::path::Path) -> Option<std::ffi::OsS
     let root = executable.ancestors().find(|root| {
         executable.starts_with(root.join("lib/node_modules")) && root.join("bin/node").is_file()
     })?;
-    let inherited = std::env::var_os("PATH").unwrap_or_default();
+    let inherited = current_path().unwrap_or_default();
     std::env::join_paths(std::iter::once(root.join("bin")).chain(std::env::split_paths(&inherited)))
         .ok()
 }

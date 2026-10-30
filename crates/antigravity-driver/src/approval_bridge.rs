@@ -131,7 +131,7 @@ fn verification_key(
         }
     }
     for name in ENV_ALLOWLIST {
-        std::env::var_os(name).hash(&mut hash);
+        agent_runtime::inherited_variable(name).hash(&mut hash);
     }
     if let Some(home) = std::env::var_os("HOME") {
         for config in [
@@ -281,7 +281,7 @@ impl Bridge {
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         for key in ENV_ALLOWLIST {
-            if let Some(value) = std::env::var_os(key) {
+            if let Some(value) = agent_runtime::inherited_variable(key) {
                 cmd.env(key, value);
             }
         }

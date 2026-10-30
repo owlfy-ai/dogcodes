@@ -5,7 +5,7 @@ use agent_runtime::{ProcessSpec, run_bounded};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,20 +55,47 @@ fn parse_commands(output: &str, names: &[String]) -> Option<Commands> {
     (commands.len() == names.len()).then_some(commands)
 }
 
+fn parse_shell_path(output: &str) -> Option<std::ffi::OsString> {
+    let record = output.split("\0DOGCODES_PATH\0").nth(1)?;
+    let (path, _) = record.split_once('\0')?;
+    Some(path.into())
+}
+
 async fn shell_commands(context: &DiscoveryContext) -> Option<Commands> {
-    // The eight provider scans share one bounded shell probe, including concurrent
-    // callers from the welcome page. A short cache avoids eight shell startups.
-    type Cache = Option<(Instant, Option<Commands>)>;
-    static CACHE: std::sync::OnceLock<tokio::sync::Mutex<Cache>> = std::sync::OnceLock::new();
-    let mut cache = CACHE.get_or_init(Default::default).lock().await;
-    if let Some((at, commands)) = cache.as_ref()
-        && at.elapsed() < Duration::from_secs(2)
-    {
-        return commands.clone();
+    // Share concurrent shell startups, but never retain a completed command
+    // lookup across rescans after an installer changes shell configuration.
+    type Outcome = Option<Option<Commands>>;
+    type Pending = std::sync::Mutex<Option<tokio::sync::watch::Receiver<Outcome>>>;
+    static RUNNING: std::sync::OnceLock<Pending> = std::sync::OnceLock::new();
+    let running = RUNNING.get_or_init(Default::default);
+    let mut receiver = {
+        let mut pending = running.lock().expect("shell probe registry");
+        if let Some(receiver) = pending.as_ref() {
+            receiver.clone()
+        } else {
+            let (sender, receiver) = tokio::sync::watch::channel(None);
+            *pending = Some(receiver.clone());
+            let context = context.clone();
+            tokio::spawn(async move {
+                let result = tokio::spawn(async move { probe_shell(&context).await })
+                    .await
+                    .ok()
+                    .flatten();
+                let mut pending = running.lock().expect("shell probe registry");
+                sender.send_replace(Some(result));
+                *pending = None;
+            });
+            receiver
+        }
+    };
+    loop {
+        if let Some(result) = receiver.borrow_and_update().clone() {
+            return result;
+        }
+        if receiver.changed().await.is_err() {
+            return None;
+        }
     }
-    let result = probe_shell(context).await;
-    *cache = Some((Instant::now(), result.clone()));
-    result
 }
 
 // Only the macOS directory lookup awaits; other platforms rely on SHELL.
@@ -142,13 +169,18 @@ async fn probe_shell(context: &DiscoveryContext) -> Option<Commands> {
         .collect();
     // Names come only from validated, built-in manifests; no user text or path
     // is interpolated into shell code. command -v does not launch the agents.
-    let script = names.iter().map(|name| {
+    let mut script = names.iter().map(|name| {
         if family == "fish" {
             format!("set -l resolved_executable (command -v {name} 2>/dev/null); if functions -q {name}; set resolved_executable shell-function; end; printf '\\0DOGCODES_COMMAND\\0{name}\\0%s\\0' \"$resolved_executable\";")
         } else {
             format!("printf '\\0DOGCODES_COMMAND\\0{name}\\0%s\\0' \"$(command -v {name} 2>/dev/null)\";")
         }
     }).collect::<String>();
+    script.push_str(if family == "fish" {
+        "printf '\\0DOGCODES_PATH\\0%s\\0' (string join : $PATH);"
+    } else {
+        "printf '\\0DOGCODES_PATH\\0%s\\0' \"$PATH\";"
+    });
     let output = run_bounded(&ProcessSpec {
         executable: shell,
         args: vec!["-lic".into(), script],
@@ -166,7 +198,11 @@ async fn probe_shell(context: &DiscoveryContext) -> Option<Commands> {
         .into_iter()
         .map(str::to_owned)
         .collect(),
-        env_overrides: BTreeMap::new(),
+        // Start each login shell from the inherited launch environment, rather
+        // than repeatedly prepending rc-file entries to our last shell result.
+        env_overrides: std::env::var_os("PATH")
+            .map(|path| BTreeMap::from([("PATH".into(), path)]))
+            .unwrap_or_default(),
         cwd: context.home_dir.clone(),
         timeout: Duration::from_secs(5),
         stdout_limit: 65536,
@@ -177,7 +213,9 @@ async fn probe_shell(context: &DiscoveryContext) -> Option<Commands> {
     if !output.success || output.stdout_truncated {
         return None;
     }
-    parse_commands(&output.stdout, &names)
+    let commands = parse_commands(&output.stdout, &names)?;
+    agent_runtime::record_shell_path(parse_shell_path(&output.stdout)?);
+    Some(commands)
 }
 
 /// Resolve the user's actual Node/npm pair for an existing local npm installation.
@@ -372,6 +410,15 @@ pub(crate) async fn preferred_executable(
 mod tests {
     use super::*;
     use agent_registry::Platform;
+    #[test]
+    fn shell_path_records_preserve_unicode_spaces_and_require_a_complete_frame() {
+        assert_eq!(
+            parse_shell_path("banner\0DOGCODES_PATH\0/Volumes/中文 用户/bin:/usr/bin\0"),
+            Some("/Volumes/中文 用户/bin:/usr/bin".into())
+        );
+        assert!(parse_shell_path("\0DOGCODES_PATH\0truncated").is_none());
+        assert!(parse_shell_path("shell failed").is_none());
+    }
     #[test]
     fn shell_command_records_preserve_unicode_and_spaces_in_installation_paths() {
         let root = tempfile::tempdir().unwrap();

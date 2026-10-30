@@ -172,7 +172,7 @@ impl Account {
             .kill_on_drop(true);
         agent_runtime::apply_platform_environment(&mut command);
         for key in ENV_ALLOWLIST.iter().chain(ACCOUNT_ENV) {
-            if let Some(value) = std::env::var_os(key) {
+            if let Some(value) = agent_runtime::inherited_variable(key) {
                 command.env(key, value);
             }
         }

@@ -115,7 +115,7 @@ impl Connection {
             "XAI_API_KEY",
             "GROQ_API_KEY",
         ] {
-            if let Some(value) = std::env::var_os(key) {
+            if let Some(value) = agent_runtime::inherited_variable(key) {
                 command.env(key, value);
             }
         }

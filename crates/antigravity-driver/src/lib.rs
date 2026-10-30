@@ -737,7 +737,7 @@ fn spawn_workspace(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     for variable in ENV_ALLOWLIST {
-        if let Ok(value) = std::env::var(variable) {
+        if let Some(value) = agent_runtime::inherited_variable(variable) {
             command.env(variable, value);
         }
     }

@@ -461,7 +461,7 @@ impl Connection {
             command.args(["--stdio", "--surface", "desktop"]);
         }
         for variable in ENV_ALLOWLIST {
-            if let Ok(value) = std::env::var(variable) {
+            if let Some(value) = agent_runtime::inherited_variable(variable) {
                 command.env(variable, value);
             }
         }
@@ -472,7 +472,7 @@ impl Connection {
             "SYSTEMROOT",
             "WINDIR",
         ] {
-            if let Some(value) = std::env::var_os(variable) {
+            if let Some(value) = agent_runtime::inherited_variable(variable) {
                 command.env(variable, value);
             }
         }

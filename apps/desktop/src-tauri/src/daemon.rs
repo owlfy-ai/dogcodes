@@ -834,7 +834,7 @@ async fn rescan_agent(core: &Arc<Core>, provider_id: &str) -> Result<BootstrapSn
     {
         return Err("请等待当前对话完成后重新检测 Agent".into());
     }
-    scan_builtin_agent(Arc::clone(core), source).await?;
+    scan_builtin_agent(Arc::clone(core), source, true).await?;
     core.bootstrap().await.map_err(|e| e.to_string())
 }
 

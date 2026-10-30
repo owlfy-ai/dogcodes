@@ -333,7 +333,7 @@ impl DiscoveryContext {
             // Empty PATH entries (":/bin") resolve against the current working
             // directory, so a repo-local executable could hijack discovery;
             // only absolute directories are eligible.
-            path_entries: std::env::var_os("PATH")
+            path_entries: agent_runtime::current_path()
                 .as_deref()
                 .map(std::env::split_paths)
                 .into_iter()
