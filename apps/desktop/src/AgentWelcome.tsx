@@ -256,20 +256,22 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
           <p className="welcome-eyebrow"><span aria-hidden="true" />欢迎使用 dog.codes</p>
           <h1>把你的 Coding Agent<br />召集到一处</h1>
           <p className="welcome-lede">自动发现本机已安装的 Agent，统一查看登录状态与剩余额度。一个工作台，随时切换、协同完成任务。</p>
-          <dl className="welcome-stats" aria-live="polite">
-            <div className="ready"><dt>已就绪</dt><dd>{readyCount}</dd></div>
-            <div className="attention"><dt>需处理</dt><dd>{attentionCount}</dd></div>
-            <div><dt>{scanningCount ? "检测中" : "可添加"}</dt><dd>{scanningCount || available.length}</dd></div>
-          </dl>
           <div className="welcome-actions">
             <button className="welcome-primary" type="button" onClick={onContinue}>开始使用 <span aria-hidden="true">→</span></button>
             {rescan}
           </div>
         </div>
-        <WelcomeHerd renderIcon={renderIcon} agents={supportedAgents.map(agent => {
-          const card = cards.find(item => item.agent.id === agent.id)!;
-          return { id: agent.id, tone: card.reading ? "installed" : card.scanning ? "scanning" : card.failed ? "failed" : "missing" };
-        })} />
+        <div className="welcome-hero-visual">
+          <WelcomeHerd renderIcon={renderIcon} agents={supportedAgents.map(agent => {
+            const card = cards.find(item => item.agent.id === agent.id)!;
+            return { id: agent.id, tone: card.reading ? "installed" : card.scanning ? "scanning" : card.failed ? "failed" : "missing" };
+          })} />
+          <dl className="welcome-stats" aria-live="polite">
+            <div className="ready"><dt>已就绪</dt><dd>{readyCount}</dd></div>
+            <div className="attention"><dt>需处理</dt><dd>{attentionCount}</dd></div>
+            <div><dt>{scanningCount ? "检测中" : "可添加"}</dt><dd>{scanningCount || available.length}</dd></div>
+          </dl>
+        </div>
       </section>
 
       {error && <p className="welcome-error" role="alert">{error}</p>}
