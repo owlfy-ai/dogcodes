@@ -327,13 +327,7 @@ fn deepseek_cache_roots(context: &DiscoveryContext) -> Vec<PathBuf> {
         roots.push(cache);
     }
     if context.platform == agent_registry::Platform::Windows {
-        let local = current_user
-            .then(|| std::env::var_os("LOCALAPPDATA"))
-            .flatten()
-            .map(PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .unwrap_or_else(|| home.join("AppData/Local"));
-        roots.push(local.join("npm-cache"));
+        roots.push(user_data_dir(home, "LOCALAPPDATA", "AppData/Local").join("npm-cache"));
     }
     roots.push(home.join(".npm"));
     roots
@@ -379,26 +373,90 @@ fn cached_deepseek(roots: &[PathBuf], platform: agent_registry::Platform) -> Opt
 // OpenCode 2 desktop migrates the shared database beyond the standalone 1.x
 // CLI schema. Only replace the standard home installation, never a custom shell
 // command/wrapper. Other providers retain strict terminal-command precedence.
-fn opencode_desktop_candidates(home: &Path) -> Vec<(semver::Version, PathBuf)> {
-    let root = home.join("Library/Application Support/ai.opencode.desktop/cli");
-    let mut candidates = std::fs::read_dir(root)
-        .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-        .take(64)
-        .filter_map(|entry| {
-            let version = semver::Version::parse(entry.file_name().to_str()?).ok()?;
-            if version.major < 2 {
-                return None;
-            }
-            Some((
-                version,
-                canonical_executable(&entry.path().join("opencode-cli"))?,
-            ))
-        })
-        .collect::<Vec<_>>();
+fn opencode_desktop_candidates(
+    platform: agent_registry::Platform,
+    home: &Path,
+) -> Vec<(semver::Version, PathBuf)> {
+    let (root, binary) = match platform {
+        agent_registry::Platform::Macos => (
+            home.join("Library/Application Support/ai.opencode.desktop/cli"),
+            "opencode-cli",
+        ),
+        agent_registry::Platform::Windows => (
+            user_data_dir(home, "APPDATA", "AppData/Roaming").join("ai.opencode.desktop/cli"),
+            "opencode-cli.exe",
+        ),
+        agent_registry::Platform::Linux => return vec![],
+    };
+    let mut candidates = Vec::new();
+    if platform == agent_registry::Platform::Windows {
+        // Prefer the bundled copy: its path stays stable across desktop updates.
+        let resources = user_data_dir(home, "LOCALAPPDATA", "AppData/Local")
+            .join("Programs/ai.opencode.desktop/resources");
+        if let Some(version) = std::fs::read(resources.join("opencode-cli.version"))
+            .ok()
+            .filter(|bytes| bytes.len() <= 64)
+            .and_then(|bytes| semver::Version::parse(String::from_utf8(bytes).ok()?.trim()).ok())
+            && let Some(path) = canonical_executable(&resources.join(binary))
+        {
+            candidates.push((version, path));
+        }
+    }
+    candidates.extend(
+        std::fs::read_dir(root)
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .take(64)
+            .filter_map(|entry| {
+                // Windows names these directories `<version>-<arch>`.
+                let name = entry.file_name();
+                let name = name.to_str()?;
+                let name = ["-x64", "-arm64"]
+                    .into_iter()
+                    .find_map(|arch| name.strip_suffix(arch))
+                    .unwrap_or(name);
+                Some((
+                    semver::Version::parse(name).ok()?,
+                    canonical_executable(&entry.path().join(binary))?,
+                ))
+            }),
+    );
+    candidates.retain(|(version, _)| version.major >= 2);
     candidates.sort_by(|a, b| b.0.cmp(&a.0));
     candidates
+}
+
+fn user_data_dir(home: &Path, name: &str, fallback: &str) -> PathBuf {
+    // Fixture/custom homes must not pick up the running user's folders.
+    (agent_registry::home_directory().as_deref() == Some(home))
+        .then(|| std::env::var_os(name))
+        .flatten()
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .unwrap_or_else(|| home.join(fallback))
+}
+
+/// The official 1.x installs the desktop runtime may supersede; never a custom wrapper.
+fn standard_opencode(platform: agent_registry::Platform, home: &Path, path: &Path) -> bool {
+    match platform {
+        agent_registry::Platform::Macos => {
+            canonical_executable(&home.join(".opencode/bin/opencode")).as_deref() == Some(path)
+        }
+        agent_registry::Platform::Windows => {
+            let npm_shim = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.eq_ignore_ascii_case("opencode.cmd"))
+                && path
+                    .parent()
+                    .is_some_and(|dir| dir.join("node_modules/opencode-ai/package.json").is_file());
+            npm_shim
+                || canonical_executable(&home.join(".opencode/bin/opencode.exe")).as_deref()
+                    == Some(path)
+        }
+        agent_registry::Platform::Linux => false,
+    }
 }
 
 async fn compatible_opencode(
@@ -406,14 +464,14 @@ async fn compatible_opencode(
     context: &DiscoveryContext,
     selected: Option<PathBuf>,
 ) -> Option<PathBuf> {
-    if manifest.id.as_str() != "opencode" || context.platform != agent_registry::Platform::Macos {
+    if manifest.id.as_str() != "opencode" {
         return selected;
     }
     let Some(home) = context.home_dir.as_deref() else {
         return selected;
     };
     if let Some(path) = &selected {
-        if canonical_executable(&home.join(".opencode/bin/opencode")).as_ref() != Some(path) {
+        if !standard_opencode(context.platform, home, path) {
             return selected;
         }
         let Ok(report) = agent_registry::probe_installation(manifest, path.clone()).await else {
@@ -423,7 +481,7 @@ async fn compatible_opencode(
             return selected;
         }
     }
-    for (version, path) in opencode_desktop_candidates(home) {
+    for (version, path) in opencode_desktop_candidates(context.platform, home) {
         if let Ok(report) = agent_registry::probe_installation(manifest, path.clone()).await
             && report.version.as_ref() == Some(&version)
             && report.status == agent_registry::InstallationStatus::Installed
@@ -543,6 +601,53 @@ mod tests {
             compatible_opencode(&manifest, &context, Some(old.clone())).await,
             Some(old)
         );
+    }
+
+    #[test]
+    fn windows_opencode_desktop_runtime_and_standard_npm_install_are_recognized() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let bundled = home.join("AppData/Local/Programs/ai.opencode.desktop/resources");
+        executable(&bundled.join("opencode-cli.exe"));
+        std::fs::write(bundled.join("opencode-cli.version"), "2.2.5\n").unwrap();
+        for name in ["2.2.5-x64", "2.3.0-arm64", "1.9.0-x64", "not-a-version"] {
+            executable(&home.join(format!(
+                "AppData/Roaming/ai.opencode.desktop/cli/{name}/opencode-cli.exe"
+            )));
+        }
+        let canonical = |relative: &str| std::fs::canonicalize(home.join(relative)).unwrap();
+        assert_eq!(
+            opencode_desktop_candidates(Platform::Windows, home),
+            vec![
+                (
+                    semver::Version::new(2, 3, 0),
+                    canonical(
+                        "AppData/Roaming/ai.opencode.desktop/cli/2.3.0-arm64/opencode-cli.exe"
+                    )
+                ),
+                (
+                    semver::Version::new(2, 2, 5),
+                    canonical(
+                        "AppData/Local/Programs/ai.opencode.desktop/resources/opencode-cli.exe"
+                    )
+                ),
+                (
+                    semver::Version::new(2, 2, 5),
+                    canonical("AppData/Roaming/ai.opencode.desktop/cli/2.2.5-x64/opencode-cli.exe")
+                ),
+            ]
+        );
+        assert!(opencode_desktop_candidates(Platform::Linux, home).is_empty());
+
+        let npm = home.join("npm/opencode.cmd");
+        executable(&npm);
+        assert!(!standard_opencode(Platform::Windows, home, &npm));
+        executable(&home.join("npm/node_modules/opencode-ai/package.json"));
+        assert!(standard_opencode(Platform::Windows, home, &npm));
+        assert!(!standard_opencode(Platform::Macos, home, &npm));
+        let custom = home.join("bin/opencode.cmd");
+        executable(&custom);
+        assert!(!standard_opencode(Platform::Windows, home, &custom));
     }
 
     #[tokio::test]

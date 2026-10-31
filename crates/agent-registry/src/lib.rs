@@ -810,6 +810,10 @@ mod tests {
                 include_str!("../../../drivers/manifests/zcode.toml"),
                 "Applications/ZCode.app/Contents/MacOS/ZCode",
             ),
+            (
+                include_str!("../../../drivers/manifests/deepseek-harness.toml"),
+                "Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh",
+            ),
         ] {
             let path = home.join(relative);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();

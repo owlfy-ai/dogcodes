@@ -14,13 +14,22 @@ timeout_millis = 5000
 output_limit_bytes = 65536
 launch_args = ["--profile", "acp"]
 
+# The desktop app bundles a CLI launcher (runtime/cli/bin) and can optionally
+# link it to /usr/local/bin/dsh. Windows desktop discovery lives in agent-registry.
 [discovery.platform_paths]
-macos = []
+macos = [
+  "/usr/local/bin/dsh",
+  "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh",
+]
 windows = []
 linux = []
 
 [discovery.user_paths]
-macos = [".local/bin/dsh", ".npm-global/bin/dsh"]
+macos = [
+  ".local/bin/dsh",
+  ".npm-global/bin/dsh",
+  "Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh",
+]
 windows = ["AppData/Roaming/npm/dsh.cmd"]
 linux = [".local/bin/dsh", ".npm-global/bin/dsh"]
 

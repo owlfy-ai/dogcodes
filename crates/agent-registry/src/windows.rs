@@ -47,6 +47,27 @@ pub fn windows_desktop_executables(provider: &str, context: &DiscoveryContext) -
                 vec![]
             }
         }
+        "deepseek-harness" => {
+            // The desktop app ships a CLI launcher that runs its bundled dsh
+            // through the app's own Electron runtime (ELECTRON_RUN_AS_NODE).
+            let app = local.join("Programs/DeepSeek Harness");
+            let launcher = app.join("resources/runtime/cli/bin/dsh.cmd");
+            if app.join("DeepSeek Harness.exe").is_file() && launcher.is_file() {
+                vec![launcher]
+            } else {
+                vec![]
+            }
+        }
+        "opencode" => {
+            // The desktop app keeps its bundled CLI at a stable path across updates.
+            let app = local.join("Programs/ai.opencode.desktop");
+            let cli = app.join("resources/opencode-cli.exe");
+            if app.join("OpenCode.exe").is_file() && cli.is_file() {
+                vec![cli]
+            } else {
+                vec![]
+            }
+        }
         "claude-code" => {
             let roaming = data_dir("APPDATA", "AppData/Roaming");
             let mut roots = vec![roaming.join("Claude/claude-code")];
@@ -292,6 +313,49 @@ mod tests {
             crate::discover_executables(&manifest, &context).unwrap(),
             vec![std::fs::canonicalize(grok).unwrap()]
         );
+    }
+
+    #[test]
+    fn deepseek_harness_uses_the_desktop_bundled_cli_launcher() {
+        let home = tempfile::tempdir().unwrap();
+        let context = DiscoveryContext {
+            platform: Platform::Windows,
+            path_entries: vec![],
+            home_dir: Some(home.path().into()),
+        };
+        let launcher = file(
+            home.path(),
+            "AppData/Local/Programs/DeepSeek Harness/resources/runtime/cli/bin/dsh.cmd",
+        );
+        assert!(windows_desktop_executables("deepseek-harness", &context).is_empty());
+        file(
+            home.path(),
+            "AppData/Local/Programs/DeepSeek Harness/DeepSeek Harness.exe",
+        );
+        assert_eq!(
+            windows_desktop_executables("deepseek-harness", &context),
+            vec![launcher]
+        );
+    }
+
+    #[test]
+    fn opencode_uses_the_desktop_bundled_cli() {
+        let home = tempfile::tempdir().unwrap();
+        let context = DiscoveryContext {
+            platform: Platform::Windows,
+            path_entries: vec![],
+            home_dir: Some(home.path().into()),
+        };
+        let cli = file(
+            home.path(),
+            "AppData/Local/Programs/ai.opencode.desktop/resources/opencode-cli.exe",
+        );
+        assert!(windows_desktop_executables("opencode", &context).is_empty());
+        file(
+            home.path(),
+            "AppData/Local/Programs/ai.opencode.desktop/OpenCode.exe",
+        );
+        assert_eq!(windows_desktop_executables("opencode", &context), vec![cli]);
     }
 
     #[test]
