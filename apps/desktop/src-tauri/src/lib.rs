@@ -2431,7 +2431,9 @@ esac
             .unwrap();
         assert_eq!(
             project.path,
-            workspace.canonicalize().unwrap().to_str().unwrap()
+            crate::project_registry::plain_path(workspace.canonicalize().unwrap())
+                .to_str()
+                .unwrap()
         );
         assert_eq!(project.display_name, "项目 with spaces");
         assert!(!workspace.join(".git").exists());
@@ -2517,7 +2519,11 @@ esac
             .unwrap();
         assert_eq!(
             saved.additional_directories,
-            vec![second.canonicalize().unwrap().to_str().unwrap()]
+            vec![
+                crate::project_registry::plain_path(second.canonicalize().unwrap())
+                    .to_str()
+                    .unwrap()
+            ]
         );
         let single = register_local_multi_project(
             &daemon::CoreClient::local(core.clone()),
@@ -2568,11 +2574,17 @@ esac
         assert_eq!(project.display_name, "After");
         assert_eq!(
             project.path,
-            second.path().canonicalize().unwrap().to_str().unwrap()
+            crate::project_registry::plain_path(second.path().canonicalize().unwrap())
+                .to_str()
+                .unwrap()
         );
         assert_eq!(
             project.additional_directories,
-            vec![first.path().canonicalize().unwrap().to_str().unwrap()]
+            vec![
+                crate::project_registry::plain_path(first.path().canonicalize().unwrap())
+                    .to_str()
+                    .unwrap()
+            ]
         );
         assert_eq!(project.stream_version, 2);
         assert!(

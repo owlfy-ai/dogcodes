@@ -432,8 +432,13 @@ mod tests {
     }
     #[tokio::test]
     async fn receiving_continues_while_the_other_direction_is_backpressured() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = tokio::net::TcpSocket::new_v4().unwrap();
+        listener.set_send_buffer_size(4096).unwrap();
+        listener.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let listener = listener.listen(1).unwrap();
         let address = listener.local_addr().unwrap();
+        let client = tokio::net::TcpSocket::new_v4().unwrap();
+        client.set_recv_buffer_size(4096).unwrap();
         let (server, client) = tokio::join!(
             async {
                 let (stream, _) = listener.accept().await.unwrap();
@@ -441,11 +446,15 @@ mod tests {
                     .await
                     .unwrap()
             },
-            tokio_tungstenite::connect_async(format!("ws://{address}"))
+            async {
+                let stream = client.connect(address).await.unwrap();
+                tokio_tungstenite::client_async(format!("ws://{address}"), stream).await
+            }
         );
         let (mut client, _) = client.unwrap();
         let (mut reader, mut writer) = split(Socket::Relay(Box::new(server)));
-        // The peer deliberately does not read. This fills real TCP buffers;
+        // Explicit socket limits keep Windows autotuning from buffering the
+        // entire frame. The peer deliberately does not read, filling TCP buffers;
         // none of these bytes are sent to the OS input controller.
         let sending = tokio::spawn(async move {
             writer

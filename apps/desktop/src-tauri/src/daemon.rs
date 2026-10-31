@@ -1989,7 +1989,7 @@ mod tests {
         let f = fixture().await;
         let project = tempfile::tempdir().unwrap();
         let other = tempfile::tempdir().unwrap();
-        let canonical = project.path().canonicalize().unwrap();
+        let canonical = crate::project_registry::plain_path(project.path().canonicalize().unwrap());
         let request = ProjectRegistration {
             display_name: String::new(),
             path: project.path().join(".").to_str().unwrap().into(),
@@ -2031,7 +2031,9 @@ mod tests {
         assert_eq!(saved.display_name, "Renamed");
         assert_eq!(
             saved.path,
-            other.path().canonicalize().unwrap().to_str().unwrap()
+            crate::project_registry::plain_path(other.path().canonicalize().unwrap())
+                .to_str()
+                .unwrap()
         );
         assert_eq!(
             saved.additional_directories,

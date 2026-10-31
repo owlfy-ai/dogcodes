@@ -53,6 +53,8 @@ impl AttachmentStore {
             )
             .map_err(|_| "无法保存上传身份")?;
             manifest.sync_all().map_err(|_| "无法同步上传身份")?;
+            // Windows cannot rename the directory while its manifest is open.
+            drop(manifest);
             fs::File::create(staging.path().join("bytes"))
                 .and_then(|f| f.sync_all())
                 .map_err(|_| "无法创建上传文件")?;

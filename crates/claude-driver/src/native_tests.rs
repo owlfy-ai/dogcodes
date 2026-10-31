@@ -223,17 +223,18 @@ async fn cancelling_initialization_before_install_still_retires_the_owned_proces
         Some(root.path().to_str().unwrap()),
     )
     .unwrap();
+    let app_mcps = [driver_api::AppMcp {
+        name: "fixture".into(),
+        command: "fixture".into(),
+        args: vec![],
+        directory: root.path().to_string_lossy().into_owned(),
+    }];
     let mut installing = Box::pin(driver.install_session(
         "private-initialization",
         child,
         root.path().into(),
         None,
-        &[driver_api::AppMcp {
-            name: "fixture".into(),
-            command: "fixture".into(),
-            args: vec![],
-            directory: root.path().to_string_lossy().into_owned(),
-        }],
+        &app_mcps,
     ));
     tokio::select! {
         result = &mut installing => panic!("initialization should await its native response: {}", result.is_ok()),
