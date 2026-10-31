@@ -6,6 +6,7 @@ pub(super) type Scope = Arc<Mutex<SessionHandle>>;
 
 #[derive(Clone)]
 pub(super) struct ResidentSession {
+    pub app_mcps: Vec<driver_api::AppMcp>,
     pub commands: mpsc::Sender<ScopedCommand>,
     pub native: Option<Arc<lifecycle::NativeProcess>>,
     pub scope: Scope,

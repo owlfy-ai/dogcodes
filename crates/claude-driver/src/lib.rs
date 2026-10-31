@@ -349,6 +349,7 @@ struct ClaudeQuotaState {
 }
 
 struct SessionProcess {
+    app_mcps: Vec<driver_api::AppMcp>,
     working_directory: PathBuf,
     quota: std::sync::Arc<ClaudeQuotaState>,
     session_id: String,
@@ -508,6 +509,7 @@ impl ClaudeDriver {
                     && !process.native.stopping()
                     && !process.commands.is_closed()
                     && process.permission_mode == workspace.permission_mode
+                    && process.app_mcps == workspace.app_mcps
                     && workspace.permission_mode.as_deref() != Some("plan")
             };
             if reusable {
@@ -568,7 +570,7 @@ impl ClaudeDriver {
                 thinking,
                 permission: workspace.permission_mode.as_deref(),
             },
-            workspace.history_mcp.as_ref(),
+            workspace.app_mcps.as_slice(),
         )?;
         let process = self
             .install_session(
@@ -576,7 +578,7 @@ impl ClaudeDriver {
                 child,
                 workspace.working_directory.into(),
                 workspace.permission_mode,
-                workspace.history_mcp.is_some(),
+                &workspace.app_mcps,
             )
             .await?;
         let mut admission = NativeAttempt::new(&process);
@@ -608,13 +610,14 @@ impl ClaudeDriver {
         child: OwnedChild,
         working_directory: PathBuf,
         permission_mode: Option<String>,
-        initialize_history: bool,
+        initialize_history: &[driver_api::AppMcp],
     ) -> Result<Arc<SessionProcess>, DriverError> {
         let (native, stdin, stdout) = native::NativeProcess::start(child)?;
         native.observe_owner(self.stopping.subscribe());
         let (autonomous_tx, autonomous_rx) = mpsc::unbounded_channel();
         let (commands, command_rx) = mpsc::unbounded_channel();
         let process = Arc::new(SessionProcess {
+            app_mcps: initialize_history.to_vec(),
             working_directory,
             quota: Arc::clone(&self.quota),
             session_id: session_id.to_owned(),
@@ -641,7 +644,7 @@ impl ClaudeDriver {
             pending_controls: std::sync::Mutex::new(HashMap::new()),
         });
         let mut reader = BufReader::new(stdout);
-        if initialize_history {
+        if !initialize_history.is_empty() {
             process.send_line(&json!({"type":"control_request","request_id":"dogcodes-history-init","request":{"subtype":"initialize","hooks":{}}})).await?;
             tokio::time::timeout(PROBE_TIMEOUT, async {
                 let mut line = String::new();
@@ -715,7 +718,7 @@ fn spawn_workspace(
         working_directory,
         additional_directories,
         SessionSelection::default(),
-        None,
+        &[],
     )
 }
 #[derive(Default)]
@@ -733,7 +736,7 @@ fn spawn_selected(
     working_directory: Option<&str>,
     additional_directories: &[String],
     selection: SessionSelection<'_>,
-    history_mcp: Option<&driver_api::HistoryMcp>,
+    app_mcps: &[driver_api::AppMcp],
 ) -> Result<OwnedChild, DriverError> {
     let SessionSelection {
         model,
@@ -758,16 +761,22 @@ fn spawn_selected(
             "{\"disableAllHooks\":true}",
         ]);
     }
-    if let Some(mcp) = history_mcp {
+    if let Some(mcp) = app_mcps.first() {
         // Only these five app tools load eagerly; keep other MCP servers' deferral policy.
-        let mut server = mcp.server_config();
-        server["alwaysLoad"] = json!(true);
+        let servers: serde_json::Map<String, Value> = app_mcps
+            .iter()
+            .map(|mcp| {
+                let mut server = mcp.server_config();
+                if !mcp.is_computer() {
+                    server["alwaysLoad"] = json!(true);
+                }
+                (mcp.name.clone(), server)
+            })
+            .collect();
         let path = std::path::Path::new(&mcp.directory).join("claude-mcp.json");
-        std::fs::write(
-            &path,
-            json!({"mcpServers":{mcp.name.clone():server}}).to_string(),
-        )
-        .map_err(|_| DriverError::Disconnected("history MCP configuration unavailable".into()))?;
+        std::fs::write(&path, json!({"mcpServers":servers}).to_string()).map_err(|_| {
+            DriverError::Disconnected("history MCP configuration unavailable".into())
+        })?;
         command.arg("--mcp-config").arg(path);
     }
     if let Some(model) = model.filter(|m| *m != "default") {
@@ -1397,10 +1406,10 @@ impl AgentDriver for ClaudeDriver {
                 permission: Some("plan"),
                 ..SessionSelection::default()
             },
-            None,
+            &[],
         )?;
         let process = self
-            .install_session(&id, child, directory.into(), Some("plan".into()), false)
+            .install_session(&id, child, directory.into(), Some("plan".into()), &[])
             .await?;
         Ok(process.handle())
     }
@@ -1424,7 +1433,7 @@ impl AgentDriver for ClaudeDriver {
                 permission: Some("bypassPermissions"),
                 ..SessionSelection::default()
             },
-            None,
+            &[],
         )?;
         let process = self
             .install_session(
@@ -1432,7 +1441,7 @@ impl AgentDriver for ClaudeDriver {
                 child,
                 directory.into(),
                 Some("bypassPermissions".into()),
-                false,
+                &[],
             )
             .await?;
         Ok(process.handle())
@@ -1540,7 +1549,7 @@ impl AgentDriver for ClaudeDriver {
                 thinking,
                 permission: request.permission_mode.as_deref(),
             },
-            request.history_mcp.as_ref(),
+            request.app_mcps.as_slice(),
         )?;
         let process = self
             .install_session(
@@ -1548,7 +1557,7 @@ impl AgentDriver for ClaudeDriver {
                 child,
                 request.working_directory.into(),
                 request.permission_mode,
-                request.history_mcp.is_some(),
+                &request.app_mcps,
             )
             .await?;
         let mut admission = NativeAttempt::new(&process);
@@ -1570,7 +1579,7 @@ impl AgentDriver for ClaudeDriver {
         self.resume_workspace_session(
             native_session_id,
             SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 working_directory: working_directory.into(),
                 additional_directories: vec![],
@@ -2198,7 +2207,7 @@ for line in sys.stdin:
         std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
         let driver = test_driver(executable.clone());
         let request = || SessionRequest {
-            history_mcp: None,
+            app_mcps: vec![],
             permission_mode: None,
             additional_directories: vec![],
             working_directory: "/tmp".into(),
@@ -2443,7 +2452,7 @@ done
         let driver = test_driver(executable);
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: "/tmp".into(),
@@ -2548,7 +2557,7 @@ done
         let driver = test_driver(executable);
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: "/tmp".into(),
@@ -2655,7 +2664,7 @@ done
         let driver = test_driver(script);
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: "/tmp".into(),
@@ -2763,7 +2772,7 @@ mod real_turn_acceptance {
         let driver = test_driver(executable);
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: std::env::temp_dir().to_string_lossy().into_owned(),
@@ -2870,7 +2879,7 @@ mod real_approval_acceptance {
             .unwrap();
             let session = driver
                 .create_session(SessionRequest {
-                    history_mcp: None,
+                    app_mcps: vec![],
                     permission_mode: None,
                     additional_directories: vec![],
                     working_directory: cwd.clone(),
@@ -2983,7 +2992,7 @@ mod real_resume_acceptance {
         .unwrap();
         let session = first
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: workspace.path().to_string_lossy().into_owned(),

@@ -52,7 +52,7 @@ fn workspace(root: &Path) -> SessionRequest {
     SessionRequest {
         working_directory: root.to_string_lossy().into_owned(),
         additional_directories: vec![],
-        history_mcp: None,
+        app_mcps: vec![],
         permission_mode: None,
     }
 }
@@ -411,6 +411,7 @@ async fn a_cancelled_queued_prompt_is_not_dispatched_after_admission() {
     let (commands_tx, commands) = mpsc::channel(4);
     let scope = Arc::new(std::sync::Mutex::new(SessionHandle::scoped("s".into())));
     let resident = ResidentSession {
+        app_mcps: vec![],
         commands: commands_tx,
         native: Some(native.clone()),
         scope: scope.clone(),
@@ -447,6 +448,7 @@ async fn a_closed_actor_channel_is_not_a_substitute_for_native_exit_proof() {
     driver.sessions.lock().await.insert(
         "s".into(),
         ResidentSession {
+            app_mcps: vec![],
             commands,
             native: Some(native.clone()),
             scope: Arc::new(std::sync::Mutex::new(session.clone())),
@@ -471,6 +473,7 @@ async fn restoring_a_closed_actor_waits_for_the_original_scope_before_spawning_a
     driver.sessions.lock().await.insert(
         "s".into(),
         ResidentSession {
+            app_mcps: vec![],
             commands,
             native: Some(native.clone()),
             scope: Arc::new(std::sync::Mutex::new(session.clone())),

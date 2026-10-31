@@ -62,7 +62,7 @@ pub(super) async fn summarize_with_driver(
             driver
                 .create_selected_session(
                     SessionRequest {
-                        history_mcp: None,
+                        app_mcps: vec![],
                         permission_mode: None,
                         additional_directories: vec![],
                         working_directory: cwd,
@@ -323,7 +323,7 @@ mod tests {
             model: Option<&str>,
             thinking: Option<&str>,
         ) -> Result<driver_api::SessionHandle, super::super::DriverError> {
-            assert!(request.history_mcp.is_none());
+            assert!(request.app_mcps.is_empty());
             assert!(std::path::Path::new(&request.working_directory).is_dir());
             *self.selection.lock().unwrap() =
                 Some((model.map(Into::into), thinking.map(Into::into)));

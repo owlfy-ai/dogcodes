@@ -73,7 +73,7 @@ fn session_request(cwd: &str) -> SessionRequest {
     SessionRequest {
         working_directory: cwd.into(),
         additional_directories: vec![],
-        history_mcp: None,
+        app_mcps: vec![],
         permission_mode: None,
     }
 }
@@ -163,7 +163,7 @@ impl PiDriver {
         thinking: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
         permissions().validate(request.permission_mode.as_deref())?;
-        if request.history_mcp.is_some() {
+        if !request.app_mcps.is_empty() {
             return Err(DriverError::CapabilityUnavailable(
                 "Pi does not expose native MCP configuration".into(),
             ));
@@ -314,7 +314,7 @@ impl AgentDriver for PiDriver {
     fn supports_live_session_reuse(&self) -> bool {
         true
     }
-    fn supports_history_mcp(&self) -> bool {
+    fn supports_app_mcp(&self) -> bool {
         false
     }
     async fn permission_catalog(&self, _: Option<&str>) -> Result<PermissionCatalog, DriverError> {

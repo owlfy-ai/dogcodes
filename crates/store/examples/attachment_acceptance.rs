@@ -136,7 +136,7 @@ async fn run() -> Result<(), Error> {
     let nonce = agent_domain::InstallationId::new().to_string();
     std::fs::write(&file, format!("ATTACHMENT_TEST_TOKEN={nonce}"))?;
     let scope = SessionRequest {
-        history_mcp: None,
+        app_mcps: vec![],
         working_directory: cwd.clone(),
         additional_directories: vec![directory.to_string_lossy().into()],
         permission_mode: if name == "antigravity" {

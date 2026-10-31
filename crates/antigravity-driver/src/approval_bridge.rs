@@ -107,7 +107,7 @@ fn verification_key(
         m.len().hash(&mut hash);
         m.modified().ok()?.hash(&mut hash);
     }
-    serde_json::to_string(&workspace.history_mcp)
+    serde_json::to_string(&workspace.app_mcps)
         .ok()?
         .hash(&mut hash);
     workspace.working_directory.hash(&mut hash);
@@ -238,12 +238,12 @@ impl Bridge {
             std::fs::create_dir(directory.path().join(".agents")).map_err(|_| fail())?;
             std::fs::write(directory.path().join(".agents/hooks.json"),json!({"dogcodes-approvals":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":command,"timeout":615}]}]}}).to_string()).map_err(|_|fail())?;
         }
-        if !cache_hit && let Some(mcp) = &workspace.history_mcp {
+        if !cache_hit && !workspace.app_mcps.is_empty() {
             // AGY discovers configuration from the final private workspace root.
             // Keep history and approval hooks together; never rewrite a live cached root.
             std::fs::write(
                 directory.path().join(".agents/mcp_config.json"),
-                json!({"mcpServers":{mcp.name.clone():mcp.server_config()}}).to_string(),
+                json!({"mcpServers":workspace.app_mcps.iter().map(|mcp| (mcp.name.clone(),mcp.server_config())).collect::<serde_json::Map<String,Value>>()} ).to_string(),
             )
             .map_err(|_| fail())?;
         }
@@ -995,7 +995,7 @@ mod tests {
         let private = tempfile::tempdir().unwrap();
         std::fs::write(private.path().join("hook"), "original").unwrap();
         let mut request = SessionRequest {
-            history_mcp: None,
+            app_mcps: vec![],
             working_directory: workspace.path().to_string_lossy().into_owned(),
             additional_directories: vec![],
             permission_mode: Some("desktop-approvals".into()),

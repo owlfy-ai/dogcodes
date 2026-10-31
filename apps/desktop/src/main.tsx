@@ -16,6 +16,7 @@ const disposeFocusVisibility = installFocusVisibility(document);
 import.meta.hot?.dispose(disposeFocusVisibility);
 
 const DetachedReview = lazy(() => import("./DetachedReview").then(module => ({ default: module.DetachedReview })));
+const ComputerUseNotice = lazy(() => import("./ComputerUseNotice").then(module => ({ default: module.ComputerUseNotice })));
 
 document.documentElement.classList.toggle("platform-macos", navigator.userAgent.includes("Macintosh"));
 
@@ -64,7 +65,7 @@ createRoot(document.getElementById("root")!).render(
     <RevealWindow />
     <RecoveryMaintenance />
     <AppErrorBoundary>
-      {new URLSearchParams(window.location.search).get("reviewTask") ? <SharedAgentPreferencesGate><Suspense fallback={<StartupShell />}><DetachedReview taskId={new URLSearchParams(window.location.search).get("reviewTask")!} /></Suspense></SharedAgentPreferencesGate> : <StartupGate />}
+      {new URLSearchParams(window.location.search).has("computerNotice") ? <Suspense fallback={null}><ComputerUseNotice /></Suspense> : new URLSearchParams(window.location.search).get("reviewTask") ? <SharedAgentPreferencesGate><Suspense fallback={<StartupShell />}><DetachedReview taskId={new URLSearchParams(window.location.search).get("reviewTask")!} /></Suspense></SharedAgentPreferencesGate> : <StartupGate />}
     </AppErrorBoundary>
   </StrictMode>,
 );

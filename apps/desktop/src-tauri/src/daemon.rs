@@ -93,6 +93,55 @@ impl CoreClient {
     pub async fn remote_control(&self, call: Value) -> Result<Value, String> {
         self.call("remote_control", call).await
     }
+
+    pub async fn computer_use(&self, task_id: TaskId, call: Value) -> Result<Value, String> {
+        self.call("computer_use", json!([task_id, call])).await
+    }
+    pub async fn computer_use_activity(&self, call: Value) -> Result<Value, String> {
+        self.call("computer_use_activity", call).await
+    }
+    pub async fn computer_use_activity_stream(
+        &self,
+    ) -> Result<
+        tokio::sync::watch::Receiver<Option<agent_core::computer_use::ComputerActivity>>,
+        String,
+    > {
+        #[cfg(any(test, feature = "review-acceptance"))]
+        if let Self::Local(core, _) = self {
+            let mut source = core.subscribe_computer_use_activity();
+            let (sender, receiver) = tokio::sync::watch::channel(Some(source.borrow().clone()));
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        () = sender.closed() => break,
+                        changed = source.changed() => {
+                            if changed.is_err() { break; }
+                            sender.send_replace(Some(source.borrow_and_update().clone()));
+                        }
+                    }
+                }
+            });
+            return Ok(receiver);
+        }
+        let mut stream = self
+            .connect("computer_use_activity_watch", json!({}))
+            .await?;
+        let initial = read_frame::<agent_core::computer_use::ComputerActivity>(&mut stream).await?;
+        let (sender, receiver) = tokio::sync::watch::channel(Some(initial));
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    () = sender.closed() => break,
+                    next = read_frame(&mut stream) => if let Ok(value) = next {
+                        sender.send_replace(Some(value));
+                    } else {
+                        sender.send_replace(None); break;
+                    }
+                }
+            }
+        });
+        Ok(receiver)
+    }
     async fn connect(&self, method: &str, args: Value) -> Result<TcpStream, String> {
         let directory = match self {
             Self::Remote(directory) => directory,
@@ -1152,6 +1201,17 @@ async fn dispatch(core: &Arc<Core>, method: &str, args: Value) -> Result<Value, 
             let result = core.registered_executors().await;
             serde_json::to_value(result).map_err(|e| e.to_string())
         }
+        "computer_use" => {
+            let (task_id, call): (TaskId, Value) =
+                serde_json::from_value(args).map_err(|e| e.to_string())?;
+            core.computer_use_control(&task_id, call)
+                .await
+                .map_err(|e| e.to_string())
+        }
+        "computer_use_activity" => core
+            .computer_use_activity(args)
+            .await
+            .map_err(|e| e.to_string()),
         "set_running_permission_mode" => {
             let (task_id, run_id, executor, mode): (TaskId, RunId, ExecutorRef, String) =
                 serde_json::from_value(args).map_err(|e| e.to_string())?;
@@ -1477,6 +1537,18 @@ async fn serve_connection(
         )
         .await;
     }
+    if request.method == "computer_use_activity_watch" {
+        let mut receiver = core.subscribe_computer_use_activity();
+        drop(request_guard);
+        loop {
+            let value = receiver.borrow_and_update().clone();
+            write_frame(&mut stream, &value).await?;
+            tokio::select! {
+                _ = stream.read_u8() => return Ok(()),
+                changed = receiver.changed() => { if changed.is_err() { return Ok(()); } }
+            }
+        }
+    }
     if request.method == "subscribe" {
         let after: u64 = serde_json::from_value(request.args).map_err(|e| e.to_string())?;
         let subscription = core.subscribe(after).await.map_err(|e| e.to_string())?;
@@ -1671,7 +1743,7 @@ async fn run_service(directory: PathBuf, owned: bool) -> Result<(), String> {
     let (store, scratch) =
         prepare_desktop_storage(&directory).map_err(|_| "service storage unavailable")?;
     drop(storage);
-    let core = Arc::new(
+    let core = Arc::new(crate::computer_use::configure(
         Core::with_workspace_context(
             Arc::new(store),
             Arc::new(
@@ -1681,7 +1753,8 @@ async fn run_service(directory: PathBuf, owned: bool) -> Result<(), String> {
         )
         .with_history_query_program(std::env::current_exe().map_err(|e| e.to_string())?)
         .with_turn_timing_sink(crate::turn_timing::file_sink(&directory)),
-    );
+        &directory,
+    ));
     let recovery = StartupTiming::new(&directory, "service.recover_interrupted_turns");
     core.recover_interrupted_turns()
         .await

@@ -4,6 +4,9 @@ mod agent_updates;
 mod artifact_export;
 mod attachment_service;
 mod attachments;
+mod computer_notice;
+mod computer_notice_layout;
+mod computer_use;
 pub mod daemon;
 mod external_links;
 mod project_registry;
@@ -577,6 +580,15 @@ fn core_startup_trace(window: tauri::WebviewWindow, stage: String, elapsed_ms: u
     if let Ok(directory) = window.app_handle().path().app_data_dir() {
         daemon::record_frontend_startup(&directory, &stage, elapsed_ms);
     }
+}
+
+#[tauri::command]
+async fn core_computer_use(
+    state: tauri::State<'_, DesktopState>,
+    task_id: TaskId,
+    call: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    state.core.computer_use(task_id, call).await
 }
 
 #[tauri::command]
@@ -1242,6 +1254,10 @@ pub fn run() {
                     }
                 });
             }
+            if let Some(state) = app.try_state::<DesktopState>() {
+                // The notice has its own non-activating window even while main is minimized.
+                computer_notice::start(app.handle(), state.core.clone())?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1323,6 +1339,8 @@ pub fn run() {
             core_bootstrap,
             core_agent_preferences,
             core_history_preferences,
+            core_computer_use,
+            computer_notice::core_computer_notice,
             turn_review::core_review_executors,
             turn_review::core_turn_reviews,
             turn_review::core_fork_task,

@@ -57,7 +57,7 @@ async fn real_approval_deny_then_allow_only_in_temporary_workspace() {
             CodexDriver::new(executable, "ins_acceptance".into(), version.clone()).unwrap();
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: cwd.clone(),

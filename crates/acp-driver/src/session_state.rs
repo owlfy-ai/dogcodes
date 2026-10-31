@@ -30,6 +30,9 @@ fn binding(mut params: Value) -> Value {
     params
 }
 impl SessionStates {
+    pub fn initialized(&self, id: &str) -> bool {
+        self.values.contains_key(id) && !self.retired.contains(id)
+    }
     pub fn forget(&mut self, id: &str) {
         self.values.remove(id);
         self.bindings.remove(id);

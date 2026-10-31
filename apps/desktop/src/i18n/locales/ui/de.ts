@@ -1,6 +1,19 @@
 import type { UiMessages } from "./en";
 
 export const uiDe: UiMessages = {
+  computerUse: {
+    glowBackground: "dog.codes prüft den Computer im Hintergrund",
+    glowForeground: "dog.codes verwendet Tastatur und Maus. Bitte Eingabe pausieren.",
+    glowPossible: "dog.codes könnte Tastatur und Maus verwenden. Bitte Eingabe pausieren.",
+    glowDisconnected: "dog.codes hat die Verbindung verloren. Eingabestatus unbekannt.",
+    glowExit: "zum Beenden",
+    enable: "Computerbedienung aktivieren",
+    disable: "Computerbedienung stoppen",
+    enableHint: "Diesem Task erlauben, den Desktop zu sehen und zu bedienen",
+    enabledHint: "Für diesen Task aktiv; zum Stoppen klicken",
+    unavailable: "In diesem Build nicht verfügbar",
+    nextTurn: "Vor dem nächsten Turn aktivieren",
+  },
   activity: {
     aboutSeconds: "about {seconds}s",
     browse: "Browsed",

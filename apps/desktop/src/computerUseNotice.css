@@ -1,0 +1,43 @@
+html.computer-notice-page, .computer-notice-page body, .computer-notice-page #root {
+  margin: 0; padding: 0; width: 100%; height: 100%; min-width: 0; min-height: 0;
+  overflow: hidden; background: transparent !important; pointer-events: none;
+}
+.computer-glow {
+  --glow: 65, 229, 151;
+  position: fixed; inset: 0; overflow: hidden; pointer-events: none;
+  color: #f1fff6; font-family: system-ui, sans-serif;
+  opacity: 1; transition: opacity .3s ease;
+}
+.computer-glow-foreground { --glow: 255, 165, 65; color: #fff7ed; }
+.computer-glow-idle { opacity: 0; }
+.computer-glow-edge {
+  position: absolute; inset: 0 0 auto; height: 6px;
+  background: rgba(var(--glow), .95);
+  box-shadow: 0 0 9px rgba(var(--glow), 1), 0 0 22px rgba(var(--glow), .9), 0 0 42px rgba(var(--glow), .7);
+}
+.computer-glow-edge::after {
+  content: ""; position: absolute; top: 0; left: -32%; width: 32%; height: 6px;
+  background: linear-gradient(90deg, transparent, #fff 50%, transparent);
+  filter: drop-shadow(0 0 4px #fff); animation: computer-glow-ion 5.5s linear infinite;
+}
+.computer-glow-haze {
+  position: absolute; inset: -24px -5% auto; height: 96px;
+  background: radial-gradient(ellipse at 50% 0, rgba(var(--glow), .72), rgba(var(--glow), .28) 50%, transparent 82%);
+  filter: blur(12px); animation: computer-glow-breathe 3.6s ease-in-out infinite alternate;
+}
+.computer-glow-caption {
+  position: absolute; top: var(--computer-caption-top, 0px); left: 50%; transform: translateX(-50%);
+  box-sizing: border-box; display: flex; align-items: center; gap: 16px;
+  width: max-content; max-width: calc(100% - 40px); padding: 9px 19px 10px;
+  border: 1px solid rgba(var(--glow), .32); border-top: 0; border-radius: 0 0 16px 16px;
+  background: linear-gradient(180deg, rgba(17, 25, 27, .94), rgba(17, 25, 27, .82));
+  box-shadow: 0 5px 22px rgba(0, 0, 0, .18), 0 -2px 20px rgba(var(--glow), .16);
+  backdrop-filter: blur(16px); font-size: 13px; font-weight: 500; line-height: 20px;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, .45);
+}
+.computer-glow-caption > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.computer-glow-escape { flex: none; color: rgba(255, 247, 237, .85); font-size: 12px; white-space: nowrap; }
+.computer-glow-safe-area .computer-glow-caption { border-top: 1px solid rgba(var(--glow), .32); border-radius: 14px; }
+@keyframes computer-glow-ion { to { transform: translateX(420%); } }
+@keyframes computer-glow-breathe { from { opacity: .65; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .computer-glow, .computer-glow-edge::after, .computer-glow-haze { animation: none; transition: none; } }

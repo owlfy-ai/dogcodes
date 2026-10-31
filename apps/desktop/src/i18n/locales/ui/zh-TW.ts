@@ -1,6 +1,19 @@
 import type { UiMessages } from "./en";
 
 export const uiZhTW: UiMessages = {
+  computerUse: {
+    glowBackground: "dog.codes 正在背景操作電腦驗證",
+    glowForeground: "dog.codes 正在使用鍵盤滑鼠，請暫停鍵鼠操作",
+    glowPossible: "dog.codes 可能使用鍵盤滑鼠，請暫停鍵鼠操作",
+    glowDisconnected: "dog.codes 連線已中斷，鍵鼠操作狀態未知",
+    glowExit: "退出",
+    enable: "啟用電腦操作",
+    disable: "停止電腦操作",
+    enableHint: "允許此任務查看並操作電腦",
+    enabledHint: "此任務已啟用；點擊停止電腦操作",
+    unavailable: "目前版本尚未提供電腦操作能力",
+    nextTurn: "請在開始下一輪前啟用",
+  },
   activity: {
     aboutSeconds: "約 {seconds} 秒",
     browse: "查閱",

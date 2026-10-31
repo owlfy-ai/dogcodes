@@ -96,7 +96,7 @@ async fn real_process_path_accepts_large_handoff_and_streams_a_turn() {
     let additional = vec![extra.path().to_string_lossy().into_owned()];
     let session = driver
         .create_session(SessionRequest {
-            history_mcp: None,
+            app_mcps: vec![],
             permission_mode: None,
             additional_directories: additional.clone(),
             working_directory: workspace.path().to_string_lossy().into_owned(),
@@ -196,7 +196,7 @@ async fn interrupt_preserves_a_terminal_notification_interleaved_before_its_resp
     let workspace = tempfile::tempdir().unwrap();
     let session = driver
         .create_session(SessionRequest {
-            history_mcp: None,
+            app_mcps: vec![],
             permission_mode: None,
             additional_directories: vec![],
             working_directory: workspace.path().to_string_lossy().into_owned(),
@@ -237,7 +237,7 @@ async fn changed_selection_reuses_the_process_and_applies_on_turn_start() {
         CodexDriver::new(fixture_executable(), "ins_fixture".into(), "0.153.4".into()).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let request = || SessionRequest {
-        history_mcp: None,
+        app_mcps: vec![],
         permission_mode: None,
         additional_directories: vec![],
         working_directory: directory.path().to_string_lossy().into_owned(),

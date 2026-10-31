@@ -6,6 +6,8 @@ use serde_json::{Value, json};
 use std::{collections::HashSet, io::Cursor};
 
 pub mod cursor;
+#[cfg(windows)]
+pub mod escape;
 
 pub type Result<T> = std::result::Result<T, String>;
 fn native(error: impl std::fmt::Display) -> String {

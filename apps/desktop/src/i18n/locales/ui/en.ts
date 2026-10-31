@@ -1,6 +1,19 @@
 // UI strings outside the older hand-written sections. English defines the key shape;
 // every other locale in ./ui implements UiMessages.
 export const uiEn = {
+  computerUse: {
+    glowBackground: "dog.codes is verifying your computer in the background",
+    glowForeground: "dog.codes is using your keyboard and mouse. Please pause input.",
+    glowPossible: "dog.codes may use your keyboard and mouse. Please pause input.",
+    glowDisconnected: "dog.codes lost its connection. Input state is unknown.",
+    glowExit: "to exit",
+    enable: "Enable computer use",
+    disable: "Stop computer use",
+    enableHint: "Let this task observe and operate your desktop",
+    enabledHint: "Enabled for this task; click to stop computer operations",
+    unavailable: "Computer use is unavailable in this build",
+    nextTurn: "Enable before starting the next turn",
+  },
   activity: {
     aboutSeconds: "about {seconds}s",
     browse: "Browsed",

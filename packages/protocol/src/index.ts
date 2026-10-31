@@ -581,7 +581,17 @@ export interface SubmissionIntentPage {
 }
 
 export interface TaskDeletion { taskId: TaskId; deletionSequence: number }
+export interface ComputerUseStatus { available: boolean; enabled: boolean; active: boolean; externalInput: boolean }
+export interface ComputerUseActivity {
+  operationId: string | null;
+  taskId: TaskId | null;
+  tool: string | null;
+  mode: "idle" | "observing" | "background" | "foreground";
+  preparing: boolean;
+  foregroundPossible: boolean;
+}
 export interface CoreClient {
+  computerUse?(taskId: TaskId, call: { type: "status" | "stop" } | { type: "set"; enabled: boolean }): Promise<ComputerUseStatus>;
   taskDeletion?(taskId: string): Promise<TaskDeletion | null>;
   submissionIntentResolve?(intent: SubmissionIntent): Promise<SubmissionResolution | null>;
   submissionIntentPut?(intent: SubmissionIntent): Promise<SubmissionIntentEntry>;

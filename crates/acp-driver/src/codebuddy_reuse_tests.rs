@@ -94,7 +94,7 @@ async fn normal_turns_reuse_but_cancel_and_failure_retire_the_connection() {
             .clone();
         let request = SessionRequest {
             working_directory: root.path().to_string_lossy().into_owned(),
-            history_mcp: None,
+            app_mcps: vec![],
             permission_mode: None,
             additional_directories: vec![],
         };
@@ -165,7 +165,7 @@ async fn local_codebuddy_reuses_success_and_recovers_after_cancel() {
     let workspace = tempfile::tempdir().unwrap();
     let request = SessionRequest {
         working_directory: workspace.path().to_string_lossy().into_owned(),
-        history_mcp: None,
+        app_mcps: vec![],
         permission_mode: None,
         additional_directories: vec![],
     };

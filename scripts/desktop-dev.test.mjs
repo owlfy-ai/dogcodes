@@ -34,7 +34,8 @@ test('Tauri, Cargo and application arguments retain their boundaries, including 
   assert.deepEqual(plan.args.slice(0, 5), ['dev', '--no-watch', '--target', 'x86_64-apple-darwin', '--']);
   assert.deepEqual(plan.args.slice(-4), ['--locked', '--', 'hello world', '--flag']);
   for (const target of ['aarch64-apple-darwin', 'x86_64-apple-darwin']) {
-    assert.ok(plan.args.includes(`target.${target}.runner = ["/bin/sh","/tmp/project with spaces/scripts/dev-sign-runner.sh"]`));
+    const runner = JSON.stringify(['/bin/sh', resolve('/tmp/project with spaces', 'scripts/dev-sign-runner.sh')]);
+    assert.ok(plan.args.includes(`target.${target}.runner = ${runner}`));
   }
 });
 

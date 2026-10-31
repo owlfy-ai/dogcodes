@@ -3,7 +3,7 @@ use acp_driver::{AcpDriver, AcpLaunch};
 use antigravity_driver::AntigravityDriver;
 use claude_driver::ClaudeDriver;
 use codex_driver::CodexDriver;
-use driver_api::{AgentDriver, HistoryMcp, SessionRequest, SessionResumeCapability};
+use driver_api::{AgentDriver, AppMcp, SessionRequest, SessionResumeCapability};
 use serde_json::{Value, json};
 use std::{
     io::{BufRead, Write},
@@ -68,12 +68,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         working_directory: directory.path().to_string_lossy().into_owned(),
         additional_directories: vec![],
         permission_mode: None,
-        history_mcp: Some(HistoryMcp {
+        app_mcps: vec![AppMcp {
             name: "initialization-benchmark".into(),
             command: std::env::current_exe()?.to_string_lossy().into_owned(),
             args: vec!["--benchmark-mcp".into()],
             directory: directory.path().to_string_lossy().into_owned(),
-        }),
+        }],
     };
     let start = Instant::now();
     let driver: Box<dyn AgentDriver> = match provider.as_str() {

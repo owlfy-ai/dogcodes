@@ -1,6 +1,19 @@
 import type { UiMessages } from "./en";
 
 export const uiIt: UiMessages = {
+  computerUse: {
+    glowBackground: "dog.codes sta verificando il computer in background",
+    glowForeground: "dog.codes sta usando tastiera e mouse. Sospendi l’input.",
+    glowPossible: "dog.codes potrebbe usare tastiera e mouse. Sospendi l’input.",
+    glowDisconnected: "dog.codes ha perso la connessione. Stato dell’input sconosciuto.",
+    glowExit: "per uscire",
+    enable: "Attiva controllo del computer",
+    disable: "Interrompi controllo del computer",
+    enableHint: "Consenti a questa attività di vedere e usare il desktop",
+    enabledHint: "Attivo per questa attività; fai clic per interrompere",
+    unavailable: "Non disponibile in questa build",
+    nextTurn: "Attiva prima del prossimo turno",
+  },
   activity: {
     aboutSeconds: "about {seconds}s",
     browse: "Browsed",

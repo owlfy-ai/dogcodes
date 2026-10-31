@@ -32,7 +32,7 @@ async fn run() {
         .unwrap();
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: Some("desktop-approvals".into()),
                 working_directory: cwd.clone(),
                 additional_directories: vec![],

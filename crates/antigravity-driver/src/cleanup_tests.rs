@@ -20,7 +20,7 @@ pub(super) fn request(path: &Path) -> SessionRequest {
     SessionRequest {
         working_directory: path.to_string_lossy().into_owned(),
         additional_directories: vec![],
-        history_mcp: None,
+        app_mcps: vec![],
         permission_mode: Some("desktop-approvals".into()),
     }
 }

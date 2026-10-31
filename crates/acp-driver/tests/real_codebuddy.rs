@@ -93,7 +93,7 @@ async fn codebuddy_resume_and_child_activity() {
     std::fs::write(dir.path().join("fixture.txt"), "CHILD_RECORD_842\n").unwrap();
     let cwd = dir.path().to_string_lossy().into_owned();
     let request = || SessionRequest {
-        history_mcp: None,
+        app_mcps: vec![],
         permission_mode: None,
         additional_directories: vec![],
         working_directory: cwd.clone(),

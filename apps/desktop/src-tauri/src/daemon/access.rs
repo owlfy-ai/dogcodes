@@ -83,6 +83,9 @@ pub(crate) fn method_access(method: &str) -> Option<MethodAccess> {
         "subscribe" | "subscribe_project" | "review_watch" | "project_runs_watch"
         | "submission_watch" | "workspace_watch" => Stream,
         "remote_control"
+        | "computer_use"
+        | "computer_use_activity"
+        | "computer_use_activity_watch"
         | "is_idle"
         | "workspace_lease"
         | "scan_agent"
@@ -153,6 +156,9 @@ mod tests {
     fn host_only_methods_cover_lifecycle_and_local_ui() {
         for method in [
             "is_idle",
+            "computer_use",
+            "computer_use_activity",
+            "computer_use_activity_watch",
             "workspace_lease",
             "scan_agent",
             "project_run_open",

@@ -29,7 +29,7 @@ async fn cursor_reports_confirmed_native_diff() {
     let session = driver
         .create_selected_session(
             SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 working_directory: cwd.clone(),
                 additional_directories: vec![],
                 permission_mode: Some("full-access".into()),

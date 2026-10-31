@@ -70,31 +70,45 @@ impl SessionHandle {
 /// App-owned stdio MCP endpoint. Never persisted in task/session projections.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HistoryMcp {
+pub struct AppMcp {
     pub name: String,
     pub command: String,
     pub args: Vec<String>,
     pub directory: String,
 }
-impl HistoryMcp {
+impl AppMcp {
     #[must_use]
     pub fn server_config(&self) -> serde_json::Value {
         serde_json::json!({"command":self.command,"args":self.args})
     }
     #[must_use]
-    pub fn native_servers(value: Option<&Self>) -> serde_json::Value {
-        serde_json::json!(value.map(|v| serde_json::json!({"name":v.name,"command":v.command,"args":v.args,"env":[]})).into_iter().collect::<Vec<_>>())
+    pub fn native_servers(value: &[Self]) -> serde_json::Value {
+        serde_json::json!(value.iter().map(|v| serde_json::json!({"name":v.name,"command":v.command,"args":v.args,"env":[]})).collect::<Vec<_>>())
     }
     #[must_use]
-    pub fn codex_config(value: Option<&Self>, thinking: Option<&str>) -> serde_json::Value {
+    pub fn codex_config(value: &[Self], thinking: Option<&str>) -> serde_json::Value {
         let mut config = serde_json::json!({});
-        if let Some(v) = value {
-            config["mcp_servers"] = serde_json::json!({v.name.clone():v.server_config()});
+        for v in value {
+            let mut server = v.server_config();
+            if v.is_computer() {
+                server["default_tools_approval_mode"] = serde_json::json!("approve");
+                server["tool_timeout_sec"] = serde_json::json!(180);
+                config["plugins.\"unified-computer-use@openai-bundled\".enabled"] =
+                    serde_json::json!(false);
+                config["plugins.\"computer-use@openai-bundled\".enabled"] =
+                    serde_json::json!(false);
+            }
+            config["mcp_servers"][&v.name] = server;
         }
         if let Some(v) = thinking {
             config["model_reasoning_effort"] = serde_json::json!(v);
         }
         config
+    }
+
+    #[must_use]
+    pub fn is_computer(&self) -> bool {
+        self.args.first().is_some_and(|arg| arg == "--computer-mcp")
     }
 }
 
@@ -102,7 +116,7 @@ impl HistoryMcp {
 #[serde(rename_all = "camelCase")]
 pub struct SessionRequest {
     #[serde(default)]
-    pub history_mcp: Option<HistoryMcp>,
+    pub app_mcps: Vec<AppMcp>,
     #[serde(default)]
     pub permission_mode: Option<String>,
     #[serde(default)]
@@ -392,7 +406,7 @@ pub fn explicitly_reports_quota_exhaustion(message: &str) -> bool {
 pub trait AgentDriver: Send + Sync {
     /// Whether the native transport accepts app-provided stdio MCP servers.
     /// Context handoff in the prompt remains available independently of MCP.
-    fn supports_history_mcp(&self) -> bool {
+    fn supports_app_mcp(&self) -> bool {
         true
     }
     /// Optional native hardening; this is not an Agent availability gate.
@@ -416,7 +430,7 @@ pub trait AgentDriver: Send + Sync {
         self.create_session(SessionRequest {
             working_directory: directory.into(),
             additional_directories: vec![],
-            history_mcp: None,
+            app_mcps: vec![],
             permission_mode,
         })
         .await
@@ -438,7 +452,7 @@ pub trait AgentDriver: Send + Sync {
         self.create_session(SessionRequest {
             working_directory: directory.into(),
             additional_directories: additional.to_vec(),
-            history_mcp: None,
+            app_mcps: vec![],
             permission_mode,
         })
         .await
@@ -457,7 +471,7 @@ pub trait AgentDriver: Send + Sync {
         self.create_session(SessionRequest {
             working_directory: directory.into(),
             additional_directories: additional.to_vec(),
-            history_mcp: None,
+            app_mcps: vec![],
             permission_mode,
         })
         .await

@@ -21,7 +21,7 @@ async fn real_headless_write_permission_observation() {
     .unwrap();
     let session = driver
         .create_session(SessionRequest {
-            history_mcp: None,
+            app_mcps: vec![],
             permission_mode: None,
             additional_directories: vec![],
             working_directory: cwd.clone(),

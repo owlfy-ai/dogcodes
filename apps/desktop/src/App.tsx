@@ -1,4 +1,5 @@
 import { RemoteDevices } from "./RemoteDevices";
+import { ComputerUseControl } from "./ComputerUseControl";
 import { invoke } from "@tauri-apps/api/core";
 import { AttachmentUploadRecovery } from "./AttachmentUploadRecovery";
 import {
@@ -1271,6 +1272,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
               lang={resolvedLang}
               modelPicker={modelPicker}
               permissionPicker={permissionPicker}
+              computerControl={selectedTaskId ? <ComputerUseControl key={selectedTask.taskId} client={client} taskId={selectedTask.taskId} running={Boolean(selectedTask.activePrimaryRun)} /> : undefined}
               submissionPending={submissionPending}
               modelSelectionPending={Boolean(activeModel) && (modelLoading || Boolean(modelError))}
               selectedTask={selectedTask}
@@ -1304,6 +1306,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
                 lang={resolvedLang}
                 modelPicker={modelPicker}
               permissionPicker={permissionPicker}
+              computerControl={selectedTaskId ? <ComputerUseControl key={selectedTask.taskId} client={client} taskId={selectedTask.taskId} running={Boolean(selectedTask.activePrimaryRun)} /> : undefined}
                 submissionPending={submissionPending}
               modelSelectionPending={Boolean(activeModel) && (modelLoading || Boolean(modelError))}
                 selectedTask={selectedTask}
@@ -1713,6 +1716,7 @@ export function QuotaCenter({
 }
 
 export function ComposerFooter({
+  computerControl,
   lang,
   permissionPicker,
   modelPicker,
@@ -1732,6 +1736,7 @@ export function ComposerFooter({
   onCancel,
   onAddAttachment,
 }: {
+  computerControl?: ReactNode;
   onAddAttachment?: () => void;
   lang?: ResolvedLanguage;
   permissionPicker?: ReactNode;
@@ -1759,6 +1764,7 @@ export function ComposerFooter({
     <footer ref={footerRef} className="composer-controls">
       <button className="composer-icon" type="button" aria-label={t("composer.addAttachment", undefined, lang)} disabled={sending} onClick={onAddAttachment}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg></button>
       <Fragment key="permission-control">{permissionPicker ?? <span className="mode-chip">{t("composer.localExecution", undefined, lang)}</span>}</Fragment>
+      {computerControl}
       <div className="spacer" />
       <ContextUsageRing quota={selectedQuota} providerId={selectedTask.preferredExecutor.providerId} />
       <Fragment key="model-control">{modelPicker}</Fragment>

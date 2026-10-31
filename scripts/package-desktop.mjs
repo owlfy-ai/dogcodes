@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 import { parseSigningConfig } from './signing-config.mjs';
 import { checkMacKeychain, buildMacKeychainPackage, runBuild } from './signing-macos.mjs';
+import { prepareComputerUse } from './prepare-computer-use.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const signingVariables = [
@@ -163,6 +164,8 @@ async function main() {
     return;
   }
   console.log(signed ? 'Building with local signing settings.' : 'Building without distribution signing or notarization.');
+  const computerUse = await prepareComputerUse();
+  if (computerUse) config.bundle.resources = { '../../../LICENSE': 'licenses/dogcodes-LICENSE.txt', '../src/assets/licenses/': 'licenses/agent-icons/', [computerUse]: 'computer-use/' };
   // Keep merged signing settings (including provider commands) out of argv.
   let stage;
   try {

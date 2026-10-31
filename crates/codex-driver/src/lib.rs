@@ -386,13 +386,18 @@ impl CodexDriver {
         if !working_directory.is_absolute() || !working_directory.is_dir() {
             return Err(stable_error("working directory is unavailable"));
         }
-        let mut connection = Connection::spawn(&self.executable).await?;
+        let mut connection = Connection::spawn_for_apps(
+            &self.executable,
+            &request.app_mcps,
+            &request.working_directory,
+        )
+        .await?;
         connection.quota = Some(Arc::clone(&self.quota));
         let full_review = request.permission_mode.as_deref() == Some("hub-review");
         let analysis = full_review || request.permission_mode.as_deref() == Some("hub-analysis");
         connection.full_review = full_review;
         connection.analysis_only = analysis;
-        let mut config = question_session_config(request.history_mcp.as_ref(), thinking);
+        let mut config = question_session_config(request.app_mcps.as_slice(), thinking);
         if analysis {
             // Disable inherited remote tools, while allowing sandboxed local reads. Never guess
             // an empty config means configured MCP servers were removed.
@@ -522,6 +527,7 @@ impl CodexDriver {
         sessions.insert(
             native_session_id,
             ResidentSession {
+                app_mcps: connection.app_mcps.clone(),
                 commands: sender,
                 native: Some(connection.native.clone()),
                 scope: scope.clone(),
@@ -562,7 +568,7 @@ impl AgentDriver for CodexDriver {
             &SessionRequest {
                 working_directory: directory.into(),
                 additional_directories: additional.to_vec(),
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: Some("hub-analysis".into()),
             },
             None,
@@ -580,7 +586,7 @@ impl AgentDriver for CodexDriver {
             &SessionRequest {
                 working_directory: directory.into(),
                 additional_directories: additional.to_vec(),
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: Some("hub-review".into()),
             },
             None,
@@ -676,7 +682,7 @@ impl AgentDriver for CodexDriver {
         self.resume_selected_session(
             native_session_id,
             SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 working_directory: working_directory.into(),
                 additional_directories: vec![],
@@ -736,7 +742,7 @@ impl AgentDriver for CodexDriver {
         if let Some(sender) = existing {
             let lease = sender.sender();
             let next_scope = SessionHandle::scoped(native_session_id.into());
-            if !sender.is_closed() {
+            if !sender.is_closed() && sender.app_mcps == request.app_mcps {
                 let (response, received) = oneshot::channel();
                 if lease
                     .send(SessionCommand::CheckReady {
@@ -771,9 +777,14 @@ impl AgentDriver for CodexDriver {
             }
             self.remove_closed_session(native_session_id, &sender).await;
         }
-        let mut connection = Connection::spawn(&self.executable).await?;
+        let mut connection = Connection::spawn_for_apps(
+            &self.executable,
+            &request.app_mcps,
+            &request.working_directory,
+        )
+        .await?;
         let exchange = connection
-            .request("thread/resume", json!({ "threadId": native_session_id, "model": model, "config": question_session_config(request.history_mcp.as_ref(), thinking) }))
+            .request("thread/resume", json!({ "threadId": native_session_id, "model": model, "config": question_session_config(request.app_mcps.as_slice(), thinking) }))
             .await;
         let exchange = match exchange {
             Ok(exchange) => exchange,
@@ -1931,6 +1942,7 @@ fn item_completed_success(item: &Value) -> bool {
 }
 
 struct Connection {
+    app_mcps: Vec<driver_api::AppMcp>,
     live_usage: live_usage::LiveUsage,
     analysis_only: bool,
     full_review: bool,
@@ -2013,8 +2025,82 @@ impl Connection {
         Ok(connection)
     }
 
+    async fn spawn_for_apps(
+        executable: &Path,
+        apps: &[driver_api::AppMcp],
+        cwd: &str,
+    ) -> Result<Self, DriverError> {
+        let mut connection = Self::create_for_apps(executable, apps)?;
+        connection.initialize().await?;
+        if apps.iter().any(driver_api::AppMcp::is_computer) {
+            // Some desktop-managed plugins keep their skills enabled even when
+            // plugins.<id>.enabled=false. Discover exact skill paths instead of
+            // hard-coding marketplace cache versions or changing user settings.
+            let skills = connection
+                .request("skills/list", json!({"cwds":[cwd],"forceReload":true}))
+                .await
+                .ok();
+            let disabled: Vec<String> = skills
+                .as_ref()
+                .and_then(|value| value.result["data"].as_array())
+                .into_iter()
+                .flatten()
+                .flat_map(|entry| entry["skills"].as_array().into_iter().flatten())
+                .filter(|skill| {
+                    matches!(
+                        skill["pluginId"].as_str(),
+                        Some("computer-use@openai-bundled" | "unified-computer-use@openai-bundled")
+                    ) && skill["enabled"] != false
+                })
+                .filter_map(|skill| skill["path"].as_str().map(str::to_owned))
+                .collect();
+            if !disabled.is_empty() {
+                connection.shutdown().await?;
+                connection = Self::create_configured(executable, apps, &disabled)?;
+                connection.initialize().await?;
+            }
+        }
+        Ok(connection)
+    }
+
     fn create(executable: &Path) -> Result<Self, DriverError> {
+        Self::create_for_apps(executable, &[])
+    }
+
+    fn create_for_apps(
+        executable: &Path,
+        apps: &[driver_api::AppMcp],
+    ) -> Result<Self, DriverError> {
+        Self::create_configured(executable, apps, &[])
+    }
+
+    fn create_configured(
+        executable: &Path,
+        apps: &[driver_api::AppMcp],
+        disabled_skills: &[String],
+    ) -> Result<Self, DriverError> {
         let mut command = Command::new(executable);
+        if !disabled_skills.is_empty() {
+            let entries = disabled_skills
+                .iter()
+                .map(|path| {
+                    format!(
+                        "{{path={},enabled=false}}",
+                        serde_json::to_string(path).expect("skill path")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            command.args(["-c", &format!("skills.config=[{entries}]")]);
+        }
+        if apps.iter().any(driver_api::AppMcp::is_computer) {
+            for plugin in [
+                "unified-computer-use@openai-bundled",
+                "computer-use@openai-bundled",
+            ] {
+                command.args(["-c", &format!("plugins.\"{plugin}\".enabled=false")]);
+            }
+        }
         command
             .args(["app-server", "--listen", "stdio://"])
             .env_clear()
@@ -2042,6 +2128,7 @@ impl Connection {
         let mut transport = JsonlTransport::new(stdout, stdin);
         transport.native = Some(native.clone());
         Ok(Self {
+            app_mcps: apps.to_vec(),
             live_usage: live_usage::LiveUsage::default(),
             analysis_only: false,
             full_review: false,
@@ -2729,7 +2816,7 @@ mod tests {
         .expect("driver construction must succeed");
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: std::env::temp_dir().to_string_lossy().into_owned(),
@@ -2830,7 +2917,7 @@ async fn real_resume_acceptance_reattaches_across_instances() {
     .unwrap();
     let session = first
         .create_session(SessionRequest {
-            history_mcp: None,
+            app_mcps: vec![],
             permission_mode: None,
             additional_directories: vec![],
             working_directory: workspace.path().to_string_lossy().into_owned(),
@@ -2941,11 +3028,8 @@ mod model_catalog_acceptance {
     }
 }
 
-fn question_session_config(
-    history: Option<&driver_api::HistoryMcp>,
-    thinking: Option<&str>,
-) -> Value {
-    let mut config = driver_api::HistoryMcp::codex_config(history, thinking);
+fn question_session_config(history: &[driver_api::AppMcp], thinking: Option<&str>) -> Value {
+    let mut config = driver_api::AppMcp::codex_config(history, thinking);
     if !config.is_object() {
         config = json!({});
     }
@@ -3011,6 +3095,7 @@ mod shutdown_tests {
         let handle = SessionHandle::scoped("fixture-session".into());
         (
             ResidentSession {
+                app_mcps: vec![],
                 commands,
                 native: None,
                 scope: Arc::new(std::sync::Mutex::new(handle.clone())),

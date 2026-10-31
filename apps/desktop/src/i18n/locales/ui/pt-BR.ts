@@ -1,6 +1,19 @@
 import type { UiMessages } from "./en";
 
 export const uiPtBR: UiMessages = {
+  computerUse: {
+    glowBackground: "dog.codes está verificando o computador em segundo plano",
+    glowForeground: "dog.codes está usando teclado e mouse. Pause a entrada.",
+    glowPossible: "dog.codes pode usar teclado e mouse. Pause a entrada.",
+    glowDisconnected: "dog.codes perdeu a conexão. Estado da entrada desconhecido.",
+    glowExit: "para sair",
+    enable: "Ativar controle do computador",
+    disable: "Parar controle do computador",
+    enableHint: "Permitir que esta tarefa veja e opere a área de trabalho",
+    enabledHint: "Ativado para esta tarefa; clique para parar",
+    unavailable: "Indisponível nesta versão",
+    nextTurn: "Ative antes de iniciar o próximo turno",
+  },
   activity: {
     aboutSeconds: "about {seconds}s",
     browse: "Browsed",

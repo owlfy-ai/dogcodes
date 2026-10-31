@@ -24,7 +24,7 @@ pub(crate) struct HistoryLease {
     access: Arc<Access>,
 }
 impl HistoryLease {
-    pub(crate) fn descriptor(&self) -> driver_api::HistoryMcp {
+    pub(crate) fn descriptor(&self) -> driver_api::AppMcp {
         self.endpoint.descriptor.clone()
     }
     /// App-owned history reads need no operator prompt. The live lease, exact
@@ -437,7 +437,7 @@ async fn query_history(
 
 pub(crate) struct HistoryEndpoint {
     task_id: TaskId,
-    descriptor: driver_api::HistoryMcp,
+    descriptor: driver_api::AppMcp,
     access: Arc<Mutex<Option<Arc<Access>>>>,
     worker: tokio::task::JoinHandle<()>,
     _directory: tempfile::TempDir,
@@ -470,7 +470,7 @@ impl HistoryEndpoint {
             .tempdir()
             .map_err(|e| CoreError::Internal(e.to_string()))?;
         let token = uuid::Uuid::new_v4().to_string();
-        let descriptor = driver_api::HistoryMcp {
+        let descriptor = driver_api::AppMcp {
             name: format!(
                 "dogcodes_{}",
                 &uuid::Uuid::new_v4().simple().to_string()[..12]
@@ -552,6 +552,10 @@ const TOOLS: [&str; 5] = [
 /// structured server/tool pair (Cursor). Never match just a prefix, title
 /// substring or a tool name copied into arbitrary query arguments.
 fn is_history_tool(server: &str, title: &str, summary: &str) -> bool {
+    is_app_tool(server, &TOOLS, title, summary)
+}
+
+pub(crate) fn is_app_tool(server: &str, tools: &[&str], title: &str, summary: &str) -> bool {
     if server.is_empty() {
         return false;
     }
@@ -581,7 +585,7 @@ fn is_history_tool(server: &str, title: &str, summary: &str) -> bool {
     if provider.is_some_and(|value| value != server) {
         return false;
     }
-    TOOLS.iter().any(|name| {
+    tools.iter().any(|name| {
         if tool.is_some_and(|value| value != *name) {
             return false;
         }

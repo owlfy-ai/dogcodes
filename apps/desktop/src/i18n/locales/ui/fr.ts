@@ -1,6 +1,19 @@
 import type { UiMessages } from "./en";
 
 export const uiFr: UiMessages = {
+  computerUse: {
+    glowBackground: "dog.codes vérifie le fonctionnement en arrière-plan",
+    glowForeground: "dog.codes utilise le clavier et la souris. Veuillez suspendre la saisie.",
+    glowPossible: "dog.codes peut utiliser le clavier et la souris. Veuillez suspendre la saisie.",
+    glowDisconnected: "dog.codes a perdu la connexion. État de saisie inconnu.",
+    glowExit: "pour quitter",
+    enable: "Activer le contrôle de l’ordinateur",
+    disable: "Arrêter le contrôle de l’ordinateur",
+    enableHint: "Autoriser cette tâche à voir et utiliser le bureau",
+    enabledHint: "Activé pour cette tâche ; cliquer pour arrêter",
+    unavailable: "Indisponible dans cette version",
+    nextTurn: "Activer avant le prochain tour",
+  },
   activity: {
     aboutSeconds: "about {seconds}s",
     browse: "Browsed",

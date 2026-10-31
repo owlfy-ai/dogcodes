@@ -1,6 +1,19 @@
 import type { UiMessages } from "./en";
 
 export const uiJa: UiMessages = {
+  computerUse: {
+    glowBackground: "dog.codes がバックグラウンドでPCを操作して検証中",
+    glowForeground: "dog.codes がキーボードとマウスを使用中です。操作をお控えください。",
+    glowPossible: "dog.codes がキーボードとマウスを使用する可能性があります。操作をお控えください。",
+    glowDisconnected: "dog.codes の接続が切れました。入力状態を確認できません。",
+    glowExit: "で終了",
+    enable: "コンピューター操作を有効化",
+    disable: "コンピューター操作を停止",
+    enableHint: "このタスクにデスクトップの表示と操作を許可",
+    enabledHint: "有効です。クリックして操作を停止",
+    unavailable: "このビルドでは利用できません",
+    nextTurn: "次のターンを開始する前に有効にしてください",
+  },
   activity: {
     aboutSeconds: "about {seconds}s",
     browse: "Browsed",

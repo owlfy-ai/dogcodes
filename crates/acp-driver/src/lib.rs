@@ -438,7 +438,7 @@ enum Command {
         reply: oneshot::Sender<Result<driver_api::ModelCatalog, DriverError>>,
     },
     NewSession {
-        history_mcp: Option<driver_api::HistoryMcp>,
+        app_mcps: Vec<driver_api::AppMcp>,
         grok: bool,
         permission_mode: Option<String>,
         model: Option<String>,
@@ -448,7 +448,7 @@ enum Command {
         reply: oneshot::Sender<Result<SessionId, DriverError>>,
     },
     LoadSession {
-        history_mcp: Option<driver_api::HistoryMcp>,
+        app_mcps: Vec<driver_api::AppMcp>,
         grok: bool,
         permission_mode: Option<String>,
         session_id: SessionId,
@@ -1670,7 +1670,7 @@ async fn handle_command(
             let _ = reply.send(result);
         }
         Command::NewSession {
-            history_mcp,
+            app_mcps,
             grok,
             permission_mode,
             model,
@@ -1684,7 +1684,7 @@ async fn handle_command(
                     .additional_directories(additional_roots(multi_root, additional_directories)),
             )
             .unwrap_or_default();
-            params["mcpServers"] = driver_api::HistoryMcp::native_servers(history_mcp.as_ref());
+            params["mcpServers"] = driver_api::AppMcp::native_servers(app_mcps.as_slice());
             if grok {
                 permissions::meta(
                     &mut params,
@@ -1767,7 +1767,7 @@ async fn handle_command(
             let _ = reply.send(result);
         }
         Command::LoadSession {
-            history_mcp,
+            app_mcps,
             grok,
             permission_mode,
             model,
@@ -1782,7 +1782,7 @@ async fn handle_command(
                     .additional_directories(additional_roots(multi_root, additional_directories)),
             )
             .unwrap_or_default();
-            params["mcpServers"] = driver_api::HistoryMcp::native_servers(history_mcp.as_ref());
+            params["mcpServers"] = driver_api::AppMcp::native_servers(app_mcps.as_slice());
             if grok {
                 permissions::meta(
                     &mut params,
@@ -1801,6 +1801,26 @@ async fn handle_command(
                 let state = if let Some(state) = resident {
                     state
                 } else {
+                    if initial_models["agentInfo"]["name"] == "deepseek-harness-acp"
+                        && initial_models
+                            .pointer("/agentCapabilities/sessionCapabilities/close")
+                            .is_some()
+                        && session_states
+                            .lock()
+                            .expect("session states")
+                            .initialized(&session_id.to_string())
+                    {
+                        // DeepSeek rejects session/resume while that session is
+                        // still active. Close only this idle session before
+                        // restoring it with a changed workspace/MCP binding.
+                        models::session_request(
+                            &connection,
+                            "session/close",
+                            serde_json::json!({"sessionId":session_id}),
+                            Some(&quota.stderr_tail),
+                        )
+                        .await?;
+                    }
                     models::session_request(
                         &connection,
                         resume_method(&initial_models),
@@ -2278,7 +2298,7 @@ impl AgentDriver for AcpDriver {
             .await?;
         let (reply_tx, reply_rx) = oneshot::channel();
         let command = Command::NewSession {
-            history_mcp: request.history_mcp.clone(),
+            app_mcps: request.app_mcps.clone(),
             grok: self.executor.provider_id.as_str() == "grok",
             permission_mode: if self.executor.provider_id.as_str() == "cursor" {
                 None
@@ -2307,7 +2327,7 @@ impl AgentDriver for AcpDriver {
         self.resume_workspace_session(
             native_session_id,
             SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 working_directory: working_directory.into(),
                 additional_directories: vec![],
@@ -2368,7 +2388,7 @@ impl AgentDriver for AcpDriver {
             .await?;
         let (reply_tx, reply_rx) = oneshot::channel();
         let command = Command::LoadSession {
-            history_mcp: workspace.history_mcp.clone(),
+            app_mcps: workspace.app_mcps.clone(),
             grok: self.executor.provider_id.as_str() == "grok",
             permission_mode: if self.executor.provider_id.as_str() == "cursor" {
                 None
@@ -4088,7 +4108,7 @@ mod tests {
                 let (reply_tx, reply_rx) = oneshot::channel();
                 commands_tx
                     .send(Command::NewSession {
-                        history_mcp: None,
+                        app_mcps: vec![],
                         grok: false,
                         permission_mode: None,
                         model: None,
@@ -4158,7 +4178,7 @@ mod tests {
                     let (reply, response) = oneshot::channel();
                     commands_tx
                         .send(Command::LoadSession {
-                            history_mcp: None,
+                            app_mcps: vec![],
                             grok: false,
                             permission_mode: None,
                             model: None,
@@ -4264,7 +4284,7 @@ mod real_turn_acceptance {
         .expect("driver construction must succeed");
         let session = match driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: std::env::temp_dir().to_string_lossy().into_owned(),
@@ -4446,7 +4466,7 @@ mod real_resume_acceptance {
         let workspace = tempfile::tempdir().unwrap();
         let session = first
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: workspace.path().to_string_lossy().into_owned(),
@@ -4642,7 +4662,7 @@ mod real_kimi_quota_probe {
         .unwrap();
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: std::env::temp_dir().to_string_lossy().into_owned(),
@@ -4729,7 +4749,7 @@ mod real_quota_probe {
         .unwrap();
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: std::env::temp_dir().to_string_lossy().into_owned(),

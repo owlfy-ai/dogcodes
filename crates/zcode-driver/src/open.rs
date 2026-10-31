@@ -111,7 +111,7 @@ impl ZcodeDriver {
         } else {
             "session/create"
         };
-        let mut params = json!({"workspace":{"workspacePath":workspace,"workspaceKey":workspace},"mcpServers":driver_api::HistoryMcp::native_servers(request.history_mcp.as_ref())});
+        let mut params = json!({"workspace":{"workspacePath":workspace,"workspaceKey":workspace},"mcpServers":driver_api::AppMcp::native_servers(request.app_mcps.as_slice())});
         if let Some(id) = id {
             params["sessionId"] = json!(id);
         }

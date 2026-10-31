@@ -393,7 +393,7 @@ mod tests {
             let session = driver
                 .create_selected_session(
                     SessionRequest {
-                        history_mcp: None,
+                        app_mcps: vec![],
                         permission_mode: None,
                         working_directory: directory.path().to_string_lossy().into_owned(),
                         additional_directories: vec![],

@@ -86,6 +86,9 @@ export class TauriCoreClient implements CoreClient {
     return invoke("core_submission_intents", { call: { type: "retire", operationId } });
   }
   historyPreferences(): Promise<import("@dogcodes/protocol").HistoryPreferencesSnapshot> { return invoke("core_history_preferences"); }
+  computerUse(taskId: TaskId, call: { type: "status" | "stop" } | { type: "set"; enabled: boolean }): Promise<import("@dogcodes/protocol").ComputerUseStatus> {
+    return invoke("core_computer_use", { taskId, call });
+  }
   async setHistoryPreferences(preferences: import("@dogcodes/protocol").HistoryPreferences, expectedRevision: number, operationId: string): Promise<void> {
     await this.execute({ type: "set_history_preferences", data: { ...preferences } }, expectedRevision, operationId);
   }

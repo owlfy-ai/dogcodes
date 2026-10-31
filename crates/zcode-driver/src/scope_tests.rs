@@ -183,7 +183,7 @@ async fn duplicate_native_create_identity_does_not_replace_or_close_an_owner() {
         .create_session(SessionRequest {
             working_directory: root.path().to_string_lossy().into_owned(),
             additional_directories: vec![],
-            history_mcp: None,
+            app_mcps: vec![],
             permission_mode: None,
         })
         .await;
@@ -263,7 +263,7 @@ fn selected_request(root: &Path) -> SessionRequest {
     SessionRequest {
         working_directory: root.to_string_lossy().into_owned(),
         additional_directories: vec![],
-        history_mcp: None,
+        app_mcps: vec![],
         permission_mode: None,
     }
 }

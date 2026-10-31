@@ -1,6 +1,19 @@
 import type { UiMessages } from "./en";
 
 export const uiKo: UiMessages = {
+  computerUse: {
+    glowBackground: "dog.codes가 백그라운드에서 컴퓨터를 조작하며 검증 중입니다",
+    glowForeground: "dog.codes가 키보드와 마우스를 사용 중입니다. 입력을 잠시 멈춰 주세요.",
+    glowPossible: "dog.codes가 키보드와 마우스를 사용할 수 있습니다. 입력을 잠시 멈춰 주세요.",
+    glowDisconnected: "dog.codes 연결이 끊겼습니다. 입력 상태를 확인할 수 없습니다.",
+    glowExit: "종료",
+    enable: "컴퓨터 조작 켜기",
+    disable: "컴퓨터 조작 중지",
+    enableHint: "이 작업이 데스크톱을 보고 조작하도록 허용",
+    enabledHint: "사용 중입니다. 클릭하면 조작을 중지합니다",
+    unavailable: "이 빌드에서는 사용할 수 없습니다",
+    nextTurn: "다음 턴을 시작하기 전에 켜세요",
+  },
   activity: {
     aboutSeconds: "about {seconds}s",
     browse: "Browsed",

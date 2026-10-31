@@ -1035,7 +1035,7 @@ async fn existing_agents_reuse_session_apis_without_a_readonly_capability_gate()
     assert_eq!(sessions.len(), 8);
     for request in sessions.iter() {
         assert_eq!(request.permission_mode.as_deref(), Some("full-access"));
-        assert!(request.history_mcp.is_none());
+        assert!(request.app_mcps.is_empty());
         assert!(request.additional_directories.is_empty());
         assert_eq!(
             std::path::Path::new(&request.working_directory),

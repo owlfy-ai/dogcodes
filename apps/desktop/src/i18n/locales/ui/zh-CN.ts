@@ -1,6 +1,19 @@
 import type { UiMessages } from "./en";
 
 export const uiZhCN: UiMessages = {
+  computerUse: {
+    glowBackground: "dog.codes 正在后台操作电脑验证",
+    glowForeground: "dog.codes 正在使用键盘鼠标，请暂停键鼠操作",
+    glowPossible: "dog.codes 可能使用键盘鼠标，请暂停键鼠操作",
+    glowDisconnected: "dog.codes 连接已中断，键鼠操作状态未知",
+    glowExit: "退出",
+    enable: "启用电脑操作",
+    disable: "停止电脑操作",
+    enableHint: "允许此任务查看并操作电脑",
+    enabledHint: "此任务已启用；点击停止电脑操作",
+    unavailable: "当前构建尚未提供电脑操作能力",
+    nextTurn: "请在开始下一轮前启用",
+  },
   activity: {
     aboutSeconds: "约 {seconds} 秒",
     browse: "查阅",

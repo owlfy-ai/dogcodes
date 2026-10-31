@@ -206,7 +206,7 @@ async fn run() -> Result<(), Error> {
     std::fs::create_dir(&primary)?;
     std::fs::create_dir(&secondary)?;
     let scope = SessionRequest {
-        history_mcp: None,
+        app_mcps: vec![],
         permission_mode: None,
         working_directory: primary.to_string_lossy().into_owned(),
         additional_directories: vec![secondary.to_string_lossy().into_owned()],
