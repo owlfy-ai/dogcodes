@@ -1,6 +1,8 @@
+import { uiDe } from "./ui/de";
 import type { TranslationDict } from "../types";
 
 export const de: TranslationDict = {
+  ...uiDe,
   agentUi: {
     "notInstalled": "Nicht installiert",
     "installHint": "Agent installieren und erneut suchen.",

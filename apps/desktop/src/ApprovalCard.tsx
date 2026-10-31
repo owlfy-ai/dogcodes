@@ -27,7 +27,7 @@ export function ApprovalCard({ approval, busy = false, disabled = false, onRespo
   if (approval.question) return <QuestionCard key={approval.approvalId} form={approval.question} busy={busy} disabled={disabled} onAnswer={onRespond ? answer => onRespond("", answer) : undefined}>{children}</QuestionCard>;
   return <article className="approval-card composer-approval" data-approval-id={approval.approvalId} aria-label="操作审批" aria-busy={busy}>
     <header className="approval-heading">
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/>{view.category === "终端" ? <path d="m7 8 3 3-3 3m6 1h4"/> : <path d="M8 8h8M8 12h8M8 16h5"/>}</svg>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/>{view.kind === "terminal" ? <path d="m7 8 3 3-3 3m6 1h4"/> : <path d="M8 8h8M8 12h8M8 16h5"/>}</svg>
       <span>{view.category}</span><span className="approval-status">需要你的许可</span>
     </header>
     <h2 className="approval-question">{view.question}</h2>

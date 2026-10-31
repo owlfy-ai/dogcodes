@@ -10,7 +10,9 @@ import {
   translate as t,
   I18nProvider,
   useI18n,
+  setGlobalResolvedLanguage,
 } from "./i18n";
+import { SCRATCH_PROJECT_NAME, UNTITLED_TASK_TITLE, projectDisplayName, taskDisplayTitle } from "./displayNames";
 import { ulid } from "ulid";
 import { SubmissionRecovery, usePendingSubmissions, useUnconfirmedSubmissions } from "./SubmissionRecovery";
 import { PendingSubmissionError, UnconfirmedSubmissionError, submissionOperations } from "./submissionOperations";
@@ -109,7 +111,7 @@ function executorKey(executor: ExecutorRef | null | undefined): string {
 }
 
 function executorLabel(executor: ExecutorRef | null): string {
-  if (!executor) return "加载中";
+  if (!executor) return t("common.loading");
   return executor.installationId ? `${executor.providerId} (${executor.installationId.slice(0, 10)}…)` : executor.providerId;
 }
 
@@ -118,29 +120,27 @@ function defaultExecutor(snapshot: BootstrapSnapshot, preferences: AgentPreferen
   return installation ? { providerId: installation.providerId, installationId: installation.installationId } : { providerId: "fake", installationId: null };
 }
 
-function projectLabel(name: string): string {
-  return name === "快速对话" ? "无项目" : name;
-}
-
 function ToolActivity({ item, active }: { item: TimelineItem; active: boolean }) {
+  const { t } = useI18n();
   const failed = item.kind === "tool.failed";
   const running = active && item.kind === "tool.started";
   return (
     <article className={`tool-activity${running ? " running activity-running" : failed ? "" : " completed"}`}>
-      <ActivityIcon kind="工具" />
+      <ActivityIcon kind="tool" />
       <span className="activity-text">{item.text}</span>
-      {!failed && <small><span className="activity-text">{running ? "进行中" : item.kind === "tool.started" ? "结果未确认" : "完成"}</span></small>}
+      {!failed && <small><span className="activity-text">{t(running ? "app.toolRunning" : item.kind === "tool.started" ? "app.toolUnconfirmed" : "app.toolDone")}</span></small>}
     </article>
   );
 }
 
 const TimelineEntry = memo(function TimelineEntry({ item, active = false }: { item: TimelineItem; active?: boolean }) {
+  const { t } = useI18n();
   const role = timelineItemRole(item.kind);
   const time = new Date(item.occurredAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   if (role === "tool") return <ToolActivity item={item} active={active} />;
   if (role === "user") {
     return (
-      <article className="message user-message" data-tooltip={`你 · ${time}`}>
+      <article className="message user-message" data-tooltip={t("app.userMessageTooltip", { time })}>
         {item.text && <p>{item.text}</p>}
         <SentAttachments items={item.attachments} />
       </article>
@@ -149,7 +149,7 @@ const TimelineEntry = memo(function TimelineEntry({ item, active = false }: { it
   if (role === "assistant") {
     return (
       <article className="message assistant-message" aria-label={`${providerLabel(item.providerId ?? "dogcodes")} · ${time}`}>
-        {item.text ? <StreamingMarkdownMessage text={item.text} streaming={active} /> : <span className="typing">正在生成</span>}
+        {item.text ? <StreamingMarkdownMessage text={item.text} streaming={active} /> : <span className="typing">{t("app.generating")}</span>}
       </article>
     );
   }
@@ -418,6 +418,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const [preferencesSection, setPreferencesSection] = useState<PreferencesSection>(null);
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>(() => readPreference("dogcodes.ui.language", "system"));
   const resolvedLang = resolveLanguage(uiLanguage);
+  // App renders before its I18nProvider, so switch the shared language here too.
+  setGlobalResolvedLanguage(resolvedLang);
   const native = "__TAURI_INTERNALS__" in window;
   useEffect(() => {
     if (!native) return;
@@ -559,7 +561,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         traceStartup("timeline_ready");
         setTimelineError(null);
       }).catch(() => {
-        if (isCurrentTimeline()) setTimelineError("对话加载失败，请重试");
+        if (isCurrentTimeline()) setTimelineError(t("app.loadFailed"));
       }).finally(() => {
         if (read) stream.endRead(read);
         if (isCurrentTimeline()) { setLoadedTaskId(taskId); setTimelineLoading(false); }
@@ -600,7 +602,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       }
     } catch {
       setStartupError(true);
-      setError("对话暂时无法更新，请稍后重试。");
+      setError(t("app.updateUnavailable"));
     }
   }, []);
 
@@ -703,7 +705,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       projectionTimer = setTimeout(() => {
         const refreshGlobal = globalDirty;
         projectionTimer = undefined; projectionBusy = true; projectionDirty = false; globalDirty = false;
-        void refreshFromProjection(refreshGlobal).catch(() => { if (!disposed) setError("对话更新失败，正在等待下一次同步"); })
+        void refreshFromProjection(refreshGlobal).catch(() => { if (!disposed) setError(t("app.updateFailed")); })
           .finally(() => { projectionBusy = false; if (projectionDirty && !disposed) requestProjection(false); });
       }, 40);
     };
@@ -777,7 +779,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       processing = processing.then(async () => {
         if (disposed) return;
         if (message.type === "error") {
-          setError("连接暂时中断，正在尝试恢复。");
+          setError(t("app.connectionInterrupted"));
           if (message.data.retryable) scheduleResubscribe(500);
           return;
         }
@@ -788,15 +790,15 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
           const missing = await client.syncEvents(cursor.lastSequence);
           for (const event of missing) {
             const recovered = cursor.accept(event);
-            if (recovered === "gap") throw new Error("事件序列无法补齐");
+            if (recovered === "gap") throw new Error(t("app.eventGap"));
             if (recovered === "applied") applyEvent(event);
           }
           const retried = cursor.accept(message.data);
-          if (retried === "gap") throw new Error("事件序列无法补齐");
+          if (retried === "gap") throw new Error(t("app.eventGap"));
           if (retried === "applied") applyEvent(message.data);
         } else applyEvent(message.data);
       }).catch((cause) => {
-        if (!disposed) setError("对话暂时无法同步，请稍后重试。");
+        if (!disposed) setError(t("app.syncUnavailable"));
       });
     };
 
@@ -804,7 +806,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       if (disposed) stop();
       else unsubscribe = stop;
     }).catch((cause) => {
-      if (!disposed) setError("暂时无法接收对话更新，请稍后重新打开应用。");
+      if (!disposed) setError(t("app.updatesUnavailable"));
     });
     return () => {
       disposed = true;
@@ -823,9 +825,9 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       // This draft summary is only a view model; its ID must never reach task APIs.
       if (!selectedTaskId && snapshot) {
         const project = snapshot.projects.find(project => project.projectId === draftProjectId)
-          ?? snapshot.projects.find(project => project.displayName === "快速对话") ?? snapshot.projects[0];
+          ?? snapshot.projects.find(project => project.displayName === SCRATCH_PROJECT_NAME) ?? snapshot.projects[0];
         if (!project) return null;
-        return { taskId: "tsk_draft" as TaskId, projectId: project.projectId, title: "新对话",
+        return { taskId: "tsk_draft" as TaskId, projectId: project.projectId, title: UNTITLED_TASK_TITLE,
           preferredExecutor: currentAgentExecutor((draftExecutor && !agentPreferences.disabled.includes(draftExecutor.providerId) ? draftExecutor : defaultExecutor(snapshot, agentPreferences)), snapshot.installations), activePrimaryRun: null, streamVersion: 0 };
       }
       const task = snapshot?.tasks.find((item) => item.taskId === selectedTaskId);
@@ -933,7 +935,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     : selectedSubmission
       ? { providerId: selectedSubmission.providerId, turnId: submittedMessage?.turnId ?? undefined }
       : undefined;
-  const renderResponseAgent = (providerId: string) => <span role="img" aria-label={`${providerLabel(providerId)} 回答`} data-tooltip={providerLabel(providerId)}><AgentIcon providerId={providerId} size="small" /></span>;
+  const renderResponseAgent = (providerId: string) => <span role="img" aria-label={t("app.agentResponse", { agent: providerLabel(providerId) })} data-tooltip={providerLabel(providerId)}><AgentIcon providerId={providerId} size="small" /></span>;
   const selectedTurnQuotaExhausted = useMemo(() => {
     const providerId = selectedTask?.preferredExecutor.providerId;
     if (!providerId) return false;
@@ -971,7 +973,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     if (!snapshot || sending || switchBusy.current) return;
     newDraftScope.current = `draft:${ulid()}`;
     composerContext.current++;
-    setDraftProjectId(projectId ?? snapshot.projects.find(project => project.displayName === "快速对话")?.projectId ?? null);
+    setDraftProjectId(projectId ?? snapshot.projects.find(project => project.displayName === SCRATCH_PROJECT_NAME)?.projectId ?? null);
     setDraftExecutor(selectedTask?.preferredExecutor ?? defaultExecutor(snapshot, agentPreferences));
     selectTask(null);
     setSubagentItemId(null);
@@ -999,7 +1001,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   }, [client, latestTask, refresh]);
   const renameHistoryTask = useCallback(async (task: TaskSummary, title: string) => {
     const latest = (await client.bootstrap()).tasks.find(candidate => candidate.taskId === task.taskId);
-    if (!latest) throw new Error("会话不存在");
+    if (!latest) throw new Error(t("app.taskMissing"));
     await client.renameTask!(latestTask(latest), title);
     await refresh();
   }, [client, latestTask, refresh]);
@@ -1066,8 +1068,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       // Once stored, recovery owns the original content and prevents a fresh resend.
       if (!durable && composerContext.current === originContext && draftRevision.current === clearedRevision) setDraft(prompt);
       if (composerContext.current === activeContext) setError(cause instanceof UnconfirmedSubmissionError
-        ? "发送结果未知，原请求和发送标识已保留，请在下方核实后再处理。"
-        : userFacingError(cause, durable ? "发送结果尚未确认，原内容已保存，请核实原发送。" : "消息未能发送，内容已保留，请重试。"));
+        ? t("app.sendUnknown")
+        : userFacingError(cause, t(durable ? "app.sendUnconfirmed" : "app.sendFailed")));
     } finally {
       setSending(false);
       switchBusy.current = false;
@@ -1090,15 +1092,15 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       }
     } catch (cause) {
       if (selectedTaskIdRef.current === selectedTask.taskId) setApprovalError({ taskId: selectedTask.taskId, approval,
-        message: userFacingError(cause, "审批结果暂时无法确认，请先核实原请求。") });
+        message: userFacingError(cause, t("app.approvalUnconfirmed")) });
     } finally {
       approvalBusy.current = false;
       setApproving(null);
     }
   };
 
-  const approvalPanel = pendingApprovals.length > 0 ? <div className="approval-dock" aria-label="待审批操作">
-    {pendingApprovals.length > 1 && <p className="approval-count">{pendingApprovals.length} 项请求等待你处理</p>}
+  const approvalPanel = pendingApprovals.length > 0 ? <div className="approval-dock" aria-label={t("app.pendingApprovals")}>
+    {pendingApprovals.length > 1 && <p className="approval-count">{t("app.pendingApprovalCount", { count: pendingApprovals.length })}</p>}
     {pendingApprovals.map(approval => <ApprovalCard key={`${approval.turnId}:${approval.requestedAtSequence}:${approval.approvalId}`} approval={approval}
       busy={approving === approval.approvalId} disabled={(approving !== null && approving !== approval.approvalId)
         || !Array.isArray(pendingApprovalResponses) || pendingApprovalResponses.some(record => record.accepted
@@ -1117,7 +1119,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     try {
       await cancelOperations.start(client, latestTask(selectedTask));
     } catch (cause) {
-      if (selectedTaskIdRef.current === selectedTask.taskId) setError(userFacingError(cause, "停止结果尚未确认，请核实原请求。"));
+      if (selectedTaskIdRef.current === selectedTask.taskId) setError(userFacingError(cause, t("app.stopUnconfirmed")));
     } finally {
       cancelGuard.current = false;
       setCancelling(false);
@@ -1213,7 +1215,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             ? <div className="task-heading"><h1>{t("agentManagement.title", undefined, resolvedLang)}</h1></div>
             : activeView === "remote"
             ? <div className="task-heading"><h1>{t("remoteDevices.title", undefined, resolvedLang)}</h1></div>
-            : <div className="task-heading"><h1>{selectedTask.title}</h1><span>{selectedProject ? projectLabel(selectedProject.displayName) : t("header.temporaryWorkspace", undefined, resolvedLang)}</span></div>}
+            : <div className="task-heading"><h1>{taskDisplayTitle(selectedTask.title)}</h1><span>{selectedProject ? projectDisplayName(selectedProject.displayName) : t("header.temporaryWorkspace", undefined, resolvedLang)}</span></div>}
           <div className="task-tools">
             {activeView === "conversation" && <>
             <button className="panel-toggle" type="button" aria-label={t("header.toggleTerminal", undefined, resolvedLang)} aria-expanded={terminalOpen} data-tooltip={terminalOpen ? t("header.collapseTerminal", undefined, resolvedLang) : t("header.toggleTerminal", undefined, resolvedLang)} onClick={() => { setTerminalLoaded(true); setTerminalOpen(open => !open); }}>
@@ -1239,7 +1241,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         <PendingExecutorContext.Provider value={pendingExecutors}><AgentQuotaContext.Provider value={quotaViews}><ConversationPages transient={!selectedTaskId} taskId={showConversation ? selectedTask.taskId : null} revision={displayedTimeline} status={conversationStatus} latestUserMessageId={latestUserMessageId}>
           {<ConversationContent onForked={async taskId => {
             const next = await client.bootstrap();
-            if (!next.tasks.some(task => task.taskId === taskId)) throw new Error("Fork 已创建，但暂时无法打开，请重试");
+            if (!next.tasks.some(task => task.taskId === taskId)) throw new Error(t("app.forkOpenFailed"));
             previousTasks.current = next.tasks;
             setSnapshot(next);
             selectTask(taskId); setActiveView("conversation"); setSubagentItemId(null);
@@ -1280,7 +1282,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
               sending={sending || attachments.pending > 0}
               cancelling={cancelling}
               cancelPending={cancelPending}
-              draft={draft || (attachments.items.length ? "附件" : "")}
+              draft={draft || (attachments.items.length ? t("app.attachment") : "")}
                 onAddAttachment={() => attachmentInput.current?.click()}
               onSelect={(executor) => void switchAgent(executor)}
               onCancel={() => void cancelActiveTurn()}
@@ -1291,7 +1293,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
 
           <div className="composer-dock">
             {timelineError && <p role="alert">{timelineError} <button type="button" onClick={() => void loadConversation(selectedTask.taskId)}>{t("welcome.retry", undefined, resolvedLang)}</button></p>}
-            {selectedTask.activePrimaryRun?.state === "disconnected" && <LoadingStatus>执行连接已中断，正在恢复会话…</LoadingStatus>}
+            {selectedTask.activePrimaryRun?.state === "disconnected" && <LoadingStatus>{t("app.runDisconnected")}</LoadingStatus>}
             {approvalPanel ?? <form className="composer" onSubmit={submit}>
 
               {error && <p className="error" role="alert">{error}</p>}
@@ -1313,7 +1315,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
                 sending={sending || attachments.pending > 0}
                 cancelling={cancelling}
                 cancelPending={cancelPending}
-                draft={draft || (attachments.items.length ? "附件" : "")}
+                draft={draft || (attachments.items.length ? t("app.attachment") : "")}
                 onAddAttachment={() => attachmentInput.current?.click()}
                 onSelect={(executor) => void switchAgent(executor)}
                 onCancel={() => void cancelActiveTurn()}
@@ -1347,7 +1349,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         }}/>}
         {selectedTaskId && <CancelRecovery key={selectedTaskId} client={client} taskId={selectedTaskId} busy={cancelling} onAccepted={() => { void refresh(); }}/>}
       </section>}
-      {terminalLoaded && selectedProject && <Suspense fallback={activeView === "conversation" && terminalOpen ? <LoadingStatus>正在加载终端…</LoadingStatus> : null}><TerminalDock
+      {terminalLoaded && selectedProject && <Suspense fallback={activeView === "conversation" && terminalOpen ? <LoadingStatus>{t("app.loadingTerminal")}</LoadingStatus> : null}><TerminalDock
         key={selectedProject.projectId} projectId={selectedProject.projectId}
         directories={[selectedProject.path, ...selectedProject.additionalDirectories]}
         open={activeView === "conversation" && terminalOpen} onClose={() => setTerminalOpen(false)}
@@ -1379,11 +1381,12 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
 }
 
 function ComposerProject({ projectName, projectPath }: { projectName?: string; projectPath?: string }) {
+  const { t } = useI18n();
   return (
     <div className="composer-project" data-tooltip={projectPath}>
       <span aria-hidden="true">▱</span>
-      <b>{projectName ? projectLabel(projectName) : t("header.temporaryWorkspace")}</b>
-      {projectName !== "快速对话" && projectPath && <small>{projectPath}</small>}
+      <b>{projectName ? projectDisplayName(projectName) : t("header.temporaryWorkspace")}</b>
+      {projectName !== SCRATCH_PROJECT_NAME && projectPath && <small>{projectPath}</small>}
     </div>
   );
 }
@@ -1415,13 +1418,13 @@ export function ComposerInput({ draft, setDraft }: { draft: string; setDraft: (v
 }
 
 
-export function quotaDiagnostic(code?: string | null, lang: ResolvedLanguage = "zh-CN"): string {
+export function quotaDiagnostic(code?: string | null, lang?: ResolvedLanguage): string {
   switch (code) {
     case "quota_network_error": return t("agentUi.quotaNetworkHint", undefined, lang);
     case "quota_timeout": return t("agentUi.quotaTimeoutHint", undefined, lang);
     case "quota_login_required": return t("agentUi.quotaLoginHint", undefined, lang);
     case "quota_subscription_required": return t("agentUi.quotaSubscriptionHint", undefined, lang);
-    case "quota_access_denied": return "当前账号没有服务或模型访问权限，请检查账号资格及服务配置。";
+    case "quota_access_denied": return t("quota.accessDeniedHint", undefined, lang);
     case "quota_not_configured": return t("agentUi.quotaConfigurationHint", undefined, lang);
     case "quota_exhausted": return t("agentUi.quotaExhaustedHint", undefined, lang);
     case "quota_rate_limited": return t("agentUi.quotaRateHint", undefined, lang);
@@ -1430,7 +1433,7 @@ export function quotaDiagnostic(code?: string | null, lang: ResolvedLanguage = "
     case "claude_quota_login_required": return t("agentUi.claudeLoginHint", undefined, lang);
     case "claude_quota_transport_unavailable": return t("agentUi.curlMissing", undefined, lang);
     case "claude_quota_rate_limited": return t("agentUi.claudeRateHint", undefined, lang);
-    case "claude_quota_token_expired": return "Claude Code 的短期访问令牌已到期，登录状态仍有效，无需重新登录。下次在终端或这里用 Claude Code 对话时会自动续期。";
+    case "claude_quota_token_expired": return t("quota.claudeTokenExpiredHint", undefined, lang);
     case "claude_quota_network_error":
     case "claude_quota_timeout": return t("agentUi.claudeNetworkHint", undefined, lang);
     case "claude_quota_invalid_response":
@@ -1442,15 +1445,16 @@ export function quotaDiagnostic(code?: string | null, lang: ResolvedLanguage = "
 /// Small radial indicator for the selected agent's most restrictive quota
 /// window; hover reveals every window plus context usage and cache hit rate.
 export function QuotaRing({ quota, providerId, diagnostic, turnQuotaExhausted = false, inline = false }: { quota: QuotaSnapshotView["quota"]; providerId?: string; diagnostic?: string | null; turnQuotaExhausted?: boolean; inline?: boolean }) {
+  const { t } = useI18n();
   const [quotaOpen, setQuotaOpen] = useState(false);
   const primary = ringQuotaWindow(quota?.windows ?? [], providerId);
   const primaryReset = primary ? quotaWindowHasReset(primary) : false;
   const remaining = primaryReset ? null : remainingPercent(primary?.usedPercent);
   if (!primary && quota?.balances?.length) {
     const rows = quota.balances.map(balance => [balance.label, formatProviderBalance(balance.amount, balance.currency)]);
-    const label = rows.map(row => row.join("：")).join("；");
-    return <span className="quota-balance-indicator" data-tooltip="供应商余额" data-tooltip-rows={JSON.stringify(rows)} aria-label={label}>
-      {rows.length === 1 ? rows[0][1] : `${rows.length} 个供应商余额`}
+    const label = rows.map(row => t("quota.labelValue", { label: row[0], value: row[1] })).join(t("quota.listSeparator"));
+    return <span className="quota-balance-indicator" data-tooltip={t("agentUi.providerBalance")} data-tooltip-rows={JSON.stringify(rows)} aria-label={label}>
+      {rows.length === 1 ? rows[0][1] : t("quota.balanceCount", { count: rows.length })}
     </span>;
   }
   if (inline && remaining === null) return null;
@@ -1483,50 +1487,50 @@ export function QuotaRing({ quota, providerId, diagnostic, turnQuotaExhausted = 
   </>;
   if (inline) {
     const rows: [string, string][] = [];
-    if (providerId === "antigravity") rows.push(["圆环", "Gemini · 5 小时"]);
-    if (providerId === "cursor" && primary?.id === "cursor-models") rows.push(["圆环", "Cursor Models · 每月"]);
+    if (providerId === "antigravity") rows.push([t("quota.ring"), t("quota.geminiFiveHours")]);
+    if (providerId === "cursor" && primary?.id === "cursor-models") rows.push([t("quota.ring"), t("quota.cursorMonthly")]);
     const plan = quota?.planType && quota.planType !== "demo" ? quotaPlanLabel(quota) : null;
-    if (plan) rows.push(["套餐", plan]);
-    if (exhausted) rows.push(["状态", providerId === "antigravity" ? "Gemini 5 小时额度已用尽" : "额度已用尽"]);
-    if (!quota?.windows.length && !quota?.balances?.length) rows.push(["状态", quotaDiagnostic(diagnostic)]);
-    else if (quotaShowsLastReading(diagnostic)) rows.push(["状态", `${quotaDiagnostic(diagnostic)}当前显示上次读数。`]);
+    if (plan) rows.push([t("quota.plan"), plan]);
+    if (exhausted) rows.push([t("quota.status"), providerId === "antigravity" ? t("quota.geminiExhausted") : t("agentUi.exhausted")]);
+    if (!quota?.windows.length && !quota?.balances?.length) rows.push([t("quota.status"), quotaDiagnostic(diagnostic)]);
+    else if (quotaShowsLastReading(diagnostic)) rows.push([t("quota.status"), `${quotaDiagnostic(diagnostic)}${t("agentUi.previousReading")}`]);
     for (const balance of quota?.balances ?? []) rows.push([balance.label, formatProviderBalance(balance.amount, balance.currency)]);
     for (const window of quota?.windows ?? []) {
       const label = [quotaScopeLabel(window.scope), quotaWindowLabel(window.windowMinutes, window.id)].filter(Boolean).join(" · ");
       const balance = remainingPercent(window.usedPercent);
-      rows.push([label, quotaWindowHasReset(window) ? "已到重置时间，待刷新" : balance === null ? "用量未知" : balance === 0 ? "已用尽" : `${balance}%`]);
+      rows.push([label, quotaWindowHasReset(window) ? t("agentUi.resetPending") : balance === null ? t("agentUi.usageUnknown") : balance === 0 ? t("agentUi.usedUp") : `${balance}%`]);
       const reset = window.resetsAtUnix ? formatResetTime(window.resetsAtUnix) : nativeResetDisplay(quota!, window);
-      if (reset) rows.push([`${label} · 重置`, reset]);
+      if (reset) rows.push([t("quota.windowReset", { window: label }), reset]);
     }
-    if (quota) rows.push(["更新于", new Date(quota.collectedAtUnixMs).toLocaleTimeString()]);
-    return <span className={`quota-ring${exhausted ? " exhausted" : ""}`} data-tooltip="剩余额度" data-tooltip-rows={JSON.stringify(rows)}>
+    if (quota) rows.push([t("quota.updated"), new Date(quota.collectedAtUnixMs).toLocaleTimeString()]);
+    return <span className={`quota-ring${exhausted ? " exhausted" : ""}`} data-tooltip={t("agentUi.remainingQuota")} data-tooltip-rows={JSON.stringify(rows)}>
       {indicator}
     </span>;
   }
   return (
-    <div onMouseEnter={() => setQuotaOpen(true)} onMouseLeave={() => setQuotaOpen(false)} onFocus={() => setQuotaOpen(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setQuotaOpen(false); }} onKeyDown={event => { if (event.key === "Escape") setQuotaOpen(false); }} className={`quota-ring ${exhausted ? "exhausted" : ""}`} tabIndex={0} aria-label={exhausted ? "Coding Agent 额度已用尽，查看详情" : remaining === null ? "额度暂无读数，查看详情" : `${providerId === "cursor" && primary?.scope ? `${primary.scope} · ` : ""}${quotaWindowLabel(primary!.windowMinutes, primary!.id)}剩余额度 ${remaining}%`}>
+    <div onMouseEnter={() => setQuotaOpen(true)} onMouseLeave={() => setQuotaOpen(false)} onFocus={() => setQuotaOpen(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setQuotaOpen(false); }} onKeyDown={event => { if (event.key === "Escape") setQuotaOpen(false); }} className={`quota-ring ${exhausted ? "exhausted" : ""}`} tabIndex={0} aria-label={exhausted ? t("quota.exhaustedDetails") : remaining === null ? t("quota.noReadingDetails") : t("quota.remainingDetails", { window: `${providerId === "cursor" && primary?.scope ? `${primary.scope} · ` : ""}${quotaWindowLabel(primary!.windowMinutes, primary!.id)}`, percent: remaining })}>
       {indicator}
       <FloatingPopover open={quotaOpen} className="quota-popover" role="tooltip">
         <header>
-          <b>剩余额度</b>
-          {providerId === "antigravity" && <small>圆环：Gemini · 5 小时</small>}
-          {providerId === "cursor" && primary?.id === "cursor-models" && <small>圆环：Cursor Models · 每月</small>}
+          <b>{t("agentUi.remainingQuota")}</b>
+          {providerId === "antigravity" && <small>{t("quota.labelValue", { label: t("quota.ring"), value: t("quota.geminiFiveHours") })}</small>}
+          {providerId === "cursor" && primary?.id === "cursor-models" && <small>{t("quota.labelValue", { label: t("quota.ring"), value: t("quota.cursorMonthly") })}</small>}
           {quota?.planType && quota.planType !== "demo" && <small>{quotaPlanLabel(quota)}</small>}
-          {primaryReset && <small className="quota-stale">已到重置时间，等待读取新额度</small>}
-          {!!quota?.windows.length && quotaShowsLastReading(diagnostic) && <small className="quota-stale">{quotaDiagnostic(diagnostic)}当前显示上次读数。</small>}
+          {primaryReset && <small className="quota-stale">{t("quota.resetWaiting")}</small>}
+          {!!quota?.windows.length && quotaShowsLastReading(diagnostic) && <small className="quota-stale">{quotaDiagnostic(diagnostic)}{t("agentUi.previousReading")}</small>}
         </header>
-        {exhausted && <p className="quota-exhausted">{providerId === "antigravity" ? "Gemini 5 小时额度已用尽。" : "额度已用尽。请等待额度重置或切换其他 Agent。"}</p>}
-        {!primary && quota?.windows.some((window) => window.scope) && <p>额度按模型组计算，当前模型组未确定，请查看下方分组读数。</p>}
-        {(!quota || (quota.windows.length === 0 && !quota.balances?.length)) && <p>{diagnostic ? quotaDiagnostic(diagnostic) : "暂无订阅额度读数。部分 Agent 仅在对话后上报，或不提供此数据。"}</p>}
+        {exhausted && <p className="quota-exhausted">{t(providerId === "antigravity" ? "quota.geminiExhaustedSentence" : "quota.exhaustedSentence")}</p>}
+        {!primary && quota?.windows.some((window) => window.scope) && <p>{t("quota.modelGroupUnknown")}</p>}
+        {(!quota || (quota.windows.length === 0 && !quota.balances?.length)) && <p>{diagnostic ? quotaDiagnostic(diagnostic) : t("quota.noSubscriptionReading")}</p>}
         {quota?.balances?.map(balance => <div className="quota-row" key={`${balance.label}:${balance.currency}`}><span>{balance.label}</span><b>{formatProviderBalance(balance.amount, balance.currency)}</b></div>)}
         {quota?.windows.map((window) => {
           const remaining = remainingPercent(window.usedPercent);
           return (
             <div className="quota-row" key={window.id}>
               <span className="quota-window-label">{quotaScopeLabel(window.scope) ? `${quotaScopeLabel(window.scope)} · ` : ""}{quotaWindowLabel(window.windowMinutes, window.id)}</span>
-              <b>{remaining == null ? "用量未知" : remaining === 0 ? "已用尽" : `${remaining}%`}</b>
+              <b>{remaining == null ? t("agentUi.usageUnknown") : remaining === 0 ? t("agentUi.usedUp") : `${remaining}%`}</b>
               <small>
-                {window.resetsAtUnix ? `重置时间：${formatResetTime(window.resetsAtUnix)}` : quotaNativeResetLabel(quota, window)}
+                {window.resetsAtUnix ? t("agentUi.resetAt", { time: formatResetTime(window.resetsAtUnix) }) : quotaNativeResetLabel(quota, window)}
               </small>
             </div>
           );
@@ -1534,7 +1538,7 @@ export function QuotaRing({ quota, providerId, diagnostic, turnQuotaExhausted = 
         {quota?.context && (
           <>
             <div className="quota-row">
-              <span>上下文</span>
+              <span>{t("quota.context")}</span>
               <b>
                 {(quota.context.usedTokens / 1000).toFixed(1)}k/
                 {(quota.context.windowTokens / 1000).toFixed(0)}k
@@ -1545,13 +1549,13 @@ export function QuotaRing({ quota, providerId, diagnostic, turnQuotaExhausted = 
             </div>
             {quota.context.cacheHitRatePercent != null && (
               <div className="quota-row">
-                <span>缓存命中</span>
+                <span>{t("quota.cacheHit")}</span>
                 <b>{quota.context.cacheHitRatePercent.toFixed(1)}%</b>
               </div>
             )}
           </>
         )}
-        {quota && <div className="quota-source">更新于 {new Date(quota.collectedAtUnixMs).toLocaleTimeString()}</div>}
+        {quota && <div className="quota-source">{t("agentUi.updatedAt", { time: new Date(quota.collectedAtUnixMs).toLocaleTimeString() })}</div>}
       </FloatingPopover>
     </div>
   );
@@ -1835,7 +1839,7 @@ function AgentPicker({
         {quotaIndicator}
         <DropdownChevron />
       </summary>
-      <AgentPickerMenu options={options} selectedKey={executorKey(current)} title={t("composer.nextRoundAgent", undefined, lang)} label="Coding Agent 列表" onSelect={option => {
+      <AgentPickerMenu options={options} selectedKey={executorKey(current)} title={t("composer.nextRoundAgent", undefined, lang)} label={t("app.agentList", undefined, lang)} onSelect={option => {
         detailsRef.current?.removeAttribute("open");
         if (option.key !== executorKey(current)) onSelect(option.executor);
         focusComposerInput(detailsRef.current);

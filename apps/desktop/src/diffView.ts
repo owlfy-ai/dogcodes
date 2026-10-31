@@ -1,3 +1,4 @@
+import { translate as t } from "./i18n";
 export type DiffLineKind = "context" | "addition" | "deletion" | "no_newline";
 
 export interface DiffLine {
@@ -24,6 +25,7 @@ export interface DiffFile {
   oldMode: string | null;
   newMode: string | null;
   similarity: string | null;
+  dissimilar?: boolean;
   binary: boolean;
   hunks: DiffHunk[];
   additions: number;
@@ -61,15 +63,15 @@ interface MutableFile extends DiffFile {
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: ?(.*))?$/;
 
 export function parseGitDiff(bytes: Uint8Array): DiffParseResult {
-  if (bytes.length > 1_048_576) return { kind: "fallback", reason: "Patch 超过 1 MiB 解析预算，结构化视图不可用。" };
+  if (bytes.length > 1_048_576) return { kind: "fallback", reason: t("diff.tooLarge") };
   let text: string;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
-    return { kind: "fallback", reason: "Patch 不是有效 UTF-8，结构化视图不可用；请使用十六进制预览或导出原始字节。" };
+    return { kind: "fallback", reason: t("diff.notUtf8") };
   }
   if (text.length === 0) return { kind: "structured", diff: emptyDiff() };
-  if (!text.endsWith("\n")) return { kind: "fallback", reason: "Patch 末尾不完整；已降级为原始内容视图。" };
+  if (!text.endsWith("\n")) return { kind: "fallback", reason: t("diff.incompleteEnd") };
 
   const files: DiffFile[] = [];
   let current: MutableFile | null = null;
@@ -82,14 +84,14 @@ export function parseGitDiff(bytes: Uint8Array): DiffParseResult {
 
   const fail = (reason: string): DiffParseResult => ({
     kind: "fallback",
-    reason: `Patch 格式无效或暂不支持（${reason}）；已降级为原始内容视图。`,
+    reason: t("diff.invalid", { reason }),
   });
 
   const finishHunk = (): DiffParseResult | null => {
     const hunk = current?.currentHunk;
     if (!hunk) return null;
     if (!truncated && (hunk.seenOld !== hunk.oldCount || hunk.seenNew !== hunk.newCount)) {
-      return fail("hunk 行数与头部声明不一致");
+      return fail(t("diff.hunkCountMismatch"));
     }
     current!.currentHunk = null;
     return null;
@@ -100,8 +102,8 @@ export function parseGitDiff(bytes: Uint8Array): DiffParseResult {
     if (invalid) return invalid;
     if (!current) return null;
     if (!current.binary && current.hunks.length === 0 && current.change === "modified"
-      && (current.oldMode === current.newMode || !current.oldMode || !current.newMode)) return fail("文件头之后没有变更内容或模式信息");
-    if ((current.change === "renamed" || current.change === "copied") && (!current.movementFrom || !current.movementTo)) return fail("重命名或复制路径不完整");
+      && (current.oldMode === current.newMode || !current.oldMode || !current.newMode)) return fail(t("diff.emptyFile"));
+    if ((current.change === "renamed" || current.change === "copied") && (!current.movementFrom || !current.movementTo)) return fail(t("diff.incompleteMove"));
     const { currentHunk: _hunk, binaryPayload: _payload, movementFrom: _from, movementTo: _to, ...file } = current;
     files.push(file);
     current = null;
@@ -118,11 +120,11 @@ export function parseGitDiff(bytes: Uint8Array): DiffParseResult {
       if (invalid) return invalid;
       if (files.length >= MAX_FILES) {
         truncated = true;
-        truncationReason = `文件数超过结构化展示上限 ${MAX_FILES}`;
+        truncationReason = t("diff.tooManyFiles", { limit: MAX_FILES });
         break;
       }
       const paths = parseDiffHeaderPaths(line.slice("diff --git ".length));
-      if (!paths) return fail("无法解析 diff --git 路径");
+      if (!paths) return fail(t("diff.badPaths"));
       current = {
         oldPath: stripSidePrefix(paths[0], "a/"), newPath: stripSidePrefix(paths[1], "b/"),
         change: "modified", oldMode: null, newMode: null, similarity: null, binary: false,
@@ -132,7 +134,7 @@ export function parseGitDiff(bytes: Uint8Array): DiffParseResult {
     }
     if (!current) {
       if (line === "") continue;
-      return fail("缺少 diff --git 文件头");
+      return fail(t("diff.missingHeader"));
     }
     if (current.binaryPayload) continue;
 
@@ -140,10 +142,10 @@ export function parseGitDiff(bytes: Uint8Array): DiffParseResult {
       const invalid = finishHunk();
       if (invalid) return invalid;
       const match = HUNK_HEADER.exec(line);
-      if (!match) return fail("无法解析 unified hunk 头部");
+      if (!match) return fail(t("diff.badHunkHeader"));
       if (hunkCount >= MAX_HUNKS) {
         truncated = true;
-        truncationReason = `hunk 数超过结构化展示上限 ${MAX_HUNKS}`;
+        truncationReason = t("diff.tooManyHunks", { limit: MAX_HUNKS });
         break;
       }
       const hunk: MutableHunk = {
@@ -154,9 +156,9 @@ export function parseGitDiff(bytes: Uint8Array): DiffParseResult {
       };
       if (![hunk.oldStart, hunk.oldCount, hunk.newStart, hunk.newCount,
         hunk.oldStart + hunk.oldCount, hunk.newStart + hunk.newCount].every(Number.isSafeInteger)) {
-        return fail("hunk 行号超出安全整数范围");
+        return fail(t("diff.lineOutOfRange"));
       }
-      if ((hunk.oldCount > 0 && hunk.oldStart < 1) || (hunk.newCount > 0 && hunk.newStart < 1)) return fail("非空 hunk 的行号必须从 1 开始");
+      if ((hunk.oldCount > 0 && hunk.oldStart < 1) || (hunk.newCount > 0 && hunk.newStart < 1)) return fail(t("diff.lineStart"));
       current.hunks.push(hunk);
       current.currentHunk = hunk;
       hunkCount += 1;
@@ -167,7 +169,7 @@ export function parseGitDiff(bytes: Uint8Array): DiffParseResult {
     if (hunk) {
       if (lineCount >= MAX_LINES) {
         truncated = true;
-        truncationReason = `变更行超过结构化展示上限 ${MAX_LINES}`;
+        truncationReason = t("diff.tooManyLines", { limit: MAX_LINES });
         break;
       }
       let parsed: DiffLine;
@@ -183,7 +185,7 @@ export function parseGitDiff(bytes: Uint8Array): DiffParseResult {
       } else if (line === "\\ No newline at end of file") {
         parsed = { kind: "no_newline", oldLine: null, newLine: null, text: line };
       } else {
-        return fail("hunk 中出现无法识别的行");
+        return fail(t("diff.badLine"));
       }
       hunk.lines.push(parsed);
       lineCount += 1;
@@ -195,22 +197,23 @@ export function parseGitDiff(bytes: Uint8Array): DiffParseResult {
       if (current.change === "modified") current.change = "binary";
       current.binaryPayload = line === "GIT binary patch";
     } else if (line.startsWith("new file mode ")) {
-      if (!/^[0-7]{6}$/.test(line.slice(14))) return fail("文件模式无效");
+      if (!/^[0-7]{6}$/.test(line.slice(14))) return fail(t("diff.badMode"));
       current.change = "added"; current.newMode = line.slice(14);
     } else if (line.startsWith("deleted file mode ")) {
-      if (!/^[0-7]{6}$/.test(line.slice(18))) return fail("文件模式无效");
+      if (!/^[0-7]{6}$/.test(line.slice(18))) return fail(t("diff.badMode"));
       current.change = "deleted"; current.oldMode = line.slice(18);
     } else if (line.startsWith("old mode ")) {
-      if (!/^[0-7]{6}$/.test(line.slice(9))) return fail("文件模式无效");
+      if (!/^[0-7]{6}$/.test(line.slice(9))) return fail(t("diff.badMode"));
       current.oldMode = line.slice(9);
     } else if (line.startsWith("new mode ")) {
-      if (!/^[0-7]{6}$/.test(line.slice(9))) return fail("文件模式无效");
+      if (!/^[0-7]{6}$/.test(line.slice(9))) return fail(t("diff.badMode"));
       current.newMode = line.slice(9);
     } else if (line.startsWith("similarity index ")) {
       current.similarity = line.slice(17);
     } else if (line.startsWith("dissimilarity index ")) {
       // Retain the fact without incorrectly labelling dissimilarity as similarity.
-      current.similarity = `差异度 ${line.slice(20)}`;
+      current.similarity = line.slice(20);
+      current.dissimilar = true;
     } else if (line.startsWith("rename from ")) {
       current.oldPath = parseSinglePath(line.slice(12)); current.change = "renamed"; current.movementFrom = true;
     } else if (line.startsWith("rename to ")) {
@@ -227,12 +230,12 @@ export function parseGitDiff(bytes: Uint8Array): DiffParseResult {
       if (path === "/dev/null") current.change = "deleted"; else current.newPath = stripSidePrefix(path, "b/");
     } else if (line.startsWith("index ")) {
       const indexMetadata = /^index [0-9a-f]+\.\.[0-9a-f]+(?: ([0-7]{6}))?$/.exec(line);
-      if (!indexMetadata) return fail("index 元数据无效");
+      if (!indexMetadata) return fail(t("diff.badIndex"));
       if (indexMetadata[1]) { current.oldMode ??= indexMetadata[1]; current.newMode ??= indexMetadata[1]; }
     } else if (line === "") {
       // Blank separators do not add facts.
     } else {
-      return fail("文件元数据行无法识别");
+      return fail(t("diff.badMetadata"));
     }
   }
 

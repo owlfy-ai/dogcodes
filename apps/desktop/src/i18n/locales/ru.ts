@@ -1,6 +1,8 @@
+import { uiRu } from "./ui/ru";
 import type { TranslationDict } from "../types";
 
 export const ru: TranslationDict = {
+  ...uiRu,
   agentUi: {
     "notInstalled": "Не установлен",
     "installHint": "Установите агент и повторите поиск.",

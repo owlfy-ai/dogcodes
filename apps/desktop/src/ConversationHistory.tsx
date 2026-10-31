@@ -11,13 +11,14 @@ import { DeleteConversation } from "./DeleteConversation";
 import { AgentIcon, providerLabel } from "./agentPresentation";
 
 import { loadProjectHistoryPreferences, saveProjectHistoryPreference, PROJECT_HISTORY_KEY } from "./projectHistoryPreferences";
-import { useI18n } from "./i18n";
+import { translate, useI18n } from "./i18n";
+import { projectDisplayName, taskDisplayTitle } from "./displayNames";
 
 const PREVIEW_COUNT = 5;
 
 function HistoryAgent({ task }: { task: TaskSummary }) {
   const executor = task.activePrimaryRun?.executor ?? task.lastTurnExecutor ?? task.preferredExecutor;
-  const label = `${task.activePrimaryRun || task.lastTurnExecutor ? "最后一轮 Agent" : "会话 Agent"}：${providerLabel(executor.providerId)}`;
+  const label = translate(task.activePrimaryRun || task.lastTurnExecutor ? "history.lastTurnAgent" : "history.conversationAgent", { agent: providerLabel(executor.providerId) });
   return <span className="history-agent" role="img" aria-label={label} data-tooltip={label}>
     <AgentIcon providerId={executor.providerId} size="small" />
   </span>;
@@ -98,16 +99,16 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
   const saveRename = async (task: TaskSummary) => {
     if (!onRename || savingRef.current || composing.current) return;
     if (!title.trim() || Array.from(title.trim()).length > 120 || /[\u0000-\u001f\u007f-\u009f]/u.test(title)) {
-      setRenameError("请输入 1–120 个字符的会话名称，不支持换行。"); return;
+      setRenameError(translate("history.renameInvalid")); return;
     }
     if (title.trim() === task.title) { finishRename(false); return; }
     savingRef.current = true; setSaving(true); setRenameError(null);
     try { await onRename(task, title.trim()); finishRename(false); }
-    catch { setRenameError("重命名未完成，请重试。输入的名称已保留。"); }
+    catch { setRenameError(translate("history.renameFailed")); }
     finally { savingRef.current = false; setSaving(false); }
   };
   const renameForm = (task: TaskSummary) => <form className="history-rename" key={task.taskId}
-    aria-label="重命名会话" aria-busy={saving} onSubmit={event => { event.preventDefault(); void saveRename(task); }}
+    aria-label={translate("nav.rename")} aria-busy={saving} onSubmit={event => { event.preventDefault(); void saveRename(task); }}
     onKeyDown={event => {
       if (composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) {
         if (event.key === "Enter") event.preventDefault();
@@ -116,14 +117,14 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); if (!savingRef.current) finishRename(); }
     }}>
     <div className="history-rename-controls">
-      <input ref={renameInput} aria-label="会话名称" data-tooltip="Enter 保存，Esc 取消" value={title} disabled={saving}
+      <input ref={renameInput} aria-label={translate("history.nameLabel")} data-tooltip={translate("history.nameTooltip")} value={title} disabled={saving}
         aria-invalid={!!renameError} aria-describedby={renameError ? renameErrorId : undefined}
         onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
         onChange={event => { setTitle(event.target.value); setRenameError(null); }} />
-      <button className="history-rename-save" type="submit" aria-label={saving ? "正在保存" : "保存"} data-tooltip={saving ? "正在保存…" : "保存（Enter）"} disabled={saving || !title.trim()}>
+      <button className="history-rename-save" type="submit" aria-label={translate(saving ? "history.saving" : "common.save")} data-tooltip={translate(saving ? "common.saving" : "history.saveTooltip")} disabled={saving || !title.trim()}>
         {saving ? <span className="task-running-spinner" aria-hidden="true" /> : <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8" /></svg>}
       </button>
-      <button type="button" aria-label="取消" data-tooltip="取消（Esc）" disabled={saving} onClick={() => finishRename()}>
+      <button type="button" aria-label={translate("common.cancel")} data-tooltip={translate("history.cancelTooltip")} disabled={saving} onClick={() => finishRename()}>
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" /></svg>
       </button>
     </div>
@@ -142,7 +143,7 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
   const removedProjects = projects.filter(project => projectPreferences[project.projectId] === "removed");
   const updateProjectPreference = (id: string, state: "pinned" | "removed" | null) => {
     try { setProjectPreferences(saveProjectHistoryPreference(id, state)); setError(null); }
-    catch { setError("无法保存项目列表设置，请重试。"); }
+    catch { setError(translate("history.projectSettingsFailed")); }
   };
   const groups = groupTasksByWorkspace(visibleProjects, newestFirst.filter(task => !preferences[task.taskId]))
     .map(group => ({ ...group, tasks: sortTasks(group.tasks, "projects", `project:${group.key}`) }));
@@ -150,7 +151,7 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
   const archived = sortTasks(newestFirst.filter(task => preferences[task.taskId] === "archived"), "archived");
   const commitSections = (next: SectionPreferences) => {
     try { setSectionPreferences(saveSectionPreferences(next, sectionPreferences)); setError(null); return true; }
-    catch { setError("无法保存分组设置，请重试。"); return false; }
+    catch { setError(translate("history.groupSettingsFailed")); return false; }
   };
   const sectionProps = (id: HistorySectionId) => ({
     preference: sectionPreferences.sections[id],
@@ -196,16 +197,16 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
       setPreferences(saveHistoryPreference(task.taskId, status));
       setError(null);
     } catch {
-      setError("无法保存会话列表设置，请重试。");
+      setError(translate("history.listSettingsFailed"));
     }
   };
   const { t } = useI18n();
   const row = (task: TaskSummary, isPinned = false, scope = "pinned", ids = pinned.map(item => item.taskId)) => renaming === task.taskId ? renameForm(task) : <div className={selectionVisible && task.taskId === selectedTaskId ? "history-row active" : "history-row"} key={task.taskId} data-drop-edge={dropEdge(scope, task.taskId)} {...dragProps(scope, task.taskId, ids, isPinned ? "pinned" : "projects")}>
-    <button type="button" className="task" data-tooltip={task.title} data-tooltip-overflow=".task-title"
+    <button type="button" className="task" data-tooltip={taskDisplayTitle(task.title)} data-tooltip-overflow=".task-title"
       aria-current={selectionVisible && task.taskId === selectedTaskId ? "page" : undefined} onClick={() => onSelect(task.taskId)}>
       <HistoryAgent task={task} />
-      <span className="task-title">{task.title}</span>
-      {task.activePrimaryRun && <span className="task-running-spinner" role="status" aria-label={task.activePrimaryRun.state === "disconnected" ? "连接中断" : "任务正在运行"} data-tooltip={task.activePrimaryRun.state === "disconnected" ? "连接中断" : "任务正在运行"} />}
+      <span className="task-title">{taskDisplayTitle(task.title)}</span>
+      {task.activePrimaryRun && <span className="task-running-spinner" role="status" aria-label={t(task.activePrimaryRun.state === "disconnected" ? "history.disconnected" : "history.running")} data-tooltip={t(task.activePrimaryRun.state === "disconnected" ? "history.disconnected" : "history.running")} />}
     </button>
     <div className="history-row-actions">
       {onRename && <button ref={renameButtonRef(task.taskId)} type="button" data-tooltip={t("nav.rename")} aria-label={t("nav.rename")} disabled={saving} onClick={() => beginRename(task)}>
@@ -232,7 +233,7 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
     onDragLeave={event => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setDropTarget(null); }}
     onDrop={finishDrag}>
     {error && <p className="history-error" role="alert">{error}</p>}
-    {sharedHistory?.error && <div className="history-error" role="alert"><p>{sharedHistory.error}</p><button type="button" disabled={sharedHistory.busy} onClick={() => void retrySharedHistoryPreferences()}>重新核实列表设置</button></div>}
+    {sharedHistory?.error && <div className="history-error" role="alert"><p>{sharedHistory.error}</p><button type="button" disabled={sharedHistory.busy} onClick={() => void retrySharedHistoryPreferences()}>{t("history.retrySettings")}</button></div>}
     {pinned.length > 0 && <HistorySection className="history-pinned" label={t("nav.pinnedSection")} {...sectionProps("pinned")}>
       {pinned.map(task => row(task, true))}
     </HistorySection>}
@@ -246,7 +247,7 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
       const visible = isExpanded ? group.tasks : group.tasks.filter((task, index) =>
         index < PREVIEW_COUNT || task.taskId === selectedTaskId || task.activePrimaryRun);
       const hiddenCount = group.tasks.length - visible.length;
-      const label = group.displayName === "快速对话" ? "无项目" : group.displayName;
+      const label = projectDisplayName(group.displayName);
       return <section className="project-group" key={group.key} aria-label={label} data-drop-edge={dropEdge("projects", group.key)} {...dragProps("projects", group.key, groups.map(item => item.key), "projects")} draggable={false}>
         <ProjectHoverCard project={projects.find(project => project.projectId === group.key)!} onEdit={onEditProject}
           conversationList={{ id: listId, expanded: !collapsed, onToggle: () => setCollapsedProjects(current => {
@@ -259,31 +260,31 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
           onCreateConversation={onCreateProjectConversation} createDisabled={createConversationDisabled} dragProps={dragProps("projects", group.key, groups.map(item => item.key), "projects")} />
         <div id={listId} className="project-conversations" hidden={collapsed}>
         {visible.map(task => row(task, false, `project:${group.key}`, group.tasks.map(item => item.taskId)))}
-        {group.tasks.length === 0 && <p className="history-empty">暂无对话</p>}
+        {group.tasks.length === 0 && <p className="history-empty">{t("history.empty")}</p>}
         {(hiddenCount > 0 || isExpanded && group.tasks.length > PREVIEW_COUNT) && <button type="button"
           className="history-show-more" aria-expanded={isExpanded}
           onClick={() => setExpanded(current => {
             const next = new Set(current);
             if (next.has(group.key)) next.delete(group.key); else next.add(group.key);
             return next;
-          })}>{isExpanded ? "收起" : "显示更多"}</button>}
+          })}>{t(isExpanded ? "history.showLess" : "history.showMore")}</button>}
         </div>
       </section>;
     })}
     </HistorySection>
-    {removedProjects.length > 0 && <details className="removed-projects"><summary>已移除项目（{removedProjects.length}）</summary>
-      {removedProjects.map(project => <button key={project.projectId} type="button" disabled={preferencesBusy} onClick={() => updateProjectPreference(project.projectId, null)}>恢复项目：{project.displayName}</button>)}
+    {removedProjects.length > 0 && <details className="removed-projects"><summary>{t("history.removedProjects", { count: removedProjects.length })}</summary>
+      {removedProjects.map(project => <button key={project.projectId} type="button" disabled={preferencesBusy} onClick={() => updateProjectPreference(project.projectId, null)}>{t("history.restoreProject", { name: project.displayName })}</button>)}
     </details>}
     {archived.length > 0 && <HistorySection className="history-archived" label={t("nav.archivedSection")} {...sectionProps("archived")}>
       {archived.map(task => renaming === task.taskId ? renameForm(task) : <div className="history-archived-row" key={task.taskId} data-drop-edge={dropEdge("archived", task.taskId)} {...dragProps("archived", task.taskId, archived.map(item => item.taskId), "archived")}>
         <HistoryAgent task={task} />
-        <span className="task-title" data-tooltip={task.title} data-tooltip-overflow="">{task.title}</span>
+        <span className="task-title" data-tooltip={taskDisplayTitle(task.title)} data-tooltip-overflow="">{taskDisplayTitle(task.title)}</span>
         <div className="history-row-actions">
           {onDelete && <DeleteConversation task={task} blocked={deletionBlocked(task)} onDelete={onDelete} />}
           {onRename && <button ref={renameButtonRef(task.taskId)} type="button" data-tooltip={t("nav.rename")} aria-label={t("nav.rename")} disabled={saving} onClick={() => beginRename(task)}>
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12 3 5 5M3 17l4-1L17 6l-3-3L4 13l-1 4Z" /></svg>
           </button>}
-          <button type="button" data-tooltip="恢复到会话列表" aria-label={`恢复会话：${task.title}`} disabled={preferencesBusy} onClick={() => update(task, null)}>
+          <button type="button" data-tooltip={t("history.restoreTooltip")} aria-label={t("history.restoreTask", { title: taskDisplayTitle(task.title) })} disabled={preferencesBusy} onClick={() => update(task, null)}>
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 11v5h12v-5M10 13V3m-4 4 4-4 4 4" /></svg>
           </button>
         </div>

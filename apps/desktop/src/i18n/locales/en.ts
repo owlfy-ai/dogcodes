@@ -1,7 +1,9 @@
 import { agentUiEn } from "../agentUi";
+import { uiEn } from "./ui/en";
 import type { TranslationDict } from "../types";
 
 export const en: TranslationDict = {
+  ...uiEn,
   agentUi: agentUiEn,
   common: {
     systemDefault: "System default",

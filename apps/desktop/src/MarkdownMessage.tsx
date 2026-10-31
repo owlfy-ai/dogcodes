@@ -23,6 +23,7 @@ import katex from "katex";
 import rehypeHighlight from "rehype-highlight";
 import "katex/dist/katex.min.css";
 import "./conversation.css";
+import { translate, useI18n } from "./i18n";
 
 function textOf(node: ReactNode): string {
   return Children.toArray(node)
@@ -36,7 +37,8 @@ function textOf(node: ReactNode): string {
     .join("");
 }
 function Copy({ text }: { text: string }) {
-  const [status, setStatus] = useState("");
+  const { t } = useI18n();
+  const [status, setStatus] = useState<"" | "incomplete" | "copied" | "failed">("");
   useEffect(() => {
     if (!status) return;
     const timer = setTimeout(() => setStatus(""), 2000);
@@ -46,15 +48,15 @@ function Copy({ text }: { text: string }) {
     <button
       type="button"
       onClick={() => {
-        if (!navigator.clipboard) { setStatus("复制未完成"); return; }
+        if (!navigator.clipboard) { setStatus("incomplete"); return; }
         void navigator.clipboard.writeText(text).then(
-          () => setStatus("已复制"),
-          () => setStatus("复制失败"),
+          () => setStatus("copied"),
+          () => setStatus("failed"),
         );
       }}
-      aria-label={status || "复制源码"}
+      aria-label={status ? t(`markdown.copy.${status}`) : t("markdown.copySource")}
     >
-      {status || "复制"}
+      {status ? t(`markdown.copy.${status}`) : t("common.copy")}
     </button>
   );
 }
@@ -86,6 +88,7 @@ function MathExpression({
 }
 let diagramQueue = Promise.resolve();
 function Diagram({ source, pending }: { source: string; pending: boolean }) {
+  const { t } = useI18n();
   const id = useId().replace(/[^a-zA-Z0-9]/g, "");
   const [svg, setSvg] = useState("");
   const [error, setError] = useState("");
@@ -118,7 +121,7 @@ function Diagram({ source, pending }: { source: string; pending: boolean }) {
     setError("");
     if (pending) return;
     if (source.length > 30000) {
-      setError("图表较大，请查看源码");
+      setError("tooLarge");
       return;
     }
     diagramQueue = diagramQueue
@@ -137,7 +140,7 @@ function Diagram({ source, pending }: { source: string; pending: boolean }) {
           const result = await mermaid.render(`diagram${id}`, source);
           if (active) setSvg(result.svg);
         } catch {
-          if (active) setError("图表暂时无法渲染，可查看源码");
+          if (active) setError("renderFailed");
         }
       });
     return () => {
@@ -147,29 +150,29 @@ function Diagram({ source, pending }: { source: string; pending: boolean }) {
   return (
     <section
       className={`diagram-block ${large ? "expanded" : ""}`}
-      aria-label="Mermaid 图表"
+      aria-label={t("markdown.diagram")}
     >
       <header>
         <span>Mermaid</span>
         <button type="button" onClick={() => setCode(!code)}>
-          {code ? "图表" : "源码"}
+          {t(code ? "markdown.chart" : "markdown.source")}
         </button>
         <Copy text={source} />
         <button type="button" onClick={() => setLarge(!large)}>
-          {large ? "收起" : "放大"}
+          {t(large ? "markdown.collapse" : "markdown.expand")}
         </button>
         {large && (
           <>
             <button
               type="button"
-              aria-label="缩小图表"
+              aria-label={t("markdown.zoomOut")}
               onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
             >
               −
             </button>
             <button
               type="button"
-              aria-label="放大图表"
+              aria-label={t("markdown.zoomIn")}
               onClick={() => setZoom((z) => Math.min(3, z + 0.25))}
             >
               ＋
@@ -177,8 +180,8 @@ function Diagram({ source, pending }: { source: string; pending: boolean }) {
           </>
         )}
       </header>
-      {pending && <LoadingStatus>图表生成中</LoadingStatus>}
-      {error && <small role="status">{error}</small>}
+      {pending && <LoadingStatus>{t("markdown.generating")}</LoadingStatus>}
+      {error && <small role="status">{t(`markdown.error.${error}`)}</small>}
       {code || error || pending ? (
         <pre>
           <code>{source}</code>
@@ -187,13 +190,13 @@ function Diagram({ source, pending }: { source: string; pending: boolean }) {
         <div className="diagram-scroll">
           <div
             role="img"
-            aria-label="生成的 Mermaid 图表，可切换源码查看文字描述"
+            aria-label={t("markdown.diagramImage")}
             style={{ width: `${zoom * 100}%` }}
             dangerouslySetInnerHTML={{ __html: svg }}
           />
         </div>
       ) : (
-        <LoadingStatus>正在绘制图表…</LoadingStatus>
+        <LoadingStatus>{t("markdown.drawing")}</LoadingStatus>
       )}
     </section>
   );
@@ -205,6 +208,7 @@ function CodeBlock({
   children: ReactNode;
   pending: boolean;
 }) {
+  const { t } = useI18n();
   const child = Children.toArray(children)[0];
   const language = isValidElement<{ className?: string }>(child)
     ? /language-([^\s]+)/.exec(child.props.className ?? "")?.[1]
@@ -221,7 +225,7 @@ function CodeBlock({
   return (
     <section className="code-block">
       <header>
-        <span>{language || "代码"}</span>
+        <span>{language || t("markdown.code")}</span>
         <Copy text={source} />
       </header>
       <pre>{children}</pre>
@@ -229,13 +233,14 @@ function CodeBlock({
   );
 }
 function WebsiteLink({ href, children }: { href?: string; children: ReactNode }) {
-  const [error, setError] = useState<string | null>(null);
+  const { t } = useI18n();
+  const [error, setError] = useState(false);
   return <><a href={href} target="_blank" rel="noopener noreferrer" onClick={event => {
     if (!href || !/^https?:\/\//i.test(href) || !isTauri()) return;
     event.preventDefault();
-    setError(null);
-    void invoke("open_website", { url: href }).catch(() => setError("无法打开浏览器，请复制链接后打开"));
-  }}>{children}</a>{error && <small role="alert">{error}</small>}</>;
+    setError(false);
+    void invoke("open_website", { url: href }).catch(() => setError(true));
+  }}>{children}</a>{error && <small role="alert">{t("markdown.browserFailed")}</small>}</>;
 }
 const SourceContext = createContext({ text: "", streaming: false });
 const messageComponents: Components = {
@@ -265,7 +270,7 @@ const messageComponents: Components = {
   ),
   img: ({ src, alt }) => (
     <WebsiteLink href={src}>
-      <img src={src} alt={alt ?? "图片"} loading="lazy" />
+      <img src={src} alt={alt ?? translate("markdown.image")} loading="lazy" />
     </WebsiteLink>
   ),
 };

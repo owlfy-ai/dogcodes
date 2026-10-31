@@ -1,4 +1,5 @@
 import type { PermissionCatalog } from "@dogcodes/protocol";
+import { translate } from "./i18n";
 
 type Mode = PermissionCatalog["modes"][number];
 type Icon = "ask" | "edit" | "plan" | "full" | "read" | "auto" | "configured";
@@ -22,18 +23,21 @@ export function permissionKind(providerId: string, mode?: Mode): Icon | undefine
   return mode ? providerPolicies[provider]?.[mode.id] : undefined;
 }
 
-const labels: Record<Icon, string> = {
-  ask: "操作前确认",
-  edit: "按需确认",
-  plan: "计划模式",
-  full: "完全访问",
-  read: "只读模式",
-  auto: "自动判断",
-  configured: "原生规则",
+// Catalogs the core builds itself carry Chinese descriptions; translate those
+// known modes and keep descriptions that agents report natively.
+const coreDescriptions: Record<string, Record<string, string>> = {
+  codex: { "read-only": "codexReadOnly", default: "codexDefault", "full-access": "codexFullAccess" },
+  "claude-code": { plan: "claudePlan", default: "claudeDefault", acceptEdits: "claudeAcceptEdits", bypassPermissions: "claudeBypass" },
+  antigravity: { "desktop-approvals": "antigravityApprovals", "dangerously-skip-permissions": "antigravitySkip" },
 };
 
 // Only normalize known policies. Preserve native text for new ACP modes.
 export function permissionPresentation(providerId: string, mode: Mode): Mode {
   const kind = permissionKind(providerId, mode);
-  return kind ? { ...mode, label: labels[kind] } : mode;
+  const description = coreDescriptions[providerId === "claude" ? "claude-code" : providerId]?.[mode.id];
+  return {
+    ...mode,
+    ...(kind ? { label: translate(`permissionPicker.mode.${kind}`) } : {}),
+    ...(description ? { description: translate(`permissionPicker.description.${description}`) } : {}),
+  };
 }

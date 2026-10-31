@@ -1,12 +1,13 @@
 import type { ReviewFinding, ReviewReport, SecurityCitation, SecurityEvidence } from "@dogcodes/protocol";
+import { translate as t } from "./i18n";
 
-const statuses = {reviewed: "已检查", not_applicable: "不适用", needs_context: "依据不足 / 缺少上下文", not_reported: "未报告检查"};
-const roles: Record<string, string> = {entry: "输入入口", propagation: "传播路径", sink: "危险操作 / 边界效果"};
+const statuses = {reviewed: "reviewed", not_applicable: "notApplicable", needs_context: "needsContext", not_reported: "notReported"};
+const roles: Record<string, string> = {entry: "entry", propagation: "propagation", sink: "sink"};
 
 function Citation({citation}: {citation: SecurityCitation}) {
   const path = citation.path && citation.rootLabel && !citation.path.startsWith("/")
     ? `${citation.rootLabel.replace(/\/$/, "")}/${citation.path}` : citation.path;
-  return <div><p>{path ?? citation.sourceId} · {citation.side === "before" ? "改动前" : "改动后"} {citation.startLine}–{citation.endLine} 行{!path && " · 引用待核实"}</p><pre>{citation.evidence}</pre></div>;
+  return <div><p>{path ?? citation.sourceId} · {t(citation.side === "before" ? "reviewResult.citationBefore" : "reviewResult.citationAfter", { start: citation.startLine, end: citation.endLine })}{!path && ` · ${t("reviewSecurity.citationUnverified")}`}</p><pre>{citation.evidence}</pre></div>;
 }
 
 export function ReviewSecurityCoverage({report}: {report: ReviewReport}) {
@@ -16,11 +17,11 @@ export function ReviewSecurityCoverage({report}: {report: ReviewReport}) {
   const reviewed = checks.filter(check => check.status === "reviewed").length;
   const excluded = checks.filter(check => check.status === "not_applicable").length;
   return <details className="review-coverage review-security-coverage">
-    <summary>安全专项：{reviewed} 项已检查 · {excluded} 项不适用 · {checks.length - reviewed - excluded} 项待补充</summary>
+    <summary>{t("reviewSecurity.summary", { reviewed, excluded, pending: checks.length - reviewed - excluded })}</summary>
     <ul>{files.map(file => <li key={file.fileId}>
       <span>{file.rootLabel && !file.path.startsWith("/") ? `${file.rootLabel.replace(/\/$/, "")}/` : ""}{file.path}</span>
       <ul>{file.securityChecks!.map(check => <li key={check.attackClass}>
-        <details><summary>{check.label} — {statuses[check.status]}</summary>
+        <details><summary>{check.label} — {t(`reviewSecurity.status.${statuses[check.status]}`)}</summary>
           <p className="review-finding-prose">{check.reason}</p>
           {check.citations.map((citation, i) => <Citation key={i} citation={citation}/>)}
         </details>
@@ -32,15 +33,15 @@ export function ReviewSecurityCoverage({report}: {report: ReviewReport}) {
 function EvidenceDetails({evidence, title}: {evidence: SecurityEvidence; title: string}) {
   return <details><summary>{title}</summary>
       <dl className="review-security-fields">
-        <dt>攻击者与已有能力</dt><dd>{evidence.attacker}</dd>
-        <dt>信任边界</dt><dd>{evidence.boundary}</dd>
-        <dt>触发条件</dt><dd>{evidence.preconditions}</dd>
-        <dt>现有防护与不足</dt><dd>{evidence.controls}</dd>
-        <dt>潜在影响</dt><dd>{evidence.impact}</dd>
+        <dt>{t("reviewSecurity.attacker")}</dt><dd>{evidence.attacker}</dd>
+        <dt>{t("reviewSecurity.boundary")}</dt><dd>{evidence.boundary}</dd>
+        <dt>{t("reviewSecurity.preconditions")}</dt><dd>{evidence.preconditions}</dd>
+        <dt>{t("reviewSecurity.controls")}</dt><dd>{evidence.controls}</dd>
+        <dt>{t("reviewSecurity.impact")}</dt><dd>{evidence.impact}</dd>
       </dl>
-      <ol>{evidence.trace.map((step, i) => <li key={i}><strong>{roles[step.role] ?? "路径节点"}</strong><p>{step.explanation}</p><Citation citation={step}/></li>)}</ol>
-      {!!evidence.blockers.length && <><p>尚未解决的条件</p><ul>{evidence.blockers.map((blocker, i) => <li key={i}>{blocker}</li>)}</ul></>}
-      <p className="review-finding-prose">后续验证建议（未执行）：{evidence.validationPlan}</p>
+      <ol>{evidence.trace.map((step, i) => <li key={i}><strong>{t(`reviewSecurity.role.${roles[step.role] ?? "node"}`)}</strong><p>{step.explanation}</p><Citation citation={step}/></li>)}</ol>
+      {!!evidence.blockers.length && <><p>{t("reviewSecurity.blockers")}</p><ul>{evidence.blockers.map((blocker, i) => <li key={i}>{blocker}</li>)}</ul></>}
+      <p className="review-finding-prose">{t("reviewSecurity.validationPlan", { plan: evidence.validationPlan })}</p>
     </details>;
 }
 
@@ -50,17 +51,17 @@ export function ReviewSecurityFinding({finding}: {finding: ReviewFinding}) {
   if (!security) return null;
   const review = finding.verification?.securityReview;
   return <div className="review-security-finding">
-    <p className="turn-review-notice">{security.evidenceStatus !== "source_checked" && "安全证据待补充 · "}未执行漏洞复现</p>
+    <p className="turn-review-notice">{security.evidenceStatus !== "source_checked" && `${t("reviewSecurity.evidencePending")} · `}{t("reviewSecurity.notReproduced")}</p>
     {security.notes.map((note, i) => <p className="turn-review-notice" key={i}>{note}</p>)}
-    {security.evidence && <EvidenceDetails evidence={security.evidence} title={revised ? "复核补充的证据与验证条件" : "安全证据与验证条件"}/>}
-    {revised && finding.security && <details><summary>保留的初审证据（复核前）</summary>
+    {security.evidence && <EvidenceDetails evidence={security.evidence} title={t(revised ? "reviewSecurity.revisedEvidence" : "reviewSecurity.evidence")}/>}
+    {revised && finding.security && <details><summary>{t("reviewSecurity.initialEvidence")}</summary>
       {finding.security.notes.map((note, i) => <p key={i}>{note}</p>)}
-      {finding.security.evidence && <EvidenceDetails evidence={finding.security.evidence} title="查看初审证据与当时未解条件"/>}
+      {finding.security.evidence && <EvidenceDetails evidence={finding.security.evidence} title={t("reviewSecurity.viewInitialEvidence")}/>}
     </details>}
-    {review && <details><summary>独立安全复核依据</summary><dl className="review-security-fields">
-      <dt>边界与前提</dt><dd>{review.boundaryAnalysis}</dd>
-      <dt>防护反证</dt><dd>{review.controlAnalysis}</dd>
-      <dt>影响范围</dt><dd>{review.impactAnalysis}</dd>
-    </dl>{!!review.unresolved.length && <><p>复核仍待确认</p><ul>{review.unresolved.map((item, i) => <li key={i}>{item}</li>)}</ul></>}</details>}
+    {review && <details><summary>{t("reviewSecurity.reviewBasis")}</summary><dl className="review-security-fields">
+      <dt>{t("reviewSecurity.reviewBoundary")}</dt><dd>{review.boundaryAnalysis}</dd>
+      <dt>{t("reviewSecurity.reviewControls")}</dt><dd>{review.controlAnalysis}</dd>
+      <dt>{t("reviewSecurity.reviewImpact")}</dt><dd>{review.impactAnalysis}</dd>
+    </dl>{!!review.unresolved.length && <><p>{t("reviewSecurity.reviewUnresolved")}</p><ul>{review.unresolved.map((item, i) => <li key={i}>{item}</li>)}</ul></>}</details>}
   </div>;
 }

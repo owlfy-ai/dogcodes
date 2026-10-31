@@ -6,6 +6,7 @@ import type { ArtifactCursor, CoreClient, TaskArtifactSummary, TaskId } from "@d
 import { acceptArtifactChunk, artifactPreview, verifyArtifactBytes } from "./artifactView";
 import { parseGitDiff } from "./diffView";
 import { StructuredDiffView } from "./StructuredDiffView";
+import { translate as t } from "./i18n";
 
 export type ArtifactReadClient = Pick<CoreClient, "taskArtifacts" | "readArtifact" | "exportArtifact">;
 
@@ -33,7 +34,7 @@ export function ArtifactBrowser({ client, taskId, onClose }: { client: ArtifactR
     focusDialogTitle(dialog.current);
     void client.taskArtifacts(taskId).then((page) => {
       if (active) { setItems(page.items); setCursor(page.nextCursor); }
-    }).catch(() => { if (active) setMessage("Artifact 列表读取失败，请关闭后重试"); })
+    }).catch(() => { if (active) setMessage(t("artifacts.listFailedClose")); })
       .finally(() => { if (active) setListBusy(false); });
     return () => { active = false; alive.current = false; generation.current += 1; dialog.current?.close(); };
   }, [client, taskId]);
@@ -44,7 +45,7 @@ export function ArtifactBrowser({ client, taskId, onClose }: { client: ArtifactR
     try {
       const page = await client.taskArtifacts(taskId, cursor);
       if (alive.current) { setItems((old) => [...old, ...page.items]); setCursor(page.nextCursor); }
-    } catch { if (alive.current) setMessage("Artifact 列表读取失败，可重试"); }
+    } catch { if (alive.current) setMessage(t("artifacts.listFailed")); }
     finally { if (alive.current) setListBusy(false); }
   };
 
@@ -61,7 +62,7 @@ export function ArtifactBrowser({ client, taskId, onClose }: { client: ArtifactR
       }
     } catch (cause) {
       if (alive.current && generation.current === token) {
-        setVerified(false); setMessage(userFacingError(cause, "Artifact 读取失败，请重新选择后重试"));
+        setVerified(false); setMessage(userFacingError(cause, t("artifacts.readFailed")));
       }
     } finally { if (alive.current && generation.current === token) setReadBusy(false); }
   };
@@ -79,8 +80,8 @@ export function ArtifactBrowser({ client, taskId, onClose }: { client: ArtifactR
     try {
       const outcome = await client.exportArtifact({ taskId, artifactId: selected.metadata.artifactId,
         expectedPayloadSha256: selected.metadata.payloadSha256, confirmedSensitiveExport: confirmed });
-      if (alive.current) setMessage(outcome === "saved" ? "原始 Artifact 已保存" : "已取消导出，未写入文件");
-    } catch (cause) { if (alive.current) setMessage(userFacingError(cause, "导出失败，请稍后重试。")); }
+      if (alive.current) setMessage(t(outcome === "saved" ? "artifacts.saved" : "artifacts.exportCancelled"));
+    } catch (cause) { if (alive.current) setMessage(userFacingError(cause, t("artifacts.exportFailed"))); }
     finally { if (alive.current) setExportBusy(false); }
   };
 
@@ -90,40 +91,40 @@ export function ArtifactBrowser({ client, taskId, onClose }: { client: ArtifactR
   const showStructuredDiff = parsedDiff?.kind === "structured" && !rawDiffView;
   return <dialog className="artifact-dialog" ref={dialog} aria-labelledby="artifact-title"
     onCancel={(event) => { if (exportBusy) event.preventDefault(); else onClose(); }}>
-    <header><div><p className="eyebrow">本机证据 · 只读</p><h2 id="artifact-title" tabIndex={-1} data-dialog-title>Task Artifacts</h2></div>
-      <button type="button" aria-label="关闭 Artifact 查看" disabled={exportBusy} onClick={onClose}>×</button></header>
-    <p className="artifact-warning">正文只在主动选择后读取；可能包含源码、个人信息和未脱敏内容。不会执行 HTML、Markdown 链接或 ANSI。</p>
+    <header><div><p className="eyebrow">{t("artifacts.eyebrow")}</p><h2 id="artifact-title" tabIndex={-1} data-dialog-title>Task Artifacts</h2></div>
+      <button type="button" aria-label={t("artifacts.close")} disabled={exportBusy} onClick={onClose}>×</button></header>
+    <p className="artifact-warning">{t("artifacts.warning")}</p>
     <div className="artifact-layout">
-      <nav aria-label="当前任务的 Artifact">
-        {!listBusy && items.length === 0 && <p>此任务尚无已固化 Artifact。</p>}
+      <nav aria-label={t("artifacts.listLabel")}>
+        {!listBusy && items.length === 0 && <p>{t("artifacts.empty")}</p>}
         {items.map((item) => <button type="button" key={item.metadata.artifactId} disabled={exportBusy}
           className={selected?.metadata.artifactId === item.metadata.artifactId ? "active" : ""} onClick={() => choose(item)}>
-          <b>{item.metadata.mediaType.endsWith(".patch") ? "原始 Diff" : item.metadata.mediaType.includes("test-report") ? "测试报告" : item.sourceKind.endsWith(".original") ? "Context · Hub 原稿" : "Context · 已确认"}</b>
-          <code>{item.metadata.artifactId}</code><small>事件 #{item.sourceSequence} · {item.metadata.byteLength} B</small>
+          <b>{t(item.metadata.mediaType.endsWith(".patch") ? "artifacts.kind.diff" : item.metadata.mediaType.includes("test-report") ? "artifacts.kind.testReport" : item.sourceKind.endsWith(".original") ? "artifacts.kind.contextOriginal" : "artifacts.kind.contextConfirmed")}</b>
+          <code>{item.metadata.artifactId}</code><small>{t("artifacts.event", { sequence: item.sourceSequence, bytes: item.metadata.byteLength })}</small>
         </button>)}
-        {listBusy && <LoadingStatus>加载元数据…</LoadingStatus>}
-        {cursor && <button type="button" disabled={listBusy} onClick={() => void loadMore()}>更早的 Artifact</button>}
+        {listBusy && <LoadingStatus>{t("artifacts.loadingMetadata")}</LoadingStatus>}
+        {cursor && <button type="button" disabled={listBusy} onClick={() => void loadMore()}>{t("artifacts.older")}</button>}
       </nav>
-      <section className="artifact-content" aria-label="Artifact 内容预览">
-        {!selected ? <p>选择一条记录以校验并查看内容。</p> : <>
+      <section className="artifact-content" aria-label={t("artifacts.preview")}>
+        {!selected ? <p>{t("artifacts.select")}</p> : <>
           <dl><dt>SHA-256</dt><dd><code>{selected.metadata.payloadSha256}</code></dd>
-            <dt>媒体类型</dt><dd>{selected.metadata.mediaType}</dd><dt>脱敏</dt>
-            <dd>{selected.metadata.redactionRulesetVersion === 0 ? "未脱敏（原始内容）" : `规则 v${selected.metadata.redactionRulesetVersion} · ${selected.metadata.redactionCount} 处替换；不保证无敏感内容`}</dd></dl>
-          <p role="status">已读取 {bytes.length} / {selected.metadata.byteLength} B{verified ? " · 完整 hash 已校验" : " · 尚未完整读取"}</p>
-          {isGitDiff && verified && <div className="artifact-view-toggle" role="group" aria-label="Diff 显示方式">
-            <button type="button" disabled={parsedDiff?.kind !== "structured"} className={showStructuredDiff ? "active" : ""} onClick={() => setRawDiffView(false)}>结构化 Diff</button>
-            <button type="button" className={!showStructuredDiff ? "active" : ""} onClick={() => setRawDiffView(true)}>原始内容</button>
+            <dt>{t("artifacts.mediaType")}</dt><dd>{selected.metadata.mediaType}</dd><dt>{t("artifacts.redaction")}</dt>
+            <dd>{selected.metadata.redactionRulesetVersion === 0 ? t("artifacts.unredacted") : t("artifacts.redacted", { version: selected.metadata.redactionRulesetVersion, count: selected.metadata.redactionCount })}</dd></dl>
+          <p role="status">{t("artifacts.readProgress", { read: bytes.length, total: selected.metadata.byteLength })}{` · ${t(verified ? "artifacts.hashVerified" : "artifacts.notFullyRead")}`}</p>
+          {isGitDiff && verified && <div className="artifact-view-toggle" role="group" aria-label={t("artifacts.diffView")}>
+            <button type="button" disabled={parsedDiff?.kind !== "structured"} className={showStructuredDiff ? "active" : ""} onClick={() => setRawDiffView(false)}>{t("artifacts.structured")}</button>
+            <button type="button" className={!showStructuredDiff ? "active" : ""} onClick={() => setRawDiffView(true)}>{t("artifacts.raw")}</button>
           </div>}
           {parsedDiff?.kind === "fallback" && <p className="artifact-warning" role="status">{parsedDiff.reason}</p>}
           {showStructuredDiff && parsedDiff?.kind === "structured"
             ? <StructuredDiffView diff={parsedDiff.diff} artifactKey={selected.metadata.artifactId} />
-            : <>{preview.hexadecimal && <p className="artifact-warning">不是有效 UTF-8：仅展示前 256 字节的十六进制。导出仍保留原始字节。</p>}
-              {readBusy && <LoadingStatus>读取中…</LoadingStatus>}{(preview.text || !readBusy) && <pre className="artifact-code" tabIndex={0}>{preview.text || "（空内容）"}</pre>}</>}
-          {nextOffset !== null && <button type="button" disabled={readBusy} onClick={() => void read(selected, bytes, generation.current)}>读取下一段（最多 32 KiB）</button>}
+            : <>{preview.hexadecimal && <p className="artifact-warning">{t("artifacts.notUtf8")}</p>}
+              {readBusy && <LoadingStatus>{t("reviewPanel.reading")}</LoadingStatus>}{(preview.text || !readBusy) && <pre className="artifact-code" tabIndex={0}>{preview.text || t("artifacts.emptyContent")}</pre>}</>}
+          {nextOffset !== null && <button type="button" disabled={readBusy} onClick={() => void read(selected, bytes, generation.current)}>{t("artifacts.readNext")}</button>}
           <label className="artifact-confirm"><input type="checkbox" checked={confirmed} disabled={!verified || exportBusy}
-            onChange={(event) => setConfirmed(event.target.checked)} />我已检查预览，确认导出原始内容（可能含敏感信息）。</label>
+            onChange={(event) => setConfirmed(event.target.checked)} />{t("artifacts.confirmExport")}</label>
           <button type="button" disabled={!verified || !confirmed || exportBusy} onClick={() => void exportSelected()}>
-            {exportBusy ? "等待保存…" : "选择新文件并导出原始字节"}</button>
+            {t(exportBusy ? "artifacts.waitingSave" : "artifacts.export")}</button>
         </>}
       </section>
     </div>

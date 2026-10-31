@@ -295,7 +295,13 @@ fn select_executable(
             return Ok(Some(path));
         }
     }
-    for path in agent_registry::windows_desktop_executables(manifest.id.as_str(), context) {
+    for path in agent_registry::windows_desktop_executables(manifest.id.as_str(), context)
+        .into_iter()
+        .chain(agent_registry::macos_desktop_executables(
+            manifest.id.as_str(),
+            context,
+        ))
+    {
         if let Some(path) = canonical_executable(&path) {
             return Ok(Some(path));
         }

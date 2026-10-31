@@ -1,6 +1,8 @@
+import { translate as t } from "./i18n";
 type RecordValue = Record<string, unknown>;
 export interface ApprovalSection { label: string; text: string; expandable?: boolean }
 export interface ApprovalPresentation {
+  kind: "terminal" | "readFile" | "editFile" | "network" | "search" | "confirm";
   category: string;
   question: string;
   sections: ApprovalSection[];
@@ -34,45 +36,46 @@ export function approvalPresentation(summary: string, toolName = ""): ApprovalPr
   const fileLike = !!path || !!value.files || /read|edit|write|patch|filechange|修改|写入|文件/i.test(toolName);
   const terminal = !!command || /command|shell|bash|terminal|终端|命令/i.test(toolName) || (!input && !fileLike && !url);
   const reading = /read|读取/i.test(toolName);
-  const category = terminal ? "终端" : fileLike ? (reading ? "读取文件" : "修改文件") : url ? "网络访问" : /search|grep|glob|搜索/i.test(toolName) ? "搜索" : "操作确认";
-  const question = terminal ? "是否允许运行以下命令？" : fileLike ? (reading ? "是否允许读取以下文件？" : "是否允许修改以下文件？") : url ? "是否允许访问以下地址？" : "是否允许执行以下操作？";
+  const kind = terminal ? "terminal" : fileLike ? (reading ? "readFile" : "editFile") : url ? "network" : /search|grep|glob|搜索/i.test(toolName) ? "search" : "confirm";
+  const category = t(`approval.category.${kind}`);
+  const question = t(terminal ? "approval.question.terminal" : fileLike ? (reading ? "approval.question.readFile" : "approval.question.editFile") : url ? "approval.question.network" : "approval.question.other");
   const sections: ApprovalSection[] = [];
   const add = (label: string, content: string, expandable = false) => { if (content.trim()) sections.push({ label, text: content, expandable }); };
-  if (command) add("命令", command);
-  add("操作内容", text(value.detailText), true);
-  if (path) add("文件", path);
-  if (url) add("地址", url);
-  add("授权目录", text(value.grantRoot));
+  if (command) add(t("approval.section.command"), command);
+  add(t("approval.section.details"), text(value.detailText), true);
+  if (path) add(t("approval.section.file"), path);
+  if (url) add(t("approval.section.url"), url);
+  add(t("approval.section.grantRoot"), text(value.grantRoot));
   const fileSection = (file: unknown, fallbackPath = "") => {
-    if (typeof file === "string") { add("文件", file); return; }
+    if (typeof file === "string") { add(t("approval.section.file"), file); return; }
     const entry = object(file);
     if (!entry) return;
     const kind = typeof entry.kind === "string" ? entry.kind : text(object(entry.kind)?.type);
-    const label = kind === "delete" ? "删除文件" : kind === "add" ? "新建文件" : "文件";
+    const label = t(kind === "delete" ? "approval.section.deleteFile" : kind === "add" ? "approval.section.newFile" : "approval.section.file");
     add(label, first(entry, ["path", "file_path", "filePath"]) || fallbackPath);
     const move = first(object(entry.kind) ?? entry, ["movePath", "move_path"]);
-    add("移动到", move);
-    add("修改内容", first(entry, ["diff", "patch", "content"]), true);
+    add(t("approval.section.moveTo"), move);
+    add(t("approval.section.changes"), first(entry, ["diff", "patch", "content"]), true);
   };
   if (Array.isArray(value.files)) value.files.forEach(file => fileSection(file));
   else if (object(value.files)) Object.entries(object(value.files)!).forEach(([name, file]) => fileSection(file, name));
   if (Array.isArray(value.ReplacementChunks)) for (const chunk of value.ReplacementChunks) {
     const entry = object(chunk);
-    if (entry) { add("替换前", text(entry.TargetContent), true); add("替换后", text(entry.ReplacementContent), true); }
+    if (entry) { add(t("approval.section.before"), text(entry.TargetContent), true); add(t("approval.section.after"), text(entry.ReplacementContent), true); }
   }
-  add("修改内容", first(value, ["diff", "patch", "unified_diff"]), true);
-  add("替换前", first(value, ["old_string", "old_str", "oldText"]), true);
-  add("替换后", first(value, ["new_string", "new_str", "newText"]), true);
-  if (fileLike) add("文件内容", first(value, ["content", "CodeContent"]), true);
-  add("搜索内容", first(value, ["query", "pattern", "glob"]));
-  if (!input && typeof parsed === "string" && !malformedEnvelope) add(terminal ? "命令" : "操作内容", parsed);
+  add(t("approval.section.changes"), first(value, ["diff", "patch", "unified_diff"]), true);
+  add(t("approval.section.before"), first(value, ["old_string", "old_str", "oldText"]), true);
+  add(t("approval.section.after"), first(value, ["new_string", "new_str", "newText"]), true);
+  if (fileLike) add(t("approval.section.fileContent"), first(value, ["content", "CodeContent"]), true);
+  add(t("approval.section.search"), first(value, ["query", "pattern", "glob"]));
+  if (!input && typeof parsed === "string" && !malformedEnvelope) add(t(terminal ? "approval.section.command" : "approval.section.details"), parsed);
   const reason = first(value, ["justification", "reason", "description"]);
   const warnings: string[] = [];
-  if (malformedEnvelope) warnings.push("审批详情格式不完整，请让 Agent 重新发起审批。");
-  else if (truncated) warnings.push("操作详情过长，下方仅展示部分内容。请让 Agent 拆分操作后重新发起审批，以查看完整范围。");
-  else if (value.scope === "unknown") warnings.push("Agent 未提供文件修改范围，请让 Agent 补充文件路径和修改内容。");
-  else if (sections.length === 0) warnings.push("未能从审批请求中读取文件路径、命令或修改内容，请让 Agent 补充详情后重新发起审批。");
-  if (sections.length === 0 && toolName) add("请求的工具", toolName);
+  if (malformedEnvelope) warnings.push(t("approval.warning.malformed"));
+  else if (truncated) warnings.push(t("approval.warning.truncated"));
+  else if (value.scope === "unknown") warnings.push(t("approval.warning.unknownScope"));
+  else if (sections.length === 0) warnings.push(t("approval.warning.empty"));
+  if (sections.length === 0 && toolName) add(t("approval.section.tool"), toolName);
   const warning = warnings.length ? warnings.join(" ") : undefined;
-  return { category, question: reason || question, sections, warning };
+  return { kind, category, question: reason || question, sections, warning };
 }

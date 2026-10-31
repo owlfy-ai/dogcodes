@@ -13,6 +13,7 @@ import { TerminalPane } from "./TerminalDock";
 import { projectRunClient, type ProjectRunApi, type ProjectRunCatalog, type ProjectRunCommand, type ProjectRunEdit, type RunProcess } from "./projectRunClient";
 import "./projectRun.css";
 import { terminalEnded } from "./terminalClient";
+import { translate as t } from "./i18n";
 
 type Execution = { key: string; directoryIndex: number; path: string; command: ProjectRunCommand; process: RunProcess; projectId: string; exited: boolean; uncertain?: boolean; hidden?: boolean };
 const directoryName = (path: string) => path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
@@ -88,7 +89,7 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
           setAgent(value.executor && value.executor.providerId !== "fake" ? JSON.stringify(value.executor) : "");
         }
         delay = value.directories.some(d => d.status === "analyzing") ? 1200 : 10000;
-      } catch (cause) { if (valid) { if (token === request.current) { setLoadError(userFacingError(cause, "无法读取运行命令，请稍后重试。")); setResourcesLoaded(false); } } }
+      } catch (cause) { if (valid) { if (token === request.current) { setLoadError(userFacingError(cause, t("projectRun.loadFailed"))); setResourcesLoaded(false); } } }
       finally { loading = false; if (valid) timer = setTimeout(load, dirty ? 0 : delay); }
     };
     const stop = api.watch(taskId, () => { void load(); }, message => { if (valid) setLoadError(message); });
@@ -107,8 +108,8 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
     } catch (cause) {
       if (cause instanceof RunOperationRejected && cause.code === "confirmation_required") {
         try { const fresh = await api.get(taskId); if (mounted.current) { setCatalog(fresh); if (isVisible.current) setConfirmGeneration(fresh.generation); } }
-        catch (error) { if (mounted.current) setError(userFacingError(error, "无法读取最新的运行命令，请重试。")); }
-      } else if (mounted.current) setError(userFacingError(cause, "分析运行命令失败，请稍后重试。"));
+        catch (error) { if (mounted.current) setError(userFacingError(error, t("projectRun.reloadFailed"))); }
+      } else if (mounted.current) setError(userFacingError(cause, t("projectRun.analyzeFailed")));
     }
     finally { submitting.current = false; if (mounted.current) { setBusy(false); setRevision(n => n + 1); } }
   };
@@ -125,9 +126,9 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
     } catch (cause) {
       if (cause instanceof RunOperationRejected && cause.code === "version_conflict") {
         try { const fresh = await api.get(taskId); if (mounted.current) setCatalog(fresh); }
-        catch (refreshError) { if (mounted.current) setLoadError(userFacingError(refreshError, "无法刷新运行命令，请稍后重试。")); }
+        catch (refreshError) { if (mounted.current) setLoadError(userFacingError(refreshError, t("projectRun.refreshFailed"))); }
       }
-      if (mounted.current) setError(userFacingError(cause, "保存运行命令失败，请重试。"));
+      if (mounted.current) setError(userFacingError(cause, t("projectRun.saveFailed")));
       return false;
     }
     finally { submitting.current = false; if (mounted.current) setBusy(false); }
@@ -155,60 +156,60 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
     && catalog.directories.every(directory => directory.status === "ready" && !directory.error && directory.commands.length === 0);
   const hasDirectories = Boolean(catalog?.directories.length);
   const canAnalyze = hasDirectories && !analyzing && Boolean(selectedAgent);
-  const emptyDescription = !hasDirectories ? "为当前项目添加目录后，即可分析启动方式。"
-    : !selectedAgent ? "连接可用的 Agent 后，即可分析项目的启动方式。"
-    : catalog?.directories.some(directory => directory.userModified) ? "运行项已清空，可以重新分析项目生成。"
-    : "未找到适合当前系统的运行命令。";
+  const emptyDescription = t(!hasDirectories ? "projectRun.emptyNoDirectories"
+    : !selectedAgent ? "projectRun.emptyNoAgent"
+    : catalog?.directories.some(directory => directory.userModified) ? "projectRun.emptyCleared"
+    : "projectRun.emptyNoCommands");
   return <div className="project-run-panel">
     {confirmGeneration && <RunAnalysisConfirmation onCancel={() => setConfirmGeneration(null)} onConfirm={() => { const generation = confirmGeneration; setConfirmGeneration(null); void analyze(generation); }} />}
     <div className="project-run-controls">
-      {executions.some(item => item.hidden) && <button type="button" onClick={() => setExecutions(items => items.map(item => ({ ...item, hidden: false })))}>恢复运行输出</button>}
-      <span className="project-run-label">使用 Agent 分析项目启动/运行方式</span>
+      {executions.some(item => item.hidden) && <button type="button" onClick={() => setExecutions(items => items.map(item => ({ ...item, hidden: false })))}>{t("projectRun.restoreOutput")}</button>}
+      <span className="project-run-label">{t("projectRun.analyzeLabel")}</span>
       <div className="project-run-agent" ref={agentPicker}>
-        <AgentPickerTrigger providerId={selectedAgent?.providerId} label="运行命令分析 Agent"
-          tooltip={selectedAgent ? `运行命令分析 Agent：${providerLabel(selectedAgent.providerId)}` : agent ? "已选 Agent（当前不可用）" : "暂无可用 Agent，请先连接或重新检测 Agent"}
+        <AgentPickerTrigger providerId={selectedAgent?.providerId} label={t("projectRun.analysisAgent")}
+          tooltip={selectedAgent ? t("projectRun.analysisAgentTooltip", { agent: providerLabel(selectedAgent.providerId) }) : t(agent ? "projectRun.agentUnavailable" : "projectRun.noAgent")}
           open={agentMenu} disabled={busy} onClick={() => setAgentMenu(open => !open)}/>
         {agentMenu && <AgentPickerMenu options={agents.map(executor => ({ key: agentChoiceKey(executor), executor }))}
-          selectedKey={agentChoiceKey(selectedAgent)} title="选择进行命令分析的 Agent" label="运行命令 Agent 列表" placement="bottom"
+          selectedKey={agentChoiceKey(selectedAgent)} title={t("projectRun.chooseAgent")} label={t("projectRun.agentList")} placement="bottom"
           onSelect={option => { setAgent(JSON.stringify(option.executor)); setAgentMenu(false); agentPicker.current?.querySelector("button")?.focus(); }}/>} 
       </div>
-      <button type="button" className="turn-action project-run-refresh" aria-label="重新分析运行命令" data-tooltip="重新分析" disabled={!canAnalyze} onClick={requestAnalysis}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9" /></svg></button>
+      <button type="button" className="turn-action project-run-refresh" aria-label={t("projectRun.reanalyzeCommands")} data-tooltip={t("projectRun.reanalyze")} disabled={!canAnalyze} onClick={requestAnalysis}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9" /></svg></button>
     </div>
-    {pendingOperation && <p role="status">上次操作的结果尚未核实。<button disabled={busy} onClick={() => {
+    {pendingOperation && <p role="status">{t("projectRun.pendingOperation")}<button disabled={busy} onClick={() => {
       if (submitting.current) return;
       submitting.current = true; setBusy(true); request.current++;
       void api.retryPending(taskId).then(value => { if (mounted.current) { setCatalog(value); setError(""); } })
-        .catch(cause => { if (mounted.current) setError(userFacingError(cause, "重试原操作失败，请稍后再试。")); })
+        .catch(cause => { if (mounted.current) setError(userFacingError(cause, t("projectRun.retryFailed"))); })
         .finally(() => { submitting.current = false; if (mounted.current) { setBusy(false); setRevision(n => n + 1); } });
-    }}>重新核实／重试原操作</button><button disabled={busy} data-tooltip="仅放弃重试，不会取消后台已开始的操作" onClick={() => { try { api.discardPending(taskId); setError(""); setRevision(n => n + 1); } catch (cause) { setError(userFacingError(cause, "放弃重试失败，请稍后再试。")); } }}>放弃重试</button></p>}
+    }}>{t("projectRun.retryOperation")}</button><button disabled={busy} data-tooltip={t("projectRun.discardTooltip")} onClick={() => { try { api.discardPending(taskId); setError(""); setRevision(n => n + 1); } catch (cause) { setError(userFacingError(cause, t("projectRun.discardFailed"))); } }}>{t("projectRun.discardRetry")}</button></p>}
     {error && <InlineError>{error}</InlineError>}
     {loadError && <InlineError onRetry={() => setRevision(n => n + 1)}>{loadError}</InlineError>}
-    {!catalog && !error && !loadError && <LoadingStatus layout="panel">正在读取运行命令…</LoadingStatus>}
+    {!catalog && !error && !loadError && <LoadingStatus layout="panel">{t("projectRun.loading")}</LoadingStatus>}
     <div className={`project-run-directories${emptyCatalog ? " project-run-directories--empty" : ""}`}>
-      {emptyCatalog ? <ReviewEmptyState kind="run" title={hasDirectories ? "暂无运行命令" : "尚未关联项目目录"}
+      {emptyCatalog ? <ReviewEmptyState kind="run" title={t(hasDirectories ? "projectRun.emptyTitle" : "projectRun.noDirectoriesTitle")}
         description={emptyDescription} compact={executions.length > 0}
-        action={canAnalyze ? <button type="button" className="review-empty-action" onClick={requestAnalysis}>重新分析</button> : !hasDirectories && onEditProject ? <button type="button" className="review-empty-action" onClick={onEditProject}>添加项目目录</button> : undefined} /> : catalog?.directories.map((directory, index) => <section key={directory.path} className="project-run-directory" aria-label={directory.path}>
+        action={canAnalyze ? <button type="button" className="review-empty-action" onClick={requestAnalysis}>{t("projectRun.reanalyze")}</button> : !hasDirectories && onEditProject ? <button type="button" className="review-empty-action" onClick={onEditProject}>{t("projectRun.addDirectory")}</button> : undefined} /> : catalog?.directories.map((directory, index) => <section key={directory.path} className="project-run-directory" aria-label={directory.path}>
         <h3 data-tooltip={directory.path}>{directoryName(directory.path)}</h3>
-        {directory.status === "analyzing" && <LoadingStatus className="project-run-analyzing">正在分析运行方式…</LoadingStatus>}
+        {directory.status === "analyzing" && <LoadingStatus className="project-run-analyzing">{t("projectRun.analyzing")}</LoadingStatus>}
         {directory.error && <p role="alert">{directory.error}</p>}
         {directory.status === "ready" && !directory.error && directory.commands.length === 0 && <ReviewEmptyState kind="run" compact
-          description={directory.userModified ? "暂无运行项，可重新分析生成。" : "未找到适合当前系统的运行命令"} />}
+          description={t(directory.userModified ? "projectRun.directoryEmpty" : "projectRun.directoryNoCommands")} />}
         {[...directory.commands].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))).map(command => <ProjectRunItem key={command.id} command={command} path={directory.path}
           disabled={Boolean(analyzing) || !resourcesLoaded} running={executions.some(item => item.command.id === command.id && !item.exited && !item.uncertain)}
           onRun={() => run(command, index)} onEdit={change => edit(index, command.id, change)} />)}
       </section>)}
     </div>
-    {outputs.length > 0 && <section className="project-run-output" aria-label="运行输出">
-      <div className="project-run-output-tabs" role="tablist" aria-label="运行中的命令">{outputs.map((item, index) => <div className="project-run-output-tab" role="presentation" key={item.key} data-selected={selected === item.key}>
-        <button role="tab" type="button" aria-selected={selected === item.key} data-tooltip={`${item.path}\n${item.command.command}`} onClick={() => setSelected(item.key)}>{item.command.label}{item.exited ? " · 已结束" : item.uncertain ? " · 状态待核实" : ""}</button>
-        <button type="button" className="project-run-tab-close" aria-label={`关闭输出 ${item.command.label}`} data-tooltip="隐藏输出，进程继续运行" onClick={() => {
+    {outputs.length > 0 && <section className="project-run-output" aria-label={t("projectRun.output")}>
+      <div className="project-run-output-tabs" role="tablist" aria-label={t("projectRun.runningCommands")}>{outputs.map((item, index) => <div className="project-run-output-tab" role="presentation" key={item.key} data-selected={selected === item.key}>
+        <button role="tab" type="button" aria-selected={selected === item.key} data-tooltip={`${item.path}\n${item.command.command}`} onClick={() => setSelected(item.key)}>{item.command.label}{item.exited ? ` · ${t("projectRun.exited")}` : item.uncertain ? ` · ${t("projectRun.uncertain")}` : ""}</button>
+        <button type="button" className="project-run-tab-close" aria-label={t("projectRun.closeOutput", { label: item.command.label })} data-tooltip={t("terminal.hideOutput")} onClick={() => {
           const remaining = outputs.filter(value => value.key !== item.key);
           setExecutions(items => items.map(value => value.key === item.key ? { ...value, hidden: true } : value)); if (selected === item.key) setSelected(remaining[Math.min(index, remaining.length - 1)]?.key ?? null);
         }}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button>
       </div>)}</div>
       {outputs.map(item => <div className="project-run-console" key={item.key} hidden={selected !== item.key}>
         <div className="project-run-console-bar"><code data-tooltip={item.command.command}>{item.command.command}</code>
-          {!item.exited && <button type="button" className="project-run-stop" aria-label="停止" data-tooltip="停止运行" onClick={() => void item.process.stop().catch(cause => setError(userFacingError(cause, "无法停止运行，请重试。")))}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg></button>}
+          {!item.exited && <button type="button" className="project-run-stop" aria-label={t("projectRun.stop")} data-tooltip={t("projectRun.stopRun")} onClick={() => void item.process.stop().catch(cause => setError(userFacingError(cause, t("projectRun.stopFailed"))))}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg></button>}
         </div>
         <TerminalPane operationId={item.key} projectId={item.projectId} directoryIndex={item.directoryIndex} visible={visible && selected === item.key} api={item.process.api} />
       </div>)}

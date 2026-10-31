@@ -1,4 +1,5 @@
 import type { AgentUiMessages } from "./agentUi";
+import type { UiMessages } from "./locales/ui/en";
 export type UiLanguage =
   | "system"
   | "zh-CN"
@@ -21,7 +22,7 @@ export interface LanguageInfo {
   nativeLabel: string;
 }
 
-export interface TranslationDict {
+export interface TranslationDict extends UiMessages {
   agentUi: AgentUiMessages;
   common: {
     systemDefault: string;

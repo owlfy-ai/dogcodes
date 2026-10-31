@@ -1,6 +1,8 @@
 //! Manifest-driven discovery and bounded, credential-free installation probes.
 
+mod macos;
 mod windows;
+pub use macos::macos_desktop_executables;
 pub use windows::windows_desktop_executables;
 
 use std::{
@@ -428,7 +430,10 @@ pub fn discover_executables(
             include_executable(&home.join(relative), &mut discovered)?;
         }
     }
-    for path in windows_desktop_executables(manifest.id.as_str(), context) {
+    for path in windows_desktop_executables(manifest.id.as_str(), context)
+        .into_iter()
+        .chain(macos_desktop_executables(manifest.id.as_str(), context))
+    {
         include_executable(&path, &mut discovered)?;
     }
     // GUI launches often omit shell-managed Node bins from PATH.

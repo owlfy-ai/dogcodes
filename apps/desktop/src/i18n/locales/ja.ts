@@ -1,6 +1,8 @@
+import { uiJa } from "./ui/ja";
 import type { TranslationDict } from "../types";
 
 export const ja: TranslationDict = {
+  ...uiJa,
   agentUi: {
     "notInstalled": "未インストール",
     "installHint": "インストール後、再検出して接続してください。",

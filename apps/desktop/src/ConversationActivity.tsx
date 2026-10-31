@@ -5,6 +5,7 @@ import { DeferredDetails } from "./DeferredDetails";
 import { AgentPending, type PendingAgent } from "./AgentPending";
 import { ThinkingTicker } from "./ThinkingTicker";
 import { ActivityIcon } from "./ActivityIcon";
+import { useI18n } from "./i18n";
 import { Fragment, memo, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
@@ -62,8 +63,9 @@ export function isSubagent(a: Activity) {
     /^Task:/.test(a.name ?? "")
   );
 }
-export function categoryOf(a: Activity): string {
-  if (isSubagent(a)) return "子智能体";
+export type ActivityCategory = "subagent" | "edit" | "webSearch" | "read" | "search" | "terminal" | "fetch" | "tool";
+export function categoryOf(a: Activity): ActivityCategory {
+  if (isSubagent(a)) return "subagent";
   const name = (a.name ?? "").toLowerCase();
   if (
     ["edit", "delete", "move"].includes(a.category ?? "") ||
@@ -71,31 +73,31 @@ export function categoryOf(a: Activity): string {
       name,
     )
   )
-    return "修改";
-  if (/^(websearch|web_search|search_web)$/.test(name)) return "网页搜索";
+    return "edit";
+  if (/^(websearch|web_search|search_web)$/.test(name)) return "webSearch";
   if (
     a.category === "read" ||
     /^(read|read_file|view_file|readfile)$/.test(name)
   )
-    return "读取";
+    return "read";
   if (
     a.category === "search" ||
     /^(grep|glob|find_by_name|grep_search|search_files)$/.test(name)
   )
-    return "搜索";
+    return "search";
   if (
     a.category === "execute" ||
     /^(bash|terminal|commandexecution|command_execution|run_command|shell|exec_command)$/.test(
       name,
     )
   )
-    return "终端";
+    return "terminal";
   if (
     a.category === "fetch" ||
     /^(webfetch|web_fetch|read_url_content)$/.test(name)
   )
-    return "获取网页";
-  return "工具";
+    return "fetch";
+  return "tool";
 }
 const printable = (v: unknown) =>
   typeof v === "string" ? v : v == null ? "" : JSON.stringify(v, null, 2);
@@ -114,27 +116,33 @@ function inputPath(a: Activity) {
     ? String(i.file_path ?? i.path ?? i.target_file ?? i.AbsolutePath ?? "")
     : "";
 }
+// Status ids map to activity.status.* keys.
 const states: Record<string, string> = {
-  pending: "等待中",
-  running: "进行中",
-  started: "进行中",
-  in_progress: "进行中",
-  completed: "完成",
-  succeeded: "完成",
+  pending: "pending",
+  running: "running",
+  started: "running",
+  in_progress: "running",
+  completed: "done",
+  succeeded: "done",
   // Tool failures are routine agent recovery steps, not user-facing alerts.
   failed: "",
-  interrupted: "已中断",
-  cancelled: "已取消",
-  unknown: "状态未确认",
+  interrupted: "interrupted",
+  cancelled: "cancelled",
+  unknown: "unknown",
 };
+function statusText(t: (key: string) => string, status: string | undefined): string {
+  const key = states[status ?? ""] ?? "unknown";
+  return key ? t(`activity.status.${key}`) : "";
+}
 const isRunning = (a: Activity, active: boolean) => active && ["running", "started", "in_progress"].includes(a.status ?? "");
 function Thought({ a, active }: { a: Activity; active: boolean }) {
+  const { t } = useI18n();
   const [, tick] = useState(0);
   const running = isRunning(a, active);
   useEffect(() => {
     if (!running) return;
-    const t = setInterval(() => tick((n) => n + 1), 1000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
   }, [running]);
   const seconds =
     typeof a.durationMs === "number"
@@ -144,16 +152,16 @@ function Thought({ a, active }: { a: Activity; active: boolean }) {
         : null;
   const label = (
     <span>
-      <ActivityIcon kind="思考" />
+      <ActivityIcon kind="think" />
       <span className="activity-text">
-      {running
-        ? "思考中"
+      {t(running
+        ? "activity.thinking"
         : a.status === "interrupted"
-          ? "思考已中断"
-          : "思考"}
+          ? "activity.thinkingInterrupted"
+          : "activity.thought")}
       {seconds !== null
-        ? ` · ${running ? "约 " : "持续了约 "}${seconds} 秒`
-        : " · 时间未记录"}
+        ? ` · ${t(running ? "activity.aboutSeconds" : "activity.lastedSeconds", { seconds })}`
+        : ` · ${t("activity.timeNotRecorded")}`}
       </span>
     </span>
   );
@@ -164,7 +172,7 @@ function Thought({ a, active }: { a: Activity; active: boolean }) {
         <summary className="activity-line">{label}</summary>
         <div className="activity-detail thought-detail">
           <MarkdownMessage text={a.text} />
-          {a.textTruncated && <p className="subagent-notice">思考内容较长，只保存了前面一部分</p>}
+          {a.textTruncated && <p className="subagent-notice">{t("activity.thoughtTruncated")}</p>}
         </div>
       </details>
     );
@@ -225,11 +233,12 @@ export function ActivityRow({
   client?: CoreClient;
   onSubagent: (id: string) => void;
 }) {
+  const { t } = useI18n();
   // Native agents may finish a turn without sending a terminal tool update.
   // Preserve the uncertainty instead of showing an inactive tool as still waiting.
   const statusLabel = !active && ["pending", "running", "started", "in_progress"].includes(a.status ?? "")
-    ? "结果未确认"
-    : states[a.status ?? ""] ?? "状态未确认";
+    ? t("activity.resultUnconfirmed")
+    : statusText(t, a.status);
   const running = isRunning(a, active);
   if (a.type === "status") return null;
   // A batch/progress notification with no display fields is not a tool row.
@@ -250,12 +259,12 @@ export function ActivityRow({
         className={`activity-line${running ? " activity-running" : ""}`}
         onClick={() => onSubagent(item.itemId)}
       >
-        <span className="activity-label"><ActivityIcon kind="子智能体" /><span className="activity-text">子智能体</span></span>
+        <span className="activity-label"><ActivityIcon kind="subagent" /><span className="activity-text">{t("activity.category.subagent")}</span></span>
         <span className="activity-title activity-text">
           {a.title ||
             (a.input as { description?: string })?.description ||
             a.name ||
-            "委派任务"}
+            t("activity.delegatedTask")}
         </span>
         <small className="activity-text">{statusLabel} ›</small>
       </button>
@@ -263,7 +272,7 @@ export function ActivityRow({
   if (a.artifact && client)
     return (
       <>
-        {categoryOf(a) !== "修改" && (
+        {categoryOf(a) !== "edit" && (
           <ActivityRow
             item={item}
             a={{ ...a, artifact: undefined }}
@@ -280,9 +289,9 @@ export function ActivityRow({
         />
       </>
     );
-  if (categoryOf(a) === "修改" && (a.changes?.length || inputPath(a)))
+  if (categoryOf(a) === "edit" && (a.changes?.length || inputPath(a)))
     return <FileEdits a={a} running={running} status={statusLabel} />;
-  const terminal = categoryOf(a) === "终端";
+  const terminal = categoryOf(a) === "terminal";
   const command = terminal ? terminalCommand(a.input) : "";
   const preview = terminal ? truncateTerminalOutput(terminalOutput(a.output ?? a.content)) : null;
   const title = command ||
@@ -298,7 +307,7 @@ export function ActivityRow({
         className={`activity-line${running ? " activity-running" : ""}`}
       >
         <span className="activity-label">
-          <ActivityIcon kind={categoryOf(a)} /><span className="activity-text">{categoryOf(a)}</span>
+          <ActivityIcon kind={categoryOf(a)} /><span className="activity-text">{t(`activity.category.${categoryOf(a)}`)}</span>
         </span>
         <span className="activity-title activity-text" data-tooltip={title}>
           {title}
@@ -306,17 +315,17 @@ export function ActivityRow({
         {statusLabel && <small className="activity-text">{statusLabel}</small>}
       </summary>
       {terminal ? <div className="activity-detail terminal-activity-detail">
-        {a.partial && <p className="subagent-notice">仅展示部分内容</p>}
+        {a.partial && <p className="subagent-notice">{t("activity.partial")}</p>}
         {command && <div className="terminal-activity-command"><span aria-hidden="true">$</span><pre>{command}</pre></div>}
-        {preview?.text ? <pre className="terminal-activity-output">{preview.text}</pre> : <p className="terminal-activity-empty">暂无命令输出</p>}
-        {preview?.truncated && <p className="terminal-activity-truncated">… 输出过长，已截断</p>}
+        {preview?.text ? <pre className="terminal-activity-output">{preview.text}</pre> : <p className="terminal-activity-empty">{t("activity.noCommandOutput")}</p>}
+        {preview?.truncated && <p className="terminal-activity-truncated">… {t("activity.outputTruncated")}</p>}
       </div> : <div className="activity-detail">
-        {a.partial && <p className="subagent-notice">仅展示部分内容</p>}
+        {a.partial && <p className="subagent-notice">{t("activity.partial")}</p>}
         {a.input != null && <pre>{printable(a.input)}</pre>}
         {a.output != null || a.content != null ? (
           <pre>{outputText(a.output ?? a.content)}</pre>
         ) : (
-          <p>暂无工具输出</p>
+          <p>{t("activity.noToolOutput")}</p>
         )}
       </div>}
     </details>
@@ -377,7 +386,7 @@ export function ConversationContent({
       !a.artifact &&
       a.type === "tool" &&
       ["completed", "succeeded"].includes(a.status ?? "") &&
-      ["读取", "搜索", "网页搜索", "获取网页"].includes(categoryOf(a))
+      ["read", "search", "webSearch", "fetch"].includes(categoryOf(a))
     );
   };
   for (const item of visible) {
@@ -407,11 +416,12 @@ export function ConversationContent({
   if (pendingAgent?.turnId && !turnProviders.has(pendingAgent.turnId)) {
     turnProviders.set(pendingAgent.turnId, pendingAgent.providerId);
   }
+  const { t } = useI18n();
   const render = (item: TimelineItem) => {
     if (item.kind === "fork_context") {
       try { const data = JSON.parse(item.text); const messages = JSON.parse(data.text) as {kind:string;text:string}[];
-        return <details className="turn-fork-history" key={item.itemId}><summary>从历史轮次分叉 · 查看继承的上下文</summary><p>{data.environment === "worktree" ? (data.restoredTurnSnapshot ? "已恢复所选轮次结束时的文件；未提交的成果可在右侧“变更”中查看。" : "此会话由旧版 Fork 创建，未恢复历史轮次的文件。") : "沿用同一项目目录；分叉不会还原文件。"}</p>{messages.filter(m => ["turn.queued","message.delta"].includes(m.kind)).map((m,index) => <article key={index}><small>{m.kind === "turn.queued" ? "你" : "Agent"}</small><MarkdownMessage text={m.text}/></article>)}</details>;
-      } catch { return <p key={item.itemId}>分叉上下文暂不可显示</p>; }
+        return <details className="turn-fork-history" key={item.itemId}><summary>{t("activity.forkSummary")}</summary><p>{t(data.environment === "worktree" ? (data.restoredTurnSnapshot ? "activity.forkRestored" : "activity.forkLegacy") : "activity.forkSameDirectory")}</p>{messages.filter(m => ["turn.queued","message.delta"].includes(m.kind)).map((m,index) => <article key={index}><small>{m.kind === "turn.queued" ? t("activity.you") : "Agent"}</small><MarkdownMessage text={m.text}/></article>)}</details>;
+      } catch { return <p key={item.itemId}>{t("activity.forkUnavailable")}</p>; }
     }
 
     if (item.kind === "turn_files") {
@@ -452,7 +462,7 @@ export function ConversationContent({
     ) : (
       <DeferredDetails key={group[0].itemId} className="conversation-activity" summary={
         <summary className="activity-line">
-          <ActivityIcon kind="查阅" /><span>查阅 ·{" "}
+          <ActivityIcon kind="browse" /><span>{t("activity.browse")} ·{" "}
           {Object.entries(
             group.reduce<Record<string, number>>((counts, i) => {
               const category = categoryOf(activityOf(i)!);
@@ -460,7 +470,7 @@ export function ConversationContent({
               return counts;
             }, {}),
           )
-            .map(([kind, count]) => `${kind} ${count} 次`)
+            .map(([kind, count]) => t("activity.categoryCount", { category: t(`activity.category.${kind}`), count }))
             .join(" · ")}
           </span>
         </summary>}>
@@ -531,17 +541,18 @@ export function SubagentPanel({
   client?: CoreClient;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const a = activityOf(item)!;
   const children = items.filter((i) => belongsTo(i, item));
   const [drill, setDrill] = useState<string | null>(null);
   const [unsupported, setUnsupported] = useState(false);
   const [history, setHistory] = useState<Activity[] | null>(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     let valid = true;
     setHistory(null);
-    setError("");
+    setError(false);
     if (!a.details?.startsWith("history")) return;
     void invoke<Activity[]>("core_subagent_history", {
       taskId: item.taskId,
@@ -551,7 +562,7 @@ export function SubagentPanel({
         if (valid) setHistory(data);
       },
       () => {
-        if (valid) setError("子智能体执行记录加载失败");
+        if (valid) setError(true);
       },
     );
     return () => {
@@ -573,47 +584,43 @@ export function SubagentPanel({
       />
     );
   return (
-    <aside className="subagent-panel" aria-label="子智能体执行过程">
+    <aside className="subagent-panel" aria-label={t("activity.subagentProcess")}>
       <header>
-        <ActivityIcon kind="子智能体" />
-        <b>{a.title || a.name || "子智能体"}</b>
-        <button type="button" aria-label="关闭子智能体详情" onClick={onClose}>
+        <ActivityIcon kind="subagent" />
+        <b>{a.title || a.name || t("activity.category.subagent")}</b>
+        <button type="button" aria-label={t("activity.closeSubagent")} onClick={onClose}>
           ✕
         </button>
       </header>
       <div className="subagent-content">
         <p className="subagent-notice">
-          {states[
-            history?.find((entry) => entry.type === "status")?.status ??
-              a.status ??
-              ""
-          ] ?? "状态未确认"}
+          {statusText(t, history?.find((entry) => entry.type === "status")?.status ?? a.status)}
         </p>
         {error ? (
           <p role="alert">
-            {error}{" "}
+            {t("activity.subagentLoadFailed")}{" "}
             <button type="button" onClick={() => setRetry((n) => n + 1)}>
-              重试
+              {t("common.retry")}
             </button>
           </p>
         ) : a.details?.startsWith("history") && history === null ? (
-          <LoadingStatus layout="panel">正在加载执行记录…</LoadingStatus>
+          <LoadingStatus layout="panel">{t("activity.loadingRecords")}</LoadingStatus>
         ) : null}
         {children.length === 0 && !a.details?.startsWith("history") && (
           <p className="subagent-notice">
-            {a.details === "live_only" ? "仅展示本应用捕获的执行记录，历史记录可能不完整"
-              : a.details === "result_only" ? "当前 Agent 仅提供任务内容和结果，不提供内部执行步骤"
-              : a.details === "available" ? "尚无执行记录"
-              : "当前 Agent 无法查看子智能体详细信息"}
+            {t(a.details === "live_only" ? "activity.liveOnly"
+              : a.details === "result_only" ? "activity.resultOnly"
+              : a.details === "available" ? "activity.noRecords"
+              : "activity.detailsUnsupported")}
           </p>
         )}
         {history !== null && (
           <p className="subagent-notice">
-            {a.details === "history_partial"
-              ? "仅提供部分执行记录"
-              : "执行记录"}{" "}
+            {t(a.details === "history_partial"
+              ? "activity.partialRecords"
+              : "activity.records")}{" "}
             <button type="button" onClick={() => setRetry((n) => n + 1)}>
-              刷新
+              {t("activity.refresh")}
             </button>
           </p>
         )}
@@ -637,11 +644,11 @@ export function SubagentPanel({
           />
         ))}
         {history?.length === 0 && (
-          <p className="subagent-notice">尚无执行记录</p>
+          <p className="subagent-notice">{t("activity.noRecords")}</p>
         )}
         {unsupported && (
           <p className="subagent-notice">
-            当前 Agent 无法查看该子智能体的详细信息
+            {t("activity.subagentDetailsUnsupported")}
           </p>
         )}
         {a.details === "result_only" && a.input != null && <MarkdownMessage text={outputText(a.input)} />}

@@ -1,6 +1,8 @@
+import { uiKo } from "./ui/ko";
 import type { TranslationDict } from "../types";
 
 export const ko: TranslationDict = {
+  ...uiKo,
   agentUi: {
     "notInstalled": "설치되지 않음",
     "installHint": "설치 후 다시 검색하여 연결하세요.",

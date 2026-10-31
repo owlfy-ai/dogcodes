@@ -49,7 +49,7 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
     const element = host.current!;
     const inputQueue = inputRuntime.current!;
     let disposed = false, exited = false, accepting = false, id: string | undefined, connection: TerminalConnection | undefined;
-    setStatus(knownResource.current ? "正在连接终端…" : "正在启动终端…"); setStarting(true); setRetry(false);
+    setStatus(t(knownResource.current ? "terminal.connecting" : "terminal.starting")); setStarting(true); setRetry(false);
     const terminal = new Terminal({
       cursorBlink: true, fontSize: 13, lineHeight: 1.25, scrollback: 5000,
       fontFamily: 'Menlo, Monaco, Consolas, "Liberation Mono", monospace',
@@ -84,7 +84,7 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
     };
     theme();
     const report = (error: unknown) => {
-      if (!disposed && !exited) { setStarting(false); setStatus(userFacingError(error, "终端出现错误，请重新打开。")); }
+      if (!disposed && !exited) { setStarting(false); setStatus(userFacingError(error, t("terminalDock.error"))); }
     };
     let lastSize = "";
     const fit = () => {
@@ -113,10 +113,10 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
     const receive = (event: TerminalOutput) => {
       if (disposed) return;
       if (event.kind === "data") terminal.write(new Uint8Array(event.bytes));
-      else if (event.kind === "gap") terminal.write("\r\n[部分历史输出已不可用]\r\n");
+      else if (event.kind === "gap") terminal.write(`\r\n[${t("terminalDock.historyGap")}]\r\n`);
       else if (event.kind === "disconnected") {
         inputQueue.suspend(); exited = true; accepting = false; terminal.options.disableStdin = true;
-        setStarting(false); setRetry(true); setFailure(n => n + 1); setStatus(userFacingError(event.error, "终端连接已中断，进程状态待核实。"));
+        setStarting(false); setRetry(true); setFailure(n => n + 1); setStatus(userFacingError(event.error, t("terminalDock.disconnected")));
       } else {
         const info = event.info;
         setStarting(false);
@@ -124,12 +124,12 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
         accepting = info.status === "running";
         terminal.options.disableStdin = !accepting || inputQueue.state.paused;
         if (info.status === "running") { setStatus(""); }
-        else if (info.status === "starting") setStatus("正在启动终端…");
-        else if (info.status === "stopping") setStatus("正在停止…");
+        else if (info.status === "starting") setStatus(t("terminal.starting"));
+        else if (info.status === "stopping") setStatus(t("terminalDock.stopping"));
         else {
           inputQueue.ended(); exited = true; terminal.options.disableStdin = true; setRetry(false);
-          setStatus(info.status === "unknown" ? (info.error ?? "原进程状态无法确认，未自动重新执行")
-            : info.status === "failed" ? (info.error ?? "终端启动失败") : `终端已退出${info.exitCode === null ? "" : `（${info.exitCode}）`}`);
+          setStatus(info.status === "unknown" ? (info.error ?? t("terminalDock.unknownProcess"))
+            : info.status === "failed" ? (info.error ?? t("terminalDock.startFailed")) : info.exitCode === null ? t("terminalDock.exited") : t("terminalDock.exitedWithCode", { code: info.exitCode }));
         }
       }
     };
@@ -152,7 +152,7 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
       if (!exited) { reconnect.current.delay = 1000; inputQueue.ready(id); }
       fit();
       if (isVisible.current && element.clientWidth) terminal.focus();
-    }).catch(error => { if (!disposed) { inputQueue.suspend(); setStarting(false); setRetry(true); setFailure(n => n + 1); setStatus(userFacingError(error, "无法连接终端，执行状态待核实。")); } });
+    }).catch(error => { if (!disposed) { inputQueue.suspend(); setStarting(false); setRetry(true); setFailure(n => n + 1); setStatus(userFacingError(error, t("terminalDock.connectFailed"))); } });
     return () => {
       disposed = true;
       inputQueue.suspend();
@@ -181,14 +181,14 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
   };
   return <div className="terminal-pane" role="tabpanel" hidden={!visible}>
     {status && <div className="terminal-status" role={starting || retry ? undefined : "status"}>{starting ? <LoadingStatus>{status}</LoadingStatus>
-      : retry ? <InlineError>{status} 正在自动重新连接…</InlineError> : status}</div>}
+      : retry ? <InlineError>{status} {t("terminal.reconnecting")}</InlineError> : status}</div>}
     {inputState.paused && !retry && <div className="terminal-input-recovery">
-      <InlineError>{userFacingError(inputState.message, "输入结果待核实，未自动重发。")}</InlineError>
-      <span>请先检查终端内容；继续输入不会重发原内容，也不会重新启动终端。</span>
-      {inputState.busy && <LoadingStatus>正在核实输入连接…</LoadingStatus>}
+      <InlineError>{userFacingError(inputState.message, t("terminalInput.resultUnverified"))}</InlineError>
+      <span>{t("terminalDock.checkFirst")}</span>
+      {inputState.busy && <LoadingStatus>{t("terminalDock.verifyingInput")}</LoadingStatus>}
       <div aria-busy={inputState.busy}>
-        {inputState.hasUnknown && <button type="button" disabled={inputState.busy} data-tooltip="只核实原输入结果，不会重新发送" onClick={() => void continueInput("verify")}>核实输入</button>}
-        {inputState.canResume && <button type="button" disabled={inputState.busy} data-tooltip="检查终端后重新连接输入，不会重发原内容" onClick={() => void continueInput("resume")}>继续输入</button>}
+        {inputState.hasUnknown && <button type="button" disabled={inputState.busy} data-tooltip={t("terminalDock.verifyTooltip")} onClick={() => void continueInput("verify")}>{t("terminalDock.verify")}</button>}
+        {inputState.canResume && <button type="button" disabled={inputState.busy} data-tooltip={t("terminalDock.resumeTooltip")} onClick={() => void continueInput("resume")}>{t("terminalDock.resume")}</button>}
       </div>
     </div>}
     <div className="terminal-emulator" ref={host} />
@@ -232,7 +232,7 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
         return next;
       });
       setLoaded(true); setLoadError("");
-    }).catch(error => { if (valid) setLoadError(userFacingError(error, "无法查询后台终端，请重试。")); });
+    }).catch(error => { if (valid) setLoadError(userFacingError(error, t("terminalDock.listFailed"))); });
     return () => { valid = false; };
     // Directory changes must not relaunch existing shells. A new shell always
     // resolves the selected root through the backend at creation time.
@@ -249,7 +249,7 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
   }, [tabs, selected]);
   const addControl = useRef<HTMLDivElement>(null);
   const tabList = useRef<HTMLDivElement>(null);
-  const directoryName = (index: number) => directories[index]?.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "工作区";
+  const directoryName = (index: number) => directories[index]?.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || t("terminalDock.workspace");
   const addTab = (directoryIndex: number) => {
     const id = crypto.randomUUID();
     setTabs(current => [...current, { id, directoryIndex, ordinal: Math.max(0, ...current.filter(tab => tab.directoryIndex === directoryIndex).map(tab => tab.ordinal)) + 1 }]);
@@ -278,7 +278,7 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
       if (!mounted.current) return;
       removeTab(tab.id);
     } catch (cause) {
-      if (mounted.current) setCloseError(userFacingError(cause, "无法关闭终端，请重试。"));
+      if (mounted.current) setCloseError(userFacingError(cause, t("terminalDock.closeFailed")));
     } finally {
       closingRequests.current.delete(id);
       if (mounted.current) setClosing(current => current.filter(item => item !== id));
@@ -318,9 +318,9 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
     </div>
     <button className="terminal-close" aria-label={t("header.collapseTerminal")} data-tooltip={t("header.collapseTerminal")} onClick={onClose}>×</button></header>
     <div className="terminal-panes">{closeError && <InlineError>{closeError}</InlineError>}{loadError && <InlineError onRetry={() => setRefresh(n => n + 1)}>{loadError}</InlineError>}
-    {!loaded && !loadError && <LoadingStatus>正在查询后台终端…</LoadingStatus>}
-    {loaded && visibleTabs.length === 0 && <div className="terminal-empty"><ReviewEmptyState kind="terminal" compact title={directories.length ? "暂无终端" : "尚未关联项目目录"}
-      description={directories.length ? "新建终端，在项目目录中运行命令。" : "先为项目添加目录，再创建终端。"}
-      action={directories.length ? <button type="button" className="review-empty-action" onClick={requestTerminal}>新建终端</button> : onEditProject && <button type="button" className="review-empty-action" onClick={onEditProject}>添加项目目录</button>} /></div>}{visibleTabs.map(tab => <TerminalPane key={tab.id} operationId={tab.id} resourceId={tab.resourceId} onResource={id => rememberResource(tab.id, id)} onStatus={(status, epoch) => rememberStatus(tab.id, status, epoch)} projectId={projectId} directoryIndex={tab.directoryIndex} visible={open && selected === tab.id} api={api} />)}</div>
+    {!loaded && !loadError && <LoadingStatus>{t("terminalDock.listing")}</LoadingStatus>}
+    {loaded && visibleTabs.length === 0 && <div className="terminal-empty"><ReviewEmptyState kind="terminal" compact title={t(directories.length ? "terminalDock.emptyTitle" : "projectRun.noDirectoriesTitle")}
+      description={t(directories.length ? "terminalDock.emptyDescription" : "terminalDock.noDirectories")}
+      action={directories.length ? <button type="button" className="review-empty-action" onClick={requestTerminal}>{t("terminal.newTerminal")}</button> : onEditProject && <button type="button" className="review-empty-action" onClick={onEditProject}>{t("projectRun.addDirectory")}</button>} /></div>}{visibleTabs.map(tab => <TerminalPane key={tab.id} operationId={tab.id} resourceId={tab.resourceId} onResource={id => rememberResource(tab.id, id)} onStatus={(status, epoch) => rememberStatus(tab.id, status, epoch)} projectId={projectId} directoryIndex={tab.directoryIndex} visible={open && selected === tab.id} api={api} />)}</div>
   </section>;
 }

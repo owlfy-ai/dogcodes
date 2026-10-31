@@ -159,9 +159,11 @@ export function I18nProvider({
   const language = controlledLanguage ?? localLanguage;
 
   const resolvedLanguage = useMemo(() => resolveLanguage(language), [language]);
+  // Helpers outside React read the global language while children render, so
+  // switch it before they render rather than in an effect afterwards.
+  setGlobalResolvedLanguage(resolvedLanguage);
 
   useEffect(() => {
-    setGlobalResolvedLanguage(resolvedLanguage);
     if (typeof document !== "undefined") {
       document.documentElement.lang = resolvedLanguage;
     }

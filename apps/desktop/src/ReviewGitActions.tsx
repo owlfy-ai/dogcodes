@@ -13,6 +13,7 @@ import { FloatingPopover } from "./FloatingPopover";
 import { readSkipStageAllConfirmation, setSkipStageAllConfirmation, useSkipStageAllConfirmation } from "./gitCommitPreferences";
 import { AgentIcon, providerLabel } from "./agentPresentation";
 import type { ReviewRoot } from "./reviewClient";
+import { translate as t } from "./i18n";
 
 type Action = "commit" | "commitPush";
 export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0, pulledRevision = 0, hasChanges, disabled, onChanged, onBusy }: {
@@ -54,11 +55,11 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
     let active = true;
     setLoadingAgents(true); setError(null);
     void availableAgentExecutors().then(items => { if (active) { setAgents(items); setAgentsLoaded(true); } })
-      .catch(cause => { if (active) { setAgents([]); setError({ message: userFacingError(cause, "无法读取可用的 Agent，请稍后重试。") }); } })
+      .catch(cause => { if (active) { setAgents([]); setError({ message: userFacingError(cause, t("gitCommit.agentsFailed")) }); } })
       .finally(() => { if (active) setLoadingAgents(false); });
     return () => { active = false; };
   }, [menu]);
-  const reason = !root?.git ? "当前目录未受 Git 管理" : disabled ? "请等待当前操作完成" : "";
+  const reason = !root?.git ? t("gitCommit.notGit") : disabled ? t("gitCommit.waitOperation") : "";
   const locked = !!reason || busy || summarizing;
   const submit = async (kind: Action, confirmStageAll = false) => {
     if (!root?.git || guard.current || locked || (!pushPending && !message.trim())) return;
@@ -85,10 +86,10 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
         setStageAll(null);
         if (cause instanceof GitResultUnknown && committed) {
           // Preserve the original operation identity while its result is uncertain.
-          setPushPending(false); setError({ message: "提交已完成，推送结果待核实。", detail: cause.message });
+          setPushPending(false); setError({ message: t("gitCommit.pushUnverified"), detail: cause.message });
         } else {
           if (cause instanceof GitPushFailed) setPushPending(false);
-          setError(committed ? reviewGitFailure(cause, "提交已完成，推送失败。请稍后重试推送。", "提交已完成，推送失败：") : reviewGitFailure(cause, "提交失败，请稍后重试。"));
+          setError(committed ? reviewGitFailure(cause, t("gitCommit.pushFailed"), t("gitCommit.pushFailedPrefix")) : reviewGitFailure(cause, t("gitCommit.commitFailed")));
         }
       }
     } finally {
@@ -104,7 +105,7 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
     try {
       const summary = await invoke<string>("core_review_commit_summary", { taskId, rootId: root.id, executor, language });
       if (mounted.current) { setMessage(summary.replace(/[\r\n]+/g, " ").trim()); setStageAll(null); }
-    } catch (cause) { if (mounted.current) setError({ message: userFacingError(cause, "生成提交说明失败，请稍后重试。") }); }
+    } catch (cause) { if (mounted.current) setError({ message: userFacingError(cause, t("gitCommit.generateFailed")) }); }
     finally { guard.current = false; onBusy?.(false); if (mounted.current) setSummarizing(false); }
   };
   const chooseLanguage = (id: SummaryLanguage) => {
@@ -131,7 +132,7 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
         const available = enabledAgents(items, item => item.providerId, readAgentPreferences());
         const current = available.find(item => agentChoiceKey(item) === agentChoiceKey(selected));
         if (current) { void summarize(current); return; }
-      } catch (cause) { if (mounted.current) setError({ message: userFacingError(cause, "无法读取可用的 Agent，请稍后重试。") }); }
+      } catch (cause) { if (mounted.current) setError({ message: userFacingError(cause, t("gitCommit.agentsFailed")) }); }
       finally { if (mounted.current) setLoadingAgents(false); }
       if (!mounted.current) return;
     }
@@ -140,28 +141,28 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
   // A successful commit can empty the diff while a push is still pending.
   // Retain its retry controls until that operation finishes.
   if (!root?.git || (!hasChanges && !pushPending && !busy && !summarizing && !error)) return null;
-  const agentName = selected ? providerLabel(selected.providerId) : "选择 Agent";
+  const agentName = selected ? providerLabel(selected.providerId) : t("gitCommit.selectAgent");
   const empty = !message.trim();
-  return <section className="review-commit" ref={section} aria-label="Git 提交" aria-busy={busy || summarizing}>
+  return <section className="review-commit" ref={section} aria-label={t("gitCommit.title")} aria-busy={busy || summarizing}>
     {(hasChanges || pushPending) && <><div className="review-commit-input">
-      <input type="text" aria-label="提交说明" placeholder="提交说明（⌘/Ctrl+Enter 提交）" value={message} disabled={locked || pushPending}
+      <input type="text" aria-label={t("gitCommit.message")} placeholder={t("gitCommit.messagePlaceholder")} value={message} disabled={locked || pushPending}
         onChange={event => { setMessage(event.target.value); setStageAll(null); }}
         onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(event.shiftKey ? "commitPush" : "commit"); } }} />
       <div className="review-commit-tools">
-        <button ref={agentTrigger} type="button" className="review-commit-agent" aria-label="选择提交说明 Agent" data-tooltip={reason || `生成提交说明使用的 Agent：${agentName}`} aria-expanded={menu} aria-haspopup="dialog" disabled={locked || pushPending} onClick={() => { generateOnPick.current = false; setLangMenu(false); setMenu(!menu); }}>
+        <button ref={agentTrigger} type="button" className="review-commit-agent" aria-label={t("review.selectCommitAgent")} data-tooltip={reason || t("gitCommit.agentTooltip", { agent: agentName })} aria-expanded={menu} aria-haspopup="dialog" disabled={locked || pushPending} onClick={() => { generateOnPick.current = false; setLangMenu(false); setMenu(!menu); }}>
           {selected && <AgentIcon providerId={selected.providerId} size="small"/>}
           <span>{agentName}</span>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5" /></svg>
         </button>
         <div className="review-generate-group">
-          <button type="button" className="review-generate-message" aria-label="生成提交说明" data-tooltip={reason || (selected ? `使用 ${agentName} 以${summaryLanguageLabel(language)}生成提交说明` : "先选择 Agent，再生成提交说明")} disabled={locked || pushPending || loadingAgents} onClick={() => void generate()}>
+          <button type="button" className="review-generate-message" aria-label={t("review.generateCommit")} data-tooltip={reason || (selected ? t("gitCommit.generateTooltip", { agent: agentName, language: summaryLanguageLabel(language) }) : t("gitCommit.selectAgentFirst"))} disabled={locked || pushPending || loadingAgents} onClick={() => void generate()}>
             <svg className={summarizing ? "spinning" : undefined} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true"><path d="m10 3 2.4 6.6L19 12l-6.6 2.4L10 21l-2.4-6.6L1 12l6.6-2.4L10 3Zm10-2 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z" /></svg>
-            <span>{summarizing ? "生成中…" : "生成"}</span>
+            <span>{t(summarizing ? "gitCommit.generating" : "gitCommit.generate")}</span>
           </button>
-          <button ref={langTrigger} type="button" className="review-generate-language" aria-label="选择提交说明语言" data-tooltip={reason || `提交说明语言：${summaryLanguageLabel(language)}`} aria-expanded={langMenu} aria-haspopup="dialog" disabled={locked || pushPending || loadingAgents} onClick={() => { setMenu(false); setLangMenu(!langMenu); }}>
+          <button ref={langTrigger} type="button" className="review-generate-language" aria-label={t("review.selectCommitLanguage")} data-tooltip={reason || t("gitCommit.languageTooltip", { language: summaryLanguageLabel(language) })} aria-expanded={langMenu} aria-haspopup="dialog" disabled={locked || pushPending || loadingAgents} onClick={() => { setMenu(false); setLangMenu(!langMenu); }}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5" /></svg>
           </button>
-          {langMenu && <FloatingPopover className="agent-picker-menu review-language-menu" role="dialog" aria-label="提交说明语言" placement="bottom">
+          {langMenu && <FloatingPopover className="agent-picker-menu review-language-menu" role="dialog" aria-label={t("review.commitLanguage")} placement="bottom">
             {SUMMARY_LANGUAGES.map(option => {
               const chosen = option.id === language;
               return <button type="button" key={option.id} className={`review-language-option${chosen ? " active" : ""}`} aria-pressed={chosen} onClick={() => chooseLanguage(option.id)}>
@@ -173,38 +174,38 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
         </div>
       </div>
       {menu && <AgentPickerMenu options={agents.map(executor => ({ key: agentChoiceKey(executor), executor }))}
-        selectedKey={agentChoiceKey(selected)} title="选择编写提交说明的 Agent" label="提交说明 Agent" role="dialog" placement="bottom" loading={loadingAgents}
+        selectedKey={agentChoiceKey(selected)} title={t("gitCommit.chooseAgent")} label={t("gitCommit.agentListLabel")} role="dialog" placement="bottom" loading={loadingAgents}
         onSelect={option => choose(option.executor)}/>}
     </div>
     <div className="review-commit-buttons">
-      {pushPending ? <button type="button" className="review-commit-action review-commit-push" disabled={locked} data-tooltip={reason || "提交已完成，重新推送到远程"} onClick={() => void submit("commitPush")}>
+      {pushPending ? <button type="button" className="review-commit-action review-commit-push" disabled={locked} data-tooltip={reason || t("gitCommit.retryPushTooltip")} onClick={() => void submit("commitPush")}>
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3V1.5h10V3M8 14V5M4.5 8.5 8 5l3.5 3.5" /></svg>
-        <span>{busy ? "推送中…" : "重试推送"}</span>
+        <span>{t(busy ? "gitCommit.pushing" : "gitCommit.retryPush")}</span>
       </button> : <>
-        <button type="button" className="review-commit-action" disabled={locked || empty} data-tooltip={reason || (skipStageAllConfirmation ? "提交已暂存的更改；未暂存时自动暂存全部并提交（⌘/Ctrl+Enter）" : "提交已暂存的更改；未暂存时将先请求确认（⌘/Ctrl+Enter）")} onClick={() => void submit("commit")}>
+        <button type="button" className="review-commit-action" disabled={locked || empty} data-tooltip={reason || t(skipStageAllConfirmation ? "gitCommit.commitTooltipAuto" : "gitCommit.commitTooltipConfirm")} onClick={() => void submit("commit")}>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3" /><path d="M1.5 8H5m6 0h3.5" /></svg>
-          <span>{busy && action === "commit" ? "处理中…" : "提交"}</span>
+          <span>{t(busy && action === "commit" ? "gitCommit.processing" : "gitCommit.commit")}</span>
         </button>
-        <button type="button" className="review-commit-action review-commit-push" disabled={locked || empty} data-tooltip={reason || "提交后推送到远程（⇧⌘/Ctrl+Enter）"} onClick={() => void submit("commitPush")}>
+        <button type="button" className="review-commit-action review-commit-push" disabled={locked || empty} data-tooltip={reason || t("gitCommit.commitPushTooltip")} onClick={() => void submit("commitPush")}>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3V1.5h10V3M8 14V5M4.5 8.5 8 5l3.5 3.5" /></svg>
-          <span>{busy && action === "commitPush" ? "处理中…" : "提交并推送"}</span>
+          <span>{t(busy && action === "commitPush" ? "gitCommit.processing" : "gitCommit.commitPush")}</span>
         </button>
       </>}
     </div>
     </>}
-    {stageAll && <div className="review-commit-confirm" role="group" aria-label="确认暂存全部"
+    {stageAll && <div className="review-commit-confirm" role="group" aria-label={t("gitCommit.confirmStageAll")}
       onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setStageAll(null); } }}>
       <div className="review-commit-confirm-text">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.25" /><path d="M8 4.75v3.75M8 11h.01" /></svg>
-        <p><strong>没有已暂存的更改</strong>将暂存全部更改（包括新增文件）后{action === "commitPush" ? "提交并推送" : "提交"}。</p>
+        <p><strong>{t("gitCommit.nothingStaged")}</strong>{t(action === "commitPush" ? "gitCommit.stageAllThenPush" : "gitCommit.stageAllThenCommit")}</p>
       </div>
       <div className="review-commit-confirm-actions">
         <label className="review-commit-confirm-remember">
           <input type="checkbox" checked={rememberStageAll} disabled={locked} onChange={event => setRememberStageAll(event.target.checked)} />
-          <span>以后不再显示</span>
+          <span>{t("gitCommit.dontShowAgain")}</span>
         </label>
-        <button type="button" className="review-commit-cancel" disabled={locked} onClick={() => setStageAll(null)}>取消</button>
-        <button type="button" className="review-commit-primary" autoFocus disabled={locked} onClick={() => void submit(action, true)}>{action === "commitPush" ? "暂存全部、提交并推送" : "暂存全部并提交"}</button>
+        <button type="button" className="review-commit-cancel" disabled={locked} onClick={() => setStageAll(null)}>{t("common.cancel")}</button>
+        <button type="button" className="review-commit-primary" autoFocus disabled={locked} onClick={() => void submit(action, true)}>{t(action === "commitPush" ? "gitCommit.stageCommitPush" : "gitCommit.stageCommit")}</button>
       </div>
     </div>}
     {reason && !busy && !summarizing && <p className="review-commit-hint">{reason}</p>}

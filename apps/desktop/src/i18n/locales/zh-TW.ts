@@ -1,6 +1,8 @@
+import { uiZhTW } from "./ui/zh-TW";
 import type { TranslationDict } from "../types";
 
 export const zhTW: TranslationDict = {
+  ...uiZhTW,
   agentUi: {
     "notInstalled": "未安裝",
     "installHint": "安裝後重新偵測，即可連線本機 Agent。",

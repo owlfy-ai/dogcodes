@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { userFacingError } from "./userFacingError";
+import { translate as t } from "./i18n";
 
 export interface Attachment { id: string; name: string; preview?: string; file?: File; path?: string; stored?: PromptAttachment; upload?: AttachmentUploadRequest }
 const MAX_SIZE = 25 * 1024 * 1024;
@@ -16,7 +17,7 @@ function preview(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error(`无法读取 ${file.name}`));
+    reader.onerror = () => reject(new Error(t("attachments.readFailed", { name: file.name })));
     reader.readAsDataURL(file);
   });
 }
@@ -37,12 +38,12 @@ export function useAttachments(client?: CoreClient) {
     setError(null);
     try {
       for (const file of files) {
-        if (file.size > MAX_SIZE) throw new Error(`${file.name} 超过 25 MB，请选择较小的文件。`);
+        if (file.size > MAX_SIZE) throw new Error(t("attachments.tooLarge", { name: file.name }));
         const item: Attachment = { id: crypto.randomUUID(), name: file.name, file,
           preview: attachmentMime(file).startsWith("image/") ? await preview(file) : undefined };
         if (epoch === generation.current) setItems(previous => [...previous, item]);
       }
-    } catch (cause) { if (epoch === generation.current) setError(userFacingError(cause, "无法添加附件，请重新选择文件。")); }
+    } catch (cause) { if (epoch === generation.current) setError(userFacingError(cause, t("attachments.addFailed"))); }
     finally { setPending(n => n - 1); }
   };
   const recover = useCallback((upload: AttachmentUploadRequest, stored: PromptAttachment) => {
@@ -50,8 +51,8 @@ export function useAttachments(client?: CoreClient) {
       { id: upload.uploadId, name: upload.name, path: stored.path, upload, stored }]);
   }, []);
   const prepare = async () => {
-    if (items.length > 16 || items.reduce((sum, item) => sum + (item.file?.size ?? item.stored?.integrity?.byteLength ?? 0), 0) > MAX_SIZE) throw new Error("一次最多发送 16 个附件，总大小不能超过 25 MB。");
-    if (items.length && !("__TAURI_INTERNALS__" in window)) throw new Error("请在桌面应用中发送附件；浏览器演示仅支持预览。");
+    if (items.length > 16 || items.reduce((sum, item) => sum + (item.file?.size ?? item.stored?.integrity?.byteLength ?? 0), 0) > MAX_SIZE) throw new Error(t("attachments.limit"));
+    if (items.length && !("__TAURI_INTERNALS__" in window)) throw new Error(t("attachments.desktopOnly"));
     const prepared: PromptAttachment[] = [];
     for (const item of items) {
       if (item.file) {
@@ -60,10 +61,10 @@ export function useAttachments(client?: CoreClient) {
       } else if (item.upload) {
         attachmentUploads.remember(item.upload);
         const stored = await attachmentUploads.check({ schemaVersion: 1, request: item.upload }, client);
-        if (!stored) throw new Error("附件尚未确认上传完成，请重新选择原文件。");
+        if (!stored) throw new Error(t("attachments.uploadUnconfirmed"));
         item.stored = stored; item.path = stored.path;
       }
-      if (!item.stored) throw new Error("附件已不可读取，请重新添加。");
+      if (!item.stored) throw new Error(t("attachments.unreadable"));
       prepared.push(structuredClone(item.stored));
     }
     return prepared;
@@ -131,10 +132,10 @@ function ImagePreviewDialog({ images, selectedId, onSelect, onClose }: {
         link.href = source.src; link.download = image.name;
         document.body.append(link); link.click(); link.remove();
       }
-    } catch { setDownloadError("图片下载失败，请重试。"); }
+    } catch { setDownloadError(t("attachments.downloadFailed")); }
     finally { setDownloading(false); }
   };
-  return createPortal(<dialog ref={dialog} tabIndex={-1} className="attachment-preview-dialog" aria-label={`图片预览：${image.name}`}
+  return createPortal(<dialog ref={dialog} tabIndex={-1} className="attachment-preview-dialog" aria-label={t("attachments.previewLabel", { name: image.name })}
     onCancel={event => { event.preventDefault(); onClose(); }}
     onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget) onClose(); }}
     onKeyDown={event => {
@@ -144,23 +145,23 @@ function ImagePreviewDialog({ images, selectedId, onSelect, onClose }: {
       }
     }}>
     <div className="attachment-preview-actions">
-      <button type="button" onClick={() => void download()} disabled={!source?.src || downloading} aria-label="下载图片" data-tooltip="下载图片">
+      <button type="button" onClick={() => void download()} disabled={!source?.src || downloading} aria-label={t("attachments.download")} data-tooltip={t("attachments.download")}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 15v5h14v-5" /></svg>
       </button>
-      <button type="button" onClick={onClose} aria-label="关闭图片预览" data-tooltip="关闭图片预览（Esc）">
+      <button type="button" onClick={onClose} aria-label={t("attachments.closePreview")} data-tooltip={t("attachments.closePreviewTooltip")}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
       </button>
     </div>
     {source?.src ? <img className="attachment-preview-full-image" src={source.src} alt={image.name} draggable={false} />
-      : <span className="attachment-preview-status" role="status">{source?.unavailable ? "图片已不可读取" : "正在读取图片"}</span>}
+      : <span className="attachment-preview-status" role="status">{t(source?.unavailable ? "attachments.imageUnavailable" : "attachments.imageLoading")}</span>}
     {images.length > 1 && <>
-      <button type="button" className="attachment-preview-previous" disabled={index === 0} onClick={() => select(-1)} aria-label="上一张图片">
+      <button type="button" className="attachment-preview-previous" disabled={index === 0} onClick={() => select(-1)} aria-label={t("attachments.previous")}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6" /></svg>
       </button>
-      <button type="button" className="attachment-preview-next" disabled={index === images.length - 1} onClick={() => select(1)} aria-label="下一张图片">
+      <button type="button" className="attachment-preview-next" disabled={index === images.length - 1} onClick={() => select(1)} aria-label={t("attachments.next")}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
       </button>
-      <span className="attachment-preview-counter" role="status" aria-label={`第 ${index + 1} 张，共 ${images.length} 张图片`}>{index + 1} / {images.length}</span>
+      <span className="attachment-preview-counter" role="status" aria-label={t("attachments.counter", { index: index + 1, total: images.length })}>{index + 1} / {images.length}</span>
     </>}
     {downloadError && <p className="attachment-preview-error" role="alert">{downloadError}</p>}
   </dialog>, document.body);
@@ -168,9 +169,9 @@ function ImagePreviewDialog({ images, selectedId, onSelect, onClose }: {
 
 function AttachmentImage({ image, onOpen }: { image: GalleryImage; onOpen: () => void }) {
   const source = useImageSource(image);
-  return source?.src ? <button type="button" className="attachment-preview-trigger" aria-label={`放大查看图片 ${image.name}`} aria-haspopup="dialog" onClick={onOpen}>
+  return source?.src ? <button type="button" className="attachment-preview-trigger" aria-label={t("attachments.zoom", { name: image.name })} aria-haspopup="dialog" onClick={onOpen}>
     <img src={source.src} alt={image.name} />
-  </button> : <span>{source?.unavailable ? "图片已不可读取" : "正在读取图片"} · {image.name}</span>;
+  </button> : <span>{t(source?.unavailable ? "attachments.imageUnavailable" : "attachments.imageLoading")} · {image.name}</span>;
 }
 
 export function AttachmentPreviews({ items, remove, disabled }: { items: Attachment[]; remove: (id: string) => void; disabled: boolean }) {
@@ -178,12 +179,12 @@ export function AttachmentPreviews({ items, remove, disabled }: { items: Attachm
   const images = items.filter(item => item.preview || item.stored?.mimeType.startsWith("image/")).map(item => ({ ...item, src: item.preview, mimeType: item.stored?.mimeType }));
   if (!items.length) return null;
   return <>
-    <div className="attachment-list" aria-label="待发送附件">{items.map(item => {
+    <div className="attachment-list" aria-label={t("attachments.pending")}>{items.map(item => {
       const image = !!item.preview || !!item.stored?.mimeType.startsWith("image/");
-      const extension = item.name.includes(".") ? item.name.split(".").pop()!.toUpperCase() : "文件";
+      const extension = item.name.includes(".") ? item.name.split(".").pop()!.toUpperCase() : t("attachments.file");
       return <div key={item.id} className={`attachment-card ${image ? "attachment-image" : "attachment-file"}`} data-tooltip={item.name}>
         {image ? <AttachmentImage image={{ ...item, src: item.preview, mimeType: item.stored?.mimeType }} onOpen={() => setSelectedId(item.id)} /> : <><span className="attachment-icon" aria-hidden="true">▤</span><span className="attachment-details"><strong>{item.name}</strong><small>{extension}</small></span></>}
-        <button type="button" className="attachment-remove" disabled={disabled} onClick={() => remove(item.id)} aria-label={`移除附件 ${item.name}`}>×</button>
+        <button type="button" className="attachment-remove" disabled={disabled} onClick={() => remove(item.id)} aria-label={t("attachments.remove", { name: item.name })}>×</button>
       </div>;
     })}</div>
     {selectedId && images.some(image => image.id === selectedId) && <ImagePreviewDialog images={images} selectedId={selectedId} onSelect={setSelectedId} onClose={() => setSelectedId(null)} />}
@@ -196,7 +197,7 @@ export function SentAttachments({ items }: { items: PromptAttachment[] }) {
   const images = entries.filter(item => item.mimeType.startsWith("image/"));
   if (!items.length) return null;
   return <>
-    <div className="sent-attachments" aria-label="已发送附件">{entries.map(item => <div className="sent-attachment" key={item.id} data-tooltip={item.name}>
+    <div className="sent-attachments" aria-label={t("attachments.sent")}>{entries.map(item => <div className="sent-attachment" key={item.id} data-tooltip={item.name}>
       {item.mimeType.startsWith("image/") ? <AttachmentImage image={item} onOpen={() => setSelectedId(item.id)} /> : <><span aria-hidden="true">▤</span><span>{item.name}</span></>}
     </div>)}</div>
     {selectedId && images.some(image => image.id === selectedId) && <ImagePreviewDialog images={images} selectedId={selectedId} onSelect={setSelectedId} onClose={() => setSelectedId(null)} />}

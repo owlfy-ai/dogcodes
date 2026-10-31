@@ -1,6 +1,8 @@
+import { uiPtBR } from "./ui/pt-BR";
 import type { TranslationDict } from "../types";
 
 export const ptBR: TranslationDict = {
+  ...uiPtBR,
   agentUi: {
     "notInstalled": "Não instalado",
     "installHint": "Instale um agente e detecte novamente.",

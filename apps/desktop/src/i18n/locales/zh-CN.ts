@@ -1,7 +1,9 @@
 import { agentUiZh } from "../agentUi";
+import { uiZhCN } from "./ui/zh-CN";
 import type { TranslationDict } from "../types";
 
 export const zhCN: TranslationDict = {
+  ...uiZhCN,
   agentUi: agentUiZh,
   common: {
     systemDefault: "系统默认",

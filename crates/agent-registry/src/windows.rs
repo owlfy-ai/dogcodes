@@ -80,26 +80,7 @@ pub fn windows_desktop_executables(provider: &str, context: &DiscoveryContext) -
                     roots.push(package.join("LocalCache/Roaming/Claude/claude-code"));
                 }
             }
-            let mut candidates = Vec::new();
-            for root in roots {
-                for version in directories(&root, 64) {
-                    let Some(number) = version
-                        .file_name()
-                        .and_then(|v| v.to_str())
-                        .and_then(|v| Version::parse(v).ok())
-                    else {
-                        continue;
-                    };
-                    for payload in directories(&version, 16) {
-                        let executable = payload.join("claude.exe");
-                        if executable.is_file() {
-                            candidates.push((number.clone(), executable));
-                        }
-                    }
-                }
-            }
-            candidates.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-            candidates.into_iter().map(|(_, path)| path).collect()
+            claude_code_payloads(&roots, "claude.exe")
         }
         "codex" => {
             let mut candidates = directories(&local.join("OpenAI/Codex/bin"), 64);
@@ -114,6 +95,31 @@ pub fn windows_desktop_executables(provider: &str, context: &DiscoveryContext) -
         }
         _ => vec![],
     }
+}
+
+/// Claude desktop downloads Claude Code as `<root>/<semver>/<payload>/<binary>`
+/// on both Windows and macOS; newest version first.
+pub(super) fn claude_code_payloads(roots: &[PathBuf], binary: &str) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    for root in roots {
+        for version in directories(root, 64) {
+            let Some(number) = version
+                .file_name()
+                .and_then(|v| v.to_str())
+                .and_then(|v| Version::parse(v).ok())
+            else {
+                continue;
+            };
+            for payload in directories(&version, 16) {
+                let executable = payload.join(binary);
+                if executable.is_file() {
+                    candidates.push((number.clone(), executable));
+                }
+            }
+        }
+    }
+    candidates.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    candidates.into_iter().map(|(_, path)| path).collect()
 }
 
 fn directories(root: &Path, limit: usize) -> Vec<PathBuf> {

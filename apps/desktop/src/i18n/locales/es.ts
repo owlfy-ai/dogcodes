@@ -1,6 +1,8 @@
+import { uiEs } from "./ui/es";
 import type { TranslationDict } from "../types";
 
 export const es: TranslationDict = {
+  ...uiEs,
   agentUi: {
     "notInstalled": "Sin instalar",
     "installHint": "Instala un agente y vuelve a detectarlo.",
