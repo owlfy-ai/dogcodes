@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { translate as t } from "./i18n";
 export function ConversationScroll({
   children,
   taskId,
@@ -82,7 +83,7 @@ export function ConversationScroll({
     <div
       className="timeline"
       ref={viewport}
-      aria-label="对话正文"
+      aria-label={t("conversationScroll.label")}
       style={{ overflowAnchor: away ? "auto" : "none", scrollBehavior: "auto" }}
       onWheel={event => { if (event.deltaY < 0) follow.current = false; }}
       onTouchStart={() => { follow.current = false; }}
@@ -127,7 +128,7 @@ export function ConversationScroll({
       <div className="conversation-flow" ref={content}>{children}</div>
       {away && (
         <button className="conversation-latest" type="button" onClick={bottom}>
-          ↓ 回到底部
+          ↓ {t("conversationScroll.toBottom")}
         </button>
       )}
     </div>

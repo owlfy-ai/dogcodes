@@ -70,7 +70,7 @@ export function ReviewFileMenu({ target, taskId, disabled, onClose, onOpenChange
       <p>{t("fileMenu.discardDescription", { base: t(root.mode === "session" ? "fileMenu.base.session" : root.mode === "unstaged" ? "fileMenu.base.index" : "fileMenu.base.head") })}</p>
       {error && <InlineError>{error}</InlineError>}
       <button type="button" disabled={busy} onClick={close}>{t("common.cancel")}</button>
-      <button type="button" disabled={blocked} onClick={() => void run(() => api.discard({ taskId, snapshotId, rootId: root.root.id, path: file.path, confirmed: true }), t("fileMenu.discardFailed"), true)}>{t(busy ? "gitCommit.processing" : "review.discard")}</button>
+      <button type="button" disabled={blocked} onClick={() => void run(() => api.discard({ taskId, snapshotId, rootId: root.root.id, path: file.path, confirmed: true }), t("fileMenu.discardFailed"), true)}>{t(busy ? "gitCommit.processing" : "fileMenu.discard")}</button>
     </dialog>}
   </div>;
 }

@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { WorkspaceWatchMessage } from "./workspaceWatch";
+import { translate as t } from "./i18n";
 
 type Listener = { refresh: () => void; error?: (message: string) => void };
 /** Shared reconnect/cleanup mechanics for read-only service invalidations. */
@@ -21,7 +22,7 @@ export function createInvalidationSubscriber(watchCommand: string, unwatchComman
         const fail = (message: string) => {
           if (!active()) return;
           ended = true; unwatch(subscription);
-          listeners.forEach(item => { item.error?.(`状态同步已断开，正在重连：${message}`); item.refresh(); });
+          listeners.forEach(item => { item.error?.(t("watch.syncLost", { message })); item.refresh(); });
           timer = setTimeout(connect, Math.min(15000, 1000 * 2 ** Math.min(failures++, 4)));
         };
         try {

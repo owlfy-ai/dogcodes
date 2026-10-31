@@ -6,6 +6,7 @@ import { LoadingStatus } from "./LoadingStatus";
 import { providerLabel } from "./agentPresentation";
 import { reviewLabels } from "./ReviewActions";
 import { userFacingError } from "./userFacingError";
+import { translate as t } from "./i18n";
 
 export function usePendingReview(task: TaskId, scope: string) {
   const saved = useSyncExternalStore(operations.subscribe, () => operations.snapshot(task, scope), () => "null");
@@ -28,18 +29,18 @@ export function ReviewStartRecovery({ client, taskId, scope, busy = false, onRec
     try {
       const run = resend ? await operations.resend(client, scope, pending) : await operations.check(client, scope, pending);
       if (mounted.current && context.current === origin) { setMissing(!run); if (run) onRecovered(run); }
-    } catch (cause) { if (mounted.current && context.current === origin) setError(userFacingError(cause, "无法核实审查，请稍后重试。")); }
+    } catch (cause) { if (mounted.current && context.current === origin) setError(userFacingError(cause, t("reviewRecovery.verifyFailed"))); }
     finally { guard.current = false; if (mounted.current) setWorking(false); }
   }
   if (!record) return null;
   if ("error" in record) return <InlineError>{record.error}</InlineError>;
-  return <div className="turn-action-feedback" role="group" aria-label="待核实的审查请求">
-    <p>有一项审查尚未核实：{reviewLabels[record.kind]} · {providerLabel(record.executor.providerId)}。</p>
-    <button type="button" disabled={busy || working} onClick={() => void recover(false)}>核实审查结果</button>
-    {missing && <><p>后台尚未找到原审查。重发保留原 Agent、范围和标识；原范围不可用时，请核对后结束跟踪再发起新审查。</p><button type="button" disabled={busy || working} onClick={() => void recover(true)}>重发原审查</button></>}
-    <button type="button" disabled={busy || working} onClick={() => { try { operations.forget(scope, record); } catch (cause) { setError(String(cause)); } }}>已核对，结束审查跟踪</button>
-    <small>结束跟踪不会取消后台审查。</small>
-    {working && <LoadingStatus>正在核实审查…</LoadingStatus>}
+  return <div className="turn-action-feedback" role="group" aria-label={t("reviewRecovery.label")}>
+    <p>{t("reviewRecovery.pending", { kind: reviewLabels[record.kind], agent: providerLabel(record.executor.providerId) })}</p>
+    <button type="button" disabled={busy || working} onClick={() => void recover(false)}>{t("reviewRecovery.verify")}</button>
+    {missing && <><p>{t("reviewRecovery.missing")}</p><button type="button" disabled={busy || working} onClick={() => void recover(true)}>{t("reviewRecovery.resend")}</button></>}
+    <button type="button" disabled={busy || working} onClick={() => { try { operations.forget(scope, record); } catch (cause) { setError(String(cause)); } }}>{t("reviewRecovery.forget")}</button>
+    <small>{t("reviewRecovery.note")}</small>
+    {working && <LoadingStatus>{t("reviewRecovery.verifying")}</LoadingStatus>}
     {error && <InlineError>{error}</InlineError>}
   </div>;
 }

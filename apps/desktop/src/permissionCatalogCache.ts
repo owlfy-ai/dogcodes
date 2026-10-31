@@ -1,4 +1,5 @@
 import type { CoreClient, ExecutorRef, PermissionCatalog, TaskId } from "@dogcodes/protocol";
+import { translate as t } from "./i18n";
 
 // Session-only inventory shared across tasks; each task stores its own selection.
 const clients = new WeakMap<CoreClient, Map<string, { value?: PermissionCatalog; request?: Promise<PermissionCatalog> }>>();
@@ -17,7 +18,7 @@ export function permissionCatalogEntry(client: CoreClient, executor: ExecutorRef
       if (target.value) return Promise.resolve(target.value);
       if (target.request) return target.request;
       const request = Promise.resolve().then(() => {
-        if (!client.permissionCatalog) throw new Error("权限策略接口不可用");
+        if (!client.permissionCatalog) throw new Error(t("permissionPicker.apiUnavailable"));
         return client.permissionCatalog(executor, taskId);
       }).then(value => {
         target.value = value;

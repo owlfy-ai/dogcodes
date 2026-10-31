@@ -6,18 +6,19 @@ import { LoadingStatus } from "./LoadingStatus";
 import { reviewGitFailure, type ReviewGitFailure } from "./reviewGitError";
 import { InlineError } from "./InlineError";
 import type { ReviewRoot } from "./reviewClient";
+import { translate as t } from "./i18n";
 
 type RemoteAction = "pull" | "sync";
 export type GitRemoteNotice = { rootId: string; action: RemoteAction; busy: boolean; error?: ReviewGitFailure };
 
 export function ReviewGitFailureNotice({ failure, className = "" }: { failure: ReviewGitFailure; className?: string }) {
-  return <div className={`review-git-error ${className}`.trim()}><InlineError>{failure.message}</InlineError>{failure.detail && <details><summary>查看错误详情</summary><pre>{failure.detail}</pre></details>}</div>;
+  return <div className={`review-git-error ${className}`.trim()}><InlineError>{failure.message}</InlineError>{failure.detail && <details><summary>{t("gitMenu.errorDetails")}</summary><pre>{failure.detail}</pre></details>}</div>;
 }
 export function ReviewGitRemoteStatus({ notice }: { notice: GitRemoteNotice | null }) {
   if (!notice) return null;
-  if (notice.busy) return <div className="review-remote-status"><LoadingStatus>{notice.action === "pull" ? "正在拉取…" : "正在同步更改…"}</LoadingStatus></div>;
+  if (notice.busy) return <div className="review-remote-status"><LoadingStatus>{t(notice.action === "pull" ? "gitMenu.pulling" : "gitMenu.syncing")}</LoadingStatus></div>;
   if (notice.error) return <ReviewGitFailureNotice className="review-remote-status" failure={notice.error} />;
-  return <p className="review-remote-status" role="status">{notice.action === "pull" ? "拉取完成" : "同步完成"}</p>;
+  return <p className="review-remote-status" role="status">{t(notice.action === "pull" ? "gitMenu.pulled" : "gitMenu.synced")}</p>;
 }
 
 export function ReviewGitMenu({ taskId, root, disabled, visible, onBusy, onChanged, onCompleted, onNotice }: {
@@ -52,14 +53,14 @@ export function ReviewGitMenu({ taskId, root, disabled, visible, onBusy, onChang
       await gitOperations.run({ taskId, rootId: root.id, action, message: "", stageAll: false });
       onNotice({ rootId: root.id, action, busy: false });
       onCompleted(action);
-    } catch (cause) { onNotice({ rootId: root.id, action, busy: false, error: reviewGitFailure(cause, action === "pull" ? "拉取失败，请稍后重试。" : "同步失败，请稍后重试。") }); }
+    } catch (cause) { onNotice({ rootId: root.id, action, busy: false, error: reviewGitFailure(cause, t(action === "pull" ? "gitMenu.pullFailed" : "gitMenu.syncFailed")) }); }
     finally { guard.current = false; if (mounted.current) setBusy(false); onBusy(false); onChanged(); }
   };
   return <span ref={host} className="review-git-menu-anchor">
-    <button ref={trigger} type="button" className="review-icon-button" aria-label="更多 Git 操作" data-tooltip="更多 Git 操作" aria-haspopup="menu" aria-expanded={open} disabled={disabled || busy} onClick={() => setOpen(value => !value)} onKeyDown={event => { if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); } }}>
+    <button ref={trigger} type="button" className="review-icon-button" aria-label={t("gitMenu.more")} data-tooltip={t("gitMenu.more")} aria-haspopup="menu" aria-expanded={open} disabled={disabled || busy} onClick={() => setOpen(value => !value)} onKeyDown={event => { if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); } }}>
       <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="13" cy="8" r="1.2"/></svg>
     </button>
-    {open && <FloatingPopover className="review-file-menu review-git-menu" role="menu" aria-label="Git 操作" placement="bottom" onKeyDown={event => {
+    {open && <FloatingPopover className="review-file-menu review-git-menu" role="menu" aria-label={t("gitMenu.label")} placement="bottom" onKeyDown={event => {
       if (!["ArrowDown", "ArrowUp", "Home", "End", "Tab"].includes(event.key)) return;
       if (event.key === "Tab") { setOpen(false); return; }
       event.preventDefault();
@@ -68,14 +69,14 @@ export function ReviewGitMenu({ taskId, root, disabled, visible, onBusy, onChang
       const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
       items[next]?.focus();
     }}>
-      <div className="review-git-menu-repository" data-tooltip={root?.path}>{root?.path.split(/[\\/]/).filter(Boolean).at(-1) ?? "未选择 Git 仓库"}</div>
-      <button type="button" role="menuitem" disabled={blocked} data-tooltip={root?.git ? "从当前分支的上游拉取更改" : "当前目录未受 Git 管理"} onClick={() => void run("pull")}>拉取</button>
-      <button type="button" role="menuitem" disabled={blocked} data-tooltip={root?.git ? "先拉取，再推送本地提交" : "当前目录未受 Git 管理"} onClick={() => { close(); setConfirm(true); }}>同步更改…</button>
+      <div className="review-git-menu-repository" data-tooltip={root?.path}>{root?.path.split(/[\\/]/).filter(Boolean).at(-1) ?? t("gitMenu.noRepository")}</div>
+      <button type="button" role="menuitem" disabled={blocked} data-tooltip={t(root?.git ? "gitMenu.pullTooltip" : "gitCommit.notGit")} onClick={() => void run("pull")}>{t("gitMenu.pull")}</button>
+      <button type="button" role="menuitem" disabled={blocked} data-tooltip={t(root?.git ? "gitMenu.syncTooltip" : "gitCommit.notGit")} onClick={() => { close(); setConfirm(true); }}>{t("gitMenu.syncEllipsis")}</button>
     </FloatingPopover>}
-    {confirm && <dialog ref={dialog} className="review-confirmation" aria-label="确认同步更改" onCancel={event => { event.preventDefault(); setConfirm(false); }}>
-      <h3 tabIndex={-1} data-dialog-title>同步更改？</h3>
-      <p>{root?.path}</p><p>将先从当前分支的上游拉取更改，再推送本地提交。出现冲突时会停止，等待处理。</p>
-      <button type="button" onClick={() => setConfirm(false)}>取消</button><button type="button" disabled={blocked} onClick={() => void run("sync")}>同步更改</button>
+    {confirm && <dialog ref={dialog} className="review-confirmation" aria-label={t("gitMenu.confirmSync")} onCancel={event => { event.preventDefault(); setConfirm(false); }}>
+      <h3 tabIndex={-1} data-dialog-title>{t("gitMenu.syncTitle")}</h3>
+      <p>{root?.path}</p><p>{t("gitMenu.syncDescription")}</p>
+      <button type="button" onClick={() => setConfirm(false)}>{t("common.cancel")}</button><button type="button" disabled={blocked} onClick={() => void run("sync")}>{t("gitMenu.sync")}</button>
     </dialog>}
   </span>;
 }

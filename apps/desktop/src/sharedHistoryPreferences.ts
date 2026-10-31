@@ -1,13 +1,14 @@
 import { useSyncExternalStore } from "react";
 import type { CoreClient, HistoryPreferences } from "@dogcodes/protocol";
 import { SharedPreferences } from "./sharedPreferences";
+import { translate as t } from "./i18n";
 
 type Client = Required<Pick<CoreClient, "historyPreferences" | "setHistoryPreferences" | "subscribe">>;
 export const emptyHistoryPreferences = (): HistoryPreferences => ({ tasks: {}, projects: {}, sorts: {}, orders: {} });
 export class SharedHistoryPreferences extends SharedPreferences<HistoryPreferences> {
   constructor(client: Client, legacy: HistoryPreferences) {
     super({ read: () => client.historyPreferences(), write: (value, revision, id) => client.setHistoryPreferences(value, revision, id), subscribe: (after, listener) => client.subscribe(after, listener) }, legacy, {
-      streamId: "preferences.history", eventType: "preferences.history.updated", label: "历史列表设置", defaults: emptyHistoryPreferences,
+      streamId: "preferences.history", eventType: "preferences.history.updated", label: "sharedPrefs.historyLabel", defaults: emptyHistoryPreferences,
       hasLegacy: value => Object.keys(value.tasks).length > 0 || Object.keys(value.projects).length > 0
         || Object.values(value.sorts).some(sort => sort !== "manual") || Object.values(value.orders).some(order => order.length > 0),
       valid: validHistoryPreferences,
@@ -46,7 +47,7 @@ export const useSharedHistoryPreferences = () => useSyncExternalStore(subscribe,
 export function editSharedHistoryPreferences(edit: (value: HistoryPreferences) => HistoryPreferences): boolean {
   if (!shared) return false;
   const state = shared.getSnapshot();
-  if (!state.snapshot || state.busy || state.unconfirmed || state.importRequired) throw new Error("请先核实当前历史列表设置");
+  if (!state.snapshot || state.busy || state.unconfirmed || state.importRequired) throw new Error(t("sharedPrefs.verifyHistory"));
   void shared.write(edit(state.snapshot.preferences));
   return true;
 }

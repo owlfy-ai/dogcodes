@@ -4,8 +4,14 @@ import { providerLabel } from "./agentPresentation";
 import { AgentPickerTrigger } from "./AgentPickerTrigger";
 import { AgentPickerMenu } from "./AgentPickerMenu";
 import "./reviewActions.css";
+import { translate as t } from "./i18n";
 
-export const reviewLabels = { code: "审查代码", security: "安全检查", performance: "性能分析" };
+// Getters so every read follows the current UI language.
+export const reviewLabels = {
+  get code() { return t("turnActions.review.code"); },
+  get security() { return t("turnActions.review.security"); },
+  get performance() { return t("turnActions.review.performance"); },
+};
 export const reviewKinds = ["code", "security", "performance"] as const;
 const executorKey = (executor: ExecutorRef) => `${executor.providerId}:${executor.installationId ?? ""}`;
 
@@ -27,7 +33,7 @@ export function ReviewActionButton({ kind, disabled, tooltip, onClick }: {
   return <button type="button" className="turn-action" aria-label={reviewLabels[kind]} data-tooltip={tooltip} disabled={disabled} onClick={onClick}><ActionIcon name={kind}/></button>;
 }
 
-export function ReviewAgentPicker({ executors, executor, quotas, open, onOpenChange, onSelect, label = "选择审查 Agent" }: {
+export function ReviewAgentPicker({ executors, executor, quotas, open, onOpenChange, onSelect, label = t("reviewActions.selectAgent") }: {
   executors: ExecutorRef[]; executor: ExecutorRef | undefined; quotas: QuotaSnapshotView[];
   open: boolean; onOpenChange: (open: boolean) => void; onSelect: (key: string) => void; label?: string;
 }) {
@@ -41,9 +47,9 @@ export function ReviewAgentPicker({ executors, executor, quotas, open, onOpenCha
     return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
   }, [open, onOpenChange]);
   return <div className="turn-review-agent" ref={picker}>
-    <AgentPickerTrigger providerId={executor?.providerId} label={label} tooltip={executor ? `审查 Agent：${providerLabel(executor.providerId)}，独立于主 Agent` : "暂无可用 Agent，请先连接或重新检测 Agent"} open={open} onClick={() => onOpenChange(!open)}/>
+    <AgentPickerTrigger providerId={executor?.providerId} label={label} tooltip={executor ? t("reviewActions.agentTooltip", { agent: providerLabel(executor.providerId) }) : t("projectRun.noAgent")} open={open} onClick={() => onOpenChange(!open)}/>
     {open && <AgentPickerMenu options={executors.map(candidate => ({ key: executorKey(candidate), executor: candidate }))}
-      selectedKey={executor ? executorKey(executor) : ""} quotas={quotas} title="选择审查使用的 Agent" label="审查 Agent 列表" onSelect={option => {
+      selectedKey={executor ? executorKey(executor) : ""} quotas={quotas} title={t("reviewActions.chooseAgent")} label={t("reviewActions.agentList")} onSelect={option => {
         onSelect(option.key);
         try { localStorage.setItem("dogcodes.review.executor", option.key); } catch { /* Optional preference. */ }
         onOpenChange(false);

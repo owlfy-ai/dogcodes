@@ -1,6 +1,7 @@
 import { ulid } from "ulid";
 import type { CoreClient, TaskId, TaskSummary } from "@dogcodes/protocol";
 import { withClientOperationLock } from "./clientOperationLock";
+import { translate as t } from "./i18n";
 
 export interface PendingCancellation { schemaVersion: 1; operationId: string; task: TaskSummary; requestedAt: string }
 const prefix = "dogcodes:pending-cancel:";
@@ -21,13 +22,13 @@ function read(taskId: TaskId): PendingCancellation[] {
     if (record?.schemaVersion !== 1 || typeof record.operationId !== "string" || !record.operationId
       || task?.taskId !== taskId || !Number.isSafeInteger(task.streamVersion) || task.streamVersion < 0
       || !active || typeof active.runId !== "string" || !active.runId || typeof active.turnId !== "string" || !active.turnId
-      || item !== key(taskId, active.runId) || typeof record.requestedAt !== "string") throw new Error("待核实的停止请求损坏，请保留记录并检查本机存储。");
+      || item !== key(taskId, active.runId) || typeof record.requestedAt !== "string") throw new Error(t("cancelOps.corrupt"));
     return [record];
   });
 }
 function tracked(record: PendingCancellation) {
   const current = read(record.task.taskId).find(item => scope(item) === scope(record));
-  if (!current || current.operationId !== record.operationId) throw new Error("原停止跟踪已变化，未重发请求。");
+  if (!current || current.operationId !== record.operationId) throw new Error(t("cancelOps.trackingChanged"));
   return current;
 }
 function forget(record: PendingCancellation) {
@@ -35,10 +36,10 @@ function forget(record: PendingCancellation) {
   if (current?.operationId === record.operationId) { localStorage.removeItem(scope(record)); emit(); }
 }
 async function check(client: CoreClient, record: PendingCancellation): Promise<boolean> {
-  if (!client.cancelTurnReceipt) throw new Error("当前客户端不支持查询停止回执，请更新后核实。");
+  if (!client.cancelTurnReceipt) throw new Error(t("cancelOps.receiptUnsupported"));
   const receipt = await client.cancelTurnReceipt(record.task, record.operationId);
   if (receipt === null) return false;
-  if (!receipt?.accepted || !receipt.requestFingerprint) throw new Error("停止回执无法确认受理状态，请检查原操作。");
+  if (!receipt?.accepted || !receipt.requestFingerprint) throw new Error(t("cancelOps.receiptUnclear"));
   forget(record); return true;
 }
 async function send(client: CoreClient, record: PendingCancellation, recovering = true) {
@@ -50,11 +51,11 @@ async function send(client: CoreClient, record: PendingCancellation, recovering 
 }
 async function start(client: CoreClient, task: TaskSummary) {
   const frozen = structuredClone(task);
-  if (!frozen.activePrimaryRun) throw new Error("当前会话没有运行中的任务。");
-  if (!client.cancelTurnReceipt) throw new Error("当前客户端不支持可靠停止请求，请更新后重试。");
+  if (!frozen.activePrimaryRun) throw new Error(t("cancelOps.noRun"));
+  if (!client.cancelTurnReceipt) throw new Error(t("cancelOps.unsupported"));
   const storageKey = key(task.taskId, frozen.activePrimaryRun.runId);
   return withClientOperationLock(storageKey, async () => {
-    if (read(task.taskId).some(item => scope(item) === storageKey)) throw new Error("请先核实原停止请求，不要重复发起。");
+    if (read(task.taskId).some(item => scope(item) === storageKey)) throw new Error(t("cancelOps.verifyFirst"));
     const record: PendingCancellation = { schemaVersion: 1, operationId: `cmd_${ulid()}`, task: frozen, requestedAt: new Date().toISOString() };
     localStorage.setItem(storageKey, JSON.stringify(record)); emit();
     // This newly generated ID has never been dispatched. Avoid an unnecessary

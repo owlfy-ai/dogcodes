@@ -1,5 +1,6 @@
 import type { CoreClient, EventStreamMessage } from "@dogcodes/protocol";
 import { ulid } from "ulid";
+import { translate as t } from "./i18n";
 
 export interface PreferencesSnapshot<T> { revision: number; lastSequence: number; preferences: T }
 export interface PreferencesClient<T> {
@@ -8,6 +9,7 @@ export interface PreferencesClient<T> {
   subscribe: CoreClient["subscribe"];
 }
 export interface PreferencesOptions<T> {
+  // label is a translation key naming the settings in messages.
   streamId: string; eventType: string; label: string;
   defaults(): T; hasLegacy(value: T): boolean; valid(value: T): boolean;
 }
@@ -75,7 +77,7 @@ export class SharedPreferences<T> {
     this.generation++;
     this.stopStream?.(); this.stopStream = undefined;
     clearTimeout(this.timer);
-    this.update({ error: `${this.options.label}暂时无法同步，正在重新连接。` });
+    this.update({ error: t("sharedPrefs.syncLost", { label: t(this.options.label) }) });
     this.timer = setTimeout(() => { void this.connect(); }, this.retryDelay);
     this.retryDelay = Math.min(this.retryDelay * 2, 8_000);
   }
@@ -101,8 +103,8 @@ export class SharedPreferences<T> {
     // and prevents the user from choosing defaults. Keep the original backup.
     if (!this.options.valid(preferences)) {
       this.update({ error: importing
-        ? `原有 ${this.options.label}包含无效内容，未写入后台。可以选择使用默认设置，原本地副本仍会保留。`
-        : `${this.options.label}包含无效内容，未保存。请重新读取设置后再试。` });
+        ? t("sharedPrefs.invalidImport", { label: t(this.options.label) })
+        : t("sharedPrefs.invalid", { label: t(this.options.label) }) });
       return;
     }
     this.pending = {
@@ -134,12 +136,12 @@ export class SharedPreferences<T> {
           // Whether our write or another client's write won, the old CAS can no
           // longer overwrite current state. Never silently resend with a new ID.
           this.pending = null;
-          if (this.active) this.update({ error: "未确认本次保存，已显示后台当前设置。请核对后再操作。" });
+          if (this.active) this.update({ error: t("sharedPrefs.saveNotConfirmed") });
         } else if (this.active) {
-          this.update({ error: "设置保存结果尚未确认，请点击重试核实原操作。" });
+          this.update({ error: t("sharedPrefs.saveUnverified") });
         }
       } catch {
-        if (this.active) this.update({ error: "暂时无法确认设置是否保存。重试会沿用原操作，不重复覆盖新设置。" });
+        if (this.active) this.update({ error: t("sharedPrefs.saveUnknown") });
       }
     } finally {
       this.update({ busy: false, unconfirmed: this.pending !== null });

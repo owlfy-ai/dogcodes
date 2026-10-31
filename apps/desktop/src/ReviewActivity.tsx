@@ -5,6 +5,7 @@ import { AgentIcon } from "./agentPresentation";
 import { DeferredDetails } from "./DeferredDetails";
 import { reviewActive } from "./reviewStream";
 import { reviewActivityText } from "./reviewActivityText";
+import { translate as t } from "./i18n";
 
 export function ReviewActivity({ client, run, notices = [] }: { client: CoreClient; run: TurnReviewRun; notices?: string[] }) {
   const activities = run.activities ?? [];
@@ -29,18 +30,18 @@ export function ReviewActivity({ client, run, notices = [] }: { client: CoreClie
     // normal tool status instead of offering a link to an unrelated conversation.
     const a = entry.data as Activity;
     const display = isSubagent(a)
-      ? { ...a, type: "tool", category: "review", name: "委派任务", input: a.title || a.input } : a;
+      ? { ...a, type: "tool", category: "review", name: t("activity.delegatedTask"), input: a.title || a.input } : a;
     return <ActivityRow key={entry.itemId} item={item} a={display} active={active} client={client} onSubagent={() => {}}/>;
   };
   const isTool = (entry: ReviewActivityItem) => entry.data.type === "tool" || isSubagent(entry.data as Activity);
   const tools = visible.filter(isTool);
   const firstTool = tools[0];
-  const content = () => <div className="review-activity" aria-label="审查执行过程">{visible.map(entry => isTool(entry)
+  const content = () => <div className="review-activity" aria-label={t("reviewActivity.label")}>{visible.map(entry => isTool(entry)
     ? entry === firstTool && <TurnProcess key="review-tools" startedAt={run.createdAt} completedAt={run.finishedAt} active={active} agent={<AgentIcon providerId={run.request.executor.providerId}/>}>
         {() => tools.map(entry => <div className="conversation-entry" key={entry.itemId}>{render(entry)}</div>)}
       </TurnProcess>
     : render(entry))}{notices.map((notice, index) => <p className="turn-review-notice" role="status" key={`notice-${index}`}>{notice}</p>)}</div>;
   return run.status === "completed"
-    ? <DeferredDetails className="review-execution" summary={<summary>审查执行过程</summary>}>{content}</DeferredDetails>
+    ? <DeferredDetails className="review-execution" summary={<summary>{t("reviewActivity.label")}</summary>}>{content}</DeferredDetails>
     : content();
 }

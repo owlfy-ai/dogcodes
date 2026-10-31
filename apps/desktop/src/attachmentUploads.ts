@@ -1,6 +1,7 @@
 import type { AttachmentUploadRequest, CoreClient, PromptAttachment } from "@dogcodes/protocol";
 import { TauriCoreClient } from "./tauriClient";
 import { withClientOperationLock } from "./clientOperationLock";
+import { translate as t } from "./i18n";
 
 const prefix = "dogcodes:pending-attachment-upload:";
 const listeners = new Set<() => void>();
@@ -16,7 +17,7 @@ function read(id: string): PendingAttachmentUpload | null {
   const raw = localStorage.getItem(prefix + id);
   if (raw === null) return null;
   const record = JSON.parse(raw) as PendingAttachmentUpload;
-  if (!record || record.schemaVersion !== 1 || !valid(record.request) || record.request.uploadId !== id) throw new Error("待核实的附件导入记录损坏，请保留记录并检查本机存储。");
+  if (!record || record.schemaVersion !== 1 || !valid(record.request) || record.request.uploadId !== id) throw new Error(t("uploads.corrupt"));
   return record;
 }
 function list() {
@@ -24,9 +25,9 @@ function list() {
 }
 const emit = () => listeners.forEach(listener => listener());
 function remember(request: AttachmentUploadRequest) {
-  if (!valid(request)) throw new Error("附件上传信息无效。");
+  if (!valid(request)) throw new Error(t("uploads.invalid"));
   const old = read(request.uploadId);
-  if (old && JSON.stringify(old.request) !== JSON.stringify(request)) throw new Error("原附件上传身份已绑定其他内容。");
+  if (old && JSON.stringify(old.request) !== JSON.stringify(request)) throw new Error(t("uploads.identityTaken"));
   if (!old) { localStorage.setItem(prefix + request.uploadId, JSON.stringify({ schemaVersion: 1, request })); emit(); }
 }
 function forget(id: string) {
@@ -34,24 +35,24 @@ function forget(id: string) {
 }
 function verify(request: AttachmentUploadRequest, result: PromptAttachment): PromptAttachment {
   if (!result || result.name !== request.name || result.mimeType !== request.mimeType || typeof result.path !== "string" || !result.path
-    || result.integrity?.sha256 !== request.sha256 || result.integrity.byteLength !== request.byteLength) throw new Error("附件回执与原文件不一致，请核实原上传。");
+    || result.integrity?.sha256 !== request.sha256 || result.integrity.byteLength !== request.byteLength) throw new Error(t("uploads.receiptMismatch"));
   return structuredClone(result);
 }
 function clientOrNative(client?: CoreClient) {
   const value = client ?? native;
-  if (!value.uploadAttachment || !value.attachmentUploadReceipt) throw new Error("当前客户端不支持可靠附件上传，请更新后重试。");
+  if (!value.uploadAttachment || !value.attachmentUploadReceipt) throw new Error(t("uploads.unsupported"));
   return value;
 }
 async function check(record: PendingAttachmentUpload, client?: CoreClient) {
-  if (!valid(record.request)) throw new Error("附件上传信息无效。");
+  if (!valid(record.request)) throw new Error(t("uploads.invalid"));
   const value = clientOrNative(client);
   const result = await value.attachmentUploadReceipt!(record.request);
   return result ? verify(record.request, result) : null;
 }
 async function prepare(file: File, uploadId: string, mimeType: string, client?: CoreClient): Promise<{ request: AttachmentUploadRequest; reference: PromptAttachment }> {
-  if (file.size > 25 * 1024 * 1024) throw new Error("附件超过 25 MB。");
+  if (file.size > 25 * 1024 * 1024) throw new Error(t("uploads.tooLarge"));
   const bytes = new Uint8Array(await file.arrayBuffer());
-  if (bytes.length > 25 * 1024 * 1024) throw new Error("附件超过 25 MB。");
+  if (bytes.length > 25 * 1024 * 1024) throw new Error(t("uploads.tooLarge"));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   const request: AttachmentUploadRequest = { uploadId, name: file.name, mimeType, byteLength: bytes.length,
     sha256: [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("") };

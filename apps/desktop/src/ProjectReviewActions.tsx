@@ -15,6 +15,7 @@ import { InlineError } from "./InlineError";
 import { userFacingError } from "./userFacingError";
 import type { ReviewSnapshot } from "./reviewClient";
 import "./projectReview.css";
+import { translate as t } from "./i18n";
 
 export const projectAnalysisClient = new TauriCoreClient();
 const key = (executor: ExecutorRef) => `${executor.providerId}:${executor.installationId ?? ""}`;
@@ -57,7 +58,7 @@ export function ProjectReviewActions({ taskId, snapshot, disabled, onReviewFindi
     let valid = true;
     void Promise.all([client.bootstrap(), client.reviewExecutors?.() ?? []]).then(([bootstrap, connected]) => {
       if (valid) { setExecutors(reviewAgentExecutors(bootstrap.installations, connected)); setAgentError(""); }
-    }).catch(() => { if (valid) setAgentError("无法读取审查 Agent，请重新打开 Agent 列表重试"); })
+    }).catch(() => { if (valid) setAgentError(t("projectReview.agentsFailed")); })
       .finally(() => { if (valid) setAgentsLoaded(true); });
     return () => { valid = false; };
   }, [client, menu]);
@@ -73,7 +74,7 @@ export function ProjectReviewActions({ taskId, snapshot, disabled, onReviewFindi
         setRuns(projectRuns); setReadError("");
         setSelectedRunId(previous => projectRuns.some(run => run.request.runId === previous) ? previous : newestReviews(projectRuns)[0]?.request.runId ?? null);
         if (projectRuns.some(active)) interval = 1500;
-      } catch { if (valid) setReadError("无法读取审查状态，正在重试"); }
+      } catch { if (valid) setReadError(t("projectReview.statusFailed")); }
       finally { if (valid) setLoadedTask(taskId); }
       // Also discover reviews started in a detached window or another panel.
       if (valid) timer = setTimeout(load, interval);
@@ -83,7 +84,7 @@ export function ProjectReviewActions({ taskId, snapshot, disabled, onReviewFindi
   }, [client, taskId, revision, visible]);
   const executor = executors.find(e => key(e) === selected) ?? executors.find(e => e.providerId === selected.split(":")[0]) ?? executors[0];
   const count = snapshot?.roots.reduce((total, root) => total + root.files.length, 0) ?? 0;
-  const reason = disabled ? "请等待 Diff 读取完成" : !snapshot || !count ? "当前比较范围没有改动" : snapshot.roots.some(root => root.error) ? "部分目录读取失败，请先刷新" : !executor ? "暂无可用 Agent" : !client.startProjectReview ? "请在桌面应用中执行审查" : "";
+  const reason = disabled ? t("projectReview.waitDiff") : !snapshot || !count ? t("projectReview.noChanges") : snapshot.roots.some(root => root.error) ? t("projectReview.partialRead") : !executor ? t("projectReview.noAgent") : !client.startProjectReview ? t("turnActions.desktopOnly") : "";
   async function start(kind: ReviewKind, retry?: TurnReviewRun) {
     if (!executor || !client.startProjectReview || guard.current || pending || (!retry && reason)) return;
     const sourceSnapshot = retry?.workspaceReview ? retry.request.sourceSnapshot : snapshot?.id;
@@ -94,26 +95,26 @@ export function ProjectReviewActions({ taskId, snapshot, disabled, onReviewFindi
     try {
       const run = await reviewStartOperations.send(client, "project", request);
       if (mounted.current) { setRuns(oldRuns => [...oldRuns.filter(r => r.request.runId !== run.request.runId), run]); setSelectedRunId(run.request.runId); setRevision(n => n + 1); }
-    } catch (cause) { if (mounted.current) setError(userFacingError(cause, "发起审查失败，请稍后重试。")); }
+    } catch (cause) { if (mounted.current) setError(userFacingError(cause, t("turnActions.startFailed"))); }
     finally { guard.current = false; if (mounted.current) setBusy(false); }
   }
   async function cancel(run: TurnReviewRun) {
     try { await client.cancelTurnReview?.(taskId as TaskId, run.request.runId); if (mounted.current) setRevision(n => n + 1); }
-    catch (cause) { if (mounted.current) setError(userFacingError(cause, "取消审查失败，请稍后重试。")); }
+    catch (cause) { if (mounted.current) setError(userFacingError(cause, t("turnActions.cancelFailed"))); }
   }
-  const title = <><svg className="project-review-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg><span className="project-review-title">AI 审查</span></>;
+  const title = <><svg className="project-review-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg><span className="project-review-title">{t("projectReview.title")}</span></>;
   // With nothing to review and no past run, the bar stays a quiet one-line hint.
   const idle = !selectedRun && (!snapshot || !count);
-  return <section className="project-review" aria-label="项目 AI 审查" data-expanded={expanded || undefined} data-idle={idle || undefined}>
+  return <section className="project-review" aria-label={t("projectReview.label")} data-expanded={expanded || undefined} data-idle={idle || undefined}>
     <header className="project-review-header">
       {selectedRun
-        ? <button type="button" className="project-review-toggle" aria-expanded={expanded} aria-controls={bodyId} data-tooltip={expanded ? "收起审查结果" : "展开审查结果"} onClick={() => setCollapsed(expanded)}>
+        ? <button type="button" className="project-review-toggle" aria-expanded={expanded} aria-controls={bodyId} data-tooltip={t(expanded ? "projectReview.collapse" : "projectReview.expand")} onClick={() => setCollapsed(expanded)}>
           {title}{!expanded && <span className="project-review-collapsed-status"><ReviewHistoryTitle run={selectedRun}/></span>}
         </button>
-        : <span className="project-review-toggle" aria-disabled="true">{title}<small className="project-review-hint" data-tooltip={reason || undefined}>{reason || `对当前 ${count} 个文件发起审查`}</small></span>}
+        : <span className="project-review-toggle" aria-disabled="true">{title}<small className="project-review-hint" data-tooltip={reason || undefined}>{reason || t("projectReview.startHint", { count })}</small></span>}
       <div className="project-review-toolbar">
-        {reviewKinds.map(kind => <ReviewActionButton key={kind} kind={kind} disabled={busy || !!pending || !!reason || runs.some(run => active(run) && run.request.sourceSnapshot === snapshot?.id && run.request.kind === kind)} tooltip={reason || `${labels[kind]} · 当前比较范围 · ${count} 个文件`} onClick={() => void start(kind)}/>)}
-        <ReviewAgentPicker executors={executors} executor={executor} quotas={quotas} open={menu} onOpenChange={setMenu} onSelect={setSelected} label="选择项目审查 Agent"/>
+        {reviewKinds.map(kind => <ReviewActionButton key={kind} kind={kind} disabled={busy || !!pending || !!reason || runs.some(run => active(run) && run.request.sourceSnapshot === snapshot?.id && run.request.kind === kind)} tooltip={reason || t("projectReview.kindTooltip", { kind: labels[kind], count })} onClick={() => void start(kind)}/>)}
+        <ReviewAgentPicker executors={executors} executor={executor} quotas={quotas} open={menu} onOpenChange={setMenu} onSelect={setSelected} label={t("projectReview.selectAgent")}/>
       </div>
     </header>
     {(error || readError || agentError) && <div className="project-review-messages"><ReviewFailure error={error}/>{readError && <InlineError role="status">{readError}</InlineError>}{agentError && <InlineError role="status">{agentError}</InlineError>}</div>}
@@ -121,14 +122,14 @@ export function ProjectReviewActions({ taskId, snapshot, disabled, onReviewFindi
     {selectedRun && <div id={bodyId} className="project-review-body" hidden={!expanded}>
       <div className="project-review-history-row">
         <ProjectReviewHistory runs={orderedRuns} selected={selectedRun} onSelect={setSelectedRunId}/>
-        {active(selectedRun) && <button type="button" className="project-review-cancel" disabled={selectedRun.status === "cancelling"} onClick={() => void cancel(selectedRun)}>取消审查</button>}
+        {active(selectedRun) && <button type="button" className="project-review-cancel" disabled={selectedRun.status === "cancelling"} onClick={() => void cancel(selectedRun)}>{t("turnActions.cancelReview")}</button>}
       </div>
       {orderedRuns.map(run => <ProjectReviewPage key={run.request.runId} runId={run.request.runId} selected={run.request.runId === selectedRun.request.runId}>
         <ReviewResult client={client} run={run} executor={executor} onReviewFinding={onReviewFinding}
           onRetry={run.workspaceReview && ["failed", "interrupted"].includes(run.status) && reviewKinds.some(kind => kind === run.request.kind)
             ? () => void start(run.request.kind as ReviewKind, run) : undefined}
           retryDisabled={busy || !!pending || !executor || !client.startProjectReview || runs.some(other => active(other) && other.request.kind === run.request.kind && other.request.sourceSnapshot === run.request.sourceSnapshot)}
-          retryTooltip={!executor ? "暂无可用审查 Agent" : "按原审查范围重新读取当前代码"}/>
+          retryTooltip={t(!executor ? "projectReview.noReviewAgent" : "projectReview.retryTooltip")}/>
       </ProjectReviewPage>)}
     </div>}
   </section>;

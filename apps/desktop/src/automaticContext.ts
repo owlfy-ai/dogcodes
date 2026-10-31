@@ -1,6 +1,7 @@
 import { createContext } from "react";
 import type { CoreClient, ExecutorRef, TaskId, TaskSummary, PromptAttachment } from "@dogcodes/protocol";
 import { contextPreviewRequest } from "./contextRoute";
+import { translate as t } from "./i18n";
 
 /** Main-Agent choices made in the composer that the core applies on the next submission. */
 export const PendingExecutorContext = createContext<Record<string, ExecutorRef>>({});
@@ -11,16 +12,16 @@ const sameExecutor = (a: ExecutorRef, b: ExecutorRef) => a.providerId === b.prov
 export async function switchExecutorWithAutomaticContext(client: CoreClient, taskId: TaskId, target: ExecutorRef): Promise<TaskSummary> {
   const latest = await client.bootstrap();
   let task = latest.tasks.find(item => item.taskId === taskId);
-  if (!task) throw new Error("对话已不可用");
-  if (task.activePrimaryRun) throw new Error("请等待当前回复结束");
+  if (!task) throw new Error(t("autoContext.unavailable"));
+  if (task.activePrimaryRun) throw new Error(t("autoContext.waitReply"));
   if (!sameExecutor(task.preferredExecutor, target)) {
     const request = contextPreviewRequest(latest, task, target, "standard");
     const built = await client.buildContextPreview(request);
     await client.confirmContextPackage(task, request, built.payloadSha256, null);
     task = (await client.bootstrap()).tasks.find(item => item.taskId === taskId);
-    if (!task) throw new Error("对话已不可用");
+    if (!task) throw new Error(t("autoContext.unavailable"));
   }
-  if (!sameExecutor(task.preferredExecutor, target)) throw new Error("执行者已变化，请重试");
+  if (!sameExecutor(task.preferredExecutor, target)) throw new Error(t("autoContext.executorChanged"));
   return task;
 }
 

@@ -1,5 +1,6 @@
 import { languageForPath } from "./syntaxHighlight";
 import "./fileIcon.css";
+import { translate as t } from "./i18n";
 
 type Icon = { kind: string; label: string; color: string; text?: string };
 const languageIcons: Record<string, [string, string]> = {
@@ -24,21 +25,21 @@ export function fileIconForPath(path: string): Icon {
   if (ext === "astro") return { kind: "label", label: "Astro", color: "purple", text: "A" };
   if (/^(dockerfile|compose\.ya?ml|docker-compose\.ya?ml)(\..*)?$/.test(name)) return { kind: "label", label: "Docker", color: "blue", text: "D" };
   if (/^\.git(ignore|attributes|modules|config)$/.test(name)) return { kind: "git", label: "Git", color: "orange" };
-  if (name === ".env" || name.startsWith(".env.") || [".editorconfig", ".npmrc", ".prettierrc", ".eslintrc"].includes(name)) return { kind: "config", label: "配置", color: "gray" };
-  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "avif", "heic", "tiff"].includes(ext)) return { kind: "image", label: "图片", color: "purple" };
-  if (["mp3", "wav", "flac", "ogg", "m4a", "aac"].includes(ext)) return { kind: "audio", label: "音频", color: "purple" };
-  if (["mp4", "mov", "webm", "avi", "mkv"].includes(ext)) return { kind: "video", label: "视频", color: "pink" };
-  if (["zip", "gz", "tar", "bz2", "xz", "7z", "rar"].includes(ext)) return { kind: "archive", label: "压缩包", color: "orange" };
-  if (["woff", "woff2", "ttf", "otf"].includes(ext)) return { kind: "label", label: "字体", color: "red", text: "Aa" };
-  if (["db", "sqlite", "sqlite3"].includes(ext)) return { kind: "database", label: "数据库", color: "yellow" };
+  if (name === ".env" || name.startsWith(".env.") || [".editorconfig", ".npmrc", ".prettierrc", ".eslintrc"].includes(name)) return { kind: "config", label: t("fileIcon.config"), color: "gray" };
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "avif", "heic", "tiff"].includes(ext)) return { kind: "image", label: t("markdown.image"), color: "purple" };
+  if (["mp3", "wav", "flac", "ogg", "m4a", "aac"].includes(ext)) return { kind: "audio", label: t("fileIcon.audio"), color: "purple" };
+  if (["mp4", "mov", "webm", "avi", "mkv"].includes(ext)) return { kind: "video", label: t("fileIcon.video"), color: "pink" };
+  if (["zip", "gz", "tar", "bz2", "xz", "7z", "rar"].includes(ext)) return { kind: "archive", label: t("fileIcon.archive"), color: "orange" };
+  if (["woff", "woff2", "ttf", "otf"].includes(ext)) return { kind: "label", label: t("fileIcon.font"), color: "red", text: "Aa" };
+  if (["db", "sqlite", "sqlite3"].includes(ext)) return { kind: "database", label: t("fileIcon.database"), color: "yellow" };
   if (ext === "pdf") return { kind: "label", label: "PDF", color: "red", text: "PDF" };
-  if (ext === "lock" || ["package-lock.json", "pnpm-lock.yaml", "bun.lockb"].includes(name)) return { kind: "lock", label: "锁文件", color: "gray" };
+  if (ext === "lock" || ["package-lock.json", "pnpm-lock.yaml", "bun.lockb"].includes(name)) return { kind: "lock", label: t("fileIcon.lock"), color: "gray" };
   const language = languageForPath(path);
   if (language && languageIcons[language]) {
     const [text, color] = languageIcons[language];
     return { kind: language === "sql" ? "database" : ["ini", "makefile"].includes(language) ? "config" : text ? "label" : "file", label: language, color, text };
   }
-  return { kind: "file", label: "文件", color: "gray" };
+  return { kind: "file", label: t("attachments.file"), color: "gray" };
 }
 
 const shapes: Record<string, string> = {

@@ -86,7 +86,7 @@ export function TurnCommitAction({ taskId, data, providerId }: { taskId: string;
     try {
       const snapshot = await reviewClient.query({ taskId, rootId: restoring.rootId, mode: "staged" });
       await reviewClient.index(taskId, snapshot.id, restoring.rootId, restoring.paths, "unstage");
-    } catch { /* The 变更 panel still shows the staged files; nothing is lost. */ }
+    } catch { /* The Changes panel still shows the staged files; nothing is lost. */ }
   }
   async function switchRoot(id: string) {
     const target = targets.find(t => t.rootId === id);

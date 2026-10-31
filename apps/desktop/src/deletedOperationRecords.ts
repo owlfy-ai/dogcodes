@@ -1,4 +1,5 @@
 import type { CoreClient } from "@dogcodes/protocol";
+import { translate as t } from "./i18n";
 
 const taskId = (value: unknown): value is string => typeof value === "string" && /^tsk_[0-9A-HJKMNP-TV-Z]{26}$/.test(value);
 interface ObjectRecord {
@@ -14,7 +15,7 @@ function owner(key: string, raw: string): string | null {
   const prefix = known.find(prefix => key.startsWith(prefix));
   if (!prefix) return null;
   const value = JSON.parse(raw) as ObjectRecord;
-  if (!value || typeof value !== "object") throw new Error("恢复记录格式损坏");
+  if (!value || typeof value !== "object") throw new Error(t("deletedRecords.corrupt"));
   let task: unknown, expected: string | undefined;
   if (prefix === "dogcodes:pending-git:" || prefix === "dogcodes:pending-review-mutation:") {
     task = value.request?.taskId;
@@ -39,7 +40,7 @@ function owner(key: string, raw: string): string | null {
     task = value.request?.taskId;
     if (typeof value.request?.operationId === "string" && typeof value.method === "string" && ["core_project_runs_analyze", "core_project_run_edit"].includes(value.method)) expected = `${prefix}${task}.${value.request.operationId}`;
   }
-  if (!taskId(task) || key !== expected) throw new Error("恢复记录归属无法核实");
+  if (!taskId(task) || key !== expected) throw new Error(t("deletedRecords.owner"));
   return task;
 }
 
@@ -55,7 +56,7 @@ export async function retireDeletedOperationRecords(client: CoreClient, current:
       const raw = localStorage.getItem(key); if (raw === null) continue;
       const task = owner(key, raw); if (!task) continue;
       const records = grouped.get(task) ?? []; records.push({ key, raw }); grouped.set(task, records);
-    } catch { result.issues.push("部分恢复记录损坏或无法读取，已保留原记录。"); }
+    } catch { result.issues.push(t("deletedRecords.unreadable")); }
   }
   for (const [task, records] of grouped) {
     if (!current()) break;
@@ -63,16 +64,16 @@ export async function retireDeletedOperationRecords(client: CoreClient, current:
       const proof = await client.taskDeletion(task);
       if (!current()) break;
       if (!proof) continue;
-      if (proof.taskId !== task || !Number.isSafeInteger(proof.deletionSequence) || proof.deletionSequence < 1) throw new Error("删除证明无效");
+      if (proof.taskId !== task || !Number.isSafeInteger(proof.deletionSequence) || proof.deletionSequence < 1) throw new Error(t("deletedRecords.proof"));
       for (const record of records) {
         if (!current()) break;
         try {
           if (localStorage.getItem(record.key) !== record.raw) continue;
           localStorage.removeItem(record.key); result.retired++;
           window.dispatchEvent(new StorageEvent("storage", { key: record.key, oldValue: record.raw, newValue: null, storageArea: localStorage }));
-        } catch { result.issues.push("部分恢复记录无法结束，已保留原记录。"); }
+        } catch { result.issues.push(t("deletedRecords.notClosed")); }
       }
-    } catch { result.issues.push("暂时无法核实会话删除状态，已保留原恢复记录。"); }
+    } catch { result.issues.push(t("deletedRecords.verifyFailed")); }
   }
   return result;
 }

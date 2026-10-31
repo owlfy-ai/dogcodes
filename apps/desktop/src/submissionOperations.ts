@@ -1,6 +1,7 @@
 import { ulid } from "ulid";
 import type { CoreClient, ExecutorRef, ProjectId, SubmissionIntent, SubmissionIntentEntry, SubmissionResolution, TaskId, TurnSubmission } from "@dogcodes/protocol";
 import { withClientOperationLock } from "./clientOperationLock";
+import { translate as t } from "./i18n";
 
 // The service freezes each send, creates the conversation or switches the Agent
 // when needed, and submits the message with fixed identities. This client only
@@ -48,7 +49,7 @@ function unconfirmed(): { records: UnconfirmedSubmission[]; error: string | null
       const value = JSON.parse(localStorage.getItem(key) ?? "null") as UnconfirmedSubmission;
       if (value?.schemaVersion !== 1 || unconfirmedPrefix + value.operationId !== key || !text(value.scope) || !value.input) throw new Error("invalid");
       records.push(value);
-    } catch { error = "部分发送结果未知的本机记录损坏，已保留原记录，请检查本机存储。"; }
+    } catch { error = t("submissionOps.corrupt"); }
   }
   return { records, error };
 }
@@ -73,12 +74,12 @@ function publish(client: CoreClient, records: PendingSubmission[], error: string
 
 function api(client: CoreClient) {
   if (!client.submissionStart || !client.submissionContinue || !client.submissionRetire || !client.submissionIntentGet || !client.submissionIntentList) {
-    throw new Error("当前客户端不支持可靠发送，请更新后重试。");
+    throw new Error(t("submissionOps.unsupported"));
   }
   return client as Required<Pick<CoreClient, "submissionStart" | "submissionContinue" | "submissionRetire" | "submissionIntentGet" | "submissionIntentList">> & CoreClient;
 }
 function settled(entry: SubmissionIntentEntry): SubmissionResolution {
-  if (entry.state !== "closed") throw new PendingSubmissionError(entry.intent, new Error("发送结果尚未确认，请核实原发送。"));
+  if (entry.state !== "closed") throw new PendingSubmissionError(entry.intent, new Error(t("submissionOps.unconfirmed")));
   return entry.resolution;
 }
 
@@ -96,21 +97,21 @@ function discover(client: CoreClient): Promise<void> {
         const page = await service.submissionIntentList(after, 50);
         if (!Array.isArray(page.operationIds) || page.operationIds.some(id => !text(id) || seen.has(id))
           || (page.nextCursor !== null && (!text(page.nextCursor) || page.nextCursor === after))) {
-          throw new Error("后台发送记录分页无效。");
+          throw new Error(t("submissionOps.badPage"));
         }
-        if (page.unrecognizedEntries) partial ??= "后台发送记录目录含无法识别的条目，其他记录仍可核实。";
+        if (page.unrecognizedEntries) partial ??= t("submissionOps.unrecognized");
         for (const id of page.operationIds) {
           seen.add(id);
           try {
             const entry = await service.submissionIntentGet(id);
             if (entry?.state === "pending" && entry.intent.operationId === id) records.push(entry.intent);
-          } catch (cause) { partial ??= `部分后台发送记录无法核实：${String(cause)}`; }
+          } catch (cause) { partial ??= t("submissionOps.partial", { reason: String(cause) }); }
         }
         after = page.nextCursor;
       } while (after !== null);
       publish(client, records, partial);
     } catch (cause) {
-      publish(client, cache(client).records, `暂时无法同步后台发送记录：${String(cause)}。请重新连接后重试。`);
+      publish(client, cache(client).records, t("submissionOps.syncFailed", { reason: String(cause) }));
     } finally { state.flight = undefined; }
   })();
   return state.flight;
@@ -118,7 +119,7 @@ function discover(client: CoreClient): Promise<void> {
 
 async function start(client: CoreClient, request: StartRequest & { operationId?: string }): Promise<SubmissionResolution> {
   const service = api(client);
-  if (!text(request.scope) || (!request.input.prompt.trim() && !request.input.attachments.length)) throw new Error("发送内容无效。");
+  if (!text(request.scope) || (!request.input.prompt.trim() && !request.input.attachments.length)) throw new Error(t("submissionOps.invalid"));
   const record: UnconfirmedSubmission = structuredClone({ schemaVersion: 1, operationId: request.operationId ?? `cmd_${ulid()}`,
     requestedAt: new Date().toISOString(), scope: request.scope, taskId: request.taskId, projectId: request.projectId, target: request.target, input: request.input });
   return withClientOperationLock(`submission:${record.scope}`, () => send(service, client, record));

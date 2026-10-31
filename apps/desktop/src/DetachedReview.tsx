@@ -7,6 +7,7 @@ import { userFacingError } from "./userFacingError";
 import { projectAnalysisClient } from "./ProjectReviewActions";
 import { createQuotaRefresh } from "./quotaRefresh";
 import { ReviewPanel, type ReviewView } from "./ReviewPanel";
+import { translate as t } from "./i18n";
 
 export function DetachedReview({ taskId }: { taskId: string }) {
   const [running, setRunning] = useState(true);
@@ -30,7 +31,7 @@ export function DetachedReview({ taskId }: { taskId: string }) {
     const check = async () => {
       if (pending) return; pending = true;
       try { const value = await invoke<boolean>("core_review_window_running", { taskId }); if (active) { setRunning(value); setError(""); } }
-      catch (e) { if (active) { setRunning(true); setError(userFacingError(e, "无法读取对话运行状态，正在重试。")); } }
+      catch (e) { if (active) { setRunning(true); setError(userFacingError(e, t("detachedReview.statusFailed"))); } }
       finally { pending = false; }
     };
     void check(); const timer = setInterval(() => void check(), 2000);
@@ -42,7 +43,7 @@ export function DetachedReview({ taskId }: { taskId: string }) {
     window.addEventListener("storage", theme); media.addEventListener("change", theme);
     return () => { active = false; clearInterval(timer); window.removeEventListener("storage", theme); media.removeEventListener("change", theme); };
   }, [taskId]);
-  const close = () => { void invoke("core_review_window_close", { taskId }).catch(e => setError(userFacingError(e, "无法关闭窗口，请稍后重试。"))); };
+  const close = () => { void invoke("core_review_window_close", { taskId }).catch(e => setError(userFacingError(e, t("detachedReview.closeFailed")))); };
   return <main className="detached-review-shell">
     {error && <InlineError>{error}</InlineError>}
     <AgentQuotaContext.Provider value={quotas}>

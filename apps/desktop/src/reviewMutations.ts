@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { translate as t } from "./i18n";
 
 type MutationCommand = "core_review_index" | "core_review_discard" | "core_review_ignore" | "core_review_batch_files" | "core_turn_undo";
 export interface MutationRequest { operationId: string; taskId: string; command: MutationCommand; arguments: Record<string, unknown> }
@@ -17,7 +18,7 @@ function entries(taskId: string): PendingMutation[] {
     if (!name?.startsWith(prefix)) continue;
     const raw = localStorage.getItem(name); if (!raw) continue;
     const item = JSON.parse(raw) as PendingMutation;
-    if (!item.request?.operationId || !item.request.taskId || !item.request.arguments || !["core_review_index", "core_review_discard", "core_review_ignore", "core_review_batch_files", "core_turn_undo"].includes(item.request.command)) throw new Error("待核实的文件操作记录损坏，请保留记录并检查本机存储");
+    if (!item.request?.operationId || !item.request.taskId || !item.request.arguments || !["core_review_index", "core_review_discard", "core_review_ignore", "core_review_batch_files", "core_turn_undo"].includes(item.request.command)) throw new Error(t("mutations.corrupt"));
     if (item.request.taskId === taskId) result.push(item);
   }
   return result.sort((a, b) => a.request.operationId.localeCompare(b.request.operationId));
@@ -35,11 +36,11 @@ export function partialMutationResult(result: unknown): { completed: string[]; e
   return { completed: "completed" in result && Array.isArray(result.completed) ? result.completed.filter((path): path is string => typeof path === "string") : [], error: result.error };
 }
 export class MutationResultUnknown extends Error {
-  constructor() { super("文件操作结果尚未核实，请先核实原操作，避免重复修改文件"); }
+  constructor() { super(t("mutations.unverified")); }
 }
 async function receipt(value: PendingMutation): Promise<MutationReceipt | null> {
   const result = await invoke<MutationReceipt | null>("core_review_file_operation", { taskId: value.request.taskId, operationId: value.request.operationId });
-  if (result && canonical(result.request) !== canonical(value.request)) throw new Error("文件操作回执与原请求不匹配，未重发操作");
+  if (result && canonical(result.request) !== canonical(value.request)) throw new Error(t("mutations.receiptMismatch"));
   return result;
 }
 function remember(value: PendingMutation, result: MutationReceipt | null) {
@@ -89,7 +90,7 @@ export const reviewMutations = {
     let result: MutationReceipt | null;
     try { result = await invoke<MutationReceipt>("core_review_file_close", { taskId: value.request.taskId, operationId: value.request.operationId }); }
     catch { result = await receipt(value); }
-    if (!result?.closed || canonical(result.request) !== canonical(value.request)) throw new Error("尚未确认后台已结束此次文件操作，请核实后重试。");
+    if (!result?.closed || canonical(result.request) !== canonical(value.request)) throw new Error(t("mutations.notClosed"));
     remove(value);
   },
 };

@@ -1,6 +1,7 @@
 import { ulid } from "ulid";
 import type { CoreClient, ExecutorRef, ReviewFixRef, ReviewRepairCall, ReviewRepairEntry, TaskId } from "@dogcodes/protocol";
 import { withClientOperationLock as serialized } from "./clientOperationLock";
+import { translate as t } from "./i18n";
 
 // The service freezes and drives the repair; this client only submits the
 // request and reads the shared record. Nothing is kept in local storage, so a
@@ -10,7 +11,7 @@ const emit = () => listeners.forEach(listener => listener());
 const key = (task: string, run: string) => `review-repair:${task}:${run}`;
 
 function api(client: CoreClient) {
-  if (!client.reviewRepair) throw new Error("当前客户端不支持可靠提交修复，请更新后重试。");
+  if (!client.reviewRepair) throw new Error(t("repairOps.unsupported"));
   return (call: ReviewRepairCall) => client.reviewRepair!(call);
 }
 function get(client: CoreClient, taskId: TaskId, runId: string): Promise<ReviewRepairEntry | null> {
@@ -19,12 +20,12 @@ function get(client: CoreClient, taskId: TaskId, runId: string): Promise<ReviewR
 async function start(client: CoreClient, taskId: TaskId, reference: ReviewFixRef, target?: ExecutorRef): Promise<ReviewRepairEntry> {
   const call = api(client);
   const findingIndices = [...new Set(reference.findingIndices)].sort((a, b) => a - b);
-  if (!reference.inputSha256 || !findingIndices.length) throw new Error("请选择有效的审查问题。");
+  if (!reference.inputSha256 || !findingIndices.length) throw new Error(t("repairOps.invalidSelection"));
   const operationId = `cmd_${ulid()}`;
   return serialized(key(taskId, reference.runId), async () => {
     try {
       const entry = await call({ action: "start", operationId, taskId, reference: { ...reference, findingIndices }, target: target ?? null });
-      if (!entry) throw new Error("修复结果尚未确认，请核实原操作。");
+      if (!entry) throw new Error(t("repair.unconfirmed"));
       return entry;
     } catch (cause) {
       // The service keeps working after a lost reply; trust only its record of this exact request.
@@ -40,7 +41,7 @@ function original(action: "resume" | "abandon") {
     return serialized(key(taskId, reference.runId), async () => {
       try {
         const latest = await call({ action, taskId, runId: reference.runId, operationId });
-        if (!latest) throw new Error("原修复记录不存在，请刷新后核实。");
+        if (!latest) throw new Error(t("repairOps.missing"));
         return latest;
       } finally { emit(); }
     });

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { CoreClient, EventEnvelope, EventStreamMessage, ReviewActivity, TurnReviewRun } from "@dogcodes/protocol";
+import { translate as t } from "./i18n";
 
 export const reviewActive = (run: TurnReviewRun) => ["queued", "running", "cancelling"].includes(run.status);
 type Listener = (event: EventEnvelope) => void;
@@ -21,7 +22,7 @@ function listen(client: CoreClient, listener: Listener) {
     };
     const publish = (event: EventEnvelope) => {
       if (disposed || event.sequence <= (cursor ?? 0)) return;
-      if (event.sequence !== (cursor ?? 0) + 1) throw new Error("审查事件序列缺失");
+      if (event.sequence !== (cursor ?? 0) + 1) throw new Error(t("reviewStream.gap"));
       cursor = event.sequence;
       if (["review.started", "review.updated", "review.activity"].includes(event.eventType)) {
         listeners.forEach(fn => fn(event));

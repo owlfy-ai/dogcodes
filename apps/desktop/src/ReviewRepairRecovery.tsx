@@ -5,6 +5,7 @@ import { InlineError } from "./InlineError";
 import { LoadingStatus } from "./LoadingStatus";
 import { providerLabel } from "./agentPresentation";
 import { userFacingError } from "./userFacingError";
+import { translate as t } from "./i18n";
 
 const REFRESH_MS = 3000;
 
@@ -22,7 +23,7 @@ export function usePendingRepair(client: CoreClient, taskId: TaskId, runId: stri
         const entry = await operations.get(client, taskId, runId);
         if (valid && current === generation) setState({ key: scopeKey, entry: entry?.state === "pending" ? entry : null, error: "" });
       } catch (cause) {
-        if (valid && current === generation) setState(previous => ({ ...previous, key: scopeKey, error: userFacingError(cause, "无法读取修复状态，请稍后重试。") }));
+        if (valid && current === generation) setState(previous => ({ ...previous, key: scopeKey, error: userFacingError(cause, t("repairRecovery.loadFailed")) }));
       }
       if (valid && current === generation) timer = setTimeout(() => void load(), REFRESH_MS);
     };
@@ -49,18 +50,18 @@ export function ReviewRepairRecovery({ client, pending, busy, onRecovered }: {
       // Never let a late reply clear a newer request's selection.
       if (mounted.current && latest.intent.operationId === operationId && latest.state === "submitted") onRecovered();
     } catch (cause) {
-      if (mounted.current) setError(userFacingError(cause, action === "resume" ? "无法继续修复，请稍后重试。" : "无法放弃修复，请稍后重试。"));
+      if (mounted.current) setError(userFacingError(cause, t(action === "resume" ? "repairRecovery.resumeFailed" : "repairRecovery.abandonFailed")));
     } finally { guard.current = false; if (mounted.current) setWorking(false); }
   }
   if (!pending || pending.state !== "pending") return null;
-  return <div className="turn-action-feedback" role="group" aria-label="待核实的修复请求">
-    <p>有一项修复尚未提交：{pending.intent.reference.findingIndices.map(index => `问题 ${index + 1}`).join("、")} · {providerLabel(pending.intent.target.providerId)}。</p>
-    {pending.contextConfirmed && <p>原上下文已确认，Agent 已切换。</p>}
-    {pending.lastError && <p>上次停止原因：{pending.lastError}</p>}
-    <button type="button" disabled={busy || working} onClick={() => void act("resume")}>继续原修复</button>
-    <button type="button" disabled={busy || working} onClick={() => void act("abandon")}>放弃这次修复</button>
-    <small>继续时保留原问题、Agent 和版本条件，会话已变化时停止提交。放弃后原请求不会再提交，已完成的 Agent 切换不会撤销。</small>
-    {working && <LoadingStatus>正在处理修复…</LoadingStatus>}
+  return <div className="turn-action-feedback" role="group" aria-label={t("repairRecovery.label")}>
+    <p>{t("repairRecovery.pending", { findings: pending.intent.reference.findingIndices.map(index => t("repair.finding", { index: index + 1 })).join(t("submissionRecovery.nameSeparator")), agent: providerLabel(pending.intent.target.providerId) })}</p>
+    {pending.contextConfirmed && <p>{t("repairRecovery.contextConfirmed")}</p>}
+    {pending.lastError && <p>{t("repairRecovery.lastError", { error: pending.lastError })}</p>}
+    <button type="button" disabled={busy || working} onClick={() => void act("resume")}>{t("repairRecovery.resume")}</button>
+    <button type="button" disabled={busy || working} onClick={() => void act("abandon")}>{t("repairRecovery.abandon")}</button>
+    <small>{t("repairRecovery.note")}</small>
+    {working && <LoadingStatus>{t("repairRecovery.working")}</LoadingStatus>}
     {error && <InlineError>{error}</InlineError>}
   </div>;
 }

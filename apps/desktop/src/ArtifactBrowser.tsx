@@ -91,7 +91,7 @@ export function ArtifactBrowser({ client, taskId, onClose }: { client: ArtifactR
   const showStructuredDiff = parsedDiff?.kind === "structured" && !rawDiffView;
   return <dialog className="artifact-dialog" ref={dialog} aria-labelledby="artifact-title"
     onCancel={(event) => { if (exportBusy) event.preventDefault(); else onClose(); }}>
-    <header><div><p className="eyebrow">{t("artifacts.eyebrow")}</p><h2 id="artifact-title" tabIndex={-1} data-dialog-title>Task Artifacts</h2></div>
+    <header><div><p className="eyebrow">{t("artifacts.eyebrow")}</p><h2 id="artifact-title" tabIndex={-1} data-dialog-title>{t("artifacts.title")}</h2></div>
       <button type="button" aria-label={t("artifacts.close")} disabled={exportBusy} onClick={onClose}>×</button></header>
     <p className="artifact-warning">{t("artifacts.warning")}</p>
     <div className="artifact-layout">

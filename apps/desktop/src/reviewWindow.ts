@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { userFacingError } from "./userFacingError";
+import { translate as t } from "./i18n";
 
 export function useReviewWindow(taskId: string | null, onDock: () => void) {
   const [detached, setDetached] = useState(false);
@@ -18,7 +19,7 @@ export function useReviewWindow(taskId: string | null, onDock: () => void) {
     void listen<string>("review-window-closed", event => {
       if (active && event.payload === taskId) { setDetached(false); callback.current(); }
     }).then(unlisten => { if (active) stop = unlisten; else unlisten(); });
-    void invoke<boolean>("core_review_window_is_open", { taskId }).then(open => { if (active) setDetached(open); }).catch(e => { if (active) setError(userFacingError(e, "无法读取独立窗口状态。")); });
+    void invoke<boolean>("core_review_window_is_open", { taskId }).then(open => { if (active) setDetached(open); }).catch(e => { if (active) setError(userFacingError(e, t("reviewWindow.stateFailed"))); });
     return () => { active = false; stop?.(); };
   }, [taskId]);
   const detach = async (view?: ReviewView) => {
@@ -27,7 +28,7 @@ export function useReviewWindow(taskId: string | null, onDock: () => void) {
     try {
       await invoke("core_review_window_open", { taskId, view });
       if (currentTask.current === taskId) setDetached(true);
-    } catch (e) { if (currentTask.current === taskId) setError(userFacingError(e, "无法打开独立窗口，请稍后重试。")); }
+    } catch (e) { if (currentTask.current === taskId) setError(userFacingError(e, t("reviewWindow.openFailed"))); }
     finally { setOpening(false); }
   };
   const dock = async () => {
@@ -35,7 +36,7 @@ export function useReviewWindow(taskId: string | null, onDock: () => void) {
     try {
       await invoke("core_review_window_close", { taskId });
       if (currentTask.current === taskId) { setDetached(false); callback.current(); }
-    } catch (e) { if (currentTask.current === taskId) setError(userFacingError(e, "无法收回侧栏，请稍后重试。")); }
+    } catch (e) { if (currentTask.current === taskId) setError(userFacingError(e, t("reviewWindow.dockFailed"))); }
   };
   return { detached, opening, error, detach, dock, available: isTauri() };
 }

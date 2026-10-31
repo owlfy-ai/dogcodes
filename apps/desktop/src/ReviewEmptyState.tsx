@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import "./emptyState.css";
+import { translate as t } from "./i18n";
 
-export function ReviewEmptyState({ kind = "changes", title = kind === "run" ? "暂无运行命令" : "没有变更", description, action, compact = false }: {
+export function ReviewEmptyState({ kind = "changes", title = t(kind === "run" ? "projectRun.emptyTitle" : "fileTree.noChanges"), description, action, compact = false }: {
   kind?: "changes" | "run" | "terminal" | "folder" | "search" | "history" | "file";
   title?: string;
   description?: string;

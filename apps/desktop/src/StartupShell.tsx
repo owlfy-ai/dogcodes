@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ActivityLoader } from "./ActivityLoader";
+import { translate as t } from "./i18n";
 
 export function StartupShell({ children }: { children?: ReactNode }) {
   return <main className="startup-shell" aria-label="dog.codes">
@@ -10,7 +11,7 @@ export function StartupShell({ children }: { children?: ReactNode }) {
 function StartupPresence() {
   const [slow, setSlow] = useState(false);
   useEffect(() => { const timer = setTimeout(() => setSlow(true), 12000); return () => clearTimeout(timer); }, []);
-  return <div className="startup-presence"><div role="status" aria-label="正在打开 dog.codes"><ActivityLoader /></div>
-    {slow && <div className="startup-help" role="status"><p>打开时间比平时久一些，可以重新尝试。</p><button type="button" onClick={() => window.location.reload()}>重新打开</button></div>}
+  return <div className="startup-presence"><div role="status" aria-label={t("startupShell.opening")}><ActivityLoader /></div>
+    {slow && <div className="startup-help" role="status"><p>{t("startupShell.slow")}</p><button type="button" onClick={() => window.location.reload()}>{t("errorBoundary.reload")}</button></div>}
   </div>;
 }

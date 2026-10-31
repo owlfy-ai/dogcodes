@@ -2,13 +2,14 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { mutationArguments, partialMutationResult, reviewMutations, type PendingMutation } from "./reviewMutations";
 import "./gitOperationRecovery.css";
 import { subscribeReviewChanges } from "./reviewWatch";
+import { translate as t } from "./i18n";
 
 function label(item: PendingMutation) {
   const args = mutationArguments(item);
-  if (item.request.command === "core_turn_undo") return "撤销本轮文件修改";
-  if (item.request.command === "core_review_index") return args.action === "stage" ? "暂存" : "取消暂存";
-  if (item.request.command === "core_review_batch_files") return args.action === "discard" ? "批量丢弃" : "批量忽略";
-  return item.request.command === "core_review_ignore" ? "忽略" : "丢弃";
+  if (item.request.command === "core_turn_undo") return t("mutationRecovery.undo");
+  if (item.request.command === "core_review_index") return t(args.action === "stage" ? "mutationRecovery.stage" : "mutationRecovery.unstage");
+  if (item.request.command === "core_review_batch_files") return t(args.action === "discard" ? "mutationRecovery.batchDiscard" : "mutationRecovery.batchIgnore");
+  return t(item.request.command === "core_review_ignore" ? "mutationRecovery.ignore" : "mutationRecovery.discard");
 }
 export function ReviewMutationRecovery({ taskId, artifactId, visible = true, onChanged }: { taskId: string; artifactId?: string; visible?: boolean; onChanged: () => void }) {
   const raw = useSyncExternalStore(reviewMutations.subscribe, () => reviewMutations.snapshot(taskId), () => "[]");
@@ -33,7 +34,7 @@ export function ReviewMutationRecovery({ taskId, artifactId, visible = true, onC
     try { await action(); onChanged(); } catch (cause) { setError(String(cause)); }
     finally { setBusy(false); }
   };
-  return <section className="git-operation-recovery" aria-label="待核实的文件操作">
+  return <section className="git-operation-recovery" aria-label={t("mutationRecovery.label")}>
     {items.map(item => {
       const state = item.receipt?.outcome, args = mutationArguments(item);
       const paths = Array.isArray(args.paths) ? args.paths.join("、") : args.path;
@@ -41,12 +42,12 @@ export function ReviewMutationRecovery({ taskId, artifactId, visible = true, onC
       const terminal = state?.status === "succeeded" || state?.status === "failed" || state?.status === "unknown";
       return <div key={item.request.operationId}>
         <p><strong>{label(item)}</strong>{typeof paths === "string" && ` · ${paths}`}</p>
-        <p role="status">{partial ? `已完成 ${partial.completed.length} 个文件，部分未完成：${partial.error}` : state?.status === "succeeded" ? "操作已完成。" : state?.status === "failed" ? `操作未全部完成：${state.message}；请刷新核对文件。` : state?.status === "running" ? "后台仍在执行，可稍后再次核实。" : item.receipt === null ? "后台尚未找到已受理记录，可重发原请求。" : "结果尚未确定，请先核实文件及恢复记录，不要重复发起操作。"}</p>
-        {partial && partial.completed.length > 0 && <details><summary>已完成的文件</summary><ul>{partial.completed.map(path => <li key={path}>{path}</li>)}</ul></details>}
+        <p role="status">{partial ? t("mutationRecovery.partial", { count: partial.completed.length, error: partial.error }) : state?.status === "succeeded" ? t("mutationRecovery.succeeded") : state?.status === "failed" ? t("mutationRecovery.failed", { message: state.message }) : state?.status === "running" ? t("mutationRecovery.running") : item.receipt === null ? t("mutationRecovery.notFound") : t("mutationRecovery.uncertain")}</p>
+        {partial && partial.completed.length > 0 && <details><summary>{t("mutationRecovery.completedFiles")}</summary><ul>{partial.completed.map(path => <li key={path}>{path}</li>)}</ul></details>}
         <div className="git-operation-recovery-actions">
-          <button type="button" disabled={busy || item.sending} onClick={() => void run(() => reviewMutations.check(item))}>核实结果</button>
-          {item.receipt === null && <button type="button" disabled={busy || item.sending} onClick={() => void run(() => reviewMutations.resend(item))}>重发原请求</button>}
-          {terminal && <button type="button" disabled={busy || item.sending} onClick={() => void run(() => reviewMutations.acknowledge(item))}>{state?.status === "succeeded" && !partial ? "完成" : "已核对文件，结束此次操作"}</button>}
+          <button type="button" disabled={busy || item.sending} onClick={() => void run(() => reviewMutations.check(item))}>{t("mutationRecovery.verify")}</button>
+          {item.receipt === null && <button type="button" disabled={busy || item.sending} onClick={() => void run(() => reviewMutations.resend(item))}>{t("mutationRecovery.resend")}</button>}
+          {terminal && <button type="button" disabled={busy || item.sending} onClick={() => void run(() => reviewMutations.acknowledge(item))}>{t(state?.status === "succeeded" && !partial ? "turnCommit.done" : "mutationRecovery.acknowledge")}</button>}
         </div>
       </div>;
     })}

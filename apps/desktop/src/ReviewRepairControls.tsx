@@ -9,9 +9,10 @@ import { providerLabel } from "./agentPresentation";
 import { InlineError } from "./InlineError";
 import { userFacingError } from "./userFacingError";
 import { PendingExecutorContext } from "./automaticContext";
+import { translate as t } from "./i18n";
 
 const active = (run: TurnReviewRun) => ["queued", "running", "cancelling"].includes(run.status);
-const status: Record<string, string> = {running: "修复中", completed: "修复轮次已完成", failed: "修复失败", cancelled: "修复已取消", interrupted: "修复已中断"};
+const status: Record<string, string> = {running: "running", completed: "completed", failed: "failed", cancelled: "cancelled", interrupted: "interrupted"};
 // Several reports may be mounted in the turn and Diff panels at once.
 const cache = new WeakMap<CoreClient, Map<string, {at: number; value: Promise<[TurnReviewRun[], BootstrapSnapshot]>}>>();
 function progress(client: CoreClient, taskId: TurnReviewRun["request"]["taskId"]) {
@@ -47,7 +48,7 @@ export function ReviewRepairControls({client, run, executor, selected, clearSele
         setAll(runs);
         const task = bootstrap.tasks.find(t => t.taskId === run.request.taskId);
         setPrimary(task ? {busy: !!task.activePrimaryRun} : null);
-      } catch { if (valid) setError("无法读取修复进度，请稍后重试"); }
+      } catch { if (valid) setError(t("repair.progressFailed")); }
       if (valid) timer = setTimeout(load, 3000);
     };
     void load(); return () => {valid = false; clearTimeout(timer);};
@@ -63,7 +64,7 @@ export function ReviewRepairControls({client, run, executor, selected, clearSele
     try {
       await reviewRepairOperations.start(client, run.request.taskId, {runId: run.request.runId, inputSha256: run.inputSha256, findingIndices: [...selected]}, pendingExecutor);
       if (mounted.current && scope.current === origin) repaired();
-    } catch (cause) { if (mounted.current && scope.current === origin) setError(userFacingError(cause, "修复结果尚未确认，请核实原操作。")); }
+    } catch (cause) { if (mounted.current && scope.current === origin) setError(userFacingError(cause, t("repair.unconfirmed"))); }
     finally {guard.current = false; if (mounted.current) setBusy(false);}
   }
   async function recheck(turnId: string) {
@@ -72,25 +73,25 @@ export function ReviewRepairControls({client, run, executor, selected, clearSele
     const origin = scope.current;
     const request: TurnReviewRequest = {taskId: run.request.taskId, turnId, runId: `run_${ulid()}`, executor, kind: run.request.kind as ReviewKind, retryOf: null, recheckOf: {runId: run.request.runId, repairTurnId: turnId}};
     try {await reviewStartOperations.send(client, recheckScope, request); cache.get(client)?.delete(run.request.taskId); if (mounted.current && scope.current === origin) setRevision(value => value + 1);}
-    catch (cause) {if (mounted.current && scope.current === origin) setError(userFacingError(cause, "发起复审失败，请稍后重试。"));}
+    catch (cause) {if (mounted.current && scope.current === origin) setError(userFacingError(cause, t("repair.recheckFailed")));}
     finally {guard.current = false; if (mounted.current) setBusy(false);}
   }
-  const hint = pendingRepair ? "原修复结果待核实" : primary?.busy ? "主对话正在回复，结束后可提交修复" : selected.length ? `已选 ${selected.length} 项` : "勾选问题后交给主 Agent 修复";
+  const hint = pendingRepair ? t("repair.pending") : primary?.busy ? t("repair.primaryBusy") : selected.length ? t("repair.selected", { count: selected.length }) : t("repair.hint");
   return <div className="review-repairs">
     <div className="review-repair-bar">
       <span className="review-repair-hint">{hint}</span>
-      <button type="button" className="review-repair-submit" disabled={!!pendingRepair || !selected.length || !primary || primary.busy || busy} onClick={() => void repair()}>开始修复</button>
+      <button type="button" className="review-repair-submit" disabled={!!pendingRepair || !selected.length || !primary || primary.busy || busy} onClick={() => void repair()}>{t("repair.start")}</button>
     </div>
     <ReviewRepairRecovery client={client} pending={pendingRepair} busy={busy} onRecovered={repaired}/>
     {repairState.error && <InlineError>{repairState.error}</InlineError>}
     {current.repairs?.map(repair => {
       const children = all.filter(r => repair.recheckRuns.includes(r.request.runId));
       return <div className="review-repair" key={repair.turnId}>
-        <p>{repair.findingIndices.map(i => `问题 ${i + 1}`).join("、")} · {status[repair.status] ?? repair.status}{children.length ? " · 已发起复审" : ""}</p>
-        {repair.status === "completed" && <button type="button" disabled={busy || !!pendingReview || !executor || children.some(active)} onClick={() => void recheck(repair.turnId)}>复审修复后的版本 · {providerLabel(executor?.providerId ?? "")}</button>}
-        {children.map(child => <details key={child.request.runId}><summary>修复后复审 · {providerLabel(child.request.executor.providerId)} · {active(child) ? "进行中" : child.status === "completed" ? "已完成" : "未完成"}</summary>
-          <p className="turn-review-notice">{child.workspaceReview ? "当前代码复审" : "历史版本复审"} · {new Date(child.createdAt).toLocaleString()}</p>{renderReport(child)}
-          {active(child) && <button type="button" disabled={child.status === "cancelling"} onClick={() => void client.cancelTurnReview?.(child.request.taskId, child.request.runId).then(() => setRevision(value => value + 1)).catch(cause => setError(userFacingError(cause, "取消复审失败，请稍后重试。")))}>取消复审</button>}
+        <p>{repair.findingIndices.map(i => t("repair.finding", { index: i + 1 })).join(t("submissionRecovery.nameSeparator"))} · {status[repair.status] ? t(`repair.status.${status[repair.status]}`) : repair.status}{children.length ? ` · ${t("repair.recheckStarted")}` : ""}</p>
+        {repair.status === "completed" && <button type="button" disabled={busy || !!pendingReview || !executor || children.some(active)} onClick={() => void recheck(repair.turnId)}>{t("repair.recheck", { agent: providerLabel(executor?.providerId ?? "") })}</button>}
+        {children.map(child => <details key={child.request.runId}><summary>{t("repair.recheckSummary", { agent: providerLabel(child.request.executor.providerId), status: t(active(child) ? "app.toolRunning" : child.status === "completed" ? "reviewResult.stage.completed" : "repair.notCompleted") })}</summary>
+          <p className="turn-review-notice">{t(child.workspaceReview ? "repair.currentCode" : "repair.historical")} · {new Date(child.createdAt).toLocaleString()}</p>{renderReport(child)}
+          {active(child) && <button type="button" disabled={child.status === "cancelling"} onClick={() => void client.cancelTurnReview?.(child.request.taskId, child.request.runId).then(() => setRevision(value => value + 1)).catch(cause => setError(userFacingError(cause, t("repair.cancelFailed"))))}>{t("repair.cancel")}</button>}
         </details>)}
       </div>;
     })}

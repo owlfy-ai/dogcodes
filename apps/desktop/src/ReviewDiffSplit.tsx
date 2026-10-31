@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { translate as t } from "./i18n";
 
 const HEIGHT_KEY = "dogcodes.review.heightRatio";
 const DEFAULT_RATIO = .45;
@@ -37,9 +38,9 @@ export function ReviewDiffSplit({ review, expanded, children }: { review: ReactN
   const stop = () => { drag.current = null; setDragging(false); };
   return <div ref={container} className={`review-diff-split${expanded ? " is-expanded" : ""}${dragging ? " is-dragging" : ""}`}>
     <div className="review-diff-files">{children}</div>
-    {expanded && <div role="separator" tabIndex={0} aria-label="调整审查与文件区域高度" aria-orientation="horizontal"
+    {expanded && <div role="separator" tabIndex={0} aria-label={t("resize.reviewHeight")} aria-orientation="horizontal"
       aria-valuemin={Math.round(min)} aria-valuemax={Math.round(max)} aria-valuenow={height}
-      className="review-height-handle" data-tooltip="拖拽调整审查区高度，双击恢复默认高度"
+      className="review-height-handle" data-tooltip={t("resize.reviewHeightTooltip")}
       onPointerDown={event => {
         if (event.button !== 0) return;
         event.preventDefault();

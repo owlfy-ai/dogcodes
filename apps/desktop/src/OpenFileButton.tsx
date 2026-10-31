@@ -41,8 +41,10 @@ export function OpenFileButton({ taskId, path, disabled = false }: { taskId: str
   const trigger = useRef<HTMLButtonElement>(null);
   const generation = useRef(0);
   const id = useId();
+  // macOS localizes Finder's name by the system language, not the app's.
   const fileManager = /Mac/.test(navigator.platform)
-    ? "finder" : /Win/.test(navigator.platform) ? "explorer" : "fileManager";
+    ? /^zh(?:-CN|-SG|-Hans|$)/i.test(navigator.language) ? "finderLocalized" : "finder"
+    : /Win/.test(navigator.platform) ? "explorer" : "fileManager";
   const close = () => { setOpen(false); trigger.current?.focus(); };
   const toggle = () => {
     if (!open && current?.error) setRetry(value => value + 1);

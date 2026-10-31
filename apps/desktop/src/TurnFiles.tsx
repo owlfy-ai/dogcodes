@@ -11,6 +11,7 @@ import type {
   TaskId,
 } from "@dogcodes/protocol";
 import "./turnSummary.css";
+import { translate as t } from "./i18n";
 
 export function TurnFiles({
   taskId,
@@ -39,7 +40,7 @@ export function TurnFiles({
     if (!cachedTurnArtifact(client, taskId, metadata)) {
       void loadTurnArtifact(client, taskId, metadata).then(value => {
         if (active) setLoaded({ key, artifact: value });
-      }).catch(() => { if (active) setError("本轮变更加载失败"); });
+      }).catch(() => { if (active) setError(t("turnFiles.loadFailed")); });
     }
     return () => { active = false; };
   }, [client, taskId, key, retry]);
@@ -48,7 +49,7 @@ export function TurnFiles({
       <p role="alert">
         {error}{" "}
         <button type="button" onClick={() => setRetry((n) => n + 1)}>
-          重试
+          {t("common.retry")}
         </button>
       </p>
     );
@@ -57,7 +58,7 @@ export function TurnFiles({
   if (!data) return null;
   if (!data.files.length) return null;
   if (operation) return <>
-    {(data.attribution === "workspace_recovery_interval" || data.recoveredAfterInterruption) && <p className="subagent-notice">连接中断后的恢复快照 · 仅反映检查时的文件变化，外部工具可能仍在写入</p>}
+    {(data.attribution === "workspace_recovery_interval" || data.recoveredAfterInterruption) && <p className="subagent-notice">{t("turnFiles.recovered")}</p>}
     {data.files.map(f => <InlineFileEdit key={f.path} path={f.path}
       file={diff?.files.find(d => (d.newPath || d.oldPath) === f.path)} truncated={diff?.truncated}
       openControl={f.status === "D" ? undefined : <OpenFileButton taskId={taskId} path={f.path} />} />)}
@@ -69,13 +70,13 @@ export function TurnFiles({
     <details className="turn-files turn-summary" open={artifact?.expanded ?? false} onToggle={event => { if (artifact) artifact.expanded = event.currentTarget.open; }}>
       <summary className="turn-summary-heading">
         <svg className="turn-summary-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m6 4 4 4-4 4" /></svg>
-        <strong>{data.files.length} 个文件已更改</strong>
+        <strong>{t("turnFiles.changed", { count: data.files.length })}</strong>
         {diff && <span className="turn-summary-counts"><span className="additions">+{diff.additions}</span><span className="deletions">−{diff.deletions}</span></span>}
         <TurnCommitAction key={`commit-${key}`} taskId={taskId} data={data} providerId={providerId} />
         <TurnUndoAction key={key} taskId={taskId} metadata={metadata} count={data.files.length} />
       </summary>
       <div className="turn-summary-list">
-        {(data.attribution === "workspace_recovery_interval" || data.recoveredAfterInterruption) && <p className="turn-summary-notice">连接中断后的恢复快照 · 仅反映检查时的文件变化，外部工具可能仍在写入</p>}
+        {(data.attribution === "workspace_recovery_interval" || data.recoveredAfterInterruption) && <p className="turn-summary-notice">{t("turnFiles.recovered")}</p>}
         {data.files.map(f => {
           const change = diff?.files.find(d => (d.newPath || d.oldPath) === f.path);
           const separator = Math.max(f.path.lastIndexOf("/"), f.path.lastIndexOf("\\"));
@@ -88,12 +89,12 @@ export function TurnFiles({
             <span className="turn-summary-directory" data-tooltip={directory}>{directory}</span>
             {change && !change.binary && <span className="turn-summary-counts"><span className="additions">+{change.additions}</span><span className="deletions">−{change.deletions}</span></span>}
             <span className="turn-summary-actions">
-              <button type="button" data-tooltip="查看这一轮保存的历史 Diff" aria-label={`查看 ${name} 的历史 Diff`} onClick={() => setHistoricalOpen(f.path)}>历史 Diff</button>
+              <button type="button" data-tooltip={t("turnFiles.historicalTooltip")} aria-label={t("turnFiles.historicalLabel", { name })} onClick={() => setHistoricalOpen(f.path)}>{t("turnFiles.historical")}</button>
               <OpenFileButton taskId={taskId} path={f.path} disabled={f.status === "D"} />
             </span>
           </div>;
         })}
-        {diff?.truncated && <p className="turn-summary-notice">变更统计仅包含已解析的部分差异。</p>}
+        {diff?.truncated && <p className="turn-summary-notice">{t("turnFiles.partialStats")}</p>}
         {error && <p className="turn-summary-notice" role="alert">{error}</p>}
       </div>
     </details>

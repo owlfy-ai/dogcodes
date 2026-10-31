@@ -3,6 +3,7 @@ import { reviewFileKey } from "./useReviewFileSelection";
 import { FileIcon } from "./FileIcon";
 import { useMemo, useState } from "react";
 import type { ReviewChange, RootChanges } from "./reviewClient";
+import { translate as t } from "./i18n";
 
 interface Directory { name: string; path: string; directories: Map<string, Directory>; files: ReviewChange[] }
 export function buildReviewTree(files: ReviewChange[]): Directory {
@@ -48,25 +49,25 @@ export function ReviewFileTree({ result, filter, selectedPath, busy, onSelect, a
     })}
     {[...node.files].sort((a, b) => a.path.localeCompare(b.path)).map(file => {
       const status = file.previousPath || file.kind === "renamed" ? "R" : result.untracked.includes(file.path) ? "U" : ({ added: "A", deleted: "D", modified: "M", renamed: "R" } as const)[file.kind];
-      const label = { M: "修改", U: "未跟踪", A: "新增", D: "删除", R: "重命名" }[status];
+      const label = t(`fileTree.status.${status}`);
       const stats = result.statistics[file.path];
       return <button type="button" className="review-file-entry" data-review-key={reviewFileKey(result.root.id, file.path)} aria-pressed={selectedFiles ? selectedFiles.has(reviewFileKey(result.root.id, file.path)) : undefined} disabled={busy} key={file.path} data-tooltip={file.previousPath ? `${file.previousPath} → ${file.path}` : file.path} aria-label={file.path} aria-current={selectedPath === file.path ? "true" : undefined} onClick={() => onSelect(file.path)} onContextMenu={event => { if (!onContextMenu) return; event.preventDefault(); onContextMenu(file, { x: event.clientX, y: event.clientY, trigger: event.currentTarget }); }} onKeyDown={event => { if (!onContextMenu || !(event.key === "ContextMenu" || event.key === "F10" && event.shiftKey)) return; event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); onContextMenu(file, { x: rect.left + 12, y: rect.bottom, trigger: event.currentTarget }); }}>
         <FileIcon path={file.path} /><span className="review-entry-name">{directoryName(file.path)}</span>
-        <span className="review-entry-counts">{stats?.additions != null && <><span className="review-add-count">+{stats.additions}</span> <span className="review-delete-count">−{stats.deletions}</span></>}{stats?.error && <span data-tooltip="行数统计暂不可用">…</span>}</span>
+        <span className="review-entry-counts">{stats?.additions != null && <><span className="review-add-count">+{stats.additions}</span> <span className="review-delete-count">−{stats.deletions}</span></>}{stats?.error && <span data-tooltip={t("fileTree.countUnavailable")}>…</span>}</span>
         <span className={`review-status status-${status}`} data-tooltip={label} aria-label={label}>{status}</span>
       </button>;
     })}
   </>;
   return <section className="review-root" data-view={view} data-root-id={result.root.id} data-active={active || undefined}>
-    {showRoot && view === "list" && <div className="review-root-label" data-tooltip={result.root.path}>{directoryName(result.root.path)}{!result.root.git && " · 会话变更"}</div>}
-    {view === "tree" && <button type="button" className="review-root-heading" aria-label={`目录 ${directoryName(result.root.path)}`} aria-expanded={open} onClick={() => { toggle("root"); onActivate?.(); }}>
-      <TreeChevron expanded={open} /><span className="review-entry-name">{directoryName(result.root.path)}{!result.root.git && " · 会话变更"}</span>
+    {showRoot && view === "list" && <div className="review-root-label" data-tooltip={result.root.path}>{directoryName(result.root.path)}{!result.root.git && ` · ${t("fileTree.sessionChanges")}`}</div>}
+    {view === "tree" && <button type="button" className="review-root-heading" aria-label={t("fileTree.directory", { name: directoryName(result.root.path) })} aria-expanded={open} onClick={() => { toggle("root"); onActivate?.(); }}>
+      <TreeChevron expanded={open} /><span className="review-entry-name">{directoryName(result.root.path)}{!result.root.git && ` · ${t("fileTree.sessionChanges")}`}</span>
       <span className="review-entry-counts"><span className="review-add-count">+{counts.reduce((n, s) => n + (s.additions ?? 0), 0)}</span> <span className="review-delete-count">−{counts.reduce((n, s) => n + (s.deletions ?? 0), 0)}</span></span>
-      {(result.error || counts.some(s => s.error)) && <span data-tooltip="部分统计不可用">!</span>}
+      {(result.error || counts.some(s => s.error)) && <span data-tooltip={t("fileTree.partialUnavailable")}>!</span>}
     </button>}
     {open && <div className="review-root-content">
-      {Boolean(result.excludedRoots?.length) && <details className="review-scope-note"><summary>已排除 {result.excludedRoots!.length} 个子仓库目录</summary><p>独立仓库不计入父目录差异，请在对应目录查看。</p><ul>{result.excludedRoots!.map(path => <li key={path}>{directoryName(path)}</li>)}</ul></details>}
-      {result.error ? <p className="review-tree-message" role="alert" data-tooltip="请刷新后重试">无法读取此目录的差异</p> : result.files.length === 0 ? <p className="review-tree-message">没有变更</p> : !tree.files.length && !tree.directories.size ? <p className="review-tree-message">没有匹配文件</p> : renderDirectory(tree)}
+      {Boolean(result.excludedRoots?.length) && <details className="review-scope-note"><summary>{t("fileTree.excluded", { count: result.excludedRoots!.length })}</summary><p>{t("fileTree.excludedNote")}</p><ul>{result.excludedRoots!.map(path => <li key={path}>{directoryName(path)}</li>)}</ul></details>}
+      {result.error ? <p className="review-tree-message" role="alert" data-tooltip={t("fileTree.refreshRetry")}>{t("fileTree.readFailed")}</p> : result.files.length === 0 ? <p className="review-tree-message">{t("fileTree.noChanges")}</p> : !tree.files.length && !tree.directories.size ? <p className="review-tree-message">{t("fileTree.noMatches")}</p> : renderDirectory(tree)}
     </div>}
   </section>;
 }

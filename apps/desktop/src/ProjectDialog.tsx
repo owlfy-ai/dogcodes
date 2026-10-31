@@ -38,7 +38,7 @@ export function ProjectDialog({
     setMessage(null);
     try {
       if (project) {
-        if (!client.updateProject) throw new Error("当前版本不支持编辑项目");
+        if (!client.updateProject) throw new Error(t("projectDialog.editUnsupported"));
         await client.updateProject(project, name.trim(), directories[0], directories.slice(1));
         await onReady(project.projectId);
       } else {
@@ -46,7 +46,7 @@ export function ProjectDialog({
         await onReady(projectId);
       }
     } catch (cause) {
-      setMessage(userFacingError(cause, project ? "项目未能保存，请重试。" : "项目未能创建，请重试。"));
+      setMessage(userFacingError(cause, t(project ? "projectDialog.saveFailed" : "projectDialog.createFailed")));
     } finally {
       setBusy(false);
     }
@@ -66,15 +66,15 @@ export function ProjectDialog({
         }
       }}>
         <header><h2 id="project-dialog-title" tabIndex={-1} data-dialog-title>{project ? t("nav.editProject") : t("nav.createProject")}</h2><button type="button" aria-label={t("common.close")} disabled={busy} onClick={onClose}>×</button></header>
-        <label>项目名称<input required maxLength={120} disabled={busy} placeholder="输入项目名称" value={name} onChange={(event) => setName(event.target.value)} /></label>
-        <label>项目目录</label>
+        <label>{t("projectDialog.name")}<input required maxLength={120} disabled={busy} placeholder={t("projectDialog.namePlaceholder")} value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label>{t("projectDialog.directories")}</label>
         <div className="project-directory-list">
           {directories.map((directory, index) => <div className="project-directory-row" key={directory}>
-            <FolderIcon /><span data-tooltip={directory}>{directory}<small>{index === 0 ? "主目录" : "关联目录"}</small></span>
-            {index > 0 && <button type="button" disabled={busy} aria-label={`将 ${directory} 设为主目录`} onClick={() => setDirectories([directory, ...directories.filter(d => d !== directory)])}>设为主目录</button>}
-            <button type="button" disabled={busy} aria-label={`移除 ${directory}`} onClick={() => setDirectories(directories.filter(d => d !== directory))}>×</button>
+            <FolderIcon /><span data-tooltip={directory}>{directory}<small>{t(index === 0 ? "projectDialog.primary" : "projectDialog.additional")}</small></span>
+            {index > 0 && <button type="button" disabled={busy} aria-label={t("projectDialog.makePrimaryLabel", { directory })} onClick={() => setDirectories([directory, ...directories.filter(d => d !== directory)])}>{t("projectDialog.makePrimary")}</button>}
+            <button type="button" disabled={busy} aria-label={t("projectDialog.remove", { directory })} onClick={() => setDirectories(directories.filter(d => d !== directory))}>×</button>
           </div>)}
-          {directories.length === 0 && <p>添加 Agent 可以读取和编辑的项目文件夹</p>}
+          {directories.length === 0 && <p>{t("projectDialog.emptyHint")}</p>}
         {"__TAURI_INTERNALS__" in window && <button type="button" disabled={busy || directories.length >= 32} onClick={async () => {
           setBusy(true);
           setChoosingFolder(true);
@@ -83,14 +83,14 @@ export function ProjectDialog({
             const directory = await pickProjectDirectory();
             if (directory) {
               setDirectories(current => current.includes(directory) ? current : [...current, directory]);
-              setName(current => current || directory.split(/[\\/]/).filter(Boolean).pop() || "新项目");
+              setName(current => current || directory.split(/[\\/]/).filter(Boolean).pop() || t("projectDialog.defaultName"));
             }
-          } catch (cause) { setMessage(userFacingError(cause, "无法打开文件夹选择窗口，请重试。")); }
+          } catch (cause) { setMessage(userFacingError(cause, t("projectDialog.pickerFailed"))); }
           finally { setBusy(false); setChoosingFolder(false); }
-        }}>＋ 添加文件夹</button>}
-        {!("__TAURI_INTERNALS__" in window) && <div className="project-directory-row"><input disabled={busy} aria-label="目录绝对路径" value={path} onChange={event => setPath(event.target.value)} placeholder="输入目录绝对路径" /><button type="button" disabled={busy || directories.length >= 32 || !path.trim()} onClick={() => { setDirectories(current => current.includes(path.trim()) ? current : [...current, path.trim()]); setPath(""); }}>添加</button></div>}
+        }}>＋ {t("projectDialog.addFolder")}</button>}
+        {!("__TAURI_INTERNALS__" in window) && <div className="project-directory-row"><input disabled={busy} aria-label={t("projectDialog.absolutePath")} value={path} onChange={event => setPath(event.target.value)} placeholder={t("projectDialog.absolutePathPlaceholder")} /><button type="button" disabled={busy || directories.length >= 32 || !path.trim()} onClick={() => { setDirectories(current => current.includes(path.trim()) ? current : [...current, path.trim()]); setPath(""); }}>{t("projectDialog.add")}</button></div>}
         </div>
-        <p className="project-scope-note">选择一个主文件夹，也可以添加相关文件夹。Agent 对文件的访问遵循你设置的权限。</p>
+        <p className="project-scope-note">{t("projectDialog.scopeNote")}</p>
         {message && <div className="error" role="alert">{message}</div>}
         <footer><button className="secondary" type="button" disabled={busy} onClick={onClose}>{t("common.cancel")}</button><button className="send" disabled={busy || !name.trim() || !directories.length}>{busy && !choosingFolder ? (project ? t("common.saving") : t("nav.creating")) : (project ? t("common.save") : t("nav.createProject"))}</button></footer>
       </form>

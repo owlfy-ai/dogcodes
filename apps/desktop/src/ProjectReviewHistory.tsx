@@ -3,15 +3,25 @@ import type { TurnReviewRun } from "@dogcodes/protocol";
 import { AgentIcon, providerLabel } from "./agentPresentation";
 import { FloatingPopover } from "./FloatingPopover";
 import { reviewLabels } from "./ReviewActions";
+import { translate as t } from "./i18n";
 
-export const reviewStates = { queued: "准备中", running: "审查中", cancelling: "正在取消", completed: "已完成", failed: "失败", cancelled: "已取消", interrupted: "连接中断" };
+// Getters so every read follows the current UI language.
+export const reviewStates = {
+  get queued() { return t("turnActions.state.queued"); },
+  get running() { return t("reviewHistory.running"); },
+  get cancelling() { return t("turnActions.state.cancelling"); },
+  get completed() { return t("turnActions.state.completed"); },
+  get failed() { return t("turnActions.state.failed"); },
+  get cancelled() { return t("turnActions.state.cancelled"); },
+  get interrupted() { return t("turnActions.state.interrupted"); },
+};
 export const reviewActive = (run: TurnReviewRun) => ["queued", "running", "cancelling"].includes(run.status);
 const label = (run: TurnReviewRun) => reviewLabels[run.request.kind as keyof typeof reviewLabels] ?? run.request.kind;
 const description = (run: TurnReviewRun) => `${label(run)} · ${providerLabel(run.request.executor.providerId)} · ${reviewStates[run.status]}`;
 export const newestReviews = (runs: TurnReviewRun[]) => [...runs].reverse().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 
 export function ReviewHistoryTitle({ run }: { run: TurnReviewRun }) {
-  return <span className="project-review-history-title"><b>{label(run)}</b><span className="project-review-history-status" data-status={run.status}>{reviewStates[run.status]}</span>{run.status === "completed" && run.report?.structured && <span className="project-review-history-findings" data-has-findings={run.report.findings.length > 0}>{run.report.findings.length} 项问题</span>}</span>;
+  return <span className="project-review-history-title"><b>{label(run)}</b><span className="project-review-history-status" data-status={run.status}>{reviewStates[run.status]}</span>{run.status === "completed" && run.report?.structured && <span className="project-review-history-findings" data-has-findings={run.report.findings.length > 0}>{t("reviewResult.findingCount", { count: run.report.findings.length })}</span>}</span>;
 }
 
 export function ProjectReviewHistory({ runs, selected, onSelect }: { runs: TurnReviewRun[]; selected: TurnReviewRun; onSelect: (id: string) => void }) {
@@ -29,21 +39,21 @@ export function ProjectReviewHistory({ runs, selected, onSelect }: { runs: TurnR
     return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
   }, [open]);
   return <div className="project-review-history" ref={host}>
-    <button ref={trigger} type="button" className="project-review-history-trigger" aria-label="选择审查记录" data-tooltip={description(selected)} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}>
+    <button ref={trigger} type="button" className="project-review-history-trigger" aria-label={t("reviewHistory.select")} data-tooltip={description(selected)} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}>
       <AgentIcon providerId={selected.request.executor.providerId}/><ReviewHistoryTitle run={selected}/>
       <time className="project-review-history-time" dateTime={selected.createdAt}>{new Date(selected.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
-      {runs.length > 1 && <small className="project-review-history-count">{runs.length} 条记录</small>}
+      {runs.length > 1 && <small className="project-review-history-count">{t("reviewHistory.count", { count: runs.length })}</small>}
       <svg className="project-review-history-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
     </button>
-    {otherActive > 0 && <small className="project-review-other-active" role="status">另有 {otherActive} 项审查中</small>}
-    {open && <FloatingPopover className="agent-picker-menu project-review-history-menu" role="menu" aria-label="审查记录" onKeyDown={event => {
+    {otherActive > 0 && <small className="project-review-other-active" role="status">{t("reviewHistory.otherActive", { count: otherActive })}</small>}
+    {open && <FloatingPopover className="agent-picker-menu project-review-history-menu" role="menu" aria-label={t("reviewHistory.title")} onKeyDown={event => {
       const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
       const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
       const next = event.key === "ArrowDown" ? (index + 1) % buttons.length : event.key === "ArrowUp" ? (index - 1 + buttons.length) % buttons.length : event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : null;
       if (next !== null) { event.preventDefault(); buttons[next]?.focus(); }
       if (event.key === "Tab") setOpen(false);
     }}>
-      <header>审查记录 · {runs.length}</header>
+      <header>{t("reviewHistory.title")} · {runs.length}</header>
       {runs.map(run => {
         const chosen = run.request.runId === selected.request.runId;
         const createdAt = new Date(run.createdAt).toLocaleString();

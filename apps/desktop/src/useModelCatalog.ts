@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExecutorRef, ModelCatalog, TaskId } from "@dogcodes/protocol";
 import { ModelCatalogCache } from "./modelCatalogCache";
 import { userFacingError } from "./userFacingError";
+import { translate as t } from "./i18n";
 
 const empty: ModelCatalog = { models: [], defaultModel: null };
 export function useModelCatalog(cache: ModelCatalogCache, executor: ExecutorRef | undefined,
@@ -40,7 +41,7 @@ export function useModelCatalog(cache: ModelCatalogCache, executor: ExecutorRef 
     cache.get(executor, version, refresh, scope).then(catalog => {
       if (!cancelled) setState({ owner, catalog, loading: false, error: null });
     }, error => {
-      if (!cancelled) setState(previous => ({ ...previous, loading: false, error: userFacingError(error, "无法读取模型列表，请稍后重试。") }));
+      if (!cancelled) setState(previous => ({ ...previous, loading: false, error: userFacingError(error, t("modelPicker.listFailed")) }));
     });
     return () => { cancelled = true; };
   }, [cache, owner, executor?.providerId, executor?.installationId, version, taskId, model, ready, busy, revision]);

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import type { TextComparison } from "./reviewClient";
 import { ReviewReadAnchor } from "./ReviewReadAnchor";
 import "./review.css";
+import { translate as t } from "./i18n";
 
 // The parent keys this component by file + comparison options, not by refresh ID.
 export function ReviewText({ diff, split, showStatistics = true, path, focusLine }: { diff: TextComparison; split: boolean; showStatistics?: boolean; path?: string; focusLine?: {side: "before" | "after"; start: number; end: number} }) {
@@ -26,7 +27,7 @@ export function ReviewText({ diff, split, showStatistics = true, path, focusLine
   }), [diff.before, diff.after, language]);
   const line = (text: string | undefined, tokens: ReactNode[] | undefined) => text === undefined ? null : <>
     <code>{tokens ?? text.replace(/\r?\n$/, "")}</code>
-    {!text.endsWith("\n") && <small className="review-no-newline">文件末尾无换行</small>}
+    {!text.endsWith("\n") && <small className="review-no-newline">{t("reviewText.noNewline")}</small>}
   </>;
   const rows = diff.blocks.flatMap((block, index) => {
     const focusStart = focusLine?.side === "before" ? block.oldStart : block.newStart;
@@ -39,7 +40,7 @@ export function ReviewText({ diff, split, showStatistics = true, path, focusLine
     const result = [];
     for (let offset = 0; offset < count; offset++) {
       if (equal && count > 8 && offset === 3 && !isExpanded) {
-        result.push(<div key={`${index}:fold`} className="review-context"><button type="button" onClick={() => setExpanded(previous => [...previous, [block.oldStart, block.oldEnd]])}>展开 {count - 6} 行未修改内容</button></div>);
+        result.push(<div key={`${index}:fold`} className="review-context"><button type="button" onClick={() => setExpanded(previous => [...previous, [block.oldStart, block.oldEnd]])}>{t("reviewText.expand", { count: count - 6 })}</button></div>);
         offset = count - 4;
         continue;
       }
@@ -63,9 +64,9 @@ export function ReviewText({ diff, split, showStatistics = true, path, focusLine
     }
     return result;
   });
-  return <ReviewReadAnchor diff={diff}><section ref={element} className="review-text" aria-label={split ? "左右对照差异" : "行内差异"}>
+  return <ReviewReadAnchor diff={diff}><section ref={element} className="review-text" aria-label={t(split ? "reviewText.split" : "reviewText.inline")}>
     {showStatistics && <header><span className="review-add-count">+{diff.additions}</span> <span className="review-delete-count">−{diff.deletions}</span></header>}
-    {diff.additions === 0 && diff.deletions === 0 && <p>没有文本差异；文件仍可能存在属性变化。</p>}
+    {diff.additions === 0 && diff.deletions === 0 && <p>{t("reviewText.noTextDiff")}</p>}
     <div className="review-code" style={{ "--review-line-width": `calc(${lineNumberDigits}ch + 8px)` } as CSSProperties}>{rows}</div>
   </section></ReviewReadAnchor>;
 }

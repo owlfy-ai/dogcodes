@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { translate as t } from "./i18n";
 export type WorkspaceWatchMessage = { kind: "invalidated" | "heartbeat" } | { kind: "error"; code: string; message: string };
 type Request = { taskId: string; root: number; path: string };
 export function watchWorkspaceDirectory(request: Request, callbacks: { refresh: () => void; error: (message: string) => void; scopeChanged: () => void }): () => void {
@@ -15,7 +16,7 @@ export function watchWorkspaceDirectory(request: Request, callbacks: { refresh: 
     const failed = (message: string) => {
       if (!active()) return;
       ended = true; unwatch(subscription);
-      callbacks.error(`自动刷新已断开，正在重连：${message}`);
+      callbacks.error(t("watch.refreshLost", { message }));
       callbacks.refresh();
       timer = setTimeout(connect, Math.min(15000, 1000 * 2 ** Math.min(failures++, 4)));
     };

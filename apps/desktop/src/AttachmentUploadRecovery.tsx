@@ -4,6 +4,7 @@ import { attachmentUploads as uploads, type PendingAttachmentUpload } from "./at
 import { InlineError } from "./InlineError";
 import { LoadingStatus } from "./LoadingStatus";
 import { userFacingError } from "./userFacingError";
+import { translate as t } from "./i18n";
 
 function UploadItem({ client, record, onRecover }: { client: CoreClient; record: PendingAttachmentUpload;
   onRecover: (request: AttachmentUploadRequest, reference: PromptAttachment) => void }) {
@@ -17,17 +18,17 @@ function UploadItem({ client, record, onRecover }: { client: CoreClient; record:
     try {
       const result = await uploads.check(record, client);
       if (mounted.current) { setReference(result); setChecked(true); }
-    } catch (cause) { if (mounted.current) setError(userFacingError(cause, "暂时无法核实附件导入，请稍后重试。")); }
+    } catch (cause) { if (mounted.current) setError(userFacingError(cause, t("uploadRecovery.verifyFailed"))); }
     finally { busy.current = false; if (mounted.current) setWorking(false); }
   }
-  return <div className="turn-action-feedback" role="group" aria-label="待核实的附件导入">
-    <p>{record.request.name} · 附件导入记录尚未交给发送流程。</p>
-    <button type="button" disabled={working} onClick={() => void check()}>核实附件导入</button>
-    {reference && <button type="button" disabled={working} onClick={() => onRecover(record.request, reference)}>添加到当前草稿</button>}
-    {checked && !reference && <p>尚未查到完整附件；请重新选择原文件。未自动重新上传或发送消息。</p>}
-    <button type="button" disabled={working} onClick={() => { try { uploads.forget(record.request.uploadId); } catch (cause) { setError(String(cause)); } }}>隐藏导入记录</button>
-    <small>隐藏只移除本机跟踪，不删除附件文件或历史消息。</small>
-    {working && <LoadingStatus>正在核实附件…</LoadingStatus>}
+  return <div className="turn-action-feedback" role="group" aria-label={t("uploadRecovery.label")}>
+    <p>{t("uploadRecovery.pending", { name: record.request.name })}</p>
+    <button type="button" disabled={working} onClick={() => void check()}>{t("uploadRecovery.verify")}</button>
+    {reference && <button type="button" disabled={working} onClick={() => onRecover(record.request, reference)}>{t("uploadRecovery.addToDraft")}</button>}
+    {checked && !reference && <p>{t("uploadRecovery.notFound")}</p>}
+    <button type="button" disabled={working} onClick={() => { try { uploads.forget(record.request.uploadId); } catch (cause) { setError(String(cause)); } }}>{t("uploadRecovery.hide")}</button>
+    <small>{t("uploadRecovery.note")}</small>
+    {working && <LoadingStatus>{t("uploadRecovery.verifying")}</LoadingStatus>}
     {error && <InlineError>{error}</InlineError>}
   </div>;
 }

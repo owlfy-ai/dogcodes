@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
+import { translate as t } from "./i18n";
 
 export function PanelResizeHandle({ width, min, max, defaultWidth, side, onResize, className, label }: { width: number; min: number; max: number; defaultWidth: number; side: "left" | "right"; onResize: (width: number) => void; className?: string; label?: string }) {
   const drag = useRef<{ pointerId: number; x: number; width: number } | null>(null);
   const [dragging, setDragging] = useState(false);
-  return <div role="separator" aria-label={label ?? (side === "left" ? "调整左侧栏宽度" : "调整右侧栏宽度")} aria-orientation="vertical" aria-valuemin={min} aria-valuemax={max} aria-valuenow={width}
-    tabIndex={0} className={`${className ?? `review-resize-handle${side === "left" ? " sidebar-resize-handle" : ""}`}${dragging ? " is-dragging" : ""}`} data-tooltip="拖拽调整宽度，双击恢复默认宽度"
+  return <div role="separator" aria-label={label ?? t(side === "left" ? "resize.left" : "resize.right")} aria-orientation="vertical" aria-valuemin={min} aria-valuemax={max} aria-valuenow={width}
+    tabIndex={0} className={`${className ?? `review-resize-handle${side === "left" ? " sidebar-resize-handle" : ""}`}${dragging ? " is-dragging" : ""}`} data-tooltip={t("resize.widthTooltip")}
     onPointerDown={event => {
       if (event.button !== 0) return;
       event.preventDefault();

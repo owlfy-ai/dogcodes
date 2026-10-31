@@ -21,6 +21,7 @@ import type {
 } from "@dogcodes/protocol";
 
 import { createInvalidationSubscriber } from "./invalidationWatch";
+import { translate as t } from "./i18n";
 const watchSubmissions = createInvalidationSubscriber("core_submission_watch", "core_submission_unwatch");
 
 type Command = { type: string; data: Record<string, unknown> };
@@ -39,7 +40,7 @@ function approvalCommand(task: Pick<TaskSummary, "taskId" | "streamVersion">, ap
 }
 function cancelTurnCommand(task: TaskSummary): Command {
   const active = task.activePrimaryRun;
-  if (!active) throw new Error("当前任务没有运行中的 Turn");
+  if (!active) throw new Error(t("tauriClient.noRun"));
   return { type: "cancel_turn", data: { taskId: task.taskId, turnId: active.turnId, runId: active.runId } };
 }
 function commandEnvelope(payload: Command, expectedStreamVersion: number | null, operationId: string) {
@@ -186,7 +187,7 @@ export class TauriCoreClient implements CoreClient {
   }
 
   async updateProject(project: ProjectSummary, displayName: string, path: string, additionalDirectories: string[]): Promise<void> {
-    if (project.streamVersion === undefined) throw new Error("项目信息已过期，请重启应用后重试");
+    if (project.streamVersion === undefined) throw new Error(t("tauriClient.projectStale"));
     await invoke("core_update_local_project", { projectId: project.projectId, expectedStreamVersion: project.streamVersion, displayName, path, additionalDirectories });
   }
 

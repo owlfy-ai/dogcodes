@@ -5,6 +5,7 @@ import { focusDialogTitle } from "./dialogFocus";
 import { ReviewText } from "./ReviewText";
 import { sourceDiff } from "./reviewSourceDiff";
 import "./turnActions.css";
+import { translate as t } from "./i18n";
 
 export function ReviewFindingDiff({ client, run, finding, onClose }: {
   client: CoreClient; run: TurnReviewRun; finding: ReviewFinding; onClose: () => void;
@@ -19,22 +20,22 @@ export function ReviewFindingDiff({ client, run, finding, onClose }: {
   }, []);
   useEffect(() => {
     let valid = true; setSource(null); setError("");
-    if (!client.reviewSource) { setError("当前版本无法读取审查材料，请更新桌面服务。"); return; }
+    if (!client.reviewSource) { setError(t("findingDiff.unsupported")); return; }
     void client.reviewSource(run.request.taskId, run.request.runId, finding.fileId).then(value => {
       if (!valid) return;
-      if (value.fileId !== finding.fileId || value.rootId !== finding.rootId || value.path !== finding.path) { setError("历史文件来源不匹配，未展示其他版本。"); return; }
+      if (value.fileId !== finding.fileId || value.rootId !== finding.rootId || value.path !== finding.path) { setError(t("findingDiff.sourceMismatch")); return; }
       setSource(value);
-    }, () => { if (valid) setError("审查材料读取或校验失败，未改用当前文件。"); });
+    }, () => { if (valid) setError(t("findingDiff.loadFailed")); });
     return () => { valid = false; };
   }, [client, run.request.taskId, run.request.runId, finding, retry]);
   const diff = useMemo(() => source ? sourceDiff(source) : null, [source]);
   const excerpt = source?.[finding.side]?.split(/\r?\n/).slice(Math.max(0, finding.startLine - 6), finding.endLine + 5);
   return <dialog ref={dialog} className="historical-turn-diff review-finding-diff" aria-labelledby={titleId} onCancel={onClose}>
-    <header><h2 tabIndex={-1} id={titleId}>审查时的历史 Diff</h2><button type="button" aria-label="关闭审查 Diff" onClick={onClose}>×</button></header>
-    <p>{finding.path} · {finding.side === "before" ? "改动前" : "改动后"} {finding.startLine}–{finding.endLine} 行</p>
+    <header><h2 tabIndex={-1} id={titleId}>{t("findingDiff.title")}</h2><button type="button" aria-label={t("findingDiff.close")} onClick={onClose}>×</button></header>
+    <p>{finding.path} · {t(finding.side === "before" ? "reviewResult.citationBefore" : "reviewResult.citationAfter", { start: finding.startLine, end: finding.endLine })}</p>
     <p>{new Date(run.createdAt).toLocaleString()}</p>
-    {error ? <p role="alert">{error}<button type="button" onClick={() => setRetry(n => n + 1)}>重试</button></p> : !source ? <LoadingStatus layout="panel">正在读取审查材料…</LoadingStatus> : diff ?
+    {error ? <p role="alert">{error}<button type="button" onClick={() => setRetry(n => n + 1)}>{t("common.retry")}</button></p> : !source ? <LoadingStatus layout="panel">{t("findingDiff.loading")}</LoadingStatus> : diff ?
       <ReviewText diff={diff} split={false} path={source.path} focusLine={{ side: finding.side, start: finding.startLine, end: finding.endLine }}/> :
-      <><p role="status">原文不完整或文件超出差异展示预算，以下只展示已保存的定位片段。</p><pre>{excerpt?.map((line, index) => `${Math.max(1, finding.startLine - 5) + index}  ${line}`).join("\n") ?? "引用侧原文不可用"}</pre></>}
+      <><p role="status">{t("findingDiff.excerptOnly")}</p><pre>{excerpt?.map((line, index) => `${Math.max(1, finding.startLine - 5) + index}  ${line}`).join("\n") ?? t("findingDiff.sourceUnavailable")}</pre></>}
   </dialog>;
 }

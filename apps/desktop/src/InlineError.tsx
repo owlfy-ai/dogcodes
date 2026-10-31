@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import "./inlineError.css";
+import { translate as t } from "./i18n";
 
 /** Shared inline failure row. Pass text already cleaned by `userFacingError`; never raw exceptions. */
-export function InlineError({ children, onRetry, retryLabel = "重试", role = "alert", className = "" }: {
+export function InlineError({ children, onRetry, retryLabel = t("common.retry"), role = "alert", className = "" }: {
   children: ReactNode;
   onRetry?: () => void;
   retryLabel?: string;

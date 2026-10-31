@@ -6,6 +6,7 @@ import { AgentIcon, providerLabel } from "./agentPresentation";
 import { AgentQuotaContext, AgentQuotaRing } from "./AgentQuotaRing";
 import { FloatingPopover } from "./FloatingPopover";
 import "./agentPicker.css";
+import { translate as t } from "./i18n";
 
 export const agentChoiceKey = (executor: ExecutorRef | null | undefined) => executor ? `${executor.providerId}:${executor.installationId ?? ""}` : "";
 export interface AgentPickerOption {
@@ -33,7 +34,7 @@ export function AgentPickerMenu({ options, selectedKey, onSelect, title, label, 
   const visibleOptions = enabledAgents(options, option => option.executor.providerId, useAgentPreferences());
   return <FloatingPopover className="agent-picker-menu" data-agent-picker role={role} aria-label={label} placement={placement}>
     <header>{title}</header>
-    {loading ? <LoadingStatus>正在读取 Agent…</LoadingStatus> : visibleOptions.map(option => {
+    {loading ? <LoadingStatus>{t("agentPicker.loading")}</LoadingStatus> : visibleOptions.map(option => {
       const chosen = option.key === selectedKey;
       const quota = option.quota !== undefined ? option.quota : readings.find(view => view.providerId === option.executor.providerId && view.installationId === option.executor.installationId)?.quota ?? null;
       return <button type="button" key={option.key} aria-label={providerLabel(option.executor.providerId)} className={`agent-picker-option${chosen ? " active" : ""}`} aria-pressed={chosen} onClick={() => onSelect(option)}>
@@ -42,6 +43,6 @@ export function AgentPickerMenu({ options, selectedKey, onSelect, title, label, 
         <AgentQuotaRing quota={quota} providerId={option.executor.providerId}/>{chosen && <i>✓</i>}
       </button>;
     })}
-    {!loading && !visibleOptions.length && <p>暂无可用 Agent，请在 Agent 管理中检测或启用</p>}
+    {!loading && !visibleOptions.length && <p>{t("agentPicker.empty")}</p>}
   </FloatingPopover>;
 }

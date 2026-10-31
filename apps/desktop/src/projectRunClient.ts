@@ -4,6 +4,7 @@ import { availableAgentExecutors } from "./availableAgentExecutors";
 import { invoke } from "@tauri-apps/api/core";
 import type { ExecutorRef } from "@dogcodes/protocol";
 import { terminalClient, followTerminal, terminalEnded, type TerminalApi, type TerminalInfo } from "./terminalClient";
+import { translate as t } from "./i18n";
 
 export interface ProjectRunCommand { id: string; label: string; command: string; cwd: string; source: string; pinned?: boolean }
 export interface ProjectRunDirectory { path: string; status: "analyzing" | "ready" | "error"; commands: ProjectRunCommand[]; error: string | null; userModified?: boolean }
@@ -16,12 +17,12 @@ function process(id: string, onExit: () => void, start?: (cols: number, rows: nu
   let target = restored && { id: restored.id, epoch: restored.epoch };
   let dimensions: { cols: number; rows: number } | undefined;
   const bind = (info: TerminalInfo) => {
-    if (info.id !== id || target && info.epoch !== target.epoch) throw new Error("终端身份已变化，请刷新后确认");
+    if (info.id !== id || target && info.epoch !== target.epoch) throw new Error(t("runClient.identityChanged"));
     target = { id: info.id, epoch: info.epoch };
     return info;
   };
   const closeTarget = () => {
-    if (!target) throw new Error("原启动结果尚未确认，请先重新连接原终端");
+    if (!target) throw new Error(t("runClient.startUnconfirmed"));
     closing ??= terminalClient.close(id, target.epoch).catch(error => { closing = undefined; throw error; });
     return closing;
   };
@@ -30,14 +31,14 @@ function process(id: string, onExit: () => void, start?: (cols: number, rows: nu
     api: {
       ...terminalClient,
       open: async (_projectId, _index, cols, rows, receive) => {
-        if (stopping && !attempted && start) { onExit(); throw new Error("运行已取消"); }
+        if (stopping && !attempted && start) { onExit(); throw new Error(t("runClient.cancelled")); }
         dimensions ??= { cols, rows };
         const reconnectOnly = attempted || !start;
         attempted = true;
         const pending = (async () => {
           let info: TerminalInfo | undefined;
           try { info = await terminalClient.get(id); } catch (error) { if (reconnectOnly) throw error; }
-          if (!info && stopping) { canceledBeforeStart = true; onExit(); throw new Error("运行已取消"); }
+          if (!info && stopping) { canceledBeforeStart = true; onExit(); throw new Error(t("runClient.cancelled")); }
           return bind(info ?? await start!(dimensions!.cols, dimensions!.rows));
         })();
         opening = pending;
@@ -56,11 +57,11 @@ function process(id: string, onExit: () => void, start?: (cols: number, rows: nu
       if (!target && opening) {
         try { await opening; } catch {
           if (canceledBeforeStart) return;
-          throw new Error("原启动结果尚未确认，请先重新连接原终端");
+          throw new Error(t("runClient.startUnconfirmed"));
         }
       }
       if (target) await closeTarget();
-      else if (attempted && !canceledBeforeStart) throw new Error("原启动结果尚未确认，请先重新连接原终端");
+      else if (attempted && !canceledBeforeStart) throw new Error(t("runClient.startUnconfirmed"));
       else if (!canceledBeforeStart) onExit();
     },
   };

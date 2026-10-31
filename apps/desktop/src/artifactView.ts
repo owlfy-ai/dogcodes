@@ -1,4 +1,5 @@
 import type { ArtifactChunk, ArtifactMetadata } from "@dogcodes/protocol";
+import { translate as t } from "./i18n";
 
 export function acceptArtifactChunk(metadata: ArtifactMetadata, current: Uint8Array, chunk: ArtifactChunk): Uint8Array {
   const end = current.length + chunk.bytes.length;
@@ -10,7 +11,7 @@ export function acceptArtifactChunk(metadata: ArtifactMetadata, current: Uint8Ar
     || chunk.bytes.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)
     || chunk.nextOffset !== (end < metadata.byteLength ? end : null)
     || (end < metadata.byteLength && chunk.bytes.length === 0)) {
-    throw new Error("Artifact 分段响应与已审阅版本不一致");
+    throw new Error(t("artifactView.chunkMismatch"));
   }
   const bytes = new Uint8Array(end);
   bytes.set(current);
@@ -43,5 +44,5 @@ export function artifactVisibleText(text: string): string {
 export async function verifyArtifactBytes(bytes: Uint8Array, expectedHash: string): Promise<void> {
   const hash = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes));
   const actual = [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  if (actual !== expectedHash) throw new Error("Artifact 内容校验失败，已禁止导出");
+  if (actual !== expectedHash) throw new Error(t("artifactView.hashMismatch"));
 }

@@ -1,4 +1,5 @@
 import type { CoreClient, ProjectReviewRequest, TaskId, TurnReviewRequest, TurnReviewRun } from "@dogcodes/protocol";
+import { translate as t } from "./i18n";
 
 export type ReviewStartRequest = TurnReviewRequest | ProjectReviewRequest;
 const prefix = "dogcodes:pending-review-start:";
@@ -19,17 +20,17 @@ function read(task: string, scope: string): ReviewStartRequest | null {
     || (value.executor.installationId != null && typeof value.executor.installationId !== "string")
     || (value.retryOf != null && typeof value.retryOf !== "string")
     || (value.recheckOf != null && (typeof value.recheckOf.runId !== "string" || typeof value.recheckOf.repairTurnId !== "string"))
-    || (value.turnId === null ? !value.sourceSnapshot || typeof value.sourceSnapshot !== "string" : !value.turnId || typeof value.turnId !== "string")) throw new Error("待核实的审查请求损坏，请保留记录并检查本机存储。");
+    || (value.turnId === null ? !value.sourceSnapshot || typeof value.sourceSnapshot !== "string" : !value.turnId || typeof value.turnId !== "string")) throw new Error(t("reviewOps.corrupt"));
   return value;
 }
 function forget(scope: string, request: ReviewStartRequest) {
   if (read(request.taskId, scope)?.runId === request.runId) { localStorage.removeItem(key(request.taskId, scope)); emit(); }
 }
 function validate(request: ReviewStartRequest, run: TurnReviewRun) {
-  if (identity(run.request) !== identity(request)) throw new Error("审查回执与原请求不匹配，未重复启动。");
+  if (identity(run.request) !== identity(request)) throw new Error(t("reviewOps.receiptMismatch"));
 }
 async function check(client: CoreClient, scope: string, request: ReviewStartRequest) {
-  if (!client.turnReviews) throw new Error("当前客户端不支持查询审查结果，请更新后核实。");
+  if (!client.turnReviews) throw new Error(t("reviewOps.receiptUnsupported"));
   const runs = await client.turnReviews(request.taskId);
   const found = runs.find(run => run.request.runId === request.runId);
   if (!found) return null;
@@ -37,15 +38,15 @@ async function check(client: CoreClient, scope: string, request: ReviewStartRequ
 }
 async function send(client: CoreClient, scope: string, request: ReviewStartRequest) {
   const previous = read(request.taskId, scope);
-  if (previous && identity(previous) !== identity(request)) throw new Error("请先核实原审查请求，不能更换 Agent 或范围重试。");
-  if (request.turnId === null ? !client.startProjectReview : !client.startTurnReview) throw new Error("当前客户端不支持此审查入口。");
+  if (previous && identity(previous) !== identity(request)) throw new Error(t("reviewOps.verifyFirst"));
+  if (request.turnId === null ? !client.startProjectReview : !client.startTurnReview) throw new Error(t("reviewOps.unsupported"));
   localStorage.setItem(key(request.taskId, scope), JSON.stringify(request)); emit();
   try {
     const run = request.turnId === null ? await client.startProjectReview!(request) : await client.startTurnReview!(request);
     validate(request, run); forget(scope, request); return run;
   } catch (cause) {
     try { const result = await check(client, scope, request); if (result) return result; } catch { /* Keep original payload for explicit recovery. */ }
-    throw new Error(`${cause instanceof Error ? cause.message : String(cause)}；原审查请求已保留，请先核实结果。`);
+    throw new Error(t("reviewOps.kept", { reason: cause instanceof Error ? cause.message : String(cause) }));
   }
 }
 export const reviewStartOperations = {

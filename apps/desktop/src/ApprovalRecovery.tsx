@@ -4,6 +4,7 @@ import { approvalOperations as operations, type ApprovalCheck, type PendingAppro
 import { InlineError } from "./InlineError";
 import { LoadingStatus } from "./LoadingStatus";
 import { userFacingError } from "./userFacingError";
+import { translate as t } from "./i18n";
 
 export function usePendingApprovalResponses(taskId: TaskId | null) {
   const saved = useSyncExternalStore(operations.subscribe, () => operations.snapshot(taskId), () => "[]");
@@ -20,7 +21,7 @@ function RecoveryItem({ client, record, busy, revision, onSettled }: { client: C
       const value = changeDecision ? await operations.changeDecision(client, record) : await operations.check(client, record);
       onSettled(value); // Matched success can remove this row before resolving.
       if (mounted.current) setResult(value);
-    } catch (cause) { if (mounted.current) setError(userFacingError(cause, "暂时无法核实审批结果，请稍后重试。")); }
+    } catch (cause) { if (mounted.current) setError(userFacingError(cause, t("approvalRecovery.verifyFailed"))); }
     finally {
       guard.current = false;
       if (mounted.current) {
@@ -34,17 +35,17 @@ function RecoveryItem({ client, record, busy, revision, onSettled }: { client: C
   useEffect(() => { if (!busy) void check(false, true); }, [client, record.query.operationId, busy, revision]);
   const accepted = result?.kind === "accepted" || record.accepted;
   const failed = result?.kind === "accepted" && result.receipt.delivery === "failed";
-  return <div className="turn-action-feedback" role="group" aria-label="审批结果待核实">
-    <p>{new Date(record.requestedAt).toLocaleString()} 提交的审批或回答</p>
-    <p>{failed ? "决定已受理，驱动报告投递失败。请查看会话状态；不会重复提交这个决定。"
-      : accepted ? "决定已受理，投递结果尚未确认；已受理不代表任务已完成。"
-      : result?.kind === "missing" ? "尚未找到原回执，不代表请求已失败。若原请求仍在，请在审批卡片中重新选择或输入原回答；提交时会先核实，并只重发相同的原请求。"
-      : "正在核实原请求。重开窗口不会自动重新提交审批。"}</p>
-    <button type="button" disabled={busy || working} onClick={() => void check()}>核实审批结果</button>
-    {!accepted && result?.kind === "missing" && <button type="button" disabled={busy || working} onClick={() => void check(true)}>修改未受理的决定</button>}
-    {record.accepted && <button type="button" disabled={busy || working} onClick={() => { try { operations.dismiss(record); } catch (cause) { setError(String(cause)); } }}>已核对，结束审批跟踪</button>}
-    <small>恢复记录不保存回答正文。修改决定会先让原版本失效；已受理的决定不能撤回。</small>
-    {working && <LoadingStatus>正在核实审批结果…</LoadingStatus>}
+  return <div className="turn-action-feedback" role="group" aria-label={t("approvalRecovery.label")}>
+    <p>{t("approvalRecovery.submittedAt", { time: new Date(record.requestedAt).toLocaleString() })}</p>
+    <p>{t(failed ? "approvalRecovery.deliveryFailed"
+      : accepted ? "approvalRecovery.accepted"
+      : result?.kind === "missing" ? "approvalRecovery.missing"
+      : "approvalRecovery.verifying")}</p>
+    <button type="button" disabled={busy || working} onClick={() => void check()}>{t("approvalRecovery.verify")}</button>
+    {!accepted && result?.kind === "missing" && <button type="button" disabled={busy || working} onClick={() => void check(true)}>{t("approvalRecovery.change")}</button>}
+    {record.accepted && <button type="button" disabled={busy || working} onClick={() => { try { operations.dismiss(record); } catch (cause) { setError(String(cause)); } }}>{t("approvalRecovery.dismiss")}</button>}
+    <small>{t("approvalRecovery.note")}</small>
+    {working && <LoadingStatus>{t("approvalRecovery.verifyingResult")}</LoadingStatus>}
     {error && <InlineError>{error}</InlineError>}
   </div>;
 }
@@ -58,7 +59,7 @@ export function ApprovalRecovery({ client, taskId, busy, revision = 0, onAccepte
   const origin = scope.current;
   const settled = (record: PendingApprovalResponse, result: ApprovalCheck) => {
     if (!mounted.current || scope.current !== origin || result.kind === "missing") return;
-    if (result.kind === "obsolete") setNotice("原审批未被受理，会话版本已更新。请重新查看请求，再确认提交。");
+    if (result.kind === "obsolete") setNotice(t("approvalOps.obsolete"));
     else setNotice("");
     onAccepted(record);
   };

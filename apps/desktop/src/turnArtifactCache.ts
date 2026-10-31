@@ -2,6 +2,7 @@ import type { ArtifactMetadata, CoreClient, TaskId } from "@dogcodes/protocol";
 import { acceptArtifactChunk, verifyArtifactBytes } from "./artifactView";
 import { frozenDiff } from "./conversationDiff";
 import type { StructuredDiff } from "./diffView";
+import { translate as t } from "./i18n";
 
 export interface TurnArtifact {
   data: { files: { path: string; status: string }[]; patch?: string; attribution?: string; recoveredAfterInterruption?: boolean };
@@ -50,7 +51,7 @@ export function loadTurnArtifact(client: CoreClient, taskId: TaskId, metadata: A
     } while (bytes.length < metadata.byteLength);
     await verifyArtifactBytes(bytes, metadata.payloadSha256);
     const data = JSON.parse(new TextDecoder().decode(bytes));
-    if (!Array.isArray(data.files) || !data.files.every((file: { path?: unknown }) => file && typeof file.path === "string")) throw new Error("变更记录格式不可用");
+    if (!Array.isArray(data.files) || !data.files.every((file: { path?: unknown }) => file && typeof file.path === "string")) throw new Error(t("turnArtifacts.badFormat"));
     const result = frozenDiff(data);
     return { data, diff: result.kind === "structured" ? result.diff : null, expanded: false };
   });

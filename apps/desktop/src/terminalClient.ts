@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { translate as t } from "./i18n";
 
 export type TerminalStatus = "starting" | "running" | "stopping" | "exited" | "failed" | "unknown";
 export interface TerminalInfo {
@@ -27,7 +28,7 @@ export function followTerminal(info: TerminalInfo, receive: (event: TerminalOutp
       while (!detached) {
         const batch = await invoke<OutputBatch>("core_terminal_read", { id: expectedId, after: cursor });
         if (detached) return;
-        if (batch.info.id !== expectedId || batch.info.epoch !== expectedEpoch) throw new Error("终端身份已变化，请重新连接后确认");
+        if (batch.info.id !== expectedId || batch.info.epoch !== expectedEpoch) throw new Error(t("terminalClient.identityChanged"));
         if (batch.gap) receive({ kind: "gap" });
         if (batch.bytes.length) receive({ kind: "data", bytes: batch.bytes });
         cursor = batch.next;
@@ -47,7 +48,7 @@ export const terminalClient = {
     receive: (event: TerminalOutput) => void, operationId: string): Promise<TerminalConnection> => {
     let existing: TerminalInfo | undefined;
     try { existing = await invoke<TerminalInfo>("core_terminal_get", { id: operationId }); } catch { /* same-ID launch below */ }
-    if (existing && (existing.projectId !== projectId || existing.directoryIndex !== directoryIndex || existing.taskId !== null)) throw new Error("终端操作标识已用于其他请求");
+    if (existing && (existing.projectId !== projectId || existing.directoryIndex !== directoryIndex || existing.taskId !== null)) throw new Error(t("terminalClient.idInUse"));
     const info = existing ?? await invoke<TerminalInfo>("core_terminal_open", { projectId, directoryIndex, cols, rows, operationId });
     return followTerminal(info, receive);
   },

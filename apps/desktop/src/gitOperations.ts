@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { translate as t } from "./i18n";
 export type GitAction = "commit" | "push" | "pull" | "sync";
 export interface GitWorkflow { nextOperationId: string; parentOperationId?: string | null }
 export interface GitRequest { operationId: string; taskId: string; rootId: string; action: GitAction; message: string; stageAll: boolean; snapshotId: string | null; workflow?: GitWorkflow | null }
@@ -12,7 +13,7 @@ function notify() { listeners.forEach(listener => listener()); }
 function store(value: PendingGit) { localStorage.setItem(key(value.request.operationId), JSON.stringify(value)); notify(); }
 function parse(value: string): PendingGit {
   const item = JSON.parse(value) as PendingGit;
-  if (!item.request?.operationId || !item.request.taskId || !item.request.rootId || !["commit", "push", "pull", "sync"].includes(item.request.action)) throw new Error("待核实的 Git 操作记录损坏，请保留记录并检查本机存储");
+  if (!item.request?.operationId || !item.request.taskId || !item.request.rootId || !["commit", "push", "pull", "sync"].includes(item.request.action)) throw new Error(t("gitOps.corrupt"));
   return item;
 }
 function entries(taskId: string) {
@@ -33,14 +34,14 @@ function sameRequest(a: GitRequest, b: GitRequest) {
 }
 async function receipt(value: PendingGit): Promise<GitReceipt | null> {
   const result = await invoke<GitReceipt | null>("core_review_git_operation", { taskId: value.request.taskId, operationId: value.request.operationId });
-  if (result && !sameRequest(result.request, value.request)) throw new Error("Git 回执与原请求不匹配，未重发操作");
+  if (result && !sameRequest(result.request, value.request)) throw new Error(t("gitOps.receiptMismatch"));
   return result;
 }
 export class GitResultUnknown extends Error {
-  constructor() { super("Git 操作结果尚未核实，请先核实结果，避免重复操作"); }
+  constructor() { super(t("gitOps.unverified")); }
 }
 export class GitPushFailed extends Error {}
-export class GitWorkflowClosed extends Error { constructor() { super("此次 Git 操作已在后台结束，不再接续推送。"); } }
+export class GitWorkflowClosed extends Error { constructor() { super(t("gitOps.closed")); } }
 function settle(value: PendingGit, result: GitReceipt): boolean {
   if (result.closed) { remove(value); throw new GitWorkflowClosed(); }
   if (result.outcome.status === "succeeded") {
@@ -86,7 +87,7 @@ function validateChild(parent: GitRequest, result: GitReceipt) {
   if (child.operationId !== parent.workflow?.nextOperationId || child.taskId !== parent.taskId || child.rootId !== parent.rootId
     || child.action !== "push" || child.message !== "" || child.stageAll || child.snapshotId
     || child.workflow?.parentOperationId !== parent.operationId || !child.workflow.nextOperationId) {
-    throw new Error("Git 接续回执与原请求不匹配，未重发操作");
+    throw new Error(t("gitOps.continuationMismatch"));
   }
 }
 function adoptChild(parent: PendingGit, result: GitReceipt) {
@@ -95,7 +96,7 @@ function adoptChild(parent: PendingGit, result: GitReceipt) {
 }
 async function advanceWorkflow(parent: PendingGit): Promise<GitReceipt> {
   if (parent.receipt?.closed) { remove(parent); throw new GitWorkflowClosed(); }
-  if (!parent.request.workflow) throw new Error("原操作没有后台组合意图，请核实仓库");
+  if (!parent.request.workflow) throw new Error(t("gitOps.noWorkflow"));
   store(parent); // A local breadcrumb is useful even if the advance reply is lost.
   let result: GitReceipt;
   try {
@@ -137,7 +138,7 @@ export const gitOperations = {
       intent, ...(intent === "commitPush" ? { nextOperationId } : {}), ...(continuation || options.committed ? { committed: true } : {}),
       ...(input.action === "push" ? { retryOperationId: crypto.randomUUID() } : {}),
     };
-    if (!value.request.operationId) throw new Error("后续推送标识缺失，请先核实提交记录");
+    if (!value.request.operationId) throw new Error(t("gitOps.pushIdMissing"));
     // Unique per-operation keys: another window cannot overwrite this request.
     // The push ID was reserved before the commit, so two recovery views cannot
     // turn the same continuation into two independent push operations.
@@ -167,14 +168,14 @@ export const gitOperations = {
     if (value.intent !== "commitPush" || value.request.action !== "commit" || result?.outcome.status !== "succeeded" || !result.outcome.completed) throw new GitResultUnknown();
     if (localStorage.getItem(key(value.request.operationId))) store({ ...value, receipt: result });
     if (result.request.workflow) { const child = await advanceWorkflow(fromReceipt(result)); return settle(fromReceipt(child), child); }
-    if (!value.nextOperationId) throw new Error("后续推送标识缺失，请先核实提交记录");
+    if (!value.nextOperationId) throw new Error(t("gitOps.pushIdMissing"));
     return this.run({ taskId: value.request.taskId, rootId: value.request.rootId, action: "push", message: "" }, "push", { operationId: value.nextOperationId, committed: true });
   },
   async retryPush(value: PendingGit) {
     const result = await receipt(value);
     if (!value.committed || value.request.action !== "push" || result?.outcome.status !== "failed") throw new GitResultUnknown();
     if (result.request.workflow) { const child = await advanceWorkflow(fromReceipt(result)); return settle(fromReceipt(child), child); }
-    if (!value.retryOperationId) throw new Error("重试推送标识缺失，请先核实仓库记录");
+    if (!value.retryOperationId) throw new Error(t("gitOps.retryIdMissing"));
     if (localStorage.getItem(key(value.request.operationId))) store({ ...value, receipt: result });
     const { operationId, ...input } = value.request;
     return this.run(input, "push", { operationId: value.retryOperationId, committed: true, retryOf: operationId });
@@ -196,7 +197,7 @@ export const gitOperations = {
     let result: GitReceipt | null;
     try { result = await invoke<GitReceipt>("core_review_git_close", { taskId: value.request.taskId, operationId: value.request.operationId }); }
     catch { result = await receipt(value); }
-    if (!result?.closed || !sameRequest(result.request, value.request)) throw new Error("尚未确认后台已结束此次操作，请核实后重试。");
+    if (!result?.closed || !sameRequest(result.request, value.request)) throw new Error(t("gitOps.notClosed"));
     remove(value);
   },
 };

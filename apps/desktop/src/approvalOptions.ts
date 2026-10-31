@@ -1,4 +1,5 @@
 import type { PendingApproval } from "@dogcodes/protocol";
+import { translate as t } from "./i18n";
 
 type Option = PendingApproval["options"][number];
 
@@ -9,12 +10,12 @@ export function approvalOptionLabel(option: Option, options: Option[], toolName 
     return option.label;
   }
   switch (option.semanticRole) {
-    case "approve_once": return "允许一次";
-    case "reject": return "拒绝";
-    case "cancel": return "取消本次";
+    case "approve_once": return t("approvalOptions.approveOnce");
+    case "reject": return t("approvalOptions.reject");
+    case "cancel": return t("approvalOptions.cancel");
     case "approve_persistent":
       if (/for (?:this |the )?session/i.test(option.label)) {
-        return /bash|shell|command|terminal/i.test(toolName) ? "后续允许类似的命令" : "本会话内允许此操作";
+        return t(/bash|shell|command|terminal/i.test(toolName) ? "approvalOptions.allowSimilar" : "approvalOptions.allowSession");
       }
       return option.label;
     default: return option.label;

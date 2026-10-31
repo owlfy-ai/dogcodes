@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { ProjectSummary } from "@dogcodes/protocol";
 import { FloatingPopover } from "./FloatingPopover";
 import { userFacingError } from "./userFacingError";
+import { translate as t } from "./i18n";
 
 export interface ProjectActionsProps {
   project: ProjectSummary;
@@ -34,9 +35,9 @@ export function ProjectActions({ project, pinned, onPin, onEdit, onReveal, onRem
   return <div className="project-actions" ref={controls} onBlur={event => {
     if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setOpen(false);
   }}>
-    <button ref={trigger} className="project-action" type="button" data-tooltip="项目操作" aria-label={`${project.displayName} 项目操作`} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => { setError(""); setOpen(value => !value); }}>⋯</button>
-    {onCreateConversation && <button className="project-action" type="button" data-tooltip="新建会话" aria-label={`在 ${project.displayName} 中新建会话`} disabled={createDisabled} onClick={() => { setOpen(false); onCreateConversation(project); }}>＋</button>}
-    {open && <FloatingPopover id={id} placement="bottom" className="project-action-menu" role="menu" aria-label={`${project.displayName} 项目操作`} onKeyDown={event => {
+    <button ref={trigger} className="project-action" type="button" data-tooltip={t("projectActions.title")} aria-label={t("projectActions.label", { name: project.displayName })} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => { setError(""); setOpen(value => !value); }}>⋯</button>
+    {onCreateConversation && <button className="project-action" type="button" data-tooltip={t("projectActions.newConversation")} aria-label={t("projectActions.newConversationIn", { name: project.displayName })} disabled={createDisabled} onClick={() => { setOpen(false); onCreateConversation(project); }}>＋</button>}
+    {open && <FloatingPopover id={id} placement="bottom" className="project-action-menu" role="menu" aria-label={t("projectActions.label", { name: project.displayName })} onKeyDown={event => {
       const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')];
       const index = items.indexOf(document.activeElement as HTMLButtonElement);
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); }
@@ -45,15 +46,15 @@ export function ProjectActions({ project, pinned, onPin, onEdit, onReveal, onRem
         items[event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
       }
     }}>
-      {onPin && <button type="button" role="menuitem" disabled={preferencesDisabled} onClick={() => action(onPin)}><ActionIcon kind="pin" />{pinned ? "取消置顶" : "置顶项目"}</button>}
-      {onEdit && <button type="button" role="menuitem" onClick={() => action(() => onEdit(project))}><ActionIcon kind="edit" />编辑项目</button>}
+      {onPin && <button type="button" role="menuitem" disabled={preferencesDisabled} onClick={() => action(onPin)}><ActionIcon kind="pin" />{t(pinned ? "projectActions.unpin" : "projectActions.pin")}</button>}
+      {onEdit && <button type="button" role="menuitem" onClick={() => action(() => onEdit(project))}><ActionIcon kind="edit" />{t("nav.editProject")}</button>}
       {onReveal && <><hr /><button type="button" role="menuitem" disabled={busy} onClick={async () => {
         setBusy(true); setError("");
         try { await onReveal(project); close(); }
-        catch (cause) { setError(userFacingError(cause, "无法在文件管理器中查看项目，请重试。")); }
+        catch (cause) { setError(userFacingError(cause, t("projectActions.revealFailed"))); }
         finally { setBusy(false); }
-      }}><ActionIcon kind="folder" />{busy ? "正在打开…" : "在文件管理器中查看"}</button></>}
-      {onRemove && <><hr /><button type="button" role="menuitem" disabled={preferencesDisabled} onClick={() => action(onRemove)}><ActionIcon kind="remove" />移除项目</button><small>保留会话和本地文件</small></>}
+      }}><ActionIcon kind="folder" />{t(busy ? "openFile.opening" : "projectActions.reveal")}</button></>}
+      {onRemove && <><hr /><button type="button" role="menuitem" disabled={preferencesDisabled} onClick={() => action(onRemove)}><ActionIcon kind="remove" />{t("projectActions.remove")}</button><small>{t("projectActions.removeNote")}</small></>}
       {error && <p role="alert">{error}</p>}
     </FloatingPopover>}
   </div>;

@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { PanelResizeHandle } from "./PanelResizeHandle";
+import { translate as t } from "./i18n";
 
 const WIDTH_KEY = "dogcodes.review.filesWidthRatio";
 const DEFAULT_RATIO = .5;
@@ -37,7 +38,7 @@ export function ReviewFilesSplit({ files, children, active, busy }: { files: Rea
     style={{ gridTemplateColumns: active ? `${available ? `${width}px` : "minmax(0, 1fr)"} ${HANDLE_WIDTH}px minmax(0, 1fr)` : "minmax(0, 1fr)" }}>
     {files}
     {active && <PanelResizeHandle width={width} min={min} max={max} defaultWidth={available * DEFAULT_RATIO} side="left"
-      onResize={resize} className="review-files-resize-handle" label="调整文件列表与差异区域宽度" />}
+      onResize={resize} className="review-files-resize-handle" label={t("resize.filesWidth")} />}
     {children}
   </div>;
 }

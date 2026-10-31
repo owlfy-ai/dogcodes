@@ -7,6 +7,7 @@ import { reviewClient, type ReviewSnapshot } from "./reviewClient";
 import { reviewFileKey } from "./useReviewFileSelection";
 import { InlineError } from "./InlineError";
 import { userFacingError } from "./userFacingError";
+import { translate as t } from "./i18n";
 
 type BatchAction = "stage" | "unstage" | "discard" | "ignore";
 export function ReviewSelectionActions({ taskId, snapshot, selected, disabled, onBusy, onChanged, onRemove, menu, onCloseMenu, api }: {
@@ -24,7 +25,7 @@ export function ReviewSelectionActions({ taskId, snapshot, selected, disabled, o
     : groups.length && groups.every(({ root }) => root.root.git && !root.error && root.mode === "staged") ? "unstage" : null;
   const discardAllowed = working && groups.every(({ files }) => files.every(file => file.before?.kind !== "gitlink" && file.after?.kind !== "gitlink"));
   const ignoreAllowed = working && groups.every(({ root, files }) => root.root.git && files.every(file => root.untracked.includes(file.path) && !file.previousPath));
-  const label = action === "unstage" ? "取消暂存所选" : "暂存所选";
+  const label = t(action === "unstage" ? "selection.unstage" : "selection.stage");
   const blocked = disabled || busy;
   const activeMenu = count > 1 ? menu : null;
   const closeMenu = onCloseMenu;
@@ -57,11 +58,11 @@ export function ReviewSelectionActions({ taskId, snapshot, selected, disabled, o
           completed += result.completed.length;
           onRemove(result.completed.map(path => reviewFileKey(root.root.id, path)));
           if (result.error) throw new Error(result.error);
-        } catch (cause) { throw new Error(`${directoryName(root.root.path)}：${userFacingError(cause, "文件操作失败，请稍后重试。")}`); }
+        } catch (cause) { throw new Error(t("quota.labelValue", { label: directoryName(root.root.path), value: userFacingError(cause, t("selection.failed")) })); }
       }
     } catch (cause) {
       // Per-root failures are already cleaned and prefixed with their directory above.
-      setError(`${completed ? `已完成 ${completed} 个文件，其余未完成。` : "操作未完成。"}${cause instanceof Error ? cause.message : userFacingError(cause, "文件操作失败，请稍后重试。")}`);
+      setError(`${completed ? t("selection.partial", { count: completed }) : t("selection.incomplete")}${cause instanceof Error ? cause.message : userFacingError(cause, t("selection.failed"))}`);
     } finally {
       guard.current = false; setBusy(false); setConfirmation(null); onBusy(false); onChanged();
     }
@@ -72,7 +73,7 @@ export function ReviewSelectionActions({ taskId, snapshot, selected, disabled, o
   };
   return <>
     {error && <InlineError className="review-selection-error">{error}</InlineError>}
-    {activeMenu && !confirmation && <div ref={menuHost} tabIndex={-1}><FloatingPopover className="review-file-menu" role="menu" aria-label="所选文件操作" point={activeMenu} onKeyDown={event => {
+    {activeMenu && !confirmation && <div ref={menuHost} tabIndex={-1}><FloatingPopover className="review-file-menu" role="menu" aria-label={t("selection.menu")} point={activeMenu} onKeyDown={event => {
       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
       event.preventDefault();
       const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
@@ -80,17 +81,17 @@ export function ReviewSelectionActions({ taskId, snapshot, selected, disabled, o
       const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
       items[next]?.focus();
     }}>
-      <button role="menuitem" type="button" disabled={blocked || !action} onClick={() => action && void run(action)}>{label}（{count} 个文件）</button>
-      <button role="menuitem" type="button" disabled={blocked || !ignoreAllowed} data-tooltip={!ignoreAllowed ? "仅支持未跟踪文件；已跟踪文件无法通过 .gitignore 忽略" : undefined} onClick={() => void run("ignore")}>加入 .gitignore（{count} 个文件）</button>
+      <button role="menuitem" type="button" disabled={blocked || !action} onClick={() => action && void run(action)}>{t("selection.withCount", { label, count })}</button>
+      <button role="menuitem" type="button" disabled={blocked || !ignoreAllowed} data-tooltip={!ignoreAllowed ? t("selection.ignoreTooltip") : undefined} onClick={() => void run("ignore")}>{t("selection.withCount", { label: t("fileMenu.ignore"), count })}</button>
       <hr role="separator" />
-      <button role="menuitem" type="button" disabled={blocked || !discardAllowed} data-tooltip={!discardAllowed ? "仅支持工作区更改，不支持历史、已暂存视图和子模块" : undefined} onClick={confirmDiscard}>丢弃所选更改…</button>
+      <button role="menuitem" type="button" disabled={blocked || !discardAllowed} data-tooltip={!discardAllowed ? t("selection.discardTooltip") : undefined} onClick={confirmDiscard}>{t("selection.discardEllipsis")}</button>
     </FloatingPopover></div>}
-    {confirmation && <dialog ref={dialog} className="review-confirmation" aria-label="丢弃所选文件更改" aria-modal="true" onCancel={event => { event.preventDefault(); if (!guard.current) setConfirmation(null); }}>
-      <h3 tabIndex={-1} data-dialog-title>丢弃所选 {confirmation.count} 个文件的更改？</h3>
-      <p>工作文件将恢复到以下比较基准。新增文件将删除，重命名将同时恢复原路径。Git 暂存区保持不变。</p>
-      <div className="review-batch-file-list">{confirmation.groups.map(({ root, files }) => <section key={root.root.id}><strong data-tooltip={root.root.path}>{root.root.path} · {root.mode === "session" ? "会话初始版本" : root.mode === "unstaged" ? "暂存区版本" : "最近提交版本"}</strong><ul>{files.map(file => <li key={file.path}>{file.previousPath ? `${file.previousPath} → ${file.path}` : file.path}</li>)}</ul></section>)}</div>
-      <button type="button" disabled={busy} onClick={() => setConfirmation(null)}>取消</button>
-      <button type="button" className="review-discard-confirm" disabled={blocked} onClick={() => void run("discard")}>{busy ? "处理中…" : `丢弃 ${confirmation.count} 个文件的更改`}</button>
+    {confirmation && <dialog ref={dialog} className="review-confirmation" aria-label={t("selection.discardLabel")} aria-modal="true" onCancel={event => { event.preventDefault(); if (!guard.current) setConfirmation(null); }}>
+      <h3 tabIndex={-1} data-dialog-title>{t("selection.discardTitle", { count: confirmation.count })}</h3>
+      <p>{t("selection.discardDescription")}</p>
+      <div className="review-batch-file-list">{confirmation.groups.map(({ root, files }) => <section key={root.root.id}><strong data-tooltip={root.root.path}>{root.root.path} · {t(root.mode === "session" ? "fileMenu.base.session" : root.mode === "unstaged" ? "fileMenu.base.index" : "fileMenu.base.head")}</strong><ul>{files.map(file => <li key={file.path}>{file.previousPath ? `${file.previousPath} → ${file.path}` : file.path}</li>)}</ul></section>)}</div>
+      <button type="button" disabled={busy} onClick={() => setConfirmation(null)}>{t("common.cancel")}</button>
+      <button type="button" className="review-discard-confirm" disabled={blocked} onClick={() => void run("discard")}>{busy ? t("gitCommit.processing") : t("selection.discardConfirm", { count: confirmation.count })}</button>
     </dialog>}
   </>;
 }

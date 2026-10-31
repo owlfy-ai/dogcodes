@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ProjectRunCatalog } from "./projectRunClient";
+import { translate as t } from "./i18n";
 export interface RunOperation { operationId: string; generation: string; status: "running" | "succeeded" | "failed" | "interrupted" | "superseded"; error: string | null }
 type Pending = { method: "core_project_runs_analyze" | "core_project_run_edit"; request: Record<string, unknown> & { taskId: string; operationId: string } };
 const prefix = (taskId: string) => `dogcodes.project-run.pending.${taskId}.`;
@@ -25,7 +26,7 @@ function pending(taskId: string): Pending | null {
   const value = read(taskId); if (!value) return null;
   const parsed = JSON.parse(value) as Pending;
   if (!["core_project_runs_analyze", "core_project_run_edit"].includes(parsed.method)
-    || parsed.request?.taskId !== taskId || typeof parsed.request.operationId !== "string") throw new Error("待核实的运行操作记录损坏，请先放弃重试后刷新配置");
+    || parsed.request?.taskId !== taskId || typeof parsed.request.operationId !== "string") throw new Error(t("runOps.corrupt"));
   return parsed;
 }
 export class RunOperationRejected extends Error {
@@ -57,7 +58,7 @@ export const runOperations = {
     return send(operation);
   },
   async mutate(method: Pending["method"], request: Pending["request"]): Promise<ProjectRunCatalog> {
-    if (pending(request.taskId)) throw new Error("上次操作的结果尚未核实，请先重新核实或放弃重试");
+    if (pending(request.taskId)) throw new Error(t("runOps.pending"));
     // Persist before invoking: a closed window must not lose the identity of an
     // operation already delivered to the service.
     store(request.taskId, { method, request });
