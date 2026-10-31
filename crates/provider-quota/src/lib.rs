@@ -21,6 +21,7 @@ use tokio::sync::Mutex;
 enum Kind {
     Go,
     DeepSeek,
+    DeepSeekPlatform,
     Sub2Api,
 }
 
@@ -88,7 +89,7 @@ impl AccountMonitor {
             for request in &mut requests {
                 request.endpoint = match request.kind {
                     Kind::Go => go.clone(),
-                    Kind::DeepSeek => deepseek.clone(),
+                    Kind::DeepSeek | Kind::DeepSeekPlatform => deepseek.clone(),
                     Kind::Sub2Api => request.endpoint.clone(),
                 };
             }
@@ -148,6 +149,9 @@ async fn fetch(requests: Vec<Request>) -> Result<QuotaSnapshot, DriverError> {
             match r.kind {
                 Kind::Go => Ok((projection::go(&payload)?, Vec::new())),
                 Kind::DeepSeek => Ok((Vec::new(), projection::deepseek(&payload)?)),
+                Kind::DeepSeekPlatform => {
+                    Ok((Vec::new(), projection::deepseek_platform(&payload)?))
+                }
                 Kind::Sub2Api => Ok((Vec::new(), projection::sub2api(&payload, &r.label)?)),
             }
         }

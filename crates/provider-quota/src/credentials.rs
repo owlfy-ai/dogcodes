@@ -10,6 +10,7 @@ use std::{
 
 const GO: &str = "https://opencode.ai/inference/go/v1/usage";
 const DEEPSEEK: &str = "https://api.deepseek.com/user/balance";
+const DEEPSEEK_PLATFORM: &str = "https://platform.deepseek.com";
 type Environment = HashMap<String, String>;
 
 fn home(env: &Environment) -> Result<PathBuf, DriverError> {
@@ -233,7 +234,15 @@ fn dsh(env: &Environment) -> Result<Vec<Request>, DriverError> {
                 .flatten()
         });
     let Some(k) = k else {
-        return Ok(Vec::new());
+        return Ok(
+            platform_grant(&stored["records"]["deepseek-account-platform/default"])
+                .map(|k| {
+                    let endpoint = format!("{DEEPSEEK_PLATFORM}/api/v0/users/get_user_summary");
+                    request("DeepSeek", &endpoint, k, Kind::DeepSeekPlatform)
+                })
+                .into_iter()
+                .collect(),
+        );
     };
     let base = env
         .get("DEEPSEEK_BASE_URL")
@@ -241,4 +250,17 @@ fn dsh(env: &Environment) -> Result<Vec<Request>, DriverError> {
     Ok(provider_request("DeepSeek API", base, k)
         .into_iter()
         .collect())
+}
+
+/// The account-platform login grant is only ever sent back to its official issuer,
+/// the way dsh reads its own wallet; it is never used as an inference API key.
+fn platform_grant(record: &Value) -> Option<String> {
+    let payload = &record["payload"];
+    if record["kind"] != "grant"
+        || payload["version"] != 1
+        || payload["issuer"].as_str()?.trim_end_matches('/') != DEEPSEEK_PLATFORM
+    {
+        return None;
+    }
+    key(payload["token"].as_str()).filter(|t| t.bytes().all(|b| b.is_ascii_graphic()))
 }

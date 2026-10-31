@@ -264,6 +264,87 @@ fn dsh_saved_reference_wins_over_environment_and_browser_grants_stay_opaque() {
     assert!(credentials::discover("deepseek-harness", &env).is_err());
 }
 
+fn dsh_platform_grant(root: &Path, issuer: &str) {
+    std::fs::create_dir_all(root.join(".dsh")).unwrap();
+    std::fs::write(root.join(".dsh/.credentials.yaml"), format!("version: 1\nrecords:\n  client-connection/browser-session:\n    kind: grant\n    payload: {{secret: browser-private}}\n  deepseek-account-platform/default:\n    kind: grant\n    payload: {{version: 1, token: grant-private, issuer: '{issuer}'}}\n")).unwrap();
+}
+
+#[test]
+fn dsh_platform_grant_is_a_fallback_bound_to_its_official_issuer() {
+    let root = tempfile::tempdir().unwrap();
+    let mut env = environment(root.path());
+    dsh_platform_grant(root.path(), "https://platform.deepseek.com");
+    let requests = credentials::discover("deepseek-harness", &env).unwrap();
+    assert_eq!(requests.len(), 1);
+    assert!(matches!(requests[0].kind, Kind::DeepSeekPlatform));
+    assert_eq!(requests[0].key, "grant-private");
+    assert_eq!(
+        requests[0].endpoint,
+        "https://platform.deepseek.com/api/v0/users/get_user_summary"
+    );
+    env.insert("DEEPSEEK_API_KEY".into(), "env-private".into());
+    let requests = credentials::discover("deepseek-harness", &env).unwrap();
+    assert!(matches!(requests[0].kind, Kind::DeepSeek));
+    assert_eq!(requests[0].key, "env-private");
+    env.remove("DEEPSEEK_API_KEY");
+    for issuer in [
+        "https://platform.deepseek.com.evil.example",
+        "http://platform.deepseek.com",
+        "https://relay.example",
+    ] {
+        dsh_platform_grant(root.path(), issuer);
+        assert!(credentials::discover("deepseek-harness", &env).is_err());
+    }
+}
+
+#[test]
+fn deepseek_platform_keeps_recharge_and_bonus_wallets_apart() {
+    let balances =
+        projection::deepseek_platform(&json!({"code":0,"data":{"biz_code":0,"biz_data":{
+            "normal_wallets":[{"currency":"CNY","balance":"0E-16"}],
+            "bonus_wallets":[{"currency":"CNY","balance":"6.0000000000000000"}]
+        }}}))
+        .unwrap();
+    assert_eq!(balances.len(), 2);
+    assert_eq!(balances[0].label, "DeepSeek");
+    assert!(balances[0].amount.abs() < f64::EPSILON);
+    assert_eq!(balances[1].label, "DeepSeek bonus");
+    assert!((balances[1].amount - 6.0).abs() < f64::EPSILON);
+    let expired = projection::deepseek_platform(
+        &json!({"code":40003,"msg":"Authorization Failed (invalid token)","data":null}),
+    )
+    .unwrap_err();
+    assert_eq!(
+        driver_api::failure::quota_diagnostic(&expired),
+        "quota_login_required"
+    );
+    for bad in [
+        json!({}),
+        json!({"code":0,"data":{"biz_data":{"normal_wallets":[]}}}),
+        json!({"code":0,"data":{"biz_data":{"normal_wallets":[],"bonus_wallets":[]}}}),
+    ] {
+        assert!(projection::deepseek_platform(&bad).is_err());
+    }
+}
+
+#[tokio::test]
+async fn dsh_platform_grant_is_sent_only_in_the_dsh_header() {
+    let root = tempfile::tempdir().unwrap();
+    let body = json!({"code":0,"data":{"biz_data":{
+        "normal_wallets":[{"currency":"CNY","balance":"1.5"}],"bonus_wallets":[]
+    }}});
+    let (url, task) = server(vec![(200, body.to_string())]).await;
+    dsh_platform_grant(root.path(), "https://platform.deepseek.com");
+    let mut m = monitor("deepseek-harness", root.path());
+    m.endpoints = Some((url.clone(), url));
+    let quota = m.read_quota(None).await.unwrap();
+    assert_eq!(quota.balances[0].label, "DeepSeek");
+    assert!(!serde_json::to_string(&quota).unwrap().contains("private"));
+    let request = task.await.unwrap().remove(0).to_ascii_lowercase();
+    assert!(request.contains("x-dsh-auth-token: grant-private"));
+    assert!(!request.contains("authorization:"));
+}
+
 #[tokio::test]
 async fn account_reads_are_get_only_cached_forced_and_invalidated_on_key_rotation() {
     let root = tempfile::tempdir().unwrap();

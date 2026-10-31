@@ -13,9 +13,12 @@ pub(super) fn client() -> Result<Client, DriverError> {
 }
 
 pub(super) async fn get(client: &Client, request: &Request) -> Result<Value, DriverError> {
-    let mut response = client
-        .get(&request.endpoint)
-        .bearer_auth(&request.key)
+    let builder = client.get(&request.endpoint);
+    let builder = match request.kind {
+        Kind::DeepSeekPlatform => builder.header("x-dsh-auth-token", &request.key),
+        _ => builder.bearer_auth(&request.key),
+    };
+    let mut response = builder
         .header("Accept", "application/json")
         .send()
         .await
