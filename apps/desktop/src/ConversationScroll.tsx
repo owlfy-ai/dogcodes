@@ -31,6 +31,15 @@ export function ConversationScroll({
       setAway(false);
     }
   };
+  const trackScroll = (node: HTMLDivElement) => {
+    const distance = node.scrollHeight - node.scrollTop - node.clientHeight;
+    // Native scrollbar drags may arrive without a pointer event on the viewport.
+    // Pause on upward movement, and resume only after moving back to the bottom.
+    if (node.scrollTop < lastTop.current && distance > 1) follow.current = false;
+    else if (node.scrollTop > lastTop.current && distance <= 1) follow.current = true;
+    lastTop.current = node.scrollTop;
+    setAway(!follow.current && distance > 1);
+  };
   useLayoutEffect(() => {
     summaryPositions.current = new WeakMap();
     summaryToggle.current = null;
@@ -51,7 +60,11 @@ export function ConversationScroll({
     if (!node) return;
     const observer = new ResizeObserver(() => {
       if (summaryToggle.current?.open === false) return;
-      if (follow.current && !window.getSelection()?.toString()) bottom();
+      if (visible.current && follow.current && !window.getSelection()?.toString()) {
+        // ResizeObserver can run before the pending native scroll event.
+        if (viewport.current) trackScroll(viewport.current);
+        if (follow.current) bottom();
+      }
     });
     observer.observe(node);
     const scrollport = viewport.current;
@@ -69,7 +82,7 @@ export function ConversationScroll({
         restoredTop.current = scrollport.scrollTop;
         const distance = scrollport.scrollHeight - scrollport.scrollTop - scrollport.clientHeight;
         follow.current = distance <= 1;
-        setAway(distance > 80);
+        setAway(distance > 1);
         summaryPositions.current.delete(request.details);
       }
     };
@@ -111,18 +124,13 @@ export function ConversationScroll({
         const node = viewport.current;
         if (!node || !visible.current) return;
         if (summaryToggle.current?.open === false) return;
-        lastTop.current = node.scrollTop;
         if (restoredTop.current !== null) {
           const restored = restoredTop.current;
           restoredTop.current = null;
-          if (Math.abs(node.scrollTop - restored) <= 1) return;
+          if (Math.abs(node.scrollTop - restored) <= 1) { lastTop.current = node.scrollTop; return; }
         }
-        // Layout and programmatic scroll events must not cancel bottom-follow.
-        if (follow.current) { bottom(); return; }
-        const isAway =
-          node.scrollHeight - node.scrollTop - node.clientHeight > 80;
-        follow.current = !isAway;
-        setAway(isAway);
+        trackScroll(node);
+        if (follow.current) bottom();
       }}
     >
       <div className="conversation-flow" ref={content}>{children}</div>
