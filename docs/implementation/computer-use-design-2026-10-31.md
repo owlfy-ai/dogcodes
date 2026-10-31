@@ -2,7 +2,7 @@
 
 日期：2026-10-31。状态：原始设计存档。第一阶段已经实现，实际架构、能力范围与验收见 [实现与验收报告](computer-use-implementation-2026-10-31.md)。
 
-> 实施时按产品需求调整为任务级开启的宿主机模式，优先保证截图、输入、软件测试与结果验证。本文原先的逐应用授权、bounded manifest、严格 15 KB schema 和“唯一安全边界”等表述不代表当前实现。第一阶段实测 Codex 与 DeepSeek Harness；完整 12 个 agent 的验收仍属后续工作。
+> 实施时按产品需求调整为任务级开启的宿主机模式，优先保证截图、输入、软件测试与结果验证。本文原先的逐应用授权、bounded manifest、严格 15 KB schema 和“唯一安全边界”等表述不代表当前实现。后续范围与验收见 [后续实施报告](computer-use-completion-2026-10-31.md)：Pi 按要求退出范围，macOS/Linux 实机测试由用户后续执行，Claude 已恢复额度并纳入 Windows 测试。
 
 ## 结论
 

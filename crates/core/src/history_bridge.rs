@@ -579,17 +579,44 @@ pub(crate) fn is_app_tool(server: &str, tools: &[&str], title: &str, summary: &s
         .and_then(|value| value.get("providerIdentifier"))
         .and_then(Value::as_str);
     let tool = input
-        .and_then(|value| value.get("toolName"))
+        .and_then(|value| {
+            value
+                .get("toolName")
+                .or_else(|| value.get("tool_name"))
+                .or_else(|| value.get("tool_id"))
+        })
         .and_then(Value::as_str);
     // Explicit metadata must agree even when a display name appears trusted.
     if provider.is_some_and(|value| value != server) {
         return false;
     }
     tools.iter().any(|name| {
-        if tool.is_some_and(|value| value != *name) {
+        let qualified = format!("mcp__{server}__{name}");
+        let native = format!("{server}__{name}");
+        let routed = format!("{server}::{name}");
+        if tool.is_some_and(|value| {
+            value != *name && value != qualified && value != native && value != routed
+        }) {
             return false;
         }
-        title == format!("mcp__{server}__{name}")
+        let opaque_call = title
+            .strip_prefix("call_")
+            .or_else(|| title.strip_prefix("chatcmpl-tool-"))
+            .is_some_and(|id| {
+                id.len() >= 8 && id.len() <= 128 && id.bytes().all(|byte| byte.is_ascii_hexdigit())
+            });
+        title == qualified
+            || title == native
+            || (title == format!("@{server}/{name}")
+                && tool == Some(routed.as_str())
+                && input.is_some_and(|value| {
+                    value["arguments"].is_object() && value.get("command").is_none()
+                }))
+            || (opaque_call
+                && tool.is_some_and(|value| value == qualified || value == native)
+                && input.is_some_and(|value| {
+                    value["params"].is_object() && value.get("command").is_none()
+                }))
             || (provider == Some(server)
                 && tool == Some(*name)
                 && (title == *name || title == format!("{server}-{name}: {name}")))
@@ -847,6 +874,62 @@ mod tests {
         ));
         let input = json!({"input":{"rawInput":{"providerIdentifier":server,"toolName":"getDecisionLog","args":{}}}}).to_string();
         assert!(is_history_tool(server, "getDecisionLog", &input));
+    }
+
+    #[test]
+    fn acp_native_qualified_names_and_opaque_mcp_calls_still_match_exact_servers() {
+        let server = "dogcodes_cu_a1b2";
+        let tools = ["list_windows", "click"];
+        assert!(is_app_tool(server, &tools, "dogcodes_cu_a1b2__list_windows", &json!({"input":{"variant":"UseTool","tool_name":"dogcodes_cu_a1b2__list_windows","tool_input":{"pid":7}}}).to_string()));
+        let input = json!({"input":{"toolName":"mcp__dogcodes_cu_a1b2__click","params":{"pid":7}}})
+            .to_string();
+        assert!(is_app_tool(
+            server,
+            &tools,
+            "call_f1d3b04e31bb4e5894342078",
+            &input
+        ));
+        assert!(is_app_tool(
+            server,
+            &tools,
+            "chatcmpl-tool-b9d6b568ea9e5915",
+            &input
+        ));
+        let routed = json!({"input":{"tool_id":"dogcodes_cu_a1b2::click","arguments":{"pid":7}}})
+            .to_string();
+        assert!(is_app_tool(
+            server,
+            &tools,
+            "@dogcodes_cu_a1b2/click",
+            &routed
+        ));
+        assert!(!is_app_tool(
+            server,
+            &tools,
+            "@dogcodes_cu_other/click",
+            &routed
+        ));
+        assert!(!is_app_tool(
+            server,
+            &tools,
+            "@dogcodes_cu_a1b2/list_windows",
+            &routed
+        ));
+        for title in ["Bash", "run_command", "call_wrong", "click"] {
+            assert!(!is_app_tool(server, &tools, title, &input));
+        }
+        assert!(!is_app_tool(
+            "another_server",
+            &tools,
+            "call_f1d3b04e31bb4e5894342078",
+            &input
+        ));
+        assert!(!is_app_tool(
+            server,
+            &["list_windows"],
+            "call_f1d3b04e31bb4e5894342078",
+            &input
+        ));
     }
 
     #[test]

@@ -37,13 +37,15 @@ export function prepareDev({ platform, environment, args = [], localEnvironment 
 }
 
 async function main() {
-  await prepareComputerUse();
   const readLocal = path => process.platform === 'darwin' && existsSync(path) ? readFileSync(path, 'utf8') : '';
   const appConfig = JSON.parse(readFileSync(resolve(root, 'apps/desktop/src-tauri/tauri.conf.json'), 'utf8'));
   const plan = prepareDev({ platform: process.platform, environment: process.env, args: process.argv.slice(2),
     localEnvironment: readLocal(resolve(root, 'release/.env.local')),
     signingConfig: readLocal(resolve(root, 'release/tauri.signing.local.json')) || null,
     identifier: appConfig.identifier });
+  const targetIndex = plan.args.indexOf('--target');
+  const target = targetIndex >= 0 ? plan.args[targetIndex + 1] : undefined;
+  await prepareComputerUse({ target, signingIdentity: plan.env.DOGCODES_DEV_SIGNING_IDENTITY || '-' });
   if (process.platform === 'darwin') console.log(plan.signed
     ? `Development signing: ${plan.env.DOGCODES_DEV_SIGNING_IDENTITY} (${appConfig.identifier}).`
     : 'Development signing: ad-hoc. Set APPLE_SIGNING_IDENTITY in release/.env.local for stable Keychain access.');

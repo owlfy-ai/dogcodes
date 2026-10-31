@@ -1,4 +1,5 @@
 //! One supervised, persistent stdio connection. Unknown actions are never replayed.
+use base64::Engine as _;
 use process_scope::OwnedChild;
 use serde_json::{Value, json};
 use std::{path::Path, process::Stdio, time::Duration};
@@ -38,7 +39,11 @@ pub(super) struct Driver {
 }
 
 impl Driver {
-    pub async fn spawn(program: &Path, home: &Path) -> Result<Self, String> {
+    pub async fn spawn(
+        program: &Path,
+        home: &Path,
+        bundle_id: Option<&str>,
+    ) -> Result<Self, String> {
         let mut command = tokio::process::Command::new(program);
         command
             .args(["mcp", "--direct"])
@@ -56,6 +61,18 @@ impl Driver {
             .env_remove("CUA_DRIVER_SESSION_POLICY_FILE")
             .env_remove("CUA_DRIVER_POLICY_FILE")
             .env_remove("CUA_DRIVER_DANGEROUSLY_BYPASS_APPROVALS");
+        // Direct MCP stays in the spawning application's responsibility chain.
+        // Only the macOS desktop host supplies an advisory bundle identity.
+        command
+            .env_remove("CUA_DRIVER_EMBEDDED")
+            .env_remove("CUA_DRIVER_HOST_BUNDLE_ID");
+        if cfg!(target_os = "macos")
+            && let Some(bundle_id) = bundle_id
+        {
+            command
+                .env("CUA_DRIVER_EMBEDDED", "1")
+                .env("CUA_DRIVER_HOST_BUNDLE_ID", bundle_id);
+        }
         let mut child =
             OwnedChild::spawn(command).map_err(|e| format!("computer_driver_start: {e}"))?;
         let input = child.stdin.take().ok_or("computer_driver_stdin")?;
@@ -103,8 +120,11 @@ impl Driver {
             .ok_or("computer_tool_name_required")?;
         let args = params.get("arguments").cloned().unwrap_or(json!({}));
         validate_call(name, &args)?;
-        self.request(method, json!({"name":name,"arguments":args}))
-            .await
+        let mut result = self
+            .request(method, json!({"name":name,"arguments":args}))
+            .await?;
+        describe_images(&mut result);
+        Ok(result)
     }
 
     async fn write(&mut self, value: &Value) -> Result<(), String> {
@@ -146,6 +166,50 @@ impl Driver {
     }
 }
 
+fn describe_images(result: &mut Value) {
+    // Some clients omit structuredContent when constructing model messages.
+    let grounding: serde_json::Map<String, Value> = [
+        "capture_id",
+        "snapshot_id",
+        "pid",
+        "window_id",
+        "window_bounds",
+        "screenshot_width",
+        "screenshot_height",
+        "screenshot_mime_type",
+    ]
+    .into_iter()
+    .filter_map(|key| {
+        result["structuredContent"]
+            .get(key)
+            .map(|value| (key.to_owned(), value.clone()))
+    })
+    .collect();
+    let Some(content) = result.get_mut("content").and_then(Value::as_array_mut) else {
+        return;
+    };
+    let mut descriptions = vec![];
+    if !grounding.is_empty() {
+        descriptions.push(json!({"type":"text","text":format!("Computer-use capture metadata (use for coordinate grounding): {}", Value::Object(grounding))}));
+    }
+    descriptions.extend(content.iter().filter(|item| item["type"] == "image")
+        .enumerate().filter_map(|(index,item)| {
+            if item["mimeType"] != "image/png" { return None; }
+            // PNG's signature and IHDR dimensions fit in the first 32 base64
+            // characters. Do not decode/copy the entire screenshot just for size.
+            let prefix = item["data"].as_str()?.get(..32)?;
+            let bytes = base64::engine::general_purpose::STANDARD.decode(prefix).ok()?;
+            if bytes.get(..8)? != b"\x89PNG\r\n\x1a\n" || bytes.get(12..16)? != b"IHDR" { return None; }
+            let width = u32::from_be_bytes(bytes.get(16..20)?.try_into().ok()?);
+            let height = u32::from_be_bytes(bytes.get(20..24)?.try_into().ok()?);
+            if width == 0 || height == 0 { return None; }
+            Some(json!({"type":"text","text":format!("Returned image {}: {width} x {height} pixels. Use the original capture/coordinate metadata for input.",index+1)}))
+        }).collect::<Vec<_>>());
+    // Some MCP clients preserve images while dropping tool-result metadata.
+    // A short text caption keeps dimensions available to their image viewers.
+    content.splice(0..0, descriptions);
+}
+
 pub(super) fn validate_call(name: &str, args: &Value) -> Result<(), String> {
     if !TOOLS.contains(&name) || !args.is_object() {
         return Err("unknown_computer_tool_or_arguments".into());
@@ -175,10 +239,10 @@ pub(super) fn validate_call(name: &str, args: &Value) -> Result<(), String> {
                     .map(String::as_str)
             });
             if tool.is_some_and(|tool| !allowed.contains(&tool)) {
-                return Err("unsupported_computer_batch_step".into());
+                return Err("unsupported_computer_batch_step; steps must be {tool,args} or {click:{...}}, using the published action enum; use observe:{} for the final read, or call an individual tool".into());
             }
             if tool.is_none() && step.get("wait_for").is_none() && step.get("expect").is_none() {
-                return Err("unsupported_computer_batch_step".into());
+                return Err("unsupported_computer_batch_step; steps must be {tool,args} or {click:{...}}, or a wait_for/expect check; use observe:{} for the final read".into());
             }
         }
     }
@@ -210,11 +274,48 @@ fn compact_schema(value: &mut Value) {
         }
         _ => (),
     }
+    if value["name"] == "run_steps" {
+        value["description"] = json!(
+            "Run 1–32 known actions, stopping on failure. Steps: {tool,args} or {click:{...}}; only the listed action tools. Use observe:{} for one final read, include_screenshot:true there for an image. Split at decisions; inspect partial results before retrying."
+        );
+        value["inputSchema"]["properties"]["steps"]["maxItems"] = json!(32);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn image_dimensions_are_portable_without_changing_pixels_or_capture_metadata() {
+        let mut header = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        header.extend(1280_u32.to_be_bytes());
+        header.extend(720_u32.to_be_bytes());
+        let image = json!({"type":"image","mimeType":"image/png","data":base64::engine::general_purpose::STANDARD.encode(header)});
+        let mut result = json!({"content":[{"type":"text","text":"tree"},image],"_meta":{"scale":2},"structuredContent":{"capture_id":"original","snapshot_id":"s1","window_bounds":{"x":10,"y":20,"width":1600,"height":900},"screenshot_width":1280,"screenshot_height":720,"tree_markdown":"large tree"}});
+        let original = result.clone();
+        describe_images(&mut result);
+        assert_eq!(result["content"][2], original["content"][0]);
+        assert_eq!(result["content"][3], original["content"][1]);
+        assert_eq!(result["_meta"], original["_meta"]);
+        assert_eq!(result["structuredContent"], original["structuredContent"]);
+        let grounding = result["content"][0]["text"].as_str().unwrap();
+        assert!(grounding.contains("original") && grounding.contains("window_bounds"));
+        assert!(!grounding.contains("large tree"));
+        assert!(
+            result["content"][1]["text"]
+                .as_str()
+                .unwrap()
+                .contains("1280 x 720")
+        );
+        let mut malformed =
+            json!({"content":[{"type":"image","mimeType":"image/png","data":"invalid"}]});
+        let original = malformed.clone();
+        describe_images(&mut malformed);
+        assert_eq!(malformed, original);
+        let mut malformed_result = json!("invalid tool result");
+        describe_images(&mut malformed_result);
+        assert_eq!(malformed_result, json!("invalid tool result"));
+    }
     #[test]
     fn batches_are_validated_before_any_native_action() {
         assert!(
@@ -244,5 +345,18 @@ mod tests {
         compact_schema(&mut schema);
         assert_eq!(schema["inputSchema"], original);
         assert_eq!(schema["description"].as_str().unwrap().len(), 240);
+    }
+    #[test]
+    fn batch_catalog_advertises_the_limit_enforced_by_the_proxy() {
+        let mut schema =
+            json!({"name":"run_steps","inputSchema":{"properties":{"steps":{"maxItems":64}}}});
+        compact_schema(&mut schema);
+        assert_eq!(schema["inputSchema"]["properties"]["steps"]["maxItems"], 32);
+        assert!(
+            schema["description"]
+                .as_str()
+                .unwrap()
+                .contains("{tool,args}")
+        );
     }
 }

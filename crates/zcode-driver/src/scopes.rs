@@ -39,6 +39,7 @@ impl SessionState {
         use std::sync::atomic::AtomicBool;
         Arc::new(Self {
             scope: Mutex::new(handle),
+            binding: Mutex::new(None),
             workspace,
             admission: tokio::sync::Mutex::new(()),
             retired: tokio::sync::watch::channel(false).0,

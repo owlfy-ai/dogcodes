@@ -4,7 +4,7 @@ mod runtime;
 pub use activity::{ActivityMode, ComputerActivity};
 
 use crate::{AppendRequest, Core, CoreError, CoreRepository};
-use agent_domain::{CommandId, TaskId};
+use agent_domain::{CommandId, ProviderId, TaskId, TurnId};
 use agent_protocol::{EventEnvelope, EventSource, NewEvent, StreamRef, StreamType};
 use driver_api::{AppMcp, ApprovalSemanticRole, DriverEvent};
 use serde_json::{Value, json};
@@ -29,11 +29,13 @@ struct Config {
     proxy: PathBuf,
     driver: PathBuf,
     home: PathBuf,
+    bundle_id: Option<String>,
 }
 
 #[derive(Default)]
 pub(crate) struct Host {
     config: Option<Config>,
+    unavailable_reason: Option<String>,
     endpoints: Mutex<BTreeMap<TaskId, Arc<Endpoint>>>,
     desktop: Arc<Mutex<()>>,
     settings: Mutex<()>,
@@ -115,6 +117,9 @@ impl Core {
             "presented" => Ok(
                 json!({"accepted": self.computer_use.activity.presented(call["operationId"].as_str().unwrap_or(""))}),
             ),
+            "unavailable" => Ok(
+                json!({"accepted":self.computer_use.activity.unavailable(call["operationId"].as_str().unwrap_or(""))}),
+            ),
             "stop" => {
                 let current = self.computer_use.activity.state.borrow().clone();
                 if current.operation_id.as_deref() != call["operationId"].as_str() {
@@ -138,7 +143,22 @@ impl Core {
             proxy,
             driver,
             home,
+            bundle_id: None,
         });
+        self
+    }
+
+    #[must_use]
+    pub fn with_computer_use_bundle_id(mut self, bundle_id: String) -> Self {
+        if let Some(config) = &mut self.computer_use.config {
+            config.bundle_id = Some(bundle_id);
+        }
+        self
+    }
+
+    #[must_use]
+    pub fn with_computer_use_unavailable_reason(mut self, reason: &str) -> Self {
+        self.computer_use.unavailable_reason = Some(reason.into());
         self
     }
 
@@ -157,7 +177,9 @@ impl Core {
             .cloned()
             .collect();
         for endpoint in &endpoints {
-            endpoint.revoke();
+            // Interrupt the current call without revoking the task's live
+            // lease. A later explicit call may resume after manual input ends.
+            endpoint.interrupt();
         }
         for endpoint in endpoints {
             endpoint.close().await;
@@ -220,7 +242,7 @@ impl Core {
             .get(task)
             .is_some_and(|endpoint| endpoint.active.load(Ordering::Acquire));
         Ok(
-            json!({"available":self.computer_use.config.as_ref().is_some_and(|config| config.driver.is_file()),"enabled":enabled,"active":active,"externalInput":self.computer_use.external_input.load(Ordering::Acquire) > 0}),
+            json!({"available":self.computer_use.config.as_ref().is_some_and(|config| config.driver.is_file()),"unavailableReason":self.computer_use.unavailable_reason,"enabled":enabled,"active":active,"externalInput":self.computer_use.external_input.load(Ordering::Acquire) > 0}),
         )
     }
 
@@ -248,6 +270,8 @@ impl Core {
     pub(crate) async fn computer_use_lease(
         &self,
         task: &TaskId,
+        turn: &TurnId,
+        provider: &ProviderId,
     ) -> Result<Option<ComputerLease>, CoreError> {
         let Some(config) = &self.computer_use.config else {
             return Ok(None);
@@ -273,7 +297,11 @@ impl Core {
             endpoint
         };
         let generation = endpoint.lease_generation.fetch_add(1, Ordering::AcqRel) + 1;
-        endpoint.cancel.send_modify(|value| *value += 1);
+        {
+            let mut scope = endpoint.turn.lock().expect("computer turn");
+            *scope = Some((turn.clone(), provider.clone()));
+            endpoint.cancel.send_modify(|value| *value += 1);
+        }
         endpoint.active.store(true, Ordering::Release);
         Ok(Some(ComputerLease {
             endpoint,
@@ -305,6 +333,7 @@ impl Drop for ManualInput {
 }
 
 struct Endpoint {
+    turn: std::sync::Mutex<Option<(TurnId, ProviderId)>>,
     activity: Arc<activity::ActivityHub>,
     lease_generation: AtomicU64,
     desktop: Arc<Mutex<()>>,
@@ -356,6 +385,7 @@ impl Endpoint {
             directory: directory.path().to_string_lossy().into_owned(),
         };
         let endpoint = Arc::new(Self {
+            turn: std::sync::Mutex::new(None),
             activity,
             lease_generation: AtomicU64::new(0),
             desktop,
@@ -439,6 +469,10 @@ impl Endpoint {
 
     fn revoke(&self) {
         self.active.store(false, Ordering::Release);
+        self.interrupt();
+    }
+
+    fn interrupt(&self) {
         self.cancel.send_modify(|generation| *generation += 1);
         self.receipts.lock().expect("computer receipts").clear();
     }
@@ -482,8 +516,12 @@ impl Endpoint {
         if !self.active.load(Ordering::Acquire) {
             return Err("computer_use_inactive; enable for this task and start a turn".into());
         }
-        let mut cancelled = self.cancel.subscribe();
-        let generation = *cancelled.borrow();
+        let (mut cancelled, generation, turn) = {
+            let scope = self.turn.lock().expect("computer turn");
+            let cancelled = self.cancel.subscribe();
+            let generation = *cancelled.borrow();
+            (cancelled, generation, scope.clone())
+        };
         let key = format!("{generation}:{}:{}", input["client"], request["id"]);
         let mut slot = self.runtime.lock().await;
         if !self.active.load(Ordering::Acquire) || *cancelled.borrow() != generation {
@@ -527,7 +565,14 @@ impl Endpoint {
             if slot.is_none() {
                 std::fs::create_dir_all(&self.config.home)
                     .map_err(|_| "computer_driver_home_unavailable")?;
-                *slot = Some(runtime::Driver::spawn(&self.config.driver, &self.config.home).await?);
+                *slot = Some(
+                    runtime::Driver::spawn(
+                        &self.config.driver,
+                        &self.config.home,
+                        self.config.bundle_id.as_deref(),
+                    )
+                    .await?,
+                );
             }
             slot.as_mut()
                 .ok_or("computer_driver_unavailable")?
@@ -561,6 +606,7 @@ impl Endpoint {
                 result.as_ref().ok(),
                 started.elapsed().as_millis(),
                 planned_activity.as_ref(),
+                turn.as_ref(),
             )
             .await;
         }
@@ -573,6 +619,7 @@ impl Endpoint {
         result: Option<&Value>,
         elapsed: u128,
         activity: Option<&ComputerActivity>,
+        turn: Option<&(TurnId, ProviderId)>,
     ) {
         let id = CommandId::new();
         let images = result
@@ -583,7 +630,7 @@ impl Endpoint {
                     .filter(|block| block["type"] == "image")
                     .count()
             });
-        let event = NewEvent::hub(
+        let mut event = NewEvent::hub(
             StreamRef {
                 stream_type: StreamType::Task,
                 stream_id: self.task.to_string(),
@@ -591,6 +638,10 @@ impl Endpoint {
             "computer_use.action",
             json!({"taskId":self.task,"tool":tool,"elapsedMs":elapsed,"imageCount":images,"transportOk":result.is_some(),"isError":result.and_then(|result| result["isError"].as_bool()),"effect":result.and_then(|result| result.pointer("/structuredContent/effect")).filter(|value| value.is_string()),"mode":activity.map(|activity|activity.mode),"foregroundPossible":activity.map(|activity|activity.foreground_possible)}),
         );
+        if let Some((turn, provider)) = turn {
+            event.payload["turnId"] = json!(turn);
+            event.payload["providerId"] = json!(provider);
+        }
         if let Ok(outcome) = self
             .repository
             .append(AppendRequest {

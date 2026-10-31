@@ -1070,13 +1070,26 @@ async fn an_abandoned_restore_keeps_setup_admission_until_native_settlement_then
         let b = b.clone();
         async move { driver.shutdown(b).await }
     });
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    wait_for(|| {
+        driver
+            .shared
+            .closed_sessions
+            .lock()
+            .unwrap()
+            .contains(&b.native_session_id)
+    })
+    .await;
     let admission_retained = driver.shared.setup_in_progress.load(Ordering::Acquire)
         && !closing.is_finished()
         && !finished.load(Ordering::Acquire);
     std::fs::write(root.path().join("load-ready"), b"").unwrap();
     closing.await.unwrap().unwrap();
-    wait_for(|| finished.load(Ordering::Acquire)).await;
+    // Native exit wakes independent retirement actors. Closing b only joins
+    // b's actor; the abandoned restore must also finish removing its resident.
+    wait_for(|| {
+        finished.load(Ordering::Acquire) && driver.shared.sessions.lock().unwrap().is_empty()
+    })
+    .await;
     assert!(
         driver.shutdown(a).await.is_err(),
         "abandoned restore must not reauthorize an old handle"

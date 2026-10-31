@@ -1341,6 +1341,7 @@ pub fn run() {
             core_history_preferences,
             core_computer_use,
             computer_notice::core_computer_notice,
+            computer_notice::computer_use_permissions,
             turn_review::core_review_executors,
             turn_review::core_turn_reviews,
             turn_review::core_fork_task,

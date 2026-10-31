@@ -16,6 +16,19 @@ fn native_cancel_and_failure_override_end_turn_but_partial_success_remains_succe
     }
 }
 
+#[test]
+fn native_permission_failure_preserves_the_vendors_reason() {
+    let response = serde_json::from_value(serde_json::json!({"stopReason":"cancelled","_meta":{
+        "codebuddy.ai/outcome":"PERMISSION_DENIED",
+        "codebuddy.ai/errorMessage":"Permission denied for tool(s): unknown"
+    }}))
+    .unwrap();
+    assert!(
+        matches!(prompt_stop_reason(response), Err(DriverError::Protocol(reason))
+        if reason == "CodeBuddy native turn failed: Permission denied for tool(s): unknown")
+    );
+}
+
 // Use the real driver's public prompt/resume path with a controllable transport
 // boundary. Reconnecting must retire that boundary before attempting a spawn.
 #[tokio::test]

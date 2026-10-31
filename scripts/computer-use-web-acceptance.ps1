@@ -1,12 +1,19 @@
-param([ValidateSet('codex','deepseek-harness')][string]$Agent='codex')
+param([ValidateSet('codex','deepseek-harness','claude-code','cursor','kimi','grok','codebuddy','kiro','opencode','antigravity','zcode')][string]$Agent='codex', [string]$Executable, [string]$OutputDirectory)
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $PSScriptRoot
-$stamp=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-$caseRoot=Join-Path $root ".local/computer-use/acceptance/web-$Agent-$stamp"
+$stamp=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+$caseRoot=if ($OutputDirectory) { [System.IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $root ".local/computer-use/acceptance/web-$Agent-$stamp" }
 [System.IO.Directory]::CreateDirectory($caseRoot) | Out-Null
 $runner=Join-Path $root 'target/debug/examples/live_computer_use.exe'
-$driver=Join-Path $root 'apps/desktop/src-tauri/resources/computer-use/cua-driver.exe'
-$binary=if ($Agent -eq 'codex') { (Get-Command codex).Source } else { Join-Path $env:LOCALAPPDATA 'Programs/DeepSeek Harness/resources/runtime/cli/bin/dsh.cmd' }
+$prepared = & node (Join-Path $PSScriptRoot 'prepare-computer-use.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'Cua preparation failed' }
+$driver=Join-Path $prepared 'cua-driver.exe'
+$binary=$Executable
+if (!$binary) {
+    $discovered = (& $runner --discover | Out-String | ConvertFrom-Json)
+    $binary=($discovered | Where-Object provider -EQ $Agent).installations | Where-Object status -EQ 'installed' | Select-Object -First 1 -ExpandProperty executable
+    if (!$binary) { throw "No installed $Agent found" }
+}
 $node=(Get-Command node).Source
 $server=Start-Process -FilePath $node -ArgumentList @(('"'+(Join-Path $PSScriptRoot 'computer-use-web-fixture.mjs')+'"'),('"'+$caseRoot+'"'),"$stamp") -WindowStyle Hidden -PassThru
 $profile=Join-Path $caseRoot 'browser-profile'

@@ -18,6 +18,7 @@ impl ZcodeDriver {
             Some(gate) => Some(gate.lock().await),
             None => None,
         };
+        let mut rebind_native = None;
         if let Some(id) = id {
             let resident = self.sessions.lock().expect("sessions").get(id).cloned();
             if let Some(state) = resident {
@@ -32,7 +33,26 @@ impl ZcodeDriver {
                     }
                     closing
                 };
-                if closing {
+                if !same_workspace(&state.workspace, &request.working_directory) {
+                    return Err(DriverError::SessionIncompatible(
+                        "ZCode session belongs to a different workspace".into(),
+                    ));
+                }
+                let binding_changed = state
+                    .binding
+                    .lock()
+                    .expect("session binding")
+                    .as_ref()
+                    .is_some_and(|old| {
+                        old.app_mcps != request.app_mcps
+                            || old.additional_directories != request.additional_directories
+                    });
+                // MCP changes require reopening this logical session. The shared
+                // native worker and its other tasks remain alive.
+                if closing || binding_changed {
+                    if binding_changed && !closing {
+                        rebind_native = state.native.clone();
+                    }
                     self.retire(&state, &original).await?;
                 } else {
                     if !same_workspace(&state.workspace, &request.working_directory) {
@@ -93,7 +113,11 @@ impl ZcodeDriver {
                     return Ok(handle);
                 }
             }
-            if self.resume_capability != SessionResumeCapability::Supported {
+            // A live session's configuration refresh stays on the same owned
+            // worker. Cold history restoration remains independently gated.
+            if rebind_native.is_none()
+                && self.resume_capability != SessionResumeCapability::Supported
+            {
                 return Err(DriverError::CapabilityUnavailable(
                     "zcode session/resume has not been runtime verified".into(),
                 ));
@@ -101,6 +125,16 @@ impl ZcodeDriver {
         }
         let mut guard = self.ensure_connection().await?;
         let connection = guard.as_mut().expect("connection ensured");
+        if id.is_some()
+            && self.resume_capability != SessionResumeCapability::Supported
+            && rebind_native
+                .as_ref()
+                .is_none_or(|native| !Arc::ptr_eq(native, &connection.native))
+        {
+            return Err(DriverError::CapabilityUnavailable(
+                "ZCode original worker ended before configuration refresh; cold resume is unverified".into(),
+            ));
+        }
         let mut native_attempt = scopes::NativeAttempt {
             native: connection.native.clone(),
             committed: false,
@@ -111,7 +145,7 @@ impl ZcodeDriver {
         } else {
             "session/create"
         };
-        let mut params = json!({"workspace":{"workspacePath":workspace,"workspaceKey":workspace},"mcpServers":driver_api::AppMcp::native_servers(request.app_mcps.as_slice())});
+        let mut params = session_params(&request);
         if let Some(id) = id {
             params["sessionId"] = json!(id);
         }
@@ -154,6 +188,7 @@ impl ZcodeDriver {
             created.clone(),
             connection.native.clone(),
         );
+        *state.binding.lock().expect("session binding") = Some(request.clone());
         {
             let mut sessions = self.sessions.lock().expect("sessions");
             if sessions.contains_key(native_id) {
@@ -209,19 +244,38 @@ impl ZcodeDriver {
         state: &Arc<SessionState>,
         handle: &SessionHandle,
     ) -> Result<(), DriverError> {
-        let _ = super::lifecycle::close_session(
+        let receipt = super::lifecycle::close_session(
             self.connection.clone(),
             self.sessions.clone(),
             handle.clone(),
             state.clone(),
             self.retired.clone(),
         )?;
+        super::lifecycle::wait(receipt, super::REQUEST_TIMEOUT).await?;
         // Installation waits for the original table reservation to retire too.
         // Public passive proof may independently use positive original OS exit.
         state.logical_confirmed().await;
         Ok(())
     }
 }
+fn session_params(request: &SessionRequest) -> serde_json::Value {
+    // ZCode 0.17 supports a session-local denylist. Its bundled JS computer-use
+    // entry would bypass the app's activity indicator, cancellation and audit.
+    // An empty list on the next resume restores the native session defaults.
+    let denied: &[&str] = if request.app_mcps.iter().any(driver_api::AppMcp::is_computer) {
+        &["mcp__node_repl__js"]
+    } else {
+        &[]
+    };
+    let workspace = &request.working_directory;
+    json!({
+        "workspace":{"workspacePath":workspace,"workspaceKey":workspace},
+        "additionalDirectories":request.additional_directories,
+        "mcpServers":driver_api::AppMcp::native_servers(&request.app_mcps),
+        "toolDenylist":denied
+    })
+}
+
 fn same_workspace(a: &str, b: &str) -> bool {
     a == b
         || std::path::Path::new(a)
@@ -229,4 +283,30 @@ fn same_workspace(a: &str, b: &str) -> bool {
             .ok()
             .zip(std::path::Path::new(b).canonicalize().ok())
             .is_some_and(|(a, b)| a == b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn computer_tools_are_selected_per_session_and_can_be_removed() {
+        let mut request = SessionRequest {
+            app_mcps: vec![],
+            permission_mode: None,
+            additional_directories: vec![],
+            working_directory: "/work".into(),
+        };
+        assert_eq!(session_params(&request)["toolDenylist"], json!([]));
+        request.app_mcps.push(driver_api::AppMcp {
+            name: "dogcodes_cu_test".into(),
+            command: "app".into(),
+            args: vec!["--computer-mcp".into()],
+            directory: "/work".into(),
+        });
+        let params = session_params(&request);
+        assert_eq!(params["toolDenylist"], json!(["mcp__node_repl__js"]));
+        assert_eq!(params["mcpServers"][0]["name"], "dogcodes_cu_test");
+        request.app_mcps.clear();
+        assert_eq!(session_params(&request)["toolDenylist"], json!([]));
+    }
 }

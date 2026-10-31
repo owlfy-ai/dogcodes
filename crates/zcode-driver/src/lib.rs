@@ -988,6 +988,7 @@ pub struct ZcodeDriver {
 
 struct SessionState {
     scope: std::sync::Mutex<SessionHandle>,
+    binding: std::sync::Mutex<Option<SessionRequest>>,
     workspace: String,
     admission: tokio::sync::Mutex<()>,
     retired: tokio::sync::watch::Sender<bool>,
@@ -2166,6 +2167,7 @@ mod tests {
             "live".into(),
             Arc::new(SessionState {
                 scope: std::sync::Mutex::new(SessionHandle::scoped("live".into())),
+                binding: std::sync::Mutex::new(None),
                 workspace: "/tmp".into(),
                 admission: tokio::sync::Mutex::new(()),
                 retired: tokio::sync::watch::channel(false).0,
@@ -2212,6 +2214,7 @@ mod tests {
         let (interaction_tx, mut interaction_rx) = mpsc::unbounded_channel();
         let state = Arc::new(SessionState {
             scope: std::sync::Mutex::new(SessionHandle::scoped("session-1".into())),
+            binding: std::sync::Mutex::new(None),
             workspace: "/tmp".into(),
             admission: tokio::sync::Mutex::new(()),
             retired: tokio::sync::watch::channel(false).0,

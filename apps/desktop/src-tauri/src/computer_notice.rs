@@ -4,6 +4,19 @@ use agent_core::computer_use::{ActivityMode, ComputerActivity};
 use serde_json::Value;
 use tauri::Emitter;
 
+#[tauri::command]
+pub fn computer_use_permissions(
+    window: tauri::WebviewWindow,
+    prompt: bool,
+) -> Result<Value, String> {
+    if window.label() != "main" {
+        return Err("main window required".into());
+    }
+    Ok(dogcodes_remote_desktop::computer_permissions::permissions(
+        prompt,
+    ))
+}
+
 fn is_notice(label: &str) -> bool {
     label
         .strip_prefix("computer-notice-")
@@ -67,18 +80,10 @@ pub fn start(
         window.set_ignore_cursor_events(true)?;
         windows.push(window);
     }
-    #[cfg(windows)]
-    let (escape, mut escape_events) = {
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        let escape = dogcodes_remote_desktop::escape::EscapeMonitor::new(move || {
-            let _ = sender.send(());
-        })?;
-        (escape, receiver)
-    };
-    #[cfg(not(windows))]
-    let (_escape_sender, mut escape_events) = tokio::sync::mpsc::unbounded_channel::<()>();
+    let (escape_sender, mut escape_events) = tokio::sync::mpsc::unbounded_channel();
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        let mut escape: Option<dogcodes_remote_desktop::escape::EscapeMonitor> = None;
         let mut escape_task: Option<agent_domain::TaskId> = None;
         loop {
             let Ok(mut activity) = core.computer_use_activity_stream().await else {
@@ -94,10 +99,25 @@ pub fn start(
                     }
                     break;
                 };
-                #[cfg(windows)]
                 if next.mode != ActivityMode::Idle {
                     let foreground = next.mode == ActivityMode::Foreground;
-                    escape.arm(foreground);
+                    if foreground && escape.is_none() {
+                        let sender = escape_sender.clone();
+                        escape = dogcodes_remote_desktop::escape::EscapeMonitor::new(move || {
+                            let _ = sender.send(());
+                        })
+                        .ok();
+                    }
+                    if foreground && escape.is_none() {
+                        let _ = core.computer_use_activity(serde_json::json!({"type":"unavailable","operationId":next.operation_id})).await;
+                        if activity.changed().await.is_err() {
+                            break;
+                        }
+                        continue;
+                    }
+                    if let Some(escape) = &escape {
+                        escape.arm(foreground);
+                    }
                     escape_task = if foreground {
                         next.task_id.clone()
                     } else {
@@ -108,19 +128,17 @@ pub fn start(
                 let idle = next.mode == ActivityMode::Idle;
                 tokio::select! {
                     biased;
-                    event = escape_events.recv(), if cfg!(windows) => {
+                    event = escape_events.recv() => {
                         if event.is_some() && let Some(task) = escape_task.take()
                             && core.computer_use(task.clone(), serde_json::json!({"type":"set","enabled":false})).await.is_err() {
-                                #[cfg(windows)]
-                                escape.arm(true);
+                                if let Some(escape) = &escape { escape.arm(true); }
                                 escape_task = Some(task);
                                 for window in &windows { let _ = window.emit("computer-use-disconnected", ()); }
                         }
                     }
                     changed = activity.changed() => { if changed.is_err() { break; } }
                     () = tokio::time::sleep(std::time::Duration::from_millis(900)), if idle => {
-                        #[cfg(windows)]
-                        escape.arm(false);
+                        if let Some(escape) = &escape { escape.arm(false); }
                         escape_task = None;
                         for window in &windows { let _ = window.hide(); }
                         if activity.changed().await.is_err() { break; }

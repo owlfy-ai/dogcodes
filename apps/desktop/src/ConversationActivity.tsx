@@ -5,6 +5,7 @@ import { DeferredDetails } from "./DeferredDetails";
 import { AgentPending, type PendingAgent } from "./AgentPending";
 import { ThinkingTicker } from "./ThinkingTicker";
 import { ActivityIcon } from "./ActivityIcon";
+import { ComputerUseActivity } from "./ComputerUseActivity";
 import { useI18n } from "./i18n";
 import { Fragment, memo, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -408,7 +409,7 @@ export function ConversationContent({
       turnProviders.set(item.turnId, item.providerId);
     }
     const a = activityOf(item);
-    const response = item.kind === "assistant_message" || (a && a.type !== "status"
+    const response = item.kind === "assistant_message" || item.kind === "computer_use" || (a && a.type !== "status"
       && (a.type !== "tool" || a.name || a.title || a.status || a.input != null
         || a.output != null || a.content != null || a.text || a.changes?.length));
     if (response && !firstResponse.has(item.turnId)) firstResponse.set(item.turnId, item.itemId);
@@ -418,6 +419,7 @@ export function ConversationContent({
   }
   const { t } = useI18n();
   const render = (item: TimelineItem) => {
+    if (item.kind === "computer_use") return <ComputerUseActivity key={item.itemId} item={item} />;
     if (item.kind === "fork_context") {
       try { const data = JSON.parse(item.text); const messages = JSON.parse(data.text) as {kind:string;text:string}[];
         return <details className="turn-fork-history" key={item.itemId}><summary>{t("activity.forkSummary")}</summary><p>{t(data.environment === "worktree" ? (data.restoredTurnSnapshot ? "activity.forkRestored" : "activity.forkLegacy") : "activity.forkSameDirectory")}</p>{messages.filter(m => ["turn.queued","message.delta"].includes(m.kind)).map((m,index) => <article key={index}><small>{m.kind === "turn.queued" ? t("activity.you") : "Agent"}</small><MarkdownMessage text={m.text}/></article>)}</details>;

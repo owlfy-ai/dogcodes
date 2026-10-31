@@ -311,7 +311,7 @@ impl Bridge {
                     return Err(fail());
                 }
                 if !child.wait().await.map_err(|_| fail())?.success() {
-                    return Err(fail());
+                    return Err(probe_failure(&bytes).unwrap_or_else(fail));
                 }
                 Ok(bytes)
             }) => result.map_err(|_| {
@@ -450,6 +450,16 @@ impl Bridge {
             while requests.join_next().await.is_some() {}
         })
     }
+}
+
+fn probe_failure(output: &[u8]) -> Option<DriverError> {
+    String::from_utf8_lossy(output).lines().find_map(|line| {
+        if let Some(super::Classified::AuthFailure(kind, _)) = super::classify(line) {
+            Some(DriverError::NotConfigured(kind.into()))
+        } else {
+            None
+        }
+    })
 }
 async fn serve(
     socket: tokio::net::TcpStream,
@@ -651,6 +661,16 @@ mod tests {
     use driver_api::{AgentDriver, SessionHandle, SessionResumeCapability};
     use std::{collections::HashMap, sync::atomic::AtomicBool};
     use tokio::sync::mpsc;
+    #[test]
+    fn account_rejection_is_not_reported_as_a_broken_approval_hook() {
+        let denied = json!({"event":"result","result":{"status":"ERROR","error":"Eligibility check failed: Your current account is not eligible for Antigravity, because it is not currently available in your location."}}).to_string();
+        assert!(
+            matches!(probe_failure(denied.as_bytes()), Some(DriverError::NotConfigured(kind)) if kind == "access_denied")
+        );
+        let transport = json!({"event":"result","result":{"status":"ERROR","error":"Eligibility check failed: context deadline exceeded"}}).to_string();
+        assert!(probe_failure(transport.as_bytes()).is_none());
+        assert!(probe_failure(b"not JSON").is_none());
+    }
     fn process() -> (Arc<SessionProcess>, mpsc::UnboundedReceiver<DriverEvent>) {
         let (tx, rx) = mpsc::unbounded_channel();
         (

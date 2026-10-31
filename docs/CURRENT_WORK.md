@@ -1,6 +1,10 @@
 # dogcodes 当前工作清单
 
-更新日期：2026-10-27。本文是当前完成状态、剩余工作与建议顺序的唯一维护入口。需求/详细设计说明产品及技术边界；实施记录保留各轮证据，不再单独决定当前排程。
+更新日期：2026-10-31。本文是当前完成状态、剩余工作与建议顺序的唯一维护入口。需求/详细设计说明产品及技术边界；实施记录保留各轮证据，不再单独决定当前排程。
+
+## Computer Use 后续实施（2026-10-31）
+
+按用户当前范围，Pi 退出 computer-use 验收，macOS/Linux 实机测试留给用户，Antigravity 暂缓后续测试。已补动作审计时间线、手机手动抢占后可恢复、固定版本跨平台资源打包、macOS 权限引导与 macOS/X11 Esc 接入；Windows 实测 Claude/Codex/DeepSeek Flash 重复各 3/3 通过，Claude 网页复现—修改—复测通过，Cursor/OpenCode/Kimi/Grok/Kiro/ZCode 冒烟通过。CodeBuddy 2.178.1 已在接入层绕过 deferred MCP 审批异常，补齐动态 MCP 缓存稳定期和截图坐标元数据的文本兼容；桌面与网页闭环均已跑通，重复验收及边界见报告。Windows debug NSIS 包已编译并核对资源；干净安装/正式签名、未完成的 UWP 计算器与系统性多屏/DPI 验收仍保留。Wayland 缺少可靠全局 Esc 时目前只开放后台投递。详情、命令和证据见 [后续实施报告](implementation/computer-use-completion-2026-10-31.md)。
 
 
 ## 发布前的格式约定（2026-10-26）
