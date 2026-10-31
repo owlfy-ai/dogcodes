@@ -86,6 +86,10 @@ Windows 正式打包和开发启动自动准备 sidecar；生成二进制及下�
 
 视觉修订：亮线由 2 个逻辑像素加粗到 6 个逻辑像素，并扩大、增强光晕；Esc 退出直接使用普通文字，不使用 kbd 标签、边框或按钮外观。更新后的 Windows 渲染预览为 `.local/computer-use/glow-live/glow-wide-background.png` 和 `glow-wide-foreground.png`。
 
+中央品牌文字进一步替换为 18px 的应用图标；状态文案不再重复显示 dog.codes，图标保留品牌替代文本供辅助功能读取。最新预览为 `.local/computer-use/glow-live/glow-icon-background.png` 和 `glow-icon-foreground.png`。
+
+图标继续使用已批准的桌面图形，通过 SVG 亮度蒙版只绘制白色轮廓，使黑色底块完全透明并融入提示区背景；不修改系统应用图标。透明版本的实际渲染预览为 `.local/computer-use/glow-live/glow-transparent-background.png` 和 `glow-transparent-foreground.png`。
+
 MacBook 刘海屏：macOS 从对应 NSScreen.safeAreaInsets.top 读取原生安全区域，把中央文字放到该区域下方并留 8 点间距；光带仍对齐屏幕顶部。按 Cocoa 与 CoreGraphics 的坐标转换匹配多显示器，不能匹配时使用保守安全偏移；窗口高度随文字偏移增加，避免文字被窗口自身裁剪。普通屏幕偏移为零。安全区数值与前端布局有回归测试，尚未在真实 MacBook 刘海屏上验收。
 
 窗口透明、无阴影、不激活且不获取键盘焦点，鼠标事件穿透，不遮挡顶部菜单的点击。它独立于主窗口，主窗口在后台或最小化时也可显示。Windows 额外校正透明窗口的非客户区偏移，使亮线对齐显示器的实际顶部像素。隐式 macOS brief-foreground 环境开关不继承。

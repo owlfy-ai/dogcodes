@@ -25,6 +25,8 @@ it("acknowledges the painted foreground glow and shows an Escape hint without co
     expect(container.textContent).toContain("Please pause input");
     expect(container.querySelector(".computer-glow-escape")!.textContent).toBe("Esc to exit");
     expect(container.querySelector("kbd")).toBeNull();
+    expect(container.querySelector('[role="img"]')!.getAttribute("aria-label")).toBe("dog.codes");
+    expect(container.textContent).not.toContain("dog.codes");
     expect(container.querySelector("button")).toBeNull();
     expect(mocks.invoke.mock.calls.filter(call=>call[1]?.call.type==="presented")).toHaveLength(0);
     await act(async()=>frame());
@@ -44,10 +46,10 @@ it("uses orange for possible foreground input and green without Escape for backg
   const container=document.createElement("div");const root=createRoot(container);
   try {
     await act(async()=>root.render(<ComputerUseNoticeView activity={{...idle,mode:"foreground",foregroundPossible:true}}/>));
-    expect(container.textContent).toContain("may use your keyboard and mouse");
+    expect(container.textContent).toContain("May use your keyboard and mouse");
     expect(container.querySelector("aside")!.classList.contains("computer-glow-foreground")).toBe(true);
     await act(async()=>root.render(<ComputerUseNoticeView activity={{...idle,mode:"background"}}/>));
-    expect(container.textContent).toContain("verifying your computer in the background");
+    expect(container.textContent).toContain("Verifying your computer in the background");
     expect(container.querySelector("aside")!.classList.contains("computer-glow-foreground")).toBe(false);
     expect(container.querySelector("kbd")).toBeNull();
     expect(container.querySelector(".computer-glow-escape")).toBeNull();

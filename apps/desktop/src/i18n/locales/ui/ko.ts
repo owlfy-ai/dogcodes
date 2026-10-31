@@ -2,10 +2,10 @@ import type { UiMessages } from "./en";
 
 export const uiKo: UiMessages = {
   computerUse: {
-    glowBackground: "dog.codes가 백그라운드에서 컴퓨터를 조작하며 검증 중입니다",
-    glowForeground: "dog.codes가 키보드와 마우스를 사용 중입니다. 입력을 잠시 멈춰 주세요.",
-    glowPossible: "dog.codes가 키보드와 마우스를 사용할 수 있습니다. 입력을 잠시 멈춰 주세요.",
-    glowDisconnected: "dog.codes 연결이 끊겼습니다. 입력 상태를 확인할 수 없습니다.",
+    glowBackground: "백그라운드에서 컴퓨터를 조작하며 검증 중입니다",
+    glowForeground: "키보드와 마우스를 사용 중입니다. 입력을 잠시 멈춰 주세요.",
+    glowPossible: "키보드와 마우스를 사용할 수 있습니다. 입력을 잠시 멈춰 주세요.",
+    glowDisconnected: "연결이 끊겼습니다. 입력 상태를 확인할 수 없습니다.",
     glowExit: "종료",
     enable: "컴퓨터 조작 켜기",
     disable: "컴퓨터 조작 중지",

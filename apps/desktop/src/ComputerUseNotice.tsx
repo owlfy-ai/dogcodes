@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useId, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { ComputerUseActivity } from "@dogcodes/protocol";
@@ -6,6 +6,7 @@ import { I18nProvider, UI_LANGUAGE_KEY, useI18n, type UiLanguage } from "./i18n"
 import "./computerUseNotice.css";
 
 const idle: ComputerUseActivity = { operationId:null, taskId:null, tool:null, mode:"idle", preparing:false, foregroundPossible:false };
+const appLogo = new URL("../src-tauri/icons/128x128.png", import.meta.url).href;
 
 function captionInset() {
   const value = Number(new URLSearchParams(window.location.search).get("captionTop"));
@@ -54,6 +55,7 @@ export function ComputerUseNotice() {
 
 export function ComputerUseNoticeView({ activity, disconnected = false, captionTop = 0 }: { activity: ComputerUseActivity; disconnected?: boolean; captionTop?: number }) {
   const { t } = useI18n();
+  const logoMask = useId();
   const foreground = activity.mode === "foreground" || disconnected;
   const idle = activity.mode === "idle" && !disconnected;
   const message = disconnected ? t("computerUse.glowDisconnected") : foreground
@@ -62,6 +64,14 @@ export function ComputerUseNoticeView({ activity, disconnected = false, captionT
   return <aside className={`computer-glow${foreground ? " computer-glow-foreground" : ""}${idle ? " computer-glow-idle" : ""}${captionTop > 0 ? " computer-glow-safe-area" : ""}`} style={{"--computer-caption-top": `${captionTop}px`} as CSSProperties} role={foreground ? "alert" : "status"} aria-hidden={idle}>
     <div className="computer-glow-haze" aria-hidden="true" />
     <div className="computer-glow-edge" aria-hidden="true" />
-    <div className="computer-glow-caption"><span>{message}</span>{activity.mode === "foreground" && <span className="computer-glow-escape">Esc {t("computerUse.glowExit")}</span>}</div>
+    <div className="computer-glow-caption">
+      <svg className="computer-glow-logo" viewBox="0 0 128 128" role="img" aria-label="dog.codes">
+        <defs><mask id={logoMask} x="0" y="0" width="128" height="128" maskUnits="userSpaceOnUse" style={{maskType:"luminance"}}>
+          <image href={appLogo} width="128" height="128" />
+        </mask></defs>
+        <rect width="128" height="128" fill="currentColor" mask={`url(#${logoMask})`} />
+      </svg>
+      <span className="computer-glow-message">{message}</span>{activity.mode === "foreground" && <span className="computer-glow-escape">Esc {t("computerUse.glowExit")}</span>}
+    </div>
   </aside>;
 }

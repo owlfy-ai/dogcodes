@@ -27,7 +27,7 @@ html.computer-notice-page, .computer-notice-page body, .computer-notice-page #ro
 }
 .computer-glow-caption {
   position: absolute; top: var(--computer-caption-top, 0px); left: 50%; transform: translateX(-50%);
-  box-sizing: border-box; display: flex; align-items: center; gap: 16px;
+  box-sizing: border-box; display: flex; align-items: center; gap: 10px;
   width: max-content; max-width: calc(100% - 40px); padding: 9px 19px 10px;
   border: 1px solid rgba(var(--glow), .32); border-top: 0; border-radius: 0 0 16px 16px;
   background: linear-gradient(180deg, rgba(17, 25, 27, .94), rgba(17, 25, 27, .82));
@@ -35,8 +35,9 @@ html.computer-notice-page, .computer-notice-page body, .computer-notice-page #ro
   backdrop-filter: blur(16px); font-size: 13px; font-weight: 500; line-height: 20px;
   text-shadow: 0 1px 5px rgba(0, 0, 0, .45);
 }
-.computer-glow-caption > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.computer-glow-escape { flex: none; color: rgba(255, 247, 237, .85); font-size: 12px; white-space: nowrap; }
+.computer-glow-logo { display: block; flex: none; width: 18px; height: 18px; color: #fff; }
+.computer-glow-message { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.computer-glow-escape { flex: none; margin-left: 6px; color: rgba(255, 247, 237, .85); font-size: 12px; white-space: nowrap; }
 .computer-glow-safe-area .computer-glow-caption { border-top: 1px solid rgba(var(--glow), .32); border-radius: 14px; }
 @keyframes computer-glow-ion { to { transform: translateX(420%); } }
 @keyframes computer-glow-breathe { from { opacity: .65; } to { opacity: 1; } }

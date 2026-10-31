@@ -2,10 +2,10 @@
 // every other locale in ./ui implements UiMessages.
 export const uiEn = {
   computerUse: {
-    glowBackground: "dog.codes is verifying your computer in the background",
-    glowForeground: "dog.codes is using your keyboard and mouse. Please pause input.",
-    glowPossible: "dog.codes may use your keyboard and mouse. Please pause input.",
-    glowDisconnected: "dog.codes lost its connection. Input state is unknown.",
+    glowBackground: "Verifying your computer in the background",
+    glowForeground: "Using your keyboard and mouse. Please pause input.",
+    glowPossible: "May use your keyboard and mouse. Please pause input.",
+    glowDisconnected: "Connection lost. Input state is unknown.",
     glowExit: "to exit",
     enable: "Enable computer use",
     disable: "Stop computer use",

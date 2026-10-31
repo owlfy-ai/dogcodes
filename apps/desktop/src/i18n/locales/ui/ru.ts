@@ -2,10 +2,10 @@ import type { UiMessages } from "./en";
 
 export const uiRu: UiMessages = {
   computerUse: {
-    glowBackground: "dog.codes проверяет работу компьютера в фоновом режиме",
-    glowForeground: "dog.codes использует клавиатуру и мышь. Приостановите ввод.",
-    glowPossible: "dog.codes может использовать клавиатуру и мышь. Приостановите ввод.",
-    glowDisconnected: "Соединение dog.codes потеряно. Состояние ввода неизвестно.",
+    glowBackground: "Проверка работы компьютера в фоновом режиме",
+    glowForeground: "Используются клавиатура и мышь. Приостановите ввод.",
+    glowPossible: "Возможно использование клавиатуры и мыши. Приостановите ввод.",
+    glowDisconnected: "Соединение потеряно. Состояние ввода неизвестно.",
     glowExit: "для выхода",
     enable: "Включить управление компьютером",
     disable: "Остановить управление компьютером",

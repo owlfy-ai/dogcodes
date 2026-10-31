@@ -2,10 +2,10 @@ import type { UiMessages } from "./en";
 
 export const uiIt: UiMessages = {
   computerUse: {
-    glowBackground: "dog.codes sta verificando il computer in background",
-    glowForeground: "dog.codes sta usando tastiera e mouse. Sospendi l’input.",
-    glowPossible: "dog.codes potrebbe usare tastiera e mouse. Sospendi l’input.",
-    glowDisconnected: "dog.codes ha perso la connessione. Stato dell’input sconosciuto.",
+    glowBackground: "Verifica del computer in background",
+    glowForeground: "Tastiera e mouse in uso. Sospendi l’input.",
+    glowPossible: "Possibile uso di tastiera e mouse. Sospendi l’input.",
+    glowDisconnected: "Connessione persa. Stato dell’input sconosciuto.",
     glowExit: "per uscire",
     enable: "Attiva controllo del computer",
     disable: "Interrompi controllo del computer",

@@ -2,10 +2,10 @@ import type { UiMessages } from "./en";
 
 export const uiZhCN: UiMessages = {
   computerUse: {
-    glowBackground: "dog.codes 正在后台操作电脑验证",
-    glowForeground: "dog.codes 正在使用键盘鼠标，请暂停键鼠操作",
-    glowPossible: "dog.codes 可能使用键盘鼠标，请暂停键鼠操作",
-    glowDisconnected: "dog.codes 连接已中断，键鼠操作状态未知",
+    glowBackground: "正在后台操作电脑验证",
+    glowForeground: "正在使用键盘鼠标，请暂停键鼠操作",
+    glowPossible: "可能使用键盘鼠标，请暂停键鼠操作",
+    glowDisconnected: "连接已中断，键鼠操作状态未知",
     glowExit: "退出",
     enable: "启用电脑操作",
     disable: "停止电脑操作",

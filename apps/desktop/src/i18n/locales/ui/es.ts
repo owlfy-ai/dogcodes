@@ -2,10 +2,10 @@ import type { UiMessages } from "./en";
 
 export const uiEs: UiMessages = {
   computerUse: {
-    glowBackground: "dog.codes está verificando el equipo en segundo plano",
-    glowForeground: "dog.codes está usando el teclado y el ratón. Pausa la entrada.",
-    glowPossible: "dog.codes puede usar el teclado y el ratón. Pausa la entrada.",
-    glowDisconnected: "dog.codes perdió la conexión. Estado de entrada desconocido.",
+    glowBackground: "Verificando el equipo en segundo plano",
+    glowForeground: "Usando el teclado y el ratón. Pausa la entrada.",
+    glowPossible: "Se pueden usar el teclado y el ratón. Pausa la entrada.",
+    glowDisconnected: "Conexión perdida. Estado de entrada desconocido.",
     glowExit: "para salir",
     enable: "Activar control del ordenador",
     disable: "Detener control del ordenador",
