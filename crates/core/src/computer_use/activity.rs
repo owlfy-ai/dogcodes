@@ -32,7 +32,7 @@ pub struct ComputerActivity {
 
 pub(super) struct ActivityHub {
     pub state: watch::Sender<ComputerActivity>,
-    presented: watch::Sender<Option<String>>,
+    presented: watch::Sender<Option<(String, bool)>>,
     pub notice_required: AtomicBool,
 }
 impl Default for ActivityHub {
@@ -66,7 +66,14 @@ impl ActivityHub {
         if state.operation_id.as_deref() != Some(id) || state.mode != ActivityMode::Foreground {
             return false;
         }
-        self.presented.send_replace(Some(id.into()));
+        self.presented.send_replace(Some((id.into(), true)));
+        true
+    }
+    pub fn unavailable(&self, id: &str) -> bool {
+        if self.state.borrow().operation_id.as_deref() != Some(id) {
+            return false;
+        }
+        self.presented.send_replace(Some((id.into(), false)));
         true
     }
 }
@@ -84,7 +91,9 @@ impl ActivityGuard {
             let mut presented = self.hub.presented.subscribe();
             tokio::time::timeout(std::time::Duration::from_secs(10), async {
                 loop {
-                    if presented.borrow_and_update().as_deref() == Some(&self.id) {
+                    if let Some((id, ready)) = presented.borrow_and_update().as_ref()
+                        && id == &self.id {
+                        if !ready { return Err("computer_escape_unavailable; foreground input was not sent; background delivery remains available".into()); }
                         break;
                     }
                     presented
@@ -249,5 +258,29 @@ mod tests {
         );
         drop(guard);
         assert_eq!(hub.state.borrow().mode, ActivityMode::Idle);
+    }
+
+    #[tokio::test]
+    async fn a_missing_escape_observer_refuses_foreground_but_allows_background() {
+        let hub = Arc::new(ActivityHub::default());
+        hub.notice_required.store(true, Ordering::Release);
+        let guard = hub.begin(
+            &TaskId::new(),
+            "click",
+            &json!({"delivery_mode":"foreground"}),
+        );
+        assert!(!hub.unavailable("expired-operation"));
+        let id = hub.state.borrow().operation_id.clone().unwrap();
+        assert!(hub.unavailable(&id));
+        assert!(
+            guard
+                .before_input()
+                .await
+                .unwrap_err()
+                .contains("computer_escape_unavailable")
+        );
+        drop(guard);
+        let background = hub.begin(&TaskId::new(), "click", &json!({}));
+        assert!(background.before_input().await.is_ok());
     }
 }

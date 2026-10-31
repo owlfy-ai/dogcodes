@@ -164,7 +164,9 @@ async function main() {
     return;
   }
   console.log(signed ? 'Building with local signing settings.' : 'Building without distribution signing or notarization.');
-  const computerUse = await prepareComputerUse();
+  const computerUse = await prepareComputerUse({ target,
+    signingIdentity: signed ? env.APPLE_SIGNING_IDENTITY || config.bundle.macOS?.signingIdentity || '-' : '-',
+    requireSigningIdentity: signed && process.platform === 'darwin' });
   if (computerUse) config.bundle.resources = { '../../../LICENSE': 'licenses/dogcodes-LICENSE.txt', '../src/assets/licenses/': 'licenses/agent-icons/', [computerUse]: 'computer-use/' };
   // Keep merged signing settings (including provider commands) out of argv.
   let stage;

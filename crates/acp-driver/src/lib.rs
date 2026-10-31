@@ -359,7 +359,15 @@ fn prompt_stop_reason(done: PromptResponse) -> Result<StopReason, DriverError> {
         Some("CANCELLED") => Ok(StopReason::Cancelled),
         Some("SUCCESS" | "PARTIAL_SUCCESS") | None => Ok(done.stop_reason),
         Some(_) => Err(DriverError::Protocol(
-            "CodeBuddy reported an unsuccessful native turn".into(),
+            done.meta
+                .as_ref()
+                .and_then(|meta| meta.get("codebuddy.ai/errorMessage"))
+                .and_then(serde_json::Value::as_str)
+                .filter(|message| !message.trim().is_empty())
+                .map_or_else(
+                    || "CodeBuddy reported an unsuccessful native turn".into(),
+                    |message| format!("CodeBuddy native turn failed: {message}"),
+                ),
         )),
     }
 }
@@ -450,6 +458,7 @@ enum Command {
     LoadSession {
         app_mcps: Vec<driver_api::AppMcp>,
         grok: bool,
+        codebuddy: bool,
         permission_mode: Option<String>,
         session_id: SessionId,
         model: Option<String>,
@@ -1044,6 +1053,15 @@ impl AcpDriver {
         if self.executor.provider_id.as_str() == "cursor" {
             permissions::cursor_launch_args(&mut launch.args, force);
         }
+        if self.executor.provider_id.as_str() == "codebuddy" {
+            // 2.178.1's deferred MCP wrapper can report PERMISSION_DENIED even
+            // after both ACP approvals return Allow. Load tools directly to
+            // avoid that wrapper; this CLI overlay leaves permission modes and
+            // the user's on-disk configuration unchanged.
+            launch
+                .args
+                .extend(["--settings".into(), r#"{"deferToolLoading":false}"#.into()]);
+        }
         self.shared.quota.stderr_tail.clear();
         let (mut child, transport) = spawn_agent_in(
             &launch,
@@ -1376,18 +1394,11 @@ async fn run_connection(
                 {
                     let _ = updates.send(DriverEvent::ApprovalRequested {
                         native_request_id,
-                        tool_name: request.tool_call.fields.title.clone().unwrap_or_else(|| {
-                            request.tool_call.tool_call_id.0.to_string()
-                        }),
-                        command_summary: request
-                            .tool_call
-                            .fields
-                            .raw_input
-                            .as_ref()
-                            .map(std::string::ToString::to_string)
-                            .or_else(|| permission_tasks.activity.lock().expect("activity")
-                                .approval_input(&request.session_id.to_string(), &request.tool_call.tool_call_id.0)
-                                .map(|input| input.to_string()))
+                        tool_name: activity::permission_tool_name(&raw,
+                            request.tool_call.fields.title.as_deref().unwrap_or(&request.tool_call.tool_call_id.0)),
+                        command_summary: permission_tasks.activity.lock().expect("activity")
+                            .permission_input(&request.session_id.to_string(), &request.tool_call.tool_call_id.0, request.tool_call.fields.raw_input.as_ref())
+                            .map(|input| input.to_string())
                             .or_else(|| serde_json::to_string(&request.tool_call.fields).ok())
                             .unwrap_or_else(|| {
                                 request.tool_call.fields.title.clone().unwrap_or_default()
@@ -1769,6 +1780,7 @@ async fn handle_command(
         Command::LoadSession {
             app_mcps,
             grok,
+            codebuddy,
             permission_mode,
             model,
             thinking,
@@ -1789,6 +1801,11 @@ async fn handle_command(
                     Some(permission_mode.as_deref().unwrap_or("ask")),
                 );
             }
+            let settle_codebuddy_mcp = codebuddy
+                && session_states
+                    .lock()
+                    .expect("session states")
+                    .mcp_changed(&session_id.to_string(), &params);
             let resident = session_states
                 .lock()
                 .expect("session states")
@@ -1801,18 +1818,18 @@ async fn handle_command(
                 let state = if let Some(state) = resident {
                     state
                 } else {
-                    if initial_models["agentInfo"]["name"] == "deepseek-harness-acp"
-                        && initial_models
-                            .pointer("/agentCapabilities/sessionCapabilities/close")
-                            .is_some()
+                    if initial_models
+                        .pointer("/agentCapabilities/sessionCapabilities/close")
+                        .is_some_and(|value| value.is_object() || value == true)
                         && session_states
                             .lock()
                             .expect("session states")
                             .initialized(&session_id.to_string())
                     {
-                        // DeepSeek rejects session/resume while that session is
-                        // still active. Close only this idle session before
-                        // restoring it with a changed workspace/MCP binding.
+                        // Agents such as DeepSeek and Kimi keep live session
+                        // resources on resume. Retire this idle session before
+                        // restoring changed workspace/MCP bindings, only when
+                        // the peer explicitly advertises session/close.
                         models::session_request(
                             &connection,
                             "session/close",
@@ -1829,6 +1846,14 @@ async fn handle_command(
                     )
                     .await?
                 };
+                if settle_codebuddy_mcp {
+                    // CodeBuddy acknowledges load before its connected-tools
+                    // projection includes new servers. Its first-run prewait is
+                    // process-cached, and WaitForMcpServers inside a model turn
+                    // cannot replace that turn's frozen schemas. Allow a bounded
+                    // settling interval only after an actual MCP binding change.
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
                 let state = session_states
                     .lock()
                     .expect("session states")
@@ -2390,6 +2415,7 @@ impl AgentDriver for AcpDriver {
         let command = Command::LoadSession {
             app_mcps: workspace.app_mcps.clone(),
             grok: self.executor.provider_id.as_str() == "grok",
+            codebuddy: self.executor.provider_id.as_str() == "codebuddy",
             permission_mode: if self.executor.provider_id.as_str() == "cursor" {
                 None
             } else {
@@ -4180,6 +4206,7 @@ mod tests {
                         .send(Command::LoadSession {
                             app_mcps: vec![],
                             grok: false,
+                            codebuddy: false,
                             permission_mode: None,
                             model: None,
                             thinking: None,

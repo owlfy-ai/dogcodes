@@ -5,6 +5,7 @@ import { FloatingPopover } from "./FloatingPopover";
 import { LoadingStatus } from "./LoadingStatus";
 import "./reviewWorkspaces.css";
 import { translate as t } from "./i18n";
+import { projectDisplayName } from "./displayNames";
 
 export interface ReviewWorkspace {
   taskId: string; name: string; conversationTitle: string; path: string;
@@ -95,7 +96,7 @@ export function ReviewWorkspaceBrowser({ taskId, running, visible = true, fileRe
         disabled={locked || !items.length} data-tooltip={t("workspaces.switchTooltip")}
         onClick={() => setOpen(value => !value)} onKeyDown={event => { if (["ArrowDown", "ArrowUp"].includes(event.key)) { event.preventDefault(); setOpen(true); } }}>
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><rect x="2" y="3" width="16" height="14" rx="2"/><path d="M7 3v14M10 7h5m-5 3h5"/></svg>
-        <span className="review-workspace-name" data-tooltip={target?.name} data-tooltip-overflow="">{target?.name ?? t("terminalDock.workspace")}</span>
+        <span className="review-workspace-name" data-tooltip={target && projectDisplayName(target.name)} data-tooltip-overflow="">{target ? projectDisplayName(target.name) : t("terminalDock.workspace")}</span>
         <svg className="review-workspace-caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5" /></svg>
         <span className="review-workspace-badge" data-current={selectedId === taskId || undefined}>{t(selectedId === taskId ? "workspaces.usedByCurrent" : "workspaces.viewing")}</span>
       </button>
@@ -116,7 +117,7 @@ export function ReviewWorkspaceBrowser({ taskId, running, visible = true, fileRe
       {target.error && <p className="review-workspace-error" role="status">{t("workspaces.statusFailed", { error: target.error })}</p>}
     </>}
     {selectedId !== taskId && <div className="review-workspace-context">
-      <p>{t("workspaces.stillUsesBefore")}<strong>{current?.name ?? t("workspaces.originalWorkspace")}</strong>{t("workspaces.stillUsesAfter")}</p>
+      <p>{t("workspaces.stillUsesBefore")}<strong>{current ? projectDisplayName(current.name) : t("workspaces.originalWorkspace")}</strong>{t("workspaces.stillUsesAfter")}</p>
       <div><button type="button" disabled={locked} onClick={() => choose(taskId)}>{t("workspaces.backToCurrent")}</button>
       {onOpenConversation && <button type="button" disabled={locked} data-tooltip={target?.conversationTitle} onClick={() => onOpenConversation(selectedId)}>{t("workspaces.openConversation")}</button>}</div>
     </div>}
@@ -131,7 +132,7 @@ export function ReviewWorkspaceBrowser({ taskId, running, visible = true, fileRe
     }}>
       <header><strong>{t("workspaces.switchTitle")}</strong><small>{t("workspaces.switchSubtitle")}</small></header>
       {items.map(item => <button type="button" role="menuitemradio" aria-checked={item.taskId === selectedId} key={item.taskId} disabled={locked} onClick={() => choose(item.taskId)}>
-        <span className="review-workspace-option-title"><strong>{item.name}</strong><small>{item.current ? t("workspaces.usedByCurrent") : item.primary ? t("workspaces.primary") : "Worktree"}</small></span>
+        <span className="review-workspace-option-title"><strong>{projectDisplayName(item.name)}</strong><small>{item.current ? t("workspaces.usedByCurrent") : item.primary ? t("workspaces.primary") : t("workspaces.worktree")}</small></span>
         <span className="review-workspace-meta"><span>{workspaceBranch(item)}</span><span>{changes(item)}</span>{item.running && <span>{t("workspaces.agentWorking")}</span>}</span>
         <span className="review-workspace-path" data-tooltip={item.path}>{shortPath(item.path)}</span>
       </button>)}

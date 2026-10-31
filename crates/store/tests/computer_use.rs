@@ -12,6 +12,21 @@ use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
+fn assert_capture_response(response: &Value) {
+    let content = response["result"]["content"].as_array().unwrap();
+    let image = content.iter().find(|item| item["type"] == "image").unwrap();
+    assert_eq!(image["mimeType"], "image/png");
+    assert_eq!(
+        image["data"],
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1XcAAAAASUVORK5CYII="
+    );
+    assert!(content.iter().any(|item| {
+        item["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("fixture:1"))
+    }));
+}
+
 struct Waiting {
     executor: ExecutorRef,
     servers: Mutex<Vec<AppMcp>>,
@@ -161,7 +176,17 @@ async fn task_opt_in_preserves_images_deduplicates_actions_and_preempts_in_fligh
     let catalog = query(&computer, 1, "catalog", json!({})).await;
     assert_eq!(catalog["result"]["tools"].as_array().unwrap().len(), 2);
     let state = query(&computer, 2, "get_window_state", json!({})).await;
-    assert_eq!(state["result"]["content"][0]["type"], "image");
+    assert_capture_response(&state);
+    let timeline = core.timeline(&task).await.unwrap();
+    let audit = timeline
+        .iter()
+        .find(|item| item.kind == "computer_use")
+        .expect("computer action in timeline");
+    assert!(audit.turn_id.is_some());
+    let details: Value = serde_json::from_str(&audit.text).unwrap();
+    assert_eq!(details["tool"], "get_window_state");
+    assert_eq!(details["imageCount"], 1);
+    assert!(details.get("arguments").is_none());
     let first_sink = driver.sink.lock().unwrap().take().unwrap();
     let second = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::CreateTask(
@@ -288,6 +313,11 @@ async fn task_opt_in_preserves_images_deduplicates_actions_and_preempts_in_fligh
         true
     );
     drop(manual);
+    // A new observation resumes only when explicitly requested; the canceled
+    // click was not replayed when the manual-input permit was released.
+    let resumed = query(&computer, 6, "get_window_state", json!({})).await;
+    assert_capture_response(&resumed);
+    assert_eq!(std::fs::read_to_string(home.join("effects")).unwrap(), "2");
     core.computer_use_control(&task, json!({"type":"set","enabled":false}))
         .await
         .unwrap();

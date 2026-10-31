@@ -30,6 +30,11 @@ fn binding(mut params: Value) -> Value {
     params
 }
 impl SessionStates {
+    pub fn mcp_changed(&self, id: &str, params: &Value) -> bool {
+        self.bindings
+            .get(id)
+            .is_some_and(|previous| previous["mcpServers"] != params["mcpServers"])
+    }
     pub fn initialized(&self, id: &str) -> bool {
         self.values.contains_key(id) && !self.retired.contains(id)
     }
@@ -129,6 +134,25 @@ impl SessionStates {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mcp_change_is_distinct_from_an_ordinary_restore_or_permission_change() {
+        let mut states = SessionStates::default();
+        let params = json!({"cwd":"/work","mcpServers":[]});
+        assert!(!states.mcp_changed("a", &params));
+        let revision = states.begin("a");
+        states
+            .finish_setup("a", revision, json!({}), params.clone())
+            .unwrap();
+        assert!(!states.mcp_changed("a", &params));
+        assert!(!states.mcp_changed(
+            "a",
+            &json!({"cwd":"/work","mcpServers":[],"mode":"default"})
+        ));
+        assert!(states.mcp_changed(
+            "a",
+            &json!({"cwd":"/work","mcpServers":[{"name":"computer"}]})
+        ));
+    }
     #[test]
     fn retirement_forgets_cached_bindings_and_rejects_late_metadata_until_explicit_setup() {
         let mut states = SessionStates::default();

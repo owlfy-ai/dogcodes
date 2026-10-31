@@ -3214,7 +3214,9 @@ impl Core {
         drop(history_timing);
         let context_timing = timing.stage("session_context");
         let mut computer_lease = if driver.supports_app_mcp() {
-            self.computer_use_lease(task_id).await?.map(Arc::new)
+            self.computer_use_lease(task_id, &active.turn_id, &active.executor.provider_id)
+                .await?
+                .map(Arc::new)
         } else {
             None
         };

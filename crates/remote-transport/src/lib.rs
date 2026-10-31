@@ -562,7 +562,12 @@ mod video_tests {
         let (tx, mut tracks) = mpsc::channel(1);
         let phone: Arc<dyn PeerConnection> = Arc::new(
             PeerConnectionBuilder::<std::net::SocketAddr>::new()
-                .with_udp_addrs(vec![std::net::SocketAddr::from(([127, 0, 0, 1], 0))])
+                // Match the production offer's interfaces. Windows cannot pair
+                // a loopback-only phone with the answer's LAN-only candidates.
+                .with_udp_addrs(vec![
+                    std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
+                    std::net::SocketAddr::from(([0_u16; 8], 0)),
+                ])
                 .with_configuration(
                     RTCConfigurationBuilder::new()
                         .with_ice_servers(servers.clone())

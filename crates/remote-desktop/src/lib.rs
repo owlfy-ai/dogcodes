@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::HashSet, io::Cursor};
 
+pub mod computer_permissions;
 pub mod cursor;
-#[cfg(windows)]
 pub mod escape;
 
 pub type Result<T> = std::result::Result<T, String>;

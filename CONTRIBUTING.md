@@ -36,9 +36,23 @@ pnpm test:release
 pnpm check:release-inputs
 ```
 
-CI runs the same checks and builds unsigned installers for Windows, macOS and Linux.
-Tests that need a real agent account stay opt-in; describe any manual verification you
-did in the pull request.
+CI selects checks from the changed paths on pull requests and pushes to `main` or
+`master`. Documentation-only changes run the inexpensive CI routing, release script
+and release-input checks. Frontend changes run `pnpm check`; native changes run
+Clippy and native tests on Windows, macOS and Linux, with formatting checked once
+on Linux. Frontend and native jobs run in parallel when both are needed. Remote
+video/transport changes also run their Linux acceptance fixtures. Shared dependency
+or CI changes run all checks; unavailable diff history falls back to all checks.
+Path selection lives in `scripts/ci-changes.mjs`.
+
+Ordinary pushes and pull requests do not build installers. Use **Run workflow** on
+`Desktop checks and unsigned packages` for all checks, all acceptance fixtures and
+unsigned installers on all four platform/architecture targets. Release tags reuse
+that full workflow before creating a draft release. The `checks` job is the stable
+aggregate status for branch protection, including documentation-only changes.
+
+Tests that need a real agent account stay opt-in; describe any manual verification
+you did in the pull request.
 
 ## Architecture in one paragraph
 

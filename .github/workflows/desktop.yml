@@ -5,16 +5,53 @@ on:
   push:
     branches: [main, master]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      full:
+        description: Run all checks, acceptance suites and unsigned packaging.
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: desktop-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: desktop-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      frontend: ${{ steps.scope.outputs.frontend }}
+      native: ${{ steps.scope.outputs.native }}
+      video: ${{ steps.scope.outputs.video }}
+      transport: ${{ steps.scope.outputs.transport }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Determine affected checks
+        id: scope
+        env:
+          FULL_CHECKS: ${{ inputs.full || github.event_name == 'workflow_dispatch' }}
+        run: node scripts/ci-changes.mjs
+      - name: CI routing and release script tests
+        run: node --test scripts/ci-changes.test.mjs scripts/package-desktop.test.mjs scripts/desktop-release.test.mjs
+      - run: node scripts/check-release-inputs.mjs
+      - name: ZCode native account and credential bridge tests
+        shell: bash
+        run: node --test crates/zcode-driver/src/*.test.cjs
+
   frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
@@ -27,15 +64,11 @@ jobs:
           package-manager-cache: false
       - run: npm install --global pnpm@11.0.9
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:release
-      - run: pnpm check:release-inputs
       - run: pnpm check
-      - name: ZCode native account and credential bridge tests
-        shell: bash
-        run: node --test crates/zcode-driver/src/*.test.cjs
 
   desktop:
-    needs: frontend
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -89,8 +122,9 @@ jobs:
           key: desktop-${{ matrix.target }}
           cache-on-failure: true
       - run: cargo fmt --all -- --check
-      - name: Relay video QoS on deterministic capacity and ACK traces
         if: runner.os == 'Linux'
+      - name: Relay video QoS on deterministic capacity and ACK traces
+        if: runner.os == 'Linux' && needs.changes.outputs.video == 'true'
         shell: bash
         run: |
           rustfmt --edition 2024 --check scripts/relay_qos_trace.rs
@@ -106,7 +140,7 @@ jobs:
           RUST_MIN_STACK: '16777216'
         run: cargo test --workspace --lib --tests --locked --no-fail-fast 2>&1 | tee native-tests.log
       - name: Software video capture on an isolated X11 display
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.changes.outputs.video == 'true'
         timeout-minutes: 5
         shell: bash
         run: |
@@ -121,13 +155,13 @@ jobs:
           done
           cargo test -p dogcodes-remote-desktop --locked isolated_x11_capture -- --ignored --nocapture
       - name: Linux encoding pipeline with synthetic software elements
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.changes.outputs.video == 'true'
         timeout-minutes: 5
         env:
           DOGCODES_LINUX_ENCODER_FIXTURE: synthetic-only
         run: cargo test -p dogcodes-remote-desktop --lib --locked synthetic_pipeline_verifies_headers_forced_idr_pts_rate_and_rejection -- --ignored --nocapture
       - name: Wayland portal fixture and real PipeWire software video
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.changes.outputs.video == 'true'
         timeout-minutes: 5
         run: |
           python3 scripts/wayland_acceptance.py
@@ -139,18 +173,18 @@ jobs:
           python3 scripts/wayland_acceptance.py --format rgb-crop-rotate90
           python3 scripts/wayland_acceptance.py --format rgb-crop-flipped90
       - name: Offscreen EGL external images and shared display lifetime
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.changes.outputs.video == 'true'
         timeout-minutes: 5
         env:
           DOGCODES_OWNED_EGL: offscreen-only
           LIBGL_ALWAYS_SOFTWARE: '1'
         run: cargo test -p dogcodes-remote-desktop --locked owned_egl_renderer -- --ignored --nocapture
       - name: Desktop video migration, geometry and backpressure on a private login1 bus
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.changes.outputs.video == 'true'
         timeout-minutes: 5
         run: python3 scripts/desktop_codec_acceptance.py
       - name: TURN data/video, UDP/TCP/TLS and certificate validation
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.changes.outputs.transport == 'true'
         timeout-minutes: 5
         run: python3 scripts/turn_acceptance.py
       - name: Retain failed native test diagnostics
@@ -162,12 +196,20 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Build unsigned installer
+        if: inputs.full || github.event_name == 'workflow_dispatch'
         run: pnpm desktop:package --unsigned --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
       - name: Packaged PipeWire client on a private Portal
-        if: runner.os == 'Linux'
-        timeout-minutes: 5
-        run: python3 scripts/wayland_acceptance.py --format rgb-cursor --appimage target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+        if: runner.os == 'Linux' && (inputs.full || github.event_name == 'workflow_dispatch')
+        timeout-minutes: 15
+        shell: bash
+        env:
+          RUST_MIN_STACK: '16777216'
+        run: |
+          flags=()
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then flags+=(--release); fi
+          python3 scripts/wayland_acceptance.py "${flags[@]}" --format rgb-cursor --appimage target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
       - name: Retain only installer artifacts for validation
+        if: inputs.full || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
           name: dogcodes-unsigned-${{ matrix.target }}
@@ -178,3 +220,22 @@ jobs:
             target/${{ matrix.target }}/release/bundle/dmg/*.dmg
             target/${{ matrix.target }}/release/bundle/deb/*.deb
             target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+
+  # One stable required check also completes for documentation-only changes.
+  checks:
+    if: always()
+    needs: [changes, frontend, desktop]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify all selected checks passed
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          FRONTEND_REQUIRED: ${{ needs.changes.outputs.frontend }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          NATIVE_REQUIRED: ${{ needs.changes.outputs.native }}
+          NATIVE_RESULT: ${{ needs.desktop.result }}
+        run: |
+          test "$CHANGES_RESULT" = success
+          if [ "$FRONTEND_REQUIRED" = true ]; then test "$FRONTEND_RESULT" = success; fi
+          if [ "$NATIVE_REQUIRED" = true ]; then test "$NATIVE_RESULT" = success; fi

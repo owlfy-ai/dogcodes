@@ -581,7 +581,7 @@ export interface SubmissionIntentPage {
 }
 
 export interface TaskDeletion { taskId: TaskId; deletionSequence: number }
-export interface ComputerUseStatus { available: boolean; enabled: boolean; active: boolean; externalInput: boolean }
+export interface ComputerUseStatus { available: boolean; enabled: boolean; active: boolean; externalInput: boolean; unavailableReason?: string | null }
 export interface ComputerUseActivity {
   operationId: string | null;
   taskId: TaskId | null;
