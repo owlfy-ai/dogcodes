@@ -1,19 +1,6 @@
 import type { UiMessages } from "./en";
 
 export const uiZhTW: UiMessages = {
-  computerUse: {
-    glowBackground: "正在背景操作電腦驗證",
-    glowForeground: "正在使用鍵盤滑鼠，請暫停鍵鼠操作",
-    glowPossible: "可能使用鍵盤滑鼠，請暫停鍵鼠操作",
-    glowDisconnected: "連線已中斷，鍵鼠操作狀態未知",
-    glowExit: "退出",
-    enable: "啟用電腦操作",
-    disable: "停止電腦操作",
-    enableHint: "允許此任務查看並操作電腦",
-    enabledHint: "此任務已啟用；點擊停止電腦操作",
-    unavailable: "目前版本尚未提供電腦操作能力",
-    nextTurn: "請在開始下一輪前啟用",
-  },
   activity: {
     aboutSeconds: "約 {seconds} 秒",
     browse: "查閱",
@@ -289,6 +276,19 @@ export const uiZhTW: UiMessages = {
     verify: "核實停止請求",
     verifyFailed: "無法核實停止請求，請稍後重試。",
     verifying: "正在核實停止請求…",
+  },
+  computerUse: {
+    disable: "停止電腦操作",
+    enable: "啟用電腦操作",
+    enableHint: "允許此任務查看並操作電腦",
+    enabledHint: "此任務已啟用；點擊停止電腦操作",
+    glowBackground: "正在背景操作電腦驗證",
+    glowDisconnected: "連線已中斷，鍵鼠操作狀態未知",
+    glowExit: "退出",
+    glowForeground: "正在使用鍵盤滑鼠，請暫停鍵鼠操作",
+    glowPossible: "可能使用鍵盤滑鼠，請暫停鍵鼠操作",
+    nextTurn: "請在開始下一輪前啟用",
+    unavailable: "目前版本尚未提供電腦操作能力",
   },
   contextUsage: {
     cacheRead: "快取讀取",
@@ -922,7 +922,7 @@ export const uiZhTW: UiMessages = {
     cancelRename: "取消重新命名",
     chooseAgent: "選擇進行命令分析的 Agent",
     closeOutput: "關閉輸出 {label}",
-    commandTooltip: "{command}\\n目錄：{path}\\n來源：{source}",
+    commandTooltip: "{command}\n目錄：{path}\n來源：{source}",
     delete: "刪除執行項",
     deleteItem: "刪除 {label}",
     directoryEmpty: "暫無執行項，可重新分析產生。",
@@ -1574,7 +1574,7 @@ export const uiZhTW: UiMessages = {
       running: "檢查中",
     },
     statusFailed: "無法讀取審查狀態",
-    timing: "開始：{start}\\n結束：{end}\\n耗時：{seconds} 秒",
+    timing: "開始：{start}\n結束：{end}\n耗時：{seconds} 秒",
   },
   turnArtifacts: {
     badFormat: "變更記錄格式不可用",

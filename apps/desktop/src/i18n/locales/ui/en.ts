@@ -1,19 +1,6 @@
 // UI strings outside the older hand-written sections. English defines the key shape;
 // every other locale in ./ui implements UiMessages.
 export const uiEn = {
-  computerUse: {
-    glowBackground: "Verifying your computer in the background",
-    glowForeground: "Using your keyboard and mouse. Please pause input.",
-    glowPossible: "May use your keyboard and mouse. Please pause input.",
-    glowDisconnected: "Connection lost. Input state is unknown.",
-    glowExit: "to exit",
-    enable: "Enable computer use",
-    disable: "Stop computer use",
-    enableHint: "Let this task observe and operate your desktop",
-    enabledHint: "Enabled for this task; click to stop computer operations",
-    unavailable: "Computer use is unavailable in this build",
-    nextTurn: "Enable before starting the next turn",
-  },
   activity: {
     aboutSeconds: "about {seconds}s",
     browse: "Browsed",
@@ -289,6 +276,19 @@ export const uiEn = {
     verify: "Verify stop request",
     verifyFailed: "Couldn't verify the stop request. Please try again later.",
     verifying: "Verifying stop request…",
+  },
+  computerUse: {
+    disable: "Stop computer use",
+    enable: "Enable computer use",
+    enableHint: "Let this task observe and operate your desktop",
+    enabledHint: "Enabled for this task; click to stop computer operations",
+    glowBackground: "Verifying your computer in the background",
+    glowDisconnected: "Connection lost. Input state is unknown.",
+    glowExit: "to exit",
+    glowForeground: "Using your keyboard and mouse. Please pause input.",
+    glowPossible: "May use your keyboard and mouse. Please pause input.",
+    nextTurn: "Enable before starting the next turn",
+    unavailable: "Computer use is unavailable in this build",
   },
   contextUsage: {
     cacheRead: "Cache read",
@@ -922,7 +922,7 @@ export const uiEn = {
     cancelRename: "Cancel rename",
     chooseAgent: "Choose the Agent that analyzes commands",
     closeOutput: "Close output {label}",
-    commandTooltip: "{command}\\nFolder: {path}\\nSource: {source}",
+    commandTooltip: "{command}\nFolder: {path}\nSource: {source}",
     delete: "Delete run item",
     deleteItem: "Delete {label}",
     directoryEmpty: "No run items; re-analyze to generate them.",
@@ -1574,7 +1574,7 @@ export const uiEn = {
       running: "Checking",
     },
     statusFailed: "Couldn't read the review status",
-    timing: "Started: {start}\\nFinished: {end}\\nDuration: {seconds}s",
+    timing: "Started: {start}\nFinished: {end}\nDuration: {seconds}s",
   },
   turnArtifacts: {
     badFormat: "Change record format unavailable",
