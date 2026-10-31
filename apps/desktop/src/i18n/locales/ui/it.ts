@@ -1761,5 +1761,6 @@ export const uiIt: UiMessages = {
     switchTooltip: "Scegli quale area di lavoro mostra il pannello laterale; la conversazione resta la stessa",
     usedByCurrent: "Usata da questa conversazione",
     viewing: "In visualizzazione",
+    worktree: "Worktree",
   },
 };

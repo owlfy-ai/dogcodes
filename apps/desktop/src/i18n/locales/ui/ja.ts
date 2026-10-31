@@ -1761,5 +1761,6 @@ export const uiJa: UiMessages = {
     switchTooltip: "サイドパネルに表示するワークスペースを選択します。会話は変わりません",
     usedByCurrent: "この会話で使用中",
     viewing: "表示中",
+    worktree: "Worktree",
   },
 };

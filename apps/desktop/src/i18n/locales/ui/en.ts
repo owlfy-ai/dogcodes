@@ -1761,6 +1761,7 @@ export const uiEn = {
     switchTooltip: "Choose which workspace the side panel shows; the conversation stays the same",
     usedByCurrent: "Used by this conversation",
     viewing: "Viewing",
+    worktree: "Worktree",
   },
 };
 

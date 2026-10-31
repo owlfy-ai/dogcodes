@@ -39,6 +39,19 @@ it("distinguishes workspaces and preserves the original reader when browsing a f
   expect(active().textContent).toContain("当前会话使用");
 });
 
+it("shows the scratch project by its localized name instead of the stored sentinel", async () => {
+  api.list.mockResolvedValue([{ ...main, name: "快速对话" }, { ...fork, name: "快速对话" }]);
+  await render();
+  expect(menu().textContent).toContain("无项目");
+  await click(menu());
+  const options = [...active().querySelectorAll('[role="menuitemradio"]')].map(node => node.textContent);
+  expect(options[0]).toContain("无项目");
+  expect(options[1]).toContain("Worktree");
+  await click(active().querySelectorAll('[role="menuitemradio"]')[1]);
+  expect(active().textContent).toContain("会话仍使用 无项目");
+  expect(active().textContent).not.toContain("快速对话");
+});
+
 it("locks workspace navigation for the duration of a Git operation", async () => {
   await render(); await chooseFork(); await click(button("开始操作"));
   expect((menu() as HTMLButtonElement).disabled).toBe(true);

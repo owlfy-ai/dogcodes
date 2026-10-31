@@ -1761,5 +1761,6 @@ export const uiEs: UiMessages = {
     switchTooltip: "Elige qué espacio de trabajo muestra el panel lateral; la conversación no cambia",
     usedByCurrent: "Usado por esta conversación",
     viewing: "Viendo",
+    worktree: "Worktree",
   },
 };

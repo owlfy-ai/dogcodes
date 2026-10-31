@@ -1761,5 +1761,6 @@ export const uiPtBR: UiMessages = {
     switchTooltip: "Escolha qual workspace o painel lateral mostra; a conversa continua a mesma",
     usedByCurrent: "Usado por esta conversa",
     viewing: "Em exibição",
+    worktree: "Worktree",
   },
 };

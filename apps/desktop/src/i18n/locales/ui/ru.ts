@@ -1761,5 +1761,6 @@ export const uiRu: UiMessages = {
     switchTooltip: "Выберите, какую рабочую область показывает боковая панель; разговор остаётся прежним",
     usedByCurrent: "Используется этим разговором",
     viewing: "Просматривается",
+    worktree: "Worktree",
   },
 };

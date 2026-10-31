@@ -1761,5 +1761,6 @@ export const uiKo: UiMessages = {
     switchTooltip: "사이드 패널에 표시할 작업 공간을 선택합니다. 대화는 그대로 유지됩니다",
     usedByCurrent: "이 대화에서 사용 중",
     viewing: "보는 중",
+    worktree: "Worktree",
   },
 };

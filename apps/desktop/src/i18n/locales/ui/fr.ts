@@ -1761,5 +1761,6 @@ export const uiFr: UiMessages = {
     switchTooltip: "Choisir l’espace de travail affiché dans le panneau latéral ; la conversation reste la même",
     usedByCurrent: "Utilisé par cette conversation",
     viewing: "Affiché",
+    worktree: "Worktree",
   },
 };

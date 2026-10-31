@@ -1761,5 +1761,6 @@ export const uiZhCN: UiMessages = {
     switchTooltip: "选择右侧查看的工作区，聊天会话保持不变",
     usedByCurrent: "当前会话使用",
     viewing: "正在查看",
+    worktree: "Worktree",
   },
 };

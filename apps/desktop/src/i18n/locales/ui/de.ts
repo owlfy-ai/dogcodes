@@ -1761,5 +1761,6 @@ export const uiDe: UiMessages = {
     switchTooltip: "Wählen, welchen Arbeitsbereich die Seitenleiste zeigt; das Gespräch bleibt dasselbe",
     usedByCurrent: "Von diesem Gespräch verwendet",
     viewing: "Wird angezeigt",
+    worktree: "Worktree",
   },
 };

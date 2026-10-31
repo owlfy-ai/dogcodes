@@ -1065,25 +1065,16 @@ async fn an_abandoned_restore_keeps_setup_admission_until_native_settlement_then
     wait_for(|| count(root.path(), "session/load") == 1).await;
     restoring.abort();
     let _ = restoring.await;
-    let closing = tokio::spawn({
-        let driver = driver.clone();
-        let b = b.clone();
-        async move { driver.shutdown(b).await }
-    });
-    wait_for(|| {
-        driver
-            .shared
-            .closed_sessions
-            .lock()
-            .unwrap()
-            .contains(&b.native_session_id)
-    })
-    .await;
+    let closing = driver.shutdown(b);
+    tokio::pin!(closing);
+    // Shutdown acquires setup admission before marking its session closed.
+    // Poll once to register the waiter; waiting for closed_sessions here would
+    // deadlock with the native load that this test has not released yet.
+    assert!(futures::poll!(&mut closing).is_pending());
     let admission_retained = driver.shared.setup_in_progress.load(Ordering::Acquire)
-        && !closing.is_finished()
         && !finished.load(Ordering::Acquire);
     std::fs::write(root.path().join("load-ready"), b"").unwrap();
-    closing.await.unwrap().unwrap();
+    closing.await.unwrap();
     // Native exit wakes independent retirement actors. Closing b only joins
     // b's actor; the abandoned restore must also finish removing its resident.
     wait_for(|| {
