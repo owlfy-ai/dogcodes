@@ -1,3 +1,4 @@
+import type { AgentUiMessages } from "./agentUi";
 export type UiLanguage =
   | "system"
   | "zh-CN"
@@ -21,6 +22,7 @@ export interface LanguageInfo {
 }
 
 export interface TranslationDict {
+  agentUi: AgentUiMessages;
   common: {
     systemDefault: string;
     light: string;

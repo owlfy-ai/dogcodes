@@ -1,3 +1,5 @@
+import { t, useI18n } from "./i18n";
+import { localizedAgentMessage, localizedUpdateSource } from "./agentI18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { focusDialogTitle } from "./dialogFocus";
@@ -20,7 +22,7 @@ export function useAgentUpdates(client: CoreClient, installations: InstallationS
     busy.current.add(id);
     if (alive.current) setUpdates(old => ({ ...old, [id]: { ...pending(id), desktopVersion: old[id]?.desktopVersion } }));
     try { accept(await client.checkAgentUpdate(id, force)); }
-    catch { accept({ ...pending(id), status: "error", message: "版本检查失败，请稍后重试" }); }
+    catch { accept({ ...pending(id), status: "error", message: "agentUi.updateCheckFailed" }); }
     finally { busy.current.delete(id); }
   }, [client, accept]);
   useEffect(() => {
@@ -57,7 +59,7 @@ export function useAgentUpdates(client: CoreClient, installations: InstallationS
   const upgrade = useCallback(async (id: string, confirmationToken?: string) => {
     if (!client.upgradeAgent || busy.current.has(id)) return;
     busy.current.add(id);
-    setUpdates(old => ({ ...old, [id]: { ...(old[id] ?? pending(id)), status: "upgrading", canUpgrade: false, message: "正在检查升级条件" } }));
+    setUpdates(old => ({ ...old, [id]: { ...(old[id] ?? pending(id)), status: "upgrading", canUpgrade: false, message: "agentUi.checkingUpgrade" } }));
     try {
       const value = await client.upgradeAgent(id, confirmationToken);
       if (value.status === "in_use") {
@@ -70,7 +72,7 @@ export function useAgentUpdates(client: CoreClient, installations: InstallationS
       const snapshot = await client.bootstrap(); if (alive.current) refreshRef.current(snapshot);
     } catch (e) {
       confirmations.current.delete(id);
-      if (alive.current) setUpdates(old => ({ ...old, [id]: { ...(old[id] ?? pending(id)), status: "error", canUpgrade: Boolean(old[id]?.latestVersion), message: typeof e === "string" ? e : "升级失败，请稍后重试" } }));
+      if (alive.current) setUpdates(old => ({ ...old, [id]: { ...(old[id] ?? pending(id)), status: "error", canUpgrade: Boolean(old[id]?.latestVersion), message: typeof e === "string" ? e : "agentUi.upgradeFailed" } }));
     } finally { busy.current.delete(id); }
   }, [client, accept]);
   const cancelUpgrade = useCallback((id: string) => {
@@ -84,7 +86,7 @@ export function useAgentUpdates(client: CoreClient, installations: InstallationS
     try { await client.openAgentUpdater(id); }
     catch {
       externalUpdates.current.delete(id);
-      setUpdates(old => ({ ...old, [id]: { ...(old[id] ?? pending(id)), status: "error", message: "无法打开宿主应用，请手动打开并检查更新" } }));
+      setUpdates(old => ({ ...old, [id]: { ...(old[id] ?? pending(id)), status: "error", message: "agentUi.openUpdaterFailed" } }));
     }
   }, [client, installations]);
   return { updates, check, upgrade, openUpdater, cancelUpgrade };
@@ -92,6 +94,7 @@ export function useAgentUpdates(client: CoreClient, installations: InstallationS
 export type AgentUpdateActions = { updates: Record<string, AgentUpdate>; check: (id: string, force?: boolean) => void; upgrade: (id: string, confirmationToken?: string) => void; openUpdater?: (id: string) => void; cancelUpgrade?: (id: string) => void };
 
 function UpgradeConfirmation({ update, actions }: { update: AgentUpdate; actions: AgentUpdateActions }) {
+  const { resolvedLanguage: lang } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -101,11 +104,11 @@ function UpgradeConfirmation({ update, actions }: { update: AgentUpdate; actions
   const usage = update.inUse!;
   return createPortal(<dialog ref={dialog} className="agent-upgrade-dialog" aria-labelledby="agent-upgrade-title"
     onCancel={event => { event.preventDefault(); actions.cancelUpgrade?.(update.installationId); }}>
-    <h2 id="agent-upgrade-title" tabIndex={-1} data-dialog-title>Agent 正在使用中</h2>
-    <p>检测到此安装有{usage.taskCount > 0 ? ` ${usage.taskCount} 个本软件内任务，` : ""} {usage.processCount} 个相关进程正在运行。</p>
-    <p>结束后将中断当前操作，包括其他终端中的相关任务。已修改的文件会保留，未完成的工作可能需要重新执行。</p>
-    <footer><button type="button" onClick={() => actions.cancelUpgrade?.(update.installationId)}>取消升级</button>
-      <button className="agent-upgrade-confirm" type="button" onClick={() => actions.upgrade(update.installationId, usage.token)}>结束任务并升级</button></footer>
+    <h2 id="agent-upgrade-title" tabIndex={-1} data-dialog-title>{t("agentUi.agentInUse", undefined, lang)}</h2>
+    <p>{t("agentUi.inUseDetail", { tasks: usage.taskCount, processes: usage.processCount }, lang)}</p>
+    <p>{t("agentUi.interruptWarning", undefined, lang)}</p>
+    <footer><button type="button" onClick={() => actions.cancelUpgrade?.(update.installationId)}>{t("agentUi.cancelUpgrade", undefined, lang)}</button>
+      <button className="agent-upgrade-confirm" type="button" onClick={() => actions.upgrade(update.installationId, usage.token)}>{t("agentUi.stopAndUpgrade", undefined, lang)}</button></footer>
   </dialog>, document.body);
 }
 function UpdateIcon({ kind }: { kind: "upgrade" | "retry" | "external" | "done" | "info" }) {
@@ -119,19 +122,21 @@ function UpdateIcon({ kind }: { kind: "upgrade" | "retry" | "external" | "done" 
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[kind]} /></svg>;
 }
 function UpgradeProgress({ message }: { message: string }) {
+  const { resolvedLanguage: lang } = useI18n();
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
     const started = Date.now();
     const timer = window.setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  const elapsed = seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
-  return <span className="agent-update-progress" role="status" aria-label={`正在升级：${message}`}>
+  const elapsed = seconds < 60 ? t("agentUi.seconds", { count: seconds }, lang) : t("agentUi.minutesSeconds", { minutes: Math.floor(seconds / 60), seconds: seconds % 60 }, lang);
+  return <span className="agent-update-progress" role="status" aria-label={t("agentUi.upgradingMessage", { message }, lang)}>
     <i className="agent-update-spinner" aria-hidden="true" />
     <span>{message}<span aria-hidden="true"> · {elapsed}</span></span>
   </span>;
 }
 export function AgentUpdateControl({ id, actions, detailed = false }: { id: string; actions?: AgentUpdateActions; detailed?: boolean }) {
+  const { resolvedLanguage: lang } = useI18n();
   const update = actions?.updates[id];
   if (!update || (!detailed && update.status === "up_to_date")) return null;
   if (update.status === "in_use" && update.inUse && actions) return <UpgradeConfirmation update={update} actions={actions} />;
@@ -139,16 +144,16 @@ export function AgentUpdateControl({ id, actions, detailed = false }: { id: stri
   if (!detailed && update.status === "managed" && !hostUpdate) return null;
   const working = update.status === "checking" || update.status === "upgrading";
   const retryUpgrade = update.status === "error" && update.canUpgrade && Boolean(update.latestVersion);
-  const label = update.status === "up_to_date" ? "已是最新版本" : update.status === "checking" ? "检查版本中…" : update.status === "upgrading" ? "正在升级…" : update.status === "available" ? `升级至 ${update.latestVersion}` : update.status === "updated" ? "升级完成" : update.status === "managed" ? update.message ?? "在宿主应用中检查更新" : update.message ?? "版本检查失败";
-  const hint = [label, update.source, update.checkedAt ? `检查于 ${new Date(update.checkedAt).toLocaleString()}` : ""].filter(Boolean).join(" · ");
+  const label = update.status === "up_to_date" ? t("agentUi.latest", undefined, lang) : update.status === "checking" ? t("agentUi.checkingVersion", undefined, lang) : update.status === "upgrading" ? t("agentUi.upgrading", undefined, lang) : update.status === "available" ? t("agentUi.upgradeTo", { version: update.latestVersion ?? "" }, lang) : update.status === "updated" ? t("agentUi.upgradeDone", undefined, lang) : update.status === "managed" ? localizedAgentMessage(update.message, "hostUpdate", lang) : localizedAgentMessage(update.message, "versionFailed", lang);
+  const hint = [label, localizedUpdateSource(update.source, lang), update.checkedAt ? t("agentUi.checkedAt", { time: new Date(update.checkedAt).toLocaleString(lang) }, lang) : ""].filter(Boolean).join(" · ");
   return <span className={`agent-update agent-update--${update.status}`} aria-live="polite" aria-busy={working} data-tooltip={hint}>
     {detailed && ["up_to_date", "managed", "unsupported", "error", "updated"].includes(update.status) && <span>{label}</span>}
-    {(update.status === "available" || hostUpdate) && <span className="agent-update-version" data-tooltip={`${hostUpdate ? "桌面应用有新版本" : "有新版本"} ${update.latestVersion}`} data-tooltip-overflow="">{hostUpdate ? "桌面应用有新版本" : "有新版本"} {update.latestVersion}</span>}
+    {(update.status === "available" || hostUpdate) && <span className="agent-update-version" data-tooltip={`${hostUpdate ? t("agentUi.newDesktopVersion", undefined, lang) : t("agentUi.newVersion", undefined, lang)} ${update.latestVersion}`} data-tooltip-overflow="">{hostUpdate ? t("agentUi.newDesktopVersion", undefined, lang) : t("agentUi.newVersion", undefined, lang)} {update.latestVersion}</span>}
     {update.status === "checking" && <span className="agent-update-status" role="status" aria-label={label}><i className="agent-update-spinner" aria-hidden="true" /></span>}
-    {update.status === "upgrading" && <UpgradeProgress message={update.message ?? "正在下载并安装，较大的更新可能需要几分钟"} />}
-    {update.status === "available" && update.canUpgrade && <button className="agent-update-action" type="button" data-tooltip={hint} aria-label={label} onClick={() => actions?.upgrade(id)}><UpdateIcon kind="upgrade" />{detailed && "升级"}</button>}
-    {update.status === "managed" && actions?.openUpdater && <button className="agent-update-action" type="button" data-tooltip={hint} aria-label="打开宿主应用检查更新" onClick={() => actions.openUpdater?.(id)}><UpdateIcon kind="external" />{detailed && "打开应用"}</button>}
-    {update.status === "error" && <button className="agent-update-action" type="button" data-tooltip={`${hint} · 点击${retryUpgrade ? "重试升级" : "重新检查"}`} aria-label={`${retryUpgrade ? "重试升级" : "重新检查版本"}：${label}`} onClick={() => retryUpgrade ? actions?.upgrade(id) : actions?.check(id, true)}><UpdateIcon kind="retry" /></button>}
+    {update.status === "upgrading" && <UpgradeProgress message={localizedAgentMessage(update.message, "downloading", lang)} />}
+    {update.status === "available" && update.canUpgrade && <button className="agent-update-action" type="button" data-tooltip={hint} aria-label={label} onClick={() => actions?.upgrade(id)}><UpdateIcon kind="upgrade" />{detailed && t("agentUi.upgrade", undefined, lang)}</button>}
+    {update.status === "managed" && actions?.openUpdater && <button className="agent-update-action" type="button" data-tooltip={hint} aria-label={t("agentUi.openHostUpdate", undefined, lang)} onClick={() => actions.openUpdater?.(id)}><UpdateIcon kind="external" />{detailed && t("agentUi.openApp", undefined, lang)}</button>}
+    {update.status === "error" && <button className="agent-update-action" type="button" data-tooltip={t("agentUi.retryUpdateHint", { hint, action: t(retryUpgrade ? "agentUi.retryUpgrade" : "agentUi.recheck", undefined, lang) }, lang)} aria-label={`${retryUpgrade ? t("agentUi.retryUpgrade", undefined, lang) : t("agentUi.recheckVersion", undefined, lang)}${lang.startsWith("zh") ? "：" : ": "}${label}`} onClick={() => retryUpgrade ? actions?.upgrade(id) : actions?.check(id, true)}><UpdateIcon kind="retry" /></button>}
     {(update.status === "updated" || update.status === "unsupported") && <span className="agent-update-status" role="status" aria-label={label}><UpdateIcon kind={update.status === "updated" ? "done" : "info"} /></span>}
   </span>;
 }

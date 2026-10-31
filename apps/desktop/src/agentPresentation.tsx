@@ -1,3 +1,4 @@
+import { t, useI18n, type ResolvedLanguage } from "./i18n";
 import type { CSSProperties } from "react";
 import chatgptSvg from "./assets/chatgpt.svg?raw";
 import cursorSvg from "./assets/cursor.svg?raw";
@@ -29,7 +30,7 @@ const logos: Record<string, string> = {
   kiro: new URL("./assets/kiro.svg", import.meta.url).href,
 };
 
-export function providerLabel(providerId: string): string {
+export function providerLabel(providerId: string, lang: ResolvedLanguage = "zh-CN"): string {
   const labels: Record<string, string> = {
     codex: "Codex",
     "claude-code": "Claude Code",
@@ -45,21 +46,22 @@ export function providerLabel(providerId: string): string {
     kiro: "Kiro",
     // Internal provider id for app-authored messages; only the label is user-visible.
     dogcodes: "dog.codes",
-    fake: "离线模式",
-    "fake-peer": "离线协作",
+    fake: t("agentUi.offline", undefined, lang),
+    "fake-peer": t("agentUi.offlinePeer", undefined, lang),
   };
   return labels[providerId] ?? providerId;
 }
 
 export function AgentIcon({ providerId, size = "medium" }: { providerId: string; size?: "small" | "medium" }) {
+  const { resolvedLanguage: lang } = useI18n();
   const normalized = providerId.toLowerCase();
   const monochrome = monochromeLogos[normalized];
   const src = monochrome?.dark ?? logos[normalized];
   if (src) {
     return <img className={`agent-icon ${size} agent-${normalized}${monochrome ? " agent-icon-monochrome" : ""}`} src={src}
       style={monochrome ? { "--agent-logo-light": `url("${monochrome.light}")` } as CSSProperties : undefined}
-      data-tooltip={providerLabel(normalized)} alt="" />;
+      data-tooltip={providerLabel(normalized, lang)} alt="" />;
   }
   const glyph = normalized.startsWith("fake") ? "F" : providerId.slice(0, 1).toUpperCase();
-  return <span className={`agent-icon ${size} agent-${normalized}`} data-tooltip={providerLabel(providerId)} aria-hidden="true">{glyph}</span>;
+  return <span className={`agent-icon ${size} agent-${normalized}`} data-tooltip={providerLabel(providerId, lang)} aria-hidden="true">{glyph}</span>;
 }

@@ -146,14 +146,17 @@ export function useI18n(): I18nContextValue {
 export function I18nProvider({
   children,
   initialLanguage,
+  language: controlledLanguage,
 }: {
   children: ReactNode;
   initialLanguage?: UiLanguage;
+  language?: UiLanguage;
 }) {
-  const [language, setLanguageState] = useState<UiLanguage>(() => {
+  const [localLanguage, setLanguageState] = useState<UiLanguage>(() => {
     if (initialLanguage) return initialLanguage;
     return getInitialLanguage();
   });
+  const language = controlledLanguage ?? localLanguage;
 
   const resolvedLanguage = useMemo(() => resolveLanguage(language), [language]);
 

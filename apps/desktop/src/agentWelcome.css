@@ -110,7 +110,7 @@
 .welcome-skip { height: 32px; padding: 0 12px; border: 0; color: var(--w-muted); background: transparent; font-size: 13px; }
 .welcome-skip:hover { color: var(--w-text); background: color-mix(in srgb, var(--w-muted) 12%, transparent); }
 
-.welcome-page-body { width: min(1440px, 100%); margin: 0 auto; padding: 0 clamp(24px, 3vw, 40px) 32px; box-sizing: border-box; }
+.welcome-page-body { width: min(1280px, calc(100% - 64px)); margin: 0 auto; padding: 0 clamp(24px, 3vw, 40px) 32px; box-sizing: border-box; }
 
 /* Hero */
 .welcome-hero {
@@ -129,13 +129,13 @@
 .welcome-hero-visual { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
 .welcome-hero-visual .welcome-herd { --herd-size: clamp(260px, 32vw, 440px); aspect-ratio: 10 / 4.4; }
 .welcome-stats {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: min(100%, 360px); margin: 0; padding: 0; overflow: hidden;
+  display: grid; grid-template-columns: repeat(3, auto); width: min(100%, 420px); margin: 0; padding: 0; overflow: hidden;
   border: 1px solid var(--w-border); border-radius: 12px;
   background: color-mix(in srgb, var(--w-surface) 75%, transparent); backdrop-filter: blur(8px); box-shadow: var(--w-shadow);
 }
-.welcome-stats > div { display: flex; justify-content: center; align-items: baseline; gap: 10px; min-width: 0; padding: 10px 12px; }
+.welcome-stats > div { display: flex; justify-content: center; align-items: baseline; gap: 8px; min-width: 0; padding: 10px; }
 .welcome-stats > div + div { border-left: 1px solid var(--w-border); }
-.welcome-stats dt { color: var(--w-muted); font-size: 12px; }
+.welcome-stats dt { color: var(--w-muted); font-size: 12px; white-space: nowrap; }
 .welcome-stats dd { margin: 0; font-size: 20px; line-height: 1.2; font-weight: 650; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .welcome-stats .ready dd { color: var(--w-ready); }
 .welcome-stats .attention dd { color: var(--w-warning); }
@@ -274,7 +274,7 @@
   font-size: 12px; font-weight: 600; letter-spacing: 0; font-variant-numeric: tabular-nums;
 }
 .welcome-section-heading p { margin: 4px 0 0; color: var(--w-muted); font-size: 13px; }
-.welcome-agent-grid, .welcome-available-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.welcome-agent-grid, .welcome-available-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .welcome-none { padding: 32px; border: 1px dashed var(--w-border-strong); border-radius: 18px; text-align: center; color: var(--w-muted); }
 .welcome-none b { color: var(--w-text); font-size: 15px; }
 .welcome-none p { margin: 6px 0 0; font-size: 13px; }
@@ -317,7 +317,7 @@
 .welcome-provider-balance > strong { flex: none; font-weight: 600; font-variant-numeric: tabular-nums; }
 .welcome-provider-balances > small { color: var(--w-muted); font-size: 11px; line-height: 1.5; }
 .welcome-card-quotas { flex: 1; display: flex; flex-direction: column; gap: 8px; padding: 12px 0 10px; }
-.welcome-rings { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr)); gap: 8px; }
+.welcome-rings { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .welcome-window {
   display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px;
   border-radius: 12px; background: var(--w-surface-quiet); border: 1px solid color-mix(in srgb, var(--w-border) 70%, transparent);
@@ -395,18 +395,18 @@
 @keyframes welcome-rise { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: none; } }
 @keyframes welcome-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
-@media (max-width: 1199px) {
-  .welcome-agent-grid, .welcome-available-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
   .welcome-hero { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .welcome-herd { display: none; }
   .welcome-stats { width: 100%; }
+}
+@media (max-width: 900px) {
   .welcome-agent-grid, .welcome-available-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
   .welcome-topbar { padding-right: 16px; }
-  .welcome-page-body { padding: 0 16px 32px; }
+  .welcome-page-body { width: 100%; padding: 0 16px 32px; }
+  .welcome-stats > div { flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px; }
   .welcome-agent-grid, .welcome-available-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {

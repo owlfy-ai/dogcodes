@@ -2,8 +2,11 @@ import { AgentPickerMenu } from "../AgentPickerMenu";
 // Isolated UI fixture. Actions only change local fixture state; no native commands.
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { AgentUpdate, InstallationSummary, QuotaSnapshotView, QuotaWindow } from "@dogcodes/protocol";
+import type { AgentUpdate, CoreClient, InstallationSummary, QuotaSnapshotView, QuotaWindow } from "@dogcodes/protocol";
 import { QuotaCenter } from "../App";
+import { AgentWelcome } from "../AgentWelcome";
+import { AgentIcon } from "../agentPresentation";
+import { I18nProvider, resolveLanguage, SUPPORTED_LANGUAGES } from "../i18n";
 import { Tooltips } from "../Tooltips";
 import type { QuotaRefreshProgress } from "../quotaRefresh";
 import "../styles.css";
@@ -23,11 +26,12 @@ const allData = [
 ];
 const data = new URLSearchParams(location.search).has("providerAccounts") ? allData.filter(agent => ["opencode", "pi", "deepseek-harness"].includes(agent.providerId)) : allData;
 const balances: Record<string, Array<{ label: string; amount: number; currency: string }>> = {
-  pi: [{ label: "DeepSeek API", amount: 25.5, currency: "CNY" }, { label: "自定义服务", amount: 3.125, currency: "USD" }],
+  pi: [{ label: "DeepSeek API", amount: 25.5, currency: "CNY" }, { label: "Custom API", amount: 3.125, currency: "USD" }],
   "deepseek-harness": [{ label: "DeepSeek API", amount: 0, currency: "USD" }, { label: "DeepSeek API", amount: 25.5, currency: "CNY" }],
 };
 const installations: InstallationSummary[] = data.map(agent => ({ installationId: `ins_${agent.providerId}`, providerId: agent.providerId, executable: "fixture", fingerprint: "fixture", status: "ready", version: agent.version, versionText: agent.version, diagnostic: null, probeElapsedMillis: 0, probedAt: new Date(now).toISOString() }));
 const views: QuotaSnapshotView[] = data.map(agent => ({ installationId: `ins_${agent.providerId}`, providerId: agent.providerId, quota: agent.windows ? { windows: agent.windows, balances: balances[agent.providerId], context: null, planType: agent.plan, source: "native_pull", confidence: "provider_reported", collectedAtUnixMs: now, staleAfterUnixMs: now + 3600000, parserVersion: "fixture" } : null, diagnostic: agent.windows ? null : "claude_quota_login_required" }));
+const welcomeClient = { bootstrap: async () => ({ installations }), scanAgent: async () => ({ installations }), quotaSnapshots: async () => views } as unknown as CoreClient;
 const update = (id: string, status: AgentUpdate["status"], latestVersion: string, desktopVersion?: string): AgentUpdate => ({ installationId: `ins_${id}`, status, currentVersion: allData.find(agent => agent.providerId === id)!.version, latestVersion, desktopVersion, message: null, source: "fixture", canUpgrade: status === "available", checkedAt: now });
 document.documentElement.dataset.theme = "light";
 function Fixture() {
@@ -48,4 +52,8 @@ function Fixture() {
     <QuotaCenter views={empty ? [] : views} installations={empty ? [] : installations} agentUpdates={{ updates, check: () => setNotice("已检查版本（模拟）"), upgrade: () => { setUpdates(old => ({ ...old, ins_cursor: { ...old.ins_cursor, status: "updated" } })); setNotice("升级完成（模拟）"); }, openUpdater: () => setNotice("已打开宿主应用（模拟）") }} refreshProgress={progress} onRefresh={() => { setProgress({ running: true, completed: 0, total: data.length, unavailable: 0, failed: false }); setTimeout(() => setProgress({ running: false, completed: data.length, total: data.length, unavailable: data.filter(agent => !agent.windows).length, failed: false }), 800); }} />
   </main><Tooltips /></>;
 }
-createRoot(document.getElementById("root")!).render(<Fixture />);
+const query = new URLSearchParams(location.search);
+const language = SUPPORTED_LANGUAGES.find(item => item.id === query.get("lang"))?.id ?? "zh-CN";
+createRoot(document.getElementById("root")!).render(<I18nProvider language={resolveLanguage(language)}>
+  {query.has("welcome") ? <><AgentWelcome client={welcomeClient} onContinue={() => {}} renderIcon={id => <AgentIcon providerId={id} />} /><Tooltips /></> : <Fixture />}
+</I18nProvider>);

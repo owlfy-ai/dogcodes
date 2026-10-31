@@ -1,5 +1,6 @@
+import { t, useI18n, type ResolvedLanguage } from "./i18n";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { userFacingError } from "./userFacingError";
+import { localizedAgentError } from "./agentI18n";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { BootstrapSnapshot, CoreClient, InstallationSummary, QuotaSnapshotView, QuotaWindow } from "@dogcodes/protocol";
 import { quotaScopeLabel, quotaColor, quotaIsStale, quotaNativeResetLabel, quotaWindowHasReset, quotaWindowLabel, formatResetTime, remainingPercent, formatProviderBalance } from "./quotaPresentation";
@@ -10,18 +11,18 @@ import { WelcomeHerd } from "./WelcomeHerd";
 import "./agentWelcome.css";
 
 export const supportedAgents = [
-  { id: "codex", installUrl: "https://developers.openai.com/codex/cli/", name: "Codex", login: "codex login" },
-  { id: "claude-code", installUrl: "https://code.claude.com/docs/en/setup", name: "Claude Code", login: "claude auth login" },
-  { id: "grok", installUrl: "https://docs.x.ai/build/overview", name: "Grok Build", login: "打开终端运行 grok login" },
-  { id: "cursor", installUrl: "https://cursor.com/docs/cli/overview", name: "Cursor", login: "cursor-agent login" },
-  { id: "antigravity", installUrl: "https://antigravity.google/download", name: "Antigravity", login: "在 Antigravity 中登录" },
-  { id: "zcode", installUrl: "https://zcode.z.ai/en/docs/install", name: "ZCode", login: "在 ZCode 中登录并选择模型" },
-  { id: "kimi", installUrl: "https://moonshotai.github.io/kimi-code/", name: "Kimi Code", login: "打开终端运行 kimi login" },
-  { id: "codebuddy", installUrl: "https://www.codebuddy.cn/docs/cli/installation", name: "CodeBuddy", login: "在 CodeBuddy 中登录" },
-  { id: "pi", installUrl: "https://pi.dev/docs/latest/quickstart", name: "Pi", login: "在 Pi 中运行 /login，或配置模型服务" },
-  { id: "opencode", installUrl: "https://opencode.ai/docs/", name: "OpenCode", login: "opencode auth login" },
-  { id: "deepseek-harness", installUrl: "https://github.com/deepseek-ai/deepseek-harness#run", name: "DeepSeek Harness", login: "在 DeepSeek Harness 中配置模型服务" },
-  { id: "kiro", installUrl: "https://kiro.dev/downloads/", name: "Kiro", login: "kiro-cli login" },
+  { id: "codex", installUrl: "https://developers.openai.com/codex/cli/", name: "Codex" },
+  { id: "claude-code", installUrl: "https://code.claude.com/docs/en/setup", name: "Claude Code" },
+  { id: "grok", installUrl: "https://docs.x.ai/build/overview", name: "Grok Build" },
+  { id: "cursor", installUrl: "https://cursor.com/docs/cli/overview", name: "Cursor" },
+  { id: "antigravity", installUrl: "https://antigravity.google/download", name: "Antigravity" },
+  { id: "zcode", installUrl: "https://zcode.z.ai/en/docs/install", name: "ZCode" },
+  { id: "kimi", installUrl: "https://moonshotai.github.io/kimi-code/", name: "Kimi Code" },
+  { id: "codebuddy", installUrl: "https://www.codebuddy.cn/docs/cli/installation", name: "CodeBuddy" },
+  { id: "pi", installUrl: "https://pi.dev/docs/latest/quickstart", name: "Pi" },
+  { id: "opencode", installUrl: "https://opencode.ai/docs/", name: "OpenCode" },
+  { id: "deepseek-harness", installUrl: "https://github.com/deepseek-ai/deepseek-harness#run", name: "DeepSeek Harness" },
+  { id: "kiro", installUrl: "https://kiro.dev/downloads/", name: "Kiro" },
 ] as const;
 const withoutQuota = new Set(["codebuddy"]);
 const independentAccounts = new Set(["pi", "opencode", "deepseek-harness"]);
@@ -30,67 +31,68 @@ const canReadQuota = (installation: InstallationSummary) => !withoutQuota.has(in
     && installation.status !== "unsupported_version"));
 
 type Reading = { installation: InstallationSummary; view?: QuotaSnapshotView; pending?: boolean; failed?: boolean; observedAt?: number };
-export function welcomeStatus(reading?: Reading): { label: string; tone: string; detail: string } {
-  if (!reading) return { label: "未安装", tone: "muted", detail: "安装后重新检测，即可连接本机 Agent。" };
+export function welcomeStatus(reading?: Reading, lang: ResolvedLanguage = "zh-CN"): { label: string; tone: string; detail: string } {
+  if (!reading) return { label: t("agentUi.notInstalled", undefined, lang), tone: "muted", detail: t("agentUi.installHint", undefined, lang) };
   const { installation: i, view, pending, failed } = reading;
-  if (view?.quota?.confidence === "demo" || i.version === "demo") return { label: "演示数据", tone: "muted", detail: "仅用于界面预览，不代表本机安装或真实账户。" };
-  const accountIssue = agentAccountIssue(i, view);
+  if (view?.quota?.confidence === "demo" || i.version === "demo") return { label: t("agentUi.demo", undefined, lang), tone: "muted", detail: t("agentUi.demoHint", undefined, lang) };
+  const accountIssue = agentAccountIssue(i, view, lang);
   if (accountIssue) return { label: accountIssue.label, tone: "warning", detail: accountIssue.detail };
-  if (i.status === "unsupported_version") return { label: "暂不兼容", tone: "warning", detail: "本机客户端暂不兼容，可先进入工作台使用其他 Agent。" };
-  if (i.status === "broken") return { label: "连接失败", tone: "warning", detail: "原生连接检测未通过，请检查客户端及网络后重试。" };
-  if (pending) return { label: "验证授权中", tone: "muted", detail: "正在查询账户额度与重置时间…" };
+  if (i.status === "unsupported_version") return { label: t("agentUi.incompatible", undefined, lang), tone: "warning", detail: t("agentUi.incompatibleHint", undefined, lang) };
+  if (i.status === "broken") return { label: t("agentUi.connectionFailed", undefined, lang), tone: "warning", detail: t("agentUi.connectionFailedHint", undefined, lang) };
+  if (pending) return { label: t("agentUi.verifying", undefined, lang), tone: "muted", detail: t("agentUi.queryingHint", undefined, lang) };
   if (view?.diagnostic === "quota_exhausted")
-    return { label: "额度已用尽", tone: "warning", detail: "原生服务报告额度已用尽，请等待额度重置或检查套餐后重新检测。" };
+    return { label: t("agentUi.exhausted", undefined, lang), tone: "warning", detail: t("agentUi.exhaustedHint", undefined, lang) };
   if (view?.diagnostic === "claude_quota_token_expired")
-    return { label: "令牌待续期", tone: "warning", detail: "Claude Code 的短期访问令牌已到期，登录状态仍有效，无需重新登录。下次在终端或工作台用 Claude Code 对话时会自动续期。" };
+    return { label: t("agentUi.tokenExpired", undefined, lang), tone: "warning", detail: t("agentUi.tokenExpiredHint", undefined, lang) };
   if (quotaShowsLastReading(view?.diagnostic))
-    return { label: "额度查询受限", tone: "warning", detail: view?.quota?.windows.length
-      ? `原生额度服务暂时限制请求，显示的是 ${new Date(view.quota.collectedAtUnixMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} 的读数，稍后自动重试。`
-      : "原生额度服务暂时限制请求，请稍后重新检测。" };
+    return { label: t("agentUi.rateLimited", undefined, lang), tone: "warning", detail: view?.quota?.windows.length
+      ? t("agentUi.lastReadingHint", { time: new Date(view.quota.collectedAtUnixMs).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" }) }, lang)
+      : t("agentUi.rateLimitedHint", undefined, lang) };
   if (view?.diagnostic === "quota_network_error")
-    return { label: "额度查询网络异常", tone: "warning", detail: "未能连接原生额度服务，请检查网络和系统代理后重试。" };
+    return { label: t("agentUi.networkError", undefined, lang), tone: "warning", detail: t("agentUi.networkErrorHint", undefined, lang) };
   if (view?.diagnostic === "quota_timeout")
-    return { label: "额度查询超时", tone: "warning", detail: "原生连接已就绪，但额度查询超时。请稍后重新检测。" };
+    return { label: t("agentUi.timeout", undefined, lang), tone: "warning", detail: t("agentUi.timeoutHint", undefined, lang) };
   if (view?.diagnostic === "claude_quota_custom_provider")
-    return { label: "第三方模型", tone: "third-party", detail: "原生连接已通过；自定义服务凭证及额度尚未验证。" };
+    return { label: t("agentUi.customProvider", undefined, lang), tone: "third-party", detail: t("agentUi.customProviderHint", undefined, lang) };
   if (view?.diagnostic === "opencode_go_not_configured")
-    return { label: i.status === "ready" ? "连接就绪" : "Go 未配置", tone: i.status === "ready" ? "ready" : "warning", detail: "未配置 OpenCode Go API Key；连接 Go 订阅后可查询其额度。" };
+    return { label: i.status === "ready" ? t("agentUi.connected", undefined, lang) : t("agentUi.goMissing", undefined, lang), tone: i.status === "ready" ? "ready" : "warning", detail: t("agentUi.goMissingHint", undefined, lang) };
   // Authentication is an observation made when this run receives its response.
   // Expiring a quota reading later is not a new authentication failure.
   if (i.status === "ready" && view?.quota?.windows.length
     && !quotaIsStale(view.quota.staleAfterUnixMs, reading.observedAt ?? Date.now())
     && view.quota.confidence === "provider_reported")
-    return { label: "已登录", tone: "ready", detail: quotaIsStale(view.quota.staleAfterUnixMs)
-      ? "本轮检测时授权有效 · 额度读数已过期，可重新检测"
-      : "原生连接已通过 · 账户额度已验证" };
+    return { label: t("agentUi.loggedIn", undefined, lang), tone: "ready", detail: quotaIsStale(view.quota.staleAfterUnixMs)
+      ? t("agentUi.quotaVerifiedExpired", undefined, lang)
+      : t("agentUi.quotaVerified", undefined, lang) };
   if (i.status === "ready" && view?.quota?.balances?.length
     && !quotaIsStale(view.quota.staleAfterUnixMs, reading.observedAt ?? Date.now())
     && view.quota.confidence === "provider_reported")
-    return { label: "余额已验证", tone: "ready", detail: quotaIsStale(view.quota.staleAfterUnixMs)
-      ? "本轮供应商余额已验证 · 读数已过期，可重新检测"
-      : "原生连接已通过 · 供应商余额已验证" };
+    return { label: t("agentUi.balanceVerified", undefined, lang), tone: "ready", detail: quotaIsStale(view.quota.staleAfterUnixMs)
+      ? t("agentUi.balanceVerifiedExpired", undefined, lang)
+      : t("agentUi.balanceVerifiedHint", undefined, lang) };
   if (withoutQuota.has(i.providerId) && i.status === "ready")
-    return { label: "连接就绪", tone: "ready", detail: "原生会话检测已通过 · 暂不支持额度查询" };
+    return { label: t("agentUi.connected", undefined, lang), tone: "ready", detail: t("agentUi.unsupportedQuotaHint", undefined, lang) };
   if (independentAccounts.has(i.providerId) && i.status === "ready" && !failed)
-    return { label: "连接就绪", tone: "ready", detail: "原生会话检测已通过 · 当前未取得可查询的供应商余额或订阅额度。" };
-  return { label: failed ? "检测失败" : "授权待确认", tone: "warning", detail: "未取得有效账户读数。请检查网络或原生登录状态后重试。" };
+    return { label: t("agentUi.connected", undefined, lang), tone: "ready", detail: t("agentUi.noBalanceHint", undefined, lang) };
+  return { label: failed ? t("agentUi.detectionFailed", undefined, lang) : t("agentUi.authPending", undefined, lang), tone: "warning", detail: t("agentUi.noReadingHint", undefined, lang) };
 }
 
 function WindowRing({ window, quota, scope = "" }: { window?: QuotaWindow; quota?: QuotaSnapshotView["quota"]; scope?: string }) {
+  const { resolvedLanguage: lang } = useI18n();
   const expired = window && quotaWindowHasReset(window);
   const remaining = expired ? null : remainingPercent(window?.usedPercent);
-  const label = window ? quotaWindowLabel(window.windowMinutes, window.id) : "剩余额度";
+  const label = window ? quotaWindowLabel(window.windowMinutes, window.id, lang) : t("agentUi.remainingQuota", undefined, lang);
   const reset = window?.resetsAtUnix
-    ? expired ? "已到重置时间，待刷新" : `重置时间：${formatResetTime(window.resetsAtUnix)}`
-    : window && quota ? quotaNativeResetLabel(quota, window) || "重置时间未提供" : "";
+    ? expired ? t("agentUi.resetPending", undefined, lang) : t("agentUi.resetAt", { time: formatResetTime(window.resetsAtUnix, Date.now(), lang) }, lang)
+    : window && quota ? quotaNativeResetLabel(quota, window, lang) || t("agentUi.resetMissing", undefined, lang) : "";
   return <div className="welcome-window">
-    <div className="welcome-ring" role="img" aria-label={`${quotaScopeLabel(window?.scope)} ${label}：${remaining == null ? "未知" : `剩余 ${remaining}%`}`}>
+    <div className="welcome-ring" role="img" aria-label={`${quotaScopeLabel(window?.scope)} ${label}${lang.startsWith("zh") ? "：" : ": "}${remaining == null ? t("agentUi.unknown", undefined, lang) : t("agentUi.remainingPercent", { percent: new Intl.NumberFormat(lang, { maximumFractionDigits: 1 }).format(remaining!) }, lang)}`}>
       <svg viewBox="0 0 100 100" aria-hidden="true"><circle className="welcome-ring-track" cx="50" cy="50" r="42" />
         {remaining != null && <circle cx="50" cy="50" r="42" pathLength="100" stroke={quotaColor(remaining)} strokeDasharray={`${remaining} 100`} className="welcome-ring-value" />}</svg>
-      <span><b>{remaining == null ? "—" : remaining > 0 && remaining < 1 ? "<1" : Math.round(remaining)}{remaining != null && <small>%</small>}</b><em>{remaining === 0 ? "已用尽" : "剩余"}</em></span>
+      <span><b>{remaining == null ? "—" : remaining > 0 && remaining < 1 ? "<1" : Math.round(remaining)}{remaining != null && <small>%</small>}</b><em>{remaining === 0 ? t("agentUi.usedUp", undefined, lang) : t("agentUi.remaining", undefined, lang)}</em></span>
     </div>
     <div className="welcome-window-copy">
-      <span className="welcome-window-title"><strong>{window ? `${label.replace(/\s+/g, "")}剩余` : label}</strong>{scope && <em>{scope}</em>}</span>
+      <span className="welcome-window-title"><strong>{window ? t("agentUi.windowRemaining", { window: lang === "zh-CN" || lang === "zh-TW" ? label.replace(/\s+/g, "") : label }, lang) : label}</strong>{scope && <em>{scope}</em>}</span>
       {reset && <small>{reset}</small>}
     </div>
   </div>;
@@ -113,25 +115,27 @@ function awaitDetection<T>(request: Promise<T>, signal: AbortSignal, timeoutMs: 
 }
 
 export function InstallationLink({ url, name, className = "welcome-install-link", errorClassName = "welcome-error" }: { url: string; name: string; className?: string; errorClassName?: string }) {
+  const { resolvedLanguage: lang } = useI18n();
   const [error, setError] = useState(false);
   return <><a className={className} href={url} target="_blank" rel="noopener noreferrer"
-    aria-label={`${name}：前往官网安装`}
+    aria-label={t("agentUi.installWebsite", { name }, lang)}
     onClick={event => {
       if (!isTauri()) return;
       event.preventDefault(); setError(false);
       void invoke("open_website", { url }).catch(() => setError(true));
-    }}>安装 <span aria-hidden="true">↗</span></a>
-    {error && <span className={errorClassName} role="alert">无法打开浏览器，请重试或复制链接。</span>}</>;
+    }}>{t("agentUi.install", undefined, lang)} <span aria-hidden="true">↗</span></a>
+    {error && <span className={errorClassName} role="alert">{t("agentUi.browserFailed", undefined, lang)}</span>}</>;
 }
 
 export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
   client: CoreClient; onContinue: () => void; renderIcon: (id: string) => ReactNode;
   onDetected?: (provider: string, snapshot: BootstrapSnapshot) => void;
 }) {
+  const { resolvedLanguage: lang } = useI18n();
   const [readings, setReadings] = useState<Reading[]>([]);
   const [pendingAgents, setPendingAgents] = useState<string[]>(supportedAgents.map(a => a.id));
   const [failedAgents, setFailedAgents] = useState<string[]>([]);
-  const [failureDetails, setFailureDetails] = useState<Record<string, string>>({});
+  const [failureDetails, setFailureDetails] = useState<Record<string, unknown>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(false);
@@ -199,10 +203,10 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
           if (current()) setReadings(previous => previous.map(r => r.installation.providerId === agent.id ? { ...r, pending: false } : r));
         } catch (cause) {
           if (current()) {
-            setFailureDetails(previous => ({ ...previous, [agent.id]: userFacingError(cause, "暂时无法确认安装，请重新检测。") }));
+            setFailureDetails(previous => ({ ...previous, [agent.id]: cause }));
             setFailedAgents(previous => [...previous, agent.id]);
             setPendingAgents(previous => previous.filter(id => id !== agent.id));
-            setError("部分 Agent 检测失败，可重试。若有正在运行的对话，请等待其完成；其余卡片不受影响。");
+            setError("agentUi.partialFailure");
           }
         }
       })]);
@@ -233,8 +237,8 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
     const scanning = pendingAgents.includes(agent.id) && !reading;
     const failed = failedAgents.includes(agent.id);
     const uninstalled = !reading && !scanning && !failed;
-    const state = scanning ? { label: "检测中", tone: "muted", detail: "正在检测安装、登录与连接状态…" }
-      : failed ? { label: "检测失败", tone: "warning", detail: "本轮检测未完成，请检查原生客户端或网络后重试。" } : welcomeStatus(reading);
+    const state = scanning ? { label: t("agentUi.scanning", undefined, lang), tone: "muted", detail: t("agentUi.scanningHint", undefined, lang) }
+      : failed ? { label: t("agentUi.detectionFailed", undefined, lang), tone: "warning", detail: t("agentUi.incompleteHint", undefined, lang) } : welcomeStatus(reading, lang);
     return { agent, reading, scanning, failed, uninstalled, state };
   });
   const connected = cards.filter(card => !card.uninstalled);
@@ -244,12 +248,12 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
   const scanningCount = pendingAgents.length;
   const logo = new URL("../src-tauri/icons/128x128.png", import.meta.url).href;
   const rescan = <button className="welcome-rescan" type="button" disabled={refreshing} onClick={() => void run()}>
-    {refreshing ? <><span className="welcome-spinner" aria-hidden="true" />正在检测…</> : <><RefreshIcon />重新检测</>}
+    {refreshing ? <><span className="welcome-spinner" aria-hidden="true" />{t("agentUi.rescanning", undefined, lang)}</> : <><RefreshIcon />{t("agentUi.rescan", undefined, lang)}</>}
   </button>;
 
   const renderCard = ({ agent, reading, scanning, failed, uninstalled, state }: typeof cards[number], index: number) => {
     if (uninstalled) return <article className="welcome-agent-card uninstalled" key={agent.id} aria-label={agent.name} style={{ "--stagger": index } as CSSProperties}>
-      <header><span className="welcome-agent-icon">{renderIcon(agent.id)}</span><div><h2>{agent.name}</h2><small>未安装</small></div></header>
+      <header><span className="welcome-agent-icon">{renderIcon(agent.id)}</span><div><h2>{agent.name}</h2><small>{t("agentUi.notInstalled", undefined, lang)}</small></div></header>
       <InstallationLink url={agent.installUrl} name={agent.name} />
     </article>;
     const quota = reading?.view?.quota;
@@ -260,16 +264,16 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
     // A reading that could not be refreshed is shown greyed with its time, never as current.
     const outdated = !scanning && displayWindows.length > 0 && quotaShowsLastReading(reading?.view?.diagnostic);
     const busy = scanning || Boolean(reading?.pending);
-    const emptyMessage = scanning || reading?.pending ? "正在等待检测结果" : failed ? "检测未完成，请重新检测"
-      : withoutQuota.has(agent.id) ? "暂未接入账户额度查询"
-      : reading?.view?.diagnostic === "opencode_go_not_configured" ? "未配置 OpenCode Go API Key，连接 Go 订阅后可查询额度"
-      : independentAccounts.has(agent.id) ? (reading?.failed ? "额度检测失败，请重新检测" : state.tone === "warning" ? state.detail : "当前未取得可查询的供应商余额或订阅额度")
-      : "暂无可用额度读数";
+    const emptyMessage = scanning || reading?.pending ? t("agentUi.waiting", undefined, lang) : failed ? t("agentUi.incomplete", undefined, lang)
+      : withoutQuota.has(agent.id) ? t("agentUi.quotaUnsupported", undefined, lang)
+      : reading?.view?.diagnostic === "opencode_go_not_configured" ? t("agentUi.goMissingEmpty", undefined, lang)
+      : independentAccounts.has(agent.id) ? (reading?.failed ? t("agentUi.quotaFailed", undefined, lang) : state.tone === "warning" ? state.detail : t("agentUi.noBalance", undefined, lang))
+      : t("agentUi.noQuota", undefined, lang);
     return <article className={`welcome-agent-card ${state.tone}${busy ? " busy" : ""}`} key={agent.id} aria-label={agent.name} style={{ "--stagger": index } as CSSProperties}>
       <header>
         <span className="welcome-agent-icon">{renderIcon(agent.id)}</span>
-        <div><h2>{agent.name}</h2><small>{reading ? "已安装" : scanning ? "正在寻找本机客户端" : "安装状态待确认"}{outdated && quota && ` · 上次读数 ${new Date(quota.collectedAtUnixMs).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}`}</small></div>
-        <span className={`welcome-status ${state.tone}`} data-tooltip={failed ? failureDetails[agent.id] : state.detail} aria-busy={busy}>
+        <div><h2>{agent.name}</h2><small>{reading ? t("agentUi.installed", undefined, lang) : scanning ? t("agentUi.finding", undefined, lang) : t("agentUi.installationPending", undefined, lang)}{outdated && quota && ` · ${t("agentUi.lastReading", { time: new Date(quota.collectedAtUnixMs).toLocaleString(lang, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) }, lang)}`}</small></div>
+        <span className={`welcome-status ${state.tone}`} data-tooltip={failed ? localizedAgentError(failureDetails[agent.id], "agentUi.scanUnavailable", lang) : state.detail} aria-busy={busy}>
           {busy ? <span className="welcome-spinner" aria-hidden="true" /> : <i aria-hidden="true" />}{state.label}
           {!scanning && !failed && reading && needsAgentLogin(reading.installation, reading.view) &&
             <AgentLogin key={reading.installation.installationId} installationId={reading.installation.installationId} name={agent.name} />}
@@ -277,15 +281,15 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
       </header>
       <div className={`welcome-card-quotas${outdated ? " outdated" : ""}`}>
         {!scanning && (displayWindows.length > 0 || !!quota?.balances?.length) ? <>
-          {groups.map(group => <section key={group} aria-label={quotaScopeLabel(group) || "账户额度"}>
+          {groups.map(group => <section key={group} aria-label={quotaScopeLabel(group) || t("agentUi.accountQuota", undefined, lang)}>
           <div className="welcome-rings">{displayWindows.filter(w => (w.scope ?? "") === group)
             .map(w => <WindowRing key={w.id} window={w} quota={quota} scope={agent.id !== "antigravity" ? quotaScopeLabel(group) : ""} />)}</div>
           </section>)}
-          {!!quota?.balances?.length && <section className="welcome-provider-balances" aria-label="供应商余额">
+          {!!quota?.balances?.length && <section className="welcome-provider-balances" aria-label={t("agentUi.providerBalance", undefined, lang)}>
             {quota.balances.map(balance => <div className="welcome-provider-balance" key={`${balance.label}:${balance.currency}`}>
-              <span>{balance.label}</span><strong>{formatProviderBalance(balance.amount, balance.currency)}</strong>
+              <span>{balance.label}</span><strong>{formatProviderBalance(balance.amount, balance.currency, lang)}</strong>
             </div>)}
-            <small>{quotaIsStale(quota.staleAfterUnixMs) ? "读数已过期，可重新检测 · " : ""}更新于 {new Date(quota.collectedAtUnixMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small>
+            <small>{quotaIsStale(quota.staleAfterUnixMs) ? `${t("agentUi.stale", undefined, lang)} · ` : ""}{t("agentUi.updatedAt", { time: new Date(quota.collectedAtUnixMs).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" }) }, lang)}</small>
           </section>}
         </> : <div className={`welcome-empty-quota${busy ? " loading" : ""}`}>
           {busy && <span className="welcome-skeleton" aria-hidden="true"><i /><i /></span>}
@@ -293,7 +297,7 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
         </div>}
       </div>
       {reading && <footer>
-        <details><summary>安装位置</summary><code>{reading.installation.executable}</code></details>
+        <details><summary>{t("agentUi.installationPath", undefined, lang)}</summary><code>{reading.installation.executable}</code></details>
       </footer>}
     </article>;
   };
@@ -301,16 +305,16 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
   return <main className="agent-welcome">
     <header className="welcome-topbar" data-tauri-drag-region="deep">
       <span className="welcome-brand"><img src={logo} alt="" />dog.codes</span>
-      <button className="welcome-skip" type="button" onClick={onContinue}>跳过，进入工作台 <span aria-hidden="true">→</span></button>
+      <button className="welcome-skip" type="button" onClick={onContinue}>{t("agentUi.skip", undefined, lang)} <span aria-hidden="true">→</span></button>
     </header>
     <div className="welcome-page-body">
       <section className="welcome-hero">
         <div className="welcome-hero-copy">
-          <p className="welcome-eyebrow"><span aria-hidden="true" />欢迎使用 dog.codes</p>
-          <h1>把你的 Coding Agent<br />召集到一处</h1>
-          <p className="welcome-lede">自动发现本机已安装的 Agent，统一查看登录状态与剩余额度。一个工作台，随时切换、协同完成任务。</p>
+          <p className="welcome-eyebrow"><span aria-hidden="true" />{t("agentUi.welcome", undefined, lang)}</p>
+          <h1>{t("agentUi.heroFirst", undefined, lang)}<br />{t("agentUi.heroSecond", undefined, lang)}</h1>
+          <p className="welcome-lede">{t("agentUi.intro", undefined, lang)}</p>
           <div className="welcome-actions">
-            <button className="welcome-primary" type="button" onClick={onContinue}>开始使用 <span aria-hidden="true">→</span></button>
+            <button className="welcome-primary" type="button" onClick={onContinue}>{t("agentUi.start", undefined, lang)} <span aria-hidden="true">→</span></button>
             {rescan}
           </div>
         </div>
@@ -320,26 +324,26 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
             return { id: agent.id, tone: card.reading ? "installed" : card.scanning ? "scanning" : card.failed ? "failed" : "missing" };
           })} />
           <dl className="welcome-stats" aria-live="polite">
-            <div className="ready"><dt>已就绪</dt><dd>{readyCount}</dd></div>
-            <div className="attention"><dt>需处理</dt><dd>{attentionCount}</dd></div>
-            <div><dt>{scanningCount ? "检测中" : "可添加"}</dt><dd>{scanningCount || available.length}</dd></div>
+            <div className="ready"><dt>{t("agentUi.ready", undefined, lang)}</dt><dd>{readyCount}</dd></div>
+            <div className="attention"><dt>{t("agentUi.attention", undefined, lang)}</dt><dd>{attentionCount}</dd></div>
+            <div><dt>{scanningCount ? t("agentUi.scanning", undefined, lang) : t("agentUi.addable", undefined, lang)}</dt><dd>{scanningCount || available.length}</dd></div>
           </dl>
         </div>
       </section>
 
-      {error && <p className="welcome-error" role="alert">{error}</p>}
+      {error && <p className="welcome-error" role="alert">{t(error, undefined, lang)}</p>}
 
       <section className="welcome-section" aria-labelledby="welcome-connected-title">
         <header className="welcome-section-heading">
-          <div><h2 id="welcome-connected-title">你的 Agent<span className="welcome-count">{connected.length}</span></h2><p>{refreshing ? "正在检查本机连接…" : `已发现 ${installedAgents.size} 个本机 Agent`}</p></div>
+          <div><h2 id="welcome-connected-title">{t("agentUi.yourAgents", undefined, lang)}<span className="welcome-count">{connected.length}</span></h2><p>{refreshing ? t("agentUi.checkingConnections", undefined, lang) : t("agentUi.discovered", { count: installedAgents.size }, lang)}</p></div>
         </header>
         {connected.length ? <div className="welcome-agent-grid">{connected.map(renderCard)}</div>
-          : <div className="welcome-none"><b>还没有发现本机 Agent</b><p>从下方安装任意一个 Coding Agent，完成后点击“重新检测”。</p></div>}
+          : <div className="welcome-none"><b>{t("agentUi.noneFound", undefined, lang)}</b><p>{t("agentUi.noneFoundHint", undefined, lang)}</p></div>}
       </section>
 
       {available.length > 0 && <section className="welcome-section" aria-labelledby="welcome-available-title">
         <header className="welcome-section-heading">
-          <div><h2 id="welcome-available-title">更多可连接的 Agent<span className="welcome-count">{available.length}</span></h2><p>安装后重新检测，即可在工作台中直接使用。</p></div>
+          <div><h2 id="welcome-available-title">{t("agentUi.moreAgents", undefined, lang)}<span className="welcome-count">{available.length}</span></h2><p>{t("agentUi.moreAgentsHint", undefined, lang)}</p></div>
         </header>
         <div className="welcome-available-grid">{available.map(renderCard)}</div>
       </section>}

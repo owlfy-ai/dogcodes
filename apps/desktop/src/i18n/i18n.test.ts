@@ -75,6 +75,18 @@ describe("i18n core", () => {
     }
   });
 
+  it("covers agent pages in every locale with matching interpolation parameters", () => {
+    const reference = LOCALES.en.agentUi;
+    for (const lang of resolvedLanguages) {
+      const dictionary = LOCALES[lang].agentUi;
+      expect(Object.keys(dictionary).sort()).toEqual(Object.keys(reference).sort());
+      for (const key of Object.keys(reference) as (keyof typeof reference)[]) {
+        expect(dictionary[key].trim()).not.toBe("");
+        expect((dictionary[key].match(/\{\w+\}/g) ?? []).sort()).toEqual((reference[key].match(/\{\w+\}/g) ?? []).sort());
+      }
+    }
+  });
+
   it("interpolates parameters in translation strings", () => {
     const zh = translate("welcome.readyAgentSelected", { agent: "Codex" }, "zh-CN");
     expect(zh).toContain("Codex");

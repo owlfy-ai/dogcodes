@@ -1,3 +1,4 @@
+import { t, useI18n, type ResolvedLanguage } from "./i18n";
 import type { DragEvent, KeyboardEvent } from "react";
 import { providerLabel } from "./agentPresentation";
 import { moveAgent, setAgentEnabled, useAgentPreferencesWriteState } from "./agentPreferences";
@@ -7,7 +8,8 @@ export function AgentManagementControls({ providerId, enabled, order, onDragStar
   providerId: string; enabled: boolean; order: string[];
   onDragStart: (event: DragEvent<HTMLButtonElement>) => void; onDragEnd: () => void;
 }) {
-  const label = providerLabel(providerId);
+  const { resolvedLanguage: lang } = useI18n();
+  const label = providerLabel(providerId, lang);
   const settings = useAgentPreferencesWriteState();
   const saving = settings.busy || settings.unconfirmed;
   const move = (event: KeyboardEvent) => {
@@ -19,12 +21,12 @@ export function AgentManagementControls({ providerId, enabled, order, onDragStar
   };
   return <div className="agent-management-controls">
     <button type="button" className="agent-drag-handle" draggable={!saving} disabled={saving} onDragStart={onDragStart} onDragEnd={onDragEnd} onKeyDown={move}
-      aria-label={`调整 ${label} 排序`} data-tooltip="拖拽排序">
+      aria-label={t("agentUi.reorder", { name: label }, lang)} data-tooltip={t("agentUi.dragReorder", undefined, lang)}>
       <svg viewBox="0 0 16 20" width="14" height="18" fill="currentColor" aria-hidden="true"><circle cx="5" cy="4" r="1.3"/><circle cx="11" cy="4" r="1.3"/><circle cx="5" cy="10" r="1.3"/><circle cx="11" cy="10" r="1.3"/><circle cx="5" cy="16" r="1.3"/><circle cx="11" cy="16" r="1.3"/></svg>
     </button>
-    <span className="agent-enabled-label">{enabled ? "已启用" : "已禁用"}</span>
-    <button type="button" role="switch" className="agent-enabled-switch" aria-label={`启用 ${label}`} aria-checked={enabled}
-      data-tooltip={enabled ? "禁用后将从 Agent 列表中隐藏" : "启用后可在 Agent 列表中选择"}
+    <span className="agent-enabled-label">{enabled ? t("agentUi.enabled", undefined, lang) : t("agentUi.disabled", undefined, lang)}</span>
+    <button type="button" role="switch" className="agent-enabled-switch" aria-label={t("agentUi.enableAgent", { name: label }, lang)} aria-checked={enabled}
+      data-tooltip={enabled ? t("agentUi.disableHint", undefined, lang) : t("agentUi.enableHint", undefined, lang)}
       onClick={() => setAgentEnabled(providerId, !enabled)}><span /></button>
   </div>;
 }

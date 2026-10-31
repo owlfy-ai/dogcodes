@@ -76,6 +76,12 @@ describe("UiLanguage switching across international languages", () => {
     expect(entries[2].hasAttribute("aria-haspopup")).toBe(false);
     await click(trigger);
     expect(document.querySelector(".preferences-popover")?.textContent).not.toContain("Connect phone");
+    await click(entries[1]);
+    const management = element.querySelector(".agent-management")!;
+    expect(management.textContent).toContain("Enabled");
+    expect(management.textContent).toContain("Not installed");
+    expect(management.textContent).not.toMatch(/\p{Script=Han}/u);
+    expect(management.querySelector('[role="switch"]')?.getAttribute("aria-label")).toMatch(/^Enable /);
   });
 
   it("opens phone pairing as a page and cancels its invitation only when navigating away", async () => {

@@ -9,6 +9,7 @@ import {
   getPreferenceLabels,
   translate as t,
   I18nProvider,
+  useI18n,
 } from "./i18n";
 import { ulid } from "ulid";
 import { SubmissionRecovery, usePendingSubmissions, useUnconfirmedSubmissions } from "./SubmissionRecovery";
@@ -91,7 +92,7 @@ import { ConversationHistory } from "./ConversationHistory";
 const MemoConversationHistory = memo(ConversationHistory);
 import { timelineItemRole } from "./timelinePresentation";
 import { RequestEpoch, changeSelection } from "./requestEpoch";
-import { formatResetTime, formatProviderBalance, quotaScopeLabel, quotaPlanLabel, quotaNativeResetLabel, nativeResetDisplay, antigravityQuotaForModel, ringQuotaWindow, quotaColor, quotaIsExhausted, quotaIsStale, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
+import { formatResetTime, formatProviderBalance, formatQuotaPercent, quotaScopeLabel, quotaPlanLabel, quotaNativeResetLabel, nativeResetDisplay, antigravityQuotaForModel, ringQuotaWindow, quotaColor, quotaIsExhausted, quotaIsStale, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
 import { createQuotaRefresh, type QuotaRefreshProgress } from "./quotaRefresh";
 import { useLoadingVisibility } from "./useLoadingVisibility";
 import { quotaShowsLastReading } from "./quotaFallback";
@@ -1142,17 +1143,17 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   };
   const windowControls = <SidebarWindowControls collapsed={sidebarCollapsed} onToggle={toggleSidebar} canBack={navigation.canBack} canForward={navigation.canForward} onBack={() => navigateConversation(-1)} onForward={() => navigateConversation(1)} />;
 
-  if (welcomeOpen) return <AgentWelcome client={client}
+  if (welcomeOpen) return <I18nProvider language={uiLanguage}><AgentWelcome client={client}
     onDetected={(provider, detected) => setSnapshot(current => current ? { ...current,
       installations: [...current.installations.filter(i => i.providerId !== provider), ...detected.installations.filter(i => i.providerId === provider)],
-    } : detected)} onContinue={closeWelcome} renderIcon={id => <AgentIcon providerId={id} />} />;
+    } : detected)} onContinue={closeWelcome} renderIcon={id => <AgentIcon providerId={id} />} /></I18nProvider>;
   if (!snapshot) return startupError ? <StartupRecovery status="unavailable" onRetry={() => { setStartupError(false); setError(null); void refresh(); }} /> : <StartupShell />;
   if (!selectedTask) {
     return <StartupRecovery status="unavailable" onRetry={() => { selectTask(null); void refresh(); }} />;
   }
 
   return (
-    <I18nProvider initialLanguage={uiLanguage}>
+    <I18nProvider language={uiLanguage}>
       <main className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${activeView === "conversation" && reviewOpen && !reviewWindow.detached ? " review-expanded" : ""}`} style={{ "--sidebar-width": `${sidebarWidth.width}px`, "--review-width": `${reviewWidth.width}px` } as React.CSSProperties}>
         <aside id="app-sidebar" className="sidebar" hidden={sidebarCollapsed}>
         <header className="sidebar-titlebar" data-tauri-drag-region="deep">
@@ -1414,27 +1415,27 @@ export function ComposerInput({ draft, setDraft }: { draft: string; setDraft: (v
 }
 
 
-export function quotaDiagnostic(code?: string | null): string {
+export function quotaDiagnostic(code?: string | null, lang: ResolvedLanguage = "zh-CN"): string {
   switch (code) {
-    case "quota_network_error": return "额度查询网络异常，请检查网络和系统代理后重试。";
-    case "quota_timeout": return "额度查询超时，请稍后重试或检查网络和系统代理。";
-    case "quota_login_required": return "额度查询授权缺失、失效或被拒绝，请检查原生客户端登录状态或 API Key。";
-    case "quota_subscription_required": return "当前账号没有有效订阅或套餐已到期，请在原生客户端确认订阅或切换账号、模型。";
+    case "quota_network_error": return t("agentUi.quotaNetworkHint", undefined, lang);
+    case "quota_timeout": return t("agentUi.quotaTimeoutHint", undefined, lang);
+    case "quota_login_required": return t("agentUi.quotaLoginHint", undefined, lang);
+    case "quota_subscription_required": return t("agentUi.quotaSubscriptionHint", undefined, lang);
     case "quota_access_denied": return "当前账号没有服务或模型访问权限，请检查账号资格及服务配置。";
-    case "quota_not_configured": return "Agent 尚未配置好，请检查原生客户端的模型、服务及运行环境。";
-    case "quota_exhausted": return "当前 Agent 额度已用尽，请等待重置或切换 Agent。";
-    case "quota_rate_limited": return "额度接口请求暂时受限，请稍后重试。";
-    case "opencode_go_not_configured": return "未配置 OpenCode Go 的 API Key。请在 OpenCode 中连接 Go 订阅后刷新；其他供应商的会话用量仍可读取。";
-    case "claude_quota_custom_provider": return "Claude Code 当前使用自定义 API 服务，无法提供订阅额度监控。";
-    case "claude_quota_login_required": return "未找到可用的 Claude 订阅授权，或授权已失效/缺少额度权限。请在 Claude Code 中使用订阅账号登录后重试；API Key 不提供此订阅额度。";
-    case "claude_quota_transport_unavailable": return "额度查询需要本机 curl，目前无法启动。";
-    case "claude_quota_rate_limited": return "Claude 额度接口请求受限，稍后自动重试。";
+    case "quota_not_configured": return t("agentUi.quotaConfigurationHint", undefined, lang);
+    case "quota_exhausted": return t("agentUi.quotaExhaustedHint", undefined, lang);
+    case "quota_rate_limited": return t("agentUi.quotaRateHint", undefined, lang);
+    case "opencode_go_not_configured": return t("agentUi.goConfigurationHint", undefined, lang);
+    case "claude_quota_custom_provider": return t("agentUi.claudeCustomHint", undefined, lang);
+    case "claude_quota_login_required": return t("agentUi.claudeLoginHint", undefined, lang);
+    case "claude_quota_transport_unavailable": return t("agentUi.curlMissing", undefined, lang);
+    case "claude_quota_rate_limited": return t("agentUi.claudeRateHint", undefined, lang);
     case "claude_quota_token_expired": return "Claude Code 的短期访问令牌已到期，登录状态仍有效，无需重新登录。下次在终端或这里用 Claude Code 对话时会自动续期。";
     case "claude_quota_network_error":
-    case "claude_quota_timeout": return "Claude 额度查询连接失败或超时，请检查网络和系统代理。";
+    case "claude_quota_timeout": return t("agentUi.claudeNetworkHint", undefined, lang);
     case "claude_quota_invalid_response":
-    case "claude_quota_no_windows": return "Claude 接口未返回可识别的订阅额度窗口。";
-    default: return "暂无额度读数（尚未上报、暂时不可用或不支持）";
+    case "claude_quota_no_windows": return t("agentUi.claudeInvalidHint", undefined, lang);
+    default: return t("agentUi.quotaEmptyHint", undefined, lang);
   }
 }
 
@@ -1571,6 +1572,7 @@ export function QuotaPanel({
   installations?: Array<Pick<InstallationSummary, "installationId" | "version"> & Partial<Pick<InstallationSummary, "providerId" | "status">>>;
   agentUpdates?: AgentUpdateActions;
 }) {
+  const { resolvedLanguage: lang } = useI18n();
   const preferences = useAgentPreferences();
   const [dragged, setDragged] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -1586,8 +1588,8 @@ export function QuotaPanel({
     const engine = installations.find((installation) => installation.installationId === installationId)?.version;
     const desktop = agentUpdates?.updates[installationId]?.desktopVersion;
     const provider = visible.find(view => view.installationId === installationId)?.providerId;
-    if (desktop) return `客户端 ${desktop} · 引擎 ${engine ?? "版本未知"}`;
-    return `${provider === "codex" || provider === "zcode" ? "引擎 " : ""}${engine ?? "版本未知"}`;
+    if (desktop) return t("agentUi.clientEngine", { client: desktop, engine: engine ?? t("agentUi.unknownVersion", undefined, lang) }, lang);
+    return provider === "codex" || provider === "zcode" ? t("agentUi.engine", { version: engine ?? t("agentUi.unknownVersion", undefined, lang) }, lang) : engine ?? t("agentUi.unknownVersion", undefined, lang);
   };
   const cards = <div className="quota-panel agent-management-grid">
     {visible.map(view => {
@@ -1595,10 +1597,10 @@ export function QuotaPanel({
       const installed = installations.some(item => item.installationId === view.installationId);
       const installation = installations.find(item => item.installationId === view.installationId);
       const loginAgent = supportedAgents.find(agent => agent.id === view.providerId);
-      const accountIssue = agentAccountIssue(installation, view);
+      const accountIssue = agentAccountIssue(installation, view, lang);
       const loginRequired = management && loginAgent && needsAgentLogin(installation, view);
       const enabled = !preferences.disabled.includes(view.providerId);
-      return <section className="agent-management-card" key={view.installationId} aria-label={providerLabel(view.providerId)}
+      return <section className="agent-management-card" key={view.installationId} aria-label={providerLabel(view.providerId, lang)}
         data-disabled={management && !enabled || undefined} data-dragging={dragged === view.providerId || undefined} data-drop-target={dropTarget === view.providerId || undefined}
         onDragOver={management ? event => { if (!dragged || dragged === view.providerId || !event.dataTransfer.types.includes(AGENT_DRAG_TYPE)) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTarget(view.providerId); } : undefined}
         onDrop={management ? event => { if (!dragged || event.dataTransfer.getData(AGENT_DRAG_TYPE) !== dragged) return; event.preventDefault(); moveAgent(dragged, view.providerId, providerOrder); endDrag(); } : undefined}>
@@ -1606,36 +1608,36 @@ export function QuotaPanel({
           onDragStart={event => { event.dataTransfer.setData(AGENT_DRAG_TYPE, view.providerId); event.dataTransfer.effectAllowed = "move"; setDragged(view.providerId); }} onDragEnd={endDrag} />}
         <header className="agent-card-heading">
           <AgentIcon providerId={view.providerId} />
-          <div className="agent-card-identity"><h3>{providerLabel(view.providerId)}</h3>
+          <div className="agent-card-identity"><h3>{providerLabel(view.providerId, lang)}</h3>
             {loginRequired ? <span className="agent-card-login-status">{accountIssue!.label}<AgentLogin installationId={view.installationId} name={loginAgent.name} /></span>
-              : <span>{accountIssue?.label ?? (quota ? quotaPlanLabel(quota) || (quota.balances?.length ? "供应商余额" : "订阅额度") : "额度暂不可用")}</span>}
+              : <span>{accountIssue?.label ?? (quota ? quotaPlanLabel(quota, lang) || (quota.balances?.length ? t("agentUi.providerBalance", undefined, lang) : t("agentUi.subscriptionQuota", undefined, lang)) : t("agentUi.quotaUnavailable", undefined, lang))}</span>}
           </div>
-          {quota && <time className="agent-card-updated" dateTime={new Date(quota.collectedAtUnixMs).toISOString()} data-tooltip={new Date(quota.collectedAtUnixMs).toLocaleString()}>更新于 {new Date(quota.collectedAtUnixMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}
+          {quota && <time className="agent-card-updated" dateTime={new Date(quota.collectedAtUnixMs).toISOString()} data-tooltip={new Date(quota.collectedAtUnixMs).toLocaleString(lang)}>{t("agentUi.updatedAt", { time: new Date(quota.collectedAtUnixMs).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" }) }, lang)}</time>}
         </header>
         <div className="agent-card-content">
           {quota ? <>
-            {!!quota.balances?.length && <div className="agent-provider-balances" aria-label="供应商余额">
-              {quota.balances.map(balance => <div className="agent-quota-label" key={`${balance.label}:${balance.currency}`}><span>{balance.label}</span><strong>{formatProviderBalance(balance.amount, balance.currency)}</strong></div>)}
+            {!!quota.balances?.length && <div className="agent-provider-balances" aria-label={t("agentUi.providerBalance", undefined, lang)}>
+              {quota.balances.map(balance => <div className="agent-quota-label" key={`${balance.label}:${balance.currency}`}><span>{balance.label}</span><strong>{formatProviderBalance(balance.amount, balance.currency, lang)}</strong></div>)}
             </div>}
-            {quota.windows.length > 0 && <div className="agent-quota-caption">剩余额度</div>}
+            {quota.windows.length > 0 && <div className="agent-quota-caption">{t("agentUi.remainingQuota", undefined, lang)}</div>}
             <div className="agent-quota-windows">
               {quota.windows.map(window => {
                 const reset = quotaWindowHasReset(window);
                 const remaining = reset ? null : remainingPercent(window.usedPercent);
-                const label = `${quotaScopeLabel(window.scope) ? `${quotaScopeLabel(window.scope)} · ` : ""}${quotaWindowLabel(window.windowMinutes, window.id)}`;
-                const resetLabel = window.resetsAtUnix ? `重置时间：${formatResetTime(window.resetsAtUnix)}` : quotaNativeResetLabel(quota, window);
+                const label = `${quotaScopeLabel(window.scope) ? `${quotaScopeLabel(window.scope)} · ` : ""}${quotaWindowLabel(window.windowMinutes, window.id, lang)}`;
+                const resetLabel = window.resetsAtUnix ? t("agentUi.resetAt", { time: formatResetTime(window.resetsAtUnix, Date.now(), lang) }, lang) : quotaNativeResetLabel(quota, window, lang);
                 return <div className="agent-quota-window" key={window.id}>
-                  <div className="agent-quota-label"><span>{label}</span><strong style={remaining === 0 ? { color: quotaColor(0) } : undefined}>{reset ? "待刷新" : remaining == null ? "未知" : `${remaining}%`}</strong></div>
-                  <div className="agent-quota-meter" role={remaining == null ? undefined : "progressbar"} aria-label={`${label}剩余额度`} aria-valuemin={remaining == null ? undefined : 0} aria-valuemax={remaining == null ? undefined : 100} aria-valuenow={remaining ?? undefined} data-unknown={remaining == null || undefined}>
+                  <div className="agent-quota-label"><span>{label}</span><strong style={remaining === 0 ? { color: quotaColor(0) } : undefined}>{reset ? t("agentUi.refreshPending", undefined, lang) : remaining == null ? t("agentUi.unknown", undefined, lang) : formatQuotaPercent(remaining, lang)}</strong></div>
+                  <div className="agent-quota-meter" role={remaining == null ? undefined : "progressbar"} aria-label={`${label}${lang.startsWith("zh") ? "" : " "}${t("agentUi.remainingQuota", undefined, lang)}`} aria-valuemin={remaining == null ? undefined : 0} aria-valuemax={remaining == null ? undefined : 100} aria-valuenow={remaining ?? undefined} data-unknown={remaining == null || undefined}>
                     {remaining != null && <i style={{ width: `${remaining}%`, background: quotaColor(remaining) }} />}
                   </div>
-                  <small className="agent-quota-reset">{reset ? "已到重置时间，待刷新" : remaining == null ? "用量未知" : remaining === 0 ? "已用尽" : ""}{!reset && resetLabel && <span>{resetLabel}</span>}</small>
+                  <small className="agent-quota-reset">{reset ? t("agentUi.resetPending", undefined, lang) : remaining == null ? t("agentUi.usageUnknown", undefined, lang) : remaining === 0 ? t("agentUi.usedUp", undefined, lang) : ""}{!reset && resetLabel && <span>{resetLabel}</span>}</small>
                 </div>;
               })}
             </div>
-            {((!quota.windows.length && !quota.balances?.length) || quotaShowsLastReading(view.diagnostic)) && <p className="agent-quota-notice" data-outdated={quota.windows.length > 0 || undefined}>{quotaDiagnostic(view.diagnostic)}{quota.windows.length > 0 && "当前显示上次读数。"}</p>}
-            {quota.context && <div className="agent-context"><span>当前会话上下文</span><b>{quota.context.usedTokens.toLocaleString()} / {quota.context.windowTokens.toLocaleString()}</b>{quota.context.cacheHitRatePercent != null && <small>缓存命中 {quota.context.cacheHitRatePercent.toFixed(1)}%</small>}</div>}
-          </> : <p className="agent-quota-notice">{quotaDiagnostic(view.diagnostic)}</p>}
+            {((!quota.windows.length && !quota.balances?.length) || quotaShowsLastReading(view.diagnostic)) && <p className="agent-quota-notice" data-outdated={quota.windows.length > 0 || undefined}>{quotaDiagnostic(view.diagnostic, lang)}{quota.windows.length > 0 && t("agentUi.previousReading", undefined, lang)}</p>}
+            {quota.context && <div className="agent-context"><span>{t("agentUi.sessionContext", undefined, lang)}</span><b>{quota.context.usedTokens.toLocaleString(lang)} / {quota.context.windowTokens.toLocaleString(lang)}</b>{quota.context.cacheHitRatePercent != null && <small>{t("agentUi.cacheHit", { percent: new Intl.NumberFormat(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(quota.context.cacheHitRatePercent) }, lang)}</small>}</div>}
+          </> : <p className="agent-quota-notice">{quotaDiagnostic(view.diagnostic, lang)}</p>}
         </div>
         {installed && <footer className="agent-card-footer">
           <div className="agent-card-version" data-tooltip={versionFor(view.installationId)} data-tooltip-overflow="">{versionFor(view.installationId)}</div>
@@ -1647,10 +1649,10 @@ export function QuotaPanel({
   if (!uninstalled.length) return cards;
   return <>{cards}
     <section className="agent-uninstalled" aria-labelledby="agent-uninstalled-title">
-      <header><h3 id="agent-uninstalled-title">未安装</h3><span>安装后重新检测即可启用</span>
+      <header><h3 id="agent-uninstalled-title">{t("agentUi.notInstalled", undefined, lang)}</h3><span>{t("agentUi.installRescanHint", undefined, lang)}</span>
         {onDetect && <button className="agent-detect-button" type="button" disabled={detecting} aria-busy={detecting}
           onClick={() => { setDetecting(true); void onDetect(uninstalled.map(agent => agent.id)).finally(() => setDetecting(false)); }}>
-          {detecting && <span className="task-running-spinner" aria-hidden="true" />}{detecting ? "正在检测…" : "重新检测"}
+          {detecting && <span className="task-running-spinner" aria-hidden="true" />}{detecting ? t("agentUi.rescanning", undefined, lang) : t("agentUi.rescan", undefined, lang)}
         </button>}
       </header>
       <ul>{uninstalled.map(agent => <li key={agent.id} aria-label={agent.name}>
@@ -1667,7 +1669,7 @@ export function QuotaCenter({
   refreshProgress,
   onRefresh,
   onDetect,
-  lang,
+  lang: language,
 }: {
   views: QuotaSnapshotView[];
   installations: InstallationSummary[];
@@ -1677,8 +1679,10 @@ export function QuotaCenter({
   onDetect?: (providerIds: string[]) => Promise<void>;
   lang?: ResolvedLanguage;
 }) {
+  const { resolvedLanguage } = useI18n();
+  const lang = language ?? resolvedLanguage;
   return (
-    <section className="workspace quota-center agent-management" aria-label={t("agentManagement.title", undefined, lang)}>
+    <I18nProvider language={lang}><section className="workspace quota-center agent-management" aria-label={t("agentManagement.title", undefined, lang)}>
 
       <div className="quota-center-content">
         <div className="quota-center-intro">
@@ -1694,13 +1698,13 @@ export function QuotaCenter({
             ? refreshProgress.total ? t("agentManagement.progress", { completed: refreshProgress.completed, total: refreshProgress.total }, lang) : t("agentManagement.fetchingList", undefined, lang)
             : refreshProgress.failed ? t("agentManagement.refreshFailed", undefined, lang)
             : !refreshProgress.total ? t("agentManagement.noRefreshable", undefined, lang)
-            : refreshProgress.unavailable ? `已完成刷新，${refreshProgress.unavailable} 个 Agent 未取得新额度；已有读数请以原更新时间为准。`
+            : refreshProgress.unavailable ? t("agentUi.refreshPartial", { count: refreshProgress.unavailable }, lang)
             : t("agentManagement.refreshSuccess", { count: refreshProgress.total }, lang)}
         </p>}
         <div className="agent-management-summary"><span>{t("agentManagement.installedCount", { count: installations.filter(item => item.providerId !== "fake").length }, lang)}</span><span>{t("agentManagement.quotaCalculation", undefined, lang)}</span></div>
         <QuotaPanel views={views} installations={installations} agentUpdates={agentUpdates} onDetect={onDetect} management />
       </div>
-    </section>
+    </section></I18nProvider>
   );
 }
 

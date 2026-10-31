@@ -1,10 +1,5 @@
+import { t, type ResolvedLanguage } from "./i18n";
 import type { QuotaSnapshot, QuotaWindow } from "@dogcodes/protocol";
-
-const QUOTA_WINDOW_LABELS: Record<number, string> = {
-  300: "5 小时",
-  10_080: "每周",
-  0: "当前账期",
-};
 
 /** Only map explicit native model IDs; never infer an agent's default model. */
 export function antigravityQuotaForModel(quota: QuotaSnapshot | null, model: string | null): QuotaSnapshot | null {
@@ -16,10 +11,11 @@ export function antigravityQuotaForModel(quota: QuotaSnapshot | null, model: str
     window.scope === group ? { ...window, scope: null } : window) };
 }
 
-export function quotaWindowLabel(minutes: number, windowId?: string): string {
-  if (windowId === "opencode-go-monthly") return "每月";
-  if (hasNativeBillingDate(windowId)) return "每月";
-  return QUOTA_WINDOW_LABELS[minutes] ?? `${minutes} 分钟`;
+export function quotaWindowLabel(minutes: number, windowId?: string, lang: ResolvedLanguage = "zh-CN"): string {
+  if (windowId === "opencode-go-monthly") return t("agentUi.monthly", undefined, lang);
+  if (hasNativeBillingDate(windowId)) return t("agentUi.monthly", undefined, lang);
+  const key = minutes === 300 ? "fiveHours" : minutes === 10_080 ? "weekly" : minutes === 0 ? "billingPeriod" : "minutes";
+  return t(`agentUi.${key}`, { count: minutes }, lang);
 }
 
 /** Overview rings use a named pool, never a synthetic total across model groups. */
@@ -31,9 +27,13 @@ export function ringQuotaWindow(windows: QuotaWindow[], providerId?: string): Qu
     && (window.scope === "Gemini Models" || window.id.startsWith("Gemini Models:"))) ?? null;
 }
 
-export function formatProviderBalance(amount: number, currency: string): string {
-  if (amount > 0 && amount < 0.000001) return `${currency} <0.000001`;
-  return new Intl.NumberFormat(undefined, { style: "currency", currency, currencyDisplay: "code", maximumFractionDigits: 6 }).format(amount);
+export function formatProviderBalance(amount: number, currency: string, lang?: ResolvedLanguage): string {
+  if (amount > 0 && amount < 0.000001) return `${currency} <${new Intl.NumberFormat(lang, { maximumFractionDigits: 6 }).format(0.000001)}`;
+  return new Intl.NumberFormat(lang, { style: "currency", currency, currencyDisplay: "code", maximumFractionDigits: 6 }).format(amount);
+}
+
+export function formatQuotaPercent(percent: number, lang: ResolvedLanguage): string {
+  return new Intl.NumberFormat(lang, { style: "percent", maximumFractionDigits: 1 }).format(percent / 100);
 }
 
 export function remainingPercent(usedPercent: number | null | undefined): number | null {
@@ -93,11 +93,11 @@ const NATIVE_MONTHS: Record<string, number> = {
 
 // Reset readings from native clients carry no time of day; show the date in
 // the operating system's own format. `undefined` hands the choice to Intl.
-function nativeResetDisplayText(text: string): string {
+function nativeResetDisplayText(text: string, lang?: ResolvedLanguage): string {
   const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(text);
   if (iso) {
     const date = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
-    return date.toLocaleDateString(undefined, date.getFullYear() !== new Date().getFullYear()
+    return date.toLocaleDateString(lang, date.getFullYear() !== new Date().getFullYear()
       ? { year: "numeric", month: "numeric", day: "numeric" }
       : { month: "numeric", day: "numeric" });
   }
@@ -106,26 +106,32 @@ function nativeResetDisplayText(text: string): string {
   if (named && month != null) {
     // The reading names no year and monthly cadence makes it obvious; never add one.
     return new Date(new Date().getFullYear(), month, Number(named[2]))
-      .toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
+      .toLocaleDateString(lang, { month: "numeric", day: "numeric" });
   }
   return text;
 }
 
 /** Bare reset date for a window whose native reading keeps it in planType. */
-export function nativeResetDisplay(quota: QuotaSnapshot, window: QuotaWindow): string {
+export function nativeResetDisplay(quota: QuotaSnapshot, window: QuotaWindow, lang?: ResolvedLanguage): string {
   if (!hasNativeBillingDate(window.id)) return "";
   const text = quota.planType?.match(NATIVE_RESET_DATE)?.[1]?.trim();
-  return text ? nativeResetDisplayText(text) : "";
+  return text ? nativeResetDisplayText(text, lang) : "";
 }
 
-export function quotaPlanLabel(quota: QuotaSnapshot): string | null | undefined {
-  return quota.windows.some(window => hasNativeBillingDate(window.id))
+export function quotaPlanLabel(quota: QuotaSnapshot, lang: ResolvedLanguage = "zh-CN"): string | null | undefined {
+  const plan = quota.windows.some(window => hasNativeBillingDate(window.id))
     ? quota.planType?.replace(NATIVE_RESET_DATE, "") : quota.planType;
+  // Translate only adapter-owned display labels; preserve provider plan names.
+  const labels: Record<string, string> = {
+    "订阅额度": "subscriptionQuota", "按量付费已开启": "onDemandOn",
+    "按量付费关闭": "onDemandOff", "另有赠送额度": "bonusQuota", "另有加购额度": "purchasedQuota",
+  };
+  return plan == null ? plan : plan.split(" · ").map(part => labels[part] ? t(`agentUi.${labels[part]}`, undefined, lang) : part).join(" · ");
 }
 
-export function quotaNativeResetLabel(quota: QuotaSnapshot, window: QuotaWindow): string {
-  const display = nativeResetDisplay(quota, window);
-  return display ? `重置时间：${display}` : "";
+export function quotaNativeResetLabel(quota: QuotaSnapshot, window: QuotaWindow, lang: ResolvedLanguage = "zh-CN"): string {
+  const display = nativeResetDisplay(quota, window, lang);
+  return display ? t("agentUi.resetAt", { time: display }, lang) : "";
 }
 
 export function quotaScopeLabel(scope: string | null | undefined): string {
@@ -135,11 +141,11 @@ export function quotaScopeLabel(scope: string | null | undefined): string {
   return scope ?? "";
 }
 
-export function formatResetTime(unixSeconds: number, nowUnixMs = Date.now()): string {
+export function formatResetTime(unixSeconds: number, nowUnixMs = Date.now(), lang?: ResolvedLanguage): string {
   // Reset timestamps always carry a time of day, so it is shown; a same-day
   // reset needs no date, and the shape follows the operating system locale.
   const date = new Date(unixSeconds * 1000);
   if (date.toDateString() === new Date(nowUnixMs).toDateString())
-    return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  return date.toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    return date.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleString(lang, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }

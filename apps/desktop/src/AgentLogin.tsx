@@ -1,28 +1,29 @@
+import { t, useI18n, type ResolvedLanguage } from "./i18n";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useRef, useState } from "react";
 import type { InstallationSummary, QuotaSnapshotView } from "@dogcodes/protocol";
 import { LoadingStatus } from "./LoadingStatus";
-import { userFacingError } from "./userFacingError";
+import { localizedAgentError } from "./agentI18n";
 import "./agentLogin.css";
 
 type AccountInstallation = Partial<Pick<InstallationSummary, "status" | "version" | "diagnostic">>;
-export function agentAccountIssue(installation: AccountInstallation | undefined, view?: QuotaSnapshotView): { label: string; detail: string; loginRequired: boolean } | null {
+export function agentAccountIssue(installation: AccountInstallation | undefined, view?: QuotaSnapshotView, lang: ResolvedLanguage = "zh-CN"): { label: string; detail: string; loginRequired: boolean } | null {
   if (!installation || installation.version === "demo" || view?.quota?.confidence === "demo") return null;
   for (const code of [view?.diagnostic, installation.diagnostic]) {
     switch (code) {
-      case "claude_quota_login_required": return { label: "未登录订阅账号", detail: "订阅授权缺失、失效或权限不足；API Key 仍可能支持对话。", loginRequired: true };
+      case "claude_quota_login_required": return { label: t("agentUi.subscriptionLoginMissing", undefined, lang), detail: t("agentUi.subscriptionLoginHint", undefined, lang), loginRequired: true };
       case "authentication_failed":
-      case "quota_login_required": return { label: "未登录", detail: "登录授权缺失、失效或被拒绝，请检查原生客户端登录状态或 API Key 后重新检测。", loginRequired: true };
+      case "quota_login_required": return { label: t("agentUi.loginMissing", undefined, lang), detail: t("agentUi.loginMissingHint", undefined, lang), loginRequired: true };
       case "subscription_required":
-      case "quota_subscription_required": return { label: "未订阅或已到期", detail: "当前账号没有有效订阅，请在原生客户端确认套餐或切换有权限的账号、模型。", loginRequired: false };
+      case "quota_subscription_required": return { label: t("agentUi.subscriptionMissing", undefined, lang), detail: t("agentUi.subscriptionMissingHint", undefined, lang), loginRequired: false };
       case "access_denied":
-      case "quota_access_denied": return { label: "无访问权限", detail: "当前账号未获得服务或模型访问权限，请检查账号资格及服务配置。", loginRequired: false };
+      case "quota_access_denied": return { label: t("agentUi.accessDenied", undefined, lang), detail: t("agentUi.accessDeniedHint", undefined, lang), loginRequired: false };
       case "quota_not_configured":
-      case "driver_not_configured": return { label: "未配置", detail: "Agent 配置尚未就绪，请在原生客户端检查模型、服务及运行环境后重新检测。", loginRequired: false };
+      case "driver_not_configured": return { label: t("agentUi.notConfigured", undefined, lang), detail: t("agentUi.notConfiguredHint", undefined, lang), loginRequired: false };
     }
   }
   return installation.status === "not_configured"
-    ? { label: "未配置", detail: "Agent 配置尚未就绪，请在原生客户端检查模型、服务及运行环境后重新检测。", loginRequired: false }
+    ? { label: t("agentUi.notConfigured", undefined, lang), detail: t("agentUi.notConfiguredHint", undefined, lang), loginRequired: false }
     : null;
 }
 export function needsAgentLogin(installation: AccountInstallation | undefined, view?: QuotaSnapshotView) {
@@ -32,18 +33,19 @@ export function needsAgentLogin(installation: AccountInstallation | undefined, v
 export function AgentLogin({ installationId, name }: {
   installationId: string; name: string;
 }) {
+  const { resolvedLanguage: lang } = useI18n();
   const busy = useRef(false);
   const [opening, setOpening] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const open = async () => {
     if (busy.current) return;
-    if (!isTauri()) { setError("请在 dog.codes 桌面端打开登录入口。"); return; }
+    if (!isTauri()) { setError("agentUi.loginDesktopOnly"); return; }
     busy.current = true;
     setOpening(true); setError(null);
     try {
       await invoke("open_agent_login", { installationId });
     } catch (cause) {
-      setError(userFacingError(cause, "无法打开登录入口，请重试或手动打开客户端。"));
+      setError(cause);
     } finally {
       busy.current = false;
       setOpening(false);
@@ -51,9 +53,9 @@ export function AgentLogin({ installationId, name }: {
   };
   return <span className="agent-login">
     <button type="button" className="agent-login-button" onClick={() => void open()} disabled={opening}
-      aria-label={`${name}：去登录`} aria-busy={opening} data-tooltip={error || undefined}>
-      {opening ? <LoadingStatus>打开中</LoadingStatus> : error ? "重试" : "去登录"}
+      aria-label={t("agentUi.loginAction", { name }, lang)} aria-busy={opening} data-tooltip={error ? localizedAgentError(error, "agentUi.loginFailed", lang) : undefined}>
+      {opening ? <LoadingStatus>{t("agentUi.opening", undefined, lang)}</LoadingStatus> : error ? t("agentUi.retry", undefined, lang) : t("agentUi.login", undefined, lang)}
     </button>
-    {error && <span className="agent-login-feedback" role="alert">{error}</span>}
+    {!!error && <span className="agent-login-feedback" role="alert">{localizedAgentError(error, "agentUi.loginFailed", lang)}</span>}
   </span>;
 }

@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { antigravityQuotaForModel, primaryQuotaWindow, quotaIsExhausted, quotaIsStale, remainingPercent, quotaNativeResetLabel, nativeResetDisplay, quotaPlanLabel, quotaWindowLabel, ringQuotaWindow, formatProviderBalance } from "./quotaPresentation";
+import { antigravityQuotaForModel, primaryQuotaWindow, quotaIsExhausted, quotaIsStale, remainingPercent, quotaNativeResetLabel, nativeResetDisplay, quotaPlanLabel, quotaWindowLabel, ringQuotaWindow, formatProviderBalance, formatQuotaPercent } from "./quotaPresentation";
 
 describe("quota presentation", () => {
+  it("formats quota windows and wallet amounts in the chosen UI language", () => {
+    expect(quotaWindowLabel(300, undefined, "en")).toBe("5 hours");
+    expect(quotaWindowLabel(0, "opencode-go-monthly", "fr")).toBe("Mensuel");
+    expect(formatProviderBalance(12.5, "CNY", "en")).toContain("12.50");
+    expect(formatProviderBalance(12.5, "CNY", "fr")).toContain("12,50");
+    expect(formatProviderBalance(0, "USD", "fr")).toContain("0,00");
+    expect(formatProviderBalance(0.0000001, "USD", "fr")).toBe("USD <0,000001");
+    expect(formatQuotaPercent(87.5, "de")).toContain("87,5");
+    expect(formatQuotaPercent(87.5, "en")).toBe("87.5%");
+    const q = { windows: [], planType: "Pro · 按量付费已开启 · 另有赠送额度", source: "native_pull", confidence: "provider_reported", parserVersion: "test", collectedAtUnixMs: 0, staleAfterUnixMs: 1 };
+    expect(quotaPlanLabel(q, "en")).toBe("Pro · Usage-based billing enabled · Bonus quota available");
+  });
   it("does not gate OpenCode's other providers on Go quota or turn wallet balances into percentages", () => {
     const q = { windows: [
       { id: "opencode-go-monthly", scope: "OpenCode Go", windowMinutes: 0, usedPercent: 100 },
