@@ -2,7 +2,7 @@
 //! are authenticated messages, so control replies can pass an incomplete frame.
 use super::{Session, Socket, Value, WebSocket, failure, json, native};
 use futures_util::{
-    SinkExt, StreamExt,
+    Sink, SinkExt, Stream, StreamExt,
     stream::{SplitSink, SplitStream},
 };
 use std::{
@@ -20,20 +20,17 @@ const BULK_WINDOW: usize = 32 * 1024;
 const MAX_FLIGHTS: usize = 16;
 pub(super) type Noise<'a> = Arc<Mutex<&'a mut Session>>;
 
-pub(super) enum Reader {
-    Relay(SplitStream<WebSocket>),
+pub(super) enum Reader<S = WebSocket> {
+    Relay(SplitStream<S>),
     Direct(Arc<dogcodes_remote_transport::Channel>),
 }
-enum Output {
-    Relay(SplitSink<WebSocket, Message>),
+enum Output<S = WebSocket> {
+    Relay(SplitSink<S, Message>),
     Direct(Arc<dogcodes_remote_transport::Channel>),
 }
 pub(super) fn split(socket: Socket) -> (Reader, WriterTransport) {
     match socket {
-        Socket::Relay(socket) => {
-            let (sink, stream) = (*socket).split();
-            (Reader::Relay(stream), WriterTransport(Output::Relay(sink)))
-        }
+        Socket::Relay(socket) => split_relay(*socket),
         Socket::Direct(channel) => {
             let channel = Arc::new(channel);
             (
@@ -43,7 +40,17 @@ pub(super) fn split(socket: Socket) -> (Reader, WriterTransport) {
         }
     }
 }
-impl Reader {
+fn split_relay<S>(socket: S) -> (Reader<S>, WriterTransport<S>)
+where
+    S: Stream + Sink<Message>,
+{
+    let (sink, stream) = socket.split();
+    (Reader::Relay(stream), WriterTransport(Output::Relay(sink)))
+}
+impl<S> Reader<S>
+where
+    S: Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+{
     pub(super) async fn next(&mut self) -> Option<Result<Message, String>> {
         match self {
             Self::Relay(socket) => socket.next().await.map(|v| v.map_err(failure)),
@@ -64,8 +71,11 @@ impl Reader {
         }
     }
 }
-pub(super) struct WriterTransport(Output);
-impl WriterTransport {
+pub(super) struct WriterTransport<S = WebSocket>(Output<S>);
+impl<S> WriterTransport<S>
+where
+    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+{
     async fn send(&mut self, message: Message) -> Result<(), String> {
         let send = async {
             match &mut self.0 {
@@ -432,33 +442,16 @@ mod tests {
     }
     #[tokio::test]
     async fn receiving_continues_while_the_other_direction_is_backpressured() {
-        let listener = tokio::net::TcpSocket::new_v4().unwrap();
-        listener.set_send_buffer_size(4096).unwrap();
-        listener.bind("127.0.0.1:0".parse().unwrap()).unwrap();
-        let listener = listener.listen(1).unwrap();
-        let address = listener.local_addr().unwrap();
-        let client = tokio::net::TcpSocket::new_v4().unwrap();
-        client.set_recv_buffer_size(4096).unwrap();
-        let (server, client) = tokio::join!(
-            async {
-                let (stream, _) = listener.accept().await.unwrap();
-                tokio_tungstenite::accept_async(tokio_tungstenite::MaybeTlsStream::Plain(stream))
-                    .await
-                    .unwrap()
-            },
-            async {
-                let stream = client.connect(address).await.unwrap();
-                tokio_tungstenite::client_async(format!("ws://{address}"), stream).await
-            }
-        );
-        let (mut client, _) = client.unwrap();
-        let (mut reader, mut writer) = split(Socket::Relay(Box::new(server)));
-        // Explicit socket limits keep Windows autotuning from buffering the
-        // entire frame. The peer deliberately does not read, filling TCP buffers;
-        // none of these bytes are sent to the OS input controller.
+        use tokio_tungstenite::{WebSocketStream, tungstenite::protocol::Role};
+        // Exercise the real WebSocket reader/writer over bounded I/O. Windows
+        // loopback TCP can buffer a whole frame despite SO_SNDBUF/SO_RCVBUF.
+        let (server, client) = tokio::io::duplex(1024);
+        let server = WebSocketStream::from_raw_socket(server, Role::Server, None).await;
+        let mut client = WebSocketStream::from_raw_socket(client, Role::Client, None).await;
+        let (mut reader, mut writer) = split_relay(server);
         let sending = tokio::spawn(async move {
             writer
-                .send(Message::Binary(vec![4; 32 * 1024 * 1024].into()))
+                .send(Message::Binary(vec![4; 64 * 1024].into()))
                 .await
         });
         tokio::time::sleep(Duration::from_millis(100)).await;
