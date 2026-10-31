@@ -218,4 +218,29 @@ Core is a child process owned by the desktop, started from the same installed bu
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, and report security issues privately as described in [SECURITY.md](SECURITY.md).
 
+### Agent integration
+
+dog.codes connects to each agent through its local process interface. ACP means Agent Client Protocol; agents with another native interface use a dedicated driver.
+
+| Agent | Integration | Supported installation |
+| --- | --- | --- |
+| Codex | Native `app-server` (JSON-RPC) | Desktop client + CLI |
+| Claude Code | Native `stream-json` | Desktop client + CLI |
+| Cursor | ACP (`cursor-agent acp`) | CLI |
+| Kimi Code | ACP (`kimi acp`) | CLI |
+| Grok Build | ACP (`grok agent stdio`) | CLI |
+| ZCode | Native `app-server` (bundled `zcode.cjs`) | Desktop client (bundled CLI) |
+| Antigravity | Native headless `stream-json` (`agy`) | CLI |
+| CodeBuddy | ACP (`codebuddy --acp`) | CLI |
+| Pi | Native RPC (`pi --mode rpc`) | CLI |
+| OpenCode | ACP (`opencode acp`) | Desktop client + CLI |
+| DeepSeek Harness | ACP (`dsh --profile acp`) | Desktop client + CLI |
+| Kiro | ACP (`kiro-cli acp`) | CLI |
+
+“Desktop client” means reusing the CLI or headless runtime shipped or installed by that client, rather than automating its graphical interface. Client support requires that runtime to be present; discovery paths and availability vary by operating system and installed version. OpenCode desktop-runtime discovery is currently implemented on Windows.
+
+### Acknowledgments
+
+Computer use builds on [Cua Driver](https://github.com/trycua/cua), licensed under MIT, for window inspection, screenshots, and mouse/keyboard interaction. Thanks to the Cua team and contributors for their open-source desktop automation work. The bundled driver integration currently supports Windows x64.
+
 Agent icons reuse the assets already included in this repository; see [icon provenance and notices](apps/desktop/src/assets/licenses/README.md). Product names and marks belong to their respective owners.

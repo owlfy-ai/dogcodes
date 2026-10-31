@@ -191,4 +191,29 @@ pnpm check
 
 提交 Pull Request 前請閱讀 [CONTRIBUTING.md](../../CONTRIBUTING.md)；安全問題請依 [SECURITY.md](../../SECURITY.md) 私下回報。
 
+### Agent 接入方式
+
+dog.codes 透過本機程序介面連接各個 Agent。ACP 指 Agent Client Protocol；使用其他原生介面的 Agent 由專用驅動接入。
+
+| Agent | 接入方式 | 支援的安裝來源 |
+| --- | --- | --- |
+| Codex | 原生 `app-server`（JSON-RPC） | 用戶端 + CLI |
+| Claude Code | 原生 `stream-json` | 用戶端 + CLI |
+| Cursor | ACP（`cursor-agent acp`） | CLI |
+| Kimi Code | ACP（`kimi acp`） | CLI |
+| Grok Build | ACP（`grok agent stdio`） | CLI |
+| ZCode | 原生 `app-server`（內建 `zcode.cjs`） | 用戶端（內建 CLI） |
+| Antigravity | 原生無介面 `stream-json`（`agy`） | CLI |
+| CodeBuddy | ACP（`codebuddy --acp`） | CLI |
+| Pi | 原生 RPC（`pi --mode rpc`） | CLI |
+| OpenCode | ACP（`opencode acp`） | 用戶端 + CLI |
+| DeepSeek Harness | ACP（`dsh --profile acp`） | 用戶端 + CLI |
+| Kiro | ACP（`kiro-cli acp`） | CLI |
+
+「用戶端」指沿用用戶端隨附或安裝的 CLI／無介面執行環境，並非操作原用戶端的圖形介面。用戶端支援以實際安裝對應執行環境為前提，探索路徑與可用性依作業系統及版本而異。OpenCode 用戶端內建執行環境目前已接入 Windows 自動探索。
+
+### 致謝
+
+Computer use 使用 MIT 授權的 [Cua Driver](https://github.com/trycua/cua)，提供視窗讀取、截圖與鍵盤滑鼠互動。感謝 Cua 團隊及貢獻者開源桌面自動化能力。目前隨應用程式整合的驅動支援 Windows x64。
+
 Agent 圖示沿用儲存庫現有素材，來源與聲明請見[圖示說明](../../apps/desktop/src/assets/licenses/README.md)。產品名稱及商標屬於各自擁有者。

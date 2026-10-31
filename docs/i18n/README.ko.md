@@ -191,4 +191,29 @@ pnpm check
 
 Pull Request 전에 [CONTRIBUTING.md](../../CONTRIBUTING.md)를 읽고, 보안 문제는 [SECURITY.md](../../SECURITY.md)에 따라 비공개로 제보해 주세요.
 
+### 에이전트 연결 방식
+
+dog.codes는 각 에이전트의 로컬 프로세스 인터페이스에 연결합니다. ACP는 Agent Client Protocol의 약자이며, 다른 네이티브 인터페이스를 사용하는 에이전트는 전용 드라이버로 연결합니다.
+
+| 에이전트 | 연결 방식 | 지원 설치 유형 |
+| --- | --- | --- |
+| Codex | 네이티브 `app-server`(JSON-RPC) | 데스크톱 클라이언트 + CLI |
+| Claude Code | 네이티브 `stream-json` | 데스크톱 클라이언트 + CLI |
+| Cursor | ACP(`cursor-agent acp`) | CLI |
+| Kimi Code | ACP(`kimi acp`) | CLI |
+| Grok Build | ACP(`grok agent stdio`) | CLI |
+| ZCode | 네이티브 `app-server`(내장 `zcode.cjs`) | 데스크톱 클라이언트(내장 CLI) |
+| Antigravity | 네이티브 헤드리스 `stream-json`(`agy`) | CLI |
+| CodeBuddy | ACP(`codebuddy --acp`) | CLI |
+| Pi | 네이티브 RPC(`pi --mode rpc`) | CLI |
+| OpenCode | ACP(`opencode acp`) | 데스크톱 클라이언트 + CLI |
+| DeepSeek Harness | ACP(`dsh --profile acp`) | 데스크톱 클라이언트 + CLI |
+| Kiro | ACP(`kiro-cli acp`) | CLI |
+
+‘데스크톱 클라이언트’는 해당 클라이언트가 포함하거나 설치한 CLI 또는 헤드리스 런타임을 재사용한다는 뜻으로, 원래 GUI를 자동 조작하는 방식이 아닙니다. 해당 런타임이 설치되어 있어야 하며, 검색 경로와 사용 가능 여부는 운영체제와 버전에 따라 달라집니다. OpenCode 데스크톱 내장 런타임의 자동 검색은 현재 Windows에 구현되어 있습니다.
+
+### 감사의 말
+
+Computer use의 창 정보 읽기, 스크린샷, 키보드와 마우스 상호작용에는 MIT 라이선스의 [Cua Driver](https://github.com/trycua/cua)를 사용합니다. 데스크톱 자동화 기능을 오픈소스로 제공한 Cua 팀과 기여자 여러분께 감사드립니다. 현재 번들 드라이버 통합은 Windows x64를 지원합니다.
+
 에이전트 아이콘은 저장소의 기존 자료를 사용합니다. [출처 및 고지](../../apps/desktop/src/assets/licenses/README.md)를 확인하세요. 제품 이름과 상표는 각 소유자에게 속합니다.
