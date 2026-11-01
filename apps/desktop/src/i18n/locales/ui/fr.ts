@@ -753,7 +753,6 @@ export const uiFr: UiMessages = {
     zoomOut: "Réduire le diagramme",
   },
   modelPicker: {
-    agentDefaultOnly: "Cet Agent utilise son modèle par défaut ; rien à configurer",
     chooseModel: "Choisir un modèle",
     default: "Par défaut",
     defaultGone: "Le modèle par défaut n’est plus disponible. Choisissez un autre modèle.",
@@ -781,6 +780,7 @@ export const uiFr: UiMessages = {
     modelMissing: "Le modèle sélectionné ne figure pas dans la liste actuelle. Il a été conservé ; choisissez à nouveau.",
     modelTooltip: "Modèle : {label}",
     noEfforts: "Ce modèle n’a aucun effort de raisonnement sélectionnable",
+    noModels: "Aucun modèle disponible",
     refreshDisabled: "L’Agent est en cours d’exécution ; actualisez une fois terminé",
     refreshEfforts: "Actualiser la liste des efforts de raisonnement",
     refreshFailed: "Échec de l’actualisation ; affichage de la liste précédente. Réessayez.",

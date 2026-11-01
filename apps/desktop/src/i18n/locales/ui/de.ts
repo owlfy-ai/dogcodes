@@ -753,7 +753,6 @@ export const uiDe: UiMessages = {
     zoomOut: "Diagramm verkleinern",
   },
   modelPicker: {
-    agentDefaultOnly: "Dieser Agent nutzt sein Standardmodell; nichts zu konfigurieren",
     chooseModel: "Modell auswählen",
     default: "Standard",
     defaultGone: "Das Standardmodell ist nicht mehr verfügbar. Ein anderes Modell auswählen.",
@@ -781,6 +780,7 @@ export const uiDe: UiMessages = {
     modelMissing: "Das gewählte Modell ist nicht in der aktuellen Liste. Es wurde behalten; bitte erneut wählen.",
     modelTooltip: "Modell: {label}",
     noEfforts: "Dieses Modell hat keinen wählbaren Reasoning-Aufwand",
+    noModels: "Keine Modelle verfügbar",
     refreshDisabled: "Der Agent läuft; nach Abschluss aktualisieren",
     refreshEfforts: "Liste des Reasoning-Aufwands aktualisieren",
     refreshFailed: "Aktualisierung fehlgeschlagen; die vorherige Liste wird angezeigt. Bitte erneut versuchen.",

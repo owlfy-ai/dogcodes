@@ -753,7 +753,6 @@ export const uiZhTW: UiMessages = {
     zoomOut: "縮小圖表",
   },
   modelPicker: {
-    agentDefaultOnly: "當前 Agent 使用預設模型，無需額外設定",
     chooseModel: "請選擇模型",
     default: "預設",
     defaultGone: "預設模型已不可用，請選擇其他模型。",
@@ -781,6 +780,7 @@ export const uiZhTW: UiMessages = {
     modelMissing: "已選模型不在當前列表中，原選擇已保留，請重新選擇。",
     modelTooltip: "模型：{label}",
     noEfforts: "當前模型未提供可選思考強度",
+    noModels: "暫無可用模型",
     refreshDisabled: "Agent 執行中，結束後可重新整理",
     refreshEfforts: "重新整理思考強度列表",
     refreshFailed: "重新整理失敗，保留上次列表，請重試。",

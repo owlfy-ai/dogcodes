@@ -19,6 +19,14 @@ const quota: NonNullable<QuotaSnapshotView["quota"]> = {
 };
 
 describe("quota components", () => {
+  it("keeps the inline ring visible when quota has not arrived or has no percentage", () => {
+    for (const reading of [null, quota]) {
+      const html = renderToStaticMarkup(createElement(components.QuotaRing, { inline: true, providerId: "codex", quota: reading }));
+      expect(html).toContain('class="quota-ring"');
+      expect(html).toContain('<svg');
+      expect(html).toContain('class="quota-ring-value" aria-hidden="true">?</span>');
+    }
+  });
   it("shows OpenCode Go's three windows while keeping other model providers usable", () => {
     const go = { ...quota, context: null, staleAfterUnixMs: Date.now() + 60_000, windows: [
       { id: "opencode-go-rolling", scope: "OpenCode Go", windowMinutes: 300, usedPercent: 12.5 },

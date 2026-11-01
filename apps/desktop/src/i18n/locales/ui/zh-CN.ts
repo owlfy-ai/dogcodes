@@ -753,7 +753,6 @@ export const uiZhCN: UiMessages = {
     zoomOut: "缩小图表",
   },
   modelPicker: {
-    agentDefaultOnly: "当前 Agent 使用默认模型，无需额外设置",
     chooseModel: "请选择模型",
     default: "默认",
     defaultGone: "默认模型已不可用，请选择其他模型。",
@@ -781,6 +780,7 @@ export const uiZhCN: UiMessages = {
     modelMissing: "已选模型不在当前列表中，原选择已保留，请重新选择。",
     modelTooltip: "模型：{label}",
     noEfforts: "当前模型未提供可选思考强度",
+    noModels: "暂无可用模型",
     refreshDisabled: "Agent 运行中，结束后可刷新",
     refreshEfforts: "刷新思考强度列表",
     refreshFailed: "刷新失败，保留上次列表，请重试。",

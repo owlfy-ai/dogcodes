@@ -753,7 +753,6 @@ export const uiPtBR: UiMessages = {
     zoomOut: "Diminuir zoom do diagrama",
   },
   modelPicker: {
-    agentDefaultOnly: "Este Agent usa seu modelo padrão; nada a configurar",
     chooseModel: "Escolha um modelo",
     default: "Padrão",
     defaultGone: "O modelo padrão não está mais disponível. Escolha outro modelo.",
@@ -781,6 +780,7 @@ export const uiPtBR: UiMessages = {
     modelMissing: "O modelo selecionado não está na lista atual. Ele foi mantido; escolha novamente.",
     modelTooltip: "Modelo: {label}",
     noEfforts: "Este modelo não tem esforços de raciocínio selecionáveis",
+    noModels: "Nenhum modelo disponível",
     refreshDisabled: "O Agent está em execução; atualize depois que terminar",
     refreshEfforts: "Atualizar lista de esforços de raciocínio",
     refreshFailed: "Falha ao atualizar; exibindo a lista anterior. Tente novamente.",

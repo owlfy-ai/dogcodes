@@ -753,7 +753,6 @@ export const uiJa: UiMessages = {
     zoomOut: "ダイアグラムを縮小",
   },
   modelPicker: {
-    agentDefaultOnly: "この Agent は既定のモデルを使用します。設定できる項目はありません",
     chooseModel: "モデルを選択",
     default: "既定",
     defaultGone: "既定のモデルは利用できなくなりました。別のモデルを選択してください。",
@@ -781,6 +780,7 @@ export const uiJa: UiMessages = {
     modelMissing: "選択したモデルは現在の一覧にありません。設定は保持されています。もう一度選択してください。",
     modelTooltip: "モデル：{label}",
     noEfforts: "このモデルには選択できる推論の強度がありません",
+    noModels: "利用可能なモデルがありません",
     refreshDisabled: "Agent が実行中です。完了してから更新してください",
     refreshEfforts: "推論の強度の一覧を更新",
     refreshFailed: "更新に失敗しました。前回の一覧を表示しています。再試行してください。",

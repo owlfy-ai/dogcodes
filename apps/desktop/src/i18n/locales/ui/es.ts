@@ -753,7 +753,6 @@ export const uiEs: UiMessages = {
     zoomOut: "Alejar diagrama",
   },
   modelPicker: {
-    agentDefaultOnly: "Este Agent usa su modelo predeterminado; no hay nada que configurar",
     chooseModel: "Elige un modelo",
     default: "Predeterminado",
     defaultGone: "El modelo predeterminado ya no está disponible. Elige otro modelo.",
@@ -781,6 +780,7 @@ export const uiEs: UiMessages = {
     modelMissing: "El modelo seleccionado no está en la lista actual. Se conservó; elige de nuevo.",
     modelTooltip: "Modelo: {label}",
     noEfforts: "Este modelo no tiene esfuerzos de razonamiento seleccionables",
+    noModels: "No hay modelos disponibles",
     refreshDisabled: "El Agent se está ejecutando; actualiza cuando termine",
     refreshEfforts: "Actualizar lista de esfuerzos de razonamiento",
     refreshFailed: "Error al actualizar; se muestra la lista anterior. Inténtalo de nuevo.",

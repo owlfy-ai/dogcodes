@@ -461,3 +461,27 @@ it("returns the text to the draft only after verifying the service never receive
   expect(element.querySelector("textarea")?.value).toBe("要放回的消息");
   expect(element.querySelector('[aria-label="结果未知的发送请求"]')).toBeNull();
 });
+
+
+it("keeps the selected Agent's quota ring in a new conversation and updates it when switching Agent", async () => {
+  const snapshot = await client.bootstrap();
+  const codex = snapshot.installations.find(i => i.providerId === "codex")!;
+  const cursor = { ...codex, providerId: "cursor", installationId: "ins_cursor" as const };
+  snapshot.installations = [codex, cursor];
+  vi.spyOn(client, "bootstrap").mockImplementation(async () => structuredClone(snapshot));
+  const readings = await client.quotaSnapshots();
+  vi.spyOn(client, "quotaSnapshots").mockResolvedValue([...readings, {
+    providerId: "cursor", installationId: cursor.installationId,
+    quota: { ...readings[0].quota!, context: null, windows: [{ id: "cursor-models", windowMinutes: 43200, usedPercent: 20 }] },
+  }]);
+  await act(async () => root.render(<App key="draft-quota" client={client} />));
+  const ring = () => element.querySelector('.agent-picker > summary .quota-ring-value');
+  expect(ring()?.textContent).toBe("61%");
+  await click(button("新建对话"));
+  expect(element.querySelector(".welcome-stage")).not.toBeNull();
+  expect(ring()?.textContent).toBe("61%");
+  await click(element.querySelector('.agent-picker > summary')!);
+  await click(element.querySelector('.agent-picker-option[aria-label="Cursor"]')!);
+  expect(ring()?.textContent).toBe("80%");
+  expect(client.createTask).not.toHaveBeenCalled();
+});

@@ -753,7 +753,6 @@ export const uiKo: UiMessages = {
     zoomOut: "다이어그램 축소",
   },
   modelPicker: {
-    agentDefaultOnly: "이 Agent는 기본 모델을 사용하며 설정할 항목이 없습니다",
     chooseModel: "모델 선택",
     default: "기본값",
     defaultGone: "기본 모델을 더 이상 사용할 수 없습니다. 다른 모델을 선택하세요.",
@@ -781,6 +780,7 @@ export const uiKo: UiMessages = {
     modelMissing: "선택한 모델이 현재 목록에 없습니다. 그대로 유지되었으니 다시 선택하세요.",
     modelTooltip: "모델: {label}",
     noEfforts: "이 모델에는 선택할 수 있는 추론 강도가 없습니다",
+    noModels: "사용 가능한 모델이 없습니다",
     refreshDisabled: "Agent가 실행 중입니다. 완료된 후 새로 고치세요",
     refreshEfforts: "추론 강도 목록 새로 고침",
     refreshFailed: "새로 고침에 실패하여 이전 목록을 표시합니다. 다시 시도하세요.",

@@ -753,7 +753,6 @@ export const uiIt: UiMessages = {
     zoomOut: "Riduci diagramma",
   },
   modelPicker: {
-    agentDefaultOnly: "Questo Agent usa il suo modello predefinito; nulla da configurare",
     chooseModel: "Scegli un modello",
     default: "Predefinito",
     defaultGone: "Il modello predefinito non è più disponibile. Scegli un altro modello.",
@@ -781,6 +780,7 @@ export const uiIt: UiMessages = {
     modelMissing: "Il modello selezionato non è nell’elenco corrente. È stato conservato; scegli di nuovo.",
     modelTooltip: "Modello: {label}",
     noEfforts: "Questo modello non ha livelli di ragionamento selezionabili",
+    noModels: "Nessun modello disponibile",
     refreshDisabled: "L’Agent è in esecuzione; aggiorna al termine",
     refreshEfforts: "Aggiorna l’elenco dei livelli di ragionamento",
     refreshFailed: "Aggiornamento non riuscito; viene mostrato l’elenco precedente. Riprova.",

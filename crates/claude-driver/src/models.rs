@@ -149,10 +149,7 @@ pub(super) fn catalog(value: &Value) -> Result<(ModelCatalog, bool), DriverError
         .get("models")
         .and_then(Value::as_array)
         .ok_or_else(|| DriverError::CapabilityUnavailable("Claude 未返回模型目录".into()))?;
-    let mut catalog = ModelCatalog {
-        default_model: Some("default".into()),
-        ..Default::default()
-    };
+    let mut catalog = ModelCatalog::default();
     for row in rows {
         let Some(id) = row["value"].as_str().filter(|s| !s.is_empty()) else {
             continue;
@@ -176,14 +173,7 @@ pub(super) fn catalog(value: &Value) -> Result<(ModelCatalog, bool), DriverError
             "Claude 未返回可用模型".into(),
         ));
     }
-    if !catalog.models.iter().any(|m| m.id == "default") {
-        let mut model = ModelOption::new("default", "默认（推荐）");
-        if let Some(first) = catalog.models.first() {
-            model.thinking_options.clone_from(&first.thinking_options);
-            model.default_thinking.clone_from(&first.default_thinking);
-        }
-        catalog.models.insert(0, model);
-    }
+    catalog.default_model = catalog.models.first().map(|model| model.id.clone());
     // Third-party aliases can resolve to the same display name.
     let labels: Vec<_> = catalog.models.iter().map(|m| m.label.clone()).collect();
     for model in &mut catalog.models {
@@ -197,6 +187,23 @@ pub(super) fn catalog(value: &Value) -> Result<(ModelCatalog, bool), DriverError
 #[cfg(test)]
 mod installed_tests {
     use super::*;
+    #[test]
+    fn catalog_preserves_native_order_without_inserting_a_default_model() {
+        let (catalog, _) = catalog(&serde_json::json!({"models":[
+            {"value":"first","displayName":"First"},
+            {"value":"second","displayName":"Second"}
+        ]}))
+        .unwrap();
+        assert_eq!(
+            catalog
+                .models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+        assert_eq!(catalog.default_model.as_deref(), Some("first"));
+    }
     #[tokio::test]
     #[ignore = "reads the locally installed Claude model catalog, no model turn"]
     async fn local_model_catalog() {

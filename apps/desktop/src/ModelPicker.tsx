@@ -22,11 +22,10 @@ export function ModelPicker({ catalog, model, thinking, loading, refreshing = fa
   const trigger = useRef<HTMLButtonElement>(null);
   const thinkingTrigger = useRef<HTMLButtonElement>(null);
   const restoreFocus = () => (open === "thinking" ? thinkingTrigger : trigger).current?.focus();
-  const selected = catalog.models.find(option => option.id === (model ?? catalog.defaultModel));
+  const selected = model ? catalog.models.find(option => option.id === model) : catalog.models[0];
   const efforts = selected?.thinkingOptions ?? [];
   const effectiveThinking = thinking ?? selected?.defaultThinking ?? null;
-  const defaultUnavailable = !!catalog.defaultModel && !catalog.models.some(option => option.id === catalog.defaultModel);
-  const missingModel = !!(model ?? catalog.defaultModel) && !selected;
+  const missingModel = !!model && !selected;
   const missingThinking = !!thinking && !efforts.some(option => option.id === thinking);
   const openMenu = (menu: "model" | "thinking") => {
     if (open !== menu) {
@@ -47,7 +46,7 @@ export function ModelPicker({ catalog, model, thinking, loading, refreshing = fa
     onChange(id, effort); setOpen(null);
     if (!focusComposerInput(root.current)) restoreFocus();
   };
-  const modelLabel = selected?.label ?? t(model ? "modelPicker.savedModel" : loading ? "modelPicker.selectModel" : defaultUnavailable ? "modelPicker.chooseModel" : "modelPicker.defaultModel");
+  const modelLabel = selected?.label ?? t(model ? "modelPicker.savedModel" : "modelPicker.chooseModel");
   const thinkingLabel = effortLabel(effectiveThinking) ?? efforts.find(option => option.id === effectiveThinking)?.label ?? t(thinking ? "modelPicker.savedEffort" : "modelPicker.default");
   return <div className="model-picker" ref={root}>
     <button type="button" ref={trigger} className="model-trigger" data-tooltip={t("modelPicker.modelTooltip", { label: modelLabel })} aria-label={t("modelPicker.selectModel")} aria-haspopup="dialog" aria-expanded={open === "model"}
@@ -69,15 +68,14 @@ export function ModelPicker({ catalog, model, thinking, loading, refreshing = fa
       {(loading || refreshing) && <LoadingStatus className="model-message">{t("modelPicker.loading")}</LoadingStatus>}
       {error && <p className="model-message" role="status">{t(catalog.models.length ? "modelPicker.refreshFailed" : "modelPicker.loadFailed")}</p>}
       {!loading && !refreshing && !error && (missingModel || missingThinking) && <p className="model-message" role="status">
-        {t(missingModel ? !model && defaultUnavailable ? "modelPicker.defaultGone" : "modelPicker.modelMissing" : "modelPicker.effortMissing")}
+        {t(missingModel ? "modelPicker.modelMissing" : "modelPicker.effortMissing")}
       </p>}
       {open === "model" ? <>
-        <button type="button" disabled={loading || defaultUnavailable} className={!model ? "selected" : ""} onClick={() => choose(null, null)}>{t(defaultUnavailable ? "modelPicker.defaultUnavailable" : "modelPicker.defaultRecommended")}<span>{!model && !defaultUnavailable ? "✓" : ""}</span></button>
         <div className="model-options">
-          {catalog.models.map(option => <button type="button" disabled={loading} key={option.id} className={model === option.id ? "selected" : ""}
-            onClick={() => choose(option.id, option.defaultThinking ?? null)}>{option.label}<span>{model === option.id ? "✓" : ""}</span></button>)}
+          {catalog.models.map(option => <button type="button" disabled={loading} key={option.id} className={selected?.id === option.id ? "selected" : ""}
+            onClick={() => choose(option.id, option.defaultThinking ?? null)}>{option.label}<span>{selected?.id === option.id ? "✓" : ""}</span></button>)}
         </div>
-        {!loading && !error && !catalog.models.length && !defaultUnavailable && <p className="model-message">{t("modelPicker.agentDefaultOnly")}</p>}
+        {!loading && !error && !catalog.models.length && <p className="model-message">{t("modelPicker.noModels")}</p>}
       </> : <>
         {missingThinking && <button type="button" disabled={loading} onClick={() => choose(model ?? selected?.id ?? null, null)}>{t("modelPicker.useDefaultEffort")}</button>}
         <div className="model-options">

@@ -753,7 +753,6 @@ export const uiEn = {
     zoomOut: "Zoom out diagram",
   },
   modelPicker: {
-    agentDefaultOnly: "This Agent uses its default model; nothing to configure",
     chooseModel: "Choose a model",
     default: "Default",
     defaultGone: "The default model is no longer available. Choose another model.",
@@ -781,6 +780,7 @@ export const uiEn = {
     modelMissing: "The selected model isn't in the current list. It was kept; please choose again.",
     modelTooltip: "Model: {label}",
     noEfforts: "This model has no selectable reasoning efforts",
+    noModels: "No models available",
     refreshDisabled: "The Agent is running; refresh after it finishes",
     refreshEfforts: "Refresh reasoning effort list",
     refreshFailed: "Refresh failed; showing the previous list. Please retry.",

@@ -753,7 +753,6 @@ export const uiRu: UiMessages = {
     zoomOut: "Уменьшить диаграмму",
   },
   modelPicker: {
-    agentDefaultOnly: "Этот Agent использует модель по умолчанию; настраивать нечего",
     chooseModel: "Выберите модель",
     default: "По умолчанию",
     defaultGone: "Модель по умолчанию больше недоступна. Выберите другую модель.",
@@ -781,6 +780,7 @@ export const uiRu: UiMessages = {
     modelMissing: "Выбранной модели нет в текущем списке. Она сохранена; выберите заново.",
     modelTooltip: "Модель: {label}",
     noEfforts: "У этой модели нет выбираемых уровней рассуждений",
+    noModels: "Нет доступных моделей",
     refreshDisabled: "Agent работает; обновите после завершения",
     refreshEfforts: "Обновить список уровней рассуждений",
     refreshFailed: "Не удалось обновить; показан прежний список. Повторите попытку.",

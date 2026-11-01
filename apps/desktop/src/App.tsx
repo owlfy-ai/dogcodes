@@ -871,7 +871,14 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const modelCatalog = useModelCatalog(modelCache, selectedTask?.preferredExecutor, modelVersion,
     selectedTaskId ?? undefined, activeModel, selectedModelReady, !!selectedTask?.activePrimaryRun);
   const { catalog: nativeModels, loading: modelLoading, error: modelError } = modelCatalog;
-  const modelSelectionBlocked = modelLoading || (!!modelError && !modelCatalog.hasCatalog);
+  const modelSelectionBlocked = !!client.availableModels && selectedTask?.preferredExecutor.providerId !== "fake"
+    && (modelLoading || (!!modelError && !modelCatalog.hasCatalog) || !activeModel);
+  useEffect(() => {
+    const first = nativeModels.models[0];
+    if (activeModel || !first || selectedTask?.preferredExecutor.providerId === "fake") return;
+    setNewSessionModel(current => current?.key === modelSelectionKey && current.model ? current
+      : { key: modelSelectionKey, model: first.id, thinking: first.defaultThinking ?? null });
+  }, [activeModel, modelSelectionKey, nativeModels.models, selectedTask?.preferredExecutor.providerId]);
   useEffect(() => { refreshModelCatalog.current = modelCatalog.refresh; }, [modelCatalog.refresh]);
   const permissionKey = selectedTask ? `${selectedTask.taskId}:${selectedTask.preferredExecutor.providerId}:${selectedTask.preferredExecutor.installationId}` : "";
   const permissionPicker = selectedTask ? <PermissionPicker key={permissionKey} version={modelVersion} client={client} executor={selectedTask.preferredExecutor} taskId={selectedTaskId ?? undefined}
@@ -883,7 +890,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     onRetry={modelCatalog.refresh} onOpen={modelCatalog.check} refreshDisabled={!!selectedTask.activePrimaryRun} /> : null;
 
   const selectedQuota = useMemo(() => {
-    if (!selectedTask || quotaTaskId !== selectedTask.taskId) return null;
+    if (!selectedTask || quotaTaskId !== selectedTaskId) return null;
     const executor = selectedTask.preferredExecutor;
     const quota = (
       quotaViews.find(
@@ -893,7 +900,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       )?.quota ?? null
     );
     return executor.providerId === "antigravity" ? antigravityQuotaForModel(quota, activeModel) : quota;
-  }, [quotaViews, quotaTaskId, selectedTask, activeModel]);
+  }, [quotaViews, quotaTaskId, selectedTaskId, selectedTask, activeModel]);
   useEffect(() => {
     const executor = selectedTask?.preferredExecutor;
     if (!selectedTask?.activePrimaryRun || !executor?.installationId) return;
@@ -1004,7 +1011,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!selectedTask || submissionPending || (!draft.trim() && !attachments.items.length) || attachments.pending > 0 || (activeModel && modelSelectionBlocked) || sending || creatingTask || switchBusy.current || selectedTask.activePrimaryRun || quotaSendingBlocked || agentPreferences.disabled.includes(selectedTask.preferredExecutor.providerId) || (agentPreferences.disabled.length > 0 && !executorOptions.length)) return;
+    if (!selectedTask || submissionPending || (!draft.trim() && !attachments.items.length) || attachments.pending > 0 || modelSelectionBlocked || sending || creatingTask || switchBusy.current || selectedTask.activePrimaryRun || quotaSendingBlocked || agentPreferences.disabled.includes(selectedTask.preferredExecutor.providerId) || (agentPreferences.disabled.length > 0 && !executorOptions.length)) return;
     const prompt = draft.trim(), attachmentIds = attachments.items.map(item => item.id);
     const originContext = composerContext.current;
     const scope = selectedTaskId ? `task:${selectedTaskId}` : newDraftScope.current;
@@ -1273,7 +1280,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
               modelPicker={modelPicker}
               permissionPicker={permissionPicker}
               submissionPending={submissionPending}
-              modelSelectionPending={Boolean(activeModel) && modelSelectionBlocked}
+              modelSelectionPending={modelSelectionBlocked}
               selectedTask={selectedTask}
               selectedQuota={selectedQuota}
               quotaDiagnosticCode={quotaViews.find(view => view.installationId === selectedTask.preferredExecutor.installationId)?.diagnostic}
@@ -1306,7 +1313,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
                 modelPicker={modelPicker}
               permissionPicker={permissionPicker}
                 submissionPending={submissionPending}
-              modelSelectionPending={Boolean(activeModel) && modelSelectionBlocked}
+              modelSelectionPending={modelSelectionBlocked}
                 selectedTask={selectedTask}
                 selectedQuota={selectedQuota}
                 quotaDiagnosticCode={quotaViews.find(view => view.installationId === selectedTask.preferredExecutor.installationId)?.diagnostic}
@@ -1458,7 +1465,6 @@ export function QuotaRing({ quota, providerId, diagnostic, turnQuotaExhausted = 
       {rows.length === 1 ? rows[0][1] : t("quota.balanceCount", { count: rows.length })}
     </span>;
   }
-  if (inline && remaining === null) return null;
   const stale = quota ? quotaIsStale(quota.staleAfterUnixMs) : false;
   const hasFreshReportedWindows = Boolean(
     quota

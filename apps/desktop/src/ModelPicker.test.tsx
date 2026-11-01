@@ -69,15 +69,23 @@ it("preserves removed model and thinking choices and disables refresh while busy
  expect(container.textContent).toContain("已选模型不在当前列表");
  expect(change).not.toHaveBeenCalled();
 });
-it("requires an explicit available model when the native default is retired",async()=>{
- const unavailable = {...catalog, defaultModel:"opencode/retired"};
- await act(async()=>root.render(<ModelPicker catalog={unavailable} model={null} thinking={null} loading={false} error={null} disabled={false} onChange={change} onRetry={retry}/>));
- expect(container.textContent).toContain("请选择模型");
+it.each(["plain", "retired"])("selects the first model without a synthetic Default row when native default is %s",async nativeDefault=>{
+ const choices = {...catalog, defaultModel:nativeDefault};
+ await act(async()=>root.render(<ModelPicker catalog={choices} model={null} thinking={null} loading={false} error={null} disabled={false} onChange={change} onRetry={retry}/>));
+ expect(button("选择模型").textContent).toContain("Grok 4.6");
  await click(button("选择模型"));
- expect(container.textContent).toContain("默认模型已不可用，请选择其他模型");
- const nativeDefault = [...container.querySelectorAll('button')].find(node=>node.textContent==="默认模型不可用")!;
- expect((nativeDefault as HTMLButtonElement).disabled).toBe(true);
  expect(container.textContent).not.toContain("默认（推荐）");
+ expect(container.querySelectorAll('.model-options button')).toHaveLength(2);
+ expect(container.querySelector('.model-options button.selected')?.textContent).toContain("Grok 4.6");
+ expect(change).not.toHaveBeenCalled();
  await click(container.querySelector('.model-options button')!);
  expect(change).toHaveBeenLastCalledWith("grok","high");
+});
+it("shows an empty catalog without inventing a default model",async()=>{
+ await act(async()=>root.render(<ModelPicker catalog={{models:[],defaultModel:null}} model={null} thinking={null} loading={false} error={null} disabled={false} onChange={change} onRetry={retry}/>));
+ expect(button("选择模型").textContent).toContain("请选择模型");
+ await click(button("选择模型"));
+ expect(container.textContent).toContain("暂无可用模型");
+ expect(container.querySelectorAll('.model-options button')).toHaveLength(0);
+ expect(change).not.toHaveBeenCalled();
 });
