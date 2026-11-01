@@ -111,7 +111,7 @@ pub(crate) fn discard_context(value: &mut Value) {
             if map.remove("contextFiles").is_some() {
                 map.insert(
                     "contextScope".into(),
-                    json!("上下文因总材料预算省略；仅可检索已保存变更"),
+                    json!("Context omitted because of the total material budget; only saved changes can be retrieved"),
                 );
             }
             for value in map.values_mut() {

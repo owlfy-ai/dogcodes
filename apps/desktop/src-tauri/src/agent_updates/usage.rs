@@ -75,7 +75,8 @@ impl Scope {
                         .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
                         .is_some_and(|v| v["name"].as_str() == Some(package))
                 })
-                .map(Path::to_path_buf),
+                .map(Path::to_path_buf)
+                .or_else(|| super::windows::npm_package(&i.provider_id, &executable)),
             Plan::Native(_) => {
                 if i.provider_id == "kiro" {
                     // The native updater replaces the whole CLI app, including

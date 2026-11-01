@@ -93,6 +93,7 @@ import { OrderedEventCursor } from "./orderedEvents";
 import { PendingExecutorContext } from "./automaticContext";
 import { ConversationHistory } from "./ConversationHistory";
 const MemoConversationHistory = memo(ConversationHistory);
+import { REVIEW_REPAIR_PROMPT, displayBackendText } from "./backendText";
 import { timelineItemRole } from "./timelinePresentation";
 import { RequestEpoch, changeSelection } from "./requestEpoch";
 import { formatResetTime, formatProviderBalance, formatQuotaPercent, quotaScopeLabel, quotaPlanLabel, quotaNativeResetLabel, nativeResetDisplay, antigravityQuotaForModel, ringQuotaWindow, quotaColor, quotaIsExhausted, quotaIsStale, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
@@ -135,14 +136,14 @@ function ToolActivity({ item, active }: { item: TimelineItem; active: boolean })
 }
 
 const TimelineEntry = memo(function TimelineEntry({ item, active = false }: { item: TimelineItem; active?: boolean }) {
-  const { t } = useI18n();
+  const { t, resolvedLanguage } = useI18n();
   const role = timelineItemRole(item.kind);
   const time = new Date(item.occurredAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   if (role === "tool") return <ToolActivity item={item} active={active} />;
   if (role === "user") {
     return (
       <article className="message user-message" data-tooltip={t("app.userMessageTooltip", { time })}>
-        {item.text && <p>{item.text}</p>}
+        {item.text && <p>{item.text === REVIEW_REPAIR_PROMPT ? t("backendText.reviewRepairPrompt") : item.text}</p>}
         <SentAttachments items={item.attachments} />
       </article>
     );
@@ -159,7 +160,7 @@ const TimelineEntry = memo(function TimelineEntry({ item, active = false }: { it
       <div className="avatar"><AgentIcon providerId={item.providerId ?? "dogcodes"} /></div>
       <div>
         <header><b>{providerLabel(item.providerId ?? "dogcodes")}</b><time>{time}</time></header>
-        <p>{item.text}</p>
+        <p>{displayBackendText(item.text, resolvedLanguage)}</p>
       </div>
     </article>
   );

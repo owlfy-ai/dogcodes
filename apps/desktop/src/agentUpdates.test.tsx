@@ -29,6 +29,40 @@ it("keeps errors actionable and never renders success for a failed check", async
   const check=vi.fn();await mount(<AgentUpdateControl id={i.installationId} actions={{updates:{[i.installationId]:{...available,status:"error",message:"网络不可用",canUpgrade:false}},check,upgrade:vi.fn()}}/>);
   expect(element.querySelector("button")?.dataset.tooltip).toContain("网络不可用");expect(element.textContent).not.toContain("已是最新");await act(async () => element.querySelector("button")!.click());expect(check).toHaveBeenCalledWith(i.installationId,true);
 });
+it("shows an external release without automatic-update warnings or an info icon", async () => {
+  const upgrade = vi.fn();
+  await mount(<AgentUpdateControl id={i.installationId} actions={{
+    updates: { [i.installationId]: { ...available, canUpgrade: false, message: "暂不支持此安装来源的自动更新，请通过原安装渠道升级" } },
+    check: vi.fn(), upgrade,
+  }} />);
+  expect(element.textContent).toContain("有新版本 0.43.0");
+  expect(element.querySelector("button")).toBeNull();
+  expect(element.querySelector('[role="status"]')).toBeNull();
+  expect(element.querySelector("svg")).toBeNull();
+  expect(element.querySelector(".agent-update")?.getAttribute("data-tooltip")).not.toContain("原安装渠道");
+  expect(upgrade).not.toHaveBeenCalled();
+});
+it("opens the external upgrade entry only after a user click", async () => {
+  const openUpdater = vi.fn(); const upgrade = vi.fn();
+  await mount(<AgentUpdateControl id={i.installationId} actions={{
+    updates: { [i.installationId]: { ...available, canUpgrade: false, message: "Automatic updates are unavailable for this installation." } },
+    check: vi.fn(), upgrade, openUpdater,
+  }} />);
+  expect(openUpdater).not.toHaveBeenCalled();
+  expect(upgrade).not.toHaveBeenCalled();
+  expect(element.querySelector('[role="status"]')).toBeNull();
+  expect(element.querySelector(".agent-update")?.getAttribute("data-tooltip")).not.toContain("Automatic");
+  await act(async () => element.querySelector("button")!.click());
+  expect(openUpdater).toHaveBeenCalledExactlyOnceWith(i.installationId);
+  expect(upgrade).not.toHaveBeenCalled();
+});
+it("does not display unsupported installation diagnostics even in the detailed view", async () => {
+  await mount(<AgentUpdateControl id={i.installationId} detailed actions={{
+    updates: { [i.installationId]: { ...available, status: "unsupported", canUpgrade: false, message: "Automatic updates are unavailable for this installation." } },
+    check: vi.fn(), upgrade: vi.fn(),
+  }} />);
+  expect(element.innerHTML).toBe("");
+});
 it("retries the upgrade after a failed upgrade instead of merely checking the feed", async () => {
   const upgradeAgent = vi.fn().mockRejectedValueOnce("下载超时").mockResolvedValueOnce({ ...available, status: "updated", canUpgrade: false });
   const checkAgentUpdate = vi.fn(async () => available);

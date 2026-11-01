@@ -221,6 +221,9 @@ async fn probe_shell(context: &DiscoveryContext) -> Option<Commands> {
 /// Resolve the user's actual Node/npm pair for an existing local npm installation.
 pub(crate) async fn npm_runtime() -> Option<(PathBuf, PathBuf)> {
     let context = DiscoveryContext::from_current_process();
+    if context.platform == agent_registry::Platform::Windows {
+        return windows_npm_runtime(&context.path_entries);
+    }
     let commands = shell_commands(&context).await;
     let resolve = |name: &str| {
         if let Some(commands) = &commands {
@@ -232,7 +235,8 @@ pub(crate) async fn npm_runtime() -> Option<(PathBuf, PathBuf)> {
         context
             .path_entries
             .iter()
-            .find_map(|dir| canonical_executable(&dir.join(name)))
+            .flat_map(|dir| agent_registry::command_paths(dir, name, context.platform))
+            .find_map(|path| canonical_executable(&path))
     };
     let node = resolve("node")?;
     let npm = resolve("npm")?;
@@ -240,6 +244,28 @@ pub(crate) async fn npm_runtime() -> Option<(PathBuf, PathBuf)> {
     let info: serde_json::Value =
         serde_json::from_slice(&std::fs::read(root.join("package.json")).ok()?).ok()?;
     (info["name"] == "npm" && npm.file_name()?.to_str()? == "npm-cli.js").then_some((node, npm))
+}
+
+fn windows_npm_runtime(directories: &[PathBuf]) -> Option<(PathBuf, PathBuf)> {
+    directories
+        .iter()
+        .filter(|p| p.is_absolute())
+        .find_map(|bin| {
+            // GUI launchers can prepend a private Node without npm. Continue to
+            // the next complete pair instead of combining unrelated runtimes.
+            let node = bin.join("node.exe");
+            let npm = bin.join("node_modules/npm/bin/npm-cli.js");
+            if !node.is_file() || !npm.is_file() {
+                return None;
+            }
+            let manifest = bin.join("node_modules/npm/package.json");
+            if std::fs::metadata(&manifest).ok()?.len() > 65_536 {
+                return None;
+            }
+            let info: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(manifest).ok()?).ok()?;
+            (info["name"] == "npm").then_some((node.canonicalize().ok()?, npm.canonicalize().ok()?))
+        })
 }
 
 fn select_executable(
@@ -514,6 +540,33 @@ pub(crate) async fn preferred_executable(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_updates_skip_private_node_without_npm_and_keep_a_matching_pair() {
+        let dir = tempfile::tempdir().unwrap();
+        let private = dir.path().join("private runtime");
+        let complete = dir.path().join("complete runtime");
+        std::fs::create_dir_all(&private).unwrap();
+        std::fs::create_dir_all(complete.join("node_modules/npm/bin")).unwrap();
+        std::fs::write(private.join("node.exe"), "").unwrap();
+        std::fs::write(complete.join("node.exe"), "").unwrap();
+        std::fs::write(complete.join("node_modules/npm/bin/npm-cli.js"), "").unwrap();
+        let manifest = complete.join("node_modules/npm/package.json");
+        std::fs::write(&manifest, r#"{"name":"npm"}"#).unwrap();
+        let directories = vec![private, complete.clone()];
+        assert_eq!(
+            windows_npm_runtime(&directories),
+            Some((
+                complete.join("node.exe").canonicalize().unwrap(),
+                complete
+                    .join("node_modules/npm/bin/npm-cli.js")
+                    .canonicalize()
+                    .unwrap(),
+            ))
+        );
+        std::fs::write(manifest, r#"{"name":"foreign-package"}"#).unwrap();
+        assert!(windows_npm_runtime(&directories).is_none());
+    }
     use agent_registry::Platform;
     #[test]
     fn shell_path_records_preserve_unicode_spaces_and_require_a_complete_frame() {

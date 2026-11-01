@@ -10,6 +10,15 @@ fn manifest(path: &Path) -> Option<Value> {
     serde_json::from_slice(&std::fs::read(path).ok()?).ok()
 }
 
+pub(super) fn pi_launcher(root: &Path) -> PathBuf {
+    let bin = root.parent().unwrap_or(root).join("bin");
+    if cfg!(windows) && bin.join("pi.cmd").is_file() {
+        bin.join("pi.cmd")
+    } else {
+        bin.join("pi")
+    }
+}
+
 pub(super) fn pi_managed_root(executable: &Path) -> Option<PathBuf> {
     for parent in executable.ancestors().skip(1).take(10) {
         let root = if parent.file_name().is_some_and(|n| n == "install") {
@@ -34,7 +43,7 @@ pub(super) fn pi_managed_root(executable: &Path) -> Option<PathBuf> {
         if package["name"] != "@earendil-works/pi-coding-agent" {
             return None;
         }
-        let launcher = root.parent()?.join("bin/pi").canonicalize().ok()?;
+        let launcher = pi_launcher(&root).canonicalize().ok()?;
         if executable == launcher || executable.starts_with(release.canonicalize().ok()?) {
             return Some(root);
         }
@@ -141,7 +150,7 @@ pub(super) async fn install_spec(
             .ok()
             .and_then(|p| pi_managed_root(&p))
             .ok_or("Pi 托管安装已变化，请重新检测")?;
-        command.executable = root.parent().ok_or("Pi 安装目录无效")?.join("bin/pi");
+        command.executable = pi_launcher(&root);
         let (node, npm) = crate::terminal_installation::npm_runtime()
             .await
             .ok_or("Pi 更新需要 Node/npm，请确认终端可用")?;

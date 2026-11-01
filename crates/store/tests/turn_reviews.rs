@@ -520,7 +520,7 @@ async fn review_answers_native_tool_permissions_without_affecting_main_session()
             .unwrap()
             .1
             .prompt
-            .contains("只能审查，不得修改任何代码")
+            .contains("you may only review and must not modify any code")
     );
     assert!(calls.last().unwrap().1.prompt.contains("允许跨目录读取"));
 }

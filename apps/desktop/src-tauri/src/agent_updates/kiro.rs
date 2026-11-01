@@ -69,6 +69,27 @@ fn latest_from_index(index: &Value) -> Result<String, String> {
         .ok_or("Kiro 当前平台没有可用发布版本".into())
 }
 
+// The newer standalone CLI (including Windows) exposes a read-only check,
+// rather than the legacy macOS bundle's debug release index.
+pub(super) fn latest_from_check(output: &str) -> Result<String, String> {
+    for line in output.lines().map(str::trim) {
+        let latest = if let Some(release) = line.strip_prefix("Update available: ") {
+            let (current, latest) = release.split_once('→').ok_or("Kiro 更新检查结果无效")?;
+            semver::Version::parse(current.trim()).map_err(|_| "Kiro 更新检查结果无效")?;
+            Some(latest.trim())
+        } else {
+            line.strip_prefix("Already up to date (")
+                .and_then(|v| v.strip_suffix(')'))
+        };
+        if let Some(latest) = latest {
+            return semver::Version::parse(latest)
+                .map(|v| v.to_string())
+                .map_err(|_| "Kiro 更新检查结果无效".into());
+        }
+    }
+    Err("Kiro 暂未确认更新状态".into())
+}
+
 pub(super) async fn latest(i: &InstallationSummary) -> Result<String, String> {
     let executable = Path::new(&i.executable);
     let app = bundle(executable).ok_or("Kiro CLI 安装已变化，请重新检测")?;
@@ -138,6 +159,27 @@ pub(super) mod tests {
     use super::*;
     use crate::agent_updates::{Plan, inspect, install_spec, plan, tests::installation_for};
     use serde_json::json;
+
+    #[test]
+    fn standalone_readonly_check_requires_an_explicit_valid_release() {
+        assert_eq!(
+            latest_from_check("Checking for updates...\nUpdate available: 2.36.0 → 2.37.0\n"),
+            Ok("2.37.0".into())
+        );
+        assert_eq!(
+            latest_from_check("Already up to date (2.37.0)\n"),
+            Ok("2.37.0".into())
+        );
+        for output in [
+            "Checking for updates...",
+            "private-token",
+            "Update available: invalid → 2.37.0",
+            "Already up to date (unknown)",
+        ] {
+            let error = latest_from_check(output).unwrap_err();
+            assert!(!error.contains(output));
+        }
+    }
 
     pub(crate) fn fixture_app(root: &Path) -> PathBuf {
         let app = root.join("Kiro CLI.app");

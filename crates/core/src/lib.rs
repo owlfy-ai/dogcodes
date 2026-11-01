@@ -4905,7 +4905,7 @@ mod tests {
             .await
             .unwrap();
         assert!(execution_prompt.contains(prompt));
-        assert!(execution_prompt.contains("[当前用户消息]"));
+        assert!(execution_prompt.contains("[Current user message]"));
     }
 
     #[tokio::test]

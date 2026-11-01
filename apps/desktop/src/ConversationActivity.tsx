@@ -422,7 +422,7 @@ export function ConversationContent({
     if (item.kind === "computer_use") return <ComputerUseActivity key={item.itemId} item={item} />;
     if (item.kind === "fork_context") {
       try { const data = JSON.parse(item.text); const messages = JSON.parse(data.text) as {kind:string;text:string}[];
-        return <details className="turn-fork-history" key={item.itemId}><summary>{t("activity.forkSummary")}</summary><p>{t(data.environment === "worktree" ? (data.restoredTurnSnapshot ? "activity.forkRestored" : "activity.forkLegacy") : "activity.forkSameDirectory")}</p>{messages.filter(m => ["turn.queued","message.delta"].includes(m.kind)).map((m,index) => <article key={index}><small>{m.kind === "turn.queued" ? t("activity.you") : "Agent"}</small><MarkdownMessage text={m.text}/></article>)}</details>;
+        return <details className="turn-fork-history" key={item.itemId}><summary>{t("activity.forkSummary")}</summary><p>{t(data.environment === "worktree" ? (data.restoredTurnSnapshot ? "activity.forkRestored" : "activity.forkLegacy") : "activity.forkSameDirectory")}</p>{messages.filter(m => ["turn.queued","message.delta"].includes(m.kind)).map((m,index) => <article key={index}><small>{m.kind === "turn.queued" ? t("activity.you") : t("activity.agent")}</small><MarkdownMessage text={m.text}/></article>)}</details>;
       } catch { return <p key={item.itemId}>{t("activity.forkUnavailable")}</p>; }
     }
 

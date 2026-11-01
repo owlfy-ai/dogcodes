@@ -19,7 +19,7 @@ use std::{
     sync::Arc,
 };
 
-pub(crate) const REPAIR_PROMPT: &str = "请处理我选中的审查意见。";
+pub(crate) const REPAIR_PROMPT: &str = "Please handle the review findings I selected.";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
