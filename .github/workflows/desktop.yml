@@ -138,7 +138,8 @@ jobs:
           # Large debug async state machines exceed the Windows test-thread
           # stack; this changes the harness resources, not which tests run.
           RUST_MIN_STACK: '16777216'
-        run: cargo test --workspace --lib --tests --locked --no-fail-fast 2>&1 | tee native-tests.log
+        # Print fixture panics immediately, even if another test is still waiting.
+        run: cargo test --workspace --lib --tests --locked --no-fail-fast -- --nocapture 2>&1 | tee native-tests.log
       - name: Software video capture on an isolated X11 display
         if: runner.os == 'Linux' && needs.changes.outputs.video == 'true'
         timeout-minutes: 5

@@ -48,30 +48,53 @@ it("limits retries when an Agent remains unavailable",async()=>{
  } finally {vi.useRealTimers();}
 });
 
-it("expires successful reads and coalesces manual refreshes while retaining stale data", async () => {
+it("keeps successful reads for the session and coalesces explicit refresh while displaying cached values", async () => {
  let now=0;
  let finish!: (value:typeof catalog)=>void;
  const read=vi.fn().mockResolvedValueOnce(catalog).mockImplementation(()=>new Promise(r=>{finish=r;}));
  const cache=new ModelCatalogCache(read,[],()=>now);
  await cache.get(executor("a"),"1");
  now=300001;
- expect(cache.peek(executor("a"),"1")).toBeUndefined();
+ expect(cache.peek(executor("a"),"1")).toEqual(catalog);
  expect(cache.peek(executor("a"),"1",{},true)).toEqual(catalog);
- const pending=cache.get(executor("a"),"1");
+ await cache.get(executor("a"),"1");expect(read).toHaveBeenCalledTimes(1);
+ const pending=cache.get(executor("a"),"1",true);
+ expect(cache.peek(executor("a"),"1")).toEqual(catalog);
  expect(cache.get(executor("a"),"1",true)).toBe(pending);
  await Promise.resolve();finish(catalog);await pending;
  expect(read).toHaveBeenCalledTimes(2);
 });
-it("isolates model efforts and workspaces and allows recovery after a cached failure expires",async()=>{
- let now=0; const read=vi.fn().mockResolvedValue(catalog);
+it("shares model efforts across tasks and allows recovery after a cached failure expires",async()=>{
+ let now=0; const choices={defaultModel:"a",models:["a","b"].map(id=>({id,label:id,thinkingOptions:[],defaultThinking:null}))};
+ const read=vi.fn().mockResolvedValue(choices);
  const cache=new ModelCatalogCache(read,[],()=>now);
  for (const scope of [{model:"a",taskId:"tsk_one"},{model:"b",taskId:"tsk_one"},{model:"a",taskId:"tsk_two"}] as const) await cache.get(executor("pi"),"1",false,scope);
- expect(read).toHaveBeenCalledTimes(3);
- expect(read).toHaveBeenLastCalledWith(executor("pi"),"a","tsk_two");
+ expect(read).toHaveBeenCalledTimes(2);
+ expect(read).toHaveBeenLastCalledWith(executor("pi"),"b",undefined);
  read.mockRejectedValueOnce(Error("offline"));
  await expect(cache.get(executor("pi"),"1",true,{model:"a",taskId:"tsk_two"})).rejects.toThrow("offline");
- expect(cache.peek(executor("pi"),"1",{model:"a",taskId:"tsk_two"},true)).toEqual(catalog);
+ expect(cache.peek(executor("pi"),"1",{model:"a",taskId:"tsk_two"},true)).toEqual(choices);
  now=30001;
  await cache.get(executor("pi"),"1",false,{model:"a",taskId:"tsk_two"});
- expect(read).toHaveBeenCalledTimes(5);
+ expect(read).toHaveBeenCalledTimes(4);
+});
+
+it("prioritizes the selected scope over queued warmup and coalesces its existing request", async () => {
+ const starts:string[]=[]; const finish=new Map<string,()=>void>();
+ const cache=new ModelCatalogCache(ex=>new Promise(resolve=>{starts.push(ex.providerId);finish.set(ex.providerId,()=>resolve(catalog));}),[]);
+ const requests=["a","b","c","d"].map(id=>cache.warm(executor(id),"1"));
+ await Promise.resolve();expect(starts).toEqual(["a","b"]);
+ const selected=cache.get(executor("d"),"1");expect(selected).toBe(requests[3]);
+ finish.get("a")!();await new Promise(r=>setTimeout(r,0));expect(starts).toEqual(["a","b","d"]);
+ finish.get("b")!();finish.get("d")!();await new Promise(r=>setTimeout(r,0));finish.get("c")!();await Promise.all(requests);
+});
+
+it("keeps cached values during invalidation and ignores replies from an older inventory",async()=>{
+ let finish!:(value:typeof catalog)=>void;
+ const read=vi.fn().mockResolvedValueOnce(catalog).mockImplementationOnce(()=>new Promise(r=>{finish=r;})).mockResolvedValue({models:[],defaultModel:"new"});
+ const cache=new ModelCatalogCache(read,[]);await cache.get(executor("a"),"1");
+ const old=cache.get(executor("a"),"1",true);await Promise.resolve();cache.invalidate();
+ expect(cache.peek(executor("a"),"1")).toEqual(catalog);
+ await cache.get(executor("a"),"1");finish(catalog);await old;
+ expect(cache.peek(executor("a"),"1")?.defaultModel).toBe("new");
 });

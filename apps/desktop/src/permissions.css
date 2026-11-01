@@ -11,3 +11,6 @@
 .permission-picker:is([data-provider="zcode"],[data-provider="kimi"]) .permission-menu>button{grid-template-columns:calc(22px * var(--ui-scale, 1)) minmax(0, 1fr) 1em;gap:10px}
 
 .permission-icon { width: calc(18px * var(--ui-scale, 1)); height: calc(20px * var(--ui-scale, 1)); flex-shrink: 0; }
+.permission-menu-header{display:flex;align-items:center;justify-content:space-between;padding:4px 9px;color:var(--muted,#888);font-size:.8125rem}
+.permission-menu-header button{border:0;border-radius:6px;background:transparent;color:inherit;font-size:1.15rem;cursor:pointer;padding:2px 6px}
+.permission-menu-header button:hover{background:#8881}.permission-menu-header button:disabled{opacity:.5;cursor:default}

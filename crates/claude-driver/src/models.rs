@@ -1,5 +1,5 @@
-//! Metadata helpers are serialized within one driver and retain admission until
-//! their original process tree exits, even when the requesting UI disappears.
+//! Unscoped metadata can reuse the readiness control channel. Other helpers are
+//! serialized through physical retirement, including when their caller leaves.
 use super::{
     AsyncBufReadExt, AsyncWriteExt, BufReader, ClaudeDriver, ClaudeLaunch, DriverError,
     PROBE_TIMEOUT, Value, native::NativeProcess, spawn,
@@ -25,29 +25,64 @@ pub(super) async fn read_with_auto(
     // A cancelled waiter never starts a helper. This gate is separate from
     // live sessions, so reading a menu cannot wait behind a running prompt.
     let admission = driver.catalog_probe.clone().lock_owned().await;
+    let prepared = driver.ready_connection.lock().await.take();
+    let ready_slot = driver.ready_connection.clone();
     let executable = driver.executable.clone();
     let workspace = workspace.map(str::to_owned);
-    let (observer, owner) = tokio::sync::watch::channel(false);
+    let (observer, mut owner) = tokio::sync::watch::channel(false);
     let result = tokio::spawn(async move {
         let _admission = admission;
         if owner.has_changed().is_err() {
+            if let Some(connection) = prepared {
+                connection.retire().await;
+            }
             return Err(DriverError::Disconnected(
                 "Claude catalog observer ended".into(),
             ));
         }
-        let child = spawn(
-            &ClaudeLaunch { executable },
-            &uuid::Uuid::new_v4().to_string(),
-            false,
-            workspace.as_deref(),
-        )?;
-        // Reuse the business-session supervisor: drain both pipes and retain
-        // the original OS scope independently of this observer's lifetime.
-        let (native, stdin, stdout) = NativeProcess::start(child)?;
-        native.observe_owner(owner);
-        let result = AssertUnwindSafe(tokio::time::timeout(
+        let prepared = if let Some(connection) = prepared {
+            if workspace.is_none() && !connection.native.stopping() {
+                Some(connection)
+            } else {
+                connection.retire().await;
+                None
+            }
+        } else {
+            None
+        };
+        if owner.has_changed().is_err() {
+            if let Some(connection) = prepared {
+                connection.retire().await;
+            }
+            return Err(DriverError::Disconnected(
+                "Claude catalog observer ended".into(),
+            ));
+        }
+        let keep_ready = prepared.is_some();
+        let mut connection = if let Some(connection) = prepared {
+            connection
+        } else {
+            let child = spawn(
+                &ClaudeLaunch { executable },
+                &uuid::Uuid::new_v4().to_string(),
+                false,
+                Some(workspace.as_deref().unwrap_or(&std::env::temp_dir().to_string_lossy())),
+            )?;
+            // Reuse the business-session supervisor: drain both pipes and retain
+            // the original OS scope independently of this observer's lifetime.
+            let (native, stdin, stdout) = NativeProcess::start(child)?;
+            super::readiness::ReadyConnection {
+                native,
+                stdin,
+                stdout: BufReader::new(stdout),
+            }
+        };
+        let result = tokio::select! {
+            biased;
+            _ = owner.changed() => Err(DriverError::Disconnected("Claude catalog observer ended".into())),
+            result = async { AssertUnwindSafe(tokio::time::timeout(
             PROBE_TIMEOUT,
-            read_catalog(stdin, stdout),
+            read_catalog(&mut connection.stdin, &mut connection.stdout),
         ))
         .catch_unwind()
         .await
@@ -57,9 +92,13 @@ pub(super) async fn read_with_auto(
             )))
         })
         .map_err(|_| DriverError::Disconnected("Claude 模型目录读取超时".into()))
-        .and_then(std::convert::identity);
-        native.request_close();
-        native.confirmed().await;
+        .and_then(std::convert::identity) } => result,
+        };
+        if keep_ready && result.is_ok() && owner.has_changed().is_ok() && !connection.native.stopping() {
+            *ready_slot.lock().await = Some(connection);
+            return result;
+        }
+        connection.retire().await;
         result
     })
     .await
@@ -71,15 +110,15 @@ pub(super) async fn read_with_auto(
 }
 
 async fn read_catalog(
-    mut stdin: tokio::process::ChildStdin,
-    stdout: tokio::io::DuplexStream,
+    stdin: &mut tokio::process::ChildStdin,
+    stdout: &mut BufReader<tokio::io::DuplexStream>,
 ) -> Result<(ModelCatalog, bool), DriverError> {
     stdin.write_all(b"{\"type\":\"control_request\",\"request_id\":\"model-catalog\",\"request\":{\"subtype\":\"initialize\",\"hooks\":{}}}\n").await.map_err(|_| DriverError::Disconnected("Claude model request failed".into()))?;
     stdin
         .flush()
         .await
         .map_err(|_| DriverError::Disconnected("Claude model request failed".into()))?;
-    let mut reader = BufReader::new(stdout.take(1024 * 1024));
+    let mut reader = stdout.take(1024 * 1024);
     let mut line = String::new();
     loop {
         line.clear();
@@ -98,57 +137,61 @@ async fn read_catalog(
         {
             continue;
         }
-        let rows = value
-            .pointer("/response/response/models")
-            .and_then(Value::as_array)
-            .ok_or_else(|| DriverError::CapabilityUnavailable("Claude 未返回模型目录".into()))?;
-        let mut catalog = ModelCatalog {
-            default_model: Some("default".into()),
-            ..Default::default()
-        };
-        for row in rows {
-            let Some(id) = row["value"].as_str().filter(|s| !s.is_empty()) else {
-                continue;
-            };
-            if catalog.models.iter().any(|m| m.id == id) {
-                continue;
-            }
-            let mut model = ModelOption::new(id, row["displayName"].as_str().unwrap_or(id));
-            model.thinking_options = ["off", "auto", "low", "medium", "high", "xhigh", "max"]
-                .iter()
-                .map(|id| ThinkingOption {
-                    id: (*id).into(),
-                    label: (*id).into(),
-                })
-                .collect();
-            model.default_thinking = Some("auto".into());
-            catalog.models.push(model);
-        }
-        if catalog.models.is_empty() {
-            return Err(DriverError::CapabilityUnavailable(
-                "Claude 未返回可用模型".into(),
-            ));
-        }
-        if !catalog.models.iter().any(|m| m.id == "default") {
-            let mut model = ModelOption::new("default", "默认（推荐）");
-            if let Some(first) = catalog.models.first() {
-                model.thinking_options.clone_from(&first.thinking_options);
-                model.default_thinking.clone_from(&first.default_thinking);
-            }
-            catalog.models.insert(0, model);
-        }
-        // Third-party aliases can resolve to the same display name.
-        let labels: Vec<_> = catalog.models.iter().map(|m| m.label.clone()).collect();
-        for model in &mut catalog.models {
-            if labels.iter().filter(|label| **label == model.label).count() > 1 {
-                model.label = format!("{} ({})", model.label, model.id);
-            }
-        }
-        return Ok((catalog, rows.iter().any(|r| r["supportsAutoMode"] == true)));
+        return catalog(&value["response"]["response"]);
     }
     Err(DriverError::Protocol(
         "Claude model response ended early".into(),
     ))
+}
+
+pub(super) fn catalog(value: &Value) -> Result<(ModelCatalog, bool), DriverError> {
+    let rows = value
+        .get("models")
+        .and_then(Value::as_array)
+        .ok_or_else(|| DriverError::CapabilityUnavailable("Claude 未返回模型目录".into()))?;
+    let mut catalog = ModelCatalog {
+        default_model: Some("default".into()),
+        ..Default::default()
+    };
+    for row in rows {
+        let Some(id) = row["value"].as_str().filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        if catalog.models.iter().any(|m| m.id == id) {
+            continue;
+        }
+        let mut model = ModelOption::new(id, row["displayName"].as_str().unwrap_or(id));
+        model.thinking_options = ["off", "auto", "low", "medium", "high", "xhigh", "max"]
+            .iter()
+            .map(|id| ThinkingOption {
+                id: (*id).into(),
+                label: (*id).into(),
+            })
+            .collect();
+        model.default_thinking = Some("auto".into());
+        catalog.models.push(model);
+    }
+    if catalog.models.is_empty() {
+        return Err(DriverError::CapabilityUnavailable(
+            "Claude 未返回可用模型".into(),
+        ));
+    }
+    if !catalog.models.iter().any(|m| m.id == "default") {
+        let mut model = ModelOption::new("default", "默认（推荐）");
+        if let Some(first) = catalog.models.first() {
+            model.thinking_options.clone_from(&first.thinking_options);
+            model.default_thinking.clone_from(&first.default_thinking);
+        }
+        catalog.models.insert(0, model);
+    }
+    // Third-party aliases can resolve to the same display name.
+    let labels: Vec<_> = catalog.models.iter().map(|m| m.label.clone()).collect();
+    for model in &mut catalog.models {
+        if labels.iter().filter(|label| **label == model.label).count() > 1 {
+            model.label = format!("{} ({})", model.label, model.id);
+        }
+    }
+    Ok((catalog, rows.iter().any(|r| r["supportsAutoMode"] == true)))
 }
 
 #[cfg(test)]

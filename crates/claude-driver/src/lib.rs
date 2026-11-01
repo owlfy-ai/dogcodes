@@ -24,6 +24,8 @@ mod native_tests;
 mod readiness;
 #[cfg(all(test, unix))]
 mod readiness_tests;
+#[cfg(test)]
+mod retained_readiness_tests;
 mod session_scope;
 use session_scope::{NativeAttempt, stale_scope};
 mod request_usage;
@@ -428,6 +430,7 @@ impl SessionProcess {
 }
 
 pub struct ClaudeDriver {
+    startup_catalogs: std::sync::Mutex<driver_api::models::StartupCatalogs>,
     executor: ExecutorRef,
     executable: PathBuf,
     native_version: Option<String>,
@@ -437,6 +440,7 @@ pub struct ClaudeDriver {
     retired_handles: std::sync::Mutex<HashMap<String, SessionHandle>>,
     restore_gates: std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     catalog_probe: Arc<tokio::sync::Mutex<()>>,
+    ready_connection: Arc<tokio::sync::Mutex<Option<readiness::ReadyConnection>>>,
     /// Shared quota observations (plan windows + context), fed by every
     /// session process of this driver.
     quota: Arc<ClaudeQuotaState>,
@@ -453,6 +457,7 @@ impl ClaudeDriver {
         resume_capability: SessionResumeCapability,
     ) -> Result<Self, agent_domain::DomainError> {
         Ok(Self {
+            startup_catalogs: std::sync::Mutex::default(),
             executor: ExecutorRef {
                 provider_id: ProviderId::parse(provider_id)?,
                 installation_id: Some(
@@ -471,6 +476,7 @@ impl ClaudeDriver {
             retired_handles: std::sync::Mutex::new(HashMap::new()),
             restore_gates: std::sync::Mutex::new(HashMap::new()),
             catalog_probe: Arc::new(tokio::sync::Mutex::new(())),
+            ready_connection: Arc::new(tokio::sync::Mutex::new(None)),
             quota: Arc::new(ClaudeQuotaState::default()),
         })
     }
@@ -602,6 +608,28 @@ impl ClaudeDriver {
     /// and [`DriverError::Protocol`] when the handshake fails or times out.
     pub async fn probe_ready(executable: &std::path::Path) -> Result<(), DriverError> {
         readiness::probe(executable).await
+    }
+
+    /// Retain the initialized control channel for unscoped catalog
+    /// request. Workspace-bound sessions retain their own process configuration.
+    pub async fn connect_ready(
+        provider_id: &str,
+        installation_id: &str,
+        executable: PathBuf,
+        native_version: Option<String>,
+        resume_capability: SessionResumeCapability,
+    ) -> Result<Self, DriverError> {
+        let driver = Self::new(
+            provider_id,
+            installation_id,
+            executable,
+            native_version,
+            resume_capability,
+        )
+        .map_err(|_| DriverError::Protocol("invalid Claude installation".into()))?;
+        let connection = readiness::connect(&driver).await?;
+        *driver.ready_connection.lock().await = Some(connection);
+        Ok(driver)
     }
 
     async fn install_session(
@@ -1384,6 +1412,9 @@ fn user_message(blocks: Vec<Value>) -> Value {
 
 #[async_trait]
 impl AgentDriver for ClaudeDriver {
+    fn take_startup_catalogs(&self) -> driver_api::models::StartupCatalogs {
+        std::mem::take(&mut *self.startup_catalogs.lock().unwrap())
+    }
     fn supports_readonly_analysis(&self) -> bool {
         true
     }

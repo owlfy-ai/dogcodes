@@ -139,12 +139,13 @@ it.each([null, "ins_old_cursor"])("loads the restored Agent's models when its in
   // while discovery and runtime registration expose only the current executable.
   await act(async () => root.render(<App key="reload" client={client} />));
   expect(element.querySelector('[aria-label="选择模型"]')?.textContent).toContain("Cursor Auto");
-  expect(permissionCatalog).toHaveBeenCalledWith(executor, snapshot.tasks[0].taskId);
+  expect(permissionCatalog).toHaveBeenCalledWith(executor, undefined);
   expect(element.querySelector('[aria-label="权限策略"]')?.textContent).not.toContain("不可用");
   await click(element.querySelector('[aria-label="选择模型"]')!);
   expect(element.querySelector('.model-menu')?.textContent).not.toContain("正在获取");
   expect(availableModels).toHaveBeenCalledTimes(1);
-  expect(availableModels).toHaveBeenCalledWith(executor, null, snapshot.tasks[0].taskId);
+  expect(availableModels).toHaveBeenCalledWith(executor, null, undefined);
+  expect(availableModels).toHaveBeenCalledWith(executor, null, undefined);
 });
 
 it.each([false, true])("recovers a replaced installation after delayed registration (draft: %s)", async (draft) => {
@@ -173,9 +174,9 @@ it.each([false, true])("recovers a replaced installation after delayed registrat
   expect(element.querySelector('[aria-label="选择模型"]')?.textContent).toContain("Recovered model");
   expect(element.querySelector('.model-menu')?.textContent).not.toContain("正在获取");
   expect(element.querySelector('textarea')?.value).toBe("keep my draft");
-  expect(availableModels).toHaveBeenLastCalledWith(executor, null, draft ? undefined : snapshot.tasks[0].taskId);
+  expect(availableModels).toHaveBeenCalledWith(executor, null, undefined);
   // A new draft queries native defaults without sending its synthetic view-model ID.
-  expect(availableModels).toHaveBeenCalledTimes(draft ? 3 : 2);
+  expect(availableModels).toHaveBeenCalledTimes(2);
 });
 
 it.each(["antigravity", "claude-code", "codebuddy", "codex", "cursor", "deepseek-harness", "grok", "kimi", "kiro", "opencode", "pi", "zcode"])(
@@ -225,9 +226,9 @@ it("queries the selected model's thinking options and refreshes without resettin
   ] }));
   Object.assign(client,{availableModels});
   await act(async()=>root.render(<App key="efforts" client={client}/>));
-  expect(availableModels).toHaveBeenLastCalledWith(snapshot.tasks[0].preferredExecutor,"old",snapshot.tasks[0].taskId);
+  expect(availableModels).toHaveBeenLastCalledWith(snapshot.tasks[0].preferredExecutor,"old",undefined);
   await click(element.querySelector('[aria-label="选择模型"]')!);await click(button("New model"));
-  expect(availableModels).toHaveBeenLastCalledWith(snapshot.tasks[0].preferredExecutor,"new",snapshot.tasks[0].taskId);
+  expect(availableModels).toHaveBeenLastCalledWith(snapshot.tasks[0].preferredExecutor,"new",undefined);
   await click(element.querySelector('[aria-label="选择思考强度"]')!);
   await click(element.querySelector('[aria-label="刷新思考强度列表"]')!);
   expect(element.querySelector('[aria-label="选择模型"]')?.textContent).toContain("New model");

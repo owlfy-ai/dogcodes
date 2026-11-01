@@ -632,7 +632,7 @@ impl CoreClient {
         #[cfg(any(test, feature = "review-acceptance"))]
         if let Self::Local(core, _) = self {
             return core
-                .permission_catalog(executor, task_id)
+                .cached_permission_catalog(executor, task_id, false)
                 .await
                 .map_err(|e| e.to_string());
         }
@@ -648,13 +648,56 @@ impl CoreClient {
         #[cfg(any(test, feature = "review-acceptance"))]
         if let Self::Local(core, _) = self {
             return core
-                .model_catalog_for_task(executor, model, task_id)
+                .cached_model_catalog(executor, model, task_id, false)
                 .await
                 .map_err(|e| e.to_string());
         }
         self.call("model_catalog_for_task", json!((executor, model, task_id,)))
             .await
     }
+    pub async fn cached_model_catalog(
+        &self,
+        executor: &ExecutorRef,
+        model: Option<&str>,
+        task_id: Option<&TaskId>,
+        refresh: bool,
+    ) -> Result<ModelCatalog, String> {
+        #[cfg(any(test, feature = "review-acceptance"))]
+        if let Self::Local(core, _) = self {
+            return core
+                .cached_model_catalog(executor, model, task_id, refresh)
+                .await
+                .map_err(|e| e.to_string());
+        }
+        self.call(
+            "cached_model_catalog",
+            json!((executor, model, task_id, refresh)),
+        )
+        .await
+    }
+    pub async fn cached_permission_catalog(
+        &self,
+        executor: &ExecutorRef,
+        task_id: Option<&TaskId>,
+        refresh: bool,
+    ) -> Result<PermissionCatalog, String> {
+        #[cfg(any(test, feature = "review-acceptance"))]
+        if let Self::Local(core, _) = self {
+            return core
+                .cached_permission_catalog(executor, task_id, refresh)
+                .await
+                .map_err(|e| e.to_string());
+        }
+        self.call(
+            "cached_permission_catalog",
+            json!((executor, task_id, refresh)),
+        )
+        .await
+    }
+    pub async fn catalog_revision(&self) -> Result<u64, String> {
+        self.call("catalog_revision", json!(())).await
+    }
+
     pub async fn review_executors(&self) -> Result<Vec<ExecutorRef>, String> {
         #[cfg(any(test, feature = "review-acceptance"))]
         if let Self::Local(core, _) = self {
@@ -1112,7 +1155,7 @@ async fn dispatch(core: &Arc<Core>, method: &str, args: Value) -> Result<Value, 
             let (executor, task_id): (ExecutorRef, Option<TaskId>) =
                 serde_json::from_value(args).map_err(|e| e.to_string())?;
             let result = core
-                .permission_catalog(&executor, task_id.as_ref())
+                .cached_permission_catalog(&executor, task_id.as_ref(), false)
                 .await
                 .map_err(|e| e.to_string())?;
             serde_json::to_value(result).map_err(|e| e.to_string())
@@ -1121,10 +1164,35 @@ async fn dispatch(core: &Arc<Core>, method: &str, args: Value) -> Result<Value, 
             let (executor, model, task_id): (ExecutorRef, Option<String>, Option<TaskId>) =
                 serde_json::from_value(args).map_err(|e| e.to_string())?;
             let result = core
-                .model_catalog_for_task(&executor, model.as_deref(), task_id.as_ref())
+                .cached_model_catalog(&executor, model.as_deref(), task_id.as_ref(), false)
                 .await
                 .map_err(|e| e.to_string())?;
             serde_json::to_value(result).map_err(|e| e.to_string())
+        }
+        "catalog_revision" => Ok(json!(core.catalog_revision())),
+        "cached_model_catalog" => {
+            let (executor, model, task_id, refresh): (
+                ExecutorRef,
+                Option<String>,
+                Option<TaskId>,
+                bool,
+            ) = serde_json::from_value(args).map_err(|e| e.to_string())?;
+            serde_json::to_value(
+                core.cached_model_catalog(&executor, model.as_deref(), task_id.as_ref(), refresh)
+                    .await
+                    .map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())
+        }
+        "cached_permission_catalog" => {
+            let (executor, task_id, refresh): (ExecutorRef, Option<TaskId>, bool) =
+                serde_json::from_value(args).map_err(|e| e.to_string())?;
+            serde_json::to_value(
+                core.cached_permission_catalog(&executor, task_id.as_ref(), refresh)
+                    .await
+                    .map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())
         }
         "review_executors" => {
             serde_json::to_value(core.review_executors().await.map_err(|e| e.to_string())?)
@@ -1979,6 +2047,49 @@ mod tests {
             control: fixture_control,
             worker,
         }
+    }
+    #[tokio::test]
+    async fn catalog_rpc_reuses_agent_inventory_without_a_task_or_project() {
+        use driver_api::AgentDriver;
+        let f = fixture().await;
+        let driver = Arc::new(driver_api::FakeDriver::new("catalog-test").unwrap());
+        let executor = driver.executor().clone();
+        f.core.register_driver(driver).await;
+        let nonexistent_task = TaskId::new();
+        let models = f
+            .client
+            .cached_model_catalog(&executor, None, Some(&nonexistent_task), false)
+            .await
+            .unwrap();
+        let permissions = f
+            .client
+            .cached_permission_catalog(&executor, Some(&nonexistent_task), false)
+            .await
+            .unwrap();
+        let revision = f.client.catalog_revision().await.unwrap();
+        assert_eq!(
+            models,
+            f.client
+                .model_catalog_for_task(&executor, None, None)
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(permissions).unwrap(),
+            serde_json::to_value(f.client.permission_catalog(&executor, None).await.unwrap())
+                .unwrap()
+        );
+        assert_eq!(revision, f.client.catalog_revision().await.unwrap());
+        f.client
+            .cached_model_catalog(&executor, None, None, true)
+            .await
+            .unwrap();
+        f.client
+            .cached_permission_catalog(&executor, None, true)
+            .await
+            .unwrap();
+        assert!(f.client.catalog_revision().await.unwrap() > revision);
+        assert!(f.core.bootstrap().await.unwrap().projects.is_empty());
     }
     #[tokio::test]
     async fn project_registration_is_validated_and_serialized_by_the_service() {

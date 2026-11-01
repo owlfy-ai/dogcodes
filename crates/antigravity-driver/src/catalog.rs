@@ -15,6 +15,7 @@ pub(super) async fn read(
         let mut command = agent_runtime::agent_command(executable);
         command
             .arg("models")
+            .current_dir(std::env::temp_dir())
             .env_clear()
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

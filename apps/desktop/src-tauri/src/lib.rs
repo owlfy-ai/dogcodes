@@ -56,7 +56,7 @@ use agent_store::SqliteStore;
 use agent_workspace::GitWorkspaceContextProvider;
 use claude_driver::ClaudeDriver;
 use codex_driver::CodexDriver;
-use driver_api::FakeDriver;
+use driver_api::{AgentDriver, FakeDriver};
 use tauri::{Emitter, Manager, ipc::Channel};
 use tokio::sync::{broadcast::error::RecvError, oneshot};
 use zcode_driver::ZcodeDriver;
@@ -654,10 +654,11 @@ async fn core_permission_catalog(
     state: tauri::State<'_, DesktopState>,
     executor: agent_domain::ExecutorRef,
     task_id: Option<agent_domain::TaskId>,
+    refresh: Option<bool>,
 ) -> Result<driver_api::PermissionCatalog, String> {
     state
         .core
-        .permission_catalog(&executor, task_id.as_ref())
+        .cached_permission_catalog(&executor, task_id.as_ref(), refresh.unwrap_or(false))
         .await
 }
 
@@ -677,15 +678,26 @@ async fn core_model_ready_executors(
 }
 
 #[tauri::command]
+async fn core_catalog_revision(state: tauri::State<'_, DesktopState>) -> Result<u64, String> {
+    state.core.catalog_revision().await
+}
+
+#[tauri::command]
 async fn core_available_models(
     state: tauri::State<'_, DesktopState>,
     executor: agent_domain::ExecutorRef,
     selected_model: Option<String>,
     task_id: Option<agent_domain::TaskId>,
+    refresh: Option<bool>,
 ) -> Result<driver_api::ModelCatalog, String> {
     state
         .core
-        .model_catalog_for_task(&executor, selected_model.as_deref(), task_id.as_ref())
+        .cached_model_catalog(
+            &executor,
+            selected_model.as_deref(),
+            task_id.as_ref(),
+            refresh.unwrap_or(false),
+        )
         .await
         .map_err(|error| error.clone())
 }
@@ -1360,6 +1372,7 @@ pub fn run() {
             core_quota_snapshots,
             core_available_models,
             core_model_ready_executors,
+            core_catalog_revision,
             agent_updates::core_check_agent_update,
             agent_updates::core_upgrade_agent,
             agent_updates::core_open_agent_updater,
@@ -1719,41 +1732,21 @@ async fn register_probed_acp_driver(
     launch: acp_driver::AcpLaunch,
 ) {
     let started = std::time::Instant::now();
-    // Reuse the already authenticated process for providers measured to
-    // support workspace-independent connections. CodeBuddy binds cwd at spawn.
-    let readiness = if matches!(
+    // Keep the authenticated connection. CodeBuddy's existing cwd check retires
+    // this readiness connection before opening a task in another workspace.
+    let readiness = acp_driver::AcpDriver::connect_ready(
         manifest.id.as_str(),
-        "cursor" | "grok" | "kimi" | "opencode" | "kiro" | "deepseek-harness"
-    ) {
-        acp_driver::AcpDriver::connect_ready(
-            manifest.id.as_str(),
-            installation.installation_id.as_str(),
-            launch,
-            installation.version.clone(),
-        )
-        .await
-    } else {
-        match acp_driver::AcpDriver::probe_ready(&launch).await {
-            Ok(report) => acp_driver::AcpDriver::new(
-                manifest.id.as_str(),
-                installation.installation_id.as_str(),
-                launch,
-                report
-                    .native_version
-                    .or_else(|| installation.version.clone()),
-                report.resume_capability,
-            )
-            .map_err(|_| {
-                driver_api::DriverError::Protocol("invalid ACP installation identity".into())
-            }),
-            Err(error) => Err(error),
-        }
-    };
+        installation.installation_id.as_str(),
+        launch,
+        installation.version.clone(),
+    )
+    .await;
     let elapsed_millis = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     match readiness {
         Ok(driver) => {
             let driver = Arc::new(driver);
             core.register_driver(driver.clone()).await;
+            core.warm_agent_catalogs(driver.executor()).await;
             // Native account queries do not submit model prompts.
             if !register_provider_account_monitor(core, installation, Some(driver.clone())).await {
                 core.register_quota_provider(driver).await;
@@ -1808,18 +1801,18 @@ async fn register_ready_pi_drivers(
         register_provider_account_monitor(&core, installation, None).await;
         let started = std::time::Instant::now();
         let executable = std::path::PathBuf::from(&installation.executable);
-        let result = pi_driver::PiDriver::probe_ready(&executable).await;
+        let result = pi_driver::PiDriver::connect_ready(
+            installation.installation_id.as_str(),
+            executable,
+            installation.version.clone(),
+        )
+        .await;
         let (status, diagnostic) = match result {
-            Ok(()) => {
-                if let Ok(driver) = pi_driver::PiDriver::new(
-                    installation.installation_id.as_str(),
-                    executable,
-                    installation.version.clone(),
-                ) {
-                    let driver = Arc::new(driver);
-                    core.register_driver(driver.clone()).await;
-                    register_provider_account_monitor(&core, installation, Some(driver)).await;
-                }
+            Ok(driver) => {
+                let driver = Arc::new(driver);
+                core.register_driver(driver.clone()).await;
+                core.warm_agent_catalogs(driver.executor()).await;
+                register_provider_account_monitor(&core, installation, Some(driver)).await;
                 (InstallationStatus::Ready, None)
             }
             Err(error @ driver_api::DriverError::NotConfigured(_)) => (
@@ -1859,24 +1852,20 @@ async fn register_ready_claude_drivers(
     }) {
         let started = std::time::Instant::now();
         let executable = std::path::PathBuf::from(&installation.executable);
-        let readiness = ClaudeDriver::probe_ready(&executable).await;
+        let readiness = ClaudeDriver::connect_ready(
+            manifest.id.as_str(),
+            installation.installation_id.as_str(),
+            executable,
+            installation.version.clone(),
+            driver_api::SessionResumeCapability::Supported,
+        )
+        .await;
         let elapsed_millis = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         match readiness {
-            Ok(()) => {
-                let Ok(driver) = ClaudeDriver::new(
-                    manifest.id.as_str(),
-                    installation.installation_id.as_str(),
-                    executable,
-                    installation.version.clone(),
-                    // Cross-process resume was verified at runtime on 2.1.218
-                    // (real_resume_acceptance); evidence in
-                    // docs/compatibility/claude-code.md.
-                    driver_api::SessionResumeCapability::Supported,
-                ) else {
-                    continue;
-                };
+            Ok(driver) => {
                 let driver = Arc::new(driver);
                 core.register_driver(driver.clone()).await;
+                core.warm_agent_catalogs(driver.executor()).await;
                 core.register_quota_provider(driver).await;
                 if installation.status != InstallationStatus::Ready {
                     record_readiness(
@@ -1926,20 +1915,18 @@ async fn register_ready_codex_drivers(core: Arc<Core>, discovered_paths: &BTreeS
             continue;
         };
         let started = std::time::Instant::now();
-        let readiness =
-            CodexDriver::probe_ready(std::path::Path::new(&installation.executable)).await;
+        let readiness = CodexDriver::connect_ready(
+            std::path::Path::new(&installation.executable),
+            installation.installation_id.to_string(),
+            version,
+        )
+        .await;
         let elapsed_millis = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         match readiness {
-            Ok(()) => {
-                let Ok(driver) = CodexDriver::new(
-                    std::path::Path::new(&installation.executable),
-                    installation.installation_id.to_string(),
-                    version,
-                ) else {
-                    continue;
-                };
+            Ok(driver) => {
                 let driver = Arc::new(driver);
                 core.register_driver(driver.clone()).await;
+                core.warm_agent_catalogs(driver.executor()).await;
                 core.register_quota_provider(driver).await;
                 if installation.status != InstallationStatus::Ready {
                     record_readiness(
@@ -2010,6 +1997,7 @@ async fn register_ready_antigravity_drivers(
                 };
                 let driver = Arc::new(driver);
                 core.register_driver(driver.clone()).await;
+                core.warm_agent_catalogs(driver.executor()).await;
                 core.register_quota_provider(driver).await;
                 // Eligibility/auth failures surface on the first real turn;
                 // the installation stays Ready-but-unverified rather than
@@ -2099,6 +2087,7 @@ async fn register_ready_zcode_drivers(
             Ok(driver) => {
                 let driver = Arc::new(driver);
                 core.register_driver(driver.clone()).await;
+                core.warm_agent_catalogs(driver.executor()).await;
                 // Reuse the ready driver for both account and task-scoped usage.
                 core.register_quota_provider(driver).await;
                 if installation.status != InstallationStatus::Ready {

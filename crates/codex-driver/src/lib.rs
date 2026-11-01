@@ -11,6 +11,8 @@ mod lifecycle;
 mod metadata;
 #[cfg(all(test, unix))]
 mod metadata_tests;
+#[cfg(test)]
+mod retained_readiness_tests;
 mod session_scope;
 use session_scope::{
     ResidentSession, Scope, ScopedCommand, SessionSender, next_command, stale_scope,
@@ -298,6 +300,7 @@ pub struct CodexDriver {
     quota: Arc<QuotaState>,
     catalog_probe: Arc<Mutex<()>>,
     history_probe: Arc<Mutex<()>>,
+    ready_connection: Arc<Mutex<Option<Connection>>>,
 }
 
 impl Drop for CodexDriver {
@@ -332,6 +335,7 @@ impl CodexDriver {
             quota: Arc::new(QuotaState::default()),
             catalog_probe: Arc::new(Mutex::new(())),
             history_probe: Arc::new(Mutex::new(())),
+            ready_connection: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -354,26 +358,27 @@ impl CodexDriver {
         let executable = std::fs::canonicalize(executable)
             .map_err(|_| stable_error("codex executable is unavailable"))?;
         let mut connection = Connection::spawn(&executable).await?;
-        let result = connection
-            .request("account/read", json!({ "refreshToken": false }))
-            .await;
-        let ready = result.as_ref().is_ok_and(|exchange| {
-            exchange.result.get("account").is_some_and(Value::is_object)
-                || exchange.result.get("requiresOpenaiAuth") == Some(&Value::Bool(false))
-        });
+        let result = connection.check_account().await;
         connection.shutdown().await?;
-        match result {
-            Ok(_) if ready => Ok(()),
-            Ok(exchange) => Err(DriverError::NotConfigured(
-                if exchange.result["requiresOpenaiAuth"] == true {
-                    "authentication_failed"
-                } else {
-                    "driver_not_configured"
-                }
-                .into(),
-            )),
-            Err(error) => Err(error),
+        result
+    }
+
+    /// Retain the authenticated, thread-free process for catalog reads.
+    /// Business threads still use their own workspace and MCP configuration.
+    pub async fn connect_ready(
+        executable: &Path,
+        installation_id: String,
+        native_agent_version: String,
+    ) -> Result<Self, DriverError> {
+        let driver = Self::new(executable, installation_id, native_agent_version)?;
+        let mut connection = Connection::spawn(&driver.executable).await?;
+        connection.native.observe_owner(driver.stopping.subscribe());
+        if let Err(error) = connection.check_account().await {
+            connection.shutdown().await?;
+            return Err(error);
         }
+        *driver.ready_connection.lock().await = Some(connection);
+        Ok(driver)
     }
 
     async fn open_thread(
@@ -1962,6 +1967,25 @@ impl Drop for Connection {
 }
 
 impl Connection {
+    async fn check_account(&mut self) -> Result<(), DriverError> {
+        let exchange = self
+            .request("account/read", json!({"refreshToken":false}))
+            .await?;
+        if exchange.result.get("account").is_some_and(Value::is_object)
+            || exchange.result.get("requiresOpenaiAuth") == Some(&Value::Bool(false))
+        {
+            return Ok(());
+        }
+        Err(DriverError::NotConfigured(
+            if exchange.result["requiresOpenaiAuth"] == true {
+                "authentication_failed"
+            } else {
+                "driver_not_configured"
+            }
+            .into(),
+        ))
+    }
+
     async fn model_catalog(&mut self) -> Result<driver_api::ModelCatalog, DriverError> {
         let mut catalog = driver_api::ModelCatalog::default();
         let mut cursor: Option<String> = None;
@@ -2103,6 +2127,7 @@ impl Connection {
         }
         command
             .args(["app-server", "--listen", "stdio://"])
+            .current_dir(std::env::temp_dir())
             .env_clear()
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

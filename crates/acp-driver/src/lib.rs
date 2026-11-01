@@ -23,6 +23,8 @@ mod opencode_models;
 #[cfg(test)]
 mod recovery_tests;
 mod request_usage;
+#[cfg(test)]
+mod retained_readiness_tests;
 mod session_usage;
 mod sessions;
 mod turn;
@@ -707,6 +709,7 @@ pub struct AcpLaunch {
 }
 
 pub struct AcpDriver {
+    startup_catalogs: std::sync::Mutex<driver_api::models::StartupCatalogs>,
     executor: ExecutorRef,
     native_version: Option<String>,
     resume_capability: SessionResumeCapability,
@@ -775,6 +778,7 @@ impl AcpDriver {
         resume_capability: SessionResumeCapability,
     ) -> Result<Self, agent_domain::DomainError> {
         Ok(Self {
+            startup_catalogs: std::sync::Mutex::default(),
             executor: ExecutorRef {
                 provider_id: ProviderId::parse(provider_id)?,
                 installation_id: Some(
@@ -853,6 +857,24 @@ impl AcpDriver {
             report.native_version.or(driver.native_version.take())
         };
         driver.resume_capability = report.resume_capability;
+        let mut catalogs = report.catalogs;
+        if provider_id == "opencode"
+            && let Some(models) = &mut catalogs.models
+        {
+            opencode_models::filter_retired(models);
+        }
+        if provider_id == "cursor" {
+            catalogs.permissions = Some(permissions::cursor_catalog());
+        }
+        if provider_id == "kimi"
+            && let Some(permissions) = &mut catalogs.permissions
+        {
+            permissions::kimi_labels(permissions);
+        }
+        *driver
+            .startup_catalogs
+            .lock()
+            .map_err(|_| DriverError::Protocol("startup inventory unavailable".into()))? = catalogs;
         Ok(driver)
     }
 
@@ -903,6 +925,7 @@ impl AcpDriver {
         match probe {
             Ok((response, _)) if response.protocol_version == ProtocolVersion::V1 => {
                 Ok(ProbeReport {
+                    catalogs: driver_api::models::StartupCatalogs::default(),
                     resume_capability: if supports_native_resume(
                         &serde_json::to_value(&response).unwrap_or_default(),
                     ) {
@@ -1136,6 +1159,7 @@ struct ConnectionTasks {
 }
 
 pub struct ProbeReport {
+    pub catalogs: driver_api::models::StartupCatalogs,
     pub resume_capability: SessionResumeCapability,
     pub native_version: Option<String>,
 }
@@ -1201,9 +1225,9 @@ fn spawn_agent_in(
         }
     }
     agent_runtime::apply_proxy_environment(&mut command);
-    if let Some(cwd) = cwd {
-        command.current_dir(agent_runtime::external_path(cwd));
-    }
+    command.current_dir(agent_runtime::external_path(
+        cwd.unwrap_or(&std::env::temp_dir()),
+    ));
     if let Some(path) = agent_runtime::installed_node_path(&launch.executable) {
         command.env("PATH", path);
     }
@@ -1622,6 +1646,18 @@ async fn handle_command(
                     return Err(DriverError::Protocol("ACP session id missing".into()));
                 }
                 Ok(ProbeReport {
+                    catalogs: {
+                        let scoped = models::catalog(&state);
+                        let catalog = if scoped.models.is_empty() {
+                            models::catalog(&initial_models)
+                        } else {
+                            scoped
+                        };
+                        driver_api::models::StartupCatalogs {
+                            models: (!catalog.models.is_empty()).then_some(catalog),
+                            permissions: Some(permissions::catalog(&state)),
+                        }
+                    },
                     resume_capability: if supports_native_resume(&initial_models) {
                         SessionResumeCapability::Supported
                     } else {
@@ -2215,6 +2251,9 @@ fn context_block(delivery: &ContextDelivery) -> ContentBlock {
 
 #[async_trait]
 impl AgentDriver for AcpDriver {
+    fn take_startup_catalogs(&self) -> driver_api::models::StartupCatalogs {
+        std::mem::take(&mut *self.startup_catalogs.lock().unwrap())
+    }
     fn independent_session_driver(&self) -> Result<Option<Arc<dyn AgentDriver>>, DriverError> {
         let driver = Self::new(
             self.executor.provider_id.as_str(),

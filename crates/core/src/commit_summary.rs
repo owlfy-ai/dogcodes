@@ -335,7 +335,7 @@ mod tests {
             request: PromptRequest,
         ) -> Result<driver_api::DriverEventStream, super::super::DriverError> {
             assert!(request.prompt.contains("Do not call tools"));
-            assert!(request.prompt.contains("Git 更改数据（JSON 字符串）"));
+            assert!(request.prompt.contains("Git change data (JSON string):"));
             self.prompts.lock().unwrap().push(request.prompt.clone());
             let events = self.events.lock().unwrap().take();
             if let Some(events) = events {
@@ -375,16 +375,9 @@ mod tests {
             *driver.selection.lock().unwrap(),
             Some((Some("native-default".into()), Some("none".into())))
         );
-        assert!(
-            driver
-                .prompts
-                .lock()
-                .unwrap()
-                .last()
-                .is_some_and(
-                    |prompt| prompt.contains("尽量不超过 50 字") && prompt.contains("中文")
-                )
-        );
+        assert!(driver.prompts.lock().unwrap().last().is_some_and(|prompt| {
+            prompt.contains("50 characters") && prompt.contains("Simplified Chinese")
+        }));
         assert!(driver.stopped.load(std::sync::atomic::Ordering::SeqCst));
     }
     #[tokio::test]
@@ -409,11 +402,11 @@ mod tests {
                 .expect("summary prompt")
         }
         let english = prompt_for(Some("en")).await;
-        assert!(english.contains("英文"));
-        assert!(english.contains("72 个字符"));
-        assert!(!english.contains("中文 Git 提交说明"));
+        assert!(english.contains("in English"));
+        assert!(english.contains("72 characters"));
+        assert!(!english.contains("Simplified Chinese"));
         let fallback = prompt_for(Some("fr")).await;
-        assert!(fallback.contains("中文") && fallback.contains("尽量不超过 50 字"));
+        assert!(fallback.contains("Simplified Chinese") && fallback.contains("50 characters"));
     }
     #[tokio::test]
     async fn consumes_acp_messages_and_excludes_other_sessions_and_child_output() {

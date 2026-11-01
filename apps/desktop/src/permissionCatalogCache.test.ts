@@ -3,7 +3,7 @@ import type { CoreClient, PermissionCatalog } from "@dogcodes/protocol";
 import { permissionCatalogEntry } from "./permissionCatalogCache";
 const executor = { providerId: "kimi", installationId: "kimi-a" };
 const catalog: PermissionCatalog = { defaultModeId: "default", modes: [] };
-it("shares pending reads and reuses successful lists across picker remounts", async () => {
+it("shares pending reads and reuses successful lists across tasks, isolating Agent versions", async () => {
   const read = vi.fn(async () => catalog);
   const client = { permissionCatalog: read } as unknown as CoreClient;
   const first = permissionCatalogEntry(client, executor, "tsk_a", "1").get();
@@ -15,6 +15,7 @@ it("shares pending reads and reuses successful lists across picker remounts", as
   await permissionCatalogEntry(client, executor, "tsk_b", "1").get();
   await permissionCatalogEntry(client, executor, "tsk_a", "2").get();
   expect(read).toHaveBeenCalledTimes(2);
+  expect(read).toHaveBeenLastCalledWith(executor, undefined);
 });
 it("does not retain busy errors or expire lists just because time passes", async () => {
   vi.useFakeTimers();

@@ -404,6 +404,10 @@ pub fn explicitly_reports_quota_exhaustion(message: &str) -> bool {
 
 #[async_trait]
 pub trait AgentDriver: Send + Sync {
+    /// Consume default metadata obtained during readiness without another query.
+    fn take_startup_catalogs(&self) -> models::StartupCatalogs {
+        models::StartupCatalogs::default()
+    }
     /// Whether the native transport accepts app-provided stdio MCP servers.
     /// Context handoff in the prompt remains available independently of MCP.
     fn supports_app_mcp(&self) -> bool {
@@ -506,6 +510,14 @@ pub trait AgentDriver: Send + Sync {
         _workspace: Option<&str>,
     ) -> Result<ModelCatalog, DriverError> {
         self.model_catalog_for(model).await
+    }
+    /// Explicit inventory refresh can discard an adapter's own metadata cache.
+    async fn refresh_model_catalog_in_workspace(
+        &self,
+        model: Option<&str>,
+        workspace: Option<&str>,
+    ) -> Result<ModelCatalog, DriverError> {
+        self.model_catalog_in_workspace(model, workspace).await
     }
     async fn model_catalog_for(&self, _model: Option<&str>) -> Result<ModelCatalog, DriverError> {
         self.model_catalog().await

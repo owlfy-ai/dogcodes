@@ -689,7 +689,9 @@ fn spawn_workspace(
     usage_log: Option<&std::path::Path>,
 ) -> Result<Child, DriverError> {
     let mut command = agent_runtime::agent_command(&launch.executable);
-    command.args(session_args());
+    command
+        .args(session_args())
+        .current_dir(std::env::temp_dir());
     if let Some(log) = usage_log {
         command
             .arg("--log-file")
@@ -1165,6 +1167,14 @@ impl AgentDriver for AntigravityDriver {
         let result = catalog::read(self.executable.clone(), slot).await?;
         *cache = result;
         Ok(cache.iter().map(|(id, _)| id.clone()).collect())
+    }
+    async fn refresh_model_catalog_in_workspace(
+        &self,
+        model: Option<&str>,
+        workspace: Option<&str>,
+    ) -> Result<driver_api::ModelCatalog, DriverError> {
+        self.models.lock().await.clear();
+        self.model_catalog_in_workspace(model, workspace).await
     }
     fn executor(&self) -> &ExecutorRef {
         &self.executor

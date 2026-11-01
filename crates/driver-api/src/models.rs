@@ -8,6 +8,12 @@ pub struct ModelCatalog {
     pub models: Vec<ModelOption>,
     pub default_model: Option<String>,
 }
+/// Metadata already returned by a successful, task-free readiness handshake.
+#[derive(Clone, Debug, Default)]
+pub struct StartupCatalogs {
+    pub models: Option<ModelCatalog>,
+    pub permissions: Option<crate::PermissionCatalog>,
+}
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelOption {

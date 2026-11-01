@@ -181,7 +181,11 @@ mod tests {
             assert_eq!(request.permission_mode.as_deref(), Some("readonly"));
             assert!(request.additional_directories.is_empty());
             assert!(request.prompt.contains("macos"));
-            assert!(request.prompt.contains("不执行命令"));
+            assert!(
+                request
+                    .prompt
+                    .contains("Only analyze: do not execute commands")
+            );
             self.entered.notify_one();
             assert!(
                 !self.panic_prompt.load(Ordering::SeqCst),
@@ -313,6 +317,14 @@ mod tests {
         .await
         .unwrap();
     }
+
+    async fn wait_for_signal(signal: &tokio::sync::Notify, stage: &str) {
+        // A fixture assertion can panic before notifying its observer. Fail
+        // with the missing stage instead of hanging the entire test executable.
+        tokio::time::timeout(std::time::Duration::from_secs(5), signal.notified())
+            .await
+            .unwrap_or_else(|_| panic!("analysis fixture did not reach {stage}"));
+    }
     #[tokio::test]
     async fn abort_or_panic_releases_original_analysis_session_and_retains_its_lifetime() {
         for panic in [false, true] {
@@ -326,12 +338,12 @@ mod tests {
             let worker = tokio::spawn(async move {
                 analyze_with_driver(analysis_driver, "macos".into(), Some(lifetime)).await
             });
-            driver.entered.notified().await;
+            wait_for_signal(&driver.entered, "prompt entry").await;
             if !panic {
                 worker.abort();
             }
             assert_eq!(worker.await.unwrap_err().is_panic(), panic);
-            driver.closing.notified().await;
+            wait_for_signal(&driver.closing, "session shutdown").await;
             assert!(driver.interrupted.load(Ordering::SeqCst));
             assert!(!released.load(Ordering::SeqCst));
             assert!(!driver.stopped.load(Ordering::SeqCst));
@@ -351,7 +363,7 @@ mod tests {
         let worker = tokio::spawn(async move {
             analyze_with_driver(analysis_driver, "macos".into(), Some(lifetime)).await
         });
-        driver.closing.notified().await;
+        wait_for_signal(&driver.closing, "session shutdown").await;
         worker.abort();
         assert!(worker.await.unwrap_err().is_cancelled());
         assert!(!released.load(Ordering::SeqCst));
@@ -411,7 +423,7 @@ mod tests {
         let worker = tokio::spawn(async move {
             analyze_with_driver(analysis_driver, "macos".into(), Some(lifetime)).await
         });
-        driver.creating.notified().await;
+        wait_for_signal(&driver.creating, "session creation").await;
         worker.abort();
         assert!(worker.await.unwrap_err().is_cancelled());
         assert!(!released.load(Ordering::SeqCst));
