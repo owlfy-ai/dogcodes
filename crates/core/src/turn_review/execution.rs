@@ -415,6 +415,27 @@ mod tests {
     }
 
     #[test]
+    fn prose_followed_by_inline_json_is_a_complete_report_but_truncated_json_is_not() {
+        let mut output = ReviewOutput::default();
+        let reply = r#"我会先检查 Git 状态。{"summary":"未发现问题","findings":[]}"#;
+        output
+            .push(&display(json!({"type":"message", "text":reply})), "root")
+            .unwrap();
+        assert!(output.report().unwrap().findings.is_empty());
+        assert_eq!(output.completed_result(true).unwrap(), reply);
+
+        let mut truncated = ReviewOutput::default();
+        truncated
+            .push(
+                &display(json!({"type":"message", "text":"检查中。\n```json"})),
+                "root",
+            )
+            .unwrap();
+        assert!(truncated.report().is_none());
+        assert!(truncated.completed_result(true).is_err());
+    }
+
+    #[test]
     fn saved_false_completions_recover_as_failed_without_losing_output() {
         let original = format!("先核对调用方。\n\n{NETWORK_ERROR}");
         let mut run: super::ReviewRun = serde_json::from_value(json!({

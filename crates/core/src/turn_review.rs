@@ -30,11 +30,15 @@ pub enum ReviewKind {
 impl ReviewKind {
     fn instruction(self) -> Option<&'static str> {
         match self {
-            Self::Code => Some("Review the selected changes for concrete bugs, edge cases and error handling."),
-            Self::Security => Some("Check the selected changes for risks in permissions, input handling, sensitive information and external calls."),
-            Self::Performance => {
-                Some("Check the selected changes for performance hazards and give a way to verify them; do not present speculation as measured results.")
-            }
+            Self::Code => Some(
+                "Review the selected changes for concrete bugs, edge cases and error handling.",
+            ),
+            Self::Security => Some(
+                "Check the selected changes for risks in permissions, input handling, sensitive information and external calls.",
+            ),
+            Self::Performance => Some(
+                "Check the selected changes for performance hazards and give a way to verify them; do not present speculation as measured results.",
+            ),
             // Keep deserializing historical records, but never start retired checks.
             Self::Tests | Self::Requirements | Self::Impact => None,
         }
@@ -400,26 +404,31 @@ impl Core {
                 CoreError::CapabilityUnavailable("所选 Agent 尚未连接，请重新检测".into())
             })?;
         let driver = driver.independent_session_driver()?.unwrap_or(driver);
-        let (mut packet, source_sequence, source_artifact, coverage) =
-            if request.source_snapshot.is_some() && request.retry_of.is_none() {
-                let mut input =
-                    input.ok_or_else(|| CoreError::InvalidArgument("项目审查材料不可用".into()))?;
-                if input["snapshotId"].as_str() != request.source_snapshot.as_deref()
-                    || input["taskId"] != json!(request.task_id)
-                {
-                    return Err(CoreError::InvalidArgument("项目审查来源不匹配".into()));
-                }
-                let coverage = format!(
-                    "The agent reads the code itself and checks the selected comparison scope: {}. Working-tree comparisons use the code as of review time.",
-                    input["scope"].as_str().unwrap_or("the selected comparison scope")
-                );
-                input["coverage"] = json!(coverage);
-                // Keep paths and Git object IDs intact; no source text is accepted here.
-                let packet = workspace::project_scope(&input)?.to_string();
-                (packet, self.repository.event_head().await?, None, coverage)
-            } else {
-                self.review_packet(&request).await?
-            };
+        let (mut packet, source_sequence, source_artifact, coverage) = if request
+            .source_snapshot
+            .is_some()
+            && request.retry_of.is_none()
+        {
+            let mut input =
+                input.ok_or_else(|| CoreError::InvalidArgument("项目审查材料不可用".into()))?;
+            if input["snapshotId"].as_str() != request.source_snapshot.as_deref()
+                || input["taskId"] != json!(request.task_id)
+            {
+                return Err(CoreError::InvalidArgument("项目审查来源不匹配".into()));
+            }
+            let coverage = format!(
+                "The agent reads the code itself and checks the selected comparison scope: {}. Working-tree comparisons use the code as of review time.",
+                input["scope"]
+                    .as_str()
+                    .unwrap_or("the selected comparison scope")
+            );
+            input["coverage"] = json!(coverage);
+            // Keep paths and Git object IDs intact; no source text is accepted here.
+            let packet = workspace::project_scope(&input)?.to_string();
+            (packet, self.repository.event_head().await?, None, coverage)
+        } else {
+            self.review_packet(&request).await?
+        };
         if request.retry_of.is_none() && request.recheck_of.is_some() {
             packet = self.recheck_packet(&request, &packet).await?;
         }

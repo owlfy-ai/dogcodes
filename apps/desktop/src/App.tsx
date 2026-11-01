@@ -195,16 +195,18 @@ function isMacPlatform(): boolean {
 }
 
 function PreferencesIcon({ kind }: { kind: Exclude<PreferencesSection, null> }) {
-  return <svg className="preferences-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  return <svg className="preferences-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {kind === "language" ? <>
-      <circle cx="10" cy="10" r="7" />
-      <path d="M3 10h14M10 3c2 2.2 2.8 4.5 2.8 7S12 14.8 10 17c-2-2.2-2.8-4.5-2.8-7S8 5.2 10 3Z" />
+      {/* 文 / A: translation glyph pair. */}
+      <path d="M2.5 4.5h8M6.5 2.75V4.5M4.25 4.5c.7 2.9 2.6 5 5.25 6M8.75 4.5c-.6 3.2-2.7 5.6-6 6.9" />
+      <path d="m10.5 17.25 3.25-7.5 3.25 7.5M11.6 14.75h4.3" />
     </> : kind === "theme" ? <>
-      <circle cx="10" cy="10" r="7" />
-      <path d="M10 3a7 7 0 0 1 0 14Z" fill="currentColor" />
+      {/* Crescent moon with a small spark. */}
+      <path d="M16.25 12.1A6.75 6.75 0 0 1 7.9 3.75a6.75 6.75 0 1 0 8.35 8.35Z" />
+      <path d="M14.5 2.75v2.5M13.25 4h2.5" />
     </> : <>
-      <circle cx="9" cy="9" r="5.5" />
-      <path d="m13 13 4 4M7 9h4M9 7v4" />
+      <circle cx="8.75" cy="8.75" r="5.5" />
+      <path d="m12.75 12.75 4.25 4.25M6.5 8.75h4.5M8.75 6.5V11" />
     </>}
   </svg>;
 }
@@ -219,7 +221,6 @@ function PreferencesMenu({
   onLanguage,
   onTheme,
   onScale,
-  onRestartCore,
   anchorRef,
   popoverRef,
 }: {
@@ -234,7 +235,6 @@ function PreferencesMenu({
   onLanguage: (value: UiLanguage) => void;
   onTheme: (value: UiTheme) => void;
   onScale: (value: ScaleAction) => void;
-  onRestartCore: () => void;
 }) {
   const labels = getPreferenceLabels(language);
   const modifier = isMacPlatform() ? "⌘" : "Ctrl";
@@ -307,10 +307,6 @@ function PreferencesMenu({
         <PreferencesIcon kind="scale" /><span>{labels.scale}</span><span aria-hidden="true">›</span>
       </button>
       {optionMenu}
-      {"__TAURI_INTERNALS__" in window && <button type="button" role="menuitem" className="background-service-menuitem" onClick={onRestartCore}>
-        <svg className="preferences-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M16 9a6 6 0 1 0-1 4M16 4v5h-5" /></svg>
-        <span>{t("backgroundService.restart", undefined, resolveLanguage(language))}</span>
-      </button>}
     </div>,
     document.body,
   );
@@ -433,15 +429,6 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       cancel: t("common.cancel", undefined, resolvedLang),
     } }).catch(() => {});
   }, [native, resolvedLang]);
-  const restartBackground = () => {
-    setPreferencesOpen(false); setPreferencesSection(null);
-    void invoke("core_service_restart", { labels: {
-      title: t("backgroundService.confirmTitle", undefined, resolvedLang),
-      warning: t("backgroundService.warning", undefined, resolvedLang),
-      confirm: t("backgroundService.restart", undefined, resolvedLang),
-      cancel: t("common.cancel", undefined, resolvedLang),
-    }, failure: t("backgroundService.failed", undefined, resolvedLang) }).catch(() => {});
-  };
   const labels = getPreferenceLabels(uiLanguage);
   const [uiTheme, setUiTheme] = useState<UiTheme>(() => readPreference("dogcodes.ui.theme", "system"));
   const [uiScale, setUiScale] = useState(() => parseUiScale(readPreference("dogcodes.ui.scale", "100")));
@@ -1209,7 +1196,6 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             onLanguage={(next) => { setUiLanguage(next); setPreferencesOpen(false); setPreferencesSection(null); }}
             onTheme={(next) => { setUiTheme(next); setPreferencesOpen(false); setPreferencesSection(null); }}
             onScale={action => setUiScale(current => adjustUiScale(current, action))}
-            onRestartCore={restartBackground}
           />
         </div>
       </aside>

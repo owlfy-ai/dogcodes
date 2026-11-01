@@ -86,7 +86,10 @@ pub(super) fn opencode_app(executable: &Path) -> Option<PathBuf> {
     let Some(home) = context.home_dir.as_deref() else {
         return Some(cache.into());
     };
-    let candidates = if filename.ends_with(".exe") {
+    let candidates = if executable
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
+    {
         vec![
             crate::terminal_installation::user_data_dir(home, "LOCALAPPDATA", "AppData/Local")
                 .join("Programs/ai.opencode.desktop"),
@@ -164,7 +167,7 @@ mod tests {
         let json =
             serde_json::json!({"files":{"package.json":{"offset":"0","size":package.len()}}})
                 .to_string();
-        let len = json.len() as u32;
+        let len = u32::try_from(json.len()).unwrap();
         let mut bytes = Vec::new();
         for size in [4, len + 8, len + 4, len] {
             bytes.extend_from_slice(&size.to_le_bytes());

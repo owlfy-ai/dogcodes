@@ -33,6 +33,9 @@ export function reviewActivityText(text: string): string {
     if (isReviewTransportErrorLine(line)) continue;
     // A bare object/array is the final transport payload, including partial JSON.
     if (jsonStart.test(line)) break;
+    // Prose followed by the payload on the same line: keep the prose only.
+    const inline = line.search(/\{\s*"(?:summary|findings)"/);
+    if (inline > 0) { output.push(line.slice(0, inline)); break; }
     if (index === lines.length - 1 && /^\s*(?:`{1,2}|~{1,2})$/.test(line)) break;
     output.push(line);
   }

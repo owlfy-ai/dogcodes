@@ -81,7 +81,7 @@ fn with_node_path(mut spec: ProcessSpec, node: &Path, npm: &Path) -> Result<Proc
     let npm_bin = agent_runtime::external_path(npm.parent().ok_or("npm 安装目录无效")?);
     let inherited = std::env::var_os("PATH").unwrap_or_default();
     let path = std::env::join_paths(
-        [bin.to_path_buf(), npm_bin.to_path_buf()]
+        [bin, npm_bin]
             .into_iter()
             .chain(std::env::split_paths(&inherited)),
     )
@@ -112,7 +112,7 @@ fn local_npm_spec(
         ],
         true,
     );
-    command.cwd = Some(agent_runtime::external_path(prefix.to_path_buf()));
+    command.cwd = Some(agent_runtime::external_path(prefix));
     with_node_path(command, node, npm)
 }
 

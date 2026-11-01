@@ -1,10 +1,9 @@
 //! Connection-scoped native account grants; no credential file is changed.
 use super::{Connection, DriverError, ENV_ALLOWLIST, Value, ZcodeLaunch, json};
 use std::{path::PathBuf, process::Stdio, time::Duration};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    process::Command,
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(windows)]
+use tokio::process::Command;
 
 const SCRIPT: &str = concat!(
     "const __dogcodesNative = (() => { const module = {exports:{}};\n",

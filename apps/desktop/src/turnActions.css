@@ -6,11 +6,18 @@
 .turn-action-feedback, .turn-review-notice { color: var(--muted, #888); font-size: 12px; line-height: 1.6; }
 .submission-original-prompt { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12em; overflow: auto; }
 .turn-review-error { font-size: calc(13px * var(--ui-scale, 1)); }
-.turn-review-result { margin-top: 10px; padding: 12px 14px; border: 1px solid #8883; border-radius: 10px; }
+.turn-review-result { margin-top: 10px; padding: 10px 12px 8px; border: 1px solid #8883; border-radius: 10px; }
 .turn-review-result > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+.turn-review-result[open] > summary { margin-bottom: 8px; }
+.turn-review-result .review-summary.is-clean { margin: 0; }
+.turn-review-result .review-execution { margin-block: 6px 0; }
 .turn-review-result > summary .agent-icon { width: calc(18px * var(--ui-scale, 1)); height: calc(18px * var(--ui-scale, 1)); }
 .turn-review-result > summary > span:last-child { margin-left: auto; opacity: .65; font-size: 12px; }
-.turn-review-result footer { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding-top: 10px; }
+.turn-review-result footer { display: flex; align-items: center; gap: 12px; justify-content: space-between; padding-top: 6px; }
+.turn-review-result footer .turn-review-recheck { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; opacity: .65; }
+.turn-review-result footer .turn-review-recheck:hover:not(:disabled) { opacity: 1; background: #8882; }
+.turn-review-result footer .turn-review-recheck:disabled { opacity: .3; cursor: default; }
+.turn-review-result footer .turn-review-recheck svg { width: 15px; height: 15px; }
 .turn-review-result footer small { opacity: .55; font-size: 11px; }
 .turn-review-result footer button { font: inherit; font-size: 12px; border: 1px solid #8884; color: inherit; background: transparent; border-radius: 6px; padding: 4px 9px; cursor: pointer; }
 .historical-turn-diff { width: min(1100px, calc(100vw - 48px)); max-height: 85vh; overflow: auto; padding: 22px; border: 1px solid #8884; border-radius: 14px; color: var(--text, #ddd); background: var(--panel, #202120); }

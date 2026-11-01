@@ -164,11 +164,11 @@ img.agent-icon { display: block; object-fit: contain; object-position: center; }
 .preferences-trigger:hover, .preferences-trigger[aria-expanded="true"] { background: #353432; }
 .preferences-trigger .brand-mark { width: calc(22px * var(--ui-scale)); height: calc(22px * var(--ui-scale)); flex: none; border-radius: calc(6px * var(--ui-scale)); box-shadow: 0 0 0 1px #ffffff14, 0 1px 2px #0000004d; }
 .preferences-popover { position: fixed; z-index: 40; box-sizing: border-box; width: 200px; padding: 5px; border: 1px solid #464541; border-radius: 11px; color: #e8e8e5; background: #242321; box-shadow: 0 18px 48px #0009; }
-.preferences-popover .background-service-menuitem { margin-top: 5px; border-top: 1px solid var(--line); border-radius: 0; }
 .preferences-popover > button, .preferences-submenu button { width: 100%; min-height: 31px; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 0 8px; border: 0; border-radius: 7px; color: inherit; background: transparent; font-size: calc(13px * var(--ui-scale)); text-align: left; cursor: pointer; }
 .preferences-popover > button:hover, .preferences-popover > button.selected, .preferences-submenu button:hover { background: #363532; }
 .preferences-icon { color: #b0b0aa; font-size: calc(15px * var(--ui-scale)); line-height: 1; text-align: center; }
-svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * var(--ui-scale)); justify-self: center; }
+svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * var(--ui-scale)); justify-self: center; transition: color .12s; }
+.preferences-popover > button:is(:hover, .selected) svg.preferences-icon { color: inherit; }
 .preferences-submenu { position: absolute; left: calc(100% - 1px); bottom: 0; box-sizing: border-box; width: 196px; max-height: var(--preferences-menu-max-height, calc(100dvh - 24px)); overflow-y: auto; overscroll-behavior: contain; padding: 5px; border: 1px solid #464541; border-radius: 11px; color: #e8e8e5; background: #242321; box-shadow: 0 18px 48px #0009; }
 .preferences-submenu button { grid-template-columns: minmax(0, 1fr) auto; }
 
@@ -1097,7 +1097,16 @@ button:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px soli
 .windows-caption button:hover { background: #8882; }
 .windows-caption button:focus-visible { outline: 2px solid var(--muted); outline-offset: -2px; }
 .windows-caption .windows-caption-close:hover { color: #fff; background: #c42b1c; }
-.platform-windows .global-content > .task-header { padding-right: 157px; }
-.platform-windows .app-shell.review-expanded .global-content > .task-header { padding-right: 19px; }
 /* The docked review panel starts below the window buttons instead of under them. */
 .platform-windows .app-shell.review-expanded > .review-panel:not(.review-standalone) { margin-top: var(--window-titlebar-height); height: calc(100% - var(--window-titlebar-height)); border-top: 1px solid var(--review-border); }
+/* Keep the panel toggles beside the window buttons, whether or not the review panel is open. */
+/* Caption = divider (1px + 5px) + 3 × 46px. The minimize glyph sits 18px into its button, so the
+   toggles stand 16px off the divider to leave the same ~23px of air on both sides. */
+.platform-windows { --window-titlebar-height: 40px; --windows-caption-width: 144px; --windows-tools-width: 96px; }
+.windows-caption::before { content: ""; align-self: center; width: 1px; height: 18px; margin-right: 5px; background: currentColor; opacity: .22; }
+.platform-windows .global-content > .task-header { padding-right: calc(var(--windows-caption-width) + var(--windows-tools-width) + 12px); }
+.platform-windows .app-shell.review-expanded .global-content > .task-header { padding-right: 19px; }
+.platform-windows .global-content > .task-header > .task-tools {
+  position: fixed; top: 0; right: calc(var(--windows-caption-width) + 16px); z-index: 30;
+  display: flex; align-items: center; gap: 4px; height: var(--window-titlebar-height);
+}

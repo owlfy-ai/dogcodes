@@ -14,6 +14,10 @@ it("preserves progress, prose surrounding fenced JSON, and ordinary code and lin
   const markdown = '检查 [调用方](src/app.ts)。\n```ts\n{ value: 1 }\n```\n保留这段解释。';
   expect(reviewActivityText(markdown)).toBe(markdown);
 });
+it("drops a JSON payload written on the same line as prose", () => {
+  expect(reviewActivityText('我会先检查状态。{"summary":"无问题","findings":[]}')).toBe('我会先检查状态。');
+  expect(reviewActivityText('我会先检查状态。{"summ')).toBe('我会先检查状态。{"summ');
+});
 it("keeps transport diagnostics out of the transcript without hiding quoted code evidence", () => {
   const error = 'Error: RetriableError: [internal] HTTP/2 keepalive ping timed out after 5000ms';
   expect(reviewActivityText(`正在核对调用方。\n\n${error}`)).toBe('正在核对调用方。');

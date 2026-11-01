@@ -177,7 +177,7 @@ fn plan(i: &InstallationSummary) -> Plan {
     }
     // Bundled packages belong to their host, even when they contain node_modules.
     if let Some(app) = host_app(&i.provider_id, &real) {
-        return Plan::Host(app.into());
+        return Plan::Host(app);
     }
     if cfg!(windows) {
         if let Some(plan) = windows::npm_plan(&i.provider_id, &real) {
@@ -764,12 +764,11 @@ fn install_spec(i: &InstallationSummary, p: &Plan, latest: &str) -> Result<Proce
                     version(latest).ok_or("更新版本无效")?.to_string(),
                     "--manual".into(),
                 ],
-                "cursor" | "grok" | "antigravity" | "claude-code" => vec!["update".into()],
                 "pi" => vec!["update".into(), "--self".into()],
                 "kiro" if kiro::bundle(Path::new(&i.executable)).is_some() => {
                     vec!["update".into(), "--non-interactive".into()]
                 }
-                "kiro" => vec!["update".into()],
+                "cursor" | "grok" | "antigravity" | "claude-code" | "kiro" => vec!["update".into()],
                 "opencode" => vec![
                     "upgrade".into(),
                     version(latest).ok_or("更新版本无效")?.to_string(),
@@ -993,7 +992,7 @@ pub async fn core_upgrade_agent(
             updates.save(&i, value.clone()).await;
             let _ = app.emit("agent-update-changed", &value);
             if matches!(i.provider_id.as_str(), "kiro" | "kimi") && matches!(p, Plan::Native(_)) {
-                wait_for_updated_version(&launcher, &target, Duration::from_secs(60)).await?;
+                wait_for_updated_version(&launcher, &target, Duration::from_mins(1)).await?;
             }
             let snapshot = core.scan_agent(&i.provider_id).await?;
             let resolved = launcher
@@ -1782,7 +1781,7 @@ mod tests {
                                 }
                             }
                             Ok(_) => {
-                                failed.push(format!("{provider}: invalid manual upgrade command"))
+                                failed.push(format!("{provider}: invalid manual upgrade command"));
                             }
                             Err(error) => failed.push(format!("{provider}: {error}")),
                         }
