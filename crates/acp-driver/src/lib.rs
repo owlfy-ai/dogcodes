@@ -138,7 +138,7 @@ async fn read_kimi_web_usage_owned(
     reply: &mut oneshot::Sender<Result<serde_json::Value, DriverError>>,
 ) -> Result<Option<serde_json::Value>, DriverError> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
-    let mut command = tokio::process::Command::new(executable);
+    let mut command = agent_runtime::agent_command(executable);
     command
         .args(["web", "--port", "0", "--no-open"])
         .env_clear()
@@ -1186,7 +1186,7 @@ fn spawn_agent_in(
     cwd: Option<&std::path::Path>,
     stderr_tail: Option<StderrTail>,
 ) -> Result<(lifecycle::Process, AgentTransport), DriverError> {
-    let mut command = tokio::process::Command::new(&launch.executable);
+    let mut command = agent_runtime::agent_command(&launch.executable);
     command
         .args(&launch.args)
         .env_clear()
@@ -1202,7 +1202,7 @@ fn spawn_agent_in(
     }
     agent_runtime::apply_proxy_environment(&mut command);
     if let Some(cwd) = cwd {
-        command.current_dir(cwd);
+        command.current_dir(agent_runtime::external_path(cwd));
     }
     if let Some(path) = agent_runtime::installed_node_path(&launch.executable) {
         command.env("PATH", path);

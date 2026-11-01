@@ -266,8 +266,8 @@ impl Bridge {
         }
         *VERIFIED.lock().expect("hook cache") = None;
         let before_key = verification_key(executable, workspace, bridge.directory.path());
-        let mut cmd = tokio::process::Command::new(executable);
-        cmd.current_dir(&workspace.working_directory)
+        let mut cmd = agent_runtime::agent_command(executable);
+        cmd.current_dir(agent_runtime::external_path(&workspace.working_directory))
             .args(["--add-dir", &workspace.working_directory]);
         for dir in &workspace.additional_directories {
             cmd.arg("--add-dir").arg(dir);
@@ -403,12 +403,17 @@ impl Bridge {
             .env("DOGCODES_APPROVAL_ADDR", &self.address)
             .env("DOGCODES_APPROVAL_TOKEN", &self.token);
         if let Ok(exe) = std::env::current_exe() {
-            command.env("DOGCODES_APPROVAL_EXE", format!("\"{}\"", exe.display()));
+            command.env(
+                "DOGCODES_APPROVAL_EXE",
+                format!("\"{}\"", agent_runtime::external_path(exe).display()),
+            );
         }
     }
     pub fn configure(&self, command: &mut tokio::process::Command) {
         self.environment(command);
-        command.arg("--add-dir").arg(self.directory.path());
+        command
+            .arg("--add-dir")
+            .arg(agent_runtime::external_path(self.directory.path()));
     }
     pub fn start(self, process: &Arc<SessionProcess>) -> tokio::task::JoinHandle<()> {
         let mut closing = process.closing.subscribe();

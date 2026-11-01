@@ -1708,6 +1708,12 @@ export const uiEs: UiMessages = {
     refreshLost: "Actualización automática desconectada; reconectando: {message}",
     syncLost: "Sincronización de estado desconectada; reconectando: {message}",
   },
+  windowControls: {
+    close: "Cerrar",
+    maximize: "Maximizar",
+    minimize: "Minimizar",
+    restore: "Restaurar",
+  },
   workspaceEmpty: {
     changes: "Selecciona un archivo para ver su diff",
     hint: "Elige de la lista de archivos de la izquierda",

@@ -63,10 +63,15 @@ struct Scope {
 }
 impl Scope {
     fn new(i: &InstallationSummary, plan: &Plan) -> Result<Self, String> {
-        let executable = Path::new(&i.executable)
+        let mut executable = Path::new(&i.executable)
             .canonicalize()
             .map_err(|_| "Agent 安装已变化，请重新检测")?;
         let directory = match plan {
+            Plan::StandaloneCli { prefix, .. } => {
+                let launcher = super::managed_cli::launcher(prefix, &i.provider_id);
+                executable = launcher.canonicalize().unwrap_or(launcher);
+                prefix.canonicalize().ok()
+            }
             Plan::Npm { package, .. } | Plan::NpmLocal { package, .. } => executable
                 .ancestors()
                 .find(|p| {

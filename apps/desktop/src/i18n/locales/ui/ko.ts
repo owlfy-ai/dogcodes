@@ -1708,6 +1708,12 @@ export const uiKo: UiMessages = {
     refreshLost: "자동 새로 고침 연결이 끊어졌습니다. 다시 연결하는 중: {message}",
     syncLost: "상태 동기화 연결이 끊어졌습니다. 다시 연결하는 중: {message}",
   },
+  windowControls: {
+    close: "닫기",
+    maximize: "최대화",
+    minimize: "최소화",
+    restore: "이전 크기로",
+  },
   workspaceEmpty: {
     changes: "파일을 선택하여 Diff 보기",
     hint: "왼쪽 파일 목록에서 선택하세요",

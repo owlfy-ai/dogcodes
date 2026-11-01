@@ -54,7 +54,7 @@ use futures::StreamExt;
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, BufReader},
-    process::{ChildStdout, Command},
+    process::ChildStdout,
     sync::mpsc,
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -441,13 +441,13 @@ impl Drop for Connection {
 
 impl Connection {
     fn spawn(launch: &ZcodeLaunch) -> Result<Self, DriverError> {
-        let mut command = Command::new(
+        let mut command = agent_runtime::agent_command(
             agent_runtime::electron_node_executable(&launch.app_binary).map_err(|_| {
                 DriverError::NotConfigured("ZCode background runtime is unavailable".into())
             })?,
         );
         command
-            .arg(&launch.cli_script)
+            .arg(agent_runtime::external_path(&launch.cli_script))
             .arg("app-server")
             .env_clear()
             .env("ELECTRON_RUN_AS_NODE", "1")

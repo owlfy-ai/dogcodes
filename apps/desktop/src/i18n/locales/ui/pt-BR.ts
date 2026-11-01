@@ -1708,6 +1708,12 @@ export const uiPtBR: UiMessages = {
     refreshLost: "Atualização automática desconectada; reconectando: {message}",
     syncLost: "Sincronização de estado desconectada; reconectando: {message}",
   },
+  windowControls: {
+    close: "Fechar",
+    maximize: "Maximizar",
+    minimize: "Minimizar",
+    restore: "Restaurar",
+  },
   workspaceEmpty: {
     changes: "Selecione um arquivo para ver seu diff",
     hint: "Escolha na lista de arquivos à esquerda",

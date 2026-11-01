@@ -1,6 +1,8 @@
 //! Installation-scoped updates. Only trusted adapters construct commands; the UI supplies an ID.
 mod codex_host;
+mod electron_host;
 mod kiro;
+pub(crate) mod managed_cli;
 mod new_agents;
 mod usage;
 mod windows;
@@ -73,6 +75,10 @@ enum Plan {
         prefix: PathBuf,
         package: &'static str,
     },
+    StandaloneCli {
+        prefix: PathBuf,
+        package: &'static str,
+    },
     Brew {
         executable: PathBuf,
         package: &'static str,
@@ -100,7 +106,9 @@ fn upgrade_resource(i: &InstallationSummary, plan: &Plan) -> Result<UpgradeResou
             Ok(UpgradeResource::Npm(canonical(prefix)?))
         }
         Plan::Brew { executable, .. } => Ok(UpgradeResource::Brew(canonical(executable)?)),
-        Plan::Native(_) => Ok(UpgradeResource::Native(i.provider_id.clone())),
+        Plan::Native(_) | Plan::StandaloneCli { .. } => {
+            Ok(UpgradeResource::Native(i.provider_id.clone()))
+        }
         Plan::Host(_) | Plan::Unsupported => Err("请在宿主应用或原安装渠道中升级".into()),
     }
 }
@@ -117,28 +125,51 @@ fn package(provider: &str) -> Option<&'static str> {
         _ => None,
     }
 }
-fn host_app<'a>(provider: &str, executable: &'a Path) -> Option<&'a Path> {
+fn host_app(provider: &str, executable: &Path) -> Option<PathBuf> {
+    if provider == "opencode"
+        && let Some(app) = electron_host::opencode_app(executable)
+    {
+        return Some(app);
+    }
     if provider == "zcode"
         && executable.file_name().is_some_and(|n| n == "ZCode.exe")
         && let Some(root) = executable.parent()
         && root.join("resources/glm/zcode.cjs").is_file()
     {
-        return Some(root);
+        return Some(root.into());
     }
     if provider == "codex"
         && let Some(app) = codex_host::desktop_app(executable)
     {
-        return Some(app);
+        return Some(app.into());
     }
     executable
         .ancestors()
         .find(|p| p.extension().is_some_and(|v| v == "app"))
+        .map(Path::to_path_buf)
 }
 fn plan(i: &InstallationSummary) -> Plan {
     let path = Path::new(&i.executable);
     let Ok(real) = path.canonicalize() else {
         return Plan::Unsupported;
     };
+    if let Some(prefix) = managed_cli::existing_prefix(i) {
+        return Plan::StandaloneCli {
+            prefix,
+            package: package(&i.provider_id).unwrap(),
+        };
+    }
+    if managed_cli::desktop_cli(&i.provider_id, &real)
+        && let Some(prefix) = managed_cli::prefix(
+            &agent_registry::DiscoveryContext::from_current_process(),
+            &i.provider_id,
+        )
+    {
+        return Plan::StandaloneCli {
+            prefix,
+            package: package(&i.provider_id).unwrap(),
+        };
+    }
     // Kiro CLI's own updater replaces its signed CLI app bundle. This is not
     // a bundled CLI that must defer to a separate IDE updater.
     if i.provider_id == "kiro" && kiro::bundle(&real).is_some() {
@@ -334,13 +365,15 @@ fn key(i: &InstallationSummary) -> String {
     )
 }
 fn desktop_version(i: &InstallationSummary) -> Option<String> {
-    if !matches!(i.provider_id.as_str(), "codex" | "zcode") {
+    if !matches!(i.provider_id.as_str(), "codex" | "zcode" | "opencode") {
         return None;
     }
     let executable = Path::new(&i.executable).canonicalize().ok()?;
     let app = host_app(&i.provider_id, &executable)?;
-    if i.provider_id == "zcode" && app.extension().is_none_or(|e| e != "app") {
-        return zcode_host::version(app);
+    if matches!(i.provider_id.as_str(), "zcode" | "opencode")
+        && app.extension().is_none_or(|e| e != "app")
+    {
+        return zcode_host::version(&app);
     }
     let info = plist::Value::from_file(app.join("Contents/Info.plist")).ok()?;
     info.as_dictionary()?
@@ -378,7 +411,18 @@ fn newer(current: &str, latest: &str) -> Result<bool, String> {
     Ok(b > a)
 }
 fn spec(executable: &Path, args: Vec<String>, updating: bool) -> ProcessSpec {
-    let mut p = ProcessSpec::probe(executable.into(), args);
+    // canonicalize() is for installation identity. Node, cmd and native
+    // installer scripts need ordinary drive/UNC paths at the process boundary.
+    let mut p = ProcessSpec::probe(
+        agent_runtime::external_path(executable),
+        args.into_iter()
+            .map(|arg| {
+                agent_runtime::external_path(&arg)
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect(),
+    );
     p.timeout = Duration::from_secs(if updating { 600 } else { 35 });
     p.env_allowlist = [
         "PATH",
@@ -407,7 +451,8 @@ fn spec(executable: &Path, args: Vec<String>, updating: bool) -> ProcessSpec {
     .collect();
     p.cwd = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from);
+        .map(PathBuf::from)
+        .map(agent_runtime::external_path);
     p.env_overrides.insert("CI".into(), "1".into());
     p.env_overrides.insert("NO_COLOR".into(), "1".into());
     // Explicit updater subcommands still work. Passive version probes must never auto-install.
@@ -547,12 +592,35 @@ fn complete_check(
 async fn inspect(i: &InstallationSummary, p: &Plan) -> Result<AgentUpdate, String> {
     let mut out = base(i);
     let latest = match p {
+        Plan::StandaloneCli { .. } => {
+            let mut checked = inspect_external(i, get).await?;
+            checked.can_upgrade = checked.status == "available";
+            checked.source = "npm".into();
+            return Ok(checked);
+        }
         Plan::Host(app) => {
             out.status = "managed".into();
             out.source = "桌面应用".into();
+            out.current_version = out.desktop_version.clone();
             out.message = Some("此 CLI 随宿主应用更新，请在应用内检查更新".into());
             if i.provider_id == "codex" {
                 return codex_host::inspect(app, out).await;
+            }
+            if i.provider_id == "opencode" {
+                // Desktop-owned 2.x runtimes must never use the npm 1.x feed.
+                if out.current_version.is_some() && electron_host::official_opencode_feed(app) {
+                    let channel = if app.extension().is_some_and(|e| e == "app") {
+                        "latest-mac.yml"
+                    } else {
+                        "latest.yml"
+                    };
+                    let body = get(&format!(
+                        "https://opencode.ai/update/api/latest/desktop/opencode/{channel}"
+                    ))
+                    .await?;
+                    return electron_host::check_opencode(out, &body);
+                }
+                return Ok(out);
             }
             if i.provider_id == "zcode" {
                 out.current_version = out.desktop_version.clone();
@@ -842,7 +910,11 @@ pub async fn core_upgrade_agent(
         let _upgrade = resource_lock
             .try_lock()
             .map_err(|_| "另一个升级正在使用相同的安装目录或更新器，请等待其完成后重试")?;
-        let launcher = stable_launcher(&i);
+        let launcher = if let Plan::StandaloneCli { prefix, .. } = &p {
+            managed_cli::launcher(prefix, &i.provider_id)
+        } else {
+            stable_launcher(&i)
+        };
         if !matches!(p, Plan::Host(_) | Plan::Unsupported) {
             // Re-read the actual binary: a native auto-updater may have run since startup.
             let actual = command(new_agents::version_spec(&i, &p).await?).await?;
@@ -856,6 +928,15 @@ pub async fn core_upgrade_agent(
         }
         let mut value = inspect(&i, &p).await?;
         if !value.can_upgrade {
+            if matches!(p, Plan::StandaloneCli { .. })
+                && launcher.canonicalize().is_ok_and(|target| {
+                    Path::new(&i.executable).canonicalize().ok() != Some(target)
+                })
+            {
+                // Recover a completed CLI install whose previous rescan was interrupted.
+                // Read its version above instead of downgrading it to the current feed.
+                core.scan_agent(&i.provider_id).await?;
+            }
             updates.save(&i, value.clone()).await;
             return Ok(value);
         }
@@ -907,11 +988,12 @@ pub async fn core_upgrade_agent(
                 }
             }
             command(command_spec).await?;
+            managed_cli::activate(&i, &p, &target).await?;
             value.message = Some("正在重新检测并验证新版本".into());
             updates.save(&i, value.clone()).await;
             let _ = app.emit("agent-update-changed", &value);
-            if i.provider_id == "kiro" && matches!(p, Plan::Native(_)) {
-                kiro::verify_updated(&launcher, &target).await?;
+            if matches!(i.provider_id.as_str(), "kiro" | "kimi") && matches!(p, Plan::Native(_)) {
+                wait_for_updated_version(&launcher, &target, Duration::from_secs(60)).await?;
             }
             let snapshot = core.scan_agent(&i.provider_id).await?;
             let resolved = launcher
@@ -958,17 +1040,44 @@ pub async fn core_upgrade_agent(
     .map_err(|_| "升级任务意外中断".to_string())?
 }
 
+async fn wait_for_updated_version(
+    executable: &Path,
+    target: &str,
+    limit: Duration,
+) -> Result<(), String> {
+    tokio::time::timeout(limit, async {
+        loop {
+            let mut probe = spec(executable, vec!["--version".into()], false);
+            // Kimi's Windows staged swap can run a 30-second startup smoke check.
+            probe.timeout = Duration::from_secs(35);
+            if let Ok(actual) = command(probe).await
+                && verified_version("native", &actual, target)
+            {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    })
+    .await
+    .map_err(|_| "更新器已退出，但尚未确认目标版本生效。请重新检测或在原安装渠道完成升级".into())
+}
+
 #[tauri::command]
 pub async fn core_open_agent_updater(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, crate::DesktopState>,
+    updates: tauri::State<'_, AgentUpdates>,
     installation_id: String,
 ) -> Result<(), String> {
     crate::require_main_artifact_window(window.label())?;
     let i = installation(&state.core, &installation_id).await?;
     let Plan::Host(app) = plan(&i) else {
-        return open_manual_update(&i).await;
+        return Err("此安装不是桌面应用更新".into());
     };
+    let checked = updates.check(&i, false).await;
+    if !desktop_update_available(&checked) {
+        return Err("未检测到桌面应用新版本".into());
+    }
     #[cfg(target_os = "macos")]
     {
         command(spec(
@@ -981,16 +1090,18 @@ pub async fn core_open_agent_updater(
     }
     #[cfg(windows)]
     {
-        if i.provider_id != "zcode" {
-            return Err("请在宿主应用内检查更新".into());
-        }
-        std::process::Command::new(app.join("ZCode.exe"))
+        let binary = match i.provider_id.as_str() {
+            "zcode" => "ZCode.exe",
+            "opencode" => "OpenCode.exe",
+            _ => return Err("请在宿主应用内检查更新".into()),
+        };
+        std::process::Command::new(app.join(binary))
             .env_remove("ELECTRON_RUN_AS_NODE")
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .map_err(|_| "无法打开 ZCode 应用".to_string())?;
+            .map_err(|_| "无法打开桌面应用".to_string())?;
         Ok(())
     }
     #[cfg(not(any(target_os = "macos", windows)))]
@@ -1000,59 +1111,91 @@ pub async fn core_open_agent_updater(
     }
 }
 
-// Invoked only by a user click. Bundled CLIs stay with their owning desktop
-// client; other external installations open their official upgrade page.
-async fn open_manual_update(i: &InstallationSummary) -> Result<(), String> {
-    #[cfg(windows)]
-    if let Some(package) = windows_update_app(i) {
-        // Package/application IDs come from Windows registration, not the UI.
-        let script = format!(
-            "$ErrorActionPreference = 'Stop'; $p = Get-AppxPackage -Name '{package}' | Select-Object -First 1; if (!$p) {{ exit 1 }}; $m = $p | Get-AppxPackageManifest; $a = @($m.Package.Applications.Application)[0].Id; if (!$a) {{ exit 1 }}; Start-Process explorer.exe -ArgumentList ('shell:AppsFolder\\' + $p.PackageFamilyName + '!' + $a)"
-        );
-        let system = std::env::var_os("SystemRoot")
-            .map(PathBuf::from)
-            .filter(|p| p.is_absolute())
-            .unwrap_or_else(|| PathBuf::from("C:/Windows"));
-        let result = command(spec(
-            &system.join("System32/WindowsPowerShell/v1.0/powershell.exe"),
-            vec![
-                "-NoProfile".into(),
-                "-NonInteractive".into(),
-                "-Command".into(),
-                script,
-            ],
-            false,
-        ))
-        .await;
-        if result.is_ok() {
-            return Ok(());
-        }
-    }
-    let manifest = crate::BUILTIN_AGENT_MANIFESTS
-        .iter()
-        .filter_map(|source| agent_registry::ProviderManifest::parse_toml(source).ok())
-        .find(|m| m.id.as_str() == i.provider_id)
-        .ok_or("未找到此 Agent 的升级入口")?;
-    crate::external_links::open_website(manifest.homepage).await
-}
-
-#[cfg(windows)]
-fn windows_update_app(i: &InstallationSummary) -> Option<&'static str> {
-    let path = Path::new(&i.executable);
-    match i.provider_id.as_str() {
-        "codex" if path.ancestors().any(|p| p.ends_with("OpenAI/Codex/bin")) => {
-            Some("OpenAI.Codex")
-        }
-        "claude-code" if path.ancestors().any(|p| p.ends_with("Claude/claude-code")) => {
-            Some("Claude")
-        }
-        _ => None,
-    }
+fn desktop_update_available(update: &AgentUpdate) -> bool {
+    update.status == "managed"
+        && update
+            .current_version
+            .as_deref()
+            .zip(update.latest_version.as_deref())
+            .is_some_and(|(current, latest)| newer(current, latest) == Ok(true))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_newer_desktop_versions_can_open_a_host_updater() {
+        let mut update = base(&installation_for("codex", Path::new("/engine"), "0.164.0"));
+        update.status = "available".into();
+        update.latest_version = Some("0.166.0".into());
+        assert!(!desktop_update_available(&update));
+        update.status = "managed".into();
+        update.current_version = Some("26.1027.3384".into());
+        for latest in [None, Some("26.1027.3384"), Some("26.1020.1000")] {
+            update.latest_version = latest.map(str::to_owned);
+            assert!(!desktop_update_available(&update));
+        }
+        update.latest_version = Some("26.1031.1000".into());
+        assert!(desktop_update_available(&update));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn updater_execution_paths_are_plain_while_installation_identity_stays_canonical() {
+        let command = spec(
+            Path::new(r"\\?\C:\node with spaces\node.exe"),
+            vec![
+                r"\\?\C:\node with spaces\node_modules\npm\bin\npm-cli.js".into(),
+                "--prefix".into(),
+                r"\\?\UNC\server\share\node".into(),
+            ],
+            true,
+        );
+        assert_eq!(
+            command.executable,
+            Path::new(r"C:\node with spaces\node.exe")
+        );
+        assert_eq!(
+            command.args,
+            [
+                r"C:\node with spaces\node_modules\npm\bin\npm-cli.js",
+                "--prefix",
+                r"\\server\share\node"
+            ]
+        );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn native_verification_waits_for_a_delayed_launcher_switch() {
+        let dir = tempfile::tempdir().unwrap();
+        let executable = dir.path().join("native agent.cmd");
+        let ready = dir.path().join("ready");
+        let observed = dir.path().join("observed");
+        std::fs::write(&executable, "@echo off\r\nif exist \"%~dp0ready\" (echo 1.1.0) else (echo old>\"%~dp0observed\" & echo 1.0.0)\r\n").unwrap();
+        let launcher = executable.canonicalize().unwrap();
+        assert!(
+            wait_for_updated_version(&launcher, "1.1.0", Duration::from_millis(100))
+                .await
+                .is_err()
+        );
+        let _ = std::fs::remove_file(&observed);
+        let switch = tokio::spawn(async move {
+            tokio::time::timeout(Duration::from_secs(4), async {
+                while !observed.is_file() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                std::fs::write(ready, "new version").unwrap();
+            })
+            .await
+            .unwrap();
+        });
+        wait_for_updated_version(&launcher, "1.1.0", Duration::from_secs(5))
+            .await
+            .unwrap();
+        switch.await.unwrap();
+    }
 
     #[tokio::test]
     async fn independent_native_upgrades_do_not_share_an_installation_lock() {
@@ -1356,7 +1499,7 @@ mod tests {
     }
 
     #[test]
-    fn native_paths_use_platform_components_and_desktop_payloads_remain_external() {
+    fn native_paths_use_platform_components_and_desktop_payloads_use_standalone_cli_upgrades() {
         let tmp = tempfile::tempdir().unwrap();
         let mut paths = vec![
             ("claude-code", "claude/versions/2.1.309"),
@@ -1386,9 +1529,13 @@ mod tests {
             .join("AppData/Roaming/Claude/claude-code/2.1.309/payload/claude.exe");
         std::fs::create_dir_all(desktop.parent().unwrap()).unwrap();
         std::fs::write(&desktop, "").unwrap();
+        let plan = plan(&installation_for("claude-code", &desktop, "2.1.309"));
         assert!(matches!(
-            plan(&installation_for("claude-code", &desktop, "2.1.309")),
-            Plan::Unsupported
+            plan,
+            Plan::StandaloneCli {
+                package: "@anthropic-ai/claude-code",
+                ..
+            }
         ));
     }
 
@@ -1498,12 +1645,13 @@ mod tests {
         let i = installation_for("codebuddy", &pkg.join("cli.js"), "2.0.0");
         let p = plan(&i);
         let s = install_spec(&i, &p, "2.1.0").unwrap();
-        assert_eq!(s.executable, node.canonicalize().unwrap());
+        assert_eq!(
+            s.executable,
+            agent_runtime::external_path(node.canonicalize().unwrap())
+        );
         assert!(
             s.args.contains(
-                &prefix
-                    .canonicalize()
-                    .unwrap()
+                &agent_runtime::external_path(prefix.canonicalize().unwrap())
                     .to_string_lossy()
                     .into_owned()
             )
@@ -1620,8 +1768,19 @@ mod tests {
                         && let Some(latest) = &value.latest_version
                     {
                         match new_agents::install_spec(&i, &p, latest).await {
-                            Ok(command)
-                                if command.executable.is_file() && command.validate().is_ok() => {}
+                            Ok(mut update)
+                                if update.executable.is_file() && update.validate().is_ok() =>
+                            {
+                                // Exercise Node's loader using the generated updater
+                                // paths, without running any install command.
+                                if matches!(p, Plan::Npm { .. } | Plan::NpmLocal { .. }) {
+                                    update.args.truncate(1);
+                                    update.args.push("--version".into());
+                                    if let Err(error) = command(update).await {
+                                        failed.push(format!("{provider}: npm preflight: {error}"));
+                                    }
+                                }
+                            }
                             Ok(_) => {
                                 failed.push(format!("{provider}: invalid manual upgrade command"))
                             }

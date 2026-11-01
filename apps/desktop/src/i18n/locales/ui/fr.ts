@@ -1708,6 +1708,12 @@ export const uiFr: UiMessages = {
     refreshLost: "Actualisation automatique interrompue ; reconnexion : {message}",
     syncLost: "Synchronisation de l’état interrompue ; reconnexion : {message}",
   },
+  windowControls: {
+    close: "Fermer",
+    maximize: "Agrandir",
+    minimize: "Réduire",
+    restore: "Restaurer",
+  },
   workspaceEmpty: {
     changes: "Sélectionnez un fichier pour voir son diff",
     hint: "Choisissez dans la liste de fichiers à gauche",

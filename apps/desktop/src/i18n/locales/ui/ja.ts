@@ -1708,6 +1708,12 @@ export const uiJa: UiMessages = {
     refreshLost: "自動更新が切断されました。再接続しています：{message}",
     syncLost: "状態の同期が切断されました。再接続しています：{message}",
   },
+  windowControls: {
+    close: "閉じる",
+    maximize: "最大化",
+    minimize: "最小化",
+    restore: "元に戻す",
+  },
   workspaceEmpty: {
     changes: "ファイルを選択して Diff を表示",
     hint: "左のファイル一覧から選択してください",

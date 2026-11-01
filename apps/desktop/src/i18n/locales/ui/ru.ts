@@ -1708,6 +1708,12 @@ export const uiRu: UiMessages = {
     refreshLost: "Автообновление отключено; переподключаемся: {message}",
     syncLost: "Синхронизация состояния отключена; переподключаемся: {message}",
   },
+  windowControls: {
+    close: "Закрыть",
+    maximize: "Развернуть",
+    minimize: "Свернуть",
+    restore: "Восстановить",
+  },
   workspaceEmpty: {
     changes: "Выберите файл, чтобы увидеть его diff",
     hint: "Выберите из списка файлов слева",

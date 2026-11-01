@@ -1081,3 +1081,23 @@ button:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px soli
 .model-menu .model-refresh { width: 28px; height: 28px; padding: 6px; justify-content: center; }
 .model-refresh svg { width: 16px; height: 16px; flex-shrink: 0; }
 .model-menu button:disabled { cursor: default; opacity: .5; }
+
+/* Windows: the native title bar is replaced by the app's own. */
+.platform-windows .sidebar { padding-top: 0; }
+.platform-windows .sidebar-titlebar { height: var(--window-titlebar-height); flex: none; margin-inline: -12px; padding: 0 8px 0 14px; }
+.windows-brand { display: flex; align-items: center; gap: 7px; flex-shrink: 0; margin-right: 8px; min-width: 0; }
+.windows-brand img { width: calc(20px * var(--ui-scale, 1)); height: calc(20px * var(--ui-scale, 1)); object-fit: contain; }
+.windows-brand b { font-size: calc(13px * var(--ui-scale, 1)); letter-spacing: -.02em; white-space: nowrap; }
+.windows-caption { position: fixed; top: 0; right: 0; z-index: 30; display: flex; align-items: center; height: var(--window-titlebar-height); }
+.windows-caption button {
+  display: grid; place-items: center; width: 46px; height: 100%; align-content: center; padding: 0; border: 0; border-radius: 0;
+  color: var(--text, inherit); background: transparent; cursor: default;
+}
+.windows-caption svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; }
+.windows-caption button:hover { background: #8882; }
+.windows-caption button:focus-visible { outline: 2px solid var(--muted); outline-offset: -2px; }
+.windows-caption .windows-caption-close:hover { color: #fff; background: #c42b1c; }
+.platform-windows .global-content > .task-header { padding-right: 157px; }
+.platform-windows .app-shell.review-expanded .global-content > .task-header { padding-right: 19px; }
+/* The docked review panel starts below the window buttons instead of under them. */
+.platform-windows .app-shell.review-expanded > .review-panel:not(.review-standalone) { margin-top: var(--window-titlebar-height); height: calc(100% - var(--window-titlebar-height)); border-top: 1px solid var(--review-border); }

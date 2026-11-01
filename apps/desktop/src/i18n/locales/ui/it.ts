@@ -1708,6 +1708,12 @@ export const uiIt: UiMessages = {
     refreshLost: "Aggiornamento automatico disconnesso; riconnessione in corso: {message}",
     syncLost: "Sincronizzazione dello stato disconnessa; riconnessione in corso: {message}",
   },
+  windowControls: {
+    close: "Chiudi",
+    maximize: "Ingrandisci",
+    minimize: "Riduci a icona",
+    restore: "Ripristina",
+  },
   workspaceEmpty: {
     changes: "Seleziona un file per vederne il diff",
     hint: "Scegli dall’elenco dei file a sinistra",

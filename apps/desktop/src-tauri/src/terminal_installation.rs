@@ -273,6 +273,26 @@ fn select_executable(
     context: &DiscoveryContext,
     commands: Option<&Commands>,
 ) -> Result<Option<PathBuf>, String> {
+    let selected = select_existing_executable(manifest, context, commands)?;
+    if selected.as_ref().is_none_or(|path| {
+        crate::agent_updates::managed_cli::desktop_cli(manifest.id.as_str(), path)
+    }) && let Some(managed) =
+        crate::agent_updates::managed_cli::candidate(context, manifest.id.as_str())
+    {
+        return Ok(Some(
+            managed
+                .canonicalize()
+                .map_err(|_| "CLI 安装路径已变化，请重新检测")?,
+        ));
+    }
+    Ok(selected)
+}
+
+fn select_existing_executable(
+    manifest: &ProviderManifest,
+    context: &DiscoveryContext,
+    commands: Option<&Commands>,
+) -> Result<Option<PathBuf>, String> {
     for name in &manifest.discovery.candidate_executables {
         match commands.and_then(|values| values.get(name)) {
             Some(Resolution::Executable(path)) => return Ok(Some(path.clone())),
@@ -459,7 +479,7 @@ fn opencode_desktop_candidates(
     candidates
 }
 
-fn user_data_dir(home: &Path, name: &str, fallback: &str) -> PathBuf {
+pub(crate) fn user_data_dir(home: &Path, name: &str, fallback: &str) -> PathBuf {
     // Fixture/custom homes must not pick up the running user's folders.
     (agent_registry::home_directory().as_deref() == Some(home))
         .then(|| std::env::var_os(name))
@@ -540,6 +560,72 @@ pub(crate) async fn preferred_executable(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn a_verified_standalone_cli_replaces_only_its_desktop_fallback() {
+        let home = tempfile::tempdir().unwrap();
+        let context = DiscoveryContext {
+            platform: agent_registry::Platform::Windows,
+            home_dir: Some(home.path().into()),
+            path_entries: vec![],
+        };
+        for (provider, manifest, relative) in [
+            (
+                "codex",
+                include_str!("../../../../drivers/manifests/codex.toml"),
+                "AppData/Local/OpenAI/Codex/bin/hash/codex.exe",
+            ),
+            (
+                "claude-code",
+                include_str!("../../../../drivers/manifests/claude-code.toml"),
+                "AppData/Roaming/Claude/claude-code/2.1.309/hash/claude.exe",
+            ),
+            (
+                "deepseek-harness",
+                include_str!("../../../../drivers/manifests/deepseek-harness.toml"),
+                "AppData/Local/Programs/DeepSeek Harness/resources/runtime/cli/bin/dsh.cmd",
+            ),
+        ] {
+            let manifest = ProviderManifest::parse_toml(manifest).unwrap();
+            let original = home.path().join(relative);
+            std::fs::create_dir_all(original.parent().unwrap()).unwrap();
+            std::fs::write(&original, "desktop CLI").unwrap();
+            if provider == "deepseek-harness" {
+                std::fs::write(
+                    home.path()
+                        .join("AppData/Local/Programs/DeepSeek Harness/DeepSeek Harness.exe"),
+                    "desktop",
+                )
+                .unwrap();
+            }
+            let original = original.canonicalize().unwrap();
+            assert_eq!(
+                select_executable(&manifest, &context, None).unwrap(),
+                Some(original.clone())
+            );
+            let standalone =
+                crate::agent_updates::managed_cli::tests::verified_fixture(&context, provider)
+                    .canonicalize()
+                    .unwrap();
+            assert_eq!(
+                select_executable(&manifest, &context, None).unwrap(),
+                Some(standalone)
+            );
+            let custom = home.path().join("custom.exe");
+            std::fs::write(&custom, "custom CLI").unwrap();
+            let mut commands = Commands::new();
+            commands.insert(
+                manifest.discovery.candidate_executables[0].clone(),
+                Resolution::Executable(custom.clone()),
+            );
+            assert_eq!(
+                select_executable(&manifest, &context, Some(&commands)).unwrap(),
+                Some(custom)
+            );
+            assert_eq!(std::fs::read_to_string(original).unwrap(), "desktop CLI");
+        }
+    }
 
     #[test]
     fn windows_updates_skip_private_node_without_npm_and_keep_a_matching_pair() {

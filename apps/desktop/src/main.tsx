@@ -20,6 +20,8 @@ const ComputerUseNotice = lazy(() => import("./ComputerUseNotice").then(module =
 
 document.documentElement.classList.toggle("platform-macos", navigator.userAgent.includes("Macintosh"));
 
+document.documentElement.classList.toggle("platform-windows", navigator.userAgent.includes("Windows") && isTauri() && !window.location.search);
+
 traceStartup("module_ready");
 if (import.meta.env.DEV && !window.location.search) {
   let previous = performance.now();

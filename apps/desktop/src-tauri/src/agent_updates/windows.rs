@@ -94,13 +94,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             spec.executable,
-            prefix.join("node.exe").canonicalize().unwrap()
+            agent_runtime::external_path(prefix.join("node.exe").canonicalize().unwrap())
         );
         assert!(
             spec.args.contains(
-                &prefix
-                    .canonicalize()
-                    .unwrap()
+                &agent_runtime::external_path(prefix.canonicalize().unwrap())
                     .to_string_lossy()
                     .into_owned()
             )

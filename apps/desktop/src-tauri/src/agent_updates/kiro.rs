@@ -78,8 +78,9 @@ pub(super) fn latest_from_check(output: &str) -> Result<String, String> {
             semver::Version::parse(current.trim()).map_err(|_| "Kiro 更新检查结果无效")?;
             Some(latest.trim())
         } else {
-            line.strip_prefix("Already up to date (")
-                .and_then(|v| v.strip_suffix(')'))
+            ["Already up to date (", "You are on the current version ("]
+                .into_iter()
+                .find_map(|prefix| line.strip_prefix(prefix).and_then(|v| v.strip_suffix(')')))
         };
         if let Some(latest) = latest {
             return semver::Version::parse(latest)
@@ -129,34 +130,11 @@ pub(super) async fn latest(i: &InstallationSummary) -> Result<String, String> {
     latest_from_index(&json(&index)?)
 }
 
-pub(super) async fn verify_updated(executable: &Path, target: &str) -> Result<(), String> {
-    wait_for_version(executable, target, std::time::Duration::from_secs(30)).await
-}
-
-async fn wait_for_version(
-    executable: &Path,
-    target: &str,
-    limit: std::time::Duration,
-) -> Result<(), String> {
-    tokio::time::timeout(limit, async {
-        loop {
-            let mut probe = spec(executable, vec!["--version".into()], false);
-            probe.timeout = std::time::Duration::from_secs(3);
-            if let Ok(actual) = command(probe).await
-                && super::verified_version("kiro", &actual, target)
-            {
-                return;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-        }
-    })
-    .await
-    .map_err(|_| "Kiro 更新器已退出，但尚未确认目标版本生效，请重新检测后重试".into())
-}
-
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    #[cfg(unix)]
+    use crate::agent_updates::wait_for_updated_version as wait_for_version;
     use crate::agent_updates::{Plan, inspect, install_spec, plan, tests::installation_for};
     use serde_json::json;
 
@@ -168,6 +146,10 @@ pub(super) mod tests {
         );
         assert_eq!(
             latest_from_check("Already up to date (2.37.0)\n"),
+            Ok("2.37.0".into())
+        );
+        assert_eq!(
+            latest_from_check("Checking for updates...\nYou are on the current version (2.37.0)\n"),
             Ok("2.37.0".into())
         );
         for output in [

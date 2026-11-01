@@ -1708,6 +1708,12 @@ export const uiZhTW: UiMessages = {
     refreshLost: "自動重新整理已斷開，正在重連：{message}",
     syncLost: "狀態同步已斷開，正在重連：{message}",
   },
+  windowControls: {
+    close: "關閉",
+    maximize: "最大化",
+    minimize: "最小化",
+    restore: "還原",
+  },
   workspaceEmpty: {
     changes: "選擇檔案查看差異",
     hint: "從左側檔案列表中選擇",

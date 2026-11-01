@@ -643,7 +643,12 @@ fn workspace_args(workspace: &SessionRequest, resume: bool) -> Vec<String> {
     for directory in
         std::iter::once(&workspace.working_directory).chain(&workspace.additional_directories)
     {
-        args.extend(["--add-dir".into(), directory.clone()]);
+        args.extend([
+            "--add-dir".into(),
+            agent_runtime::external_path(directory)
+                .to_string_lossy()
+                .into_owned(),
+        ]);
     }
     args
 }
@@ -683,10 +688,12 @@ fn spawn_workspace(
     bridge: Option<&approval_bridge::Bridge>,
     usage_log: Option<&std::path::Path>,
 ) -> Result<Child, DriverError> {
-    let mut command = tokio::process::Command::new(&launch.executable);
+    let mut command = agent_runtime::agent_command(&launch.executable);
     command.args(session_args());
     if let Some(log) = usage_log {
-        command.arg("--log-file").arg(log);
+        command
+            .arg("--log-file")
+            .arg(agent_runtime::external_path(log));
     }
     let mode = workspace.and_then(|w| w.permission_mode.as_deref());
     driver_api::permissions::antigravity().validate(mode)?;
@@ -704,14 +711,16 @@ fn spawn_workspace(
         command.arg("--dangerously-skip-permissions");
     }
     if let Some(workspace) = workspace {
-        command.current_dir(&workspace.working_directory);
+        command.current_dir(agent_runtime::external_path(&workspace.working_directory));
         // Keep user workspaces out of agy's shared default CLI project.
         // A resumed conversation carries its original project identity.
         command.args(workspace_args(workspace, resume_conversation.is_some()));
         if bridge.is_none()
             && let Some(mcp) = workspace.app_mcps.first()
         {
-            command.arg("--add-dir").arg(&mcp.directory);
+            command
+                .arg("--add-dir")
+                .arg(agent_runtime::external_path(&mcp.directory));
         }
     }
     if let Some(model) = model {

@@ -1708,6 +1708,12 @@ export const uiZhCN: UiMessages = {
     refreshLost: "自动刷新已断开，正在重连：{message}",
     syncLost: "状态同步已断开，正在重连：{message}",
   },
+  windowControls: {
+    close: "关闭",
+    maximize: "最大化",
+    minimize: "最小化",
+    restore: "还原",
+  },
   workspaceEmpty: {
     changes: "选择文件查看差异",
     hint: "从左侧文件列表中选择",

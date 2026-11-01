@@ -87,10 +87,10 @@ impl Connection {
         session: Option<&str>,
         ephemeral: bool,
     ) -> Result<Self, DriverError> {
-        let mut command = tokio::process::Command::new(executable);
+        let mut command = agent_runtime::agent_command(executable);
         command
             .args(["--mode", "rpc"])
-            .current_dir(cwd)
+            .current_dir(agent_runtime::external_path(cwd))
             .env_clear()
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

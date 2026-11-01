@@ -1,6 +1,6 @@
 import { RemoteDevices } from "./RemoteDevices";
 import { ComputerUseControl } from "./ComputerUseControl";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { AttachmentUploadRecovery } from "./AttachmentUploadRecovery";
 import {
   type UiLanguage,
@@ -36,6 +36,7 @@ import { userFacingError } from "./userFacingError";
 import { AgentQuotaContext } from "./AgentQuotaRing";
 import { AgentIcon, providerLabel } from "./agentPresentation";
 import { SidebarWindowControls } from "./SidebarWindowControls";
+import { isWindowsPlatform, WindowsBrand, WindowsCaptionButtons } from "./WindowsTitleBar";
 import { SidebarNavIcon } from "./SidebarNavIcon";
 import { ActivityIcon } from "./ActivityIcon";
 import { useConversationNavigation } from "./useConversationNavigation";
@@ -1145,7 +1146,11 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     const taskId = navigation.move(direction);
     if (taskId) { selectTask(taskId, false); setActiveView("conversation"); }
   };
-  const windowControls = <SidebarWindowControls collapsed={sidebarCollapsed} onToggle={toggleSidebar} canBack={navigation.canBack} canForward={navigation.canForward} onBack={() => navigateConversation(-1)} onForward={() => navigateConversation(1)} />;
+  const customTitleBar = isWindowsPlatform() && isTauri();
+  const windowControls = <>
+    {customTitleBar && <WindowsBrand logo={appLogo} />}
+    <SidebarWindowControls collapsed={sidebarCollapsed} onToggle={toggleSidebar} canBack={navigation.canBack} canForward={navigation.canForward} onBack={() => navigateConversation(-1)} onForward={() => navigateConversation(1)} />
+  </>;
 
   if (welcomeOpen) return <I18nProvider language={uiLanguage}><AgentWelcome client={client}
     onDetected={(provider, detected) => setSnapshot(current => current ? { ...current,
@@ -1209,6 +1214,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         </div>
       </aside>
 
+      {customTitleBar && <WindowsCaptionButtons />}
       {!sidebarCollapsed && <SidebarResizeHandle width={sidebarWidth.width} max={sidebarWidth.max} defaultWidth={sidebarWidth.defaultWidth} onResize={sidebarWidth.setWidth} />}
       <div className="conversation-column global-content">
         <header className="task-header" data-tauri-drag-region="deep">

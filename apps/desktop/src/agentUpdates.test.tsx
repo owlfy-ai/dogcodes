@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AgentUpdate, CoreClient, InstallationSummary } from "@dogcodes/protocol";
 import { AgentUpdateControl, useAgentUpdates } from "./agentUpdates";
+import { I18nProvider } from "./i18n";
 const i: InstallationSummary = { installationId: "ins_a", providerId: "kimi", executable: "/kimi", fingerprint: "f", version: "0.42.0", versionText: null, status: "ready", diagnostic: null, probedAt: "2026-09-14", probeElapsedMillis: 1 };
 const available: AgentUpdate = { installationId: i.installationId, status: "available", currentVersion: i.version, latestVersion: "0.43.0", source: "native", message: null, canUpgrade: true, checkedAt: Date.now() };
 let root: Root; let element: HTMLDivElement;
@@ -42,7 +43,7 @@ it("shows an external release without automatic-update warnings or an info icon"
   expect(element.querySelector(".agent-update")?.getAttribute("data-tooltip")).not.toContain("原安装渠道");
   expect(upgrade).not.toHaveBeenCalled();
 });
-it("opens the external upgrade entry only after a user click", async () => {
+it("never routes a CLI release to the desktop updater when no CLI upgrade action exists", async () => {
   const openUpdater = vi.fn(); const upgrade = vi.fn();
   await mount(<AgentUpdateControl id={i.installationId} actions={{
     updates: { [i.installationId]: { ...available, canUpgrade: false, message: "Automatic updates are unavailable for this installation." } },
@@ -52,9 +53,23 @@ it("opens the external upgrade entry only after a user click", async () => {
   expect(upgrade).not.toHaveBeenCalled();
   expect(element.querySelector('[role="status"]')).toBeNull();
   expect(element.querySelector(".agent-update")?.getAttribute("data-tooltip")).not.toContain("Automatic");
-  await act(async () => element.querySelector("button")!.click());
-  expect(openUpdater).toHaveBeenCalledExactlyOnceWith(i.installationId);
+  expect(element.querySelector("button")).toBeNull();
+  expect(openUpdater).not.toHaveBeenCalled();
   expect(upgrade).not.toHaveBeenCalled();
+});
+it("upgrades Codex and Claude CLI releases without opening their desktop applications", async () => {
+  const upgrade = vi.fn(); const openUpdater = vi.fn();
+  let mounted = false;
+  for (const [id, currentVersion, latestVersion] of [["codex-cli", "0.164.0", "0.166.0"], ["claude-cli", "2.1.309", "2.1.316"]]) {
+    const node = <AgentUpdateControl id={id} actions={{ updates: { [id]: { ...available, installationId: id, currentVersion, latestVersion, source: "npm" } }, check: vi.fn(), upgrade, openUpdater }} />;
+    if (!mounted) { await mount(node); mounted = true; } else await act(async () => root.render(node));
+    expect(element.textContent).toContain(`有新版本 ${latestVersion}`);
+    expect(element.textContent).not.toContain("桌面应用有新版本");
+    await act(async () => element.querySelector("button")!.click());
+    expect(upgrade).toHaveBeenLastCalledWith(id);
+  }
+  expect(upgrade).toHaveBeenCalledTimes(2);
+  expect(openUpdater).not.toHaveBeenCalled();
 });
 it("does not display unsupported installation diagnostics even in the detailed view", async () => {
   await mount(<AgentUpdateControl id={i.installationId} detailed actions={{
@@ -205,10 +220,24 @@ it("requires explicit consent before ending tasks and cancellation leaves them r
   expect(element.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe("升级完成");
 });
 
-it("keeps the detailed host updater accessible when its latest version is unknown", async () => {
+it("does not offer a desktop updater until a newer desktop version is known, including detailed views", async () => {
   const openUpdater = vi.fn();
   await mount(<AgentUpdateControl id={i.installationId} detailed actions={{ updates: { [i.installationId]: { ...available, status: "managed", latestVersion: null, canUpgrade: false, message: "在宿主应用中检查更新" } }, check: vi.fn(), upgrade: vi.fn(), openUpdater }} />);
   expect(element.textContent).toContain("在宿主应用中检查更新");
-  await act(async () => element.querySelector("button")!.click());
-  expect(openUpdater).toHaveBeenCalledWith(i.installationId);
+  expect(element.querySelector("button")).toBeNull();
+  expect(openUpdater).not.toHaveBeenCalled();
+});
+
+it("describes updater failures as upgrade failures in English and retains the exit code", async () => {
+  const upgrade = vi.fn();
+  await mount(<I18nProvider language="en"><AgentUpdateControl id={i.installationId} actions={{
+    updates: { [i.installationId]: { ...available, status: "error", message: "更新命令未成功（退出码 1），请检查网络和安装权限后重试" } },
+    check: vi.fn(), upgrade,
+  }} /></I18nProvider>);
+  const button = element.querySelector("button")!;
+  expect(button.getAttribute("aria-label")).toContain("Upgrade failed");
+  expect(button.getAttribute("aria-label")).toContain("(1)");
+  expect(button.dataset.tooltip).not.toContain("Version check failed");
+  await act(async () => button.click());
+  expect(upgrade).toHaveBeenCalledExactlyOnceWith(i.installationId);
 });

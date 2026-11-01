@@ -745,7 +745,7 @@ fn spawn_selected(
         analysis_only,
     } = selection;
     // The app retains the private configuration directory for the live session.
-    let mut command = tokio::process::Command::new(&launch.executable);
+    let mut command = agent_runtime::agent_command(&launch.executable);
     if analysis_only {
         command.args([
             "--tools",
@@ -777,7 +777,9 @@ fn spawn_selected(
         std::fs::write(&path, json!({"mcpServers":servers}).to_string()).map_err(|_| {
             DriverError::Disconnected("history MCP configuration unavailable".into())
         })?;
-        command.arg("--mcp-config").arg(path);
+        command
+            .arg("--mcp-config")
+            .arg(agent_runtime::external_path(path));
     }
     if let Some(model) = model.filter(|m| *m != "default") {
         command.arg("--model").arg(model);
@@ -791,7 +793,9 @@ fn spawn_selected(
         }
     }
     for directory in additional_directories {
-        command.arg("--add-dir").arg(directory);
+        command
+            .arg("--add-dir")
+            .arg(agent_runtime::external_path(directory));
     }
     driver_api::permissions::claude_with_auto(true).validate(permission)?;
     let mut args = session_args(session_uuid, resume);
@@ -810,7 +814,7 @@ fn spawn_selected(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     if let Some(directory) = working_directory {
-        command.current_dir(directory);
+        command.current_dir(agent_runtime::external_path(directory));
     }
     agent_runtime::apply_platform_environment(&mut command);
     for variable in ENV_ALLOWLIST {

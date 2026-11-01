@@ -155,17 +155,26 @@ async fn open_target(target: LoginTarget) -> Result<(), String> {
 }
 
 #[cfg(windows)]
+fn windows_cli_command(executable: &Path, args: &[&str]) -> String {
+    let quote = |value: &str| format!("'{}'", value.replace('\'', "''"));
+    std::iter::once(
+        agent_runtime::external_path(executable)
+            .to_string_lossy()
+            .into_owned(),
+    )
+    .chain(args.iter().map(ToString::to_string))
+    .map(|s| quote(&s))
+    .collect::<Vec<_>>()
+    .join(" ")
+}
+
+#[cfg(windows)]
 async fn open_target(target: LoginTarget) -> Result<(), String> {
     use base64::Engine;
     let LoginTarget::Cli(executable, args) = target else {
         return Err("此客户端需要在 macOS 中打开".into());
     };
-    let quote = |value: &str| format!("'{}'", value.replace('\'', "''"));
-    let command = std::iter::once(executable.to_string_lossy().into_owned())
-        .chain(args.iter().map(ToString::to_string))
-        .map(|s| quote(&s))
-        .collect::<Vec<_>>()
-        .join(" ");
+    let command = windows_cli_command(&executable, args);
     let script = format!("Set-Location $HOME; & {command}");
     let encoded = base64::engine::general_purpose::STANDARD.encode(
         script
@@ -215,6 +224,17 @@ pub async fn open_agent_login(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_login_quotes_a_plain_path_without_changing_the_selected_installation() {
+        let identity = Path::new(r"\\?\C:\用户\Agent's directory\agent.cmd");
+        assert_eq!(
+            windows_cli_command(identity, &["auth", "login"]),
+            r"'C:\用户\Agent''s directory\agent.cmd' 'auth' 'login'"
+        );
+        assert!(identity.to_string_lossy().starts_with(r"\\?\"));
+    }
 
     #[test]
     fn routes_native_login_commands_without_protocol_arguments() {

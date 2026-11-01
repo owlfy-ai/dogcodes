@@ -1708,6 +1708,12 @@ export const uiEn = {
     refreshLost: "Auto-refresh disconnected; reconnecting: {message}",
     syncLost: "State sync disconnected; reconnecting: {message}",
   },
+  windowControls: {
+    close: "Close",
+    maximize: "Maximize",
+    minimize: "Minimize",
+    restore: "Restore",
+  },
   workspaceEmpty: {
     changes: "Select a file to view its diff",
     hint: "Choose from the file list on the left",

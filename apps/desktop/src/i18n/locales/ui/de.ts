@@ -1708,6 +1708,12 @@ export const uiDe: UiMessages = {
     refreshLost: "Automatische Aktualisierung getrennt; Verbindung wird wiederhergestellt: {message}",
     syncLost: "Statussynchronisierung getrennt; Verbindung wird wiederhergestellt: {message}",
   },
+  windowControls: {
+    close: "Schließen",
+    maximize: "Maximieren",
+    minimize: "Minimieren",
+    restore: "Wiederherstellen",
+  },
   workspaceEmpty: {
     changes: "Eine Datei auswählen, um ihren Diff anzuzeigen",
     hint: "Aus der Dateiliste links auswählen",

@@ -43,7 +43,7 @@ use driver_api::{
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader},
-    process::{ChildStdin, Command},
+    process::ChildStdin,
     sync::{Mutex, mpsc, oneshot, watch},
     time::timeout,
 };
@@ -2079,7 +2079,7 @@ impl Connection {
         apps: &[driver_api::AppMcp],
         disabled_skills: &[String],
     ) -> Result<Self, DriverError> {
-        let mut command = Command::new(executable);
+        let mut command = agent_runtime::agent_command(executable);
         if !disabled_skills.is_empty() {
             let entries = disabled_skills
                 .iter()

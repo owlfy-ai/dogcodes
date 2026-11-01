@@ -1109,10 +1109,15 @@ pub fn run() {
         })
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            if let Some(window) = app.get_webview_window("main")
-                && let Err(error) = window_geometry::fit_to_work_area(&window)
-            {
-                eprintln!("could not fit main window to screen: {error}");
+            if let Some(window) = app.get_webview_window("main") {
+                // Windows draws its own title bar in the web UI.
+                #[cfg(target_os = "windows")]
+                if let Err(error) = window.set_decorations(false) {
+                    eprintln!("could not hide native title bar: {error}");
+                }
+                if let Err(error) = window_geometry::fit_to_work_area(&window) {
+                    eprintln!("could not fit main window to screen: {error}");
+                }
             }
             #[cfg(not(feature = "review-acceptance"))]
             {
