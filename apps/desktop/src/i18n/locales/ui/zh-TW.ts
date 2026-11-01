@@ -279,6 +279,7 @@ export const uiZhTW: UiMessages = {
     verifying: "正在核實停止請求…",
   },
   computerUse: {
+    menuLabel: "電腦操作",
     macosVersion: "電腦操作需要 macOS 13 或更新版本。",
     unconfirmed: "結果待確認",
     unverified: "效果未驗證",
@@ -316,8 +317,8 @@ export const uiZhTW: UiMessages = {
     },
     disable: "停止電腦操作",
     enable: "啟用電腦操作",
-    enableHint: "允許此任務查看並操作電腦",
-    enabledHint: "此任務已啟用；點擊停止電腦操作",
+    enableHint: "為所有 Agent 開啟電腦操作，從下一輪生效",
+    enabledHint: "所有 Agent 已啟用；關閉會立即停止目前的電腦操作",
     glowBackground: "正在背景操作電腦驗證",
     glowDisconnected: "連線已中斷，鍵鼠操作狀態未知",
     glowExit: "退出",

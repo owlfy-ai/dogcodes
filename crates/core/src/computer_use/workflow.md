@@ -4,7 +4,7 @@ Workflow: locate the exact app/window; observe; act; wait for the expected chang
 
 Use targeted accessibility reads and fresh element_token values for ordinary controls. get_window_state can return a real screenshot; request include_screenshot:true for visual inspection, custom controls, layout checks and pixel grounding. If the tree cannot reach a control, use a fresh screenshot of that exact window, then window-local coordinates. zoom helps small targets. get_desktop_state and desktop targets cover cross-window dialogs and desktop-only surfaces. Preserve capture/coordinate metadata; reobserve after moving/resizing windows. A missing image cannot ground a pixel action.
 
-Prefer background actions when they work. This task's enabled computer-use switch also permits visible foreground control; if background input is unavailable, use foreground delivery or foreground_fallback:true. The pointer/focus may move. Reobserve if the user changes focus. Stop on cancellation and do not compete with the user or phone remote control.
+Prefer background actions when they work. The host's enabled global computer-use switch also permits visible foreground control; if background input is unavailable, use foreground delivery or foreground_fallback:true. The pointer/focus may move. Reobserve if the user changes focus. Stop on cancellation and do not compete with the user or phone remote control.
 
 Foreground delivery requires the host's visible warning and emergency Escape observer. If computer_escape_unavailable is returned, use background routes only; never bypass it with another input API. During manual_input_active, wait or continue non-desktop work; after manual control ends, start with a new observation. An interrupted operation is never replayed automatically.
 

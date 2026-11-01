@@ -585,10 +585,9 @@ fn core_startup_trace(window: tauri::WebviewWindow, stage: String, elapsed_ms: u
 #[tauri::command]
 async fn core_computer_use(
     state: tauri::State<'_, DesktopState>,
-    task_id: TaskId,
     call: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    state.core.computer_use(task_id, call).await
+    state.core.computer_use(call).await
 }
 
 #[tauri::command]

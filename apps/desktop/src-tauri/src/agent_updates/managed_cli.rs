@@ -217,6 +217,7 @@ pub(crate) mod tests {
         root
     }
 
+    #[cfg(windows)]
     pub(crate) fn verified_fixture(context: &DiscoveryContext, provider: &str) -> PathBuf {
         let root = fixture(context, provider, "1.1.0");
         register(&root, provider, "1.1.0", "1.1.0").unwrap();

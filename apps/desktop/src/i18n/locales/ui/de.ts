@@ -279,6 +279,7 @@ export const uiDe: UiMessages = {
     verifying: "Stoppanfrage wird geprüft…",
   },
   computerUse: {
+    menuLabel: "Computerbedienung",
     macosVersion: "Computerbedienung erfordert macOS 13 oder neuer.",
     unconfirmed: "Ergebnis unbestätigt",
     unverified: "Wirkung nicht geprüft",
@@ -316,8 +317,8 @@ export const uiDe: UiMessages = {
     },
     disable: "Computerbedienung stoppen",
     enable: "Computerbedienung aktivieren",
-    enableHint: "Diesem Task erlauben, den Desktop zu sehen und zu bedienen",
-    enabledHint: "Für diesen Task aktiv; zum Stoppen klicken",
+    enableHint: "Computerbedienung für alle Agenten ab dem nächsten Durchlauf aktivieren",
+    enabledHint: "Für alle Agenten aktiviert; Ausschalten stoppt laufende Computeraktionen",
     glowBackground: "Computer wird im Hintergrund geprüft",
     glowDisconnected: "Verbindung verloren. Eingabestatus unbekannt.",
     glowExit: "zum Beenden",

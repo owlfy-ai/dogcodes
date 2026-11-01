@@ -219,6 +219,13 @@ fn rebuild_in_transaction(transaction: &Transaction<'_>) -> Result<(), Repositor
 
 #[async_trait]
 impl CoreRepository for SqliteStore {
+    async fn computer_use_enabled(&self) -> Result<bool, RepositoryError> {
+        let (_, _, preferences) = self.read_preferences::<agent_core::computer_use::Preferences>(
+            agent_core::computer_use::SETTINGS_STREAM,
+            agent_core::computer_use::SETTINGS_EVENT,
+        )?;
+        Ok(preferences.enabled)
+    }
     async fn history_preferences(
         &self,
     ) -> Result<agent_protocol::HistoryPreferencesSnapshot, RepositoryError> {

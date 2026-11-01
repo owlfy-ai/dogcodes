@@ -279,6 +279,7 @@ export const uiKo: UiMessages = {
     verifying: "중지 요청 확인 중…",
   },
   computerUse: {
+    menuLabel: "컴퓨터 조작",
     macosVersion: "컴퓨터 조작에는 macOS 13 이상이 필요합니다.",
     unconfirmed: "결과 미확인",
     unverified: "효과 미검증",
@@ -316,8 +317,8 @@ export const uiKo: UiMessages = {
     },
     disable: "컴퓨터 조작 중지",
     enable: "컴퓨터 조작 켜기",
-    enableHint: "이 작업이 데스크톱을 보고 조작하도록 허용",
-    enabledHint: "사용 중입니다. 클릭하면 조작을 중지합니다",
+    enableHint: "다음 턴부터 모든 에이전트의 컴퓨터 조작을 활성화합니다",
+    enabledHint: "모든 에이전트에서 활성화됨. 끄면 현재 컴퓨터 조작을 즉시 중지합니다",
     glowBackground: "백그라운드에서 컴퓨터를 조작하며 검증 중입니다",
     glowDisconnected: "연결이 끊겼습니다. 입력 상태를 확인할 수 없습니다.",
     glowExit: "종료",

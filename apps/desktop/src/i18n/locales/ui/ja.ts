@@ -279,6 +279,7 @@ export const uiJa: UiMessages = {
     verifying: "停止リクエストを確認中…",
   },
   computerUse: {
+    menuLabel: "コンピューター操作",
     macosVersion: "コンピューター操作には macOS 13 以降が必要です。",
     unconfirmed: "結果未確認",
     unverified: "効果未検証",
@@ -316,8 +317,8 @@ export const uiJa: UiMessages = {
     },
     disable: "コンピューター操作を停止",
     enable: "コンピューター操作を有効化",
-    enableHint: "このタスクにデスクトップの表示と操作を許可",
-    enabledHint: "有効です。クリックして操作を停止",
+    enableHint: "すべてのエージェントで次のターンからコンピューター操作を有効にします",
+    enabledHint: "すべてのエージェントで有効。オフにすると実行中のコンピューター操作を停止します",
     glowBackground: "バックグラウンドでPCを操作して検証中",
     glowDisconnected: "接続が切れました。入力状態を確認できません。",
     glowExit: "で終了",

@@ -279,6 +279,7 @@ export const uiEs: UiMessages = {
     verifying: "Verificando solicitud de detención…",
   },
   computerUse: {
+    menuLabel: "Uso del ordenador",
     macosVersion: "El uso del ordenador requiere macOS 13 o posterior.",
     unconfirmed: "Resultado sin confirmar",
     unverified: "Efecto sin verificar",
@@ -316,8 +317,8 @@ export const uiEs: UiMessages = {
     },
     disable: "Detener control del ordenador",
     enable: "Activar control del ordenador",
-    enableHint: "Permitir que esta tarea vea y use el escritorio",
-    enabledHint: "Activado para esta tarea; pulsa para detener",
+    enableHint: "Activar el uso del ordenador para todos los agentes a partir del siguiente turno",
+    enabledHint: "Activado para todos los agentes; desactivarlo detiene las acciones actuales",
     glowBackground: "Verificando el equipo en segundo plano",
     glowDisconnected: "Conexión perdida. Estado de entrada desconocido.",
     glowExit: "para salir",

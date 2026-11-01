@@ -49,7 +49,10 @@ impl AgentDriver for Waiting {
         _: &SessionHandle,
         request: PromptRequest,
     ) -> Result<DriverEventStream, DriverError> {
-        assert!(request.prompt.contains("computer use enabled"));
+        assert_eq!(
+            request.prompt.contains("computer use enabled"),
+            self.servers.lock().unwrap().iter().any(AppMcp::is_computer)
+        );
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         *self.sink.lock().unwrap() = Some(tx);
         Ok(Box::pin(futures::stream::unfold(rx, |mut rx| async move {
@@ -90,7 +93,7 @@ async fn wait(mut check: impl FnMut() -> bool) {
 }
 
 #[tokio::test]
-async fn task_opt_in_preserves_images_deduplicates_actions_and_preempts_in_flight_work() {
+async fn global_default_preserves_images_deduplicates_actions_and_preempts_in_flight_work() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("driver");
     let store = Arc::new(SqliteStore::open(dir.path().join("test.db")).unwrap());
@@ -133,12 +136,12 @@ async fn task_opt_in_preserves_images_deduplicates_actions_and_preempts_in_fligh
     .await
     .unwrap();
     assert_eq!(
-        core.computer_use_control(&task, json!({"type":"status"}))
+        core.computer_use_control(json!({"type":"status"}))
             .await
             .unwrap()["enabled"],
-        false
+        true
     );
-    core.computer_use_control(&task, json!({"type":"set","enabled":true}))
+    core.computer_use_control(json!({"type":"set","enabled":false}))
         .await
         .unwrap();
     let reopened = Core::new(store.clone()).with_computer_use(
@@ -148,11 +151,14 @@ async fn task_opt_in_preserves_images_deduplicates_actions_and_preempts_in_fligh
     );
     assert_eq!(
         reopened
-            .computer_use_control(&task, json!({"type":"status"}))
+            .computer_use_control(json!({"type":"status"}))
             .await
             .unwrap()["enabled"],
-        true
+        false
     );
+    core.computer_use_control(json!({"type":"set","enabled":true}))
+        .await
+        .unwrap();
     let mut command = CommandEnvelope::local(CoreCommand::SubmitTurn(SubmitTurn {
         review_fix: None,
         attachments: vec![],
@@ -199,9 +205,6 @@ async fn task_opt_in_preserves_images_deduplicates_actions_and_preempts_in_fligh
     )))
     .await
     .unwrap();
-    core.computer_use_control(&second, json!({"type":"set","enabled":true}))
-        .await
-        .unwrap();
     let mut command = CommandEnvelope::local(CoreCommand::SubmitTurn(SubmitTurn {
         review_fix: None,
         attachments: vec![],
@@ -239,16 +242,7 @@ async fn task_opt_in_preserves_images_deduplicates_actions_and_preempts_in_fligh
             .unwrap()
             .contains("desktop_busy")
     );
-    driver
-        .sink
-        .lock()
-        .unwrap()
-        .take()
-        .unwrap()
-        .send(Ok(DriverEvent::TurnCompleted {
-            summary: "continued coding without desktop access".into(),
-        }))
-        .unwrap();
+    let second_sink = driver.sink.lock().unwrap().take().unwrap();
     let first = query(&computer, 3, "click", json!({})).await;
     assert_eq!(query(&computer, 3, "click", json!({})).await, first);
     assert_eq!(std::fs::read_to_string(home.join("effects")).unwrap(), "1");
@@ -307,7 +301,7 @@ async fn task_opt_in_preserves_images_deduplicates_actions_and_preempts_in_fligh
     assert!(query(&computer, 5, "click", json!({})).await["error"].is_string());
     assert_eq!(std::fs::read_to_string(home.join("effects")).unwrap(), "2");
     assert_eq!(
-        core.computer_use_control(&task, json!({"type":"status"}))
+        core.computer_use_control(json!({"type":"status"}))
             .await
             .unwrap()["externalInput"],
         true
@@ -318,9 +312,31 @@ async fn task_opt_in_preserves_images_deduplicates_actions_and_preempts_in_fligh
     let resumed = query(&computer, 6, "get_window_state", json!({})).await;
     assert_capture_response(&resumed);
     assert_eq!(std::fs::read_to_string(home.join("effects")).unwrap(), "2");
-    core.computer_use_control(&task, json!({"type":"set","enabled":false}))
+    std::fs::remove_file(home.join("in-flight")).unwrap();
+    let delayed = {
+        let computer = computer.clone();
+        tokio::spawn(async move { query(&computer, 7, "click", json!({"delay_ms":2500})).await })
+    };
+    wait(|| home.join("in-flight").exists()).await;
+    let stopped = std::time::Instant::now();
+    core.computer_use_control(json!({"type":"set","enabled":false}))
         .await
         .unwrap();
+    assert!(stopped.elapsed() < std::time::Duration::from_secs(1));
+    assert!(
+        delayed.await.unwrap()["error"]
+            .as_str()
+            .unwrap()
+            .contains("cancelled")
+    );
+    assert!(query(&computer, 8, "get_window_state", json!({})).await["error"].is_string());
+    assert!(query(&second_computer, 3, "catalog", json!({})).await["error"].is_string());
+    second_sink
+        .send(Ok(DriverEvent::TurnCompleted {
+            summary: "continued coding without desktop access".into(),
+        }))
+        .unwrap();
+    drop(second_sink);
     first_sink
         .send(Ok(DriverEvent::TurnCompleted {
             summary: "done".into(),
@@ -342,4 +358,128 @@ async fn task_opt_in_preserves_images_deduplicates_actions_and_preempts_in_fligh
     .await
     .unwrap();
     assert_eq!(std::fs::read_to_string(home.join("effects")).unwrap(), "2");
+    // The same task drops the MCP on its next turn, and receives it again after
+    // enabling globally. No per-task opt-in is involved in either transition.
+    for enabled in [false, true] {
+        core.computer_use_control(json!({"type":"set","enabled":enabled}))
+            .await
+            .unwrap();
+        let mut command = CommandEnvelope::local(CoreCommand::SubmitTurn(SubmitTurn {
+            review_fix: None,
+            attachments: vec![],
+            permission_mode: None,
+            thinking: None,
+            model: None,
+            task_id: task.clone(),
+            prompt: "test".into(),
+            executor_override: None,
+        }));
+        command.expected_stream_version = Some(
+            core.bootstrap()
+                .await
+                .unwrap()
+                .tasks
+                .iter()
+                .find(|entry| entry.task_id == task)
+                .unwrap()
+                .stream_version,
+        );
+        core.execute(command).await.unwrap();
+        wait(|| driver.sink.lock().unwrap().is_some()).await;
+        let computer = driver
+            .servers
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|server| server.is_computer())
+            .cloned();
+        assert_eq!(computer.is_some(), enabled);
+        if let Some(computer) = computer {
+            assert_capture_response(&query(&computer, 100, "get_window_state", json!({})).await);
+            let foreground = tokio::spawn({
+                let computer = computer.clone();
+                async move {
+                    query(
+                        &computer,
+                        101,
+                        "click",
+                        json!({"delivery_mode":"foreground"}),
+                    )
+                    .await
+                }
+            });
+            wait(|| activity.borrow().mode == agent_core::computer_use::ActivityMode::Foreground)
+                .await;
+            let operation = activity.borrow().operation_id.clone().unwrap();
+            core.computer_use_activity(json!({"type":"stop","operationId":operation}))
+                .await
+                .unwrap();
+            assert!(foreground.await.unwrap()["error"].is_string());
+            // Escape stops this lease without changing the global preference.
+            assert_eq!(
+                core.computer_use_control(json!({"type":"status"}))
+                    .await
+                    .unwrap()["enabled"],
+                true
+            );
+            assert!(query(&computer, 102, "click", json!({})).await["error"].is_string());
+        }
+        driver
+            .sink
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap()
+            .send(Ok(DriverEvent::TurnCompleted {
+                summary: "done".into(),
+            }))
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while core
+                .bootstrap()
+                .await
+                .unwrap()
+                .tasks
+                .iter()
+                .any(|entry| entry.active_primary_run.is_some())
+            {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn global_preference_survives_reopen_without_any_task() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("settings.db");
+    {
+        let core = Core::new(Arc::new(SqliteStore::open(&path).unwrap()));
+        let status = core
+            .computer_use_control(json!({"type":"status"}))
+            .await
+            .unwrap();
+        assert_eq!(status["enabled"], true);
+        assert_eq!(status["available"], false);
+        core.computer_use_control(json!({"type":"set","enabled":false}))
+            .await
+            .unwrap();
+    }
+    let store = Arc::new(SqliteStore::open(path).unwrap());
+    store.rebuild_projections().unwrap();
+    let core = Core::new(store);
+    assert_eq!(
+        core.computer_use_control(json!({"type":"status"}))
+            .await
+            .unwrap()["enabled"],
+        false
+    );
+    let events = core.sync_events(0, 10).await.unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].stream.stream_id,
+        agent_core::computer_use::SETTINGS_STREAM
+    );
 }

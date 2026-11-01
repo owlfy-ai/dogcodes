@@ -212,6 +212,7 @@ function PreferencesIcon({ kind }: { kind: Exclude<PreferencesSection, null> }) 
 }
 
 function PreferencesMenu({
+  client,
   open,
   section,
   language,
@@ -224,6 +225,7 @@ function PreferencesMenu({
   anchorRef,
   popoverRef,
 }: {
+  client: CoreClient;
   anchorRef: RefObject<HTMLElement | null>;
   popoverRef: RefObject<HTMLDivElement | null>;
   open: boolean;
@@ -306,6 +308,7 @@ function PreferencesMenu({
       <button type="button" role="menuitem" className={section === "scale" ? "selected" : ""} onClick={() => onToggle("scale")}>
         <PreferencesIcon kind="scale" /><span>{labels.scale}</span><span aria-hidden="true">›</span>
       </button>
+      <ComputerUseControl client={client} />
       {optionMenu}
     </div>,
     document.body,
@@ -1185,6 +1188,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             <svg className="preferences-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>
           </button>
           <PreferencesMenu
+            client={client}
             anchorRef={preferencesRef}
             popoverRef={preferencesPopoverRef}
             open={preferencesOpen}
@@ -1265,7 +1269,6 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
               lang={resolvedLang}
               modelPicker={modelPicker}
               permissionPicker={permissionPicker}
-              computerControl={selectedTaskId ? <ComputerUseControl key={selectedTask.taskId} client={client} taskId={selectedTask.taskId} running={Boolean(selectedTask.activePrimaryRun)} /> : undefined}
               submissionPending={submissionPending}
               modelSelectionPending={Boolean(activeModel) && (modelLoading || Boolean(modelError))}
               selectedTask={selectedTask}
@@ -1299,7 +1302,6 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
                 lang={resolvedLang}
                 modelPicker={modelPicker}
               permissionPicker={permissionPicker}
-              computerControl={selectedTaskId ? <ComputerUseControl key={selectedTask.taskId} client={client} taskId={selectedTask.taskId} running={Boolean(selectedTask.activePrimaryRun)} /> : undefined}
                 submissionPending={submissionPending}
               modelSelectionPending={Boolean(activeModel) && (modelLoading || Boolean(modelError))}
                 selectedTask={selectedTask}
@@ -1709,7 +1711,6 @@ export function QuotaCenter({
 }
 
 export function ComposerFooter({
-  computerControl,
   lang,
   permissionPicker,
   modelPicker,
@@ -1729,7 +1730,6 @@ export function ComposerFooter({
   onCancel,
   onAddAttachment,
 }: {
-  computerControl?: ReactNode;
   onAddAttachment?: () => void;
   lang?: ResolvedLanguage;
   permissionPicker?: ReactNode;
@@ -1757,7 +1757,6 @@ export function ComposerFooter({
     <footer ref={footerRef} className="composer-controls">
       <button className="composer-icon" type="button" aria-label={t("composer.addAttachment", undefined, lang)} disabled={sending} onClick={onAddAttachment}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg></button>
       <Fragment key="permission-control">{permissionPicker ?? <span className="mode-chip">{t("composer.localExecution", undefined, lang)}</span>}</Fragment>
-      {computerControl}
       <div className="spacer" />
       <ContextUsageRing quota={selectedQuota} providerId={selectedTask.preferredExecutor.providerId} />
       <Fragment key="model-control">{modelPicker}</Fragment>

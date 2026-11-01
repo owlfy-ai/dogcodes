@@ -591,7 +591,8 @@ export interface ComputerUseActivity {
   foregroundPossible: boolean;
 }
 export interface CoreClient {
-  computerUse?(taskId: TaskId, call: { type: "status" | "stop" } | { type: "set"; enabled: boolean }): Promise<ComputerUseStatus>;
+  /** Host-wide preference, enabled by default. MCP bindings refresh on the next turn. */
+  computerUse?(call: { type: "status" | "stop" } | { type: "set"; enabled: boolean }): Promise<ComputerUseStatus>;
   taskDeletion?(taskId: string): Promise<TaskDeletion | null>;
   submissionIntentResolve?(intent: SubmissionIntent): Promise<SubmissionResolution | null>;
   submissionIntentPut?(intent: SubmissionIntent): Promise<SubmissionIntentEntry>;

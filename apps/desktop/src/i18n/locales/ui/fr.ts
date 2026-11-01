@@ -279,6 +279,7 @@ export const uiFr: UiMessages = {
     verifying: "Vérification de la demande d’arrêt…",
   },
   computerUse: {
+    menuLabel: "Utilisation de l’ordinateur",
     macosVersion: "L’utilisation de l’ordinateur nécessite macOS 13 ou ultérieur.",
     unconfirmed: "Résultat non confirmé",
     unverified: "Effet non vérifié",
@@ -316,8 +317,8 @@ export const uiFr: UiMessages = {
     },
     disable: "Arrêter le contrôle de l’ordinateur",
     enable: "Activer le contrôle de l’ordinateur",
-    enableHint: "Autoriser cette tâche à voir et utiliser le bureau",
-    enabledHint: "Activé pour cette tâche ; cliquer pour arrêter",
+    enableHint: "Activer pour tous les agents à partir du prochain tour",
+    enabledHint: "Activé pour tous les agents ; la désactivation arrête les actions en cours",
     glowBackground: "Vérification du fonctionnement en arrière-plan",
     glowDisconnected: "Connexion perdue. État de saisie inconnu.",
     glowExit: "pour quitter",

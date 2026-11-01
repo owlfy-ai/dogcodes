@@ -279,6 +279,7 @@ export const uiPtBR: UiMessages = {
     verifying: "Verificando solicitação de parada…",
   },
   computerUse: {
+    menuLabel: "Uso do computador",
     macosVersion: "O uso do computador requer macOS 13 ou posterior.",
     unconfirmed: "Resultado não confirmado",
     unverified: "Efeito não verificado",
@@ -316,8 +317,8 @@ export const uiPtBR: UiMessages = {
     },
     disable: "Parar controle do computador",
     enable: "Ativar controle do computador",
-    enableHint: "Permitir que esta tarefa veja e opere a área de trabalho",
-    enabledHint: "Ativado para esta tarefa; clique para parar",
+    enableHint: "Ativar para todos os agentes a partir do próximo turno",
+    enabledHint: "Ativado para todos os agentes; desativar interrompe as operações em andamento",
     glowBackground: "Verificando o computador em segundo plano",
     glowDisconnected: "Conexão perdida. Estado da entrada desconhecido.",
     glowExit: "para sair",

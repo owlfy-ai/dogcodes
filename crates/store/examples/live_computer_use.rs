@@ -97,12 +97,12 @@ async fn run() -> Result<(), Error> {
         },
     )))
     .await?;
-    let initial = core
-        .computer_use_control(&task, json!({"type":"status"}))
-        .await?;
-    if initial["enabled"] != false {
-        return Err("computer use must default off".into());
+    let initial = core.computer_use_control(json!({"type":"status"})).await?;
+    if initial["enabled"] != true {
+        return Err("computer use must default on".into());
     }
+    core.computer_use_control(json!({"type":"set","enabled":false}))
+        .await?;
     // Start with an ordinary turn so dynamic MCP injection is tested on resume.
     let started = std::time::Instant::now();
     let seed = execute_turn(
@@ -115,10 +115,10 @@ async fn run() -> Result<(), Error> {
     )
     .await;
     if let Err(error) = seed {
-        cleanup(&core, &native, &task).await;
+        cleanup(&core, &native).await;
         return Err(error);
     }
-    core.computer_use_control(&task, json!({"type":"set","enabled":true}))
+    core.computer_use_control(json!({"type":"set","enabled":true}))
         .await?;
     let before = core.bootstrap().await?.last_sequence;
     let prompt = std::fs::read_to_string(prompt_path)?;
@@ -171,7 +171,7 @@ async fn run() -> Result<(), Error> {
         "{}",
         json!({"provider":provider,"turnCompleted":result.is_ok(),"actionCount":actions.len(),"elapsedMs":started.elapsed().as_millis(),"error":result.as_ref().err().map(ToString::to_string)})
     );
-    cleanup(&core, &native, &task).await;
+    cleanup(&core, &native).await;
     result?;
     if !read || !input {
         return Err("agent did not observe and operate the GUI through dogcodes tools".into());
@@ -351,9 +351,9 @@ fn artifact_listing(summary: &str, workspace: &std::path::Path) -> bool {
     }
 }
 
-async fn cleanup(core: &Core, native: &Arc<dyn AgentDriver>, task: &TaskId) {
+async fn cleanup(core: &Core, native: &Arc<dyn AgentDriver>) {
     let _ = core
-        .computer_use_control(task, json!({"type":"set","enabled":false}))
+        .computer_use_control(json!({"type":"set","enabled":false}))
         .await;
     if let Ok(snapshot) = core.bootstrap().await {
         for mapping in snapshot.session_maps {

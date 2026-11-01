@@ -53,7 +53,7 @@ impl Driver {
             .env("DO_NOT_TRACK", "1")
             .env("CUA_DRIVER_RS_TELEMETRY_ENABLED", "0")
             .env("CUA_DRIVER_RS_HOME", home)
-            // The task switch authorizes ordinary host-desktop work. Do not inherit
+            // The global switch authorizes ordinary host-desktop work. Do not inherit
             // a user's unrelated Cua manifest, recording or browser configuration.
             .env("CUA_DRIVER_PERMISSION_MODE", "standard")
             .env_remove("CUA_DRIVER_ALLOW_BRIEF_FOREGROUND")

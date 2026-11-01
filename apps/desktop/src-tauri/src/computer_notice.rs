@@ -84,7 +84,7 @@ pub fn start(
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut escape: Option<dogcodes_remote_desktop::escape::EscapeMonitor> = None;
-        let mut escape_task: Option<agent_domain::TaskId> = None;
+        let mut escape_operation: Option<String> = None;
         loop {
             let Ok(mut activity) = core.computer_use_activity_stream().await else {
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -118,8 +118,8 @@ pub fn start(
                     if let Some(escape) = &escape {
                         escape.arm(foreground);
                     }
-                    escape_task = if foreground {
-                        next.task_id.clone()
+                    escape_operation = if foreground {
+                        next.operation_id.clone()
                     } else {
                         None
                     };
@@ -129,17 +129,17 @@ pub fn start(
                 tokio::select! {
                     biased;
                     event = escape_events.recv() => {
-                        if event.is_some() && let Some(task) = escape_task.take()
-                            && core.computer_use(task.clone(), serde_json::json!({"type":"set","enabled":false})).await.is_err() {
+                        if event.is_some() && let Some(operation) = escape_operation.take()
+                            && core.computer_use_activity(serde_json::json!({"type":"stop","operationId":operation})).await.is_err() {
                                 if let Some(escape) = &escape { escape.arm(true); }
-                                escape_task = Some(task);
+                                escape_operation = Some(operation);
                                 for window in &windows { let _ = window.emit("computer-use-disconnected", ()); }
                         }
                     }
                     changed = activity.changed() => { if changed.is_err() { break; } }
                     () = tokio::time::sleep(std::time::Duration::from_millis(900)), if idle => {
                         if let Some(escape) = &escape { escape.arm(false); }
-                        escape_task = None;
+                        escape_operation = None;
                         for window in &windows { let _ = window.hide(); }
                         if activity.changed().await.is_err() { break; }
                     }

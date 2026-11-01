@@ -279,6 +279,7 @@ export const uiEn = {
     verifying: "Verifying stop request…",
   },
   computerUse: {
+    menuLabel: "Computer use",
     macosVersion: "Computer use requires macOS 13 or later.",
     unconfirmed: "Result unconfirmed",
     unverified: "Effect not verified",
@@ -316,8 +317,8 @@ export const uiEn = {
     },
     disable: "Stop computer use",
     enable: "Enable computer use",
-    enableHint: "Let this task observe and operate your desktop",
-    enabledHint: "Enabled for this task; click to stop computer operations",
+    enableHint: "Enable computer use for all agents from their next turn",
+    enabledHint: "Enabled for all agents; turning off stops current computer operations",
     glowBackground: "Verifying your computer in the background",
     glowDisconnected: "Connection lost. Input state is unknown.",
     glowExit: "to exit",

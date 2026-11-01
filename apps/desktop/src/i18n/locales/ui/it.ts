@@ -279,6 +279,7 @@ export const uiIt: UiMessages = {
     verifying: "Verifica della richiesta di arresto…",
   },
   computerUse: {
+    menuLabel: "Uso del computer",
     macosVersion: "L’uso del computer richiede macOS 13 o successivo.",
     unconfirmed: "Risultato non confermato",
     unverified: "Effetto non verificato",
@@ -316,8 +317,8 @@ export const uiIt: UiMessages = {
     },
     disable: "Interrompi controllo del computer",
     enable: "Attiva controllo del computer",
-    enableHint: "Consenti a questa attività di vedere e usare il desktop",
-    enabledHint: "Attivo per questa attività; fai clic per interrompere",
+    enableHint: "Abilita per tutti gli agenti dal prossimo turno",
+    enabledHint: "Abilitato per tutti gli agenti; disattivando si interrompono le operazioni in corso",
     glowBackground: "Verifica del computer in background",
     glowDisconnected: "Connessione persa. Stato dell’input sconosciuto.",
     glowExit: "per uscire",

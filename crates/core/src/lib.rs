@@ -319,6 +319,27 @@ pub trait CoreRepository: Send + Sync {
     async fn event_head(&self) -> Result<u64, RepositoryError> {
         Ok(self.bootstrap().await?.last_sequence)
     }
+    async fn computer_use_enabled(&self) -> Result<bool, RepositoryError> {
+        let through = self.event_head().await?;
+        let mut after = 0;
+        let mut enabled = true;
+        while after < through {
+            let page = self.sync_events(after, 1000).await?;
+            let Some(last) = page.last() else { break };
+            after = last.sequence;
+            for event in page.into_iter().filter(|event| {
+                event.sequence <= through
+                    && event.stream.stream_type == StreamType::System
+                    && event.stream.stream_id == computer_use::SETTINGS_STREAM
+                    && event.event_type == computer_use::SETTINGS_EVENT
+            }) {
+                enabled = serde_json::from_value::<computer_use::Preferences>(event.payload)
+                    .map_err(|error| RepositoryError::Unavailable(error.to_string()))?
+                    .enabled;
+            }
+        }
+        Ok(enabled)
+    }
     async fn task_execution_state(
         &self,
         task_id: &TaskId,

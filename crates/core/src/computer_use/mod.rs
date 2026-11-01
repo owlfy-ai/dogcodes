@@ -1,11 +1,11 @@
-//! Task-scoped host-desktop capability. Core owns driver lifetime and cancellation.
+//! Globally enabled host-desktop capability with per-turn leases and cancellation.
 mod activity;
 mod runtime;
 pub use activity::{ActivityMode, ComputerActivity};
 
 use crate::{AppendRequest, Core, CoreError, CoreRepository};
 use agent_domain::{CommandId, ProviderId, TaskId, TurnId};
-use agent_protocol::{EventEnvelope, EventSource, NewEvent, StreamRef, StreamType};
+use agent_protocol::{EventEnvelope, NewEvent, StreamRef, StreamType};
 use driver_api::{AppMcp, ApprovalSemanticRole, DriverEvent};
 use serde_json::{Value, json};
 use std::{
@@ -22,7 +22,18 @@ use tokio::{
     sync::{Mutex, OwnedMutexGuard, watch},
 };
 
-const SETTINGS_EVENT: &str = "computer_use.settings_changed";
+pub const SETTINGS_STREAM: &str = "preferences.computer_use";
+pub const SETTINGS_EVENT: &str = "preferences.computer_use.updated";
+
+#[derive(serde::Deserialize)]
+pub struct Preferences {
+    pub enabled: bool,
+}
+impl Default for Preferences {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
 
 #[derive(Clone)]
 struct Config {
@@ -126,8 +137,7 @@ impl Core {
                     return Ok(json!({"accepted":false}));
                 }
                 if let Some(task) = current.task_id {
-                    self.computer_use_control(&task, json!({"type":"set","enabled":false}))
-                        .await?;
+                    self.revoke_computer_use(&task).await;
                 }
                 Ok(json!({"accepted":true}))
             }
@@ -187,24 +197,14 @@ impl Core {
         permit
     }
 
-    pub async fn computer_use_control(
-        &self,
-        task: &TaskId,
-        call: Value,
-    ) -> Result<Value, CoreError> {
+    pub async fn computer_use_control(&self, call: Value) -> Result<Value, CoreError> {
         let _settings = self.computer_use.settings.lock().await;
-        let summary = self.require_task(task).await?;
         match call["type"].as_str().unwrap_or("status") {
             "status" => (),
             "set" => {
                 let enabled = call["enabled"].as_bool().ok_or_else(|| {
                     CoreError::InvalidArgument("computer-use enabled must be a boolean".into())
                 })?;
-                if enabled && summary.active_primary_run.is_some() {
-                    return Err(CoreError::Conflict(
-                        "Enable computer use before starting the next turn".into(),
-                    ));
-                }
                 if enabled
                     && self
                         .computer_use
@@ -216,19 +216,32 @@ impl Core {
                         "Computer-use driver is not installed in this build".into(),
                     ));
                 }
-                if !enabled {
-                    self.revoke_computer_use(task).await;
-                }
-                self.append_runtime_event(
-                    task,
+                let event = NewEvent::hub(
+                    StreamRef {
+                        stream_type: StreamType::System,
+                        stream_id: SETTINGS_STREAM.into(),
+                    },
                     SETTINGS_EVENT,
-                    json!({"taskId":task,"enabled":enabled}),
-                    EventSource::Hub,
-                )
-                .await?;
+                    json!({"enabled":enabled}),
+                );
+                let outcome = self
+                    .repository
+                    .append(AppendRequest {
+                        request_fingerprint: None,
+                        command_id: CommandId::new(),
+                        idempotency_key: event.event_id.to_string(),
+                        expected_stream_version: None,
+                        artifacts: vec![],
+                        events: vec![event],
+                    })
+                    .await?;
+                if !enabled {
+                    self.stop_all_computer_use().await;
+                }
+                self.publish(&outcome.events);
             }
             "stop" => {
-                self.revoke_computer_use(task).await;
+                self.stop_all_computer_use().await;
             }
             _ => {
                 return Err(CoreError::InvalidArgument(
@@ -236,35 +249,32 @@ impl Core {
                 ));
             }
         }
-        let enabled = self.computer_use_enabled(task).await?;
+        let enabled = self.repository.computer_use_enabled().await?;
         let endpoints = self.computer_use.endpoints.lock().await;
         let active = endpoints
-            .get(task)
-            .is_some_and(|endpoint| endpoint.active.load(Ordering::Acquire));
+            .values()
+            .any(|endpoint| endpoint.active.load(Ordering::Acquire));
         Ok(
             json!({"available":self.computer_use.config.as_ref().is_some_and(|config| config.driver.is_file()),"unavailableReason":self.computer_use.unavailable_reason,"enabled":enabled,"active":active,"externalInput":self.computer_use.external_input.load(Ordering::Acquire) > 0}),
         )
     }
 
-    async fn computer_use_enabled(&self, task: &TaskId) -> Result<bool, CoreError> {
-        let through = self.repository.event_head().await?;
-        let mut after = 0;
-        let mut enabled = false;
-        loop {
-            let page = self
-                .repository
-                .task_events_of_types(task, after, through, &[SETTINGS_EVENT], 128)
-                .await?;
-            let Some(last) = page.last() else {
-                break;
-            };
-            after = last.sequence;
-            enabled = last.payload["enabled"].as_bool().unwrap_or(false);
-            if page.len() < 128 {
-                break;
-            }
+    async fn stop_all_computer_use(&self) {
+        let endpoints: Vec<_> = self
+            .computer_use
+            .endpoints
+            .lock()
+            .await
+            .values()
+            .cloned()
+            .collect();
+        // Revoke every lease before awaiting any native process shutdown.
+        for endpoint in &endpoints {
+            endpoint.revoke();
         }
-        Ok(enabled)
+        for endpoint in endpoints {
+            endpoint.close().await;
+        }
     }
 
     pub(crate) async fn computer_use_lease(
@@ -273,10 +283,11 @@ impl Core {
         turn: &TurnId,
         provider: &ProviderId,
     ) -> Result<Option<ComputerLease>, CoreError> {
+        let _settings = self.computer_use.settings.lock().await;
         let Some(config) = &self.computer_use.config else {
             return Ok(None);
         };
-        if !self.computer_use_enabled(task).await? {
+        if !self.repository.computer_use_enabled().await? {
             return Ok(None);
         }
         let mut endpoints = self.computer_use.endpoints.lock().await;

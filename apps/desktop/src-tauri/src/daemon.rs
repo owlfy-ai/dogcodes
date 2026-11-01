@@ -94,8 +94,8 @@ impl CoreClient {
         self.call("remote_control", call).await
     }
 
-    pub async fn computer_use(&self, task_id: TaskId, call: Value) -> Result<Value, String> {
-        self.call("computer_use", json!([task_id, call])).await
+    pub async fn computer_use(&self, call: Value) -> Result<Value, String> {
+        self.call("computer_use", call).await
     }
     pub async fn computer_use_activity(&self, call: Value) -> Result<Value, String> {
         self.call("computer_use_activity", call).await
@@ -1201,13 +1201,10 @@ async fn dispatch(core: &Arc<Core>, method: &str, args: Value) -> Result<Value, 
             let result = core.registered_executors().await;
             serde_json::to_value(result).map_err(|e| e.to_string())
         }
-        "computer_use" => {
-            let (task_id, call): (TaskId, Value) =
-                serde_json::from_value(args).map_err(|e| e.to_string())?;
-            core.computer_use_control(&task_id, call)
-                .await
-                .map_err(|e| e.to_string())
-        }
+        "computer_use" => core
+            .computer_use_control(args)
+            .await
+            .map_err(|e| e.to_string()),
         "computer_use_activity" => core
             .computer_use_activity(args)
             .await
