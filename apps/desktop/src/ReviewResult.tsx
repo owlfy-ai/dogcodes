@@ -61,7 +61,7 @@ export function ReviewResult({ client, run: savedRun, executor, allowRepair = tr
         </div>
         : run.status === "completed" ? <p className="review-summary is-clean"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="m5.3 8.2 1.8 1.8 3.6-3.8"/></svg>{t("reviewResult.clean")}</p>
           : <p className="turn-review-notice">{t("reviewResult.notFinished")}</p>}
-      <div className="review-findings">{report.findings.map((item, index) => {
+      {!!report.findings.length && <div className="review-findings">{report.findings.map((item, index) => {
         const open = expanded.includes(index);
         return <article className="review-finding" data-severity={item.severity} data-open={open || undefined} data-selected={selected.includes(index) || undefined} key={`${index}:${item.fileId}`}>
           <div className="review-finding-head">
@@ -88,7 +88,7 @@ export function ReviewResult({ client, run: savedRun, executor, allowRepair = tr
             {item.suggestion && <p className="review-finding-prose review-finding-suggestion"><strong>{t("reviewResult.suggestion")}</strong>{item.suggestion}</p>}
           </div>
         </article>;
-      })}</div>
+      })}</div>}
     </>}
     {selectable && <ReviewRepairControls client={client} run={run} executor={executor} selected={selected} clearSelection={() => setSelected([])} renderReport={child => <ReviewResult client={client} run={child} executor={executor} onReviewFinding={onReviewFinding}/>}/>}
     {activity}

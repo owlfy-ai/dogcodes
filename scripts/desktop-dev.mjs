@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 import { parseSigningConfig } from './signing-config.mjs';
+import { prepareComputerUse } from './prepare-computer-use.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -35,13 +36,16 @@ export function prepareDev({ platform, environment, args = [], localEnvironment 
   return { env, args: ['dev', ...tauriArgs, '--', ...cargoConfig, ...cargoArgs], signed: true };
 }
 
-function main() {
+async function main() {
   const readLocal = path => process.platform === 'darwin' && existsSync(path) ? readFileSync(path, 'utf8') : '';
   const appConfig = JSON.parse(readFileSync(resolve(root, 'apps/desktop/src-tauri/tauri.conf.json'), 'utf8'));
   const plan = prepareDev({ platform: process.platform, environment: process.env, args: process.argv.slice(2),
     localEnvironment: readLocal(resolve(root, 'release/.env.local')),
     signingConfig: readLocal(resolve(root, 'release/tauri.signing.local.json')) || null,
     identifier: appConfig.identifier });
+  const targetIndex = plan.args.indexOf('--target');
+  const target = targetIndex >= 0 ? plan.args[targetIndex + 1] : undefined;
+  await prepareComputerUse({ target, signingIdentity: plan.env.DOGCODES_DEV_SIGNING_IDENTITY || '-' });
   if (process.platform === 'darwin') console.log(plan.signed
     ? `Development signing: ${plan.env.DOGCODES_DEV_SIGNING_IDENTITY} (${appConfig.identifier}).`
     : 'Development signing: ad-hoc. Set APPLE_SIGNING_IDENTITY in release/.env.local for stable Keychain access.');
@@ -63,5 +67,5 @@ function main() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { main(); } catch (error) { console.error(error.message); process.exitCode = 1; }
+  main().catch(error => { console.error(error.message); process.exitCode = 1; });
 }

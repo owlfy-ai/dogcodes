@@ -131,7 +131,7 @@ async fn installed_native_cold_resume() {
         .create_session(SessionRequest {
             working_directory: cwd.clone(),
             additional_directories: vec![],
-            history_mcp: None,
+            app_mcps: vec![],
             permission_mode: None,
         })
         .await

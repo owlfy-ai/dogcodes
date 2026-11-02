@@ -38,7 +38,7 @@ export function turnStatisticsRows(items: TimelineItem[], turnId: string, starte
 }
 export function TurnStatistics(props: { items: TimelineItem[]; turnId: string; startedAt: string; completedAt: string }) {
   const rows = turnStatisticsRows(props.items, props.turnId, props.startedAt, props.completedAt);
-  return <button type="button" className="turn-action turn-statistics" aria-label={t("turnStats.title")} data-tooltip={t("turnStats.title")} data-tooltip-rows={JSON.stringify(rows)}>
+  return <button type="button" className="turn-action turn-statistics" aria-label={t("turnStats.title")} aria-expanded={false} data-tooltip={t("turnStats.title")} data-tooltip-toggle="" data-tooltip-rows={JSON.stringify(rows)}>
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M4 20h16M7 16v-5m5 5V4m5 12V8"/>
     </svg>

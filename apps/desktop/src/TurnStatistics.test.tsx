@@ -36,6 +36,33 @@ it("puts the statistics icon immediately after copy and opens the shared tooltip
   expect(document.querySelector('[role="tooltip"]')?.textContent).toContain("模型请求2 次");
 });
 
+it("pins statistics on click, keeps them visible after pointer leave, and toggles or dismisses them", async () => {
+  await act(async () => root.render(<><TurnStatistics items={[item("trn_one", usage)]} turnId="trn_one" startedAt={start} completedAt={end}/><button className="outside">Outside</button><Tooltips /></>));
+  const stats = host.querySelector<HTMLButtonElement>(".turn-statistics")!;
+  const click = () => act(async () => {
+    stats.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    stats.click();
+  });
+  // The first click pins an already visible hover panel rather than closing it.
+  await act(async () => { stats.dispatchEvent(new MouseEvent("pointerover", { bubbles: true })); vi.advanceTimersByTime(500); });
+  await click();
+  await act(async () => { stats.dispatchEvent(new MouseEvent("pointerout", { bubbles: true })); vi.advanceTimersByTime(1000); });
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toContain("1,500");
+  expect(stats.getAttribute("aria-expanded")).toBe("true");
+  await click();
+  await act(async () => vi.advanceTimersByTime(1000));
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(stats.getAttribute("aria-expanded")).toBe("false");
+  // A click without hover (including keyboard activation) opens immediately.
+  await act(async () => stats.click());
+  expect(document.querySelector('[role="tooltip"]')).not.toBeNull();
+  await act(async () => host.querySelector(".outside")!.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  await click();
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+});
+
 it("keeps earlier turn statistics fixed when later turns arrive", async () => {
   const first = item("trn_one", usage);
   const render = async (items: TimelineItem[]) => act(async () => root.render(<TurnStatistics items={items} turnId="trn_one" startedAt={start} completedAt={end}/>));

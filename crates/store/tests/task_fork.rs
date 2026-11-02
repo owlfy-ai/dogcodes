@@ -641,7 +641,9 @@ async fn active_fork_prevents_source_deletion_and_directory_rebinding_until_fini
             .contains("Fork")
     );
     provider.release.notify_one();
-    let target = tokio::time::timeout(Duration::from_secs(5), worker)
+    // Finalization includes real Git and SQLite I/O. Keep this a bounded
+    // correctness check without imposing a five-second disk-speed contract.
+    let target = tokio::time::timeout(Duration::from_secs(30), worker)
         .await
         .unwrap()
         .unwrap();

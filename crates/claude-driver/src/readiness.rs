@@ -1,13 +1,84 @@
-//! Read-only initialize probe supervised through natural exit and observer loss.
+//! Retained initialize channels and ephemeral probes with supervised retirement.
 use super::{
-    Classified, ClaudeLaunch, DriverError, PROBE_TIMEOUT, native::NativeProcess, read_until, spawn,
+    Classified, ClaudeDriver, ClaudeLaunch, DriverError, PROBE_TIMEOUT, native::NativeProcess,
+    read_until, spawn,
 };
 use futures::FutureExt;
 use std::{panic::AssertUnwindSafe, path::Path, time::Duration};
 use tokio::{
-    io::{AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, DuplexStream},
+    process::ChildStdin,
     sync::watch,
 };
+
+pub(super) struct ReadyConnection {
+    pub native: std::sync::Arc<NativeProcess>,
+    pub stdin: ChildStdin,
+    pub stdout: BufReader<DuplexStream>,
+}
+
+impl Drop for ReadyConnection {
+    fn drop(&mut self) {
+        self.native.request_close();
+    }
+}
+
+impl ReadyConnection {
+    pub async fn retire(self) {
+        let native = self.native.clone();
+        drop(self);
+        native.request_close();
+        native.confirmed().await;
+    }
+}
+
+pub(super) async fn connect(driver: &ClaudeDriver) -> Result<ReadyConnection, DriverError> {
+    let child = spawn(
+        &ClaudeLaunch {
+            executable: driver.executable.clone(),
+        },
+        &uuid::Uuid::new_v4().to_string(),
+        false,
+        Some(&std::env::temp_dir().to_string_lossy()),
+    )?;
+    let (native, stdin, stdout) = NativeProcess::start_with_grace(child, Duration::from_secs(5))?;
+    native.observe_owner(driver.stopping.subscribe());
+    let mut connection = ReadyConnection {
+        native,
+        stdin,
+        stdout: BufReader::new(stdout),
+    };
+    let result = tokio::time::timeout(PROBE_TIMEOUT, async {
+        connection.stdin.write_all(b"{\"type\":\"control_request\",\"request_id\":\"dogcodes-probe\",\"request\":{\"subtype\":\"initialize\",\"hooks\":{}}}\n").await
+            .map_err(|_| DriverError::Disconnected("claude stdin rejected the probe".into()))?;
+        connection.stdin.flush().await
+            .map_err(|_| DriverError::Disconnected("claude stdin rejected the probe".into()))?;
+        let mut reader = (&mut connection.stdout).take(super::FRAME_LIMIT as u64);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            if reader.read_line(&mut line).await
+                .map_err(|_| DriverError::Protocol("Claude readiness response unavailable".into()))? == 0 {
+                return Err(DriverError::Protocol("Claude readiness ended before initialize".into()));
+            }
+            if let Some(Classified::ControlResponse { request_id, success, data }) = super::classify(&line)
+                && request_id == "dogcodes-probe" {
+                if success && let Ok((models, auto)) = super::models::catalog(&data) {
+                    *driver.startup_catalogs.lock().unwrap() = driver_api::models::StartupCatalogs {
+                        models: Some(models), permissions: Some(driver_api::permissions::claude_with_auto(auto)),
+                    };
+                }
+                return if success { Ok(()) } else { Err(DriverError::Protocol("Claude rejected initialize".into())) };
+            }
+        }
+    }).await.map_err(|_| DriverError::Disconnected("Claude readiness timed out".into()))
+        .and_then(std::convert::identity);
+    if let Err(error) = result {
+        connection.retire().await;
+        return Err(error);
+    }
+    Ok(connection)
+}
 
 pub(super) async fn probe(executable: &Path) -> Result<(), DriverError> {
     let executable = executable.to_path_buf();
@@ -20,7 +91,7 @@ pub(super) async fn probe(executable: &Path) -> Result<(), DriverError> {
             &ClaudeLaunch { executable },
             &uuid::Uuid::new_v4().to_string(),
             false,
-            None,
+            Some(&std::env::temp_dir().to_string_lossy()),
         )?;
         // The existing supervisor drains stderr without retaining diagnostics,
         // bounds the stdout pipe, and owns physical cleanup independently of UI.

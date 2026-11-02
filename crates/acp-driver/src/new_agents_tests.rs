@@ -63,7 +63,7 @@ async fn real_new_agent_metadata() {
     let request = SessionRequest {
         working_directory: cwd,
         additional_directories: vec![],
-        history_mcp: None,
+        app_mcps: vec![],
         permission_mode: permissions.default_mode_id.clone(),
     };
     let model = catalog.default_model.as_deref();
@@ -125,7 +125,7 @@ async fn real_new_agent_turn() {
     let request = SessionRequest {
         working_directory: cwd.clone(),
         additional_directories: vec![],
-        history_mcp: None,
+        app_mcps: vec![],
         permission_mode: None,
     };
     let handle = driver.create_session(request).await.unwrap();

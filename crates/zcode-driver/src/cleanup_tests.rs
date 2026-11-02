@@ -85,7 +85,7 @@ pub(super) async fn session(driver: &ZcodeDriver, root: &Path) -> SessionHandle 
         .create_session(SessionRequest {
             working_directory: root.to_string_lossy().into_owned(),
             additional_directories: vec![],
-            history_mcp: None,
+            app_mcps: vec![],
             permission_mode: None,
         })
         .await

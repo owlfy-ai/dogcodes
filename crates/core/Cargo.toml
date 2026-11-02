@@ -12,6 +12,7 @@ async-trait.workspace = true
 chrono.workspace = true
 agent-domain = { path = "../domain" }
 driver-api = { path = "../driver-api" }
+process-scope = { path = "../process-scope" }
 agent-protocol = { path = "../protocol" }
 redaction = { path = "../redaction" }
 futures.workspace = true
@@ -19,10 +20,12 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 hex.workspace = true
+base64 = "0.22"
 thiserror.workspace = true
-tokio = { workspace = true, features = ["net", "io-util"] }
+tokio = { workspace = true, features = ["net", "io-util", "io-std", "process"] }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 tokio-stream.workspace = true
 
 [lints]

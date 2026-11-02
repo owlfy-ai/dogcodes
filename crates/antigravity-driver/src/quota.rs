@@ -130,7 +130,7 @@ impl QuotaProvider for AntigravityDriver {
             let slot = self.spawn.clone().try_lock_owned().map_err(|_| {
                 DriverError::Disconnected("agy session is active; quota refresh deferred".into())
             })?;
-            let mut command = tokio::process::Command::new(&self.executable);
+            let mut command = agent_runtime::agent_command(&self.executable);
             command
                 .args(["--print=/usage", "--output-format", "stream-json"])
                 .env_clear()
@@ -270,7 +270,7 @@ mod tests {
         let slot = crate::SpawnSlot {
             _guard: lock.clone().lock_owned().await,
         };
-        let mut command = tokio::process::Command::new(executable);
+        let mut command = agent_runtime::agent_command(executable);
         command
             .arg("--print=/usage")
             .stdin(Stdio::null())

@@ -21,6 +21,8 @@ use std::sync::{
 };
 use tokio::sync::Semaphore;
 
+const HISTORICAL_FILE_CONTENT: &str = "fixture-only-historical-file-content";
+
 struct Reviewer {
     executor: ExecutorRef,
     mode: AtomicUsize,
@@ -100,7 +102,7 @@ impl AgentDriver for Reviewer {
                 if self.mode.load(Ordering::SeqCst) == 11 {
                     "repaired version\n"
                 } else {
-                    "historical version\n"
+                    HISTORICAL_FILE_CONTENT
                 },
             )
             .unwrap();
@@ -442,7 +444,7 @@ async fn reviews_live_workspace_in_a_separate_session_and_retries_scope() {
     assert!(done.source_artifact.is_none());
     let (id, prompt) = f.driver.calls.lock().unwrap().last().unwrap().clone();
     assert_ne!(id, "main-session");
-    assert!(!prompt.prompt.contains("historical version"));
+    assert!(!prompt.prompt.contains(HISTORICAL_FILE_CONTENT));
     assert!(prompt.prompt.contains("a.rs"));
     assert!(!prompt.prompt.contains("later live version"));
     assert!(prompt.prompt.contains("实现历史版本"));
@@ -520,9 +522,16 @@ async fn review_answers_native_tool_permissions_without_affecting_main_session()
             .unwrap()
             .1
             .prompt
-            .contains("只能审查，不得修改任何代码")
+            .contains("you may only review and must not modify any code")
     );
-    assert!(calls.last().unwrap().1.prompt.contains("允许跨目录读取"));
+    assert!(
+        calls
+            .last()
+            .unwrap()
+            .1
+            .prompt
+            .contains("reading related code and Git metadata across directories is allowed")
+    );
 }
 
 #[tokio::test]
@@ -1035,7 +1044,7 @@ async fn existing_agents_reuse_session_apis_without_a_readonly_capability_gate()
     assert_eq!(sessions.len(), 8);
     for request in sessions.iter() {
         assert_eq!(request.permission_mode.as_deref(), Some("full-access"));
-        assert!(request.history_mcp.is_none());
+        assert!(request.app_mcps.is_empty());
         assert!(request.additional_directories.is_empty());
         assert_eq!(
             std::path::Path::new(&request.working_directory),
@@ -1344,7 +1353,7 @@ async fn selected_findings_repair_and_recheck_current_code_survive_rebuild() {
         .prompt
         .clone();
     assert!(!prompt.contains("repaired version"));
-    assert!(prompt.contains("当前实现"));
+    assert!(prompt.contains("review the current implementation"));
     assert!(prompt.contains("repairReview"));
     assert!(!prompt.contains("later unrelated live version"));
     request.retry_of = Some(request.run_id.clone());

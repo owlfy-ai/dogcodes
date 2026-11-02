@@ -216,7 +216,7 @@ fn workspace(dir: &std::path::Path) -> SessionRequest {
     SessionRequest {
         working_directory: dir.to_string_lossy().into_owned(),
         additional_directories: vec![],
-        history_mcp: None,
+        app_mcps: vec![],
         permission_mode: None,
     }
 }

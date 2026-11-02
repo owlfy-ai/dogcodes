@@ -58,6 +58,8 @@ __pycache__/
 
 # Local acceptance screenshots; reviewed documentation images remain public.
 /artifacts/
+/.local/
+/apps/desktop/src-tauri/resources/computer-use/
 
 # Tool caches, coverage and test reports.
 .pnpm-store/

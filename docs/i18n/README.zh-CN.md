@@ -191,4 +191,29 @@ pnpm check
 
 提交 Pull Request 前请阅读 [CONTRIBUTING.md](../../CONTRIBUTING.md)；安全问题请按 [SECURITY.md](../../SECURITY.md) 私下报告。
 
+### Agent 接入方式
+
+dog.codes 通过本地进程接口连接各个 Agent。ACP 指 Agent Client Protocol；采用其他原生接口的 Agent 由专用驱动接入。
+
+| Agent | 接入方式 | 支持的安装来源 |
+| --- | --- | --- |
+| Codex | 原生 `app-server`（JSON-RPC） | 客户端 + CLI |
+| Claude Code | 原生 `stream-json` | 客户端 + CLI |
+| Cursor | ACP（`cursor-agent acp`） | CLI |
+| Kimi Code | ACP（`kimi acp`） | CLI |
+| Grok Build | ACP（`grok agent stdio`） | CLI |
+| ZCode | 原生 `app-server`（内置 `zcode.cjs`） | 客户端（内置 CLI） |
+| Antigravity | 原生无界面 `stream-json`（`agy`） | CLI |
+| CodeBuddy | ACP（`codebuddy --acp`） | CLI |
+| Pi | 原生 RPC（`pi --mode rpc`） | CLI |
+| OpenCode | ACP（`opencode acp`） | 客户端 + CLI |
+| DeepSeek Harness | ACP（`dsh --profile acp`） | 客户端 + CLI |
+| Kiro | ACP（`kiro-cli acp`） | CLI |
+
+“客户端”指复用客户端附带或安装的 CLI／无界面运行时，并非操控原客户端的图形界面。客户端支持以实际安装了对应运行时为前提，发现路径和可用性随操作系统与版本而异。OpenCode 客户端内置运行时目前已接入 Windows 自动发现。
+
+### 鸣谢
+
+Computer use 使用 MIT 协议的 [Cua Driver](https://github.com/trycua/cua)，提供窗口读取、截图和键盘鼠标交互。感谢 Cua 团队及贡献者开源桌面自动化能力。目前随应用集成的驱动支持 Windows x64。
+
 Agent 图标复用本仓库已有素材，来源与声明见[图标说明](../../apps/desktop/src/assets/licenses/README.md)。产品名称及商标归各自所有者。

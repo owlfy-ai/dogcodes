@@ -11,6 +11,15 @@ pub(super) struct Activities {
 fn text(v: &Value, key: &str) -> String {
     v[key].as_str().unwrap_or("").to_owned()
 }
+pub(super) fn permission_tool_name(request: &Value, fallback: &str) -> String {
+    // Direct CodeBuddy MCP permission frames omit title, but identify the
+    // actual tool in namespaced protocol metadata (not in its arguments).
+    request["toolCall"]["_meta"]["codebuddy.ai/toolName"]
+        .as_str()
+        .filter(|name| name.starts_with("mcp__"))
+        .unwrap_or(fallback)
+        .to_owned()
+}
 fn emit(id: &str, data: Value) -> DriverEvent {
     DriverEvent::Presentation {
         item_id: id.into(),
@@ -68,6 +77,28 @@ impl Activities {
         let input: Value = serde_json::from_str(text).ok()?;
         input.get("command")?.as_str()?;
         Some(input)
+    }
+
+    pub fn permission_input(
+        &self,
+        session: &str,
+        call: &str,
+        input: Option<&Value>,
+    ) -> Option<Value> {
+        let known = self.approval_input(session, call);
+        // CodeBuddy's deferred MCP permission frame sometimes contains just
+        // params, while the exact unfinished tool already supplied its name.
+        // Retain that wrapper only when its params equal the permission input.
+        if let (Some(input), Some(known)) = (input, known.as_ref())
+            && known["toolName"]
+                .as_str()
+                .is_some_and(|name| name.starts_with("mcp__"))
+            && known.get("params") == Some(input)
+            && known.get("command").is_none()
+        {
+            return Some(known.clone());
+        }
+        input.cloned().or(known)
     }
 
     pub fn update(&mut self, raw: &Value) -> Vec<DriverEvent> {
@@ -368,6 +399,48 @@ mod tests {
         );
         activity.update(&serde_json::json!({"sessionId":"session-a","update":{"sessionUpdate":"tool_call_update","toolCallId":"call","status":"completed"}}));
         assert_eq!(activity.approval_input("session-a", "call"), None);
+    }
+
+    #[test]
+    fn deferred_mcp_permission_keeps_the_exact_calls_matching_wrapper() {
+        let mut activity = super::Activities::default();
+        let params = json!({"pid":33332,"session":"fixture"});
+        let input = json!({"toolName":"mcp__dogcodes_cu_test__list_windows","params":params});
+        activity.update(&json!({"sessionId":"s","update":{"sessionUpdate":"tool_call","toolCallId":"call","title":"DeferExecuteTool","rawInput":input}}));
+        assert_eq!(
+            activity.permission_input("s", "call", Some(&params)),
+            Some(input)
+        );
+        let other = json!({"pid":7});
+        assert_eq!(
+            activity.permission_input("s", "call", Some(&other)),
+            Some(other)
+        );
+        assert_eq!(
+            activity.permission_input("other-session", "call", Some(&params)),
+            Some(params.clone())
+        );
+        activity.update(&json!({"sessionId":"s","update":{"sessionUpdate":"tool_call_update","toolCallId":"call","status":"completed"}}));
+        assert_eq!(
+            activity.permission_input("s", "call", Some(&params)),
+            Some(params)
+        );
+    }
+
+    #[test]
+    fn direct_mcp_approval_uses_native_tool_identity_without_promoting_arguments() {
+        let request = json!({"toolCall":{"toolCallId":"call_9476e867b51744d881f78e2f","rawInput":{"pid":7},"_meta":{"codebuddy.ai/toolName":"mcp__dogcodes_cu_test__list_windows"}}});
+        assert_eq!(
+            permission_tool_name(&request, "call_9476e867b51744d881f78e2f"),
+            "mcp__dogcodes_cu_test__list_windows"
+        );
+        let deferred = json!({"toolCall":{"rawInput":{"toolName":"mcp__dogcodes_cu_test__click","params":{}},"_meta":{"codebuddy.ai/toolName":"DeferExecuteTool"}}});
+        assert_eq!(
+            permission_tool_name(&deferred, "call_9476e867b51744d881f78e2f"),
+            "call_9476e867b51744d881f78e2f"
+        );
+        let shell = json!({"toolCall":{"rawInput":{"_meta":{"codebuddy.ai/toolName":"mcp__dogcodes_cu_test__click"}},"_meta":{"codebuddy.ai/toolName":"Bash"}}});
+        assert_eq!(permission_tool_name(&shell, "Bash"), "Bash");
     }
 
     use super::*;

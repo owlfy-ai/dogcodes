@@ -191,4 +191,29 @@ pnpm check
 
 プルリクエストの前に [CONTRIBUTING.md](../../CONTRIBUTING.md) を読み、セキュリティ問題は [SECURITY.md](../../SECURITY.md) の手順で非公開に報告してください。
 
+### エージェントの接続方式
+
+dog.codes は各エージェントのローカルプロセスのインターフェースに接続します。ACP は Agent Client Protocol の略です。別のネイティブインターフェースを使うエージェントには専用ドライバーを用います。
+
+| エージェント | 接続方式 | 対応するインストール元 |
+| --- | --- | --- |
+| Codex | ネイティブ `app-server`（JSON-RPC） | デスクトップクライアント + CLI |
+| Claude Code | ネイティブ `stream-json` | デスクトップクライアント + CLI |
+| Cursor | ACP（`cursor-agent acp`） | CLI |
+| Kimi Code | ACP（`kimi acp`） | CLI |
+| Grok Build | ACP（`grok agent stdio`） | CLI |
+| ZCode | ネイティブ `app-server`（内蔵 `zcode.cjs`） | デスクトップクライアント（内蔵 CLI） |
+| Antigravity | ネイティブのヘッドレス `stream-json`（`agy`） | CLI |
+| CodeBuddy | ACP（`codebuddy --acp`） | CLI |
+| Pi | ネイティブ RPC（`pi --mode rpc`） | CLI |
+| OpenCode | ACP（`opencode acp`） | デスクトップクライアント + CLI |
+| DeepSeek Harness | ACP（`dsh --profile acp`） | デスクトップクライアント + CLI |
+| Kiro | ACP（`kiro-cli acp`） | CLI |
+
+「デスクトップクライアント」は、そのクライアントが同梱またはインストールした CLI／ヘッドレス実行環境を再利用することを指し、元の GUI を自動操作する意味ではありません。対応する実行環境の導入が必要で、検出パスと利用可否は OS やバージョンによって異なります。OpenCode のデスクトップ内蔵実行環境の自動検出は、現在 Windows に実装されています。
+
+### 謝辞
+
+Computer use のウィンドウ情報取得、スクリーンショット、マウスとキーボードの操作には、MIT ライセンスの [Cua Driver](https://github.com/trycua/cua) を利用しています。デスクトップ自動化をオープンソースで提供する Cua チームと貢献者の皆さまに感謝します。現在、同梱ドライバーの統合は Windows x64 に対応しています。
+
 エージェントのアイコンにはリポジトリ内の既存素材を使用しています。[出典と表記](../../apps/desktop/src/assets/licenses/README.md)をご確認ください。製品名と商標は各権利者に帰属します。

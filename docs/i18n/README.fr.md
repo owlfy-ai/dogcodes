@@ -191,4 +191,29 @@ pnpm check
 
 Lisez [CONTRIBUTING.md](../../CONTRIBUTING.md) avant d’ouvrir une pull request ; signalez les failles de sécurité en privé comme indiqué dans [SECURITY.md](../../SECURITY.md).
 
+### Intégration des agents
+
+dog.codes se connecte à chaque agent par son interface de processus local. ACP signifie Agent Client Protocol ; les agents disposant d’une autre interface native utilisent un pilote dédié.
+
+| Agent | Intégration | Installation prise en charge |
+| --- | --- | --- |
+| Codex | `app-server` natif (JSON-RPC) | Client de bureau + CLI |
+| Claude Code | `stream-json` natif | Client de bureau + CLI |
+| Cursor | ACP (`cursor-agent acp`) | CLI |
+| Kimi Code | ACP (`kimi acp`) | CLI |
+| Grok Build | ACP (`grok agent stdio`) | CLI |
+| ZCode | `app-server` natif (`zcode.cjs` intégré) | Client de bureau (CLI intégrée) |
+| Antigravity | `stream-json` natif sans interface graphique (`agy`) | CLI |
+| CodeBuddy | ACP (`codebuddy --acp`) | CLI |
+| Pi | RPC natif (`pi --mode rpc`) | CLI |
+| OpenCode | ACP (`opencode acp`) | Client de bureau + CLI |
+| DeepSeek Harness | ACP (`dsh --profile acp`) | Client de bureau + CLI |
+| Kiro | ACP (`kiro-cli acp`) | CLI |
+
+« Client de bureau » signifie réutiliser la CLI ou l’environnement sans interface graphique fourni ou installé par ce client, et non automatiser son interface graphique. Cet environnement doit être installé ; les chemins de détection et la disponibilité varient selon le système d’exploitation et la version. La détection automatique de l’environnement intégré à OpenCode Desktop est actuellement implémentée sous Windows.
+
+### Remerciements
+
+Computer use s’appuie sur [Cua Driver](https://github.com/trycua/cua), sous licence MIT, pour lire les fenêtres, prendre des captures d’écran et interagir avec le clavier et la souris. Merci à l’équipe Cua et aux contributeurs pour leur travail d’automatisation du bureau en open source. L’intégration du pilote fourni prend actuellement en charge Windows x64.
+
 Les icônes reprennent les ressources déjà présentes dans le dépôt ; voir leur [provenance et les mentions associées](../../apps/desktop/src/assets/licenses/README.md). Les noms et marques appartiennent à leurs titulaires respectifs.

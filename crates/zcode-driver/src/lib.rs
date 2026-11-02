@@ -54,7 +54,7 @@ use futures::StreamExt;
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, BufReader},
-    process::{ChildStdout, Command},
+    process::ChildStdout,
     sync::mpsc,
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -441,13 +441,13 @@ impl Drop for Connection {
 
 impl Connection {
     fn spawn(launch: &ZcodeLaunch) -> Result<Self, DriverError> {
-        let mut command = Command::new(
+        let mut command = agent_runtime::agent_command(
             agent_runtime::electron_node_executable(&launch.app_binary).map_err(|_| {
                 DriverError::NotConfigured("ZCode background runtime is unavailable".into())
             })?,
         );
         command
-            .arg(&launch.cli_script)
+            .arg(agent_runtime::external_path(&launch.cli_script))
             .arg("app-server")
             .env_clear()
             .env("ELECTRON_RUN_AS_NODE", "1")
@@ -988,6 +988,7 @@ pub struct ZcodeDriver {
 
 struct SessionState {
     scope: std::sync::Mutex<SessionHandle>,
+    binding: std::sync::Mutex<Option<SessionRequest>>,
     workspace: String,
     admission: tokio::sync::Mutex<()>,
     retired: tokio::sync::watch::Sender<bool>,
@@ -1199,7 +1200,7 @@ impl ZcodeDriver {
         &self,
         id: &str,
         workspace: &str,
-        history: Option<&driver_api::HistoryMcp>,
+        history: &[driver_api::AppMcp],
         model: Option<&str>,
         thinking: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
@@ -1207,7 +1208,7 @@ impl ZcodeDriver {
             Some(id),
             SessionRequest {
                 working_directory: workspace.into(),
-                history_mcp: history.cloned(),
+                app_mcps: history.to_vec(),
                 permission_mode: None,
                 additional_directories: vec![],
             },
@@ -1319,7 +1320,7 @@ impl AgentDriver for ZcodeDriver {
         native_session_id: &str,
         working_directory: &str,
     ) -> Result<SessionHandle, DriverError> {
-        self.resume_with_selection(native_session_id, working_directory, None, None, None)
+        self.resume_with_selection(native_session_id, working_directory, &[], None, None)
             .await
     }
 
@@ -1942,7 +1943,7 @@ mod tests {
         let handle = driver
             .create_session(SessionRequest {
                 working_directory: root.path().to_string_lossy().into_owned(),
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
             })
@@ -2166,6 +2167,7 @@ mod tests {
             "live".into(),
             Arc::new(SessionState {
                 scope: std::sync::Mutex::new(SessionHandle::scoped("live".into())),
+                binding: std::sync::Mutex::new(None),
                 workspace: "/tmp".into(),
                 admission: tokio::sync::Mutex::new(()),
                 retired: tokio::sync::watch::channel(false).0,
@@ -2212,6 +2214,7 @@ mod tests {
         let (interaction_tx, mut interaction_rx) = mpsc::unbounded_channel();
         let state = Arc::new(SessionState {
             scope: std::sync::Mutex::new(SessionHandle::scoped("session-1".into())),
+            binding: std::sync::Mutex::new(None),
             workspace: "/tmp".into(),
             admission: tokio::sync::Mutex::new(()),
             retired: tokio::sync::watch::channel(false).0,
@@ -2357,7 +2360,7 @@ mod real_probes {
             .create_session(SessionRequest {
                 working_directory: cwd.clone(),
                 additional_directories: vec![],
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
             })
             .await
@@ -2429,7 +2432,7 @@ mod real_probes {
         let workspace = tempfile::tempdir().unwrap();
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: workspace.path().to_string_lossy().into_owned(),
@@ -2517,7 +2520,7 @@ mod real_probes {
         let workspace = tempfile::tempdir().unwrap();
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: workspace.path().to_string_lossy().into_owned(),
@@ -2647,7 +2650,7 @@ mod real_probes {
             .unwrap();
             let session = driver
                 .create_session(SessionRequest {
-                    history_mcp: None,
+                    app_mcps: vec![],
                     permission_mode: None,
                     additional_directories: vec![],
                     working_directory: cwd.clone(),
@@ -2806,7 +2809,7 @@ mod real_probes {
         .unwrap();
         let session = first
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: cwd.clone(),
@@ -2904,7 +2907,7 @@ mod real_probes {
         .unwrap();
         let session = first
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: cwd.clone(),

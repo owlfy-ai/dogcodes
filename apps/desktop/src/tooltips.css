@@ -38,6 +38,7 @@
   }
 }
 
+.icon-tooltip-pinned { pointer-events: auto; user-select: text; }
 .icon-tooltip-details { min-width: 250px; padding: 14px 16px; border-radius: 12px; font-size: calc(13px * var(--ui-scale, 1)); }
 .icon-tooltip-details strong { display: block; margin-bottom: 10px; font-weight: 600; }
 .icon-tooltip-details dl { margin: 0; display: grid; gap: 7px; }

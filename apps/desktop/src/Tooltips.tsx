@@ -9,16 +9,17 @@ function detailRows(raw?: string): [string, string][] {
   } catch { return []; }
 }
 
-/** Shared, fast tooltips for controls marked with data-tooltip. */
+/** Shared tooltips. data-tooltip-toggle opts into click-to-pin alongside hover. */
 export function Tooltips() {
-  const [active, setActive] = useState<{ anchor: HTMLElement; text: string; rows?: string } | null>(null);
+  const [active, setActive] = useState<{ anchor: HTMLElement; text: string; rows?: string; pinned?: boolean } | null>(null);
   const tooltip = useRef<HTMLDivElement>(null);
   const id = useId();
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let anchor: HTMLElement | null = null;
-    const hide = () => { clearTimeout(timer); anchor = null; setActive(null); };
+    let pinned = false;
+    const hide = () => { clearTimeout(timer); anchor = null; pinned = false; setActive(null); };
     const find = (target: EventTarget | null) => target instanceof Element ? target.closest<HTMLElement>("[data-tooltip]") : null;
     const needsTooltip = (element: HTMLElement) => {
       const selector = element.dataset.tooltipOverflow;
@@ -27,6 +28,7 @@ export function Tooltips() {
       return Boolean(label && label.clientWidth > 0 && label.scrollWidth > label.clientWidth);
     };
     const show = (next: HTMLElement | null, delay: number) => {
+      if (pinned) return;
       if (next === anchor) return;
       hide();
       if (!next?.dataset.tooltip) return;
@@ -37,17 +39,36 @@ export function Tooltips() {
       }, delay);
     };
     const enter = (event: PointerEvent) => { if (event.pointerType !== "touch") show(find(event.target), 500); };
-    const leave = (event: PointerEvent) => { if (find(event.relatedTarget) !== anchor) hide(); };
+    const leave = (event: PointerEvent) => { if (!pinned && find(event.relatedTarget) !== anchor) hide(); };
+    const down = (event: PointerEvent) => {
+      if (pinned && event.target instanceof Node && tooltip.current?.contains(event.target)) return;
+      if (find(event.target)?.hasAttribute("data-tooltip-toggle")) return;
+      hide();
+    };
+    const click = (event: MouseEvent) => {
+      const next = find(event.target);
+      if (!next?.hasAttribute("data-tooltip-toggle") || next.matches(":disabled")) return;
+      if (pinned && next === anchor) { hide(); return; }
+      hide();
+      if (!next.dataset.tooltip || !next.isConnected || !next.getClientRects().length || !needsTooltip(next)) return;
+      anchor = next;
+      pinned = true;
+      setActive({ anchor: next, text: next.dataset.tooltip, rows: next.dataset.tooltipRows, pinned: true });
+    };
     const focus = (event: FocusEvent) => {
       const next = find(event.target);
       if (document.documentElement.dataset.focusModality !== "pointer" && next?.matches(":focus-visible")) show(next, 0);
     };
     const key = (event: KeyboardEvent) => { if (event.key === "Escape") hide(); };
+    const blur = (event: FocusEvent) => {
+      if (!pinned || event.relatedTarget instanceof Node && !anchor?.contains(event.relatedTarget) && !tooltip.current?.contains(event.relatedTarget)) hide();
+    };
     document.addEventListener("pointerover", enter, true);
     document.addEventListener("pointerout", leave, true);
-    document.addEventListener("pointerdown", hide, true);
+    document.addEventListener("pointerdown", down, true);
+    document.addEventListener("click", click, true);
     document.addEventListener("focusin", focus);
-    document.addEventListener("focusout", hide);
+    document.addEventListener("focusout", blur);
     document.addEventListener("keydown", key, true);
     window.addEventListener("scroll", hide, true);
     window.addEventListener("resize", hide);
@@ -56,16 +77,17 @@ export function Tooltips() {
       if (!anchor) return;
       const text = anchor.dataset.tooltip;
       if (!anchor.isConnected || !text) { hide(); return; }
-      setActive(current => current && (current.text !== text || current.rows !== anchor?.dataset.tooltipRows) ? { anchor: current.anchor, text, rows: anchor?.dataset.tooltipRows } : current);
+      setActive(current => current && (current.text !== text || current.rows !== anchor?.dataset.tooltipRows) ? { ...current, text, rows: anchor?.dataset.tooltipRows } : current);
     });
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-tooltip", "data-tooltip-rows"] });
     return () => {
       clearTimeout(timer); observer.disconnect();
       document.removeEventListener("pointerover", enter, true);
       document.removeEventListener("pointerout", leave, true);
-      document.removeEventListener("pointerdown", hide, true);
+      document.removeEventListener("pointerdown", down, true);
+      document.removeEventListener("click", click, true);
       document.removeEventListener("focusin", focus);
-      document.removeEventListener("focusout", hide);
+      document.removeEventListener("focusout", blur);
       document.removeEventListener("keydown", key, true);
       window.removeEventListener("scroll", hide, true);
       window.removeEventListener("resize", hide);
@@ -78,6 +100,9 @@ export function Tooltips() {
     if (!active || !node) return;
     const { anchor } = active;
     const descriptions = anchor.getAttribute("aria-describedby");
+    const expandable = anchor.hasAttribute("data-tooltip-toggle");
+    const expanded = anchor.getAttribute("aria-expanded");
+    if (expandable) anchor.setAttribute("aria-expanded", "true");
     anchor.setAttribute("aria-describedby", [descriptions, id].filter(Boolean).join(" "));
     // Use the top layer so scroll containers and other popovers cannot clip the hint.
     if (typeof node.showPopover === "function") {
@@ -94,12 +119,16 @@ export function Tooltips() {
     return () => {
       if (descriptions === null) anchor.removeAttribute("aria-describedby");
       else anchor.setAttribute("aria-describedby", descriptions);
+      if (expandable) {
+        if (expanded === null) anchor.removeAttribute("aria-expanded");
+        else anchor.setAttribute("aria-expanded", expanded);
+      }
       if (node.hasAttribute("popover") && node.matches(":popover-open")) node.hidePopover();
     };
   }, [active, id]);
 
   const rows = detailRows(active?.rows);
-  return active && createPortal(<div ref={tooltip} id={id} role="tooltip" className={`icon-tooltip${rows.length ? " icon-tooltip-details" : ""}`}>
+  return active && createPortal(<div ref={tooltip} id={id} role="tooltip" className={`icon-tooltip${rows.length ? " icon-tooltip-details" : ""}${active.pinned ? " icon-tooltip-pinned" : ""}`}>
     {rows.length ? <><strong>{active.text}</strong><dl>{rows.map(([label, value], index) => <div key={index}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></> : active.text}
   </div>, document.body);
 }

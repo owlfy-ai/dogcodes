@@ -84,9 +84,12 @@ pub(crate) fn parse_with_prose(text: &str) -> Option<(Value, bool)> {
         return value.is_object().then_some((value, false));
     }
     let lines: Vec<_> = text.lines().collect();
-    let start = lines
+    let Some(start) = lines
         .iter()
-        .position(|line| matches!(line.trim(), "```json" | "```"))?;
+        .position(|line| matches!(line.trim(), "```json" | "```"))
+    else {
+        return trailing_object(text);
+    };
     let end = start
         + 1
         + lines[start + 1..]
@@ -104,6 +107,21 @@ pub(crate) fn parse_with_prose(text: &str) -> Option<(Value, bool)> {
     value.is_object().then_some((value, prose))
 }
 
+/// Agents often write a sentence and then the JSON object on the same line.
+/// Accept it only when the object runs to the end of the text, so a truncated
+/// object is never recovered and at most one candidate can parse.
+fn trailing_object(text: &str) -> Option<(Value, bool)> {
+    if !text.ends_with('}') {
+        return None;
+    }
+    text.match_indices('{').take(256).find_map(|(index, _)| {
+        let value: Value = serde_json::from_str(&text[index..]).ok()?;
+        value
+            .is_object()
+            .then(|| (value, !text[..index].trim().is_empty()))
+    })
+}
+
 /// Optional context must never crowd the actual changed code out of a packet.
 pub(crate) fn discard_context(value: &mut Value) {
     match value {
@@ -111,7 +129,7 @@ pub(crate) fn discard_context(value: &mut Value) {
             if map.remove("contextFiles").is_some() {
                 map.insert(
                     "contextScope".into(),
-                    json!("上下文因总材料预算省略；仅可检索已保存变更"),
+                    json!("Context omitted because of the total material budget; only saved changes can be retrieved"),
                 );
             }
             for value in map.values_mut() {

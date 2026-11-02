@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "computer-notice",
+  "description": "Local non-activating computer-use notice",
+  "windows": ["computer-notice-*"],
+  "permissions": ["core:default"]
+}

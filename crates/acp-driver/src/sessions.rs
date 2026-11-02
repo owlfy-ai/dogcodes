@@ -469,3 +469,37 @@ async fn finish(
     }
     completed.send_replace(Some(Ok(())));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{AcpDriver, AcpLaunch, SessionResumeCapability};
+    use driver_api::AgentDriver;
+
+    #[tokio::test]
+    async fn shutdown_waits_for_setup_before_marking_a_session_closed() {
+        let driver = AcpDriver::new(
+            "cursor",
+            &agent_domain::InstallationId::new().to_string(),
+            AcpLaunch {
+                executable: "unused-fixture".into(),
+                args: vec![],
+            },
+            None,
+            SessionResumeCapability::Supported,
+        )
+        .unwrap();
+        let session = SessionHandle::scoped("pending-restore".into());
+        let permit = driver.shared.setup.lock().await;
+        let closing = driver.shutdown(session.clone());
+        tokio::pin!(closing);
+        // No process is needed: even handle validation must wait for setup.
+        assert!(futures::poll!(&mut closing).is_pending());
+        assert!(driver.shared.closed_sessions.lock().unwrap().is_empty());
+        drop(permit);
+        let result = tokio::time::timeout(Duration::from_secs(1), closing)
+            .await
+            .expect("shutdown must resume after setup admission is released");
+        assert!(matches!(result, Err(DriverError::SessionMissing(_))));
+    }
+}

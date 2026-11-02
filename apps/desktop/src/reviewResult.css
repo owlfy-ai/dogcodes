@@ -1,8 +1,9 @@
 .review-report { min-width: 0; overflow-wrap: anywhere; }
 .review-failure { margin-block: 8px; padding: 10px 12px; border: 1px solid #c4834538; border-radius: 8px; background: #c483450c; overflow-wrap: anywhere; }
-.review-failure p { margin: 0 0 6px; line-height: 1.6; }
-.review-failure button { margin-block: 4px; }
-.review-failure details { margin-top: 6px; font-size: calc(12px * var(--ui-scale, 1)); }
+.review-failure { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+.review-failure p { flex: 1 1 14em; margin: 0; line-height: 1.6; }
+.review-failure button { flex: none; margin: 0; }
+.review-failure details { flex: 0 0 100%; color: var(--muted, #888); font-size: calc(12px * var(--ui-scale, 1)); }
 .review-failure pre { max-height: 180px; overflow: auto; white-space: pre-wrap; }
 .review-coverage { margin: 10px 0; font-size: 12px; }
 .review-coverage li { margin: 6px 0; }

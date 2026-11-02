@@ -216,6 +216,7 @@ impl Core {
             // task projection. Release task-owned MCP listeners and temp configs
             // even if the independent review-file cleanup needs another attempt.
             self.forget_deleted_history(&task).await;
+            self.forget_deleted_computer_use(&task).await;
             match self
                 .workspace_context
                 .delete_task_review_data(task.as_str())

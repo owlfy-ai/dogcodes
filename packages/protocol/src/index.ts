@@ -581,7 +581,18 @@ export interface SubmissionIntentPage {
 }
 
 export interface TaskDeletion { taskId: TaskId; deletionSequence: number }
+export interface ComputerUseStatus { available: boolean; enabled: boolean; active: boolean; externalInput: boolean; unavailableReason?: string | null }
+export interface ComputerUseActivity {
+  operationId: string | null;
+  taskId: TaskId | null;
+  tool: string | null;
+  mode: "idle" | "observing" | "background" | "foreground";
+  preparing: boolean;
+  foregroundPossible: boolean;
+}
 export interface CoreClient {
+  /** Host-wide preference, enabled by default. MCP bindings refresh on the next turn. */
+  computerUse?(call: { type: "status" | "stop" } | { type: "set"; enabled: boolean }): Promise<ComputerUseStatus>;
   taskDeletion?(taskId: string): Promise<TaskDeletion | null>;
   submissionIntentResolve?(intent: SubmissionIntent): Promise<SubmissionResolution | null>;
   submissionIntentPut?(intent: SubmissionIntent): Promise<SubmissionIntentEntry>;
@@ -673,11 +684,12 @@ export interface CoreClient {
   invalidateContextPackage?(task: TaskSummary, request: ContextPreviewRequest, expectedPayloadSha256: string, editedPackage: ContextPackageV1 | null, operationId: string): Promise<CommandInvalidation>;
   setPreferredExecutor(task: TaskSummary, executor: ExecutorRef): Promise<void>;
   captureWorkspaceDiff(task: TaskSummary): Promise<void>;
-  permissionCatalog?(executor: ExecutorRef, taskId?: TaskId): Promise<PermissionCatalog>;
+  permissionCatalog?(executor: ExecutorRef, taskId?: TaskId, refresh?: boolean): Promise<PermissionCatalog>;
+  catalogRevision?(): Promise<number>;
   /** Complete selection for the next turn; null model/thinking uses native defaults. */
   submitTurn(task: TaskSummary, prompt: string, model?: string | null, thinking?: string | null, permissionMode?: string | null, attachments?: PromptAttachment[], operationId?: string): Promise<void>;
   setRunningPermissionMode?(taskId: TaskId, runId: RunId, executor: ExecutorRef, mode: string): Promise<void>;
-  availableModels?(executor: ExecutorRef, selectedModel?: string | null, taskId?: TaskId): Promise<ModelCatalog>;
+  availableModels?(executor: ExecutorRef, selectedModel?: string | null, taskId?: TaskId, refresh?: boolean): Promise<ModelCatalog>;
   cancelTurn(task: TaskSummary, operationId?: string): Promise<void>;
   cancelTurnReceipt?(task: TaskSummary, operationId: string): Promise<CommandReceipt | null>;
   subscribe(afterSequence: number, listener: (message: EventStreamMessage) => void): Promise<() => void>;

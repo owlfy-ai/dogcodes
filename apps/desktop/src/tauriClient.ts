@@ -86,6 +86,9 @@ export class TauriCoreClient implements CoreClient {
     return invoke("core_submission_intents", { call: { type: "retire", operationId } });
   }
   historyPreferences(): Promise<import("@dogcodes/protocol").HistoryPreferencesSnapshot> { return invoke("core_history_preferences"); }
+  computerUse(call: { type: "status" | "stop" } | { type: "set"; enabled: boolean }): Promise<import("@dogcodes/protocol").ComputerUseStatus> {
+    return invoke("core_computer_use", { call });
+  }
   async setHistoryPreferences(preferences: import("@dogcodes/protocol").HistoryPreferences, expectedRevision: number, operationId: string): Promise<void> {
     await this.execute({ type: "set_history_preferences", data: { ...preferences } }, expectedRevision, operationId);
   }
@@ -262,6 +265,7 @@ export class TauriCoreClient implements CoreClient {
   modelReadyExecutors(): Promise<import("@dogcodes/protocol").ExecutorRef[]> {
     return invoke("core_model_ready_executors");
   }
+  catalogRevision(): Promise<number> { return invoke("core_catalog_revision"); }
 
   onQuotaProviderReady(callback: () => void): Promise<() => void> {
     return listen("quota-provider-ready", callback);
@@ -306,12 +310,12 @@ export class TauriCoreClient implements CoreClient {
     );
   }
 
-  availableModels(executor: ExecutorRef, selectedModel: string | null = null, taskId?: TaskId): Promise<ModelCatalog> {
-    return invoke("core_available_models", { executor, selectedModel, taskId: taskId ?? null });
+  availableModels(executor: ExecutorRef, selectedModel: string | null = null, taskId?: TaskId, refresh = false): Promise<ModelCatalog> {
+    return invoke("core_available_models", { executor, selectedModel, taskId: taskId ?? null, refresh });
   }
 
-  permissionCatalog(executor: ExecutorRef, taskId?: TaskId): Promise<import("@dogcodes/protocol").PermissionCatalog> {
-    return invoke("core_permission_catalog", {executor, taskId: taskId ?? null});
+  permissionCatalog(executor: ExecutorRef, taskId?: TaskId, refresh = false): Promise<import("@dogcodes/protocol").PermissionCatalog> {
+    return invoke("core_permission_catalog", {executor, taskId: taskId ?? null, refresh});
   }
 
   setRunningPermissionMode(taskId: TaskId, runId: import("@dogcodes/protocol").RunId, executor: ExecutorRef, mode: string): Promise<void> {

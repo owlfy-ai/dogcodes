@@ -48,6 +48,24 @@ describe("UiLanguage switching across international languages", () => {
     vi.unstubAllGlobals();
   });
 
+  it("places the global computer-use toggle in preferences and removes it from the composer", async () => {
+    let enabled = true;
+    const computerUse = vi.fn(async (call: {type: string; enabled?: boolean}) => {
+      if (call.type === "set") enabled = call.enabled!;
+      return {available:true, enabled, active:false, externalInput:false};
+    });
+    Object.assign(client, {computerUse});
+    expect(computerUse).not.toHaveBeenCalled();
+    await click(element.querySelector<HTMLButtonElement>(".preferences-trigger")!);
+    const toggle = document.body.querySelector<HTMLButtonElement>('.preferences-popover [role="switch"]')!;
+    expect(toggle).toBeTruthy();
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(element.querySelector('.composer-controls .computer-use-control')).toBeNull();
+    await click(toggle);
+    expect(computerUse).toHaveBeenLastCalledWith({type:"set", enabled:false});
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+  });
+
   it("switches interface language to English", async () => {
     const trigger = element.querySelector<HTMLButtonElement>(".preferences-trigger")!;
     expect(trigger).toBeTruthy();

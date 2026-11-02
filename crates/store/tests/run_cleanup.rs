@@ -297,7 +297,9 @@ async fn wait_for(test: impl Fn() -> bool) {
     .unwrap();
 }
 async fn idle(f: &Fixture) {
-    tokio::time::timeout(Duration::from_secs(5), async {
+    // Real Git checkpoint/recovery starts many processes; Windows CI can exceed
+    // five seconds even when the worker is making progress.
+    tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             if f.core
                 .bootstrap()
@@ -764,7 +766,7 @@ async fn start_autonomous(
         text: "partial autonomous output".into(),
     }))
     .unwrap();
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             let state = f.core.bootstrap().await.unwrap();
             let run = state.tasks[0].active_primary_run.clone();

@@ -191,4 +191,29 @@ pnpm check
 
 Lies vor einem Pull Request [CONTRIBUTING.md](../../CONTRIBUTING.md); Sicherheitslücken meldest du vertraulich wie in [SECURITY.md](../../SECURITY.md) beschrieben.
 
+### Agenten-Anbindung
+
+dog.codes verbindet sich über die lokale Prozessschnittstelle mit jedem Agenten. ACP steht für Agent Client Protocol; Agenten mit einer anderen nativen Schnittstelle erhalten einen eigenen Treiber.
+
+| Agent | Anbindung | Unterstützte Installation |
+| --- | --- | --- |
+| Codex | Natives `app-server` (JSON-RPC) | Desktop-Client + CLI |
+| Claude Code | Natives `stream-json` | Desktop-Client + CLI |
+| Cursor | ACP (`cursor-agent acp`) | CLI |
+| Kimi Code | ACP (`kimi acp`) | CLI |
+| Grok Build | ACP (`grok agent stdio`) | CLI |
+| ZCode | Natives `app-server` (mitgeliefertes `zcode.cjs`) | Desktop-Client (mitgelieferte CLI) |
+| Antigravity | Natives `stream-json` ohne grafische Oberfläche (`agy`) | CLI |
+| CodeBuddy | ACP (`codebuddy --acp`) | CLI |
+| Pi | Natives RPC (`pi --mode rpc`) | CLI |
+| OpenCode | ACP (`opencode acp`) | Desktop-Client + CLI |
+| DeepSeek Harness | ACP (`dsh --profile acp`) | Desktop-Client + CLI |
+| Kiro | ACP (`kiro-cli acp`) | CLI |
+
+„Desktop-Client“ bedeutet, die vom Client mitgelieferte oder installierte CLI bzw. Laufzeit ohne grafische Oberfläche zu verwenden, nicht seine Oberfläche zu automatisieren. Die entsprechende Laufzeit muss installiert sein; Erkennungspfade und Verfügbarkeit hängen von Betriebssystem und Version ab. Die automatische Erkennung der mit OpenCode Desktop gelieferten Laufzeit ist derzeit unter Windows implementiert.
+
+### Danksagung
+
+Computer use nutzt den MIT-lizenzierten [Cua Driver](https://github.com/trycua/cua) zum Auslesen von Fenstern, für Screenshots sowie für Maus- und Tastatureingaben. Vielen Dank an das Cua-Team und die Mitwirkenden für ihre quelloffene Desktop-Automatisierung. Die Integration des mitgelieferten Treibers unterstützt derzeit Windows x64.
+
 Die Agenten-Icons stammen aus den bereits vorhandenen Ressourcen dieses Repositorys; siehe [Herkunft und Hinweise](../../apps/desktop/src/assets/licenses/README.md). Produktnamen und Marken gehören ihren jeweiligen Inhabern.

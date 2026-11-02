@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ActiveRunSummary, CoreClient, ExecutorRef, PermissionCatalog, TaskId } from "@dogcodes/protocol";
 import "./permissions.css";
 import { permissionPresentation } from "./permissionPresentation";
-import { permissionCatalogEntry } from "./permissionCatalogCache";
+import { permissionCatalogEntry, subscribePermissionCatalog } from "./permissionCatalogCache";
 import { PermissionIcon } from "./PermissionIcon";
 import { useI18n } from "./i18n";
 
@@ -18,6 +18,10 @@ export function PermissionPicker({client,executor,taskId,version,run,disabled,on
   const [selected,setSelected]=useState<string|null>(null);
   const [error,setError]=useState<"busy"|"unavailable"|null>(null);
   const [retry,setRetry]=useState(0);
+  const force=useRef(false);
+  const ownerRef=useRef("");
+  const ownerClient=useRef<CoreClient|null>(null);
+  const [catalogLoading,setCatalogLoading]=useState(false);
   const [open,setOpen]=useState(false);
   const [updating,setUpdating]=useState(false);
   const [selectionError,setSelectionError]=useState<string|null>(null);
@@ -29,24 +33,40 @@ export function PermissionPicker({client,executor,taskId,version,run,disabled,on
     && run?.executor.providerId===executor.providerId && run.executor.installationId===executor.installationId);
   const runReady=Boolean(run && ["running","waiting_for_approval","waiting_for_input"].includes(run.state));
   const blocked=disabled || updating || Boolean(run && (!liveSupported || !runReady));
+  useEffect(()=> {
+    if (run&&liveSupported) return;
+    const entry=permissionCatalogEntry(client,executor,taskId,version);
+    return subscribePermissionCatalog(client, changed=>{ if(!changed||changed===entry.key)setRetry(n=>n+1); });
+  },[client,key,version,run?.runId,liveSupported]);
   useEffect(()=>{
     generation.current++;
     setUpdating(false);setSelectionError(null);
     if(disabled) return;
     let live=true;
-    setCatalog(null);setSelected(null);setError(null);setOpen(false);change.current(null);
+    const owner=JSON.stringify([key,version,run?.runId,liveSupported,runReady]);
+    if(ownerRef.current!==owner||ownerClient.current!==client){
+      ownerRef.current=owner;ownerClient.current=client;setCatalog(null);setSelected(null);setOpen(false);change.current(null);
+    }
+    setError(null);
     if (!client.permissionCatalog) { setCatalog({ modes: [], defaultModeId: null }); return; }
     const entry=permissionCatalogEntry(client,executor,taskId,version);
     const apply=(value:PermissionCatalog)=>{
       if (!live) return;
       let stored:string|null=null;try{stored=localStorage.getItem(key);}catch{/* storage may be unavailable */}
-      // During a run the backend's actual policy wins over a saved next-turn choice.
       const mode=run&&liveSupported ? value.defaultModeId : value.modes.find(m=>m.id===stored)?.id??value.defaultModeId;
       setCatalog(value);setSelected(mode);change.current(mode);
     };
     const cached=run&&liveSupported ? undefined : entry.peek();
-    if(cached) apply(cached);
-    else (run&&liveSupported ? client.permissionCatalog(executor,taskId) : entry.get()).then(apply).catch(cause=>{if(live)setError(String(cause).includes("空闲") ? "busy" : "unavailable");});
+    if(cached){
+      if(entry.isDirty()){setCatalog(cached);setSelected(null);change.current(null);}
+      else apply(cached);
+    }
+    const refresh=force.current;force.current=false;
+    if(!refresh && cached && !entry.needsRead()){setCatalogLoading(false);return;}
+    setCatalogLoading(true);
+    (run&&liveSupported ? client.permissionCatalog(executor,taskId) : entry.get(refresh)).then(value=>{
+      if(live){apply(value);setCatalogLoading(false);}
+    }).catch(cause=>{if(live){setCatalogLoading(false);setError(String(cause).includes("空闲") ? "busy" : "unavailable");}});
     return ()=>{live=false;generation.current++;};
   },[client,key,version,retry,disabled,run?.runId,liveSupported,runReady]);
   useEffect(()=>{
@@ -96,7 +116,9 @@ export function PermissionPicker({client,executor,taskId,version,run,disabled,on
       const next=event.key==="Home"?0:event.key==="End"?items.length-1:(index+(event.key==="ArrowUp"?-1:1)+items.length)%items.length;
       items[next]?.focus();
     }}>
-      {error?<InlineError className="permission-error" onRetry={()=>setRetry(n=>n+1)}>{t(error==="busy"?"permissionPicker.busyError":"permissionPicker.loadError")}</InlineError>:!catalog?<LoadingStatus className="permission-empty">{t("permissionPicker.loading")}</LoadingStatus>:!modes.length?<div className="permission-empty">{t("permissionPicker.noModes")}</div>:modes.map(mode=><button type="button" role="menuitemradio" disabled={blocked} aria-checked={selected===mode.id} key={mode.id} className={mode.dangerous && executor.providerId !== "zcode"?"dangerous":""} onClick={()=>void select(mode.id)}><PermissionIcon providerId={executor.providerId} mode={mode} /><span><strong>{mode.label}</strong><small>{mode.description}</small></span><span aria-hidden="true">{selected===mode.id?"✓":""}</span></button>)}
+      <div className="permission-menu-header"><span>{t("permissionPicker.title")}</span><button type="button" disabled={catalogLoading||blocked} aria-label={t("activity.refresh")} data-tooltip={t("activity.refresh")} onClick={()=>{force.current=true;setRetry(n=>n+1);}}>↻</button></div>
+      {error&&<InlineError className="permission-error" onRetry={()=>{force.current=true;setRetry(n=>n+1);}}>{t(error==="busy"?"permissionPicker.busyError":"permissionPicker.loadError")}</InlineError>}
+      {!catalog?error?null:<LoadingStatus className="permission-empty">{t("permissionPicker.loading")}</LoadingStatus>:!modes.length?<div className="permission-empty">{t("permissionPicker.noModes")}</div>:modes.map(mode=><button type="button" role="menuitemradio" disabled={blocked} aria-checked={selected===mode.id} key={mode.id} className={mode.dangerous && executor.providerId !== "zcode"?"dangerous":""} onClick={()=>void select(mode.id)}><PermissionIcon providerId={executor.providerId} mode={mode} /><span><strong>{mode.label}</strong><small>{mode.description}</small></span><span aria-hidden="true">{selected===mode.id?"✓":""}</span></button>)}
       {selectionError&&<InlineError className="permission-error">{t("permissionPicker.notChanged", { reason: selectionError })}</InlineError>}
       <div className="permission-hint">{updating?<LoadingStatus>{t("permissionPicker.applying")}</LoadingStatus>:t(run?"permissionPicker.appliesNow":"permissionPicker.appliesNextTurn")}</div>
     </FloatingPopover>}

@@ -8,6 +8,17 @@ const event = (sequence: number, eventType = "message.delta", payload: Record<st
   payload: { taskId: "tsk_one", turnId: "trn_one", itemId: "answer", text: "你", ...payload },
 });
 const seed = (stream: StreamingTimeline) => stream.replace(stream.beginRead(), { items: [], lastSequence: 0 });
+it("keeps independent computer actions when replaying a snapshot during streaming", () => {
+  const stream = new StreamingTimeline(); seed(stream);
+  const first = event(1, "computer_use.action", { tool: "click", providerId: "codex", mode: "background" });
+  stream.receive(first);
+  const read = stream.beginRead();
+  stream.receive(event(2, "computer_use.action", {tool:"get_window_state",providerId:"codex"}));
+  stream.replace(read, { items: [{itemId:first.eventId,kind:"computer_use",text:JSON.stringify(first.payload)} as TimelineItem],lastSequence:1 });
+  expect(stream.items?.map(item=>item.itemId)).toEqual(["evt_1","evt_2"]);
+  expect(stream.items?.[1].providerId).toBe("codex");
+  expect(stream.items?.[1].kind).toBe("computer_use");
+});
 it("appends deltas while preserving unrelated rows and their identities", () => {
   const old = { itemId: "old", text: "earlier" } as TimelineItem;
   const first = applyTimelineDelta([old], event(1))!;

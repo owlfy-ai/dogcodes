@@ -1,10 +1,9 @@
 //! Connection-scoped native account grants; no credential file is changed.
 use super::{Connection, DriverError, ENV_ALLOWLIST, Value, ZcodeLaunch, json};
 use std::{path::PathBuf, process::Stdio, time::Duration};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    process::Command,
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(windows)]
+use tokio::process::Command;
 
 const SCRIPT: &str = concat!(
     "const __dogcodesNative = (() => { const module = {exports:{}};\n",
@@ -34,7 +33,7 @@ fn configure_helper_source(
         .suffix(".cjs")
         .tempfile()?;
     script.write_all(source.as_bytes())?;
-    command.arg(script.path());
+    command.arg(agent_runtime::external_path(script.path()));
     Ok(script)
 }
 
@@ -152,7 +151,7 @@ impl Account {
                 "ZCode 账号信息暂时不可用，请检查原生登录状态后重试。".into(),
             )
         };
-        let mut command = Command::new(
+        let mut command = agent_runtime::agent_command(
             agent_runtime::electron_node_executable(&self.launch.app_binary).map_err(|_| fail())?,
         );
         // The embedded helper exceeds Windows' command-line limit. Store only
@@ -332,7 +331,7 @@ mod tests {
     #[test]
     fn large_helper_source_stays_out_of_the_windows_command_line_and_is_removed() {
         let source = format!("/*{}*/\n", "fixture".repeat(8000));
-        let mut command = Command::new("unused.exe");
+        let mut command = agent_runtime::agent_command("unused.exe");
         let helper = configure_helper_source(&mut command, &source).unwrap();
         let path = helper.path().to_path_buf();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), source);

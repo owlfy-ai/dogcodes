@@ -2,6 +2,7 @@ import "./activityPresentation.css";
 
 export function ActivityIcon({ kind }: { kind: string }) {
   const shape = kind === "think" ? <><path d="M9 18h6m-5 3h4M8.5 14.5a6 6 0 1 1 7 0c-.9.6-1.5 1.5-1.5 2.5h-4c0-1-.6-1.9-1.5-2.5Z" /></>
+    : kind === "computer" ? <><rect x="3" y="3" width="18" height="14" rx="2" /><path d="M8 21h8m-4-4v4" /></>
     : kind === "terminal" ? <><rect x="3" y="4" width="18" height="16" rx="3" /><path d="m7 9 3 3-3 3m6 0h4" /></>
     : kind === "read" ? <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" /><path d="M14 3v6h6M8 13h8m-8 4h6" /></>
     : kind === "search" || kind === "browse" ? <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></>

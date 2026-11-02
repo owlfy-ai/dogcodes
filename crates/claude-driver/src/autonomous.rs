@@ -89,7 +89,7 @@ for line in sys.stdin:
         .unwrap();
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: directory.path().to_string_lossy().into_owned(),

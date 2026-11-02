@@ -170,7 +170,7 @@ async fn operation(driver: Arc<Driver>) -> Result<(SessionHandle, ()), CoreError
         driver
             .create_session(SessionRequest {
                 working_directory: "/tmp".into(),
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
             })

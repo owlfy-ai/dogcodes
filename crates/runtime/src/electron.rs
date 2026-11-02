@@ -9,20 +9,7 @@ pub fn electron_resources_directory(executable: &Path) -> Option<PathBuf> {
     // Electron's Node loader rejects verbatim script paths with EISDIR on
     // Windows. Keep the executable identity canonical, but pass ordinary paths
     // to its JavaScript entry point and bundled provider metadata.
-    #[cfg(windows)]
-    let normalized = {
-        let value = executable.to_str()?;
-        if let Some(tail) = value.strip_prefix(r"\\?\UNC\") {
-            PathBuf::from(format!(r"\\{tail}"))
-        } else if let Some(tail) = value.strip_prefix(r"\\?\")
-            && tail.as_bytes().get(1..3) == Some(b":\\")
-        {
-            PathBuf::from(tail)
-        } else {
-            executable.to_path_buf()
-        }
-    };
-    #[cfg(windows)]
+    let normalized = crate::external_path(executable);
     let executable = normalized.as_path();
     let parent = executable.parent()?;
     if parent.file_name() == Some(std::ffi::OsStr::new("MacOS"))

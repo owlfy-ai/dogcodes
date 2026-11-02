@@ -1,5 +1,5 @@
-//! Private ephemeral catalog queries hold one admission through original
-//! process retirement; no live session is used for metadata configuration.
+//! Default catalogs can reuse readiness. Selected models and other workspaces
+//! use private scopes retired before release; business sessions stay isolated.
 use super::{Connection, DriverError, PiDriver, Value, json, model_id};
 use driver_api::{ModelCatalog, ModelOption, ThinkingOption};
 use futures::FutureExt;
@@ -13,23 +13,57 @@ pub(super) async fn read(
     // No detached task exists while queued, so cancelling this future cannot
     // start a helper later when another query finally retires.
     let admission = driver.catalog_probe.clone().lock_owned().await;
+    let prepared = driver.ready_connection.lock().await.take();
+    let ready_slot = driver.ready_connection.clone();
     let executable = driver.executable.clone();
     let model = model.map(str::to_owned);
     let workspace = workspace.map_or_else(
         || std::env::temp_dir().to_string_lossy().into_owned(),
         str::to_owned,
     );
-    let (observer, owner) = tokio::sync::watch::channel(false);
+    let (observer, mut owner) = tokio::sync::watch::channel(false);
     let result = tokio::spawn(async move {
         let _admission = admission;
         if owner.has_changed().is_err() {
+            if let Some(connection) = prepared {
+                connection.request_close();
+                connection.confirmed().await;
+            }
             return Err(DriverError::Disconnected(
                 "Pi catalog observer ended".into(),
             ));
         }
-        let connection = Connection::spawn(&executable, &workspace, None, true)?;
-        connection.observe_owner(owner);
-        let result = AssertUnwindSafe(tokio::time::timeout(
+        let prepared = if let Some(connection) = prepared {
+            let reusable = std::path::Path::new(&workspace) == std::env::temp_dir()
+                && !connection.state.lock().expect("Pi state").disconnected;
+            if reusable {
+                Some(connection)
+            } else {
+                connection.request_close();
+                connection.confirmed().await;
+                None
+            }
+        } else {
+            None
+        };
+        if owner.has_changed().is_err() {
+            if let Some(connection) = prepared {
+                connection.request_close();
+                connection.confirmed().await;
+            }
+            return Err(DriverError::Disconnected(
+                "Pi catalog observer ended".into(),
+            ));
+        }
+        let keep_ready = prepared.is_some() && model.is_none();
+        let connection = match prepared {
+            Some(connection) => connection,
+            None => Connection::spawn(&executable, &workspace, None, true)?,
+        };
+        let result = tokio::select! {
+            biased;
+            _ = owner.changed() => Err(DriverError::Disconnected("Pi catalog observer ended".into())),
+            result = async { AssertUnwindSafe(tokio::time::timeout(
             Duration::from_secs(30),
             catalog(&connection, model.as_deref()),
         ))
@@ -41,7 +75,16 @@ pub(super) async fn read(
             )))
         })
         .map_err(|_| DriverError::Disconnected("Pi model catalog timed out".into()))
-        .and_then(std::convert::identity);
+        .and_then(std::convert::identity) } => result,
+        };
+        if keep_ready && result.is_ok() && owner.has_changed().is_ok()
+            && !connection.state.lock().expect("Pi state").disconnected
+        {
+            // Only default reads preserve the initialized model. A selected
+            // model mutates the private scope, so that query still retires it.
+            *ready_slot.lock().await = Some(connection);
+            return result;
+        }
         // close() may stop observing before the native process is gone. Keep
         // the actual proof and the same admission instead of returning/retrying.
         connection.request_close();

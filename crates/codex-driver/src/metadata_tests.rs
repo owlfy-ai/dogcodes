@@ -168,7 +168,7 @@ async fn reading_catalogs_and_child_history_never_stops_an_active_peer_turn() {
     let request = SessionRequest {
         working_directory: root.path().to_string_lossy().into_owned(),
         additional_directories: vec![],
-        history_mcp: None,
+        app_mcps: vec![],
         permission_mode: None,
     };
     let peer = driver.create_session(request).await.unwrap();

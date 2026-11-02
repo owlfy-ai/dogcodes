@@ -219,6 +219,13 @@ fn rebuild_in_transaction(transaction: &Transaction<'_>) -> Result<(), Repositor
 
 #[async_trait]
 impl CoreRepository for SqliteStore {
+    async fn computer_use_enabled(&self) -> Result<bool, RepositoryError> {
+        let (_, _, preferences) = self.read_preferences::<agent_core::computer_use::Preferences>(
+            agent_core::computer_use::SETTINGS_STREAM,
+            agent_core::computer_use::SETTINGS_EVENT,
+        )?;
+        Ok(preferences.enabled)
+    }
     async fn history_preferences(
         &self,
     ) -> Result<agent_protocol::HistoryPreferencesSnapshot, RepositoryError> {
@@ -1946,6 +1953,14 @@ fn apply_projection(
                     ],
                 )
                 .map_err(storage_error)?;
+            update_task_stream_version(transaction, event)?;
+        }
+        "computer_use.action" => {
+            let task_id = payload_string(event, "taskId")?;
+            transaction.execute(
+                "INSERT INTO timeline_items(item_id,task_id,turn_id,kind,text,provider_id,sequence,occurred_at) VALUES (?1,?2,?3,'computer_use',?4,?5,?6,?7)",
+                params![event.event_id.to_string(), task_id, event.payload["turnId"].as_str(), event.payload.to_string(), event.payload["providerId"].as_str(), to_i64(event.sequence)?, event.occurred_at.timestamp_millis()],
+            ).map_err(storage_error)?;
             update_task_stream_version(transaction, event)?;
         }
         "tool.started" | "tool.completed" => {

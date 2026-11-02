@@ -274,7 +274,7 @@ mod tests {
         let handle = driver
             .create_session(driver_api::SessionRequest {
                 working_directory: workspace.path().to_string_lossy().into_owned(),
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
             })

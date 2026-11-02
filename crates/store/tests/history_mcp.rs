@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 struct WaitingDriver {
     executor: ExecutorRef,
-    mcp: Mutex<Option<HistoryMcp>>,
+    mcp: Mutex<Vec<AppMcp>>,
     replies: Mutex<Vec<(String, String)>>,
     sink: Mutex<Option<tokio::sync::mpsc::UnboundedSender<Result<DriverEvent, DriverError>>>>,
 }
@@ -22,7 +22,7 @@ impl AgentDriver for WaitingDriver {
         "test"
     }
     async fn create_session(&self, request: SessionRequest) -> Result<SessionHandle, DriverError> {
-        *self.mcp.lock().unwrap() = request.history_mcp;
+        *self.mcp.lock().unwrap() = request.app_mcps;
         Ok(SessionHandle::new("fixture".into()))
     }
     async fn prompt(
@@ -65,7 +65,7 @@ impl AgentDriver for WaitingDriver {
         Ok(())
     }
 }
-async fn request(mcp: &HistoryMcp, query: Value) -> Value {
+async fn request(mcp: &AppMcp, query: Value) -> Value {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
     let mut stream = tokio::net::TcpStream::connect(&mcp.args[1]).await.unwrap();
     stream
@@ -79,7 +79,7 @@ async fn request(mcp: &HistoryMcp, query: Value) -> Value {
         .unwrap();
     serde_json::from_str(&line).unwrap()
 }
-async fn query(mcp: &HistoryMcp) -> Value {
+async fn query(mcp: &AppMcp) -> Value {
     request(mcp, json!({"operation":"getTurns"})).await
 }
 async fn append(store: &SqliteStore, events: Vec<NewEvent>) -> Vec<EventEnvelope> {
@@ -144,7 +144,7 @@ async fn core_injects_out_of_band_and_revokes_on_cancel() {
     let executor = installations::executor("fixture");
     let driver = Arc::new(WaitingDriver {
         executor: executor.clone(),
-        mcp: Mutex::new(None),
+        mcp: Mutex::new(vec![]),
         replies: Mutex::new(vec![]),
         sink: Mutex::new(None),
     });
@@ -216,7 +216,7 @@ async fn core_injects_out_of_band_and_revokes_on_cancel() {
     })
     .await
     .unwrap();
-    let mcp = driver.mcp.lock().unwrap().clone().unwrap();
+    let mcp = driver.mcp.lock().unwrap().first().unwrap().clone();
     let response = query(&mcp).await;
     assert!(response["error"].is_null());
     assert_eq!(response["result"]["taskId"], task.to_string());
@@ -423,7 +423,7 @@ async fn builtin_history_tools_are_approved_once_but_external_tools_still_requir
     let executor = installations::executor("fixture");
     let driver = Arc::new(WaitingDriver {
         executor: executor.clone(),
-        mcp: Mutex::new(None),
+        mcp: Mutex::new(vec![]),
         replies: Mutex::new(vec![]),
         sink: Mutex::new(None),
     });
@@ -473,7 +473,7 @@ async fn builtin_history_tools_are_approved_once_but_external_tools_still_requir
     })
     .await
     .unwrap();
-    let mcp = driver.mcp.lock().unwrap().clone().unwrap();
+    let mcp = driver.mcp.lock().unwrap().first().unwrap().clone();
     let approval = |id: &str, tool: String, input: Value| DriverEvent::ApprovalRequested {
         native_request_id: id.into(),
         tool_name: tool,

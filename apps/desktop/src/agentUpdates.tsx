@@ -111,13 +111,12 @@ function UpgradeConfirmation({ update, actions }: { update: AgentUpdate; actions
       <button className="agent-upgrade-confirm" type="button" onClick={() => actions.upgrade(update.installationId, usage.token)}>{t("agentUi.stopAndUpgrade", undefined, lang)}</button></footer>
   </dialog>, document.body);
 }
-function UpdateIcon({ kind }: { kind: "upgrade" | "retry" | "external" | "done" | "info" }) {
+function UpdateIcon({ kind }: { kind: "upgrade" | "retry" | "external" | "done" }) {
   const paths = {
     upgrade: "M12 16V4m-4 4 4-4 4 4M5 14v5h14v-5",
     retry: "M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17",
     external: "M14 4h6v6m0-6-9 9M10 5H5v14h14v-5",
     done: "m5 12 4 4L19 6",
-    info: "M12 11v5m0-9v.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0",
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[kind]} /></svg>;
 }
@@ -138,22 +137,22 @@ function UpgradeProgress({ message }: { message: string }) {
 export function AgentUpdateControl({ id, actions, detailed = false }: { id: string; actions?: AgentUpdateActions; detailed?: boolean }) {
   const { resolvedLanguage: lang } = useI18n();
   const update = actions?.updates[id];
-  if (!update || (!detailed && update.status === "up_to_date")) return null;
+  if (!update || update.status === "unsupported" || (!detailed && update.status === "up_to_date")) return null;
   if (update.status === "in_use" && update.inUse && actions) return <UpgradeConfirmation update={update} actions={actions} />;
   const hostUpdate = update.status === "managed" && update.latestVersion && update.currentVersion && compareVersions(update.latestVersion, update.currentVersion) > 0;
   if (!detailed && update.status === "managed" && !hostUpdate) return null;
   const working = update.status === "checking" || update.status === "upgrading";
   const retryUpgrade = update.status === "error" && update.canUpgrade && Boolean(update.latestVersion);
-  const label = update.status === "up_to_date" ? t("agentUi.latest", undefined, lang) : update.status === "checking" ? t("agentUi.checkingVersion", undefined, lang) : update.status === "upgrading" ? t("agentUi.upgrading", undefined, lang) : update.status === "available" ? t("agentUi.upgradeTo", { version: update.latestVersion ?? "" }, lang) : update.status === "updated" ? t("agentUi.upgradeDone", undefined, lang) : update.status === "managed" ? localizedAgentMessage(update.message, "hostUpdate", lang) : localizedAgentMessage(update.message, "versionFailed", lang);
+  const label = update.status === "up_to_date" ? t("agentUi.latest", undefined, lang) : update.status === "checking" ? t("agentUi.checkingVersion", undefined, lang) : update.status === "upgrading" ? t("agentUi.upgrading", undefined, lang) : update.status === "available" ? t("agentUi.upgradeTo", { version: update.latestVersion ?? "" }, lang) : update.status === "updated" ? t("agentUi.upgradeDone", undefined, lang) : update.status === "managed" ? localizedAgentMessage(update.message, "hostUpdate", lang) : localizedAgentMessage(update.message, retryUpgrade ? "upgradeFailed" : "versionFailed", lang);
   const hint = [label, localizedUpdateSource(update.source, lang), update.checkedAt ? t("agentUi.checkedAt", { time: new Date(update.checkedAt).toLocaleString(lang) }, lang) : ""].filter(Boolean).join(" · ");
   return <span className={`agent-update agent-update--${update.status}`} aria-live="polite" aria-busy={working} data-tooltip={hint}>
-    {detailed && ["up_to_date", "managed", "unsupported", "error", "updated"].includes(update.status) && <span>{label}</span>}
+    {detailed && ["up_to_date", "managed", "error", "updated"].includes(update.status) && <span>{label}</span>}
     {(update.status === "available" || hostUpdate) && <span className="agent-update-version" data-tooltip={`${hostUpdate ? t("agentUi.newDesktopVersion", undefined, lang) : t("agentUi.newVersion", undefined, lang)} ${update.latestVersion}`} data-tooltip-overflow="">{hostUpdate ? t("agentUi.newDesktopVersion", undefined, lang) : t("agentUi.newVersion", undefined, lang)} {update.latestVersion}</span>}
     {update.status === "checking" && <span className="agent-update-status" role="status" aria-label={label}><i className="agent-update-spinner" aria-hidden="true" /></span>}
     {update.status === "upgrading" && <UpgradeProgress message={localizedAgentMessage(update.message, "downloading", lang)} />}
     {update.status === "available" && update.canUpgrade && <button className="agent-update-action" type="button" data-tooltip={hint} aria-label={label} onClick={() => actions?.upgrade(id)}><UpdateIcon kind="upgrade" />{detailed && t("agentUi.upgrade", undefined, lang)}</button>}
-    {update.status === "managed" && actions?.openUpdater && <button className="agent-update-action" type="button" data-tooltip={hint} aria-label={t("agentUi.openHostUpdate", undefined, lang)} onClick={() => actions.openUpdater?.(id)}><UpdateIcon kind="external" />{detailed && t("agentUi.openApp", undefined, lang)}</button>}
+    {hostUpdate && actions?.openUpdater && <button className="agent-update-action" type="button" data-tooltip={hint} aria-label={t("agentUi.openHostUpdate", undefined, lang)} onClick={() => actions.openUpdater?.(id)}><UpdateIcon kind="external" />{detailed && t("agentUi.openApp", undefined, lang)}</button>}
     {update.status === "error" && <button className="agent-update-action" type="button" data-tooltip={t("agentUi.retryUpdateHint", { hint, action: t(retryUpgrade ? "agentUi.retryUpgrade" : "agentUi.recheck", undefined, lang) }, lang)} aria-label={`${retryUpgrade ? t("agentUi.retryUpgrade", undefined, lang) : t("agentUi.recheckVersion", undefined, lang)}${lang.startsWith("zh") ? "：" : ": "}${label}`} onClick={() => retryUpgrade ? actions?.upgrade(id) : actions?.check(id, true)}><UpdateIcon kind="retry" /></button>}
-    {(update.status === "updated" || update.status === "unsupported") && <span className="agent-update-status" role="status" aria-label={label}><UpdateIcon kind={update.status === "updated" ? "done" : "info"} /></span>}
+    {update.status === "updated" && <span className="agent-update-status" role="status" aria-label={label}><UpdateIcon kind="done" /></span>}
   </span>;
 }

@@ -1,6 +1,7 @@
 import { t, type ResolvedLanguage } from "./i18n";
 import { agentUiZh, type AgentUiMessages } from "./i18n/agentUi";
 import { userFacingError } from "./userFacingError";
+import { localizeBackendText } from "./backendText";
 
 // Older desktop services return display messages. Keep this compatibility at
 // the presentation boundary; account diagnostics and update status remain data.
@@ -11,6 +12,10 @@ export function localizedAgentMessage(message: string | null | undefined, fallba
   if (!message) return t(`agentUi.${fallback}`, undefined, lang);
   const key = message.startsWith("agentUi.") ? message : nativeMessages.has(message) ? `agentUi.${nativeMessages.get(message)}` : null;
   if (key) return t(key, undefined, lang);
+  const translated = localizeBackendText(message, lang);
+  if (translated) return translated;
+  const exitCode = /更新命令未成功（退出码 (-?\d+)）/.exec(message);
+  if (exitCode) return `${t("agentUi.upgradeFailed", undefined, lang)} (${exitCode[1]})`;
   const hostVersion = /^桌面应用可升级至 ([^，]+)，请在 ZCode 中完成升级$/.exec(message);
   if (hostVersion) return `${t("agentUi.upgradeTo", { version: hostVersion[1] }, lang)} · ${t("agentUi.hostUpdate", undefined, lang)}`;
   // Do not expose an untranslated Chinese service message in another language.

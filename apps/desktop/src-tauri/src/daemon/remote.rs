@@ -680,6 +680,7 @@ impl RemoteHost {
                                         if !connection.alive() {return;}
                                         let allowed={let state=control.remote.state.lock().await;state.ready.as_ref().is_some_and(|ready|ready.book.check(&lease).is_ok())};
                                         if !allowed {let _=out.send(response(&request_id,Err("device revoked".into()))).await;return;}
+                                        let _computer_input = if method == "remote_desktop_input" { Some(core.begin_computer_use_manual_input().await) } else { None };
                                         let result=if method=="pairing_receipt" {control.remote.pairing_receipt(&lease,peer,&binding,args).await} else if method=="direct_open" {control.remote.open_direct(&core,&control,peer,args).await} else if preview::METHODS.contains(&method.as_str()) {previews.call(&core,&method,args).await} else if power::METHODS.contains(&method.as_str()) {control.remote.power.call(&method,args).await} else if native::METHODS.contains(&method.as_str()) {native.call(connection,&method,args).await} else {remote_call(&core,&control,&method,args,actor).await};
                                         let _=out.send(response(&request_id,result)).await;
                                     });

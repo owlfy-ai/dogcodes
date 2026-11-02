@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::HashSet, io::Cursor};
 
+pub mod computer_permissions;
 pub mod cursor;
+pub mod escape;
 
 pub type Result<T> = std::result::Result<T, String>;
 fn native(error: impl std::fmt::Display) -> String {

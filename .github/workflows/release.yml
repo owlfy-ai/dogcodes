@@ -41,74 +41,9 @@ jobs:
 
   installers:
     needs: version
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            bundles: nsis
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            bundles: dmg
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            bundles: dmg
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            bundles: deb,appimage
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
-    env:
-      CARGO_INCREMENTAL: '0'
-      CARGO_PROFILE_DEV_DEBUG: '0'
-      CARGO_PROFILE_TEST_DEBUG: '0'
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          package-manager-cache: false
-      - run: npm install --global pnpm@11.0.9
-      - run: pnpm install --frozen-lockfile
-      - name: Linux native dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          # Select GStreamer's libunwind provider explicitly so APT replaces the
-          # conflicting LLVM libunwind development package on hosted runners.
-          sudo apt-get install -y libunwind-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev file patchelf xdg-utils libssl-dev build-essential pkg-config nasm libclang-dev libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libpipewire-0.3-modules libspa-0.2-modules pipewire-bin wireplumber dbus libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libwayland-dev libegl-dev libgbm-dev libxkbcommon-dev
-      - name: Compatible SPA build headers for the Linux baseline
-        if: runner.os == 'Linux'
-        run: python3 scripts/prepare_linux_spa_sdk.py --destination "${{ runner.temp }}/dogcodes-native-sdk" --github-env "$GITHUB_ENV"
-      - name: Install the repository Rust toolchain and target
-        run: |
-          rustup show active-toolchain
-          rustup target add ${{ matrix.target }}
-      - run: pnpm check
-      - run: cargo test --workspace --lib --tests --locked
-        env:
-          RUST_MIN_STACK: '16777216'
-      - name: Build unsigned installer
-        run: pnpm desktop:package --unsigned --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
-      - name: Release AppImage client on a private Portal
-        if: runner.os == 'Linux'
-        timeout-minutes: 15
-        env:
-          RUST_MIN_STACK: '16777216'
-        run: python3 scripts/wayland_acceptance.py --release --format rgb-cursor --appimage target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
-      - uses: actions/upload-artifact@v7
-        with:
-          name: installer-${{ matrix.target }}
-          if-no-files-found: error
-          retention-days: 7
-          path: |
-            target/${{ matrix.target }}/release/bundle/nsis/*.exe
-            target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            target/${{ matrix.target }}/release/bundle/deb/*.deb
-            target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+    uses: ./.github/workflows/desktop.yml
+    with:
+      full: true
 
   draft:
     needs: installers
@@ -119,6 +54,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v7
         with:
+          pattern: dogcodes-unsigned-*
           path: installers
           merge-multiple: true
       - name: Checksums

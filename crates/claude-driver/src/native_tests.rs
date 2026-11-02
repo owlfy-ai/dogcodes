@@ -26,7 +26,7 @@ pub(super) fn workspace(root: &std::path::Path) -> SessionRequest {
         working_directory: root.to_string_lossy().into_owned(),
         additional_directories: vec![],
         permission_mode: None,
-        history_mcp: None,
+        app_mcps: vec![],
     }
 }
 
@@ -223,12 +223,18 @@ async fn cancelling_initialization_before_install_still_retires_the_owned_proces
         Some(root.path().to_str().unwrap()),
     )
     .unwrap();
+    let app_mcps = [driver_api::AppMcp {
+        name: "fixture".into(),
+        command: "fixture".into(),
+        args: vec![],
+        directory: root.path().to_string_lossy().into_owned(),
+    }];
     let mut installing = Box::pin(driver.install_session(
         "private-initialization",
         child,
         root.path().into(),
         None,
-        true,
+        &app_mcps,
     ));
     tokio::select! {
         result = &mut installing => panic!("initialization should await its native response: {}", result.is_ok()),
@@ -314,7 +320,7 @@ async fn native_idle_shutdown_is_confirmed_without_model_requests() {
                 SessionRequest {
                     working_directory: directory.path().to_string_lossy().into_owned(),
                     additional_directories: vec![],
-                    history_mcp: None,
+                    app_mcps: vec![],
                     permission_mode: None,
                 },
                 Some("sonnet"),

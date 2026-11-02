@@ -23,6 +23,8 @@ mod opencode_models;
 #[cfg(test)]
 mod recovery_tests;
 mod request_usage;
+#[cfg(test)]
+mod retained_readiness_tests;
 mod session_usage;
 mod sessions;
 mod turn;
@@ -138,7 +140,7 @@ async fn read_kimi_web_usage_owned(
     reply: &mut oneshot::Sender<Result<serde_json::Value, DriverError>>,
 ) -> Result<Option<serde_json::Value>, DriverError> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
-    let mut command = tokio::process::Command::new(executable);
+    let mut command = agent_runtime::agent_command(executable);
     command
         .args(["web", "--port", "0", "--no-open"])
         .env_clear()
@@ -359,7 +361,15 @@ fn prompt_stop_reason(done: PromptResponse) -> Result<StopReason, DriverError> {
         Some("CANCELLED") => Ok(StopReason::Cancelled),
         Some("SUCCESS" | "PARTIAL_SUCCESS") | None => Ok(done.stop_reason),
         Some(_) => Err(DriverError::Protocol(
-            "CodeBuddy reported an unsuccessful native turn".into(),
+            done.meta
+                .as_ref()
+                .and_then(|meta| meta.get("codebuddy.ai/errorMessage"))
+                .and_then(serde_json::Value::as_str)
+                .filter(|message| !message.trim().is_empty())
+                .map_or_else(
+                    || "CodeBuddy reported an unsuccessful native turn".into(),
+                    |message| format!("CodeBuddy native turn failed: {message}"),
+                ),
         )),
     }
 }
@@ -438,7 +448,7 @@ enum Command {
         reply: oneshot::Sender<Result<driver_api::ModelCatalog, DriverError>>,
     },
     NewSession {
-        history_mcp: Option<driver_api::HistoryMcp>,
+        app_mcps: Vec<driver_api::AppMcp>,
         grok: bool,
         permission_mode: Option<String>,
         model: Option<String>,
@@ -448,8 +458,9 @@ enum Command {
         reply: oneshot::Sender<Result<SessionId, DriverError>>,
     },
     LoadSession {
-        history_mcp: Option<driver_api::HistoryMcp>,
+        app_mcps: Vec<driver_api::AppMcp>,
         grok: bool,
+        codebuddy: bool,
         permission_mode: Option<String>,
         session_id: SessionId,
         model: Option<String>,
@@ -698,6 +709,7 @@ pub struct AcpLaunch {
 }
 
 pub struct AcpDriver {
+    startup_catalogs: std::sync::Mutex<driver_api::models::StartupCatalogs>,
     executor: ExecutorRef,
     native_version: Option<String>,
     resume_capability: SessionResumeCapability,
@@ -766,6 +778,7 @@ impl AcpDriver {
         resume_capability: SessionResumeCapability,
     ) -> Result<Self, agent_domain::DomainError> {
         Ok(Self {
+            startup_catalogs: std::sync::Mutex::default(),
             executor: ExecutorRef {
                 provider_id: ProviderId::parse(provider_id)?,
                 installation_id: Some(
@@ -844,6 +857,24 @@ impl AcpDriver {
             report.native_version.or(driver.native_version.take())
         };
         driver.resume_capability = report.resume_capability;
+        let mut catalogs = report.catalogs;
+        if provider_id == "opencode"
+            && let Some(models) = &mut catalogs.models
+        {
+            opencode_models::filter_retired(models);
+        }
+        if provider_id == "cursor" {
+            catalogs.permissions = Some(permissions::cursor_catalog());
+        }
+        if provider_id == "kimi"
+            && let Some(permissions) = &mut catalogs.permissions
+        {
+            permissions::kimi_labels(permissions);
+        }
+        *driver
+            .startup_catalogs
+            .lock()
+            .map_err(|_| DriverError::Protocol("startup inventory unavailable".into()))? = catalogs;
         Ok(driver)
     }
 
@@ -894,6 +925,7 @@ impl AcpDriver {
         match probe {
             Ok((response, _)) if response.protocol_version == ProtocolVersion::V1 => {
                 Ok(ProbeReport {
+                    catalogs: driver_api::models::StartupCatalogs::default(),
                     resume_capability: if supports_native_resume(
                         &serde_json::to_value(&response).unwrap_or_default(),
                     ) {
@@ -1044,6 +1076,15 @@ impl AcpDriver {
         if self.executor.provider_id.as_str() == "cursor" {
             permissions::cursor_launch_args(&mut launch.args, force);
         }
+        if self.executor.provider_id.as_str() == "codebuddy" {
+            // 2.178.1's deferred MCP wrapper can report PERMISSION_DENIED even
+            // after both ACP approvals return Allow. Load tools directly to
+            // avoid that wrapper; this CLI overlay leaves permission modes and
+            // the user's on-disk configuration unchanged.
+            launch
+                .args
+                .extend(["--settings".into(), r#"{"deferToolLoading":false}"#.into()]);
+        }
         self.shared.quota.stderr_tail.clear();
         let (mut child, transport) = spawn_agent_in(
             &launch,
@@ -1118,6 +1159,7 @@ struct ConnectionTasks {
 }
 
 pub struct ProbeReport {
+    pub catalogs: driver_api::models::StartupCatalogs,
     pub resume_capability: SessionResumeCapability,
     pub native_version: Option<String>,
 }
@@ -1168,7 +1210,7 @@ fn spawn_agent_in(
     cwd: Option<&std::path::Path>,
     stderr_tail: Option<StderrTail>,
 ) -> Result<(lifecycle::Process, AgentTransport), DriverError> {
-    let mut command = tokio::process::Command::new(&launch.executable);
+    let mut command = agent_runtime::agent_command(&launch.executable);
     command
         .args(&launch.args)
         .env_clear()
@@ -1183,9 +1225,9 @@ fn spawn_agent_in(
         }
     }
     agent_runtime::apply_proxy_environment(&mut command);
-    if let Some(cwd) = cwd {
-        command.current_dir(cwd);
-    }
+    command.current_dir(agent_runtime::external_path(
+        cwd.unwrap_or(&std::env::temp_dir()),
+    ));
     if let Some(path) = agent_runtime::installed_node_path(&launch.executable) {
         command.env("PATH", path);
     }
@@ -1376,18 +1418,11 @@ async fn run_connection(
                 {
                     let _ = updates.send(DriverEvent::ApprovalRequested {
                         native_request_id,
-                        tool_name: request.tool_call.fields.title.clone().unwrap_or_else(|| {
-                            request.tool_call.tool_call_id.0.to_string()
-                        }),
-                        command_summary: request
-                            .tool_call
-                            .fields
-                            .raw_input
-                            .as_ref()
-                            .map(std::string::ToString::to_string)
-                            .or_else(|| permission_tasks.activity.lock().expect("activity")
-                                .approval_input(&request.session_id.to_string(), &request.tool_call.tool_call_id.0)
-                                .map(|input| input.to_string()))
+                        tool_name: activity::permission_tool_name(&raw,
+                            request.tool_call.fields.title.as_deref().unwrap_or(&request.tool_call.tool_call_id.0)),
+                        command_summary: permission_tasks.activity.lock().expect("activity")
+                            .permission_input(&request.session_id.to_string(), &request.tool_call.tool_call_id.0, request.tool_call.fields.raw_input.as_ref())
+                            .map(|input| input.to_string())
                             .or_else(|| serde_json::to_string(&request.tool_call.fields).ok())
                             .unwrap_or_else(|| {
                                 request.tool_call.fields.title.clone().unwrap_or_default()
@@ -1611,6 +1646,18 @@ async fn handle_command(
                     return Err(DriverError::Protocol("ACP session id missing".into()));
                 }
                 Ok(ProbeReport {
+                    catalogs: {
+                        let scoped = models::catalog(&state);
+                        let catalog = if scoped.models.is_empty() {
+                            models::catalog(&initial_models)
+                        } else {
+                            scoped
+                        };
+                        driver_api::models::StartupCatalogs {
+                            models: (!catalog.models.is_empty()).then_some(catalog),
+                            permissions: Some(permissions::catalog(&state)),
+                        }
+                    },
                     resume_capability: if supports_native_resume(&initial_models) {
                         SessionResumeCapability::Supported
                     } else {
@@ -1670,7 +1717,7 @@ async fn handle_command(
             let _ = reply.send(result);
         }
         Command::NewSession {
-            history_mcp,
+            app_mcps,
             grok,
             permission_mode,
             model,
@@ -1684,7 +1731,7 @@ async fn handle_command(
                     .additional_directories(additional_roots(multi_root, additional_directories)),
             )
             .unwrap_or_default();
-            params["mcpServers"] = driver_api::HistoryMcp::native_servers(history_mcp.as_ref());
+            params["mcpServers"] = driver_api::AppMcp::native_servers(app_mcps.as_slice());
             if grok {
                 permissions::meta(
                     &mut params,
@@ -1767,8 +1814,9 @@ async fn handle_command(
             let _ = reply.send(result);
         }
         Command::LoadSession {
-            history_mcp,
+            app_mcps,
             grok,
+            codebuddy,
             permission_mode,
             model,
             thinking,
@@ -1782,13 +1830,18 @@ async fn handle_command(
                     .additional_directories(additional_roots(multi_root, additional_directories)),
             )
             .unwrap_or_default();
-            params["mcpServers"] = driver_api::HistoryMcp::native_servers(history_mcp.as_ref());
+            params["mcpServers"] = driver_api::AppMcp::native_servers(app_mcps.as_slice());
             if grok {
                 permissions::meta(
                     &mut params,
                     Some(permission_mode.as_deref().unwrap_or("ask")),
                 );
             }
+            let settle_codebuddy_mcp = codebuddy
+                && session_states
+                    .lock()
+                    .expect("session states")
+                    .mcp_changed(&session_id.to_string(), &params);
             let resident = session_states
                 .lock()
                 .expect("session states")
@@ -1801,6 +1854,26 @@ async fn handle_command(
                 let state = if let Some(state) = resident {
                     state
                 } else {
+                    if initial_models
+                        .pointer("/agentCapabilities/sessionCapabilities/close")
+                        .is_some_and(|value| value.is_object() || value == true)
+                        && session_states
+                            .lock()
+                            .expect("session states")
+                            .initialized(&session_id.to_string())
+                    {
+                        // Agents such as DeepSeek and Kimi keep live session
+                        // resources on resume. Retire this idle session before
+                        // restoring changed workspace/MCP bindings, only when
+                        // the peer explicitly advertises session/close.
+                        models::session_request(
+                            &connection,
+                            "session/close",
+                            serde_json::json!({"sessionId":session_id}),
+                            Some(&quota.stderr_tail),
+                        )
+                        .await?;
+                    }
                     models::session_request(
                         &connection,
                         resume_method(&initial_models),
@@ -1809,6 +1882,14 @@ async fn handle_command(
                     )
                     .await?
                 };
+                if settle_codebuddy_mcp {
+                    // CodeBuddy acknowledges load before its connected-tools
+                    // projection includes new servers. Its first-run prewait is
+                    // process-cached, and WaitForMcpServers inside a model turn
+                    // cannot replace that turn's frozen schemas. Allow a bounded
+                    // settling interval only after an actual MCP binding change.
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
                 let state = session_states
                     .lock()
                     .expect("session states")
@@ -2170,6 +2251,9 @@ fn context_block(delivery: &ContextDelivery) -> ContentBlock {
 
 #[async_trait]
 impl AgentDriver for AcpDriver {
+    fn take_startup_catalogs(&self) -> driver_api::models::StartupCatalogs {
+        std::mem::take(&mut *self.startup_catalogs.lock().unwrap())
+    }
     fn independent_session_driver(&self) -> Result<Option<Arc<dyn AgentDriver>>, DriverError> {
         let driver = Self::new(
             self.executor.provider_id.as_str(),
@@ -2278,7 +2362,7 @@ impl AgentDriver for AcpDriver {
             .await?;
         let (reply_tx, reply_rx) = oneshot::channel();
         let command = Command::NewSession {
-            history_mcp: request.history_mcp.clone(),
+            app_mcps: request.app_mcps.clone(),
             grok: self.executor.provider_id.as_str() == "grok",
             permission_mode: if self.executor.provider_id.as_str() == "cursor" {
                 None
@@ -2307,7 +2391,7 @@ impl AgentDriver for AcpDriver {
         self.resume_workspace_session(
             native_session_id,
             SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 working_directory: working_directory.into(),
                 additional_directories: vec![],
@@ -2368,8 +2452,9 @@ impl AgentDriver for AcpDriver {
             .await?;
         let (reply_tx, reply_rx) = oneshot::channel();
         let command = Command::LoadSession {
-            history_mcp: workspace.history_mcp.clone(),
+            app_mcps: workspace.app_mcps.clone(),
             grok: self.executor.provider_id.as_str() == "grok",
+            codebuddy: self.executor.provider_id.as_str() == "codebuddy",
             permission_mode: if self.executor.provider_id.as_str() == "cursor" {
                 None
             } else {
@@ -4088,7 +4173,7 @@ mod tests {
                 let (reply_tx, reply_rx) = oneshot::channel();
                 commands_tx
                     .send(Command::NewSession {
-                        history_mcp: None,
+                        app_mcps: vec![],
                         grok: false,
                         permission_mode: None,
                         model: None,
@@ -4158,8 +4243,9 @@ mod tests {
                     let (reply, response) = oneshot::channel();
                     commands_tx
                         .send(Command::LoadSession {
-                            history_mcp: None,
+                            app_mcps: vec![],
                             grok: false,
+                            codebuddy: false,
                             permission_mode: None,
                             model: None,
                             thinking: None,
@@ -4264,7 +4350,7 @@ mod real_turn_acceptance {
         .expect("driver construction must succeed");
         let session = match driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: std::env::temp_dir().to_string_lossy().into_owned(),
@@ -4446,7 +4532,7 @@ mod real_resume_acceptance {
         let workspace = tempfile::tempdir().unwrap();
         let session = first
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: workspace.path().to_string_lossy().into_owned(),
@@ -4642,7 +4728,7 @@ mod real_kimi_quota_probe {
         .unwrap();
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: std::env::temp_dir().to_string_lossy().into_owned(),
@@ -4729,7 +4815,7 @@ mod real_quota_probe {
         .unwrap();
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: std::env::temp_dir().to_string_lossy().into_owned(),

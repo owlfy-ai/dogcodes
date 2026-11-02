@@ -1,21 +1,22 @@
 import type { EventEnvelope, TaskId, TimelineItem, TimelineSnapshot, TurnId } from "@dogcodes/protocol";
 
-export const isTimelineDelta = (event: EventEnvelope) => ["message.delta", "activity.updated", "tool.started", "tool.completed"].includes(event.eventType);
+export const isTimelineDelta = (event: EventEnvelope) => ["message.delta", "activity.updated", "tool.started", "tool.completed", "computer_use.action"].includes(event.eventType);
 const terminal = new Set(["completed", "failed", "interrupted", "cancelled"]);
 
 function delta(event: EventEnvelope) {
   if (!isTimelineDelta(event) || event.stream.streamType !== "task") return null;
   const payload = event.payload as Record<string, unknown>;
   if (!payload || typeof payload.turnId !== "string" || payload.taskId !== event.stream.streamId) return null;
-  const message = event.eventType === "message.delta", activity = event.eventType === "activity.updated";
+  const message = event.eventType === "message.delta", activity = event.eventType === "activity.updated", computer = event.eventType === "computer_use.action";
   if ((message || activity) && typeof payload.itemId !== "string") return null;
   if (message && typeof payload.text !== "string") return null;
   if (activity && (!payload.data || typeof payload.data !== "object" || Array.isArray(payload.data))) return null;
-  if (!message && !activity && typeof payload.toolName !== "string") return null;
+  if (!message && !activity && !computer && typeof payload.toolName !== "string") return null;
+  if (computer && typeof payload.tool !== "string") return null;
   const taskId = event.stream.streamId as TaskId, turnId = payload.turnId as TurnId;
-  const itemId = typeof payload.itemId === "string"
+  const itemId = !computer && typeof payload.itemId === "string"
     ? `${message ? "message" : "tool"}:${taskId}:${turnId}:${payload.itemId}` : event.eventId;
-  return { payload, message, activity, taskId, turnId, itemId };
+  return { payload, message, activity, computer, taskId, turnId, itemId };
 }
 
 /** One index and at most one array/row copy per batch. Untouched rows keep their
@@ -30,7 +31,7 @@ export function applyTimelineBatch(items: TimelineItem[], events: readonly Event
   for (const event of events) {
     const entry = delta(event);
     if (!entry) { dirty = true; continue; }
-    const { payload, message, activity, taskId, turnId, itemId } = entry;
+    const { payload, message, activity, computer, taskId, turnId, itemId } = entry;
     const index = positions.get(itemId), previous = index === undefined ? undefined : next[index];
     if (!message && !activity && previous?.kind === "activity") continue;
     let data = activities.get(itemId);
@@ -50,7 +51,11 @@ export function applyTimelineBatch(items: TimelineItem[], events: readonly Event
       else next[index] = item;
       changed.add(itemId);
     }
-    if (message) {
+    if (computer) {
+      item.kind = "computer_use";
+      item.text = JSON.stringify(payload);
+      item.providerId = typeof payload.providerId === "string" ? payload.providerId : null;
+    } else if (message) {
       item.kind = "assistant_message";
       let chunks = messages.get(itemId);
       if (!chunks) { chunks = [item.text]; messages.set(itemId, chunks); }

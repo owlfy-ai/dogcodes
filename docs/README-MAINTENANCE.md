@@ -57,6 +57,8 @@ Playwright 不在项目运行依赖中；也可通过 `--playwright-module /abso
 
 新增或移除 Agent 时，同步全部语言页的标签、数量和能力说明；以实际驱动接入为依据。各标签指向对应 Agent 的主页，链接取自本仓库 `drivers/manifests/`。
 
+各语言 Project details／更多信息章节中的接入表也须同步。协议以 `drivers/manifests/` 和对应 driver 为准；客户端／CLI 安装来源以 manifest 路径及 `crates/agent-registry/src/windows.rs`、`macos.rs` 的发现逻辑为准。“客户端”指可复用的内置 CLI／无界面运行时，不表示操控原客户端 GUI；保留操作系统与版本限制。Cua 鸣谢统一链接 `https://github.com/trycua/cua`，说明 Cua Driver 的 MIT 协议和实际集成的平台范围。
+
 ## 本次检查范围
 
 此次仅编写说明页、翻译和图片资源，不修改应用功能，不创建 GitHub 仓库或上传发布。正文按 dog.codes 的实际能力独立编写。

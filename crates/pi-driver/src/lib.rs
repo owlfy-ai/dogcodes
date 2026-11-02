@@ -4,6 +4,8 @@ mod metadata;
 #[cfg(all(test, unix))]
 mod metadata_tests;
 mod request_usage;
+#[cfg(test)]
+mod retained_readiness_tests;
 mod selection;
 mod sessions;
 mod transport;
@@ -45,6 +47,7 @@ pub struct PiDriver {
     restore_gates: std::sync::Mutex<HashMap<String, Arc<Mutex<()>>>>,
     retired_handles: std::sync::Mutex<HashMap<String, SessionHandle>>,
     catalog_probe: Arc<Mutex<()>>,
+    ready_connection: Arc<Mutex<Option<Connection>>>,
 }
 impl Drop for PiDriver {
     fn drop(&mut self) {
@@ -73,7 +76,7 @@ fn session_request(cwd: &str) -> SessionRequest {
     SessionRequest {
         working_directory: cwd.into(),
         additional_directories: vec![],
-        history_mcp: None,
+        app_mcps: vec![],
         permission_mode: None,
     }
 }
@@ -95,6 +98,7 @@ impl PiDriver {
             restore_gates: std::sync::Mutex::new(HashMap::new()),
             retired_handles: std::sync::Mutex::new(HashMap::new()),
             catalog_probe: Arc::new(Mutex::new(())),
+            ready_connection: Arc::new(Mutex::new(None)),
         })
     }
     async fn interrupt_with_timeout(
@@ -121,24 +125,49 @@ impl PiDriver {
             None,
             true,
         )?;
-        let result = async {
-            connection.call(json!({"type":"get_state"})).await?;
-            let models = connection
-                .call(json!({"type":"get_available_models"}))
-                .await?;
-            if models["models"]
-                .as_array()
-                .is_none_or(std::vec::Vec::is_empty)
-            {
-                return Err(DriverError::NotConfigured(
-                    "Pi has no configured models; use pi /login or configure a provider".into(),
-                ));
-            }
-            Ok(())
-        }
-        .await;
+        let result = Self::check_ready(&connection).await;
         connection.close().await?;
         result
+    }
+
+    /// Keep the ephemeral readiness process for compatible default catalog
+    /// query. A business session still needs its own cwd and persistent file.
+    pub async fn connect_ready(
+        installation: &str,
+        executable: PathBuf,
+        version: Option<String>,
+    ) -> Result<Self, DriverError> {
+        let driver = Self::new(installation, executable, version)
+            .map_err(|_| DriverError::Protocol("invalid Pi installation".into()))?;
+        let connection = Connection::spawn(
+            &driver.executable,
+            &std::env::temp_dir().to_string_lossy(),
+            None,
+            true,
+        )?;
+        connection.observe_owner(driver.stopping.subscribe());
+        if let Err(error) = Self::check_ready(&connection).await {
+            connection.close().await?;
+            return Err(error);
+        }
+        *driver.ready_connection.lock().await = Some(connection);
+        Ok(driver)
+    }
+
+    async fn check_ready(connection: &Connection) -> Result<(), DriverError> {
+        connection.call(json!({"type":"get_state"})).await?;
+        let models = connection
+            .call(json!({"type":"get_available_models"}))
+            .await?;
+        if models["models"]
+            .as_array()
+            .is_none_or(std::vec::Vec::is_empty)
+        {
+            return Err(DriverError::NotConfigured(
+                "Pi has no configured models; use pi /login or configure a provider".into(),
+            ));
+        }
+        Ok(())
     }
     async fn connection(&self, id: &str) -> Result<Arc<Connection>, DriverError> {
         self.sessions
@@ -163,7 +192,7 @@ impl PiDriver {
         thinking: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
         permissions().validate(request.permission_mode.as_deref())?;
-        if request.history_mcp.is_some() {
+        if !request.app_mcps.is_empty() {
             return Err(DriverError::CapabilityUnavailable(
                 "Pi does not expose native MCP configuration".into(),
             ));
@@ -314,7 +343,7 @@ impl AgentDriver for PiDriver {
     fn supports_live_session_reuse(&self) -> bool {
         true
     }
-    fn supports_history_mcp(&self) -> bool {
+    fn supports_app_mcp(&self) -> bool {
         false
     }
     async fn permission_catalog(&self, _: Option<&str>) -> Result<PermissionCatalog, DriverError> {

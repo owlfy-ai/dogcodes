@@ -19,6 +19,8 @@ serde_json.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
+agent-registry = { path = "../agent-registry" }
+agent-runtime = { path = "../runtime" }
 pi-driver = { path = "../pi-driver" }
 claude-driver = { path = "../claude-driver" }
 antigravity-driver = { path = "../antigravity-driver" }

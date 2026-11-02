@@ -10,6 +10,15 @@ fn manifest(path: &Path) -> Option<Value> {
     serde_json::from_slice(&std::fs::read(path).ok()?).ok()
 }
 
+pub(super) fn pi_launcher(root: &Path) -> PathBuf {
+    let bin = root.parent().unwrap_or(root).join("bin");
+    if cfg!(windows) && bin.join("pi.cmd").is_file() {
+        bin.join("pi.cmd")
+    } else {
+        bin.join("pi")
+    }
+}
+
 pub(super) fn pi_managed_root(executable: &Path) -> Option<PathBuf> {
     for parent in executable.ancestors().skip(1).take(10) {
         let root = if parent.file_name().is_some_and(|n| n == "install") {
@@ -34,7 +43,7 @@ pub(super) fn pi_managed_root(executable: &Path) -> Option<PathBuf> {
         if package["name"] != "@earendil-works/pi-coding-agent" {
             return None;
         }
-        let launcher = root.parent()?.join("bin/pi").canonicalize().ok()?;
+        let launcher = pi_launcher(&root).canonicalize().ok()?;
         if executable == launcher || executable.starts_with(release.canonicalize().ok()?) {
             return Some(root);
         }
@@ -67,12 +76,12 @@ pub(super) fn is_opencode_native(executable: &Path) -> bool {
 }
 
 fn with_node_path(mut spec: ProcessSpec, node: &Path, npm: &Path) -> Result<ProcessSpec, String> {
-    let bin = node.parent().ok_or("Node 安装目录无效")?;
+    let bin = agent_runtime::external_path(node.parent().ok_or("Node 安装目录无效")?);
     // Native Pi invokes npm itself; make both executables visible from GUI launches.
-    let npm_bin = npm.parent().ok_or("npm 安装目录无效")?;
+    let npm_bin = agent_runtime::external_path(npm.parent().ok_or("npm 安装目录无效")?);
     let inherited = std::env::var_os("PATH").unwrap_or_default();
     let path = std::env::join_paths(
-        [bin.to_path_buf(), npm_bin.to_path_buf()]
+        [bin, npm_bin]
             .into_iter()
             .chain(std::env::split_paths(&inherited)),
     )
@@ -103,7 +112,7 @@ fn local_npm_spec(
         ],
         true,
     );
-    command.cwd = Some(prefix.to_path_buf());
+    command.cwd = Some(agent_runtime::external_path(prefix));
     with_node_path(command, node, npm)
 }
 
@@ -111,8 +120,16 @@ pub(super) async fn version_spec(
     i: &InstallationSummary,
     plan: &Plan,
 ) -> Result<ProcessSpec, String> {
-    let command = spec(Path::new(&i.executable), vec!["--version".into()], false);
-    if matches!(plan, Plan::NpmLocal { .. })
+    let executable = if let Plan::StandaloneCli { prefix, .. } = plan {
+        super::managed_cli::version_executable(i, prefix)
+    } else {
+        PathBuf::from(&i.executable)
+    };
+    let command = spec(&executable, vec!["--version".into()], false);
+    if let Plan::Npm { node, npm, .. } = plan {
+        return with_node_path(command, node, npm);
+    }
+    if matches!(plan, Plan::NpmLocal { .. } | Plan::StandaloneCli { .. })
         || (i.provider_id == "pi" && matches!(plan, Plan::Native(_)))
     {
         let (node, npm) = crate::terminal_installation::npm_runtime()
@@ -128,6 +145,18 @@ pub(super) async fn install_spec(
     plan: &Plan,
     latest: &str,
 ) -> Result<ProcessSpec, String> {
+    if let Plan::StandaloneCli { prefix, package } = plan {
+        let (node, npm) = crate::terminal_installation::npm_runtime()
+            .await
+            .ok_or("CLI 升级需要 Node/npm，请安装后重试")?;
+        let npm_plan = Plan::Npm {
+            node: node.clone(),
+            npm: npm.clone(),
+            prefix: prefix.clone(),
+            package,
+        };
+        return with_node_path(super::install_spec(i, &npm_plan, latest)?, &node, &npm);
+    }
     if let Plan::NpmLocal { prefix, package } = plan {
         let (node, npm) = crate::terminal_installation::npm_runtime()
             .await
@@ -135,13 +164,16 @@ pub(super) async fn install_spec(
         return local_npm_spec(prefix, package, latest, &node, &npm);
     }
     let mut command = super::install_spec(i, plan, latest)?;
+    if let Plan::Npm { node, npm, .. } = plan {
+        command = with_node_path(command, node, npm)?;
+    }
     if i.provider_id == "pi" && matches!(plan, Plan::Native(_)) {
         let root = Path::new(&i.executable)
             .canonicalize()
             .ok()
             .and_then(|p| pi_managed_root(&p))
             .ok_or("Pi 托管安装已变化，请重新检测")?;
-        command.executable = root.parent().ok_or("Pi 安装目录无效")?.join("bin/pi");
+        command.executable = pi_launcher(&root);
         let (node, npm) = crate::terminal_installation::npm_runtime()
             .await
             .ok_or("Pi 更新需要 Node/npm，请确认终端可用")?;
@@ -270,13 +302,14 @@ mod tests {
             let p = plan(&i);
             assert!(matches!(p, Plan::Npm { .. }));
             let s = super::super::install_spec(&i, &p, "1.1.0").unwrap();
-            assert_eq!(s.executable, node.canonicalize().unwrap());
+            assert_eq!(
+                s.executable,
+                agent_runtime::external_path(node.canonicalize().unwrap())
+            );
             assert!(s.args.contains(&format!("{name}@1.1.0")));
             assert!(
                 s.args.contains(
-                    &prefix
-                        .canonicalize()
-                        .unwrap()
+                    &agent_runtime::external_path(prefix.canonicalize().unwrap())
                         .to_string_lossy()
                         .into_owned()
                 )

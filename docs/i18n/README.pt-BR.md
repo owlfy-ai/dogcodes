@@ -191,4 +191,29 @@ pnpm check
 
 Leia o [CONTRIBUTING.md](../../CONTRIBUTING.md) antes de abrir um pull request e relate problemas de segurança de forma privada conforme o [SECURITY.md](../../SECURITY.md).
 
+### Integração dos agentes
+
+dog.codes se conecta a cada agente por sua interface de processo local. ACP significa Agent Client Protocol; agentes com outra interface nativa usam um driver específico.
+
+| Agente | Integração | Instalação compatível |
+| --- | --- | --- |
+| Codex | `app-server` nativo (JSON-RPC) | Cliente desktop + CLI |
+| Claude Code | `stream-json` nativo | Cliente desktop + CLI |
+| Cursor | ACP (`cursor-agent acp`) | CLI |
+| Kimi Code | ACP (`kimi acp`) | CLI |
+| Grok Build | ACP (`grok agent stdio`) | CLI |
+| ZCode | `app-server` nativo (`zcode.cjs` incluído) | Cliente desktop (CLI incluída) |
+| Antigravity | `stream-json` nativo sem interface gráfica (`agy`) | CLI |
+| CodeBuddy | ACP (`codebuddy --acp`) | CLI |
+| Pi | RPC nativo (`pi --mode rpc`) | CLI |
+| OpenCode | ACP (`opencode acp`) | Cliente desktop + CLI |
+| DeepSeek Harness | ACP (`dsh --profile acp`) | Cliente desktop + CLI |
+| Kiro | ACP (`kiro-cli acp`) | CLI |
+
+“Cliente desktop” significa reutilizar a CLI ou o ambiente sem interface gráfica incluído ou instalado pelo cliente, e não automatizar sua interface gráfica. Esse ambiente precisa estar instalado; os caminhos de descoberta e a disponibilidade variam conforme o sistema operacional e a versão. A descoberta automática do ambiente incluído no OpenCode Desktop está implementada atualmente no Windows.
+
+### Agradecimentos
+
+Computer use utiliza o [Cua Driver](https://github.com/trycua/cua), sob licença MIT, para ler janelas, capturar telas e interagir com teclado e mouse. Agradecemos à equipe Cua e aos colaboradores pelo trabalho de automação desktop de código aberto. A integração do driver incluído oferece suporte atualmente a Windows x64.
+
 Os ícones reutilizam os recursos já presentes neste repositório; veja a [origem e os avisos](../../apps/desktop/src/assets/licenses/README.md). Nomes de produtos e marcas pertencem aos respectivos titulares.

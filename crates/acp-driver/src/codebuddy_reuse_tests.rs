@@ -16,6 +16,19 @@ fn native_cancel_and_failure_override_end_turn_but_partial_success_remains_succe
     }
 }
 
+#[test]
+fn native_permission_failure_preserves_the_vendors_reason() {
+    let response = serde_json::from_value(serde_json::json!({"stopReason":"cancelled","_meta":{
+        "codebuddy.ai/outcome":"PERMISSION_DENIED",
+        "codebuddy.ai/errorMessage":"Permission denied for tool(s): unknown"
+    }}))
+    .unwrap();
+    assert!(
+        matches!(prompt_stop_reason(response), Err(DriverError::Protocol(reason))
+        if reason == "CodeBuddy native turn failed: Permission denied for tool(s): unknown")
+    );
+}
+
 // Use the real driver's public prompt/resume path with a controllable transport
 // boundary. Reconnecting must retire that boundary before attempting a spawn.
 #[tokio::test]
@@ -94,7 +107,7 @@ async fn normal_turns_reuse_but_cancel_and_failure_retire_the_connection() {
             .clone();
         let request = SessionRequest {
             working_directory: root.path().to_string_lossy().into_owned(),
-            history_mcp: None,
+            app_mcps: vec![],
             permission_mode: None,
             additional_directories: vec![],
         };
@@ -165,7 +178,7 @@ async fn local_codebuddy_reuses_success_and_recovers_after_cancel() {
     let workspace = tempfile::tempdir().unwrap();
     let request = SessionRequest {
         working_directory: workspace.path().to_string_lossy().into_owned(),
-        history_mcp: None,
+        app_mcps: vec![],
         permission_mode: None,
         additional_directories: vec![],
     };

@@ -283,8 +283,8 @@ are never automatically stolen based on time alone.
 Pushing a tag such as `v0.1.0` runs `.github/workflows/release.yml`. It first checks
 that the tag matches the versions in `package.json`, `apps/desktop/package.json`,
 `tauri.conf.json` and the Cargo workspace, then builds unsigned installers on
-Windows (NSIS), macOS (arm64 and x64 DMG) and Linux (deb, AppImage), runs the checks
-and tests on each platform, and creates a **draft pre-release** with all installers and
+Windows (NSIS), macOS (arm64 and x64 DMG) and Linux (deb, AppImage), reuses the full
+desktop checks and Linux acceptance fixtures, and creates a **draft pre-release** with all installers and
 `SHA256SUMS.txt`. Review the draft, install from it, and publish it by hand. Signed
 builds require a separate workflow change: the current workflow explicitly uses
 `--unsigned` and cannot access local Keychain profiles or a local SimplySign
@@ -292,11 +292,15 @@ session. Filling local settings or adding Secrets alone does not enable CI
 signing. If replacing draft assets with locally signed packages, regenerate
 `SHA256SUMS.txt` from the final assets before publication.
 
-The `Desktop checks and unsigned packages` workflow checks the frontend and native
-code, then builds Windows x64 NSIS, macOS ARM64/x64 DMG and Linux x64 DEB/AppImage
-artifacts. It has read-only repository permissions, uses no signing secrets and
-does not publish a release. Its presence is not proof of passing CI: inspect an
-actual run, then test installation and daily workflows on each platform.
+On normal pushes and pull requests, `Desktop checks and unsigned packages` selects
+frontend, native and Linux acceptance checks by changed paths and skips installer
+builds. Documentation-only changes skip compilation. Select **Run workflow** to run
+the full suite and build Windows x64 NSIS, macOS ARM64/x64 DMG and Linux x64
+DEB/AppImage artifacts. The tag-triggered release workflow calls this same full
+suite, including the optimized native PipeWire fixture for the release AppImage.
+The desktop workflow has read-only repository permissions, uses no signing secrets
+and does not publish a release. Its presence is not proof of passing CI: inspect
+an actual run, then test installation and daily workflows on each platform.
 
 `.gitignore` does not remove secrets already committed to history. Source-release
 review must check the Git index and history separately before publishing.

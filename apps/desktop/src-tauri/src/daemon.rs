@@ -93,6 +93,55 @@ impl CoreClient {
     pub async fn remote_control(&self, call: Value) -> Result<Value, String> {
         self.call("remote_control", call).await
     }
+
+    pub async fn computer_use(&self, call: Value) -> Result<Value, String> {
+        self.call("computer_use", call).await
+    }
+    pub async fn computer_use_activity(&self, call: Value) -> Result<Value, String> {
+        self.call("computer_use_activity", call).await
+    }
+    pub async fn computer_use_activity_stream(
+        &self,
+    ) -> Result<
+        tokio::sync::watch::Receiver<Option<agent_core::computer_use::ComputerActivity>>,
+        String,
+    > {
+        #[cfg(any(test, feature = "review-acceptance"))]
+        if let Self::Local(core, _) = self {
+            let mut source = core.subscribe_computer_use_activity();
+            let (sender, receiver) = tokio::sync::watch::channel(Some(source.borrow().clone()));
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        () = sender.closed() => break,
+                        changed = source.changed() => {
+                            if changed.is_err() { break; }
+                            sender.send_replace(Some(source.borrow_and_update().clone()));
+                        }
+                    }
+                }
+            });
+            return Ok(receiver);
+        }
+        let mut stream = self
+            .connect("computer_use_activity_watch", json!({}))
+            .await?;
+        let initial = read_frame::<agent_core::computer_use::ComputerActivity>(&mut stream).await?;
+        let (sender, receiver) = tokio::sync::watch::channel(Some(initial));
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    () = sender.closed() => break,
+                    next = read_frame(&mut stream) => if let Ok(value) = next {
+                        sender.send_replace(Some(value));
+                    } else {
+                        sender.send_replace(None); break;
+                    }
+                }
+            }
+        });
+        Ok(receiver)
+    }
     async fn connect(&self, method: &str, args: Value) -> Result<TcpStream, String> {
         let directory = match self {
             Self::Remote(directory) => directory,
@@ -583,7 +632,7 @@ impl CoreClient {
         #[cfg(any(test, feature = "review-acceptance"))]
         if let Self::Local(core, _) = self {
             return core
-                .permission_catalog(executor, task_id)
+                .cached_permission_catalog(executor, task_id, false)
                 .await
                 .map_err(|e| e.to_string());
         }
@@ -599,13 +648,56 @@ impl CoreClient {
         #[cfg(any(test, feature = "review-acceptance"))]
         if let Self::Local(core, _) = self {
             return core
-                .model_catalog_for_task(executor, model, task_id)
+                .cached_model_catalog(executor, model, task_id, false)
                 .await
                 .map_err(|e| e.to_string());
         }
         self.call("model_catalog_for_task", json!((executor, model, task_id,)))
             .await
     }
+    pub async fn cached_model_catalog(
+        &self,
+        executor: &ExecutorRef,
+        model: Option<&str>,
+        task_id: Option<&TaskId>,
+        refresh: bool,
+    ) -> Result<ModelCatalog, String> {
+        #[cfg(any(test, feature = "review-acceptance"))]
+        if let Self::Local(core, _) = self {
+            return core
+                .cached_model_catalog(executor, model, task_id, refresh)
+                .await
+                .map_err(|e| e.to_string());
+        }
+        self.call(
+            "cached_model_catalog",
+            json!((executor, model, task_id, refresh)),
+        )
+        .await
+    }
+    pub async fn cached_permission_catalog(
+        &self,
+        executor: &ExecutorRef,
+        task_id: Option<&TaskId>,
+        refresh: bool,
+    ) -> Result<PermissionCatalog, String> {
+        #[cfg(any(test, feature = "review-acceptance"))]
+        if let Self::Local(core, _) = self {
+            return core
+                .cached_permission_catalog(executor, task_id, refresh)
+                .await
+                .map_err(|e| e.to_string());
+        }
+        self.call(
+            "cached_permission_catalog",
+            json!((executor, task_id, refresh)),
+        )
+        .await
+    }
+    pub async fn catalog_revision(&self) -> Result<u64, String> {
+        self.call("catalog_revision", json!(())).await
+    }
+
     pub async fn review_executors(&self) -> Result<Vec<ExecutorRef>, String> {
         #[cfg(any(test, feature = "review-acceptance"))]
         if let Self::Local(core, _) = self {
@@ -1063,7 +1155,7 @@ async fn dispatch(core: &Arc<Core>, method: &str, args: Value) -> Result<Value, 
             let (executor, task_id): (ExecutorRef, Option<TaskId>) =
                 serde_json::from_value(args).map_err(|e| e.to_string())?;
             let result = core
-                .permission_catalog(&executor, task_id.as_ref())
+                .cached_permission_catalog(&executor, task_id.as_ref(), false)
                 .await
                 .map_err(|e| e.to_string())?;
             serde_json::to_value(result).map_err(|e| e.to_string())
@@ -1072,10 +1164,35 @@ async fn dispatch(core: &Arc<Core>, method: &str, args: Value) -> Result<Value, 
             let (executor, model, task_id): (ExecutorRef, Option<String>, Option<TaskId>) =
                 serde_json::from_value(args).map_err(|e| e.to_string())?;
             let result = core
-                .model_catalog_for_task(&executor, model.as_deref(), task_id.as_ref())
+                .cached_model_catalog(&executor, model.as_deref(), task_id.as_ref(), false)
                 .await
                 .map_err(|e| e.to_string())?;
             serde_json::to_value(result).map_err(|e| e.to_string())
+        }
+        "catalog_revision" => Ok(json!(core.catalog_revision())),
+        "cached_model_catalog" => {
+            let (executor, model, task_id, refresh): (
+                ExecutorRef,
+                Option<String>,
+                Option<TaskId>,
+                bool,
+            ) = serde_json::from_value(args).map_err(|e| e.to_string())?;
+            serde_json::to_value(
+                core.cached_model_catalog(&executor, model.as_deref(), task_id.as_ref(), refresh)
+                    .await
+                    .map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())
+        }
+        "cached_permission_catalog" => {
+            let (executor, task_id, refresh): (ExecutorRef, Option<TaskId>, bool) =
+                serde_json::from_value(args).map_err(|e| e.to_string())?;
+            serde_json::to_value(
+                core.cached_permission_catalog(&executor, task_id.as_ref(), refresh)
+                    .await
+                    .map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())
         }
         "review_executors" => {
             serde_json::to_value(core.review_executors().await.map_err(|e| e.to_string())?)
@@ -1152,6 +1269,14 @@ async fn dispatch(core: &Arc<Core>, method: &str, args: Value) -> Result<Value, 
             let result = core.registered_executors().await;
             serde_json::to_value(result).map_err(|e| e.to_string())
         }
+        "computer_use" => core
+            .computer_use_control(args)
+            .await
+            .map_err(|e| e.to_string()),
+        "computer_use_activity" => core
+            .computer_use_activity(args)
+            .await
+            .map_err(|e| e.to_string()),
         "set_running_permission_mode" => {
             let (task_id, run_id, executor, mode): (TaskId, RunId, ExecutorRef, String) =
                 serde_json::from_value(args).map_err(|e| e.to_string())?;
@@ -1477,6 +1602,18 @@ async fn serve_connection(
         )
         .await;
     }
+    if request.method == "computer_use_activity_watch" {
+        let mut receiver = core.subscribe_computer_use_activity();
+        drop(request_guard);
+        loop {
+            let value = receiver.borrow_and_update().clone();
+            write_frame(&mut stream, &value).await?;
+            tokio::select! {
+                _ = stream.read_u8() => return Ok(()),
+                changed = receiver.changed() => { if changed.is_err() { return Ok(()); } }
+            }
+        }
+    }
     if request.method == "subscribe" {
         let after: u64 = serde_json::from_value(request.args).map_err(|e| e.to_string())?;
         let subscription = core.subscribe(after).await.map_err(|e| e.to_string())?;
@@ -1671,7 +1808,7 @@ async fn run_service(directory: PathBuf, owned: bool) -> Result<(), String> {
     let (store, scratch) =
         prepare_desktop_storage(&directory).map_err(|_| "service storage unavailable")?;
     drop(storage);
-    let core = Arc::new(
+    let core = Arc::new(crate::computer_use::configure(
         Core::with_workspace_context(
             Arc::new(store),
             Arc::new(
@@ -1681,7 +1818,8 @@ async fn run_service(directory: PathBuf, owned: bool) -> Result<(), String> {
         )
         .with_history_query_program(std::env::current_exe().map_err(|e| e.to_string())?)
         .with_turn_timing_sink(crate::turn_timing::file_sink(&directory)),
-    );
+        &directory,
+    ));
     let recovery = StartupTiming::new(&directory, "service.recover_interrupted_turns");
     core.recover_interrupted_turns()
         .await
@@ -1911,12 +2049,55 @@ mod tests {
         }
     }
     #[tokio::test]
+    async fn catalog_rpc_reuses_agent_inventory_without_a_task_or_project() {
+        use driver_api::AgentDriver;
+        let f = fixture().await;
+        let driver = Arc::new(driver_api::FakeDriver::new("catalog-test").unwrap());
+        let executor = driver.executor().clone();
+        f.core.register_driver(driver).await;
+        let nonexistent_task = TaskId::new();
+        let models = f
+            .client
+            .cached_model_catalog(&executor, None, Some(&nonexistent_task), false)
+            .await
+            .unwrap();
+        let permissions = f
+            .client
+            .cached_permission_catalog(&executor, Some(&nonexistent_task), false)
+            .await
+            .unwrap();
+        let revision = f.client.catalog_revision().await.unwrap();
+        assert_eq!(
+            models,
+            f.client
+                .model_catalog_for_task(&executor, None, None)
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(permissions).unwrap(),
+            serde_json::to_value(f.client.permission_catalog(&executor, None).await.unwrap())
+                .unwrap()
+        );
+        assert_eq!(revision, f.client.catalog_revision().await.unwrap());
+        f.client
+            .cached_model_catalog(&executor, None, None, true)
+            .await
+            .unwrap();
+        f.client
+            .cached_permission_catalog(&executor, None, true)
+            .await
+            .unwrap();
+        assert!(f.client.catalog_revision().await.unwrap() > revision);
+        assert!(f.core.bootstrap().await.unwrap().projects.is_empty());
+    }
+    #[tokio::test]
     async fn project_registration_is_validated_and_serialized_by_the_service() {
         use crate::project_registry::{ProjectEdit, ProjectRegistration};
         let f = fixture().await;
         let project = tempfile::tempdir().unwrap();
         let other = tempfile::tempdir().unwrap();
-        let canonical = project.path().canonicalize().unwrap();
+        let canonical = crate::project_registry::plain_path(project.path().canonicalize().unwrap());
         let request = ProjectRegistration {
             display_name: String::new(),
             path: project.path().join(".").to_str().unwrap().into(),
@@ -1958,7 +2139,9 @@ mod tests {
         assert_eq!(saved.display_name, "Renamed");
         assert_eq!(
             saved.path,
-            other.path().canonicalize().unwrap().to_str().unwrap()
+            crate::project_registry::plain_path(other.path().canonicalize().unwrap())
+                .to_str()
+                .unwrap()
         );
         assert_eq!(
             saved.additional_directories,

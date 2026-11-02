@@ -2,12 +2,14 @@
 
 mod electron;
 mod environment;
+mod external_path;
 mod path_environment;
 mod proxy;
 pub use process_scope::OwnedChild;
 
 pub use electron::{electron_node_executable, electron_resources_directory};
 pub use environment::{apply_platform_environment, inherited_variable};
+pub use external_path::{agent_command, external_path};
 pub use path_environment::{current_path, record_shell_path};
 pub use proxy::apply_proxy_environment;
 
@@ -23,7 +25,6 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
-    process::Command,
     time::timeout,
 };
 
@@ -180,7 +181,7 @@ async fn run_bytes(
     } else {
         spec.executable.clone()
     };
-    let mut command = Command::new(executable);
+    let mut command = agent_command(executable);
     command
         .args(&spec.args)
         .env_clear()
@@ -193,7 +194,7 @@ async fn run_bytes(
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
     if let Some(cwd) = &spec.cwd {
-        command.current_dir(cwd);
+        command.current_dir(external_path(cwd));
     }
     apply_platform_environment(&mut command);
     for name in &spec.env_allowlist {

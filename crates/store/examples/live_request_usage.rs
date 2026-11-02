@@ -116,7 +116,7 @@ async fn main() -> Result<(), Error> {
             SessionRequest {
                 working_directory: cwd.clone(),
                 additional_directories: vec![],
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: (multi && provider == "codex").then(|| "hub-analysis".into()),
             },
             args.get(4).map(String::as_str),
@@ -146,7 +146,7 @@ async fn main() -> Result<(), Error> {
                     SessionRequest {
                         working_directory: cwd.clone(),
                         additional_directories: vec![],
-                        history_mcp: None,
+                        app_mcps: vec![],
                         permission_mode: None,
                     },
                     args.get(4).map(String::as_str),

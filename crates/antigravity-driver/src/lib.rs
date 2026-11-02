@@ -643,7 +643,12 @@ fn workspace_args(workspace: &SessionRequest, resume: bool) -> Vec<String> {
     for directory in
         std::iter::once(&workspace.working_directory).chain(&workspace.additional_directories)
     {
-        args.extend(["--add-dir".into(), directory.clone()]);
+        args.extend([
+            "--add-dir".into(),
+            agent_runtime::external_path(directory)
+                .to_string_lossy()
+                .into_owned(),
+        ]);
     }
     args
 }
@@ -653,7 +658,7 @@ mod multi_root_args_tests {
     #[test]
     fn new_project_is_isolated_and_resume_retains_all_roots() {
         let request = super::SessionRequest {
-            history_mcp: None,
+            app_mcps: vec![],
             permission_mode: None,
             working_directory: "/primary".into(),
             additional_directories: vec!["/extra folder".into()],
@@ -683,10 +688,14 @@ fn spawn_workspace(
     bridge: Option<&approval_bridge::Bridge>,
     usage_log: Option<&std::path::Path>,
 ) -> Result<Child, DriverError> {
-    let mut command = tokio::process::Command::new(&launch.executable);
-    command.args(session_args());
+    let mut command = agent_runtime::agent_command(&launch.executable);
+    command
+        .args(session_args())
+        .current_dir(std::env::temp_dir());
     if let Some(log) = usage_log {
-        command.arg("--log-file").arg(log);
+        command
+            .arg("--log-file")
+            .arg(agent_runtime::external_path(log));
     }
     let mode = workspace.and_then(|w| w.permission_mode.as_deref());
     driver_api::permissions::antigravity().validate(mode)?;
@@ -707,14 +716,16 @@ fn spawn_workspace(
         command.arg("--mode").arg("plan");
     }
     if let Some(workspace) = workspace {
-        command.current_dir(&workspace.working_directory);
+        command.current_dir(agent_runtime::external_path(&workspace.working_directory));
         // Keep user workspaces out of agy's shared default CLI project.
         // A resumed conversation carries its original project identity.
         command.args(workspace_args(workspace, resume_conversation.is_some()));
         if bridge.is_none()
-            && let Some(mcp) = &workspace.history_mcp
+            && let Some(mcp) = workspace.app_mcps.first()
         {
-            command.arg("--add-dir").arg(&mcp.directory);
+            command
+                .arg("--add-dir")
+                .arg(agent_runtime::external_path(&mcp.directory));
         }
     }
     if let Some(model) = model {
@@ -1160,6 +1171,14 @@ impl AgentDriver for AntigravityDriver {
         *cache = result;
         Ok(cache.iter().map(|(id, _)| id.clone()).collect())
     }
+    async fn refresh_model_catalog_in_workspace(
+        &self,
+        model: Option<&str>,
+        workspace: Option<&str>,
+    ) -> Result<driver_api::ModelCatalog, DriverError> {
+        self.models.lock().await.clear();
+        self.model_catalog_in_workspace(model, workspace).await
+    }
     fn executor(&self) -> &ExecutorRef {
         &self.executor
     }
@@ -1244,7 +1263,7 @@ impl AgentDriver for AntigravityDriver {
         self.resume_workspace_session(
             id,
             SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 working_directory: cwd.into(),
                 additional_directories: vec![],
@@ -1665,7 +1684,7 @@ done
         let session = driver
             .create_session_with_model(
                 SessionRequest {
-                    history_mcp: None,
+                    app_mcps: vec![],
                     permission_mode: Some("dangerously-skip-permissions".into()),
                     additional_directories: vec![],
                     working_directory: "/tmp".into(),
@@ -1702,7 +1721,7 @@ done
             driver.resume_workspace_session(
                 "conv-fixture",
                 SessionRequest {
-                    history_mcp: None,
+                    app_mcps: vec![],
                     permission_mode: Some("dangerously-skip-permissions".into()),
                     working_directory: "/tmp".into(),
                     additional_directories: vec![],
@@ -1718,7 +1737,7 @@ done
             .reconfigure_session(
                 &resumed.native_session_id,
                 SessionRequest {
-                    history_mcp: None,
+                    app_mcps: vec![],
                     permission_mode: Some("dangerously-skip-permissions".into()),
                     working_directory: "/tmp".into(),
                     additional_directories: vec![],
@@ -1746,7 +1765,7 @@ done
             .resume_workspace_session(
                 &updated.native_session_id,
                 SessionRequest {
-                    history_mcp: None,
+                    app_mcps: vec![],
                     permission_mode: Some("dangerously-skip-permissions".into()),
                     working_directory: "/tmp".into(),
                     additional_directories: vec!["/tmp/attachment-fixture".into()],
@@ -1772,7 +1791,7 @@ done
             std::time::Duration::from_secs(2),
             driver.create_session_with_model(
                 SessionRequest {
-                    history_mcp: None,
+                    app_mcps: vec![],
                     permission_mode: Some("dangerously-skip-permissions".into()),
                     additional_directories: vec![],
                     working_directory: "/tmp".into(),
@@ -1832,7 +1851,7 @@ done
         let driver = test_driver(executable);
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: Some("dangerously-skip-permissions".into()),
                 additional_directories: vec![],
                 working_directory: "/tmp".into(),
@@ -1915,7 +1934,7 @@ mod real_turn_acceptance {
             let session = driver
                 .create_session_with_model(
                     SessionRequest {
-                        history_mcp: None,
+                        app_mcps: vec![],
                         permission_mode: None,
                         additional_directories: vec![],
                         working_directory: std::env::temp_dir().to_string_lossy().into_owned(),
@@ -1990,7 +2009,7 @@ mod real_turn_acceptance {
         let driver = home_driver();
         let session = driver
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: std::env::temp_dir().to_string_lossy().into_owned(),
@@ -2085,7 +2104,7 @@ mod real_resume_acceptance {
         .unwrap();
         let session = first
             .create_session(SessionRequest {
-                history_mcp: None,
+                app_mcps: vec![],
                 permission_mode: None,
                 additional_directories: vec![],
                 working_directory: workspace.path().to_string_lossy().into_owned(),

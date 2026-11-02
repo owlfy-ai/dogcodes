@@ -1,5 +1,6 @@
 import { RemoteDevices } from "./RemoteDevices";
-import { invoke } from "@tauri-apps/api/core";
+import { ComputerUseControl } from "./ComputerUseControl";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { AttachmentUploadRecovery } from "./AttachmentUploadRecovery";
 import {
   type UiLanguage,
@@ -35,6 +36,7 @@ import { userFacingError } from "./userFacingError";
 import { AgentQuotaContext } from "./AgentQuotaRing";
 import { AgentIcon, providerLabel } from "./agentPresentation";
 import { SidebarWindowControls } from "./SidebarWindowControls";
+import { isWindowsPlatform, WindowsBrand, WindowsCaptionButtons } from "./WindowsTitleBar";
 import { SidebarNavIcon } from "./SidebarNavIcon";
 import { ActivityIcon } from "./ActivityIcon";
 import { useConversationNavigation } from "./useConversationNavigation";
@@ -52,6 +54,7 @@ import { visibleQuotaViews } from "./quotaInstallations";
 import { useModelReadyExecutors } from "./useModelReadyExecutors";
 import { ModelCatalogCache } from "./modelCatalogCache";
 import { useModelCatalog } from "./useModelCatalog";
+import { useCatalogWarmup } from "./useCatalogWarmup";
 import { DropdownChevron } from "./DropdownChevron";
 import { PermissionPicker } from "./PermissionPicker";
 import { ModelPicker } from "./ModelPicker";
@@ -92,6 +95,7 @@ import { OrderedEventCursor } from "./orderedEvents";
 import { PendingExecutorContext } from "./automaticContext";
 import { ConversationHistory } from "./ConversationHistory";
 const MemoConversationHistory = memo(ConversationHistory);
+import { REVIEW_REPAIR_PROMPT, displayBackendText } from "./backendText";
 import { timelineItemRole } from "./timelinePresentation";
 import { RequestEpoch, changeSelection } from "./requestEpoch";
 import { formatResetTime, formatProviderBalance, formatQuotaPercent, quotaScopeLabel, quotaPlanLabel, quotaNativeResetLabel, nativeResetDisplay, antigravityQuotaForModel, ringQuotaWindow, quotaColor, quotaIsExhausted, quotaIsStale, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
@@ -134,14 +138,14 @@ function ToolActivity({ item, active }: { item: TimelineItem; active: boolean })
 }
 
 const TimelineEntry = memo(function TimelineEntry({ item, active = false }: { item: TimelineItem; active?: boolean }) {
-  const { t } = useI18n();
+  const { t, resolvedLanguage } = useI18n();
   const role = timelineItemRole(item.kind);
   const time = new Date(item.occurredAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   if (role === "tool") return <ToolActivity item={item} active={active} />;
   if (role === "user") {
     return (
       <article className="message user-message" data-tooltip={t("app.userMessageTooltip", { time })}>
-        {item.text && <p>{item.text}</p>}
+        {item.text && <p>{item.text === REVIEW_REPAIR_PROMPT ? t("backendText.reviewRepairPrompt") : item.text}</p>}
         <SentAttachments items={item.attachments} />
       </article>
     );
@@ -158,7 +162,7 @@ const TimelineEntry = memo(function TimelineEntry({ item, active = false }: { it
       <div className="avatar"><AgentIcon providerId={item.providerId ?? "dogcodes"} /></div>
       <div>
         <header><b>{providerLabel(item.providerId ?? "dogcodes")}</b><time>{time}</time></header>
-        <p>{item.text}</p>
+        <p>{displayBackendText(item.text, resolvedLanguage)}</p>
       </div>
     </article>
   );
@@ -192,21 +196,24 @@ function isMacPlatform(): boolean {
 }
 
 function PreferencesIcon({ kind }: { kind: Exclude<PreferencesSection, null> }) {
-  return <svg className="preferences-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  return <svg className="preferences-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {kind === "language" ? <>
-      <circle cx="10" cy="10" r="7" />
-      <path d="M3 10h14M10 3c2 2.2 2.8 4.5 2.8 7S12 14.8 10 17c-2-2.2-2.8-4.5-2.8-7S8 5.2 10 3Z" />
+      {/* 文 / A: translation glyph pair. */}
+      <path d="M2.5 4.5h8M6.5 2.75V4.5M4.25 4.5c.7 2.9 2.6 5 5.25 6M8.75 4.5c-.6 3.2-2.7 5.6-6 6.9" />
+      <path d="m10.5 17.25 3.25-7.5 3.25 7.5M11.6 14.75h4.3" />
     </> : kind === "theme" ? <>
-      <circle cx="10" cy="10" r="7" />
-      <path d="M10 3a7 7 0 0 1 0 14Z" fill="currentColor" />
+      {/* Crescent moon with a small spark. */}
+      <path d="M16.25 12.1A6.75 6.75 0 0 1 7.9 3.75a6.75 6.75 0 1 0 8.35 8.35Z" />
+      <path d="M14.5 2.75v2.5M13.25 4h2.5" />
     </> : <>
-      <circle cx="9" cy="9" r="5.5" />
-      <path d="m13 13 4 4M7 9h4M9 7v4" />
+      <circle cx="8.75" cy="8.75" r="5.5" />
+      <path d="m12.75 12.75 4.25 4.25M6.5 8.75h4.5M8.75 6.5V11" />
     </>}
   </svg>;
 }
 
 function PreferencesMenu({
+  client,
   open,
   section,
   language,
@@ -216,10 +223,10 @@ function PreferencesMenu({
   onLanguage,
   onTheme,
   onScale,
-  onRestartCore,
   anchorRef,
   popoverRef,
 }: {
+  client: CoreClient;
   anchorRef: RefObject<HTMLElement | null>;
   popoverRef: RefObject<HTMLDivElement | null>;
   open: boolean;
@@ -231,7 +238,6 @@ function PreferencesMenu({
   onLanguage: (value: UiLanguage) => void;
   onTheme: (value: UiTheme) => void;
   onScale: (value: ScaleAction) => void;
-  onRestartCore: () => void;
 }) {
   const labels = getPreferenceLabels(language);
   const modifier = isMacPlatform() ? "⌘" : "Ctrl";
@@ -303,11 +309,8 @@ function PreferencesMenu({
       <button type="button" role="menuitem" className={section === "scale" ? "selected" : ""} onClick={() => onToggle("scale")}>
         <PreferencesIcon kind="scale" /><span>{labels.scale}</span><span aria-hidden="true">›</span>
       </button>
+      <ComputerUseControl client={client} />
       {optionMenu}
-      {"__TAURI_INTERNALS__" in window && <button type="button" role="menuitem" className="background-service-menuitem" onClick={onRestartCore}>
-        <svg className="preferences-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M16 9a6 6 0 1 0-1 4M16 4v5h-5" /></svg>
-        <span>{t("backgroundService.restart", undefined, resolveLanguage(language))}</span>
-      </button>}
     </div>,
     document.body,
   );
@@ -316,7 +319,7 @@ function PreferencesMenu({
 export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const agentPreferences = useAgentPreferences();
   useEffect(() => { traceStartup("app_mounted"); }, []);
-  const modelCache = useMemo(() => new ModelCatalogCache((executor, model, taskId) => client.availableModels ? client.availableModels(executor, model, taskId) : Promise.resolve({models:[],defaultModel:null})), [client]);
+  const modelCache = useMemo(() => new ModelCatalogCache((executor, model, taskId, refresh) => client.availableModels ? refresh ? client.availableModels(executor, model, taskId, true) : client.availableModels(executor, model, taskId) : Promise.resolve({models:[],defaultModel:null}), client.catalogRevision ? [] : undefined), [client]);
   const [welcomeOpen, setWelcomeOpen] = useState(() => {
     // Explicitly injected clients are embedded hosts; the default app owns first-run UX.
     if (client !== defaultClient) return false;
@@ -430,15 +433,6 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       cancel: t("common.cancel", undefined, resolvedLang),
     } }).catch(() => {});
   }, [native, resolvedLang]);
-  const restartBackground = () => {
-    setPreferencesOpen(false); setPreferencesSection(null);
-    void invoke("core_service_restart", { labels: {
-      title: t("backgroundService.confirmTitle", undefined, resolvedLang),
-      warning: t("backgroundService.warning", undefined, resolvedLang),
-      confirm: t("backgroundService.restart", undefined, resolvedLang),
-      cancel: t("common.cancel", undefined, resolvedLang),
-    }, failure: t("backgroundService.failed", undefined, resolvedLang) }).catch(() => {});
-  };
   const labels = getPreferenceLabels(uiLanguage);
   const [uiTheme, setUiTheme] = useState<UiTheme>(() => readPreference("dogcodes.ui.theme", "system"));
   const [uiScale, setUiScale] = useState(() => parseUiScale(readPreference("dogcodes.ui.scale", "100")));
@@ -867,6 +861,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     && mapping.executor.providerId === selectedTask?.preferredExecutor.providerId
     && mapping.executor.installationId === selectedTask?.preferredExecutor.installationId);
   const modelReadyIds = useModelReadyExecutors(client);
+  useCatalogWarmup(client, modelCache, snapshot?.installations ?? [], modelReadyIds);
   const modelVersion = snapshot?.installations.find(i=>i.installationId===selectedTask?.preferredExecutor.installationId)?.version ?? null;
   const selectedModelReady = !client.modelReadyExecutors || modelReadyIds.includes(`${selectedTask?.preferredExecutor.providerId}:${selectedTask?.preferredExecutor.installationId}`);
   const modelSelectionKey = `${selectedTask?.taskId}:${selectedTask?.preferredExecutor.providerId}:${selectedTask?.preferredExecutor.installationId}`;
@@ -876,18 +871,26 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const modelCatalog = useModelCatalog(modelCache, selectedTask?.preferredExecutor, modelVersion,
     selectedTaskId ?? undefined, activeModel, selectedModelReady, !!selectedTask?.activePrimaryRun);
   const { catalog: nativeModels, loading: modelLoading, error: modelError } = modelCatalog;
+  const modelSelectionBlocked = !!client.availableModels && selectedTask?.preferredExecutor.providerId !== "fake"
+    && (modelLoading || (!!modelError && !modelCatalog.hasCatalog) || !activeModel);
+  useEffect(() => {
+    const first = nativeModels.models[0];
+    if (activeModel || !first || selectedTask?.preferredExecutor.providerId === "fake") return;
+    setNewSessionModel(current => current?.key === modelSelectionKey && current.model ? current
+      : { key: modelSelectionKey, model: first.id, thinking: first.defaultThinking ?? null });
+  }, [activeModel, modelSelectionKey, nativeModels.models, selectedTask?.preferredExecutor.providerId]);
   useEffect(() => { refreshModelCatalog.current = modelCatalog.refresh; }, [modelCatalog.refresh]);
   const permissionKey = selectedTask ? `${selectedTask.taskId}:${selectedTask.preferredExecutor.providerId}:${selectedTask.preferredExecutor.installationId}` : "";
   const permissionPicker = selectedTask ? <PermissionPicker key={permissionKey} version={modelVersion} client={client} executor={selectedTask.preferredExecutor} taskId={selectedTaskId ?? undefined}
     run={selectedTask.activePrimaryRun} disabled={sending} onChange={mode=>setPermissionSelection({key:permissionKey,mode})} /> : null;
   const modelPicker = selectedTask && selectedTask.preferredExecutor.providerId !== "fake" ? <ModelPicker key={modelSelectionKey}
-    catalog={nativeModels} model={activeModel} thinking={activeThinking} loading={modelLoading} error={modelError}
+    catalog={nativeModels} model={activeModel} thinking={activeThinking} loading={modelLoading} refreshing={modelCatalog.refreshing} error={modelError}
     disabled={sending}
     onChange={(model, thinking) => setNewSessionModel({ key: modelSelectionKey, model, thinking })}
     onRetry={modelCatalog.refresh} onOpen={modelCatalog.check} refreshDisabled={!!selectedTask.activePrimaryRun} /> : null;
 
   const selectedQuota = useMemo(() => {
-    if (!selectedTask || quotaTaskId !== selectedTask.taskId) return null;
+    if (!selectedTask || quotaTaskId !== selectedTaskId) return null;
     const executor = selectedTask.preferredExecutor;
     const quota = (
       quotaViews.find(
@@ -897,7 +900,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       )?.quota ?? null
     );
     return executor.providerId === "antigravity" ? antigravityQuotaForModel(quota, activeModel) : quota;
-  }, [quotaViews, quotaTaskId, selectedTask, activeModel]);
+  }, [quotaViews, quotaTaskId, selectedTaskId, selectedTask, activeModel]);
   useEffect(() => {
     const executor = selectedTask?.preferredExecutor;
     if (!selectedTask?.activePrimaryRun || !executor?.installationId) return;
@@ -1008,7 +1011,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!selectedTask || submissionPending || (!draft.trim() && !attachments.items.length) || attachments.pending > 0 || (activeModel && (modelLoading || modelError)) || sending || creatingTask || switchBusy.current || selectedTask.activePrimaryRun || quotaSendingBlocked || agentPreferences.disabled.includes(selectedTask.preferredExecutor.providerId) || (agentPreferences.disabled.length > 0 && !executorOptions.length)) return;
+    if (!selectedTask || submissionPending || (!draft.trim() && !attachments.items.length) || attachments.pending > 0 || modelSelectionBlocked || sending || creatingTask || switchBusy.current || selectedTask.activePrimaryRun || quotaSendingBlocked || agentPreferences.disabled.includes(selectedTask.preferredExecutor.providerId) || (agentPreferences.disabled.length > 0 && !executorOptions.length)) return;
     const prompt = draft.trim(), attachmentIds = attachments.items.map(item => item.id);
     const originContext = composerContext.current;
     const scope = selectedTaskId ? `task:${selectedTaskId}` : newDraftScope.current;
@@ -1143,7 +1146,11 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     const taskId = navigation.move(direction);
     if (taskId) { selectTask(taskId, false); setActiveView("conversation"); }
   };
-  const windowControls = <SidebarWindowControls collapsed={sidebarCollapsed} onToggle={toggleSidebar} canBack={navigation.canBack} canForward={navigation.canForward} onBack={() => navigateConversation(-1)} onForward={() => navigateConversation(1)} />;
+  const customTitleBar = isWindowsPlatform() && isTauri();
+  const windowControls = <>
+    {customTitleBar && <WindowsBrand logo={appLogo} />}
+    <SidebarWindowControls collapsed={sidebarCollapsed} onToggle={toggleSidebar} canBack={navigation.canBack} canForward={navigation.canForward} onBack={() => navigateConversation(-1)} onForward={() => navigateConversation(1)} />
+  </>;
 
   if (welcomeOpen) return <I18nProvider language={uiLanguage}><AgentWelcome client={client}
     onDetected={(provider, detected) => setSnapshot(current => current ? { ...current,
@@ -1191,6 +1198,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             <svg className="preferences-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg>
           </button>
           <PreferencesMenu
+            client={client}
             anchorRef={preferencesRef}
             popoverRef={preferencesPopoverRef}
             open={preferencesOpen}
@@ -1202,11 +1210,11 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             onLanguage={(next) => { setUiLanguage(next); setPreferencesOpen(false); setPreferencesSection(null); }}
             onTheme={(next) => { setUiTheme(next); setPreferencesOpen(false); setPreferencesSection(null); }}
             onScale={action => setUiScale(current => adjustUiScale(current, action))}
-            onRestartCore={restartBackground}
           />
         </div>
       </aside>
 
+      {customTitleBar && <WindowsCaptionButtons />}
       {!sidebarCollapsed && <SidebarResizeHandle width={sidebarWidth.width} max={sidebarWidth.max} defaultWidth={sidebarWidth.defaultWidth} onResize={sidebarWidth.setWidth} />}
       <div className="conversation-column global-content">
         <header className="task-header" data-tauri-drag-region="deep">
@@ -1272,7 +1280,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
               modelPicker={modelPicker}
               permissionPicker={permissionPicker}
               submissionPending={submissionPending}
-              modelSelectionPending={Boolean(activeModel) && (modelLoading || Boolean(modelError))}
+              modelSelectionPending={modelSelectionBlocked}
               selectedTask={selectedTask}
               selectedQuota={selectedQuota}
               quotaDiagnosticCode={quotaViews.find(view => view.installationId === selectedTask.preferredExecutor.installationId)?.diagnostic}
@@ -1305,7 +1313,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
                 modelPicker={modelPicker}
               permissionPicker={permissionPicker}
                 submissionPending={submissionPending}
-              modelSelectionPending={Boolean(activeModel) && (modelLoading || Boolean(modelError))}
+              modelSelectionPending={modelSelectionBlocked}
                 selectedTask={selectedTask}
                 selectedQuota={selectedQuota}
                 quotaDiagnosticCode={quotaViews.find(view => view.installationId === selectedTask.preferredExecutor.installationId)?.diagnostic}
@@ -1457,7 +1465,6 @@ export function QuotaRing({ quota, providerId, diagnostic, turnQuotaExhausted = 
       {rows.length === 1 ? rows[0][1] : t("quota.balanceCount", { count: rows.length })}
     </span>;
   }
-  if (inline && remaining === null) return null;
   const stale = quota ? quotaIsStale(quota.staleAfterUnixMs) : false;
   const hasFreshReportedWindows = Boolean(
     quota

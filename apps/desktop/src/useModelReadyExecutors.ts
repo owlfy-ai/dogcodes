@@ -19,7 +19,8 @@ export function useModelReadyExecutors(client: CoreClient) {
     }).catch(() => {});
     load();
     // Also recover from a missed native event or a temporary IPC failure.
-    const timer = setInterval(load, 5000);
+    let ticks = 0;
+    const timer = setInterval(() => { ticks++; if (ticks <= 30 || ticks % 5 === 0) load(); }, 1000);
     return () => { active = false; stop?.(); clearInterval(timer); };
   }, [client]);
   return modelReadyIds;

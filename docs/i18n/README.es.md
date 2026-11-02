@@ -191,4 +191,29 @@ pnpm check
 
 Lee [CONTRIBUTING.md](../../CONTRIBUTING.md) antes de abrir un pull request e informa de los problemas de seguridad en privado según [SECURITY.md](../../SECURITY.md).
 
+### Integración de agentes
+
+dog.codes se conecta a cada agente mediante su interfaz de proceso local. ACP significa Agent Client Protocol; los agentes con otra interfaz nativa utilizan un controlador específico.
+
+| Agente | Integración | Instalación compatible |
+| --- | --- | --- |
+| Codex | `app-server` nativo (JSON-RPC) | Cliente de escritorio + CLI |
+| Claude Code | `stream-json` nativo | Cliente de escritorio + CLI |
+| Cursor | ACP (`cursor-agent acp`) | CLI |
+| Kimi Code | ACP (`kimi acp`) | CLI |
+| Grok Build | ACP (`grok agent stdio`) | CLI |
+| ZCode | `app-server` nativo (`zcode.cjs` incluido) | Cliente de escritorio (CLI incluida) |
+| Antigravity | `stream-json` nativo sin interfaz gráfica (`agy`) | CLI |
+| CodeBuddy | ACP (`codebuddy --acp`) | CLI |
+| Pi | RPC nativo (`pi --mode rpc`) | CLI |
+| OpenCode | ACP (`opencode acp`) | Cliente de escritorio + CLI |
+| DeepSeek Harness | ACP (`dsh --profile acp`) | Cliente de escritorio + CLI |
+| Kiro | ACP (`kiro-cli acp`) | CLI |
+
+«Cliente de escritorio» significa reutilizar la CLI o el entorno sin interfaz gráfica que ese cliente incluye o instala, no automatizar su GUI. Debe estar instalado el entorno correspondiente; las rutas de detección y la disponibilidad varían según el sistema operativo y la versión. La detección automática del entorno incluido en OpenCode Desktop está implementada actualmente en Windows.
+
+### Agradecimientos
+
+Computer use utiliza [Cua Driver](https://github.com/trycua/cua), con licencia MIT, para consultar ventanas, tomar capturas e interactuar con el teclado y el ratón. Gracias al equipo de Cua y a sus colaboradores por su trabajo de automatización de escritorio de código abierto. La integración del controlador incluido admite actualmente Windows x64.
+
 Los iconos reutilizan los recursos incluidos en este repositorio; consulta su [procedencia y avisos](../../apps/desktop/src/assets/licenses/README.md). Los nombres y las marcas pertenecen a sus respectivos titulares.

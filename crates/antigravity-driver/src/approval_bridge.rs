@@ -107,7 +107,7 @@ fn verification_key(
         m.len().hash(&mut hash);
         m.modified().ok()?.hash(&mut hash);
     }
-    serde_json::to_string(&workspace.history_mcp)
+    serde_json::to_string(&workspace.app_mcps)
         .ok()?
         .hash(&mut hash);
     workspace.working_directory.hash(&mut hash);
@@ -238,12 +238,12 @@ impl Bridge {
             std::fs::create_dir(directory.path().join(".agents")).map_err(|_| fail())?;
             std::fs::write(directory.path().join(".agents/hooks.json"),json!({"dogcodes-approvals":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":command,"timeout":615}]}]}}).to_string()).map_err(|_|fail())?;
         }
-        if !cache_hit && let Some(mcp) = &workspace.history_mcp {
+        if !cache_hit && !workspace.app_mcps.is_empty() {
             // AGY discovers configuration from the final private workspace root.
             // Keep history and approval hooks together; never rewrite a live cached root.
             std::fs::write(
                 directory.path().join(".agents/mcp_config.json"),
-                json!({"mcpServers":{mcp.name.clone():mcp.server_config()}}).to_string(),
+                json!({"mcpServers":workspace.app_mcps.iter().map(|mcp| (mcp.name.clone(),mcp.server_config())).collect::<serde_json::Map<String,Value>>()} ).to_string(),
             )
             .map_err(|_| fail())?;
         }
@@ -266,8 +266,8 @@ impl Bridge {
         }
         *VERIFIED.lock().expect("hook cache") = None;
         let before_key = verification_key(executable, workspace, bridge.directory.path());
-        let mut cmd = tokio::process::Command::new(executable);
-        cmd.current_dir(&workspace.working_directory)
+        let mut cmd = agent_runtime::agent_command(executable);
+        cmd.current_dir(agent_runtime::external_path(&workspace.working_directory))
             .args(["--add-dir", &workspace.working_directory]);
         for dir in &workspace.additional_directories {
             cmd.arg("--add-dir").arg(dir);
@@ -311,7 +311,7 @@ impl Bridge {
                     return Err(fail());
                 }
                 if !child.wait().await.map_err(|_| fail())?.success() {
-                    return Err(fail());
+                    return Err(probe_failure(&bytes).unwrap_or_else(fail));
                 }
                 Ok(bytes)
             }) => result.map_err(|_| {
@@ -403,12 +403,17 @@ impl Bridge {
             .env("DOGCODES_APPROVAL_ADDR", &self.address)
             .env("DOGCODES_APPROVAL_TOKEN", &self.token);
         if let Ok(exe) = std::env::current_exe() {
-            command.env("DOGCODES_APPROVAL_EXE", format!("\"{}\"", exe.display()));
+            command.env(
+                "DOGCODES_APPROVAL_EXE",
+                format!("\"{}\"", agent_runtime::external_path(exe).display()),
+            );
         }
     }
     pub fn configure(&self, command: &mut tokio::process::Command) {
         self.environment(command);
-        command.arg("--add-dir").arg(self.directory.path());
+        command
+            .arg("--add-dir")
+            .arg(agent_runtime::external_path(self.directory.path()));
     }
     pub fn start(self, process: &Arc<SessionProcess>) -> tokio::task::JoinHandle<()> {
         let mut closing = process.closing.subscribe();
@@ -450,6 +455,16 @@ impl Bridge {
             while requests.join_next().await.is_some() {}
         })
     }
+}
+
+fn probe_failure(output: &[u8]) -> Option<DriverError> {
+    String::from_utf8_lossy(output).lines().find_map(|line| {
+        if let Some(super::Classified::AuthFailure(kind, _)) = super::classify(line) {
+            Some(DriverError::NotConfigured(kind.into()))
+        } else {
+            None
+        }
+    })
 }
 async fn serve(
     socket: tokio::net::TcpStream,
@@ -651,6 +666,16 @@ mod tests {
     use driver_api::{AgentDriver, SessionHandle, SessionResumeCapability};
     use std::{collections::HashMap, sync::atomic::AtomicBool};
     use tokio::sync::mpsc;
+    #[test]
+    fn account_rejection_is_not_reported_as_a_broken_approval_hook() {
+        let denied = json!({"event":"result","result":{"status":"ERROR","error":"Eligibility check failed: Your current account is not eligible for Antigravity, because it is not currently available in your location."}}).to_string();
+        assert!(
+            matches!(probe_failure(denied.as_bytes()), Some(DriverError::NotConfigured(kind)) if kind == "access_denied")
+        );
+        let transport = json!({"event":"result","result":{"status":"ERROR","error":"Eligibility check failed: context deadline exceeded"}}).to_string();
+        assert!(probe_failure(transport.as_bytes()).is_none());
+        assert!(probe_failure(b"not JSON").is_none());
+    }
     fn process() -> (Arc<SessionProcess>, mpsc::UnboundedReceiver<DriverEvent>) {
         let (tx, rx) = mpsc::unbounded_channel();
         (
@@ -995,7 +1020,7 @@ mod tests {
         let private = tempfile::tempdir().unwrap();
         std::fs::write(private.path().join("hook"), "original").unwrap();
         let mut request = SessionRequest {
-            history_mcp: None,
+            app_mcps: vec![],
             working_directory: workspace.path().to_string_lossy().into_owned(),
             additional_directories: vec![],
             permission_mode: Some("desktop-approvals".into()),

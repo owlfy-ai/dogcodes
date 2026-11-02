@@ -3,6 +3,7 @@ import {act} from "react";
 import {createRoot, type Root} from "react-dom/client";
 import {afterEach,beforeEach,expect,it,vi} from "vitest";
 import {PermissionPicker} from "./PermissionPicker";
+import {invalidatePermissionCatalogs} from "./permissionCatalogCache";
 import type {ActiveRunSummary,CoreClient,PermissionCatalog} from "@dogcodes/protocol";
 let host:HTMLDivElement,root:Root;
 beforeEach(()=>{vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);localStorage.clear();host=document.createElement("div");document.body.append(host);root=createRoot(host);});
@@ -118,4 +119,29 @@ it("refreshes the effective policy once a starting run becomes ready",async()=>{
  await act(async()=>root.render(<PermissionPicker client={client} executor={cursor} taskId="tsk_a" run={run} disabled={false} onChange={()=>{}}/>));
  expect(permissionCatalog).toHaveBeenCalledTimes(2);
  expect(host.querySelector('.permission-trigger')?.textContent).toContain("完全访问");
+});
+
+it("keeps usable options visible when a manual refresh fails",async()=>{
+ let fail!:(error:Error)=>void;
+ const read=vi.fn().mockResolvedValueOnce(catalog).mockImplementation(()=>new Promise((_,reject)=>{fail=reject;}));
+ const client={permissionCatalog:read} as unknown as CoreClient;
+ await act(async()=>root.render(<PermissionPicker client={client} executor={executor} taskId="tsk_a" disabled={false} onChange={()=>{}}/>));
+ await act(async()=>host.querySelector<HTMLButtonElement>("button")!.click());
+ await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="刷新"]')!.click());
+ expect(host.querySelectorAll('[role="menuitemradio"]').length).toBe(2);
+ expect(read).toHaveBeenLastCalledWith(executor,undefined,true);
+ await act(async()=>fail(Error("offline")));
+ expect(host.querySelector('[role="alert"]')).not.toBeNull();
+ expect(host.querySelectorAll('[role="menuitemradio"]').length).toBe(2);
+});
+
+it("does not carry an invalidated cached default policy into the next turn",async()=>{
+ let finish!:(value:PermissionCatalog)=>void;
+ const read=vi.fn().mockResolvedValueOnce({...catalog,defaultModeId:"bypass"}).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+ const client={permissionCatalog:read} as unknown as CoreClient;const change=vi.fn();
+ await act(async()=>root.render(<PermissionPicker client={client} executor={executor} taskId="tsk_a" disabled={false} onChange={change}/>));
+ expect(change).toHaveBeenLastCalledWith("bypass");
+ await act(async()=>invalidatePermissionCatalogs(client));expect(change).toHaveBeenLastCalledWith(null);
+ await act(async()=>finish(catalog));expect(change).toHaveBeenLastCalledWith("default");
+ expect(read).toHaveBeenCalledTimes(2);
 });

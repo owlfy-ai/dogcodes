@@ -61,7 +61,7 @@ beforeEach(async () => {
   await act(async () => root.render(<App client={client} />));
 });
 afterEach(async () => { await act(async () => root.unmount()); element.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
-it("changes a saved session's model for the next turn and can reset to native defaults", async () => {
+it("changes a saved session's model and can select the first model again", async () => {
   await click(element.querySelector('[aria-label="选择模型"]')!);
   await click(button("New model"));
   expect(element.querySelector('[aria-label="选择思考强度"]')).toBeNull();
@@ -69,9 +69,10 @@ it("changes a saved session's model for the next turn and can reset to native de
   await typePrompt("use new model"); await send();
   expect(client.submitTurn).toHaveBeenLastCalledWith(expect.anything(), "use new model", "new", null, null, [], expect.any(String));
   await click(element.querySelector('[aria-label="选择模型"]')!);
-  await click(button("默认（推荐）"));
+  expect(element.querySelector(".model-menu")?.textContent).not.toContain("默认（推荐）");
+  await click(button("Old model"));
   await typePrompt("use defaults"); await send();
-  expect(client.submitTurn).toHaveBeenLastCalledWith(expect.anything(), "use defaults", null, null, null, [], expect.any(String));
+  expect(client.submitTurn).toHaveBeenLastCalledWith(expect.anything(), "use defaults", "old", "high", null, [], expect.any(String));
 });
 it("allows selecting next-turn thinking during an active run without dispatching a turn", async () => {
   const task = snapshot.tasks[0];
@@ -116,7 +117,7 @@ it("refreshes a failed model's catalog and preserves the choice until the user r
   expect(available.mock.calls.length).toBeGreaterThan(before);
   await click(element.querySelector('[aria-label="选择模型"]')!);
   expect(element.textContent).toContain("已选模型不在当前列表中");
-  expect(button("默认模型不可用").disabled).toBe(true);
+  expect(element.querySelector(".model-menu")?.textContent).not.toContain("默认模型不可用");
   await click(button("New model"));
   await typePrompt("retry with new model"); await send();
   expect(client.submitTurn).toHaveBeenLastCalledWith(expect.anything(),"retry with new model","new",null,null,[],expect.any(String));
@@ -139,12 +140,13 @@ it.each([null, "ins_old_cursor"])("loads the restored Agent's models when its in
   // while discovery and runtime registration expose only the current executable.
   await act(async () => root.render(<App key="reload" client={client} />));
   expect(element.querySelector('[aria-label="选择模型"]')?.textContent).toContain("Cursor Auto");
-  expect(permissionCatalog).toHaveBeenCalledWith(executor, snapshot.tasks[0].taskId);
+  expect(permissionCatalog).toHaveBeenCalledWith(executor, undefined);
   expect(element.querySelector('[aria-label="权限策略"]')?.textContent).not.toContain("不可用");
   await click(element.querySelector('[aria-label="选择模型"]')!);
   expect(element.querySelector('.model-menu')?.textContent).not.toContain("正在获取");
   expect(availableModels).toHaveBeenCalledTimes(1);
-  expect(availableModels).toHaveBeenCalledWith(executor, null, snapshot.tasks[0].taskId);
+  expect(availableModels).toHaveBeenCalledWith(executor, null, undefined);
+  expect(availableModels).toHaveBeenCalledWith(executor, null, undefined);
 });
 
 it.each([false, true])("recovers a replaced installation after delayed registration (draft: %s)", async (draft) => {
@@ -173,9 +175,9 @@ it.each([false, true])("recovers a replaced installation after delayed registrat
   expect(element.querySelector('[aria-label="选择模型"]')?.textContent).toContain("Recovered model");
   expect(element.querySelector('.model-menu')?.textContent).not.toContain("正在获取");
   expect(element.querySelector('textarea')?.value).toBe("keep my draft");
-  expect(availableModels).toHaveBeenLastCalledWith(executor, null, draft ? undefined : snapshot.tasks[0].taskId);
+  expect(availableModels).toHaveBeenCalledWith(executor, null, undefined);
   // A new draft queries native defaults without sending its synthetic view-model ID.
-  expect(availableModels).toHaveBeenCalledTimes(draft ? 3 : 2);
+  expect(availableModels).toHaveBeenCalledTimes(2);
 });
 
 it.each(["antigravity", "claude-code", "codebuddy", "codex", "cursor", "deepseek-harness", "grok", "kimi", "kiro", "opencode", "pi", "zcode"])(
@@ -225,12 +227,37 @@ it("queries the selected model's thinking options and refreshes without resettin
   ] }));
   Object.assign(client,{availableModels});
   await act(async()=>root.render(<App key="efforts" client={client}/>));
-  expect(availableModels).toHaveBeenLastCalledWith(snapshot.tasks[0].preferredExecutor,"old",snapshot.tasks[0].taskId);
+  expect(availableModels).toHaveBeenLastCalledWith(snapshot.tasks[0].preferredExecutor,"old",undefined);
   await click(element.querySelector('[aria-label="选择模型"]')!);await click(button("New model"));
-  expect(availableModels).toHaveBeenLastCalledWith(snapshot.tasks[0].preferredExecutor,"new",snapshot.tasks[0].taskId);
+  expect(availableModels).toHaveBeenLastCalledWith(snapshot.tasks[0].preferredExecutor,"new",undefined);
   await click(element.querySelector('[aria-label="选择思考强度"]')!);
   await click(element.querySelector('[aria-label="刷新思考强度列表"]')!);
   expect(element.querySelector('[aria-label="选择模型"]')?.textContent).toContain("New model");
   expect(element.querySelector('.model-options')?.textContent).toContain("低");
   expect(client.submitTurn).not.toHaveBeenCalled();
+});
+
+it("waits for the catalog and submits its first model instead of the native default when no model is saved",async()=>{
+ snapshot.sessionMaps=[];
+ let finish!:(catalog:import("@dogcodes/protocol").ModelCatalog)=>void;
+ const availableModels=vi.fn(()=>new Promise<import("@dogcodes/protocol").ModelCatalog>(resolve=>{finish=resolve;}));
+ Object.assign(client,{availableModels});
+ await act(async()=>root.render(<App key="first-model" client={client}/>));
+ await typePrompt("use the first model");await send();
+ expect(client.submitTurn).not.toHaveBeenCalled();
+ await act(async()=>finish({defaultModel:"second",models:[
+  {id:"first",label:"First model",thinkingOptions:[{id:"low",label:"Low"}],defaultThinking:"low"},
+  {id:"second",label:"Native default",thinkingOptions:[],defaultThinking:null},
+ ]}));
+ expect(element.querySelector('[aria-label="选择模型"]')?.textContent).toContain("First model");
+ await send();
+ expect(client.submitTurn).toHaveBeenLastCalledWith(expect.anything(),"use the first model","first","low",null,[],expect.any(String));
+});
+
+it("does not submit an implicit default when the Agent reports no available models",async()=>{
+ snapshot.sessionMaps=[];
+ Object.assign(client,{availableModels:vi.fn(async()=>({defaultModel:null,models:[]}))});
+ await act(async()=>root.render(<App key="no-models" client={client}/>));
+ await typePrompt("wait for a model");await send();
+ expect(client.submitTurn).not.toHaveBeenCalled();
 });
