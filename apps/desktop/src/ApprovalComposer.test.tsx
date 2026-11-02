@@ -85,7 +85,7 @@ it("applies full access to the active Cursor run while an approval is displayed"
   expect(update).toHaveBeenCalledExactlyOnceWith(task.taskId,"run_cursor",executor,"full-access");
   await sync();
   expect(element.querySelector(".approval-card")).toBeNull();
-  expect(element.querySelector('[aria-label="权限策略"]')?.textContent).toContain("完全访问");
+  expect(element.querySelector('[aria-label="权限策略"]')?.textContent).toContain("跳过审批");
 });
 
 it("keeps answers transient and resets a form when a native ID is reused", async () => {

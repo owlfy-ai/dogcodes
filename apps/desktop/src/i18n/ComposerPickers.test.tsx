@@ -32,7 +32,7 @@ it("renders the permission picker in the UI language, including core-built mode 
   for (const lang of ["en", "ja", "zh-CN"] as ResolvedLanguage[]) {
     await act(async () => root.render(<I18nProvider language={lang}><PermissionPicker client={client} executor={{ providerId: "codex", installationId: "ins" }} taskId="tsk_a" disabled={false} onChange={() => {}} /></I18nProvider>));
     const ui = LOCALES[lang].permissionPicker;
-    expect(host.querySelector("button")?.textContent).toContain(ui.mode.edit);
+    expect(host.querySelector("button")?.textContent).toContain(ui.mode.onRequest);
     await click(host.querySelector("button")!);
     expect(host.textContent).toContain(ui.mode.read);
     expect(host.textContent).toContain(ui.mode.full);
@@ -41,6 +41,62 @@ it("renders the permission picker in the UI language, including core-built mode 
     if (lang !== "zh-CN" && lang !== "ja") expect(visibleText()).not.toMatch(/\p{Script=Han}/u);
     await click(host.querySelector("button")!);
   }
+});
+
+const mode = (id: string, dangerous = false) => ({ id, label: "核心模式", description: "核心生成的说明", dangerous });
+const agentCatalogs: Record<string, PermissionCatalog["modes"]> = {
+  cursor: [mode("default"), mode("full-access", true)],
+  codex: [mode("read-only"), mode("default"), mode("full-access", true)],
+  "claude-code": ["plan", "default", "acceptEdits", "auto", "dontAsk"].map(id => mode(id)).concat(mode("bypassPermissions", true)),
+  codebuddy: ["default", "acceptEdits", "plan", "auto", "dontAsk"].map(id => mode(id)).concat(mode("bypassPermissions", true), mode("fullAccess", true)),
+  grok: [mode("ask"), mode("auto"), mode("always-approve", true)],
+  zcode: ["build", "edit", "plan", "auto"].map(id => mode(id)).concat(mode("yolo", true)),
+  kimi: [mode("default"), mode("yolo"), mode("plan"), mode("auto", true)],
+  kiro: [mode("on", true), mode("off")],
+  opencode: [mode("build"), mode("plan")],
+  antigravity: [mode("desktop-approvals"), mode("plan"), mode("dangerously-skip-permissions", true)],
+  pi: [mode("native", true)],
+  "deepseek-harness": [mode("configured")],
+};
+
+it("translates every core-built permission mode and gives each mode its own icon", async () => {
+  const iconByLabel = new Map<string, string>();
+  const labelByIcon = new Map<string, string>();
+  for (const [providerId, modes] of Object.entries(agentCatalogs)) {
+    const client = { permissionCatalog: vi.fn(async () => ({ defaultModeId: modes[0].id, modes })) } as unknown as CoreClient;
+    await act(async () => root.render(<I18nProvider language="en"><PermissionPicker client={client} executor={{ providerId, installationId: `ins_${providerId}` }} taskId="tsk_a" disabled={false} onChange={() => {}} /></I18nProvider>));
+    await click(host.querySelector("button")!);
+    const icons = [...host.querySelectorAll('[role="menuitemradio"] .permission-icon')].map(node => node.getAttribute("data-icon"));
+    expect(icons, providerId).toHaveLength(modes.length);
+    expect(new Set(icons).size, providerId).toBe(modes.length);
+    expect(visibleText(), providerId).not.toMatch(/\p{Script=Han}/u);
+    for (const item of host.querySelectorAll('[role="menuitemradio"]')) {
+      const label = item.querySelector("strong")!.textContent!;
+      const icon = item.querySelector(".permission-icon")!.getAttribute("data-icon")!;
+      expect(item.classList.contains("dangerous"), `${providerId}: ${label}`).toBe(icon === "full");
+      expect(iconByLabel.get(label) ?? icon, `${providerId}: ${label}`).toBe(icon);
+      expect(labelByIcon.get(icon) ?? label, `${providerId}: ${icon}`).toBe(label);
+      iconByLabel.set(label, icon);
+      labelByIcon.set(icon, label);
+    }
+    await act(async () => root.render(<></>));
+  }
+  expect(labelByIcon.size).toBe(10);
+});
+
+it("keeps native mode text and still distinguishes icons for unknown ACP agents", async () => {
+  const modes = [
+    { id: "default", label: "Default", description: "", dangerous: false },
+    { id: "bypassPermissions", label: "Bypass", description: "Skip prompts", dangerous: true },
+    { id: "fullAccess", label: "Everything", description: "No checks", dangerous: true },
+  ];
+  const client = { permissionCatalog: vi.fn(async () => ({ defaultModeId: "default", modes })) } as unknown as CoreClient;
+  await act(async () => root.render(<I18nProvider language="en"><PermissionPicker client={client} executor={{ providerId: "new-agent", installationId: "ins_new" }} taskId="tsk_a" disabled={false} onChange={() => {}} /></I18nProvider>));
+  await click(host.querySelector("button")!);
+  const items = [...host.querySelectorAll('[role="menuitemradio"]')];
+  expect(items.map(node => node.querySelector("strong")?.textContent)).toEqual(["Default", "Bypass", "Everything"]);
+  expect(items[0].querySelector("small")).toBeNull();
+  expect(items.map(node => node.querySelector(".permission-icon")?.getAttribute("data-icon"))).toEqual(["ask", "bypass", "full"]);
 });
 
 it("translates known reasoning efforts and keeps unknown agent labels", async () => {

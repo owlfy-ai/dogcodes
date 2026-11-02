@@ -66,7 +66,7 @@ it("applies a running policy before updating the label and saved choice",async()
  expect(host.textContent).toContain("正在应用权限策略");
  expect(localStorage.getItem("dogcodes.permissions:tsk_a:cursor:ins_cursor")).toBeNull();
  await act(async()=>finish());
- expect(host.querySelector('.permission-trigger')?.textContent).toContain("完全访问");
+ expect(host.querySelector('.permission-trigger')?.textContent).toContain("跳过审批");
  expect(change).toHaveBeenLastCalledWith("full-access");
  expect(localStorage.getItem("dogcodes.permissions:tsk_a:cursor:ins_cursor")).toBe("full-access");
 });
@@ -89,7 +89,7 @@ it("reads the current run's policy rather than another task's cached catalog",as
  await act(async()=>root.render(<PermissionPicker client={client} executor={cursor} taskId="tsk_a" disabled={false} onChange={()=>{}}/>));
  await act(async()=>root.render(<PermissionPicker client={client} executor={cursor} taskId="tsk_b" run={run} disabled={false} onChange={()=>{}}/>));
  expect(permissionCatalog).toHaveBeenCalledTimes(2);
- expect(host.querySelector('.permission-trigger')?.textContent).toContain("完全访问");
+ expect(host.querySelector('.permission-trigger')?.textContent).toContain("跳过审批");
 });
 it("disables live changes for an unsupported Agent or a different running executor",async()=>{
  const client={permissionCatalog:vi.fn(async()=>catalog),setRunningPermissionMode:vi.fn()} as unknown as CoreClient;
@@ -118,7 +118,7 @@ it("refreshes the effective policy once a starting run becomes ready",async()=>{
  expect(host.querySelector<HTMLButtonElement>("button")!.disabled).toBe(true);
  await act(async()=>root.render(<PermissionPicker client={client} executor={cursor} taskId="tsk_a" run={run} disabled={false} onChange={()=>{}}/>));
  expect(permissionCatalog).toHaveBeenCalledTimes(2);
- expect(host.querySelector('.permission-trigger')?.textContent).toContain("完全访问");
+ expect(host.querySelector('.permission-trigger')?.textContent).toContain("跳过审批");
 });
 
 it("keeps usable options visible when a manual refresh fails",async()=>{

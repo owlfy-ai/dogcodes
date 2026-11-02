@@ -215,10 +215,7 @@ pub fn acp(state: &serde_json::Value) -> PermissionCatalog {
                 catalog.modes.push(PermissionMode {
                     id: id.into(),
                     label: row["name"].as_str().unwrap_or(id).into(),
-                    description: row["description"]
-                        .as_str()
-                        .unwrap_or("Agent 原生会话模式")
-                        .into(),
+                    description: row["description"].as_str().unwrap_or_default().into(),
                     dangerous: is_dangerous_mode_id(id),
                 });
             }

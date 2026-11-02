@@ -7,7 +7,7 @@ import { focusComposerInput } from "./composerFocus";
 import { useEffect, useRef, useState } from "react";
 import type { ActiveRunSummary, CoreClient, ExecutorRef, PermissionCatalog, TaskId } from "@dogcodes/protocol";
 import "./permissions.css";
-import { permissionPresentation } from "./permissionPresentation";
+import { permissionKind, permissionPresentation } from "./permissionPresentation";
 import { permissionCatalogEntry, subscribePermissionCatalog } from "./permissionCatalogCache";
 import { PermissionIcon } from "./PermissionIcon";
 import { useI18n } from "./i18n";
@@ -103,7 +103,7 @@ export function PermissionPicker({client,executor,taskId,version,run,disabled,on
   // With nothing to choose, the trigger only reports the default policy instead of opening an empty menu.
   const fixed=Boolean(catalog && !catalog.modes.length && !error);
   return <div className="permission-picker" data-provider={executor.providerId} ref={host}>
-    <button type="button" className={`permission-trigger ${current?.dangerous && executor.providerId !== "zcode"?"dangerous":""}`} disabled={blocked} aria-disabled={fixed||undefined} data-fixed={fixed||undefined}
+    <button type="button" className={`permission-trigger ${current && permissionKind(executor.providerId, current) === "full"?"dangerous":""}`} disabled={blocked} aria-disabled={fixed||undefined} data-fixed={fixed||undefined}
       data-tooltip={run&&!liveSupported?t("permissionPicker.runningUnsupported"):fixed?t("permissionPicker.fixedTooltip"):t("permissionPicker.currentTooltip", { label: currentLabel })}
       aria-label={t("permissionPicker.title")} aria-expanded={fixed?undefined:open} aria-haspopup={fixed?undefined:"menu"} onClick={()=>{if(!fixed)setOpen(!open);}}>
       <PermissionIcon providerId={executor.providerId} mode={current} /> <span className="composer-control-label">{currentLabel}</span> {!fixed&&<DropdownChevron />}
@@ -118,7 +118,7 @@ export function PermissionPicker({client,executor,taskId,version,run,disabled,on
     }}>
       <div className="permission-menu-header"><span>{t("permissionPicker.title")}</span><button type="button" disabled={catalogLoading||blocked} aria-label={t("activity.refresh")} data-tooltip={t("activity.refresh")} onClick={()=>{force.current=true;setRetry(n=>n+1);}}>↻</button></div>
       {error&&<InlineError className="permission-error" onRetry={()=>{force.current=true;setRetry(n=>n+1);}}>{t(error==="busy"?"permissionPicker.busyError":"permissionPicker.loadError")}</InlineError>}
-      {!catalog?error?null:<LoadingStatus className="permission-empty">{t("permissionPicker.loading")}</LoadingStatus>:!modes.length?<div className="permission-empty">{t("permissionPicker.noModes")}</div>:modes.map(mode=><button type="button" role="menuitemradio" disabled={blocked} aria-checked={selected===mode.id} key={mode.id} className={mode.dangerous && executor.providerId !== "zcode"?"dangerous":""} onClick={()=>void select(mode.id)}><PermissionIcon providerId={executor.providerId} mode={mode} /><span><strong>{mode.label}</strong><small>{mode.description}</small></span><span aria-hidden="true">{selected===mode.id?"✓":""}</span></button>)}
+      {!catalog?error?null:<LoadingStatus className="permission-empty">{t("permissionPicker.loading")}</LoadingStatus>:!modes.length?<div className="permission-empty">{t("permissionPicker.noModes")}</div>:modes.map(mode=><button type="button" role="menuitemradio" disabled={blocked} aria-checked={selected===mode.id} key={mode.id} className={permissionKind(executor.providerId, mode) === "full"?"dangerous":""} onClick={()=>void select(mode.id)}><PermissionIcon providerId={executor.providerId} mode={mode} /><span><strong>{mode.label}</strong>{mode.description&&<small>{mode.description}</small>}</span><span aria-hidden="true">{selected===mode.id?"✓":""}</span></button>)}
       {selectionError&&<InlineError className="permission-error">{t("permissionPicker.notChanged", { reason: selectionError })}</InlineError>}
       <div className="permission-hint">{updating?<LoadingStatus>{t("permissionPicker.applying")}</LoadingStatus>:t(run?"permissionPicker.appliesNow":"permissionPicker.appliesNextTurn")}</div>
     </FloatingPopover>}
