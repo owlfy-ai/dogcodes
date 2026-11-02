@@ -32,6 +32,16 @@ pub(super) fn bundle(executable: &Path) -> Option<PathBuf> {
     Some(app.into())
 }
 
+// The standalone installer owns only its per-user launcher; copies managed by a
+// system package manager must keep using that channel.
+pub(super) fn standalone(executable: &Path) -> bool {
+    if cfg!(windows) {
+        executable.file_name().is_some_and(|n| n == "kiro-cli.exe")
+    } else {
+        executable.ends_with(".local/bin/kiro-cli")
+    }
+}
+
 fn matches_package(package: &Value) -> bool {
     package["targetTriple"] == "universal-apple-darwin"
         && package["variant"] == "full"
@@ -214,6 +224,26 @@ pub(super) mod tests {
         )
         .unwrap();
         assert!(matches!(plan(&i), Plan::Host(_)));
+    }
+
+    #[test]
+    fn standalone_launcher_uses_native_update_but_other_copies_only_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let name = if cfg!(windows) { "kiro-cli.exe" } else { "kiro-cli" };
+        let launcher = dir.path().join(".local/bin").join(name);
+        let other = dir.path().join("usr/bin/kiro");
+        for path in [&launcher, &other] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "").unwrap();
+        }
+        let i = installation_for("kiro", &launcher, "2.36.0");
+        let p = plan(&i);
+        assert!(matches!(p, Plan::Native(_)));
+        assert_eq!(install_spec(&i, &p, "2.37.1").unwrap().args, ["update"]);
+        assert!(matches!(
+            plan(&installation_for("kiro", &other, "2.36.0")),
+            Plan::Unsupported
+        ));
     }
 
     #[test]

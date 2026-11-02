@@ -179,13 +179,13 @@ fn plan(i: &InstallationSummary) -> Plan {
     if let Some(app) = host_app(&i.provider_id, &real) {
         return Plan::Host(app);
     }
-    if cfg!(windows) {
-        if let Some(plan) = windows::npm_plan(&i.provider_id, &real) {
-            return plan;
-        }
-        if i.provider_id == "kiro" && real.file_name().is_some_and(|n| n == "kiro-cli.exe") {
-            return Plan::Native("Kiro 原生更新器");
-        }
+    if cfg!(windows)
+        && let Some(plan) = windows::npm_plan(&i.provider_id, &real)
+    {
+        return plan;
+    }
+    if i.provider_id == "kiro" && kiro::standalone(&real) {
+        return Plan::Native("Kiro 原生更新器");
     }
     if i.provider_id == "pi" && new_agents::pi_managed_root(&real).is_some() {
         return Plan::Native("Pi 原生更新器");
