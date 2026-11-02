@@ -1,6 +1,25 @@
 //! Native permission policies. IDs are opaque outside the owning driver.
 use crate::DriverError;
 use serde::{Deserialize, Serialize};
+
+/// Native IDs that disable approvals entirely. Agents that report modes
+/// dynamically are classified with this one list.
+pub const DANGEROUS_MODE_IDS: &[&str] = &[
+    "full-access",
+    "fullAccess",
+    "danger-full-access",
+    "bypassPermissions",
+    "always-approve",
+    "yolo",
+    "dangerously-skip-permissions",
+    "auto-approve",
+    "allow-all",
+];
+
+#[must_use]
+pub fn is_dangerous_mode_id(id: &str) -> bool {
+    DANGEROUS_MODE_IDS.contains(&id)
+}
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionCatalog {
@@ -48,19 +67,11 @@ impl PermissionCatalog {
     /// Review runs explicitly use full native permissions; the prompt defines the no-edit intent.
     #[must_use]
     pub fn review_mode(&self) -> Option<String> {
-        for id in [
-            "full-access",
-            "fullAccess",
-            "bypassPermissions",
-            "always-approve",
-            "yolo",
-            "dangerously-skip-permissions",
-            "auto-approve",
-        ] {
+        for id in DANGEROUS_MODE_IDS {
             if let Some(mode) = self
                 .modes
                 .iter()
-                .find(|mode| mode.id == id && mode.dangerous)
+                .find(|mode| mode.id == *id && mode.dangerous)
             {
                 return Some(mode.id.clone());
             }
@@ -121,7 +132,7 @@ pub fn codex() -> PermissionCatalog {
             (
                 "default",
                 "默认",
-                "工作区写入沙箱；受保护的操作请求审批。",
+                "工作区写入沙箱；需要越出沙箱时请求审批。",
                 false,
             ),
             ("full-access", "完全访问", "关闭沙箱并跳过审批。", true),
@@ -152,6 +163,12 @@ pub fn claude() -> PermissionCatalog {
                 false,
             ),
             (
+                "dontAsk",
+                "不询问",
+                "只运行预先允许的工具，其余直接拒绝，不请求审批。",
+                false,
+            ),
+            (
                 "bypassPermissions",
                 "跳过权限检查",
                 "跳过 Claude Code 工具权限检查。",
@@ -169,6 +186,12 @@ pub fn antigravity() -> PermissionCatalog {
                 "desktop-approvals",
                 "桌面审批",
                 "每次工具执行前在此审批；审批桥不可用时拒绝执行。",
+                false,
+            ),
+            (
+                "plan",
+                "计划模式",
+                "使用 Antigravity 原生计划模式；工具执行仍在此审批。",
                 false,
             ),
             (
@@ -196,10 +219,7 @@ pub fn acp(state: &serde_json::Value) -> PermissionCatalog {
                         .as_str()
                         .unwrap_or("Agent 原生会话模式")
                         .into(),
-                    dangerous: matches!(
-                        id,
-                        "yolo" | "bypassPermissions" | "full-access" | "auto-approve"
-                    ),
+                    dangerous: is_dangerous_mode_id(id),
                 });
             }
         }
@@ -235,6 +255,7 @@ pub fn zcode() -> PermissionCatalog {
             ("build", "变更前确认", "改文件前先问我。", false),
             ("edit", "自动编辑", "自动编辑文件。", false),
             ("plan", "计划模式", "编辑前先出计划。", false),
+            ("auto", "自动判断", "由 ZCode 判断哪些操作可直接执行。", false),
             ("yolo", "完全访问", "减少确认次数。", true),
         ],
     )
@@ -242,8 +263,18 @@ pub fn zcode() -> PermissionCatalog {
 
 #[must_use]
 pub fn claude_with_auto(supported: bool) -> PermissionCatalog {
+    claude_for(supported, true)
+}
+
+/// Claude Code exits at startup when root requests a bypass outside a
+/// declared sandbox, so such hosts never see the mode.
+#[must_use]
+pub fn claude_for(auto: bool, bypass: bool) -> PermissionCatalog {
     let mut catalog = claude();
-    if supported {
+    if !bypass {
+        catalog.modes.retain(|mode| mode.id != "bypassPermissions");
+    }
+    if auto {
         catalog.modes.insert(
             3,
             PermissionMode {
@@ -287,6 +318,30 @@ mod tests {
         assert!(claude_with_auto(false).validate(Some("auto")).is_err());
         assert!(claude_with_auto(true).validate(Some("auto")).is_ok());
         assert!(codex().validate(Some("bypassPermissions")).is_err());
+    }
+    #[test]
+    fn unsandboxed_root_never_sees_claude_bypass() {
+        let catalog = claude_for(true, false);
+        assert!(catalog.validate(Some("bypassPermissions")).is_err());
+        assert!(catalog.validate(Some("dontAsk")).is_ok());
+        assert_eq!(catalog.review_mode().as_deref(), Some("default"));
+        let ids: Vec<_> = claude_for(true, true)
+            .modes
+            .into_iter()
+            .map(|mode| mode.id)
+            .collect();
+        assert_eq!(
+            ids,
+            ["plan", "default", "acceptEdits", "auto", "dontAsk", "bypassPermissions"]
+        );
+    }
+    #[test]
+    fn native_modes_added_to_static_catalogs_stay_safe() {
+        assert!(zcode().validate(Some("auto")).is_ok());
+        assert!(antigravity().validate(Some("plan")).is_ok());
+        for catalog in [zcode(), antigravity(), claude()] {
+            assert!(catalog.modes.iter().all(|mode| mode.dangerous == is_dangerous_mode_id(&mode.id)));
+        }
     }
     #[test]
     fn acp_preserves_native_ids_and_current_mode() {

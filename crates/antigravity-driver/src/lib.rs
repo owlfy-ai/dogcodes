@@ -690,18 +690,21 @@ fn spawn_workspace(
     }
     let mode = workspace.and_then(|w| w.permission_mode.as_deref());
     driver_api::permissions::antigravity().validate(mode)?;
-    if mode == Some("desktop-approvals") && bridge.is_none() {
+    if matches!(mode, Some("desktop-approvals" | "plan")) && bridge.is_none() {
         return Err(DriverError::CapabilityUnavailable(
             "桌面审批桥尚未验证".into(),
         ));
     }
     // Headless native permission prompts cannot consume approval replies.
-    // Desktop mode instead gates every tool through the verified, live Hook.
+    // Desktop modes instead gate every tool through the verified, live Hook.
     if matches!(
         mode,
-        Some("desktop-approvals" | "dangerously-skip-permissions")
+        Some("desktop-approvals" | "plan" | "dangerously-skip-permissions")
     ) {
         command.arg("--dangerously-skip-permissions");
+    }
+    if mode == Some("plan") {
+        command.arg("--mode").arg("plan");
     }
     if let Some(workspace) = workspace {
         command.current_dir(&workspace.working_directory);

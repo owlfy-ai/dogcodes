@@ -66,7 +66,9 @@ async fn real_approval_deny_then_allow_only_in_temporary_workspace() {
             .unwrap();
         let mut stream = driver.prompt(&session, PromptRequest {
                         attachments: vec![],
-            permission_mode: None,
+            // The workspace preset writes inside the sandbox without asking;
+            // a read-only sandbox makes this write a real approval.
+            permission_mode: Some("read-only".into()),
             additional_directories: vec![],
             working_directory:cwd,
             prompt: "Approval integration test. Use a shell tool to run exactly: printf DOGCODES_APPROVAL_OK > approval.txt . Request approval if required. Do not use apply_patch or other tools. If denied, stop immediately and report denied. Do not access any other paths.".into(),

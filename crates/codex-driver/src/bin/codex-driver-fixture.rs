@@ -37,7 +37,7 @@ fn main() {
                     analysis = request.pointer("/params/ephemeral") == Some(&json!(true));
                     assert_eq!(
                         request.pointer("/params/approvalPolicy"),
-                        Some(&json!(if analysis { "never" } else { "untrusted" }))
+                        Some(&json!(if analysis { "never" } else { "on-request" }))
                     );
                     if analysis {
                         full_review = request["params"]["sandbox"] == "danger-full-access";

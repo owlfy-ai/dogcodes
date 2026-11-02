@@ -463,7 +463,7 @@ impl CodexDriver {
                 "thread/start",
                 json!({
                     "cwd": request.working_directory,
-                    "approvalPolicy": if analysis { "never" } else { "untrusted" },
+                    "approvalPolicy": if analysis { "never" } else { "on-request" },
                     "sandbox": if full_review { "danger-full-access" } else if analysis { "read-only" } else { "workspace-write" },
                     "ephemeral": analysis,
                     "experimentalRawEvents": true,
@@ -1383,7 +1383,9 @@ async fn start_turn(
             params["sandboxPolicy"] = json!({"type":"readOnly"});
         }
         _ => {
-            params["approvalPolicy"] = json!("untrusted");
+            // Codex's own workspace preset: the sandbox bounds routine work and
+            // the agent asks only when it needs to leave it.
+            params["approvalPolicy"] = json!("on-request");
             let roots: Vec<_> = std::iter::once(&request.working_directory)
                 .chain(&request.additional_directories)
                 .collect();

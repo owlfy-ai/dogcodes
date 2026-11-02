@@ -67,7 +67,24 @@ const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 /// without it reports "Not logged in" and cannot renew its token.
 const ENV_ALLOWLIST: &[&str] = &[
     "PATH", "HOME", "USER", "LOGNAME", "LANG", "TZ", "TMPDIR", "TERM",
+    // Sandbox declarations that Claude Code requires before root may bypass.
+    "IS_SANDBOX", "CLAUDE_CODE_BUBBLEWRAP",
 ];
+
+/// Mirrors Claude Code's startup rule: root may bypass permissions only
+/// inside a declared sandbox, otherwise the CLI exits before the first turn.
+fn bypass_permissions_available() -> bool {
+    #[cfg(unix)]
+    let root = nix::unistd::geteuid().is_root();
+    #[cfg(not(unix))]
+    let root = false;
+    let declared = |name: &str| {
+        std::env::var(name).is_ok_and(|value| {
+            ["1", "true", "yes", "on"].contains(&value.trim().to_ascii_lowercase().as_str())
+        })
+    };
+    !root || declared("IS_SANDBOX") || declared("CLAUDE_CODE_BUBBLEWRAP")
+}
 
 pub struct ClaudeLaunch {
     pub executable: PathBuf,
@@ -784,7 +801,8 @@ fn spawn_selected(
     for directory in additional_directories {
         command.arg("--add-dir").arg(directory);
     }
-    driver_api::permissions::claude_with_auto(true).validate(permission)?;
+    driver_api::permissions::claude_for(true, bypass_permissions_available())
+        .validate(permission)?;
     let mut args = session_args(session_uuid, resume);
     if let Some(mode) = permission {
         let index = args.iter().position(|a| a == "--permission-mode").unwrap();
@@ -1410,6 +1428,12 @@ impl AgentDriver for ClaudeDriver {
         directory: &str,
         additional: &[String],
     ) -> Result<SessionHandle, DriverError> {
+        // Without a usable bypass the review runner answers native approvals.
+        let review_permission = if bypass_permissions_available() {
+            "bypassPermissions"
+        } else {
+            "default"
+        };
         let id = uuid::Uuid::new_v4().to_string();
         let child = spawn_selected(
             &ClaudeLaunch {
@@ -1421,7 +1445,7 @@ impl AgentDriver for ClaudeDriver {
             additional,
             SessionSelection {
                 analysis_only: true,
-                permission: Some("bypassPermissions"),
+                permission: Some(review_permission),
                 ..SessionSelection::default()
             },
             None,
@@ -1431,7 +1455,7 @@ impl AgentDriver for ClaudeDriver {
                 &id,
                 child,
                 directory.into(),
-                Some("bypassPermissions".into()),
+                Some(review_permission.into()),
                 false,
             )
             .await?;
@@ -1443,7 +1467,10 @@ impl AgentDriver for ClaudeDriver {
         workspace: Option<&str>,
     ) -> Result<driver_api::PermissionCatalog, DriverError> {
         let (_, auto) = models::read_with_auto(self, workspace).await?;
-        Ok(driver_api::permissions::claude_with_auto(auto))
+        Ok(driver_api::permissions::claude_for(
+            auto,
+            bypass_permissions_available(),
+        ))
     }
     fn executor(&self) -> &ExecutorRef {
         &self.executor

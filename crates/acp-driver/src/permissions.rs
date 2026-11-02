@@ -19,7 +19,7 @@ pub(super) fn catalog(state: &Value) -> PermissionCatalog {
                         .as_str()
                         .unwrap_or("Agent 原生权限模式")
                         .into(),
-                    dangerous: matches!(id, "bypassPermissions" | "fullAccess")
+                    dangerous: permissions::is_dangerous_mode_id(id)
                         || (mode["id"] == "autopilot" && id == "on"),
                 })
             })
@@ -175,6 +175,20 @@ mod tests {
         assert_eq!(c.default_mode_id.as_deref(), Some("default"));
         assert!(c.modes[1].dangerous);
         assert!(c.validate(Some("plan")).is_err());
+    }
+    #[test]
+    fn full_access_ids_are_dangerous_on_both_native_mode_channels() {
+        for id in ["danger-full-access", "yolo", "fullAccess", "bypassPermissions"] {
+            let config = catalog(&json!({"configOptions":[{"id":"mode","type":"select","currentValue":"default","options":[
+                {"value":"default","name":"Default"},{"value":id,"name":id}
+            ]}]}));
+            assert!(config.modes[1].dangerous, "{id} via configOptions");
+            let modes = catalog(&json!({"modes":{"currentModeId":"default","availableModes":[
+                {"id":"default"},{"id":id}
+            ]}}));
+            assert!(modes.modes[1].dangerous, "{id} via availableModes");
+            assert_eq!(modes.review_mode().as_deref(), Some(id));
+        }
     }
     #[test]
     fn missing_native_modes_only_offers_configured_rules() {
