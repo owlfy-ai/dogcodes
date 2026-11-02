@@ -229,7 +229,11 @@ pub(super) mod tests {
     #[test]
     fn standalone_launcher_uses_native_update_but_other_copies_only_check() {
         let dir = tempfile::tempdir().unwrap();
-        let name = if cfg!(windows) { "kiro-cli.exe" } else { "kiro-cli" };
+        let name = if cfg!(windows) {
+            "kiro-cli.exe"
+        } else {
+            "kiro-cli"
+        };
         let launcher = dir.path().join(".local/bin").join(name);
         let other = dir.path().join("usr/bin/kiro");
         for path in [&launcher, &other] {

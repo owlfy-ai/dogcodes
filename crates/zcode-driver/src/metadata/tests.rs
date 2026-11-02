@@ -248,10 +248,12 @@ async fn cancelling_an_account_probe_stops_both_original_helpers_before_the_next
     let driver = driver(launch);
     let first_driver = driver.clone();
     let first = tokio::spawn(async move { first_driver.model_catalog().await });
+    // The account helper can record itself before the catalog process flushes
+    // its own spawn line. Wait until both original helpers are recorded.
     wait_for(|| {
-        records(root.path())
-            .iter()
-            .any(|row| row["method"] == "account.spawn")
+        let rows = records(root.path());
+        rows.iter().any(|row| row["method"] == "native.spawn")
+            && rows.iter().any(|row| row["method"] == "account.spawn")
     })
     .await;
     let original = ids(root.path());

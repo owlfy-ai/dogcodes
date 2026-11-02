@@ -68,9 +68,17 @@ const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 /// secret: on macOS Claude Code finds its keychain login by account name, and
 /// without it reports "Not logged in" and cannot renew its token.
 const ENV_ALLOWLIST: &[&str] = &[
-    "PATH", "HOME", "USER", "LOGNAME", "LANG", "TZ", "TMPDIR", "TERM",
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "LANG",
+    "TZ",
+    "TMPDIR",
+    "TERM",
     // Sandbox declarations that Claude Code requires before root may bypass.
-    "IS_SANDBOX", "CLAUDE_CODE_BUBBLEWRAP",
+    "IS_SANDBOX",
+    "CLAUDE_CODE_BUBBLEWRAP",
 ];
 
 /// Mirrors Claude Code's startup rule: root may bypass permissions only

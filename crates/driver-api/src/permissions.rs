@@ -252,7 +252,12 @@ pub fn zcode() -> PermissionCatalog {
             ("build", "变更前确认", "改文件前先问我。", false),
             ("edit", "自动编辑", "自动编辑文件。", false),
             ("plan", "计划模式", "编辑前先出计划。", false),
-            ("auto", "自动判断", "由 ZCode 判断哪些操作可直接执行。", false),
+            (
+                "auto",
+                "自动判断",
+                "由 ZCode 判断哪些操作可直接执行。",
+                false,
+            ),
             ("yolo", "完全访问", "减少确认次数。", true),
         ],
     )
@@ -329,7 +334,14 @@ mod tests {
             .collect();
         assert_eq!(
             ids,
-            ["plan", "default", "acceptEdits", "auto", "dontAsk", "bypassPermissions"]
+            [
+                "plan",
+                "default",
+                "acceptEdits",
+                "auto",
+                "dontAsk",
+                "bypassPermissions"
+            ]
         );
     }
     #[test]
@@ -337,7 +349,12 @@ mod tests {
         assert!(zcode().validate(Some("auto")).is_ok());
         assert!(antigravity().validate(Some("plan")).is_ok());
         for catalog in [zcode(), antigravity(), claude()] {
-            assert!(catalog.modes.iter().all(|mode| mode.dangerous == is_dangerous_mode_id(&mode.id)));
+            assert!(
+                catalog
+                    .modes
+                    .iter()
+                    .all(|mode| mode.dangerous == is_dangerous_mode_id(&mode.id))
+            );
         }
     }
     #[test]

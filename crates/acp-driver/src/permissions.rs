@@ -175,14 +175,23 @@ mod tests {
     }
     #[test]
     fn full_access_ids_are_dangerous_on_both_native_mode_channels() {
-        for id in ["danger-full-access", "yolo", "fullAccess", "bypassPermissions"] {
-            let config = catalog(&json!({"configOptions":[{"id":"mode","type":"select","currentValue":"default","options":[
-                {"value":"default","name":"Default"},{"value":id,"name":id}
-            ]}]}));
+        for id in [
+            "danger-full-access",
+            "yolo",
+            "fullAccess",
+            "bypassPermissions",
+        ] {
+            let config = catalog(
+                &json!({"configOptions":[{"id":"mode","type":"select","currentValue":"default","options":[
+                    {"value":"default","name":"Default"},{"value":id,"name":id}
+                ]}]}),
+            );
             assert!(config.modes[1].dangerous, "{id} via configOptions");
-            let modes = catalog(&json!({"modes":{"currentModeId":"default","availableModes":[
-                {"id":"default"},{"id":id}
-            ]}}));
+            let modes = catalog(
+                &json!({"modes":{"currentModeId":"default","availableModes":[
+                    {"id":"default"},{"id":id}
+                ]}}),
+            );
             assert!(modes.modes[1].dangerous, "{id} via availableModes");
             assert_eq!(modes.review_mode().as_deref(), Some(id));
         }
