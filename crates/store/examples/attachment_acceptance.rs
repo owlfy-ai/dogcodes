@@ -5,6 +5,7 @@ use driver_api::{
 use futures::StreamExt;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 type Error = Box<dyn std::error::Error>;
+const ATTACHMENT_IMAGE: &[u8] = include_bytes!("../../../apps/desktop/src/assets/kimi.svg");
 async fn driver(name: &str, installation: &str) -> Result<Arc<dyn AgentDriver>, Error> {
     let home = std::env::var("HOME")?;
     Ok(match name {
@@ -127,11 +128,8 @@ async fn run() -> Result<(), Error> {
         .to_string_lossy()
         .into_owned();
     let directory = std::fs::canonicalize(attachments.path())?;
-    let image = directory.join("sample.png");
-    std::fs::write(
-        &image,
-        include_bytes!("../../../apps/desktop/src/assets/kimi.png"),
-    )?;
+    let image = directory.join("sample.svg");
+    std::fs::write(&image, ATTACHMENT_IMAGE)?;
     let file = directory.join("reference #1.txt");
     let nonce = agent_domain::InstallationId::new().to_string();
     std::fs::write(&file, format!("ATTACHMENT_TEST_TOKEN={nonce}"))?;
@@ -156,7 +154,7 @@ async fn run() -> Result<(), Error> {
             permission_mode: scope.permission_mode, context: vec![],
             prompt: "Read the two user attachments. Describe the image's large letter and background color. Read the attached text file and repeat its exact ATTACHMENT_TEST_TOKEN. Use native read tools if needed. If no file reader exists, a read-only /bin/cat command for the attached text file is allowed. Do not execute other commands, edit files, or delegate.".into(),
             attachments: vec![
-                agent_domain::PromptAttachment { integrity: None, name:"sample.png".into(), path:image.to_string_lossy().into(), mime_type:"image/png".into() },
+                agent_domain::PromptAttachment { integrity: None, name:"sample.svg".into(), path:image.to_string_lossy().into(), mime_type:"image/svg+xml".into() },
                 agent_domain::PromptAttachment { integrity: None, name:"reference #1.txt".into(), path:file.to_string_lossy().into(), mime_type:"text/plain".into() },
             ],
         }).await?;
@@ -182,8 +180,8 @@ async fn run() -> Result<(), Error> {
                                 // CodeBuddy stages our inline image in its own clipboard cache and asks to read it.
                                 // Approve only the exact bytes sent by this test, never an arbitrary cached image.
                                 name == "codebuddy" && path.parent().is_some_and(|p| p.ends_with("workbuddy-clipboard-images"))
-                                    && std::fs::metadata(&path).is_ok_and(|m| m.len() == include_bytes!("../../../apps/desktop/src/assets/kimi.png").len() as u64)
-                                    && std::fs::read(path).is_ok_and(|bytes| bytes == include_bytes!("../../../apps/desktop/src/assets/kimi.png"))
+                                    && std::fs::metadata(&path).is_ok_and(|m| m.len() == ATTACHMENT_IMAGE.len() as u64)
+                                    && std::fs::read(path).is_ok_and(|bytes| bytes == ATTACHMENT_IMAGE)
                             }))
                     });
                     let safe = ((tool.contains("read") || tool.contains("view_file")) && command_summary.contains(directory.to_str().unwrap())) || path_only_read || (tool == "commandexecution" && is_fixture_cat(&input, &file));
