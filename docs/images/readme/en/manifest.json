@@ -17,19 +17,6 @@
       "layout": "Desktop first, corresponding phone second"
     },
     {
-      "file": "computer-use.png",
-      "title": "Codex-level computer use for every agent",
-      "source_image": "exec-10aa0b3b-8bbf-4a93-a895-d2d111a1ff50.png",
-      "width": 1536,
-      "height": 1024,
-      "mode": "RGB",
-      "sha256": "045903d4370f887f1be3bd031a6186772d50516900fe2cd9e6238086a5abe674",
-      "layout": "Desktop only; agent conversation and controlled local browser",
-      "scenario": "Cursor verifies Ledger invoice filters and CSV export through real computer-use controls; curated illustration",
-      "brand_reference": "apps/desktop/src-tauri/icons/128x128@2x.png",
-      "agent_reference": "apps/desktop/src/assets/cursor.svg"
-    },
-    {
       "file": "switch-agent.png",
       "title": "Hand off work between agents seamlessly",
       "source_image": "exec-ef8a069d-2c64-493e-8b18-7c3f1b307cac.png",
@@ -118,6 +105,19 @@
       "mode": "RGB",
       "sha256": "fffcae5172f0b33a6dd362debdeedce9f486eb06aa0f8860358862184fcfc916",
       "layout": "Desktop only; complete centered app window"
+    },
+    {
+      "file": "computer-use.png",
+      "title": "Codex-level computer use for every agent",
+      "source_image": "exec-10aa0b3b-8bbf-4a93-a895-d2d111a1ff50.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "045903d4370f887f1be3bd031a6186772d50516900fe2cd9e6238086a5abe674",
+      "layout": "Desktop only; agent conversation and controlled local browser",
+      "scenario": "Cursor verifies Ledger invoice filters and CSV export through real computer-use controls; curated illustration",
+      "brand_reference": "apps/desktop/src-tauri/icons/128x128@2x.png",
+      "agent_reference": "apps/desktop/src/assets/cursor.svg"
     },
     {
       "file": "phone-remote.png",

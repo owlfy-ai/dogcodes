@@ -43,18 +43,6 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 ## Features
 
-### Codex-level computer use for every agent
-
-**Give agents and CLIs that cannot operate your computer or verify their own work the same powerful computer-use capabilities as Codex.**
-
-- Let the agent observe your desktop, open apps, and click, type, and scroll in real interfaces.
-- Close the development loop: run the project, reproduce a problem in the UI, fix the code, then return to the app to verify the result.
-- Control the capability with one global switch. Computer actions appear in the conversation; press Esc to interrupt the current foreground operation.
-
-Requires a compatible agent/CLI and system permissions. Pi is not supported; this feature requires macOS 13 or later on Mac.
-
-![Cursor uses the computer to verify invoice filters and CSV export — desktop](docs/images/readme/en/computer-use.png)
-
 ### Hand off work between agents seamlessly
 
 **Switch the agent running the same conversation at any time; context is handed over automatically.**
@@ -137,6 +125,18 @@ Requires a compatible agent/CLI and system permissions. Pi is not supported; thi
 - Understand exactly what the current conversation and each turn consumed, and where your tokens went.
 
 ![Per-turn usage, crystal clear — desktop](docs/images/readme/en/turn-usage.png)
+
+### Codex-level computer use for every agent
+
+**Give agents and CLIs that cannot operate your computer or verify their own work the same powerful computer-use capabilities as Codex.**
+
+- Let the agent observe your desktop, open apps, and click, type, and scroll in real interfaces.
+- Close the development loop: run the project, reproduce a problem in the UI, fix the code, then return to the app to verify the result.
+- Control the capability with one global switch. Computer actions appear in the conversation; press Esc to interrupt the current foreground operation.
+
+Requires a compatible agent/CLI and system permissions. Pi is not supported; this feature requires macOS 13 or later on Mac.
+
+![Cursor uses the computer to verify invoice filters and CSV export — desktop](docs/images/readme/en/computer-use.png)
 
 **Open source · Free · Cross-platform**: licensed under Apache-2.0, built for macOS, Windows, and Linux.
 

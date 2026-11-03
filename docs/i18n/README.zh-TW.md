@@ -43,18 +43,6 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 
 ## 功能
 
-### 為所有 Agent 帶來 Codex 等級的 Computer Use 能力
-
-**讓原本無法操作電腦、自主驗證工作成果的 Agent 或 CLI，也具備像 Codex 一樣強大的電腦操作能力。**
-
-- Agent 能觀察桌面、開啟應用程式，在真實介面中點擊、輸入及捲動。
-- 串起開發與驗證：執行專案，在介面中重現問題，修改程式碼後回到軟體驗證結果。
-- 透過全域開關統一控制；電腦操作紀錄直接顯示在對話中，按 Esc 可中斷目前的前景操作。
-
-需要相容的 Agent/CLI 及系統權限。Pi 暫不支援；Mac 上此功能需要 macOS 13 或更新版本。
-
-![Cursor 操作電腦，驗證發票篩選與 CSV 匯出 — PC 端](../images/readme/en/computer-use.png)
-
 ### 多 Agent 無縫接續任務
 
 **同一個對話中可隨時更換執行的 Agent，自動交接上下文。**
@@ -137,6 +125,18 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 - 詳細掌握目前會話及每一輪對話的消耗，知道 token 花在哪裡。
 
 <!-- 截圖預留: ../../docs/images/readme/turn-usage.png -->
+
+### 為所有 Agent 帶來 Codex 等級的 Computer Use 能力
+
+**讓原本無法操作電腦、自主驗證工作成果的 Agent 或 CLI，也具備像 Codex 一樣強大的電腦操作能力。**
+
+- Agent 能觀察桌面、開啟應用程式，在真實介面中點擊、輸入及捲動。
+- 串起開發與驗證：執行專案，在介面中重現問題，修改程式碼後回到軟體驗證結果。
+- 透過全域開關統一控制；電腦操作紀錄直接顯示在對話中，按 Esc 可中斷目前的前景操作。
+
+需要相容的 Agent/CLI 及系統權限。Pi 暫不支援；Mac 上此功能需要 macOS 13 或更新版本。
+
+![Cursor 操作電腦，驗證發票篩選與 CSV 匯出 — PC 端](../images/readme/en/computer-use.png)
 
 **開源 · 免費 · 跨平台**：Apache-2.0 授權，面向 macOS、Windows 和 Linux 建置。
 

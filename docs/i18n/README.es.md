@@ -43,18 +43,6 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 
 ## Funciones
 
-### Computer Use al nivel de Codex para todos los agentes
-
-**Dale a los agentes y CLI que no pueden manejar tu equipo ni verificar su propio trabajo capacidades de uso del ordenador tan potentes como las de Codex.**
-
-- El agente puede observar el escritorio, abrir aplicaciones y hacer clic, escribir y desplazarse por interfaces reales.
-- Completa el ciclo de desarrollo: ejecuta el proyecto, reproduce el problema en la interfaz, corrige el código y vuelve a la aplicación para verificar el resultado.
-- Controla la función con un interruptor global. Las acciones aparecen en la conversación; pulsa Esc para interrumpir la operación actual en primer plano.
-
-Requiere un agente/CLI compatible y permisos del sistema. Pi no es compatible; en Mac, esta función requiere macOS 13 o posterior.
-
-![Cursor maneja el equipo para verificar filtros de facturas y exportación CSV — escritorio](../images/readme/en/computer-use.png)
-
 ### Pasa el trabajo entre agentes sin interrupciones
 
 **Cambia en cualquier momento el agente que ejecuta la misma conversación; el contexto se traspasa automáticamente.**
@@ -137,6 +125,18 @@ Requiere un agente/CLI compatible y permisos del sistema. Pi no es compatible; e
 - Entiende con detalle lo que consumieron la conversación actual y cada turno, y en qué se fueron tus tokens.
 
 <!-- Captura pendiente: ../../docs/images/readme/turn-usage.png -->
+
+### Computer Use al nivel de Codex para todos los agentes
+
+**Dale a los agentes y CLI que no pueden manejar tu equipo ni verificar su propio trabajo capacidades de uso del ordenador tan potentes como las de Codex.**
+
+- El agente puede observar el escritorio, abrir aplicaciones y hacer clic, escribir y desplazarse por interfaces reales.
+- Completa el ciclo de desarrollo: ejecuta el proyecto, reproduce el problema en la interfaz, corrige el código y vuelve a la aplicación para verificar el resultado.
+- Controla la función con un interruptor global. Las acciones aparecen en la conversación; pulsa Esc para interrumpir la operación actual en primer plano.
+
+Requiere un agente/CLI compatible y permisos del sistema. Pi no es compatible; en Mac, esta función requiere macOS 13 o posterior.
+
+![Cursor maneja el equipo para verificar filtros de facturas y exportación CSV — escritorio](../images/readme/en/computer-use.png)
 
 **Código abierto · Gratis · Multiplataforma**: con licencia Apache-2.0, creado para macOS, Windows y Linux.
 

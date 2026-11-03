@@ -73,6 +73,6 @@ Features 章节的 10 张图只展示 PC，完整窗口居中；总览及手机�
 
 ## Computer Use 配图与文案
 
-9 种语言的功能区首项新增 Computer Use，沿用用户提供的 Codex 级别电脑操作与自主验证卖点；同时注明兼容 Agent/CLI、系统权限、Pi 暂不支持及 Mac 最低 macOS 13。共用英文图 `en/computer-use.png`，不在本轮生成其他语言图片。图中 Cursor 操作 Ledger 网页验证发票筛选与 CSV 导出；设置开关位于左下菜单，操作明细遵循 `ComputerUseActivity.tsx`，顶部使用后台状态提示。文案依据当前全局开关实现、`crates/core/src/computer_use/workflow.md` 及 Computer Use 实施报告，不把示意图当作原生验收证据或等效性能测试。
+9 种语言的功能区最后一项为 Computer Use，沿用用户提供的 Codex 级别电脑操作与自主验证卖点；同时注明兼容 Agent/CLI、系统权限、Pi 暂不支持及 Mac 最低 macOS 13。共用英文图 `en/computer-use.png`，不在本轮生成其他语言图片。图中 Cursor 操作 Ledger 网页验证发票筛选与 CSV 导出；设置开关位于左下菜单，操作明细遵循 `ComputerUseActivity.tsx`，顶部使用后台状态提示。文案依据当前全局开关实现、`crates/core/src/computer_use/workflow.md` 及 Computer Use 实施报告，不把示意图当作原生验收证据或等效性能测试。
 
 Computer Use 图已校正：示例 Agent 统一为 Cursor，顶部状态提示与左下应用按钮使用项目正式的黑底白色侧面牧羊犬标志作为参考（`apps/desktop/src-tauri/icons/128x128@2x.png`），不使用新设计的正面卡通狗；Cursor 图标依据项目现有素材。
