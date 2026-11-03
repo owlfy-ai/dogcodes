@@ -68,6 +68,12 @@ too_many_lines = "allow"
 # boxing each future adds churn without benefit. Other pedantic lints stay on.
 large_futures = "allow"
 
+# With Xcode 27, stripping a dylib linked for macOS >= 12 (Tauri sets the
+# deployment target to 12.3) leaves a LINKEDIT that dyld rejects, so release
+# proc macros fail to load. Shipped executables are unaffected and still stripped.
+[profile.release.build-override]
+strip = "none"
+
 # Reviewed local extension of 0.21.1: TURN TCP/TLS. See vendor/webrtc/DOGCODES.md.
 [patch.crates-io]
 webrtc = { path = "vendor/webrtc" }
