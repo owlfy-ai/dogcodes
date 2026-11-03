@@ -285,7 +285,7 @@ Pushing a tag such as `v0.1.0` runs `.github/workflows/release.yml`. It first ch
 that the tag matches the versions in `package.json`, `apps/desktop/package.json`,
 `tauri.conf.json` and the Cargo workspace, then builds unsigned installers on
 Windows (NSIS) and macOS (arm64 and x64 DMG), reuses the full
-desktop checks and Linux acceptance fixtures, and creates a **draft pre-release** with those installers and
+desktop checks on those platforms, and creates a **draft pre-release** with those installers and
 `SHA256SUMS.txt`. Review the draft, install from it, and publish it by hand. Signed
 builds require a separate workflow change: the current workflow explicitly uses
 `--unsigned` and cannot access local Keychain profiles or a local SimplySign
@@ -294,12 +294,12 @@ signing. If replacing draft assets with locally signed packages, regenerate
 `SHA256SUMS.txt` from the final assets before publication.
 
 On normal pushes and pull requests, `Desktop checks and unsigned packages` selects
-frontend, native and Linux acceptance checks by changed paths and skips installer
+frontend and native checks by changed paths and skips installer
 builds. Documentation-only changes skip compilation. Select **Run workflow** to run
-the full suite and build Windows x64 NSIS and macOS ARM64/x64 DMG artifacts. Linux
-DEB/AppImage packaging, including the release AppImage fixture, stays commented out
-until real-machine testing. The tag-triggered release workflow calls this same full
-suite.
+the full suite and build Windows x64 NSIS and macOS ARM64/x64 DMG artifacts. The
+Linux desktop job, including DEB/AppImage packaging and the release AppImage fixture,
+stays commented out until real-machine testing. The tag-triggered release workflow
+calls this same full suite.
 The desktop workflow has read-only repository permissions, uses no signing secrets
 and does not publish a release. Its presence is not proof of passing CI: inspect
 an actual run, then test installation and daily workflows on each platform.
