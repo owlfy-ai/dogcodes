@@ -32,7 +32,7 @@ struct Request {
     label: String,
     endpoint: String,
     key: String,
-    /// OpenCode Go subscriptions are scoped to the signed-in organization.
+    /// `OpenCode` Go subscriptions are scoped to the signed-in organization.
     org_id: Option<String>,
 }
 

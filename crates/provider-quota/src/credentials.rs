@@ -179,7 +179,7 @@ fn credential_value(db: &rusqlite::Connection, sql: &str) -> Result<Option<Value
         .transpose()
 }
 
-/// Go subscriptions are billed to the signed-in OpenCode organization.
+/// Go subscriptions are billed to the signed-in `OpenCode` organization.
 /// Only the official host is contacted, and the refresh token is never sent.
 fn go_account(value: &Value) -> Option<Request> {
     if value["type"] == "external" {
