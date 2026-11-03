@@ -15,34 +15,44 @@ export function ConversationScroll({
     content = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
   const lastTop = useRef(0);
+  const lastSize = useRef({ height: 0, viewport: 0 });
+  const touchY = useRef<number | null>(null);
   const summaryPositions = useRef(new WeakMap<HTMLDetailsElement, number>());
   const summaryToggle = useRef<{ details: HTMLDetailsElement; open: boolean; top?: number } | null>(null);
   const restoredTop = useRef<number | null>(null);
   const visible = useRef(active);
   visible.current = active;
   const [away, setAway] = useState(false);
+  const rememberPosition = (node: HTMLDivElement) => {
+    lastTop.current = node.scrollTop;
+    lastSize.current = { height: node.scrollHeight, viewport: node.clientHeight };
+  };
   const bottom = () => {
     const node = viewport.current;
     if (node && visible.current) {
       restoredTop.current = null;
       node.scrollTop = node.scrollHeight;
-      lastTop.current = node.scrollTop;
+      rememberPosition(node);
       follow.current = true;
       setAway(false);
     }
   };
   const trackScroll = (node: HTMLDivElement) => {
     const distance = node.scrollHeight - node.scrollTop - node.clientHeight;
+    const resized = node.scrollHeight !== lastSize.current.height || node.clientHeight !== lastSize.current.viewport;
     // Native scrollbar drags may arrive without a pointer event on the viewport.
-    // Pause on upward movement, and resume only after moving back to the bottom.
-    if (node.scrollTop < lastTop.current && distance > 1) follow.current = false;
+    // A layout shrink can clamp scrollTop before streamed content grows again.
+    // That upward movement is not a request to stop following. Explicit wheel,
+    // touch and keyboard input still pauses immediately, including during resize.
+    if (!resized && node.scrollTop < lastTop.current && distance > 1) follow.current = false;
     else if (node.scrollTop > lastTop.current && distance <= 1) follow.current = true;
-    lastTop.current = node.scrollTop;
+    rememberPosition(node);
     setAway(!follow.current && distance > 1);
   };
   useLayoutEffect(() => {
     summaryPositions.current = new WeakMap();
     summaryToggle.current = null;
+    touchY.current = null;
     follow.current = true;
     setAway(false);
     bottom();
@@ -78,7 +88,7 @@ export function ConversationScroll({
       else if (request.top !== undefined) {
         follow.current = false;
         scrollport.scrollTop = request.top;
-        lastTop.current = scrollport.scrollTop;
+        rememberPosition(scrollport);
         restoredTop.current = scrollport.scrollTop;
         const distance = scrollport.scrollHeight - scrollport.scrollTop - scrollport.clientHeight;
         follow.current = distance <= 1;
@@ -99,8 +109,15 @@ export function ConversationScroll({
       aria-label={t("conversationScroll.label")}
       style={{ overflowAnchor: away ? "auto" : "none", scrollBehavior: "auto" }}
       onWheel={event => { if (event.deltaY < 0) follow.current = false; }}
-      onTouchStart={() => { follow.current = false; }}
-      onPointerDown={() => { follow.current = false; }}
+      onTouchStart={event => { touchY.current = event.touches?.[0]?.clientY ?? null; }}
+      onTouchMove={event => {
+        const y = event.touches?.[0]?.clientY;
+        if (y === undefined) return;
+        if (touchY.current !== null && y > touchY.current) follow.current = false;
+        touchY.current = y;
+      }}
+      onTouchEnd={() => { touchY.current = null; }}
+      onTouchCancel={() => { touchY.current = null; }}
       onClickCapture={event => {
         const node = viewport.current;
         const target = event.target instanceof Element ? event.target : null;
@@ -119,7 +136,11 @@ export function ConversationScroll({
           follow.current = true;
         }
       }}
-      onKeyDown={event => { if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) follow.current = false; }}
+      onKeyDown={event => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (event.defaultPrevented || target?.closest("button, a, input, select, textarea, [role='button'], [contenteditable='true']")) return;
+        if (["ArrowUp", "PageUp", "Home"].includes(event.key) || (event.key === " " && event.shiftKey)) follow.current = false;
+      }}
       onScroll={() => {
         const node = viewport.current;
         if (!node || !visible.current) return;
@@ -127,7 +148,7 @@ export function ConversationScroll({
         if (restoredTop.current !== null) {
           const restored = restoredTop.current;
           restoredTop.current = null;
-          if (Math.abs(node.scrollTop - restored) <= 1) { lastTop.current = node.scrollTop; return; }
+          if (Math.abs(node.scrollTop - restored) <= 1) { rememberPosition(node); return; }
         }
         trackScroll(node);
         if (follow.current) bottom();

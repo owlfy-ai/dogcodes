@@ -2,6 +2,7 @@ import { spawn, execFile } from 'node:child_process';
 import { readFileSync, mkdirSync, mkdtempSync, rmSync, copyFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { resolve, join } from 'node:path';
+import { macReleaseDmgName } from './release-names.mjs';
 
 export function runBuild(command, args, options) {
   return new Promise((accept, reject) => {
@@ -90,7 +91,7 @@ export async function buildMacKeychainPackage({ root, env, config, cli, configAr
     mkdirSync(image);
     await tool('ditto', [app, join(image, `${appConfig.productName}.app`)]);
     await tool('ln', ['-s', '/Applications', join(image, 'Applications')]);
-    const name = `${appConfig.productName}_${appConfig.version}_${options.target.replace('-apple-darwin', '')}.dmg`;
+    const name = macReleaseDmgName(appConfig.productName, appConfig.version, options.target);
     const dmg = join(stage, name);
     await tool('hdiutil', ['create', '-volname', appConfig.productName, '-srcfolder', image, '-format', 'UDZO', dmg]);
     await tool('codesign', ['--sign', identity, '--timestamp', dmg]);

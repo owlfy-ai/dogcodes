@@ -171,8 +171,8 @@ export async function refreshChecksums(client, { tag, commit, stage }) {
   assertDraft(release);
   const packages = release.assets.filter(asset => installer(asset.name)).sort((a, b) => a.name.localeCompare(b.name, 'en'));
   if (packages.filter(a => a.name.endsWith('.dmg')).length !== 2 || packages.filter(a => a.name.endsWith('.exe')).length !== 1
-      || packages.filter(a => a.name.endsWith('.deb')).length !== 1 || packages.filter(a => a.name.endsWith('.AppImage')).length !== 1) {
-    throw new Error('The draft must contain exactly two Mac DMGs, one Windows EXE, one DEB and one AppImage.');
+      || packages.filter(a => a.name.endsWith('.deb')).length !== 2 || packages.filter(a => a.name.endsWith('.AppImage')).length !== 2) {
+    throw new Error('The draft must contain exactly two Mac DMGs, one Windows EXE, two DEBs and two AppImages.');
   }
   const hashes = new Map();
   for (const asset of packages) {
@@ -214,7 +214,7 @@ export async function refreshChecksums(client, { tag, commit, stage }) {
   };
   await unchanged();
   await client.upload(checksum);
-  const section = `${startMarker}\n| Platform | Package status |\n| --- | --- |\n| macOS ARM64 / Intel | ${complete.darwin ? 'Developer ID signed and notarized' : 'Awaiting local signed packages'} |\n| Windows x64 | ${complete.win32 ? 'Authenticode signed and timestamped' : 'Awaiting local signed package'} |\n| Linux x64 | CI-built DEB / AppImage; no additional package signature |\n\nSource commit: \`${commit}\`. Verify downloads with \`SHA256SUMS.txt\`.\n${endMarker}`;
+  const section = `${startMarker}\n| Platform | Package status |\n| --- | --- |\n| macOS ARM64 / Intel | ${complete.darwin ? 'Developer ID signed and notarized' : 'Awaiting local signed packages'} |\n| Windows x64 | ${complete.win32 ? 'Authenticode signed and timestamped' : 'Awaiting local signed package'} |\n| Linux x64 | CI-built DEB / AppImage; no additional package signature |\n| Linux ARM64 | CI-built DEB / AppImage; no additional package signature |\n\nSource commit: \`${commit}\`. Verify downloads with \`SHA256SUMS.txt\`.\n${endMarker}`;
   const current = await unchanged();
   const body = current.body ?? '';
   const begin = body.indexOf(startMarker), end = body.indexOf(endMarker);
@@ -357,7 +357,7 @@ export async function releaseDesktop({ root = rootDirectory, platform = process.
       const started = Date.now();
       await runBuild(process.execPath, [packageScript, '--signed', '--target', target, '--bundles', platform === 'darwin' ? 'dmg' : 'nsis'], { cwd: root });
       const directory = platform === 'darwin' ? resolve(root, 'release/installers', version, target) : join(cargo.target_directory, target, 'release/bundle/nsis');
-      const files = readdirSync(directory).filter(name => name.includes(`_${version}_`) && name.endsWith(platform === 'darwin' ? '.dmg' : '.exe')
+      const files = readdirSync(directory).filter(name => name.includes(`-${version}-`) && name.endsWith(platform === 'darwin' ? '.dmg' : '.exe')
         && statSync(join(directory, name)).mtimeMs >= started - 2000);
       if (files.length !== 1) throw new Error('Expected exactly one newly built installer for this version and target.');
       const name = files[0], path = join(directory, name);

@@ -7,6 +7,7 @@ import { parseEnv } from 'node:util';
 import { parseSigningConfig } from './signing-config.mjs';
 import { checkMacKeychain, buildMacKeychainPackage, runBuild } from './signing-macos.mjs';
 import { prepareComputerUse } from './prepare-computer-use.mjs';
+import { renameReleaseInstallers } from './release-names.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const signingVariables = [
@@ -185,6 +186,8 @@ async function main() {
     } else {
       await runBuild(process.execPath, [cli, 'build', '--config', configArgument, ...forwarded, '--', '--locked'], { cwd: desktop, env });
     }
+    const metadata = JSON.parse(execFileSync('cargo', ['metadata', '--format-version', '1', '--no-deps', '--locked'], { cwd: root, encoding: 'utf8' }));
+    renameReleaseInstallers(resolve(metadata.target_directory, ...(target ? [target] : []), 'release', 'bundle'));
   } finally {
     if (stage) rmSync(stage, { recursive: true, force: true });
   }

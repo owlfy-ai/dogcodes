@@ -22,8 +22,9 @@ function fakeGitHub({ serverDigests = true } = {}) {
     assets.set(name, asset);
     return metadata(asset);
   };
-  for (const name of ['dog.codes_0.1.0_aarch64.dmg', 'dog.codes_0.1.0_x64.dmg',
-    'dog.codes_0.1.0_x64-setup.exe', 'dog.codes_0.1.0_amd64.deb', 'dog.codes_0.1.0_amd64.AppImage']) put(name, `ci-${name}`);
+  for (const name of ['dog.codes-0.1.0-macOS-AppleSilicon.dmg', 'dog.codes-0.1.0-macOS-Intel.dmg',
+    'dog.codes-0.1.0-Windows-x64-Setup.exe', 'dog.codes-0.1.0-Linux-x64.deb', 'dog.codes-0.1.0-Linux-x64.AppImage',
+    'dog.codes-0.1.0-Linux-arm64.deb', 'dog.codes-0.1.0-Linux-arm64.AppImage']) put(name, `ci-${name}`);
   put('SHA256SUMS.txt', 'initial-checksums');
   const client = {
     async release() { return { id: 1, draft, body, assets: [...assets.values()].map(metadata) }; },
@@ -51,7 +52,7 @@ function fakeGitHub({ serverDigests = true } = {}) {
 async function fixture(work) {
   const root = mkdtempSync(resolve(tmpdir(), 'dogcodes-release-'));
   async function receipt(platform) {
-    const names = platform === 'darwin' ? ['dog.codes_0.1.0_aarch64.dmg', 'dog.codes_0.1.0_x86_64.dmg'] : ['dog.codes_0.1.0_x64-setup.exe'];
+    const names = platform === 'darwin' ? ['dog.codes-0.1.0-macOS-AppleSilicon.dmg', 'dog.codes-0.1.0-macOS-Intel.dmg'] : ['dog.codes-0.1.0-Windows-x64-Setup.exe'];
     const assets = [];
     for (const name of names) {
       const path = resolve(root, name);
@@ -144,10 +145,10 @@ test('Mac upload replaces CI naming variants, keeps Windows/Linux, and hashes th
   const hub = fakeGitHub({ serverDigests: false });
   const ready = await uploadSignedPackages(hub.client, await receipt('darwin'), stage('mac'));
   assert.equal(ready, false);
-  assert.equal(hub.assets.has('dog.codes_0.1.0_x64.dmg'), false);
-  assert.equal(hub.assets.get('dog.codes_0.1.0_x64-setup.exe').bytes.toString(), 'ci-dog.codes_0.1.0_x64-setup.exe');
+  assert.equal(hub.assets.get('dog.codes-0.1.0-macOS-Intel.dmg').bytes.toString(), 'signed-dog.codes-0.1.0-macOS-Intel.dmg');
+  assert.equal(hub.assets.get('dog.codes-0.1.0-Windows-x64-Setup.exe').bytes.toString(), 'ci-dog.codes-0.1.0-Windows-x64-Setup.exe');
   const lines = hub.assets.get('SHA256SUMS.txt').bytes.toString().trim().split('\n');
-  assert.equal(lines.length, 5);
+  assert.equal(lines.length, 7);
   for (const line of lines) {
     const [sha, name] = line.split('  ');
     assert.equal(sha, digest(hub.assets.get(name).bytes));
@@ -174,15 +175,15 @@ test('two computers serialize updates and produce one correct checksum set for b
   assert.match(release.body, /Authenticode signed and timestamped/);
   assert.equal(hub.assets.has(lockName), false);
   for (const asset of [...mac.assets, ...windows.assets]) assert.equal(digest(hub.assets.get(asset.name).bytes), asset.sha256);
-  assert.equal(hub.assets.get('SHA256SUMS.txt').bytes.toString().trim().split('\n').length, 5);
-  assert.equal(hub.changes.some(change => change.includes('delete:dog.codes_0.1.0_amd64')), false);
+  assert.equal(hub.assets.get('SHA256SUMS.txt').bytes.toString().trim().split('\n').length, 7);
+  assert.equal(hub.changes.some(change => change.includes('delete:dog.codes-0.1.0-Linux')), false);
 }));
 
 test('a failed upload releases its lock and can resume without replacing other platforms', async () => fixture(async ({ receipt, stage }) => {
   const hub = fakeGitHub(), mac = await receipt('darwin');
   const upload = hub.client.upload;
   hub.client.upload = async (file, replace) => {
-    if (basename(file).endsWith('x86_64.dmg')) throw new Error('network failure');
+    if (basename(file).endsWith('macOS-Intel.dmg')) throw new Error('network failure');
     return upload(file, replace);
   };
   await assert.rejects(uploadSignedPackages(hub.client, mac, stage('failed')), /network failure/);
@@ -213,7 +214,7 @@ test('changed remote signed bytes cannot be declared ready or replace the checks
   const hub = fakeGitHub();
   await uploadSignedPackages(hub.client, await receipt('darwin'), stage('upload'));
   const previous = hub.assets.get('SHA256SUMS.txt').bytes.toString();
-  hub.put('dog.codes_0.1.0_aarch64.dmg', 'changed-after-upload');
+  hub.put('dog.codes-0.1.0-macOS-AppleSilicon.dmg', 'changed-after-upload');
   await assert.rejects(refreshChecksums(hub.client, { tag, commit, stage: stage('refresh') }), /receipt does not match/);
   assert.equal(hub.assets.get('SHA256SUMS.txt').bytes.toString(), previous);
 }));

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
 import { prepareBuild, parseArguments, signingVariables, linuxAppImageFiles } from './package-desktop.mjs';
+import { releaseInstallerName, renameReleaseInstallers } from './release-names.mjs';
 import { checkReleaseInputs, privateOrGeneratedPath } from './check-release-inputs.mjs';
 import { buildMacKeychainPackage, checkMacKeychain, macPackageOptions } from './signing-macos.mjs';
 
@@ -16,6 +17,36 @@ test('release index guard catches force-added secrets and generated directories'
   }
   for (const path of ['release/.env.example', '.env.example', 'release/tauri.signing.example.json',
     'crates/core/src/lib.rs', 'README.md']) assert.equal(privateOrGeneratedPath(path), false, path);
+});
+
+test('release installers use platform names users can distinguish', () => {
+  assert.equal(releaseInstallerName('dog.codes_0.1.0_x86_64.dmg'), 'dog.codes-0.1.0-macOS-Intel.dmg');
+  assert.equal(releaseInstallerName('notes.txt'), null);
+  const root = mkdtempSync(resolve(tmpdir(), 'dogcodes-names-'));
+  try {
+    const cases = {
+      'dmg/dog.codes_0.1.0_aarch64.dmg': 'dog.codes-0.1.0-macOS-AppleSilicon.dmg',
+      'dmg/dog.codes_0.1.0_x64.dmg': 'dog.codes-0.1.0-macOS-Intel.dmg',
+      'nsis/dog.codes_0.1.0_x64-setup.exe': 'dog.codes-0.1.0-Windows-x64-Setup.exe',
+      'deb/dog.codes_0.1.0_amd64.deb': 'dog.codes-0.1.0-Linux-x64.deb',
+      'deb/dog.codes_0.1.0_arm64.deb': 'dog.codes-0.1.0-Linux-arm64.deb',
+      'appimage/dog.codes_0.1.0_amd64.AppImage': 'dog.codes-0.1.0-Linux-x64.AppImage',
+      'appimage/dog.codes_0.1.0_aarch64.AppImage': 'dog.codes-0.1.0-Linux-arm64.AppImage',
+    };
+    for (const [path, name] of Object.entries(cases)) {
+      assert.equal(releaseInstallerName(path.slice(path.indexOf('/') + 1)), name);
+      mkdirSync(resolve(root, path, '..'), { recursive: true });
+      writeFileSync(resolve(root, path), path);
+    }
+    renameReleaseInstallers(root);
+    for (const [path, name] of Object.entries(cases)) {
+      const folder = path.slice(0, path.indexOf('/'));
+      assert.equal(readFileSync(resolve(root, folder, name), 'utf8'), path);
+      assert.equal(existsSync(resolve(root, path)), false);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('unsigned builds remove inherited signing credentials and config overrides', () => {
@@ -165,8 +196,8 @@ test('Mac artifacts are exported only after app and DMG notarization, stapling a
       } else {
         await buildMacKeychainPackage(parameters);
         assert.equal(submissions, 2);
-        assert.equal(readFileSync(resolve(output, 'dog.codes_0.1.0_aarch64.dmg'), 'utf8'), 'signed-package-fixture');
-        assert.match(readFileSync(resolve(output, 'dog.codes_0.1.0_aarch64.dmg.sha256'), 'utf8'), /^[a-f0-9]{64}  dog.codes_/);
+        assert.equal(readFileSync(resolve(output, 'dog.codes-0.1.0-macOS-AppleSilicon.dmg'), 'utf8'), 'signed-package-fixture');
+        assert.match(readFileSync(resolve(output, 'dog.codes-0.1.0-macOS-AppleSilicon.dmg.sha256'), 'utf8'), /^[a-f0-9]{64}  dog\.codes-0\.1\.0-macOS-AppleSilicon\.dmg/);
         assert.equal(calls.filter(([command]) => command === 'spctl').length, 2);
         assert.equal(calls.filter(([command, args]) => command === 'xcrun' && args[1] === 'validate').length, 2);
       }

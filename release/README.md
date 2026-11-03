@@ -221,11 +221,11 @@ installer and packaged `desktop.exe` signatures and timestamps. The command then
 1. Creates and pushes `v<package.json version>` after successful local packaging,
    or reuses that tag if it already points to the same source commit.
 2. Waits for the tag-triggered GitHub workflow to finish and create a draft with
-   all five installers, including the Linux DEB and AppImage.
+   all seven installers, including the Linux x64 and ARM64 DEB and AppImage.
 3. Uploads this machine's signed installers, replaces their unsigned CI variants,
    and leaves the other platforms intact. The two machines can run in either order.
 4. Validates signed-package receipts against the actual uploaded files, updates
-   `SHA256SUMS.txt` for **all five installers**, and updates the managed signing
+   `SHA256SUMS.txt` for **all seven installers**, and updates the managed signing
    status section in the draft notes while preserving your other release notes.
 
 Hashing uses the SHA-256 digest GitHub computes for uploaded assets; if it is
@@ -283,7 +283,7 @@ are never automatically stolen based on time alone.
 Pushing a tag such as `v0.1.0` runs `.github/workflows/release.yml`. It first checks
 that the tag matches the versions in `package.json`, `apps/desktop/package.json`,
 `tauri.conf.json` and the Cargo workspace, then builds unsigned installers on
-Windows (NSIS), macOS (arm64 and x64 DMG) and Linux (deb, AppImage), reuses the full
+Windows (NSIS), macOS (arm64 and x64 DMG) and Linux x64 and ARM64 (deb, AppImage), reuses the full
 desktop checks and Linux acceptance fixtures, and creates a **draft pre-release** with all installers and
 `SHA256SUMS.txt`. Review the draft, install from it, and publish it by hand. Signed
 builds require a separate workflow change: the current workflow explicitly uses
@@ -295,8 +295,8 @@ signing. If replacing draft assets with locally signed packages, regenerate
 On normal pushes and pull requests, `Desktop checks and unsigned packages` selects
 frontend, native and Linux acceptance checks by changed paths and skips installer
 builds. Documentation-only changes skip compilation. Select **Run workflow** to run
-the full suite and build Windows x64 NSIS, macOS ARM64/x64 DMG and Linux x64
-DEB/AppImage artifacts. The tag-triggered release workflow calls this same full
+the full suite and build Windows x64 NSIS, macOS ARM64/x64 DMG and Linux x64 and
+ARM64 DEB/AppImage artifacts. The tag-triggered release workflow calls this same full
 suite, including the optimized native PipeWire fixture for the release AppImage.
 The desktop workflow has read-only repository permissions, uses no signing secrets
 and does not publish a release. Its presence is not proof of passing CI: inspect

@@ -70,7 +70,7 @@ jobs:
             fi
             cp "$file" "release-assets/$name"
           done < <(find installers -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' \) -print0)
-          test "$(find release-assets -type f | wc -l)" -eq 5
+          test "$(find release-assets -type f | wc -l)" -eq 7
           cd release-assets
           sha256sum -- *.exe *.dmg *.deb *.AppImage > SHA256SUMS.txt
       - name: Create a draft release
@@ -90,6 +90,7 @@ jobs:
           | macOS ARM64 / Intel | Awaiting local signed packages |
           | Windows x64 | Awaiting local signed package |
           | Linux x64 | CI-built DEB / AppImage; no additional package signature |
+          | Linux ARM64 | CI-built DEB / AppImage; no additional package signature |
           <!-- dogcodes-signing:end -->
           NOTES
           gh release create "$TAG" --repo "$REPO" --draft --prerelease \

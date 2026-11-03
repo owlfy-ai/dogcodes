@@ -161,3 +161,137 @@ it("reveals the latest summary despite trailing actions and restores its previou
     await act(async () => root.unmount()); heights.mockRestore(); sizes.mockRestore(); vi.unstubAllGlobals();
   }
 });
+
+it.each(["scroll first", "resize first"])("keeps following through a streaming layout shrink and regrowth (%s)", async order => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let resize!: () => void;
+  vi.stubGlobal("ResizeObserver", class { constructor(callback: () => void) { resize = callback; } observe() {} disconnect() {} });
+  let height = 1400, top = 0;
+  const heights = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(() => height);
+  const sizes = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(500);
+  const tops = vi.spyOn(HTMLElement.prototype, "scrollTop", "get").mockImplementation(() => top);
+  const writes = vi.spyOn(HTMLElement.prototype, "scrollTop", "set").mockImplementation(value => { top = Math.max(0, Math.min(value, height - 500)); });
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ConversationScroll taskId="one"><p>Streaming reply</p></ConversationScroll>));
+    const node = host.querySelector<HTMLElement>(".timeline")!;
+    expect(top).toBe(900);
+    await act(async () => {
+      // Markdown/tool output can briefly shrink and clamp the native scrollTop,
+      // then grow again before the queued scroll or ResizeObserver is delivered.
+      height = 1000; node.scrollTop = top;
+      height = 1600;
+      if (order === "resize first") resize();
+      node.dispatchEvent(new Event("scroll"));
+      if (order === "scroll first") resize();
+    });
+    expect(top).toBe(1100);
+    expect(host.querySelector(".conversation-latest")).toBeNull();
+    await act(async () => { height = 1700; resize(); });
+    expect(top).toBe(1200);
+  } finally {
+    await act(async () => root.unmount());
+    heights.mockRestore(); sizes.mockRestore(); tops.mockRestore(); writes.mockRestore(); vi.unstubAllGlobals();
+  }
+});
+
+it("keeps following when viewport resizing clamps the position during streaming", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let resize!: () => void;
+  vi.stubGlobal("ResizeObserver", class { constructor(callback: () => void) { resize = callback; } observe() {} disconnect() {} });
+  let height = 1400, size = 500, top = 0;
+  const heights = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(() => height);
+  const sizes = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(() => size);
+  const tops = vi.spyOn(HTMLElement.prototype, "scrollTop", "get").mockImplementation(() => top);
+  const writes = vi.spyOn(HTMLElement.prototype, "scrollTop", "set").mockImplementation(value => { top = Math.max(0, Math.min(value, height - size)); });
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ConversationScroll taskId="one"><p>Streaming reply</p></ConversationScroll>));
+    const node = host.querySelector<HTMLElement>(".timeline")!;
+    await act(async () => {
+      size = 700; node.scrollTop = top;
+      height = 1500;
+      node.dispatchEvent(new Event("scroll")); resize();
+    });
+    expect(top).toBe(800);
+    expect(host.querySelector(".conversation-latest")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    heights.mockRestore(); sizes.mockRestore(); tops.mockRestore(); writes.mockRestore(); vi.unstubAllGlobals();
+  }
+});
+
+it.each(["pointerdown", "touchstart"])("does not pause following for a stationary %s without a scroll", async input => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let resize!: () => void;
+  vi.stubGlobal("ResizeObserver", class { constructor(callback: () => void) { resize = callback; } observe() {} disconnect() {} });
+  let height = 1400;
+  const heights = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(() => height);
+  const sizes = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(500);
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ConversationScroll taskId="one"><p>Streaming reply</p></ConversationScroll>));
+    const node = host.querySelector<HTMLElement>(".timeline")!;
+    await act(async () => {
+      node.querySelector("p")!.dispatchEvent(new Event(input, { bubbles: true }));
+      height = 1600; resize();
+    });
+    expect(node.scrollTop).toBe(1600);
+    expect(host.querySelector(".conversation-latest")).toBeNull();
+  } finally {
+    await act(async () => root.unmount()); heights.mockRestore(); sizes.mockRestore(); vi.unstubAllGlobals();
+  }
+});
+
+it.each(["keyboard", "touch"])("preserves explicit upward %s input while content resizes", async input => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let resize!: () => void;
+  vi.stubGlobal("ResizeObserver", class { constructor(callback: () => void) { resize = callback; } observe() {} disconnect() {} });
+  let height = 1400, top = 0;
+  const heights = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(() => height);
+  const sizes = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(500);
+  const tops = vi.spyOn(HTMLElement.prototype, "scrollTop", "get").mockImplementation(() => top);
+  const writes = vi.spyOn(HTMLElement.prototype, "scrollTop", "set").mockImplementation(value => { top = Math.max(0, Math.min(value, height - 500)); });
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ConversationScroll taskId="one"><p>Streaming reply</p></ConversationScroll>));
+    const node = host.querySelector<HTMLElement>(".timeline")!;
+    await act(async () => {
+      if (input === "keyboard") node.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+      else for (const [type, y] of [["touchstart", 100], ["touchmove", 140]] as const) {
+        const event = new Event(type, { bubbles: true });
+        Object.defineProperty(event, "touches", { value: [{ clientY: y }] });
+        node.dispatchEvent(event);
+      }
+      node.scrollTop = 860;
+      height = 1600; resize(); node.dispatchEvent(new Event("scroll"));
+    });
+    expect(top).toBe(860);
+    expect(host.querySelector(".conversation-latest")).not.toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    heights.mockRestore(); sizes.mockRestore(); tops.mockRestore(); writes.mockRestore(); vi.unstubAllGlobals();
+  }
+});
+
+it("does not treat a message button's keyboard activation as scrolling history", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let resize!: () => void;
+  vi.stubGlobal("ResizeObserver", class { constructor(callback: () => void) { resize = callback; } observe() {} disconnect() {} });
+  let height = 1400;
+  const heights = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(() => height);
+  const sizes = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(500);
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ConversationScroll taskId="one"><button>Copy</button></ConversationScroll>));
+    const node = host.querySelector<HTMLElement>(".timeline")!;
+    await act(async () => {
+      node.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+      height = 1600; resize();
+    });
+    expect(node.scrollTop).toBe(1600);
+    expect(host.querySelector(".conversation-latest")).toBeNull();
+  } finally {
+    await act(async () => root.unmount()); heights.mockRestore(); sizes.mockRestore(); vi.unstubAllGlobals();
+  }
+});
