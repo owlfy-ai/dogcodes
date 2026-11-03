@@ -138,7 +138,7 @@ Requires a compatible agent/CLI and system permissions. Pi is not supported; thi
 
 ![Cursor uses the computer to verify invoice filters and CSV export — desktop](docs/images/readme/en/computer-use.png)
 
-**Open source · Free · Cross-platform**: licensed under MIT, built for macOS, Windows, and Linux.
+**Open source · Free · Cross-platform**: licensed under MIT, desktop apps for macOS and Windows are released; Linux is awaiting real-machine testing.
 
 <a id="phone"></a>
 
@@ -187,7 +187,7 @@ Pair a phone once and run everything below from anywhere. Your code and your age
 - Scan a QR code once; no account is needed. The link is end-to-end encrypted. Pair several computers, see which are online, and revoke a phone at any time from the desktop app.
 - The phone connects directly when it can and falls back to the dog.codes relay service, which only forwards encrypted traffic.
 - Your computer stays on with dog.codes open or minimized. While work or a remote session is active, dog.codes can keep the computer from sleeping automatically; you can turn this off.
-- Remote desktop works with macOS, Windows and Linux (X11 and Wayland) computers; your operating system asks for the screen and input permissions it requires.
+- Remote desktop works with macOS and Windows computers (Linux X11 and Wayland support is awaiting real-machine testing); your operating system asks for the screen and input permissions it requires.
 
 <a id="getting-started"></a>
 
@@ -195,7 +195,7 @@ Pair a phone once and run everything below from anywhere. Your code and your age
 
 The macOS app requires **macOS 12.3 or later** for ScreenCaptureKit.
 
-For now, run from source. Install **Rust 1.97.1**, **Node.js 22+**, **pnpm 11**, and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/). Clone or download this repository, then run these commands from its root:
+Download the installer for macOS (Apple silicon / Intel) or Windows x64 from [Releases](https://github.com/owlfy-ai/dogcodes/releases). The Linux app is awaiting real-machine testing; on Linux, or to build it yourself, run from source. Install **Rust 1.97.1**, **Node.js 22+**, **pnpm 11**, and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/). Clone or download this repository, then run these commands from its root:
 
 ```bash
 pnpm install
@@ -253,6 +253,6 @@ dog.codes connects to each agent through its local process interface. ACP means 
 
 ### Acknowledgments
 
-Computer use builds on [Cua Driver](https://github.com/trycua/cua), licensed under MIT, for window inspection, screenshots, and mouse/keyboard interaction. Thanks to the Cua team and contributors for their open-source desktop automation work. The bundled driver integration currently supports Windows x64.
+Computer use builds on [Cua Driver](https://github.com/trycua/cua), licensed under MIT, for window inspection, screenshots, and mouse/keyboard interaction. Thanks to the Cua team and contributors for their open-source desktop automation work. The bundled driver integration currently supports Windows x64 and macOS; Linux is awaiting real-machine testing.
 
 Agent icons reuse the assets already included in this repository; see [icon provenance and notices](apps/desktop/src/assets/licenses/README.md). Product names and marks belong to their respective owners.

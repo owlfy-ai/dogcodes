@@ -138,7 +138,7 @@ dog.codes은 코딩 에이전트, 대화, 코드 변경 사항, 프로젝트 실
 
 ![Cursor가 컴퓨터를 조작해 청구서 필터와 CSV 내보내기를 검증 — 데스크톱](../images/readme/en/computer-use.png)
 
-**오픈 소스 · 무료 · 크로스 플랫폼**: MIT 라이선스, macOS·Windows·Linux용으로 만들어졌습니다.
+**오픈 소스 · 무료 · 크로스 플랫폼**: MIT 라이선스, macOS·Windows 데스크톱 앱이 출시되었으며 Linux 버전은 실기기 테스트를 앞두고 있습니다.
 
 <a id="phone"></a>
 
@@ -166,13 +166,13 @@ dog.codes은 코딩 에이전트, 대화, 코드 변경 사항, 프로젝트 실
 - QR 코드를 한 번 스캔하면 되며 계정은 필요 없습니다. 연결은 종단 간 암호화됩니다. 컴퓨터를 여러 대 페어링하고, 접속 상태를 확인하고, 데스크톱 앱에서 언제든 휴대폰 연결을 해제할 수 있습니다.
 - 휴대폰은 가능하면 직접 연결하고, 그렇지 않으면 암호화된 트래픽만 전달하는 dog.codes 중계 서비스를 거칩니다.
 - 컴퓨터는 켜 둔 채 dog.codes를 열어 두거나 최소화해 두세요. 작업이나 원격 세션이 진행 중일 때는 dog.codes가 컴퓨터의 자동 절전을 막을 수 있으며, 이 옵션은 끌 수 있습니다.
-- 원격 데스크톱은 macOS, Windows, Linux(X11 및 Wayland) 컴퓨터를 지원하며, 필요한 화면·입력 권한은 운영 체제가 요청합니다.
+- 원격 데스크톱은 macOS, Windows 컴퓨터를 지원하며(Linux X11 및 Wayland는 실기기 테스트 예정), 필요한 화면·입력 권한은 운영 체제가 요청합니다.
 
 <a id="getting-started"></a>
 
 ## 시작하기
 
-현재는 소스에서 실행합니다. **Rust 1.97.1**, **Node.js 22+**, **pnpm 11** 및 [Tauri 플랫폼 필수 구성 요소](https://v2.tauri.app/start/prerequisites/)를 설치하세요. 저장소를 복제하거나 내려받은 뒤 루트에서 실행합니다.
+[Releases](https://github.com/owlfy-ai/dogcodes/releases)에서 macOS(Apple 실리콘 / Intel) 또는 Windows x64 설치 파일을 내려받으세요. Linux 버전은 실기기 테스트를 앞두고 있습니다. Linux에서 쓰거나 직접 빌드하려면 소스에서 실행합니다. **Rust 1.97.1**, **Node.js 22+**, **pnpm 11** 및 [Tauri 플랫폼 필수 구성 요소](https://v2.tauri.app/start/prerequisites/)를 설치하세요. 저장소를 복제하거나 내려받은 뒤 루트에서 실행합니다.
 
 ```bash
 pnpm install
@@ -226,6 +226,6 @@ dog.codes는 각 에이전트의 로컬 프로세스 인터페이스에 연결�
 
 ### 감사의 말
 
-Computer use의 창 정보 읽기, 스크린샷, 키보드와 마우스 상호작용에는 MIT 라이선스의 [Cua Driver](https://github.com/trycua/cua)를 사용합니다. 데스크톱 자동화 기능을 오픈소스로 제공한 Cua 팀과 기여자 여러분께 감사드립니다. 현재 번들 드라이버 통합은 Windows x64를 지원합니다.
+Computer use의 창 정보 읽기, 스크린샷, 키보드와 마우스 상호작용에는 MIT 라이선스의 [Cua Driver](https://github.com/trycua/cua)를 사용합니다. 데스크톱 자동화 기능을 오픈소스로 제공한 Cua 팀과 기여자 여러분께 감사드립니다. 현재 번들 드라이버 통합은 Windows x64와 macOS를 지원하며, Linux는 실기기 테스트를 앞두고 있습니다.
 
 에이전트 아이콘은 저장소의 기존 자료를 사용합니다. [출처 및 고지](../../apps/desktop/src/assets/licenses/README.md)를 확인하세요. 제품 이름과 상표는 각 소유자에게 속합니다.

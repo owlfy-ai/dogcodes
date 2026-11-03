@@ -138,7 +138,7 @@ dog.codes 把编程 Agent、对话、代码变更和项目运行命令放进同�
 
 ![Cursor 操作电脑，验证发票筛选与 CSV 导出 — PC 端](../images/readme/en/computer-use.png)
 
-**开源 · 免费 · 跨平台**：MIT 授权，面向 macOS、Windows 和 Linux 构建。
+**开源 · 免费 · 跨平台**：MIT 授权，macOS 与 Windows 桌面端已发布，Linux 版待实机测试。
 
 <a id="phone"></a>
 
@@ -166,13 +166,13 @@ dog.codes 把编程 Agent、对话、代码变更和项目运行命令放进同�
 - 只需扫一次二维码，无需账号。连接全程端到端加密。可配对多台电脑、查看在线状态，并随时在桌面端撤销某部手机。
 - 手机能直连时直连，否则回退到 dog.codes 中继服务，中继只转发加密数据。
 - 电脑需保持开机，dog.codes 保持打开或最小化。有任务或远程会话进行时，dog.codes 可以阻止电脑自动睡眠，也可以关闭该选项。
-- 远程桌面支持 macOS、Windows 和 Linux（X11 与 Wayland）电脑；系统会请求所需的屏幕与输入权限。
+- 远程桌面支持 macOS 和 Windows 电脑（Linux X11 与 Wayland 待实机测试）；系统会请求所需的屏幕与输入权限。
 
 <a id="getting-started"></a>
 
 ## 开始使用
 
-目前通过源码运行。先安装 **Rust 1.97.1**、**Node.js 22+**、**pnpm 11**，并准备好 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)。克隆或下载本仓库后，在根目录执行：
+从 [Releases](https://github.com/owlfy-ai/dogcodes/releases) 下载 macOS（Apple 芯片 / Intel）或 Windows x64 安装包。Linux 版待实机测试；在 Linux 上或需要自行构建时，可通过源码运行：先安装 **Rust 1.97.1**、**Node.js 22+**、**pnpm 11**，并准备好 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)。克隆或下载本仓库后，在根目录执行：
 
 ```bash
 pnpm install
@@ -226,6 +226,6 @@ dog.codes 通过本地进程接口连接各个 Agent。ACP 指 Agent Client Prot
 
 ### 鸣谢
 
-Computer use 使用 MIT 协议的 [Cua Driver](https://github.com/trycua/cua)，提供窗口读取、截图和键盘鼠标交互。感谢 Cua 团队及贡献者开源桌面自动化能力。目前随应用集成的驱动支持 Windows x64。
+Computer use 使用 MIT 协议的 [Cua Driver](https://github.com/trycua/cua)，提供窗口读取、截图和键盘鼠标交互。感谢 Cua 团队及贡献者开源桌面自动化能力。目前随应用集成的驱动支持 Windows x64 和 macOS，Linux 待实机测试。
 
 Agent 图标复用本仓库已有素材，来源与声明见[图标说明](../../apps/desktop/src/assets/licenses/README.md)。产品名称及商标归各自所有者。

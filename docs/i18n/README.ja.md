@@ -138,7 +138,7 @@ dog.codes は、コーディングエージェント、会話、コードの変�
 
 ![Cursor が PC を操作し、請求書フィルターと CSV エクスポートを検証 — デスクトップ](../images/readme/en/computer-use.png)
 
-**オープンソース · 無料 · クロスプラットフォーム**：MIT ライセンス。macOS、Windows、Linux 向けに構築しています。
+**オープンソース · 無料 · クロスプラットフォーム**：MIT ライセンス。macOS と Windows のデスクトップ版を公開中で、Linux 版は実機テスト待ちです。
 
 <a id="phone"></a>
 
@@ -166,13 +166,13 @@ dog.codes は、コーディングエージェント、会話、コードの変�
 - QR コードを一度スキャンするだけで、アカウントは不要です。通信はエンドツーエンドで暗号化されます。複数のコンピューターを登録でき、オンライン状況の確認や、スマートフォンの連携解除はデスクトップ側からいつでも可能です。
 - スマートフォンは可能なら直接接続し、できない場合は dog.codes の中継サービスを経由します。中継は暗号化された通信を転送するだけです。
 - コンピューターは電源を入れたまま、dog.codes を開いた（または最小化した）状態にしてください。作業やリモートセッション中は、dog.codes が自動スリープを防げます（オフにもできます）。
-- リモートデスクトップは macOS、Windows、Linux（X11 / Wayland）のコンピューターに対応します。必要な画面・入力の権限は OS が確認します。
+- リモートデスクトップは macOS と Windows のコンピューターに対応します（Linux の X11 / Wayland は実機テスト待ち）。必要な画面・入力の権限は OS が確認します。
 
 <a id="getting-started"></a>
 
 ## はじめる
 
-現在はソースから実行します。**Rust 1.97.1**、**Node.js 22+**、**pnpm 11** と [Tauri のプラットフォーム依存環境](https://v2.tauri.app/start/prerequisites/)を用意してください。リポジトリをクローンまたはダウンロードし、ルートで実行します。
+[Releases](https://github.com/owlfy-ai/dogcodes/releases) から macOS（Apple シリコン / Intel）または Windows x64 のインストーラーをダウンロードしてください。Linux 版は実機テスト待ちです。Linux で使う場合や自分でビルドする場合は、ソースから実行します。**Rust 1.97.1**、**Node.js 22+**、**pnpm 11** と [Tauri のプラットフォーム依存環境](https://v2.tauri.app/start/prerequisites/)を用意してください。リポジトリをクローンまたはダウンロードし、ルートで実行します。
 
 ```bash
 pnpm install
@@ -226,6 +226,6 @@ dog.codes は各エージェントのローカルプロセスのインターフ�
 
 ### 謝辞
 
-Computer use のウィンドウ情報取得、スクリーンショット、マウスとキーボードの操作には、MIT ライセンスの [Cua Driver](https://github.com/trycua/cua) を利用しています。デスクトップ自動化をオープンソースで提供する Cua チームと貢献者の皆さまに感謝します。現在、同梱ドライバーの統合は Windows x64 に対応しています。
+Computer use のウィンドウ情報取得、スクリーンショット、マウスとキーボードの操作には、MIT ライセンスの [Cua Driver](https://github.com/trycua/cua) を利用しています。デスクトップ自動化をオープンソースで提供する Cua チームと貢献者の皆さまに感謝します。現在、同梱ドライバーの統合は Windows x64 と macOS に対応しており、Linux は実機テスト待ちです。
 
 エージェントのアイコンにはリポジトリ内の既存素材を使用しています。[出典と表記](../../apps/desktop/src/assets/licenses/README.md)をご確認ください。製品名と商標は各権利者に帰属します。

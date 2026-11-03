@@ -138,7 +138,7 @@ Erfordert einen kompatiblen Agenten bzw. eine kompatible CLI und Systemberechtig
 
 ![Cursor bedient den Computer und überprüft Rechnungsfilter und CSV-Export — Desktop](../images/readme/en/computer-use.png)
 
-**Open Source · Kostenlos · Plattformübergreifend**: unter MIT lizenziert, für macOS, Windows und Linux gebaut.
+**Open Source · Kostenlos · Plattformübergreifend**: unter MIT lizenziert, Desktop-Apps für macOS und Windows sind veröffentlicht; Linux wartet noch auf Tests auf echter Hardware.
 
 <a id="phone"></a>
 
@@ -166,13 +166,13 @@ Koppel ein Smartphone einmal und erledige alles Folgende von überall. Dein Code
 - Einmal einen QR-Code scannen, ein Konto ist nicht nötig. Die Verbindung ist Ende-zu-Ende-verschlüsselt. Koppel mehrere Computer, sieh, welche online sind, und widerrufe ein Smartphone jederzeit in der Desktop-App.
 - Das Smartphone verbindet sich direkt, wenn es kann, und weicht sonst auf den dog.codes-Relay-Dienst aus, der nur verschlüsselten Datenverkehr weiterleitet.
 - Dein Computer bleibt eingeschaltet, mit dog.codes geöffnet oder minimiert. Solange Arbeit oder eine Remote-Sitzung aktiv ist, kann dog.codes den automatischen Ruhezustand des Computers verhindern; das lässt sich abschalten.
-- Remote-Desktop funktioniert mit macOS-, Windows- und Linux-Computern (X11 und Wayland); dein Betriebssystem fragt die benötigten Bildschirm- und Eingabeberechtigungen ab.
+- Remote-Desktop funktioniert mit macOS- und Windows-Computern (Linux mit X11 und Wayland wartet noch auf Tests auf echter Hardware); dein Betriebssystem fragt die benötigten Bildschirm- und Eingabeberechtigungen ab.
 
 <a id="getting-started"></a>
 
 ## Erste Schritte
 
-Starte die App derzeit aus dem Quellcode. Installiere **Rust 1.97.1**, **Node.js 22+**, **pnpm 11** und die [Tauri-Voraussetzungen für deine Plattform](https://v2.tauri.app/start/prerequisites/). Klone dieses Repository oder lade es herunter und führe im Hauptverzeichnis aus:
+Lade das Installationsprogramm für macOS (Apple Silicon / Intel) oder Windows x64 unter [Releases](https://github.com/owlfy-ai/dogcodes/releases) herunter. Die Linux-App wartet noch auf Tests auf echter Hardware; unter Linux oder für einen eigenen Build startest du die App aus dem Quellcode. Installiere **Rust 1.97.1**, **Node.js 22+**, **pnpm 11** und die [Tauri-Voraussetzungen für deine Plattform](https://v2.tauri.app/start/prerequisites/). Klone dieses Repository oder lade es herunter und führe im Hauptverzeichnis aus:
 
 ```bash
 pnpm install
@@ -226,6 +226,6 @@ dog.codes verbindet sich über die lokale Prozessschnittstelle mit jedem Agenten
 
 ### Danksagung
 
-Computer use nutzt den MIT-lizenzierten [Cua Driver](https://github.com/trycua/cua) zum Auslesen von Fenstern, für Screenshots sowie für Maus- und Tastatureingaben. Vielen Dank an das Cua-Team und die Mitwirkenden für ihre quelloffene Desktop-Automatisierung. Die Integration des mitgelieferten Treibers unterstützt derzeit Windows x64.
+Computer use nutzt den MIT-lizenzierten [Cua Driver](https://github.com/trycua/cua) zum Auslesen von Fenstern, für Screenshots sowie für Maus- und Tastatureingaben. Vielen Dank an das Cua-Team und die Mitwirkenden für ihre quelloffene Desktop-Automatisierung. Die Integration des mitgelieferten Treibers unterstützt derzeit Windows x64 und macOS; Linux wartet noch auf Tests auf echter Hardware.
 
 Die Agenten-Icons stammen aus den bereits vorhandenen Ressourcen dieses Repositorys; siehe [Herkunft und Hinweise](../../apps/desktop/src/assets/licenses/README.md). Produktnamen und Marken gehören ihren jeweiligen Inhabern.

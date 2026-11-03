@@ -138,7 +138,7 @@ Requiere un agente/CLI compatible y permisos del sistema. Pi no es compatible; e
 
 ![Cursor maneja el equipo para verificar filtros de facturas y exportación CSV — escritorio](../images/readme/en/computer-use.png)
 
-**Código abierto · Gratis · Multiplataforma**: con licencia MIT, creado para macOS, Windows y Linux.
+**Código abierto · Gratis · Multiplataforma**: con licencia MIT, aplicaciones de escritorio para macOS y Windows ya publicadas; Linux está pendiente de pruebas en equipos reales.
 
 <a id="phone"></a>
 
@@ -166,13 +166,13 @@ Empareja un móvil una sola vez y haz todo lo que sigue desde cualquier lugar. T
 - Escaneas un código QR una vez y no hace falta cuenta. La conexión va cifrada de extremo a extremo. Empareja varios ordenadores, comprueba cuáles están en línea y revoca un móvil cuando quieras desde la app de escritorio.
 - El móvil se conecta directamente cuando puede y, si no, recurre al servicio de retransmisión de dog.codes, que solo reenvía tráfico cifrado.
 - Tu ordenador debe seguir encendido con dog.codes abierto o minimizado. Mientras haya trabajo o una sesión remota activa, dog.codes puede evitar que el ordenador entre en suspensión automática; puedes desactivarlo.
-- El escritorio remoto funciona con ordenadores macOS, Windows y Linux (X11 y Wayland); tu sistema operativo te pedirá los permisos de pantalla y entrada que necesita.
+- El escritorio remoto funciona con ordenadores macOS y Windows (Linux con X11 y Wayland está pendiente de pruebas en equipos reales); tu sistema operativo te pedirá los permisos de pantalla y entrada que necesita.
 
 <a id="getting-started"></a>
 
 ## Primeros pasos
 
-Por ahora, ejecuta la aplicación desde el código fuente. Instala **Rust 1.97.1**, **Node.js 22+**, **pnpm 11** y los [requisitos de Tauri para tu plataforma](https://v2.tauri.app/start/prerequisites/). Clona o descarga este repositorio y ejecuta estos comandos en su raíz:
+Descarga el instalador para macOS (Apple silicon / Intel) o Windows x64 desde [Releases](https://github.com/owlfy-ai/dogcodes/releases). La aplicación para Linux está pendiente de pruebas en equipos reales; en Linux, o para compilarla tú mismo, ejecútala desde el código fuente. Instala **Rust 1.97.1**, **Node.js 22+**, **pnpm 11** y los [requisitos de Tauri para tu plataforma](https://v2.tauri.app/start/prerequisites/). Clona o descarga este repositorio y ejecuta estos comandos en su raíz:
 
 ```bash
 pnpm install
@@ -226,6 +226,6 @@ dog.codes se conecta a cada agente mediante su interfaz de proceso local. ACP si
 
 ### Agradecimientos
 
-Computer use utiliza [Cua Driver](https://github.com/trycua/cua), con licencia MIT, para consultar ventanas, tomar capturas e interactuar con el teclado y el ratón. Gracias al equipo de Cua y a sus colaboradores por su trabajo de automatización de escritorio de código abierto. La integración del controlador incluido admite actualmente Windows x64.
+Computer use utiliza [Cua Driver](https://github.com/trycua/cua), con licencia MIT, para consultar ventanas, tomar capturas e interactuar con el teclado y el ratón. Gracias al equipo de Cua y a sus colaboradores por su trabajo de automatización de escritorio de código abierto. La integración del controlador incluido admite actualmente Windows x64 y macOS; Linux está pendiente de pruebas en equipos reales.
 
 Los iconos reutilizan los recursos incluidos en este repositorio; consulta su [procedencia y avisos](../../apps/desktop/src/assets/licenses/README.md). Los nombres y las marcas pertenecen a sus respectivos titulares.

@@ -138,7 +138,7 @@ Requer um agente/CLI compatível e permissões do sistema. Pi não é compatíve
 
 ![Cursor opera o computador para verificar filtros de faturas e exportação CSV — desktop](../images/readme/en/computer-use.png)
 
-**Código aberto · Grátis · Multiplataforma**: licenciado sob MIT, feito para macOS, Windows e Linux.
+**Código aberto · Grátis · Multiplataforma**: licenciado sob MIT, apps de desktop para macOS e Windows já publicados; Linux aguarda testes em máquina real.
 
 <a id="phone"></a>
 
@@ -166,13 +166,13 @@ Pareie um celular uma única vez e faça tudo abaixo de qualquer lugar. Seu cód
 - Escaneie um QR code uma vez, sem precisar de conta. A conexão é criptografada de ponta a ponta. Pareie vários computadores, veja quais estão on-line e revogue um celular quando quiser pelo app de desktop.
 - O celular se conecta diretamente quando pode e, se não der, usa o serviço de retransmissão do dog.codes, que apenas encaminha tráfego criptografado.
 - Seu computador precisa ficar ligado, com o dog.codes aberto ou minimizado. Enquanto houver trabalho ou uma sessão remota ativa, o dog.codes pode impedir que o computador entre em suspensão automática; você pode desativar isso.
-- A área de trabalho remota funciona com computadores macOS, Windows e Linux (X11 e Wayland); o sistema operacional pede as permissões de tela e entrada necessárias.
+- A área de trabalho remota funciona com computadores macOS e Windows (Linux com X11 e Wayland aguarda testes em máquina real); o sistema operacional pede as permissões de tela e entrada necessárias.
 
 <a id="getting-started"></a>
 
 ## Primeiros passos
 
-Por enquanto, execute a partir do código-fonte. Instale **Rust 1.97.1**, **Node.js 22+**, **pnpm 11** e os [pré-requisitos do Tauri para sua plataforma](https://v2.tauri.app/start/prerequisites/). Clone ou baixe este repositório e execute na raiz:
+Baixe o instalador para macOS (Apple silicon / Intel) ou Windows x64 em [Releases](https://github.com/owlfy-ai/dogcodes/releases). O app para Linux aguarda testes em máquina real; no Linux, ou para compilar você mesmo, execute a partir do código-fonte. Instale **Rust 1.97.1**, **Node.js 22+**, **pnpm 11** e os [pré-requisitos do Tauri para sua plataforma](https://v2.tauri.app/start/prerequisites/). Clone ou baixe este repositório e execute na raiz:
 
 ```bash
 pnpm install
@@ -226,6 +226,6 @@ dog.codes se conecta a cada agente por sua interface de processo local. ACP sign
 
 ### Agradecimentos
 
-Computer use utiliza o [Cua Driver](https://github.com/trycua/cua), sob licença MIT, para ler janelas, capturar telas e interagir com teclado e mouse. Agradecemos à equipe Cua e aos colaboradores pelo trabalho de automação desktop de código aberto. A integração do driver incluído oferece suporte atualmente a Windows x64.
+Computer use utiliza o [Cua Driver](https://github.com/trycua/cua), sob licença MIT, para ler janelas, capturar telas e interagir com teclado e mouse. Agradecemos à equipe Cua e aos colaboradores pelo trabalho de automação desktop de código aberto. A integração do driver incluído oferece suporte atualmente a Windows x64 e macOS; Linux aguarda testes em máquina real.
 
 Os ícones reutilizam os recursos já presentes neste repositório; veja a [origem e os avisos](../../apps/desktop/src/assets/licenses/README.md). Nomes de produtos e marcas pertencem aos respectivos titulares.
