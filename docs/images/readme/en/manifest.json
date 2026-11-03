@@ -4,7 +4,7 @@
   "tool": "Built-in image_gen",
   "scenario": "Ledger: invoice filters, CSV export, code review, tests and commits",
   "status": "English review set; other languages await user acceptance",
-  "layout": "Nine Features images show desktop only; overview and phone-remote illustrations retain desktop and phone views.",
+  "layout": "Ten Features images show desktop only; overview and phone-remote illustrations retain desktop and phone views.",
   "assets": [
     {
       "file": "overview.png",
@@ -15,6 +15,17 @@
       "mode": "RGB",
       "sha256": "c47372423a10d224e80347fb594eb703fe37793c933423e114094f85d041e68b",
       "layout": "Desktop first, corresponding phone second"
+    },
+    {
+      "file": "computer-use.png",
+      "title": "Codex-level computer use for every agent",
+      "source_image": "exec-cde59831-4dca-42af-afe6-5dfd8c8e9121.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "936f24d87e8214eb6f6155301a9b74f2004028a8335b06b18a5b5f1023994cdf",
+      "layout": "Desktop only; agent conversation and controlled local browser",
+      "scenario": "Claude Code verifies Ledger invoice filters and CSV export through real computer-use controls; curated illustration"
     },
     {
       "file": "switch-agent.png",

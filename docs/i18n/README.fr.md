@@ -43,6 +43,18 @@ Connectez les agents que vous utilisez déjà. Les 12 intégrations ci-dessous s
 
 ## Fonctionnalités
 
+### Computer Use au niveau de Codex pour tous les agents
+
+**Offrez aux agents et aux CLI qui ne peuvent pas piloter votre ordinateur ni vérifier eux-mêmes leur travail des capacités de contrôle aussi puissantes que celles de Codex.**
+
+- L’agent peut observer le bureau, ouvrir des applications, cliquer, saisir du texte et faire défiler de vraies interfaces.
+- Bouclez le cycle de développement : lancez le projet, reproduisez le problème dans l’interface, corrigez le code, puis revenez dans l’application pour vérifier le résultat.
+- Un interrupteur global contrôle la fonction. Les actions apparaissent dans la conversation ; Échap interrompt l’opération en cours au premier plan.
+
+Nécessite un agent/CLI compatible et les autorisations système. Pi n’est pas pris en charge ; sur Mac, cette fonction nécessite macOS 13 ou une version ultérieure.
+
+![Claude Code pilote l’ordinateur pour vérifier les filtres de factures et l’export CSV — bureau](../images/readme/en/computer-use.png)
+
 ### Passez le relais entre agents sans interruption
 
 **Changez à tout moment l'agent qui exécute la même conversation ; le contexte est transmis automatiquement.**

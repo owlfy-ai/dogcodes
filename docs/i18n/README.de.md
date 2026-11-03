@@ -43,6 +43,18 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 
 ## Funktionen
 
+### Computer Use auf Codex-Niveau für alle Agenten
+
+**Gib Agenten und CLIs, die deinen Computer bisher nicht bedienen oder ihre Arbeit selbst überprüfen können, ebenso leistungsfähige Computersteuerung wie Codex.**
+
+- Der Agent kann den Desktop beobachten, Apps öffnen und in echten Oberflächen klicken, tippen und scrollen.
+- Schließe den Entwicklungszyklus: Projekt starten, den Fehler in der Oberfläche reproduzieren, den Code korrigieren und das Ergebnis anschließend in der App überprüfen.
+- Ein globaler Schalter steuert die Funktion. Computeraktionen erscheinen im Gespräch; mit Esc unterbrichst du den aktuellen Vorgang im Vordergrund.
+
+Erfordert einen kompatiblen Agenten bzw. eine kompatible CLI und Systemberechtigungen. Pi wird nicht unterstützt; auf dem Mac benötigt diese Funktion macOS 13 oder neuer.
+
+![Claude Code bedient den Computer und überprüft Rechnungsfilter und CSV-Export — Desktop](../images/readme/en/computer-use.png)
+
 ### Arbeit nahtlos zwischen Agenten übergeben
 
 **Wechsle jederzeit den Agenten, der dieselbe Unterhaltung ausführt; der Kontext wird automatisch übergeben.**

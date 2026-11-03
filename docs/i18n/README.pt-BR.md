@@ -43,6 +43,18 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 
 ## Recursos
 
+### Computer Use no nível do Codex para todos os agentes
+
+**Dê aos agentes e CLIs que não conseguem operar seu computador ou verificar o próprio trabalho recursos de controle do computador tão poderosos quanto os do Codex.**
+
+- O agente pode observar a área de trabalho, abrir aplicativos e clicar, digitar e rolar em interfaces reais.
+- Feche o ciclo de desenvolvimento: execute o projeto, reproduza o problema na interface, corrija o código e volte ao aplicativo para verificar o resultado.
+- Controle o recurso com um interruptor global. As ações aparecem na conversa; pressione Esc para interromper a operação atual em primeiro plano.
+
+Requer um agente/CLI compatível e permissões do sistema. Pi não é compatível; no Mac, este recurso exige macOS 13 ou posterior.
+
+![Claude Code opera o computador para verificar filtros de faturas e exportação CSV — desktop](../images/readme/en/computer-use.png)
+
 ### Passe o trabalho entre agentes sem interrupções
 
 **Troque a qualquer momento o agente que executa a mesma conversa; o contexto é repassado automaticamente.**
