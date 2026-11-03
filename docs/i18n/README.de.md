@@ -138,7 +138,7 @@ Erfordert einen kompatiblen Agenten bzw. eine kompatible CLI und Systemberechtig
 
 ![Cursor bedient den Computer und überprüft Rechnungsfilter und CSV-Export — Desktop](../images/readme/en/computer-use.png)
 
-**Open Source · Kostenlos · Plattformübergreifend**: unter Apache-2.0 lizenziert, für macOS, Windows und Linux gebaut.
+**Open Source · Kostenlos · Plattformübergreifend**: unter MIT lizenziert, für macOS, Windows und Linux gebaut.
 
 <a id="phone"></a>
 

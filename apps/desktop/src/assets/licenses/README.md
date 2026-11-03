@@ -7,7 +7,7 @@
 | `pi.svg` | [Pi source](https://github.com/BytePioneer-AI/codex-host/blob/e61d25c7d7c41391ea32b5ace05be03dffc5e6cd/packages/adapters/pi/assets/icon.svg) | Only `viewBox` changed from `0 0 800 800` to `120 120 560 560`, cropping the viewport; paths are unchanged. |
 | `opencode.png` | [OpenCode source](https://github.com/BytePioneer-AI/codex-host/blob/e61d25c7d7c41391ea32b5ace05be03dffc5e6cd/packages/adapters/opencode/assets/icon.png) | Byte-identical. |
 
-The reference repository's [LICENSE](https://github.com/BytePioneer-AI/codex-host/blob/e61d25c7d7c41391ea32b5ace05be03dffc5e6cd/LICENSE) is preserved byte-for-byte in [codex-host-LICENSE.txt](codex-host-LICENSE.txt). It contains LGPL v3; it is not replaced by this project's Apache-2.0 license. The comparison establishes file provenance, not independent permission for every product mark. Upstream asset-specific terms and complete distribution notices remain release review items.
+The reference repository's [LICENSE](https://github.com/BytePioneer-AI/codex-host/blob/e61d25c7d7c41391ea32b5ace05be03dffc5e6cd/LICENSE) is preserved byte-for-byte in [codex-host-LICENSE.txt](codex-host-LICENSE.txt). It contains LGPL v3; it is not replaced by this project's MIT license. The comparison establishes file provenance, not independent permission for every product mark. Upstream asset-specific terms and complete distribution notices remain release review items.
 
 SHA-256 of current local assets:
 

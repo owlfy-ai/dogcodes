@@ -138,7 +138,7 @@ Nécessite un agent/CLI compatible et les autorisations système. Pi n’est pas
 
 ![Cursor pilote l’ordinateur pour vérifier les filtres de factures et l’export CSV — bureau](../images/readme/en/computer-use.png)
 
-**Open source · Gratuit · Multiplateforme** : sous licence Apache-2.0, conçu pour macOS, Windows et Linux.
+**Open source · Gratuit · Multiplateforme** : sous licence MIT, conçu pour macOS, Windows et Linux.
 
 <a id="phone"></a>
 

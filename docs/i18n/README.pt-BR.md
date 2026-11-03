@@ -138,7 +138,7 @@ Requer um agente/CLI compatível e permissões do sistema. Pi não é compatíve
 
 ![Cursor opera o computador para verificar filtros de faturas e exportação CSV — desktop](../images/readme/en/computer-use.png)
 
-**Código aberto · Grátis · Multiplataforma**: licenciado sob Apache-2.0, feito para macOS, Windows e Linux.
+**Código aberto · Grátis · Multiplataforma**: licenciado sob MIT, feito para macOS, Windows e Linux.
 
 <a id="phone"></a>
 

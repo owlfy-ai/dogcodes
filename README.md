@@ -138,7 +138,7 @@ Requires a compatible agent/CLI and system permissions. Pi is not supported; thi
 
 ![Cursor uses the computer to verify invoice filters and CSV export — desktop](docs/images/readme/en/computer-use.png)
 
-**Open source · Free · Cross-platform**: licensed under Apache-2.0, built for macOS, Windows, and Linux.
+**Open source · Free · Cross-platform**: licensed under MIT, built for macOS, Windows, and Linux.
 
 <a id="phone"></a>
 

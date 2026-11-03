@@ -138,7 +138,7 @@ dog.codes は、コーディングエージェント、会話、コードの変�
 
 ![Cursor が PC を操作し、請求書フィルターと CSV エクスポートを検証 — デスクトップ](../images/readme/en/computer-use.png)
 
-**オープンソース · 無料 · クロスプラットフォーム**：Apache-2.0 ライセンス。macOS、Windows、Linux 向けに構築しています。
+**オープンソース · 無料 · クロスプラットフォーム**：MIT ライセンス。macOS、Windows、Linux 向けに構築しています。
 
 <a id="phone"></a>
 

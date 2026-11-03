@@ -138,7 +138,7 @@ dog.codes은 코딩 에이전트, 대화, 코드 변경 사항, 프로젝트 실
 
 ![Cursor가 컴퓨터를 조작해 청구서 필터와 CSV 내보내기를 검증 — 데스크톱](../images/readme/en/computer-use.png)
 
-**오픈 소스 · 무료 · 크로스 플랫폼**: Apache-2.0 라이선스, macOS·Windows·Linux용으로 만들어졌습니다.
+**오픈 소스 · 무료 · 크로스 플랫폼**: MIT 라이선스, macOS·Windows·Linux용으로 만들어졌습니다.
 
 <a id="phone"></a>
 

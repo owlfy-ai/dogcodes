@@ -82,4 +82,4 @@ for the planned mobile client, which will talk to the same service.
 ## License
 
 By contributing, you agree that your contributions are licensed under the
-[Apache License 2.0](LICENSE).
+[MIT License](LICENSE).

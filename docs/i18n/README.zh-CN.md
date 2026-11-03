@@ -138,7 +138,7 @@ dog.codes 把编程 Agent、对话、代码变更和项目运行命令放进同�
 
 ![Cursor 操作电脑，验证发票筛选与 CSV 导出 — PC 端](../images/readme/en/computer-use.png)
 
-**开源 · 免费 · 跨平台**：Apache-2.0 授权，面向 macOS、Windows 和 Linux 构建。
+**开源 · 免费 · 跨平台**：MIT 授权，面向 macOS、Windows 和 Linux 构建。
 
 <a id="phone"></a>
 
