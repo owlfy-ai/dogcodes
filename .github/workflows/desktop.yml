@@ -85,9 +85,11 @@ jobs:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             bundles: deb,appimage
-          - os: ubuntu-22.04-arm
-            target: aarch64-unknown-linux-gnu
-            bundles: deb,appimage
+          # Linux ARM packaging is paused until a real machine has installed the
+          # DEB and AppImage. Restore this row together with the package steps below.
+          # - os: ubuntu-22.04-arm
+          #   target: aarch64-unknown-linux-gnu
+          #   bundles: deb,appimage
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     env:
@@ -199,31 +201,34 @@ jobs:
           path: native-tests.log
           if-no-files-found: ignore
           retention-days: 7
+      # Linux DEB/AppImage packaging is paused until real-machine install testing.
+      # The Linux runner still compiles and runs the native checks above.
       - name: Build unsigned installer
-        if: inputs.full || github.event_name == 'workflow_dispatch'
+        if: runner.os != 'Linux' && (inputs.full || github.event_name == 'workflow_dispatch')
         run: pnpm desktop:package --unsigned --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
-      - name: Packaged PipeWire client on a private Portal
-        if: runner.os == 'Linux' && (inputs.full || github.event_name == 'workflow_dispatch')
-        timeout-minutes: 15
-        shell: bash
-        env:
-          RUST_MIN_STACK: '16777216'
-        run: |
-          flags=()
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then flags+=(--release); fi
-          python3 scripts/wayland_acceptance.py "${flags[@]}" --format rgb-cursor --appimage target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+      # - name: Packaged PipeWire client on a private Portal
+      #   if: runner.os == 'Linux' && (inputs.full || github.event_name == 'workflow_dispatch')
+      #   timeout-minutes: 15
+      #   shell: bash
+      #   env:
+      #     RUST_MIN_STACK: '16777216'
+      #   run: |
+      #     flags=()
+      #     if [[ "$GITHUB_REF" == refs/tags/* ]]; then flags+=(--release); fi
+      #     python3 scripts/wayland_acceptance.py "${flags[@]}" --format rgb-cursor --appimage target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
       - name: Retain only installer artifacts for validation
-        if: inputs.full || github.event_name == 'workflow_dispatch'
+        if: runner.os != 'Linux' && (inputs.full || github.event_name == 'workflow_dispatch')
         uses: actions/upload-artifact@v7
         with:
           name: dogcodes-unsigned-${{ matrix.target }}
           if-no-files-found: error
           retention-days: 14
+          # Linux packages stay out of the draft until real-machine testing:
+          # target/${{ matrix.target }}/release/bundle/deb/*.deb
+          # target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
           path: |
             target/${{ matrix.target }}/release/bundle/nsis/*.exe
             target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            target/${{ matrix.target }}/release/bundle/deb/*.deb
-            target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
 
   # One stable required check also completes for documentation-only changes.
   checks:

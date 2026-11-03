@@ -62,6 +62,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir release-assets
+          # Linux DEB/AppImage are omitted until real-machine testing. Restore with:
+          # -o -name '*.deb' -o -name '*.AppImage'
           while IFS= read -r -d '' file; do
             name=$(basename "$file")
             if [ -e "release-assets/$name" ]; then
@@ -69,10 +71,11 @@ jobs:
               exit 1
             fi
             cp "$file" "release-assets/$name"
-          done < <(find installers -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' \) -print0)
-          test "$(find release-assets -type f | wc -l)" -eq 7
+          done < <(find installers -type f \( -name '*.exe' -o -name '*.dmg' \) -print0)
+          test "$(find release-assets -type f | wc -l)" -eq 3
           cd release-assets
-          sha256sum -- *.exe *.dmg *.deb *.AppImage > SHA256SUMS.txt
+          sha256sum -- *.exe *.dmg > SHA256SUMS.txt
+          # sha256sum -- *.exe *.dmg *.deb *.AppImage > SHA256SUMS.txt
       - name: Create a draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -89,8 +92,10 @@ jobs:
           | --- | --- |
           | macOS ARM64 / Intel | Awaiting local signed packages |
           | Windows x64 | Awaiting local signed package |
+          <!-- Linux packaging paused until real-machine testing
           | Linux x64 | CI-built DEB / AppImage; no additional package signature |
           | Linux ARM64 | CI-built DEB / AppImage; no additional package signature |
+          -->
           <!-- dogcodes-signing:end -->
           NOTES
           gh release create "$TAG" --repo "$REPO" --draft --prerelease \

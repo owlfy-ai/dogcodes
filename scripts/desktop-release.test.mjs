@@ -23,8 +23,7 @@ function fakeGitHub({ serverDigests = true } = {}) {
     return metadata(asset);
   };
   for (const name of ['dog.codes-0.1.0-macOS-AppleSilicon.dmg', 'dog.codes-0.1.0-macOS-Intel.dmg',
-    'dog.codes-0.1.0-Windows-x64-Setup.exe', 'dog.codes-0.1.0-Linux-x64.deb', 'dog.codes-0.1.0-Linux-x64.AppImage',
-    'dog.codes-0.1.0-Linux-arm64.deb', 'dog.codes-0.1.0-Linux-arm64.AppImage']) put(name, `ci-${name}`);
+    'dog.codes-0.1.0-Windows-x64-Setup.exe']) put(name, `ci-${name}`);
   put('SHA256SUMS.txt', 'initial-checksums');
   const client = {
     async release() { return { id: 1, draft, body, assets: [...assets.values()].map(metadata) }; },
@@ -148,7 +147,7 @@ test('Mac upload replaces CI naming variants, keeps Windows/Linux, and hashes th
   assert.equal(hub.assets.get('dog.codes-0.1.0-macOS-Intel.dmg').bytes.toString(), 'signed-dog.codes-0.1.0-macOS-Intel.dmg');
   assert.equal(hub.assets.get('dog.codes-0.1.0-Windows-x64-Setup.exe').bytes.toString(), 'ci-dog.codes-0.1.0-Windows-x64-Setup.exe');
   const lines = hub.assets.get('SHA256SUMS.txt').bytes.toString().trim().split('\n');
-  assert.equal(lines.length, 7);
+  assert.equal(lines.length, 3);
   for (const line of lines) {
     const [sha, name] = line.split('  ');
     assert.equal(sha, digest(hub.assets.get(name).bytes));
@@ -175,7 +174,7 @@ test('two computers serialize updates and produce one correct checksum set for b
   assert.match(release.body, /Authenticode signed and timestamped/);
   assert.equal(hub.assets.has(lockName), false);
   for (const asset of [...mac.assets, ...windows.assets]) assert.equal(digest(hub.assets.get(asset.name).bytes), asset.sha256);
-  assert.equal(hub.assets.get('SHA256SUMS.txt').bytes.toString().trim().split('\n').length, 7);
+  assert.equal(hub.assets.get('SHA256SUMS.txt').bytes.toString().trim().split('\n').length, 3);
   assert.equal(hub.changes.some(change => change.includes('delete:dog.codes-0.1.0-Linux')), false);
 }));
 

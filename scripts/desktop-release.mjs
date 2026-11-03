@@ -170,9 +170,10 @@ export async function refreshChecksums(client, { tag, commit, stage }) {
   const release = await client.release();
   assertDraft(release);
   const packages = release.assets.filter(asset => installer(asset.name)).sort((a, b) => a.name.localeCompare(b.name, 'en'));
+  // Linux DEB/AppImage counts stay at zero until real-machine testing. Restore to two of each.
   if (packages.filter(a => a.name.endsWith('.dmg')).length !== 2 || packages.filter(a => a.name.endsWith('.exe')).length !== 1
-      || packages.filter(a => a.name.endsWith('.deb')).length !== 2 || packages.filter(a => a.name.endsWith('.AppImage')).length !== 2) {
-    throw new Error('The draft must contain exactly two Mac DMGs, one Windows EXE, two DEBs and two AppImages.');
+      || packages.filter(a => a.name.endsWith('.deb')).length !== 0 || packages.filter(a => a.name.endsWith('.AppImage')).length !== 0) {
+    throw new Error('The draft must contain exactly two Mac DMGs and one Windows EXE.');
   }
   const hashes = new Map();
   for (const asset of packages) {
@@ -214,7 +215,7 @@ export async function refreshChecksums(client, { tag, commit, stage }) {
   };
   await unchanged();
   await client.upload(checksum);
-  const section = `${startMarker}\n| Platform | Package status |\n| --- | --- |\n| macOS ARM64 / Intel | ${complete.darwin ? 'Developer ID signed and notarized' : 'Awaiting local signed packages'} |\n| Windows x64 | ${complete.win32 ? 'Authenticode signed and timestamped' : 'Awaiting local signed package'} |\n| Linux x64 | CI-built DEB / AppImage; no additional package signature |\n| Linux ARM64 | CI-built DEB / AppImage; no additional package signature |\n\nSource commit: \`${commit}\`. Verify downloads with \`SHA256SUMS.txt\`.\n${endMarker}`;
+  const section = `${startMarker}\n| Platform | Package status |\n| --- | --- |\n| macOS ARM64 / Intel | ${complete.darwin ? 'Developer ID signed and notarized' : 'Awaiting local signed packages'} |\n| Windows x64 | ${complete.win32 ? 'Authenticode signed and timestamped' : 'Awaiting local signed package'} |\n<!-- Linux packaging paused until real-machine testing\n| Linux x64 | CI-built DEB / AppImage; no additional package signature |\n| Linux ARM64 | CI-built DEB / AppImage; no additional package signature |\n-->\n\nSource commit: \`${commit}\`. Verify downloads with \`SHA256SUMS.txt\`.\n${endMarker}`;
   const current = await unchanged();
   const body = current.body ?? '';
   const begin = body.indexOf(startMarker), end = body.indexOf(endMarker);
@@ -297,7 +298,7 @@ async function verifyPackages({ root, platform, assets }) {
 export async function releaseDesktop({ root = rootDirectory, platform = process.platform, args = process.argv.slice(2) } = {}) {
   const options = releaseArguments(args);
   const targets = platformTargets[platform];
-  if (!targets) throw new Error('Run this command on the Mac or Windows signing machine. Linux packages come from CI.');
+  if (!targets) throw new Error('Run this command on the Mac or Windows signing machine.');
   const git = args => capture('git', args, { cwd: root });
   const version = releaseVersion(root), tag = `v${version}`;
   const commit = await git(['rev-parse', 'HEAD']);
