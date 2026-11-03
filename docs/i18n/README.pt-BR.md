@@ -37,7 +37,7 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 
 ## Todo o seu trabalho em um só lugar
 
-<!-- Captura de tela pendente: ../../docs/images/readme/overview.png -->
+![Todo o seu trabalho em um só lugar](../images/readme/en/overview.png)
 
 <a id="features"></a>
 
@@ -51,7 +51,7 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 - Quando um agente esgota a cota, outro continua o trabalho sem que você precise repetir os requisitos.
 - A conversa anterior acompanha a passagem, e o novo agente pode consultar turnos anteriores pelas ferramentas de histórico integradas — ele realmente continua, em vez de recomeçar.
 
-<!-- Captura de tela pendente: ../../docs/images/readme/switch-agent.png -->
+![Passe o trabalho entre agentes sem interrupções](../images/readme/en/switch-agent.png)
 
 ### Cotas e uso de relance
 
@@ -61,7 +61,7 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 - Gerencie as versões dos agentes em um só lugar e atualize com um clique.
 - Os agentes instalados e o status de login são detectados automaticamente.
 
-<!-- Captura de tela pendente: ../../docs/images/readme/usage.png -->
+![Cotas e uso de relance](../images/readme/en/usage.png)
 
 ### Use as assinaturas que você já tem
 
@@ -71,7 +71,7 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 - Local primeiro: seu código, suas conversas e suas credenciais ficam no seu computador. A conexão opcional com o celular é criptografada de ponta a ponta, então a retransmissão nunca vê seus dados.
 - Os agentes são iniciados apenas com as variáveis de ambiente necessárias, sem expor seus outros segredos.
 
-<!-- Captura de tela pendente: ../../docs/images/readme/accounts.png -->
+![Use as assinaturas que você já tem](../images/readme/en/accounts.png)
 
 ### Revisão e correção de código entre agentes
 
@@ -81,7 +81,7 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 - Os achados são classificados em prioridade alta, média e baixa; escolha os que quiser e inicie a correção com um clique.
 - A correção volta ao agente principal com o relatório de revisão e os achados escolhidos, sem perder o contexto.
 
-<!-- Captura de tela pendente: ../../docs/images/readme/review-fix.png -->
+![Revisão e correção de código entre agentes](../images/readme/en/review-fix.png)
 
 ### Ramifique entre agentes e compare abordagens
 
@@ -90,7 +90,7 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 - Com worktrees, as alterações de código de cada abordagem ficam isoladas umas das outras.
 - Peça a vários agentes que resolvam a mesma tarefa e fique com a melhor versão.
 
-<!-- Captura de tela pendente: ../../docs/images/readme/fork.png -->
+![Ramifique entre agentes e compare abordagens](../images/readme/en/fork.png)
 
 ### Gerenciamento de Git com cara de familiar
 
@@ -99,7 +99,7 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 - Preparar, remover da preparação, descartar, ignorar, Commit e Commit & Push, com visualização em árvore e em lista.
 - Peça a qualquer agente que escreva a mensagem de commit com um clique, no idioma que você escolher.
 
-<!-- Captura de tela pendente: ../../docs/images/readme/git-changes.png -->
+![Gerenciamento de Git com cara de familiar](../images/readme/en/git-changes.png)
 
 ### Descubra como executar um projeto e rode com um clique
 
@@ -108,7 +108,7 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 - Chega de decorar o comando de início de cada projeto ou abrir um terminal só para isso — basta um clique.
 - A saída fica reunida em um só lugar para você consultar quando quiser.
 
-<!-- Captura de tela pendente: ../../docs/images/readme/run-project.png -->
+![Descubra como executar um projeto e rode com um clique](../images/readme/en/run-project.png)
 
 ### Projetos com várias pastas
 
@@ -116,7 +116,7 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 
 - Mesmo agentes sem suporte nativo a várias pastas conseguem trabalhar em projetos multipasta pelo dog.codes.
 
-<!-- Captura de tela pendente: ../../docs/images/readme/multi-folder.png -->
+![Projetos com várias pastas](../images/readme/en/multi-folder.png)
 
 ### Uso por turno, com toda a clareza
 
@@ -124,7 +124,7 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 
 - Entenda em detalhe o que a conversa atual e cada turno consumiram, e para onde foram seus tokens.
 
-<!-- Captura de tela pendente: ../../docs/images/readme/turn-usage.png -->
+![Uso por turno, com toda a clareza](../images/readme/en/turn-usage.png)
 
 ### Computer Use no nível do Codex para todos os agentes
 
@@ -148,18 +148,39 @@ Requer um agente/CLI compatível e permissões do sistema. Pi não é compatíve
 
 Pareie um celular uma única vez e faça tudo abaixo de qualquer lugar. Seu código e seus agentes ficam no seu computador.
 
-<!-- Captura de tela pendente: ../../docs/images/readme/phone-remote.png -->
+![Comande seus agentes pelo celular](../images/readme/en/phone-remote.png)
 
 - **Continue ou inicie conversas.** Retome qualquer conversa do seu computador ou comece uma nova: escolha agente, modelo e nível de raciocínio, acompanhe a saída ao vivo e pesquise, fixe, arquive ou ramifique sessões.
+
+  ![Continue ou inicie conversas](../images/readme/en/switch-agent-phone.png)
+
 - **Aprove e responda.** Pedidos de permissão e perguntas dos agentes chegam ao celular com notificações push; um toque e o agente segue em frente. Cada aprovação é conferida com a execução original no seu computador.
+
+  ![Aprove e responda](../images/readme/en/permissions.png)
+
 - **Revise e faça commit.** Veja as mudanças em cada pasta do projeto, prepare arquivos, peça a um agente que escreva a mensagem do commit e então confirme, envie, baixe ou sincronize. Navegue pelo histórico de commits e compare branches em modo somente leitura.
+
+  ![Revise e faça commit](../images/readme/en/git-changes-phone.png)
+
 - **Adicione projetos a partir do PC.** Navegue pelas pastas do seu computador e adicione uma como projeto sem voltar para a mesa.
+
+  ![Adicione projetos a partir do PC](../images/readme/en/add-project.png)
+
 - **Execute comandos no terminal do PC.** Abra terminais em qualquer pasta do projeto e trabalhe no shell de verdade do seu computador.
+
+  ![Execute comandos no terminal do PC](../images/readme/en/terminal.png)
+
 - **Execute o projeto e veja no celular.** Inicie as entradas de execução no computador e abra o app web em execução direto no celular.
+
+  ![Execute o projeto e veja no celular](../images/readme/en/run-project-phone.png)
+
 - **Navegue por arquivos e envie anexos.** Leia os arquivos do projeto e anexe arquivos e imagens às suas mensagens.
+
+  ![Navegue por arquivos e envie anexos](../images/readme/en/files-attachments.png)
+
 - **Área de trabalho remota quando precisar.** Veja a tela do seu computador e toque, arraste, role, faça pinça, digite ou cole texto e imagens, com qualidade que se adapta à rede.
 
-<!-- Captura de tela pendente: ../../docs/images/readme/remote-desktop.png -->
+![Área de trabalho remota quando precisar](../images/readme/en/remote-desktop.png)
 
 ### Como a conexão funciona
 

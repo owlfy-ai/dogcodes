@@ -37,7 +37,7 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 
 ## Todo tu trabajo en un solo lugar
 
-<!-- Captura pendiente: ../../docs/images/readme/overview.png -->
+![Todo tu trabajo en un solo lugar](../images/readme/en/overview.png)
 
 <a id="features"></a>
 
@@ -51,7 +51,7 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 - Si un agente agota su cuota, otro continúa el trabajo sin que tengas que repetir los requisitos.
 - La conversación anterior viaja con el traspaso y el nuevo agente puede consultar turnos previos con las herramientas de historial integradas: de verdad continúa, no empieza de cero.
 
-<!-- Captura pendiente: ../../docs/images/readme/switch-agent.png -->
+![Pasa el trabajo entre agentes sin interrupciones](../images/readme/en/switch-agent.png)
 
 ### Cuotas y uso de un vistazo
 
@@ -61,7 +61,7 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 - Gestiona las versiones de los agentes en un solo lugar y actualízalos con un clic.
 - Los agentes instalados y su estado de inicio de sesión se detectan automáticamente.
 
-<!-- Captura pendiente: ../../docs/images/readme/usage.png -->
+![Cuotas y uso de un vistazo](../images/readme/en/usage.png)
 
 ### Usa las suscripciones que ya tienes
 
@@ -71,7 +71,7 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 - Local primero: tu código, tus conversaciones y tus credenciales se quedan en tu ordenador. La conexión opcional con el móvil va cifrada de extremo a extremo, así que el servicio de retransmisión nunca ve tus datos.
 - Los agentes se inician solo con las variables de entorno que necesitan, así tus otros secretos no quedan expuestos.
 
-<!-- Captura pendiente: ../../docs/images/readme/accounts.png -->
+![Usa las suscripciones que ya tienes](../images/readme/en/accounts.png)
 
 ### Revisión y corrección de código entre agentes
 
@@ -81,7 +81,7 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 - Los hallazgos se clasifican en prioridad alta, media y baja; elige los que quieras y empieza la corrección con un clic.
 - La corrección vuelve al agente principal junto con el informe de revisión y los hallazgos elegidos, sin perder el contexto.
 
-<!-- Captura pendiente: ../../docs/images/readme/review-fix.png -->
+![Revisión y corrección de código entre agentes](../images/readme/en/review-fix.png)
 
 ### Bifurca entre agentes y compara enfoques
 
@@ -90,7 +90,7 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 - Con worktrees, los cambios de código de cada enfoque quedan aislados entre sí.
 - Haz que varios agentes resuelvan la misma tarea y quédate con la mejor versión.
 
-<!-- Captura pendiente: ../../docs/images/readme/fork.png -->
+![Bifurca entre agentes y compara enfoques](../images/readme/en/fork.png)
 
 ### Gestión de Git que resulta familiar
 
@@ -99,7 +99,7 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 - Preparar, quitar de preparación, descartar, ignorar, Commit y Commit & Push, con vista de árbol y de lista.
 - Haz que cualquier agente redacte el mensaje de commit con un clic, en el idioma que elijas.
 
-<!-- Captura pendiente: ../../docs/images/readme/git-changes.png -->
+![Gestión de Git que resulta familiar](../images/readme/en/git-changes.png)
 
 ### Descubre cómo ejecutar un proyecto y hazlo con un clic
 
@@ -108,7 +108,7 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 - Olvídate de memorizar el comando de inicio de cada proyecto o de abrir una terminal solo para lanzarlo: basta un clic.
 - La salida se reúne en un solo lugar para consultarla cuando quieras.
 
-<!-- Captura pendiente: ../../docs/images/readme/run-project.png -->
+![Descubre cómo ejecutar un proyecto y hazlo con un clic](../images/readme/en/run-project.png)
 
 ### Proyectos con varias carpetas
 
@@ -116,7 +116,7 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 
 - Incluso los agentes sin soporte nativo para varias carpetas pueden trabajar en proyectos multicarpeta a través de dog.codes.
 
-<!-- Captura pendiente: ../../docs/images/readme/multi-folder.png -->
+![Proyectos con varias carpetas](../images/readme/en/multi-folder.png)
 
 ### Uso por turno, con total claridad
 
@@ -124,7 +124,7 @@ Conecta los agentes que ya utilizas. Las 12 integraciones siguientes están impl
 
 - Entiende con detalle lo que consumieron la conversación actual y cada turno, y en qué se fueron tus tokens.
 
-<!-- Captura pendiente: ../../docs/images/readme/turn-usage.png -->
+![Uso por turno, con total claridad](../images/readme/en/turn-usage.png)
 
 ### Computer Use al nivel de Codex para todos los agentes
 
@@ -148,18 +148,39 @@ Requiere un agente/CLI compatible y permisos del sistema. Pi no es compatible; e
 
 Empareja un móvil una sola vez y haz todo lo que sigue desde cualquier lugar. Tu código y tus agentes se quedan en tu ordenador.
 
-<!-- Captura pendiente: ../../docs/images/readme/phone-remote.png -->
+![Dirige tus agentes desde el móvil](../images/readme/en/phone-remote.png)
 
 - **Continúa o inicia conversaciones.** Retoma cualquier conversación de tu ordenador o empieza una nueva: elige agente, modelo y nivel de razonamiento, mira la salida en directo y busca, fija, archiva o bifurca sesiones.
+
+  ![Continúa o inicia conversaciones](../images/readme/en/switch-agent-phone.png)
+
 - **Aprueba y responde.** Las solicitudes de permiso y las preguntas de los agentes llegan al móvil con notificaciones push; un toque y el agente continúa. Cada aprobación se comprueba con la ejecución original en tu ordenador.
+
+  ![Aprueba y responde](../images/readme/en/permissions.png)
+
 - **Revisa y confirma.** Consulta los cambios de cada carpeta del proyecto, prepara archivos, deja que un agente escriba el mensaje del commit y luego confirma, sube, descarga o sincroniza. Explora el historial de commits y compara ramas en modo de solo lectura.
+
+  ![Revisa y confirma](../images/readme/en/git-changes-phone.png)
+
 - **Añade proyectos desde tu PC.** Explora las carpetas de tu ordenador y añade una como proyecto sin volver a sentarte en el escritorio.
+
+  ![Añade proyectos desde tu PC](../images/readme/en/add-project.png)
+
 - **Ejecuta comandos en la terminal de tu PC.** Abre terminales en cualquier carpeta del proyecto y trabaja en el shell real de tu ordenador.
+
+  ![Ejecuta comandos en la terminal de tu PC](../images/readme/en/terminal.png)
+
 - **Ejecuta el proyecto y míralo en el móvil.** Inicia las entradas de lanzamiento en tu ordenador y abre la app web en ejecución directamente en el móvil.
+
+  ![Ejecuta el proyecto y míralo en el móvil](../images/readme/en/run-project-phone.png)
+
 - **Explora archivos y envía adjuntos.** Lee los archivos del proyecto y adjunta archivos e imágenes a tus mensajes.
+
+  ![Explora archivos y envía adjuntos](../images/readme/en/files-attachments.png)
+
 - **Escritorio remoto cuando lo necesites.** Mira la pantalla de tu ordenador y toca, arrastra, desplázate, pellizca, escribe o pega texto e imágenes, con una calidad que se adapta a la red.
 
-<!-- Captura pendiente: ../../docs/images/readme/remote-desktop.png -->
+![Escritorio remoto cuando lo necesites](../images/readme/en/remote-desktop.png)
 
 ### Cómo se conecta
 

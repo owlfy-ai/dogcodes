@@ -37,7 +37,7 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 
 ## 把開發流程放在一起
 
-<!-- 截圖預留: ../../docs/images/readme/overview.png -->
+![把開發流程放在一起](../images/readme/en/overview.png)
 
 <a id="features"></a>
 
@@ -51,7 +51,7 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 - 某個 Agent 額度用盡，換另一個 Agent 接著做，不必重新說明需求。
 - 交接時會帶上先前的對話內容，接手的 Agent 也能透過內建歷史工具查閱過往紀錄，是真正接著做，而不是重新開始。
 
-<!-- 截圖預留: ../../docs/images/readme/switch-agent.png -->
+![多 Agent 無縫接續任務](../images/readme/en/switch-agent.png)
 
 ### 隨時掌握額度與用量
 
@@ -61,7 +61,7 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 - 統一管理各 Agent 的版本，一鍵升級。
 - 自動發現本機已安裝的 Agent，並偵測登入狀態。
 
-<!-- 截圖預留: ../../docs/images/readme/usage.png -->
+![隨時掌握額度與用量](../images/readme/en/usage.png)
 
 ### 沿用你現有的訂閱，不必另購 API
 
@@ -71,7 +71,7 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 - 本機優先：程式碼、對話和憑證都留在你的電腦上。可選的手機連線全程端對端加密，中繼看不到你的資料。
 - 啟動 Agent 時只傳入必要的環境變數，你的其他密鑰不會暴露給 Agent。
 
-<!-- 截圖預留: ../../docs/images/readme/accounts.png -->
+![沿用你現有的訂閱，不必另購 API](../images/readme/en/accounts.png)
 
 ### 多 Agent 程式碼審查並修復
 
@@ -81,7 +81,7 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 - 評審結果分為高、中、低優先級，選中問題後一鍵「開始修復」。
 - 修復交回主 Agent 執行，並附上審查報告與選中的問題，上下文連貫，改得更準。
 
-<!-- 截圖預留: ../../docs/images/readme/review-fix.png -->
+![多 Agent 程式碼審查並修復](../images/readme/en/review-fix.png)
 
 ### 跨 Agent 分叉，平行比較方案
 
@@ -90,7 +90,7 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 - 配合 worktree，不同方案的程式碼改動彼此隔離。
 - 讓不同 Agent 對同一問題各出一版，比較後擇優採用。
 
-<!-- 截圖預留: ../../docs/images/readme/fork.png -->
+![跨 Agent 分叉，平行比較方案](../images/readme/en/fork.png)
 
 ### 符合使用習慣的 Git 管理
 
@@ -99,7 +99,7 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 - 暫存、取消暫存、捨棄、忽略，Commit 及 Commit & Push，樹狀與清單檢視自由切換。
 - 可指定任一 Agent 一鍵產生 Commit Message，並可指定語言。
 
-<!-- 截圖預留: ../../docs/images/readme/git-changes.png -->
+![符合使用習慣的 Git 管理](../images/readme/en/git-changes.png)
 
 ### 自動分析專案運行方式，一鍵執行
 
@@ -108,7 +108,7 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 - 不用再記不同專案各自的啟動命令，也不必專門打開終端機，點一下就能執行。
 - 運行輸出集中顯示，隨時查看。
 
-<!-- 截圖預留: ../../docs/images/readme/run-project.png -->
+![自動分析專案運行方式，一鍵執行](../images/readme/en/run-project.png)
 
 ### 多目錄專案支援
 
@@ -116,7 +116,7 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 
 - 原本不支援多目錄的 Agent，經 dog.codes 管理後也能進行多目錄專案開發。
 
-<!-- 截圖預留: ../../docs/images/readme/multi-folder.png -->
+![多目錄專案支援](../images/readme/en/multi-folder.png)
 
 ### 每一輪的用量明細一目了然
 
@@ -124,7 +124,7 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 
 - 詳細掌握目前會話及每一輪對話的消耗，知道 token 花在哪裡。
 
-<!-- 截圖預留: ../../docs/images/readme/turn-usage.png -->
+![每一輪的用量明細一目了然](../images/readme/en/turn-usage.png)
 
 ### 為所有 Agent 帶來 Codex 等級的 Computer Use 能力
 
@@ -148,18 +148,39 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 
 手機只需配對一次，下面的一切都能在任何地方完成。你的程式碼和 Agent 始終留在自己的電腦上。
 
-<!-- 截圖預留: ../../docs/images/readme/phone-remote.png -->
+![用手機指揮你的 Agent](../images/readme/en/phone-remote.png)
 
 - **接續對話或發起新對話。** 接著電腦上的任一對話繼續，也可以新增工作階段：選擇 Agent、模型和思考強度，即時查看串流輸出，還能搜尋、置頂、封存或分岔工作階段。
+
+  ![接續對話或發起新對話](../images/readme/en/switch-agent-phone.png)
+
 - **批准權限，回答提問。** 權限請求和 Agent 的提問會連同推播通知送到手機，點一下 Agent 就繼續工作。每次批准都會與電腦上原本的執行核對。
+
+  ![批准權限，回答提問](../images/readme/en/permissions.png)
+
 - **審查並提交。** 查看每個專案目錄的變更，暫存檔案，讓 Agent 寫好提交說明，再提交、推送、拉取或同步。還能唯讀瀏覽提交歷史、比較分支。
+
+  ![審查並提交](../images/readme/en/git-changes-phone.png)
+
 - **從電腦目錄建立專案。** 瀏覽電腦上的資料夾，選一個加入為專案，不必坐回桌前。
+
+  ![從電腦目錄建立專案](../images/readme/en/add-project.png)
+
 - **在電腦終端機裡執行指令。** 在任一專案目錄開啟終端機，使用你電腦上真實的 Shell。
+
+  ![在電腦終端機裡執行指令](../images/readme/en/terminal.png)
+
 - **執行專案，在手機上看效果。** 在電腦上啟動執行項，手機裡直接開啟正在執行的網頁應用程式。
+
+  ![執行專案，在手機上看效果](../images/readme/en/run-project-phone.png)
+
 - **瀏覽檔案，傳送附件。** 查看專案檔案，並在訊息中附上檔案和圖片。
+
+  ![瀏覽檔案，傳送附件](../images/readme/en/files-attachments.png)
+
 - **需要時開啟遠端桌面。** 查看電腦螢幕，點按、拖曳、捲動、捏合縮放、輸入，或貼上文字和圖片，畫質會隨網路狀況自動調整。
 
-<!-- 截圖預留: ../../docs/images/readme/remote-desktop.png -->
+![需要時開啟遠端桌面](../images/readme/en/remote-desktop.png)
 
 ### 連線方式
 

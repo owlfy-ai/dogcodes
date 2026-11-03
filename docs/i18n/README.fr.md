@@ -37,7 +37,7 @@ Connectez les agents que vous utilisez déjà. Les 12 intégrations ci-dessous s
 
 ## Tout votre travail au même endroit
 
-<!-- Capture à venir: ../../docs/images/readme/overview.png -->
+![Tout votre travail au même endroit](../images/readme/en/overview.png)
 
 <a id="features"></a>
 
@@ -51,7 +51,7 @@ Connectez les agents que vous utilisez déjà. Les 12 intégrations ci-dessous s
 - Quand un agent a épuisé son quota, un autre reprend le travail sans que vous ayez à répéter les exigences.
 - La conversation précédente accompagne le relais, et le nouvel agent peut consulter les échanges antérieurs grâce aux outils d'historique intégrés : il continue vraiment au lieu de repartir de zéro.
 
-<!-- Capture à venir: ../../docs/images/readme/switch-agent.png -->
+![Passez le relais entre agents sans interruption](../images/readme/en/switch-agent.png)
 
 ### Quotas et consommation en un coup d'œil
 
@@ -61,7 +61,7 @@ Connectez les agents que vous utilisez déjà. Les 12 intégrations ci-dessous s
 - Gérez les versions des agents au même endroit et mettez-les à jour en un clic.
 - Les agents installés et leur état de connexion sont détectés automatiquement.
 
-<!-- Capture à venir: ../../docs/images/readme/usage.png -->
+![Quotas et consommation en un coup d'œil](../images/readme/en/usage.png)
 
 ### Utilisez les abonnements que vous avez déjà
 
@@ -71,7 +71,7 @@ Connectez les agents que vous utilisez déjà. Les 12 intégrations ci-dessous s
 - Local d’abord : votre code, vos conversations et vos identifiants restent sur votre ordinateur. La liaison facultative avec le téléphone est chiffrée de bout en bout, le relais ne voit donc jamais vos données.
 - Les agents sont lancés avec les seules variables d'environnement nécessaires, sans exposer vos autres secrets.
 
-<!-- Capture à venir: ../../docs/images/readme/accounts.png -->
+![Utilisez les abonnements que vous avez déjà](../images/readme/en/accounts.png)
 
 ### Revue et correction de code entre agents
 
@@ -81,7 +81,7 @@ Connectez les agents que vous utilisez déjà. Les 12 intégrations ci-dessous s
 - Les constats sont classés par priorité haute, moyenne et basse ; sélectionnez ceux qui vous intéressent et lancez la correction en un clic.
 - La correction revient à l'agent principal avec le rapport de revue et les constats choisis, sans rupture de contexte.
 
-<!-- Capture à venir: ../../docs/images/readme/review-fix.png -->
+![Revue et correction de code entre agents](../images/readme/en/review-fix.png)
 
 ### Bifurquez d'un agent à l'autre et comparez les approches
 
@@ -90,7 +90,7 @@ Connectez les agents que vous utilisez déjà. Les 12 intégrations ci-dessous s
 - Avec les worktrees, les modifications de code de chaque approche restent isolées les unes des autres.
 - Faites traiter la même tâche par plusieurs agents, puis gardez la meilleure version.
 
-<!-- Capture à venir: ../../docs/images/readme/fork.png -->
+![Bifurquez d'un agent à l'autre et comparez les approches](../images/readme/en/fork.png)
 
 ### Une gestion Git qui vous est familière
 
@@ -99,7 +99,7 @@ Connectez les agents que vous utilisez déjà. Les 12 intégrations ci-dessous s
 - Indexer, désindexer, annuler, ignorer, Commit et Commit & Push, avec vues arborescente et en liste.
 - Faites rédiger le message de commit par n'importe quel agent en un clic, dans la langue de votre choix.
 
-<!-- Capture à venir: ../../docs/images/readme/git-changes.png -->
+![Une gestion Git qui vous est familière](../images/readme/en/git-changes.png)
 
 ### Découvrez comment lancer un projet, puis lancez-le en un clic
 
@@ -108,7 +108,7 @@ Connectez les agents que vous utilisez déjà. Les 12 intégrations ci-dessous s
 - Plus besoin de retenir la commande de démarrage de chaque projet ni d'ouvrir un terminal juste pour le lancer : un clic suffit.
 - La sortie est regroupée au même endroit, consultable à tout moment.
 
-<!-- Capture à venir: ../../docs/images/readme/run-project.png -->
+![Découvrez comment lancer un projet, puis lancez-le en un clic](../images/readme/en/run-project.png)
 
 ### Projets multi-dossiers
 
@@ -116,7 +116,7 @@ Connectez les agents que vous utilisez déjà. Les 12 intégrations ci-dessous s
 
 - Même les agents sans prise en charge native du multi-dossier peuvent travailler sur des projets multi-dossiers grâce à dog.codes.
 
-<!-- Capture à venir: ../../docs/images/readme/multi-folder.png -->
+![Projets multi-dossiers](../images/readme/en/multi-folder.png)
 
 ### Consommation par tour, en toute clarté
 
@@ -124,7 +124,7 @@ Connectez les agents que vous utilisez déjà. Les 12 intégrations ci-dessous s
 
 - Comprenez précisément ce qu'ont consommé la conversation en cours et chaque tour, et où sont passés vos tokens.
 
-<!-- Capture à venir: ../../docs/images/readme/turn-usage.png -->
+![Consommation par tour, en toute clarté](../images/readme/en/turn-usage.png)
 
 ### Computer Use au niveau de Codex pour tous les agents
 
@@ -148,18 +148,39 @@ Nécessite un agent/CLI compatible et les autorisations système. Pi n’est pas
 
 Appairez un téléphone une seule fois et faites tout ce qui suit de n’importe où. Votre code et vos agents restent sur votre ordinateur.
 
-<!-- Capture à venir: ../../docs/images/readme/phone-remote.png -->
+![Pilotez vos agents depuis votre téléphone](../images/readme/en/phone-remote.png)
 
 - **Reprenez ou démarrez des conversations.** Reprenez n’importe quelle conversation de votre ordinateur ou lancez-en une nouvelle : choisissez l’agent, le modèle et le niveau de raisonnement, suivez la sortie en direct, puis recherchez, épinglez, archivez ou bifurquez des sessions.
+
+  ![Reprenez ou démarrez des conversations](../images/readme/en/switch-agent-phone.png)
+
 - **Approuvez et répondez.** Les demandes d’autorisation et les questions des agents arrivent sur votre téléphone avec des notifications push ; un appui et l’agent continue. Chaque approbation est vérifiée par rapport à l’exécution d’origine sur votre ordinateur.
+
+  ![Approuvez et répondez](../images/readme/en/permissions.png)
+
 - **Relisez et validez.** Consultez les changements de chaque dossier du projet, indexez des fichiers, faites écrire le message de commit par un agent, puis validez, poussez, tirez ou synchronisez. Parcourez l’historique des commits et comparez des branches en lecture seule.
+
+  ![Relisez et validez](../images/readme/en/git-changes-phone.png)
+
 - **Ajoutez des projets depuis votre PC.** Parcourez les dossiers de votre ordinateur et ajoutez-en un comme projet sans retourner à votre bureau.
+
+  ![Ajoutez des projets depuis votre PC](../images/readme/en/add-project.png)
+
 - **Exécutez des commandes dans le terminal de votre PC.** Ouvrez des terminaux dans n’importe quel dossier du projet et travaillez dans le vrai shell de votre ordinateur.
+
+  ![Exécutez des commandes dans le terminal de votre PC](../images/readme/en/terminal.png)
+
 - **Lancez le projet, voyez-le sur votre téléphone.** Démarrez les entrées de lancement sur votre ordinateur et ouvrez l’app web en cours d’exécution directement sur le téléphone.
+
+  ![Lancez le projet, voyez-le sur votre téléphone](../images/readme/en/run-project-phone.png)
+
 - **Parcourez les fichiers et envoyez des pièces jointes.** Lisez les fichiers du projet et joignez fichiers et images à vos messages.
+
+  ![Parcourez les fichiers et envoyez des pièces jointes](../images/readme/en/files-attachments.png)
+
 - **Bureau à distance au besoin.** Affichez l’écran de votre ordinateur et touchez, glissez, faites défiler, pincez, saisissez ou collez du texte et des images, avec une qualité qui s’adapte au réseau.
 
-<!-- Capture à venir: ../../docs/images/readme/remote-desktop.png -->
+![Bureau à distance au besoin](../images/readme/en/remote-desktop.png)
 
 ### Comment ça se connecte
 

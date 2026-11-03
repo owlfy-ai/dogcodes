@@ -37,7 +37,7 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 
 ## Alles an einem Ort
 
-<!-- Screenshot folgt: ../../docs/images/readme/overview.png -->
+![Alles an einem Ort](../images/readme/en/overview.png)
 
 <a id="features"></a>
 
@@ -51,7 +51,7 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 - Ist das Kontingent eines Agenten aufgebraucht, übernimmt ein anderer – ohne dass du die Anforderungen wiederholen musst.
 - Die bisherige Unterhaltung wird mitgegeben, und der neue Agent kann frühere Runden über die integrierten Verlaufswerkzeuge nachschlagen – er macht wirklich weiter, statt neu anzufangen.
 
-<!-- Screenshot folgt: ../../docs/images/readme/switch-agent.png -->
+![Arbeit nahtlos zwischen Agenten übergeben](../images/readme/en/switch-agent.png)
 
 ### Kontingente und Verbrauch auf einen Blick
 
@@ -61,7 +61,7 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 - Verwalte die Versionen der Agenten zentral und aktualisiere sie mit einem Klick.
 - Installierte Agenten und ihr Anmeldestatus werden automatisch erkannt.
 
-<!-- Screenshot folgt: ../../docs/images/readme/usage.png -->
+![Kontingente und Verbrauch auf einen Blick](../images/readme/en/usage.png)
 
 ### Nutze die Abonnements, die du schon hast
 
@@ -71,7 +71,7 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 - Lokal zuerst: Dein Code, deine Gespräche und deine Zugangsdaten bleiben auf deinem Computer. Die optionale Smartphone-Verbindung ist Ende-zu-Ende-verschlüsselt, das Relay sieht deine Daten also nie.
 - Agenten erhalten nur die Umgebungsvariablen, die sie brauchen – deine übrigen Geheimnisse bleiben verborgen.
 
-<!-- Screenshot folgt: ../../docs/images/readme/accounts.png -->
+![Nutze die Abonnements, die du schon hast](../images/readme/en/accounts.png)
 
 ### Code-Review und Korrektur über Agenten hinweg
 
@@ -81,7 +81,7 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 - Befunde werden nach hoher, mittlerer und niedriger Priorität eingestuft; wähle die gewünschten aus und starte die Korrektur mit einem Klick.
 - Die Korrektur geht samt Review-Bericht und ausgewählten Befunden an den Haupt-Agenten zurück – der Kontext bleibt erhalten.
 
-<!-- Screenshot folgt: ../../docs/images/readme/review-fix.png -->
+![Code-Review und Korrektur über Agenten hinweg](../images/readme/en/review-fix.png)
 
 ### Über Agenten hinweg verzweigen und Ansätze vergleichen
 
@@ -90,7 +90,7 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 - Mit Worktrees bleiben die Codeänderungen der einzelnen Ansätze voneinander getrennt.
 - Lass mehrere Agenten dieselbe Aufgabe lösen und übernimm die beste Version.
 
-<!-- Screenshot folgt: ../../docs/images/readme/fork.png -->
+![Über Agenten hinweg verzweigen und Ansätze vergleichen](../images/readme/en/fork.png)
 
 ### Git-Verwaltung, die sich vertraut anfühlt
 
@@ -99,7 +99,7 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 - Stagen, Unstagen, Verwerfen, Ignorieren, Commit und Commit & Push, mit Baum- und Listenansicht.
 - Lass einen beliebigen Agenten die Commit-Nachricht mit einem Klick schreiben – in der Sprache deiner Wahl.
 
-<!-- Screenshot folgt: ../../docs/images/readme/git-changes.png -->
+![Git-Verwaltung, die sich vertraut anfühlt](../images/readme/en/git-changes.png)
 
 ### Herausfinden, wie ein Projekt läuft – und es mit einem Klick starten
 
@@ -108,7 +108,7 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 - Kein Merken der Startbefehle jedes Projekts mehr und kein Terminal nur zum Starten – ein Klick genügt.
 - Die Ausgabe wird an einem Ort gesammelt und ist jederzeit einsehbar.
 
-<!-- Screenshot folgt: ../../docs/images/readme/run-project.png -->
+![Herausfinden, wie ein Projekt läuft – und es mit einem Klick starten](../images/readme/en/run-project.png)
 
 ### Projekte mit mehreren Ordnern
 
@@ -116,7 +116,7 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 
 - Auch Agenten ohne native Unterstützung für mehrere Ordner können über dog.codes an solchen Projekten arbeiten.
 
-<!-- Screenshot folgt: ../../docs/images/readme/multi-folder.png -->
+![Projekte mit mehreren Ordnern](../images/readme/en/multi-folder.png)
 
 ### Verbrauch pro Runde, glasklar
 
@@ -124,7 +124,7 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 
 - Verstehe genau, was die aktuelle Unterhaltung und jede Runde verbraucht haben und wofür deine Tokens draufgingen.
 
-<!-- Screenshot folgt: ../../docs/images/readme/turn-usage.png -->
+![Verbrauch pro Runde, glasklar](../images/readme/en/turn-usage.png)
 
 ### Computer Use auf Codex-Niveau für alle Agenten
 
@@ -148,18 +148,39 @@ Erfordert einen kompatiblen Agenten bzw. eine kompatible CLI und Systemberechtig
 
 Koppel ein Smartphone einmal und erledige alles Folgende von überall. Dein Code und deine Agents bleiben auf deinem Computer.
 
-<!-- Screenshot folgt: ../../docs/images/readme/phone-remote.png -->
+![Steuere deine Agents vom Smartphone aus](../images/readme/en/phone-remote.png)
 
 - **Gespräche fortsetzen oder neu starten.** Nimm jedes Gespräch von deinem Computer wieder auf oder starte ein neues: Agent, Modell und Denkaufwand wählen, die Ausgabe live mitverfolgen und Sitzungen suchen, anheften, archivieren oder verzweigen.
+
+  ![Gespräche fortsetzen oder neu starten](../images/readme/en/switch-agent-phone.png)
+
 - **Freigeben und antworten.** Berechtigungsanfragen und Rückfragen der Agents erreichen dein Smartphone mit Push-Benachrichtigungen; ein Tipp, und der Agent macht weiter. Jede Freigabe wird mit dem ursprünglichen Lauf auf deinem Computer abgeglichen.
+
+  ![Freigeben und antworten](../images/readme/en/permissions.png)
+
 - **Prüfen und committen.** Sieh die Änderungen in jedem Projektordner, stage Dateien, lass einen Agent die Commit-Nachricht schreiben und committe, pushe, pulle oder synchronisiere dann. Durchsuche den Commit-Verlauf und vergleiche Branches schreibgeschützt.
+
+  ![Prüfen und committen](../images/readme/en/git-changes-phone.png)
+
 - **Projekte aus den Ordnern deines PCs hinzufügen.** Durchsuche die Ordner deines Computers und füge einen als Projekt hinzu, ohne dich wieder an den Schreibtisch zu setzen.
+
+  ![Projekte aus den Ordnern deines PCs hinzufügen](../images/readme/en/add-project.png)
+
 - **Befehle im Terminal deines PCs ausführen.** Öffne Terminals in jedem Projektordner und arbeite in der echten Shell deines Computers.
+
+  ![Befehle im Terminal deines PCs ausführen](../images/readme/en/terminal.png)
+
 - **Projekt starten, auf dem Smartphone ansehen.** Starte die Startpunkte auf deinem Computer und öffne die laufende Web-App direkt auf dem Smartphone.
+
+  ![Projekt starten, auf dem Smartphone ansehen](../images/readme/en/run-project-phone.png)
+
 - **Dateien ansehen und Anhänge senden.** Lies Projektdateien und hänge Dateien und Bilder an deine Nachrichten an.
+
+  ![Dateien ansehen und Anhänge senden](../images/readme/en/files-attachments.png)
+
 - **Remote-Desktop bei Bedarf.** Sieh dir den Bildschirm deines Computers an und tippe, ziehe, scrolle, zoome per Pinch, gib Text ein oder füge Text und Bilder ein – mit einer Qualität, die sich dem Netzwerk anpasst.
 
-<!-- Screenshot folgt: ../../docs/images/readme/remote-desktop.png -->
+![Remote-Desktop bei Bedarf](../images/readme/en/remote-desktop.png)
 
 ### So verbindet es sich
 

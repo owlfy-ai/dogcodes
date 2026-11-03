@@ -1,4 +1,4 @@
-<!-- English feature illustrations live in docs/images/readme/en/. Other language artwork awaits review. -->
+<!-- Feature illustrations live in docs/images/readme/en/ and are shared by every README language. -->
 <div align="center">
 
 <img src="apps/desktop/src-tauri/icons/128x128@2x.png" alt="dog.codes" width="96" height="96" />
