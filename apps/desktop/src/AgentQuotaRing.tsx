@@ -1,7 +1,7 @@
 import { createContext, Fragment } from "react";
 import type { QuotaSnapshotView, QuotaWindow } from "@dogcodes/protocol";
 import { getGlobalResolvedLanguage, translate as t } from "./i18n";
-import { formatProviderBalance, formatResetTime, pickerQuotaWindows, pickerWindowLabel, quotaColor, quotaNativeResetLabel, quotaWindowHasReset, remainingPercent } from "./quotaPresentation";
+import { composerQuotaWindows, formatProviderBalance, formatResetTime, pickerQuotaWindows, pickerWindowLabel, quotaColor, quotaNativeResetLabel, quotaWindowHasReset, remainingPercent } from "./quotaPresentation";
 
 // Shared live readings also reach cached conversation pages through React context.
 export const AgentQuotaContext = createContext<QuotaSnapshotView[]>([]);
@@ -19,10 +19,10 @@ function meterReading(window: QuotaWindow) {
   return { pendingReset, remaining, text, detail };
 }
 
-/** Compact quota rows inside an Agent picker option. */
-export function AgentQuotaRing({ quota, providerId, model = null }: { quota: QuotaSnapshotView["quota"]; providerId: string; model?: string | null }) {
+/** Compact quota rows inside an Agent picker option, or the shorter set under the composer. */
+export function AgentQuotaRing({ quota, providerId, model = null, composer = false }: { quota: QuotaSnapshotView["quota"]; providerId: string; model?: string | null; composer?: boolean }) {
   const lang = getGlobalResolvedLanguage();
-  const windows = pickerQuotaWindows(quota?.windows ?? [], providerId, model);
+  const windows = (composer ? composerQuotaWindows : pickerQuotaWindows)(quota?.windows ?? [], providerId, model);
   if (!windows.length && quota?.balances?.length) {
     const rows = quota.balances.map((balance) => ({
       label: balance.label,

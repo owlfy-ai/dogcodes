@@ -42,6 +42,14 @@ export function pickerQuotaWindows(windows: QuotaWindow[], providerId?: string, 
   return byWindowLength(account.length ? account : included);
 }
 
+/** The shorter set under the message box: OpenCode Go's monthly window stays in the picker only. */
+export function composerQuotaWindows(windows: QuotaWindow[], providerId?: string, model?: string | null): QuotaWindow[] {
+  const picked = pickerQuotaWindows(windows, providerId, model);
+  if (providerId !== "opencode") return picked;
+  const short = picked.filter((window) => window.id !== "opencode-go-monthly");
+  return short.length ? short : picked;
+}
+
 export function pickerWindowLabel(window: QuotaWindow, providerId?: string, lang: ResolvedLanguage = "zh-CN"): string {
   const period = quotaWindowLabel(window.windowMinutes, window.id, lang);
   if (providerId === "cursor" && window.id === "cursor-models") return t("quota.cursorPool", undefined, lang);

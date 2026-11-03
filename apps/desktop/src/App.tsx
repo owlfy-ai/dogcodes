@@ -1468,7 +1468,7 @@ export function quotaDiagnostic(code?: string | null, lang?: ResolvedLanguage): 
 export function QuotaRing({ quota, providerId, diagnostic, turnQuotaExhausted = false, inline = false }: { quota: QuotaSnapshotView["quota"]; providerId?: string; diagnostic?: string | null; turnQuotaExhausted?: boolean; inline?: boolean }) {
   const { t } = useI18n();
   const [quotaOpen, setQuotaOpen] = useState(false);
-  if (inline) return <AgentQuotaRing quota={quota} providerId={providerId ?? ""} />;
+  if (inline) return <AgentQuotaRing quota={quota} providerId={providerId ?? ""} composer />;
   const primary = ringQuotaWindow(quota?.windows ?? [], providerId);
   const primaryReset = primary ? quotaWindowHasReset(primary) : false;
   const remaining = primaryReset ? null : remainingPercent(primary?.usedPercent);

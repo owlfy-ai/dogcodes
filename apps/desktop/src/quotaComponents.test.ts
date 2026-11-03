@@ -41,6 +41,11 @@ describe("quota components", () => {
     const picker = renderToStaticMarkup(createElement(AgentQuotaRing, { providerId: "opencode", quota: go }));
     for (const value of ["5 小时", "87.5%", "每周", "用尽", "每月", "53%"]) expect(picker).toContain(value);
     expect(picker).not.toContain("额度已用尽");
+    // Under the composer only the 5-hour and weekly windows remain.
+    const composer = renderToStaticMarkup(createElement(components.QuotaRing, { inline: true, providerId: "opencode", quota: go }));
+    for (const value of ["5 小时", "87.5%", "每周", "用尽"]) expect(composer).toContain(value);
+    expect(composer).not.toContain("每月");
+    expect(composer).not.toContain("53%");
   });
 
   it("shows separate supplier currencies, including zero balances, without synthetic percentages", () => {
