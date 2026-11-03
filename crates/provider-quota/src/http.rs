@@ -18,6 +18,12 @@ pub(super) async fn get(client: &Client, request: &Request) -> Result<Value, Dri
         Kind::DeepSeekPlatform => builder.header("x-dsh-auth-token", &request.key),
         _ => builder.bearer_auth(&request.key),
     };
+    let builder = match &request.org_id {
+        Some(org_id) if matches!(request.kind, Kind::Go) => {
+            builder.header("x-opencode-org-id", org_id)
+        }
+        _ => builder,
+    };
     let mut response = builder
         .header("Accept", "application/json")
         .send()

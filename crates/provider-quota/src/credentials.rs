@@ -9,6 +9,7 @@ use std::{
 };
 
 const GO: &str = "https://opencode.ai/inference/go/v1/usage";
+const GO_USAGE: &str = "https://opencode.ai/zen/go/v1/usage";
 const DEEPSEEK: &str = "https://api.deepseek.com/user/balance";
 const DEEPSEEK_PLATFORM: &str = "https://platform.deepseek.com";
 type Environment = HashMap<String, String>;
@@ -68,6 +69,7 @@ fn request(label: &str, endpoint: &str, key: String, kind: Kind) -> Request {
         endpoint: endpoint.into(),
         key,
         kind,
+        org_id: None,
     }
 }
 
@@ -102,24 +104,32 @@ fn opencode(env: &Environment) -> Result<Request, DriverError> {
     }
     let root = path(env, "XDG_DATA_HOME", home(env)?.join(".local/share")).join("opencode");
     let database = root.join(env.get("OPENCODE_DB").map_or("opencode.db", String::as_str));
-    // v2 migrates auth.json to the credential table. Select exactly the native active
-    // Go credential, including the pre-v2.1 type=api shape; never borrow Zen/OAuth.
-    let (modern, native) = opencode_database_key(&database)?;
-    let native = if modern {
-        native
-    } else {
-        let auth = json(&root.join("auth.json"))?;
-        stored_key(&auth["opencode-go"]).or_else(|| stored_key(&auth["opencode_go"]))
-    };
-    let k = native
-        .or_else(|| key(env.get("OPENCODE_API_KEY").map(String::as_str)))
+    // v2 migrates auth.json to the credential table. A dedicated Go API key still wins.
+    // A Go subscription lives on the signed-in OpenCode account, which is OAuth.
+    let (modern, native, account) = opencode_database(&database)?;
+    if let Some(k) = native {
+        return Ok(request("OpenCode Go", GO, k, Kind::Go));
+    }
+    if modern {
+        return account.ok_or_else(|| unavailable("opencode_go_not_configured"));
+    }
+    let auth = json(&root.join("auth.json"))?;
+    if let Some(k) = stored_key(&auth["opencode-go"]).or_else(|| stored_key(&auth["opencode_go"])) {
+        return Ok(request("OpenCode Go", GO, k, Kind::Go));
+    }
+    if let Some(account) =
+        go_account(&auth["opencode"]).or_else(|| go_account(&auth["opencode_go"]))
+    {
+        return Ok(account);
+    }
+    let k = key(env.get("OPENCODE_API_KEY").map(String::as_str))
         .ok_or_else(|| unavailable("opencode_go_not_configured"))?;
     Ok(request("OpenCode Go", GO, k, Kind::Go))
 }
 
-fn opencode_database_key(file: &Path) -> Result<(bool, Option<String>), DriverError> {
+fn opencode_database(file: &Path) -> Result<(bool, Option<String>, Option<Request>), DriverError> {
     if !file.exists() {
-        return Ok((false, None));
+        return Ok((false, None, None));
     }
     let db = rusqlite::Connection::open_with_flags(
         file,
@@ -136,21 +146,78 @@ fn opencode_database_key(file: &Path) -> Result<(bool, Option<String>), DriverEr
         )
         .map_err(|_| unavailable("OpenCode credential schema unavailable"))?;
     if !modern {
-        return Ok((false, None));
+        return Ok((false, None, None));
     }
-    let value: Option<String> = db.query_row(
+    let go_key = credential_value(
+        &db,
         "SELECT value FROM credential WHERE integration_id='opencode-go' ORDER BY active DESC, time_created DESC, id DESC LIMIT 1",
-        [], |r| r.get(0)).optional().map_err(|_| unavailable("OpenCode credential selection unavailable"))?;
-    let value = value
-        .map(|s| {
-            if s.len() > 1024 * 1024 {
+    )?;
+    let account = credential_value(
+        &db,
+        "SELECT value FROM credential WHERE integration_id='opencode' ORDER BY active DESC, time_created DESC, id DESC LIMIT 1",
+    )?;
+    Ok((
+        true,
+        go_key.as_ref().and_then(stored_key),
+        account.as_ref().and_then(go_account),
+    ))
+}
+
+fn credential_value(db: &rusqlite::Connection, sql: &str) -> Result<Option<Value>, DriverError> {
+    let value: Option<String> = db
+        .query_row(sql, [], |row| row.get(0))
+        .optional()
+        .map_err(|_| unavailable("OpenCode credential selection unavailable"))?;
+    value
+        .map(|raw| {
+            if raw.len() > 1024 * 1024 {
                 return Err(unavailable("OpenCode credential too large"));
             }
-            serde_json::from_str::<Value>(&s)
+            serde_json::from_str::<Value>(&raw)
                 .map_err(|_| unavailable("OpenCode credential invalid"))
         })
-        .transpose()?;
-    Ok((true, value.as_ref().and_then(stored_key)))
+        .transpose()
+}
+
+/// Go subscriptions are billed to the signed-in OpenCode organization.
+/// Only the official host is contacted, and the refresh token is never sent.
+fn go_account(value: &Value) -> Option<Request> {
+    if value["type"] == "external" {
+        return None;
+    }
+    let token = if value["type"] == "oauth" {
+        key(value["access"].as_str())?
+    } else {
+        stored_key(value)?
+    };
+    let org_id = key(value["metadata"]["orgID"].as_str())?;
+    let server = value["metadata"]["server"]
+        .as_str()
+        .unwrap_or("https://opencode.ai/console");
+    let server = if let Some(rest) = server.strip_prefix("https://console.opencode.ai") {
+        if rest.is_empty() || rest.starts_with('/') {
+            format!("https://opencode.ai/console{rest}")
+        } else {
+            server.to_string()
+        }
+    } else {
+        server.to_string()
+    };
+    let url = reqwest::Url::parse(&server).ok()?;
+    if url.scheme() != "https"
+        || url.host_str() != Some("opencode.ai")
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return None;
+    }
+    Some(Request {
+        label: "OpenCode Go".into(),
+        endpoint: GO_USAGE.into(),
+        key: token,
+        kind: Kind::Go,
+        org_id: Some(org_id),
+    })
 }
 
 fn provider_request(label: &str, base: &str, k: String) -> Option<Request> {

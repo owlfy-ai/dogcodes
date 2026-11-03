@@ -32,6 +32,8 @@ struct Request {
     label: String,
     endpoint: String,
     key: String,
+    /// OpenCode Go subscriptions are scoped to the signed-in organization.
+    org_id: Option<String>,
 }
 
 struct Cached {
@@ -128,7 +130,12 @@ impl AccountMonitor {
 fn identity(requests: &[Request]) -> [u8; 32] {
     let mut digest = Sha256::new();
     for request in requests {
-        for part in [&request.label, &request.endpoint, &request.key] {
+        for part in [
+            request.label.as_str(),
+            request.endpoint.as_str(),
+            request.key.as_str(),
+            request.org_id.as_deref().unwrap_or(""),
+        ] {
             digest.update(part.len().to_le_bytes());
             digest.update(part.as_bytes());
         }

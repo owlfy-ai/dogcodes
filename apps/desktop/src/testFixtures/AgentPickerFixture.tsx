@@ -10,7 +10,23 @@ import "../projectRun.css";
 
 document.documentElement.dataset.theme = "light";
 const providers = ["antigravity", "claude-code", "codebuddy", "codex", "cursor", "deepseek-harness", "grok", "kimi", "kiro", "opencode", "pi", "zcode"];
-const options = providers.map(providerId => ({ key: providerId, executor: { providerId, installationId: null } }));
+const quotaOf = (windows: Array<[string, number, number | null]>, balances?: Array<{ label: string; amount: number; currency: string }>) => ({
+  windows: windows.map(([id, windowMinutes, usedPercent]) => ({ id, windowMinutes, usedPercent })), balances,
+  collectedAtUnixMs: Date.now(), staleAfterUnixMs: Date.now() + 60_000, source: "fixture", confidence: "high", parserVersion: "fixture",
+});
+const sampleQuotas: Record<string, ReturnType<typeof quotaOf>> = {
+  codex: quotaOf([["five-hour", 300, 0], ["weekly", 10080, 100]]),
+  antigravity: quotaOf([["Gemini Models:5h", 300, 1], ["Gemini Models:week", 10080, 0.6]]),
+  "claude-code": quotaOf([["five-hour", 300, 4], ["weekly", 10080, 4]]),
+  cursor: quotaOf([["cursor-models", 43200, 40.2], ["cursor-other-models", 43200, 41.8]]),
+  zcode: quotaOf([["five-hour", 300, 1], ["weekly", 10080, 11]]),
+  kimi: quotaOf([["five-hour", 300, 2.4], ["weekly", 10080, 2.2]]),
+  grok: quotaOf([["weekly", 10080, null]]),
+  opencode: quotaOf([["opencode-go-rolling", 300, 0], ["opencode-go-weekly", 10080, 0], ["opencode-go-monthly", 43200, 0]]),
+  "deepseek-harness": quotaOf([], [{ label: "CNY", amount: 301.25, currency: "CNY" }, { label: "USD", amount: 0, currency: "USD" }]),
+  kiro: quotaOf([["kiro-included", 43200, 0]]),
+};
+const options = providers.map(providerId => ({ key: providerId, executor: { providerId, installationId: null }, quota: sampleQuotas[providerId] ?? null }));
 function Fixture() {
   const [theme, setTheme] = useState("light");
   const [scale, setScale] = useState(1);

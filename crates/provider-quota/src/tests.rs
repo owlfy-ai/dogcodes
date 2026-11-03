@@ -169,6 +169,61 @@ fn opencode_legacy_go_key_is_not_replaced_by_zen_or_oauth() {
 }
 
 #[test]
+fn opencode_go_subscription_uses_the_signed_in_account_without_sending_its_refresh_token() {
+    let root = tempfile::tempdir().unwrap();
+    let env = environment(root.path());
+    std::fs::create_dir_all(root.path().join("data/opencode")).unwrap();
+    let db = rusqlite::Connection::open(root.path().join("data/opencode/opencode.db")).unwrap();
+    db.execute_batch("CREATE TABLE credential(id TEXT, integration_id TEXT, value TEXT, active INTEGER, time_created INTEGER);").unwrap();
+    let value = json!({
+        "type": "oauth",
+        "access": "access-private",
+        "refresh": "refresh-private",
+        "metadata": {"server": "https://console.opencode.ai", "orgID": "org-private"}
+    });
+    db.execute(
+        "INSERT INTO credential VALUES ('account','opencode',?1,1,1)",
+        rusqlite::params![value.to_string()],
+    )
+    .unwrap();
+    let request = credentials::discover("opencode", &env).unwrap().remove(0);
+    assert_eq!(request.key, "access-private");
+    assert_ne!(request.key, "refresh-private");
+    assert_eq!(request.org_id.as_deref(), Some("org-private"));
+    assert_eq!(request.endpoint, "https://opencode.ai/zen/go/v1/usage");
+}
+
+#[tokio::test]
+async fn opencode_go_subscription_sends_the_org_header() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("data/opencode")).unwrap();
+    let db = rusqlite::Connection::open(root.path().join("data/opencode/opencode.db")).unwrap();
+    db.execute_batch("CREATE TABLE credential(id TEXT, integration_id TEXT, value TEXT, active INTEGER, time_created INTEGER);").unwrap();
+    let value = json!({
+        "type": "oauth",
+        "access": "access-private",
+        "refresh": "refresh-private",
+        "metadata": {"server": "https://opencode.ai/console", "orgID": "org-private"}
+    });
+    db.execute(
+        "INSERT INTO credential VALUES ('account','opencode',?1,1,1)",
+        rusqlite::params![value.to_string()],
+    )
+    .unwrap();
+    drop(db);
+    let (url, task) = server(vec![(200, go_payload().to_string())]).await;
+    let mut monitor = monitor("opencode", root.path());
+    monitor.endpoints = Some((url.clone(), url));
+    let quota = monitor.read_quota(None).await.unwrap();
+    assert_eq!(quota.windows.len(), 3);
+    assert_eq!(quota.windows[0].id, "opencode-go-rolling");
+    let request = task.await.unwrap().remove(0).to_ascii_lowercase();
+    assert!(request.contains("authorization: bearer access-private"));
+    assert!(request.contains("x-opencode-org-id: org-private"));
+    assert!(!request.contains("refresh-private"));
+}
+
+#[test]
 fn opencode_v2_selects_native_active_key_and_does_not_resurrect_legacy_credentials() {
     let root = tempfile::tempdir().unwrap();
     let env = environment(root.path());
@@ -498,6 +553,7 @@ async fn http_diagnostics_are_bounded_and_do_not_expose_response_or_credentials(
             label: "Go".into(),
             endpoint: url,
             key: "private-key".into(),
+            org_id: None,
         };
         let error = http::get(&http::client().unwrap(), &r).await.unwrap_err();
         assert_eq!(driver_api::failure::quota_diagnostic(&error), diagnostic);

@@ -1,31 +1,49 @@
 .agent-picker-menu {
-  --agent-menu-bg: #292927; --agent-menu-fg: #c8c8c3; --agent-menu-muted: #777772;
-  --agent-menu-border: #484844; --agent-menu-hover: #383835; --agent-menu-shadow: #000b;
+  --agent-menu-bg: #292927; --agent-menu-fg: #c8c8c3; --agent-menu-muted: #8a8a84;
+  --agent-menu-border: #42423e; --agent-menu-hover: #353532; --agent-menu-shadow: #000a;
+  --agent-menu-accent: #a9c46c; --agent-menu-track: #ffffff14;
   position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 8;
-  box-sizing: border-box; width: min(440px, calc(100vw - 32px)); padding: 7px;
-  max-height: min(440px, 60vh); overflow-y: auto;
-  border: 1px solid var(--agent-menu-border); border-radius: 11px;
-  background: var(--agent-menu-bg); color: var(--agent-menu-fg); box-shadow: 0 18px 52px var(--agent-menu-shadow);
+  box-sizing: border-box; width: min(440px, calc(100vw - 32px)); padding: 6px;
+  max-height: min(480px, 60vh); overflow-y: auto; scrollbar-width: thin;
+  border: 1px solid var(--agent-menu-border); border-radius: 14px;
+  background: var(--agent-menu-bg); color: var(--agent-menu-fg);
+  box-shadow: 0 1px 2px #0000000d, 0 16px 40px -12px var(--agent-menu-shadow);
   font-size: calc(14px * var(--ui-scale, 1)); font-weight: 400; line-height: 1.5;
   letter-spacing: normal; text-align: left; text-transform: none;
 }
-.agent-picker-menu > header { padding: 7px 8px 8px; color: var(--agent-menu-muted); font-size: calc(13px * var(--ui-scale, 1)); letter-spacing: normal; }
+.agent-picker-menu > header {
+  padding: 6px 10px 8px; margin-bottom: 4px; border-bottom: 1px solid var(--agent-menu-border);
+  color: var(--agent-menu-muted); font-size: calc(12px * var(--ui-scale, 1)); font-weight: 500; letter-spacing: .01em;
+}
 /* Specificity keeps file-list and run-panel button rules out of shared rows. */
 .agent-picker-menu[data-agent-picker] { width: max-content; max-width: calc(100vw - 32px); }
 .agent-picker-menu[data-agent-picker] > button.agent-picker-option {
-  width: 100%; display: grid; grid-template-columns: calc(28px * var(--ui-scale, 1)) minmax(max-content, 1fr) max-content;
-  align-items: center; justify-items: start; justify-content: normal; gap: 8px; height: auto; min-height: 44px;
-  padding: 7px 8px; margin: 0; border: 0; border-radius: 8px;
+  position: relative; width: 100%; display: grid; grid-template-columns: calc(22px * var(--ui-scale, 1)) minmax(max-content, 1fr) max-content;
+  align-items: center; justify-items: start; justify-content: normal; column-gap: 12px; height: auto; min-height: calc(44px * var(--ui-scale, 1));
+  padding: 9px 10px; margin: 0; border: 0; border-radius: 9px;
   color: var(--agent-menu-fg); background: transparent; font: inherit; text-align: left; cursor: pointer;
+  transition: background-color .12s ease;
 }
-.agent-picker-menu[data-agent-picker] > button.agent-picker-option:hover,
-.agent-picker-menu[data-agent-picker] > button.agent-picker-option.active { background: var(--agent-menu-hover); }
+/* Dividers separate stacked quota rows of neighbouring agents; highlighted rows hide them. */
+.agent-picker-menu[data-agent-picker] > button.agent-picker-option + button.agent-picker-option::before {
+  content: ""; position: absolute; top: 0; left: 10px; right: 10px; height: 1px; background: var(--agent-menu-border); pointer-events: none;
+}
+.agent-picker-menu[data-agent-picker] > button.agent-picker-option:is(:hover, .active)::before,
+.agent-picker-menu[data-agent-picker] > button.agent-picker-option:is(:hover, .active) + button.agent-picker-option::before { opacity: 0; }
+.agent-picker-menu[data-agent-picker] > button.agent-picker-option:hover { background: var(--agent-menu-hover); }
+.agent-picker-menu[data-agent-picker] > button.agent-picker-option.active { background: color-mix(in srgb, var(--agent-menu-accent) 14%, transparent); }
+.agent-picker-menu[data-agent-picker] > button.agent-picker-option.active:hover { background: color-mix(in srgb, var(--agent-menu-accent) 20%, transparent); }
 .agent-picker-menu[data-agent-picker] > button.agent-picker-option:focus-visible { outline: 2px solid #7e9eca; outline-offset: -2px; }
 .agent-picker-menu .agent-option-label { min-width: 0; display: grid; gap: 3px; }
 .agent-picker-menu[data-agent-picker] .agent-option-label { min-width: max-content; }
-.agent-picker-menu[data-agent-picker] > button.agent-picker-option b { overflow: visible; text-overflow: clip; white-space: nowrap; font-size: calc(14px * var(--ui-scale, 1)); line-height: 1.5; font-weight: 600; }
+.agent-picker-menu[data-agent-picker] > button.agent-picker-option b { overflow: visible; text-overflow: clip; white-space: nowrap; font-size: calc(13.5px * var(--ui-scale, 1)); line-height: 1.4; font-weight: 500; }
+.agent-picker-menu[data-agent-picker] > button.agent-picker-option.active b { font-weight: 600; }
 .agent-picker-menu[data-agent-picker] .agent-icon.small { width: calc(22px * var(--ui-scale, 1)); height: calc(22px * var(--ui-scale, 1)); margin: 0; align-self: center; }
-.agent-picker-menu[data-agent-picker] .agent-option-quota { display: grid; grid-template-columns: 5.5em 64px 3.6em; align-items: center; justify-content: end; column-gap: 8px; row-gap: 4px; height: auto; margin: 0; white-space: nowrap; }
+.agent-picker-menu[data-agent-picker] .agent-option-quota { display: grid; grid-template-columns: max-content 56px 3.4em; align-items: center; justify-content: end; column-gap: 8px; row-gap: 4px; height: auto; margin: 0; white-space: nowrap; }
+.agent-picker-menu[data-agent-picker] .picker-quota-label { color: var(--agent-menu-muted); font-size: calc(11.5px * var(--ui-scale, 1)); }
+.agent-picker-menu[data-agent-picker] .picker-quota-bar { width: 56px; background: var(--agent-menu-track); }
+.agent-picker-menu[data-agent-picker] .picker-quota-value { width: 3.4em; font-size: calc(11.5px * var(--ui-scale, 1)); font-weight: 500; }
+.agent-picker-menu[data-agent-picker] .picker-quota-amount { font-size: calc(11.5px * var(--ui-scale, 1)); font-weight: 500; }
 .composer-controls .agent-picker > summary > .composer-control-label { overflow: visible; text-overflow: clip; flex: 0 0 auto; min-width: max-content; }
 .composer-controls .agent-picker > summary .agent-option-quota { display: grid; grid-template-columns: max-content 64px max-content; align-items: center; justify-content: start; column-gap: 8px; row-gap: 3px; width: max-content; height: auto; margin: 0; white-space: nowrap; }
 .composer-controls .agent-picker > summary .agent-option-quota:not(:has(.picker-quota-bar)) { grid-template-columns: max-content; }
@@ -38,9 +56,10 @@
 .picker-quota-bar > span { display: block; height: 100%; max-width: 100%; border-radius: inherit; }
 .picker-quota-value { width: 3.6em; overflow: hidden; text-align: right; font-variant-numeric: tabular-nums; }
 .picker-quota-amount { grid-column: 1 / -1; justify-self: end; font-weight: 600; font-variant-numeric: tabular-nums; }
-.agent-picker-menu[data-agent-picker] > p { padding: 7px 8px; margin: 0; font-size: calc(12px * var(--ui-scale, 1)); color: var(--agent-menu-muted); }
+.agent-picker-menu[data-agent-picker] .agent-option-quota > .picker-quota-amount:only-child { grid-column: 3; width: 3.4em; justify-self: stretch; text-align: right; color: var(--agent-menu-muted); font-weight: 400; }
+.agent-picker-menu[data-agent-picker] > p { padding: 7px 10px; margin: 0; font-size: calc(12px * var(--ui-scale, 1)); color: var(--agent-menu-muted); }
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) .agent-picker-menu { --agent-menu-bg: #fff; --agent-menu-fg: #3e3e3a; --agent-menu-muted: #8a8a85; --agent-menu-border: #d5d5d1; --agent-menu-hover: #eeeeec; --agent-menu-shadow: #0002; }
+  :root:not([data-theme="dark"]) .agent-picker-menu { --agent-menu-bg: #fff; --agent-menu-fg: #3a3a36; --agent-menu-muted: #8d8d87; --agent-menu-border: #e4e4df; --agent-menu-hover: #f3f3f0; --agent-menu-shadow: #0000002e; --agent-menu-accent: #6a8a1f; --agent-menu-track: #0000000f; }
 }
-:root[data-theme="light"] .agent-picker-menu { --agent-menu-bg: #fff; --agent-menu-fg: #3e3e3a; --agent-menu-muted: #8a8a85; --agent-menu-border: #d5d5d1; --agent-menu-hover: #eeeeec; --agent-menu-shadow: #0002; }
-:root[data-theme="dark"] .agent-picker-menu { --agent-menu-bg: #252624; --agent-menu-fg: #d5d7cf; --agent-menu-muted: #898d84; --agent-menu-border: #4c5148; --agent-menu-hover: #343731; --agent-menu-shadow: #0009; }
+:root[data-theme="light"] .agent-picker-menu { --agent-menu-bg: #fff; --agent-menu-fg: #3a3a36; --agent-menu-muted: #8d8d87; --agent-menu-border: #e4e4df; --agent-menu-hover: #f3f3f0; --agent-menu-shadow: #0000002e; --agent-menu-accent: #6a8a1f; --agent-menu-track: #0000000f; }
+:root[data-theme="dark"] .agent-picker-menu { --agent-menu-bg: #252624; --agent-menu-fg: #d5d7cf; --agent-menu-muted: #8e9289; --agent-menu-border: #3e423b; --agent-menu-hover: #30332e; --agent-menu-shadow: #000a; --agent-menu-accent: #a9c46c; --agent-menu-track: #ffffff14; }
