@@ -63,16 +63,6 @@ Connectez les agents que vous utilisez déjà. Les 12 intégrations ci-dessous s
 
 ![Quotas et consommation en un coup d'œil](../images/readme/en/usage.png)
 
-### Utilisez les abonnements que vous avez déjà
-
-**dog.codes pilote les CLI officielles que vous avez installées et auxquelles vous êtes connecté — Claude Code, Codex, Cursor et d'autres — avec vos propres forfaits.**
-
-- Pas de compte dog.codes séparé ni d'achat d'API supplémentaire : les forfaits que vous payez déjà continuent de servir.
-- Local d’abord : votre code, vos conversations et vos identifiants restent sur votre ordinateur. La liaison facultative avec le téléphone est chiffrée de bout en bout, le relais ne voit donc jamais vos données.
-- Les agents sont lancés avec les seules variables d'environnement nécessaires, sans exposer vos autres secrets.
-
-![Utilisez les abonnements que vous avez déjà](../images/readme/en/accounts.png)
-
 ### Revue et correction de code entre agents
 
 **Demandez à un autre agent de relire le code qui vient d'être modifié pour repérer bugs et défauts de conception, ou de mener une analyse de sécurité ou de performance.**
@@ -173,10 +163,6 @@ Appairez un téléphone une seule fois et faites tout ce qui suit de n’importe
 - **Lancez le projet, voyez-le sur votre téléphone.** Démarrez les entrées de lancement sur votre ordinateur et ouvrez l’app web en cours d’exécution directement sur le téléphone.
 
   ![Lancez le projet, voyez-le sur votre téléphone](../images/readme/en/run-project-phone.png)
-
-- **Parcourez les fichiers et envoyez des pièces jointes.** Lisez les fichiers du projet et joignez fichiers et images à vos messages.
-
-  ![Parcourez les fichiers et envoyez des pièces jointes](../images/readme/en/files-attachments.png)
 
 - **Bureau à distance au besoin.** Affichez l’écran de votre ordinateur et touchez, glissez, faites défiler, pincez, saisissez ou collez du texte et des images, avec une qualité qui s’adapte au réseau.
 

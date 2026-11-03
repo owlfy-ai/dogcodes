@@ -63,16 +63,6 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 
 ![Cotas e uso de relance](../images/readme/en/usage.png)
 
-### Use as assinaturas que você já tem
-
-**O dog.codes executa as CLIs oficiais que você instalou e nas quais já fez login — Claude Code, Codex, Cursor e outras — com seus próprios planos.**
-
-- Sem conta separada no dog.codes nem compra extra de API: os planos que você já paga continuam valendo.
-- Local primeiro: seu código, suas conversas e suas credenciais ficam no seu computador. A conexão opcional com o celular é criptografada de ponta a ponta, então a retransmissão nunca vê seus dados.
-- Os agentes são iniciados apenas com as variáveis de ambiente necessárias, sem expor seus outros segredos.
-
-![Use as assinaturas que você já tem](../images/readme/en/accounts.png)
-
 ### Revisão e correção de código entre agentes
 
 **Peça a outro agente para revisar o código recém-alterado, encontrando bugs e falhas de design, ou para fazer uma análise de segurança ou desempenho.**
@@ -173,10 +163,6 @@ Pareie um celular uma única vez e faça tudo abaixo de qualquer lugar. Seu cód
 - **Execute o projeto e veja no celular.** Inicie as entradas de execução no computador e abra o app web em execução direto no celular.
 
   ![Execute o projeto e veja no celular](../images/readme/en/run-project-phone.png)
-
-- **Navegue por arquivos e envie anexos.** Leia os arquivos do projeto e anexe arquivos e imagens às suas mensagens.
-
-  ![Navegue por arquivos e envie anexos](../images/readme/en/files-attachments.png)
 
 - **Área de trabalho remota quando precisar.** Veja a tela do seu computador e toque, arraste, role, faça pinça, digite ou cole texto e imagens, com qualidade que se adapta à rede.
 

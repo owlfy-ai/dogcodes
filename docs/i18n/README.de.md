@@ -63,16 +63,6 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 
 ![Kontingente und Verbrauch auf einen Blick](../images/readme/en/usage.png)
 
-### Nutze die Abonnements, die du schon hast
-
-**dog.codes steuert die offiziellen CLIs, die du installiert und bei denen du angemeldet bist – Claude Code, Codex, Cursor und weitere – mit deinen eigenen Plänen.**
-
-- Kein eigenes dog.codes-Konto und kein zusätzlicher API-Kauf: Die Pläne, für die du schon zahlst, funktionieren weiter.
-- Lokal zuerst: Dein Code, deine Gespräche und deine Zugangsdaten bleiben auf deinem Computer. Die optionale Smartphone-Verbindung ist Ende-zu-Ende-verschlüsselt, das Relay sieht deine Daten also nie.
-- Agenten erhalten nur die Umgebungsvariablen, die sie brauchen – deine übrigen Geheimnisse bleiben verborgen.
-
-![Nutze die Abonnements, die du schon hast](../images/readme/en/accounts.png)
-
 ### Code-Review und Korrektur über Agenten hinweg
 
 **Lass einen anderen Agenten den gerade geänderten Code prüfen, um Fehler und Designmängel zu finden, oder eine Sicherheits- bzw. Performance-Analyse durchführen.**
@@ -173,10 +163,6 @@ Koppel ein Smartphone einmal und erledige alles Folgende von überall. Dein Code
 - **Projekt starten, auf dem Smartphone ansehen.** Starte die Startpunkte auf deinem Computer und öffne die laufende Web-App direkt auf dem Smartphone.
 
   ![Projekt starten, auf dem Smartphone ansehen](../images/readme/en/run-project-phone.png)
-
-- **Dateien ansehen und Anhänge senden.** Lies Projektdateien und hänge Dateien und Bilder an deine Nachrichten an.
-
-  ![Dateien ansehen und Anhänge senden](../images/readme/en/files-attachments.png)
 
 - **Remote-Desktop bei Bedarf.** Sieh dir den Bildschirm deines Computers an und tippe, ziehe, scrolle, zoome per Pinch, gib Text ein oder füge Text und Bilder ein – mit einer Qualität, die sich dem Netzwerk anpasst.
 

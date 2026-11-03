@@ -63,16 +63,6 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 ![Know your quota and usage at a glance — desktop](docs/images/readme/en/usage.png)
 
-### Use the subscriptions you already have
-
-**dog.codes drives the official CLIs you have installed and signed in to — Claude Code, Codex, Cursor, and more — using your own plans.**
-
-- No separate dog.codes account or extra API purchase: the plans you already pay for keep working.
-- Local-first: your code, conversations and credentials stay on your computer. The optional phone link is end-to-end encrypted, so the relay never sees your data.
-- Agents are launched with only the environment they need, so your other secrets are not exposed to them.
-
-![Use the subscriptions you already have — desktop](docs/images/readme/en/accounts.png)
-
 ### Cross-agent code review and repair
 
 **Ask a different agent to review the code that was just changed, catching bugs and design flaws, or to run a security or performance analysis.**
@@ -173,10 +163,6 @@ Pair a phone once and run everything below from anywhere. Your code and your age
 - **Run the project, see it on your phone.** Start the launch entries on your computer and open the running web app right on the phone.
 
   ![Discover how to run a project — desktop first, phone where available](docs/images/readme/en/run-project-phone.png)
-
-- **Browse files and send attachments.** Read project files, and attach files and images to your messages.
-
-  ![Browse files and send attachments — desktop first, phone where available](docs/images/readme/en/files-attachments.png)
 
 - **Remote desktop when you need it.** View your computer’s screen and tap, drag, scroll, pinch, type, or paste text and images — with quality that adapts to the network.
 

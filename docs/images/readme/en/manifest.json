@@ -37,16 +37,6 @@
       "layout": "Desktop only; complete centered app window"
     },
     {
-      "file": "accounts.png",
-      "title": "Use the subscriptions you already have",
-      "source_image": "exec-424d113a-ae75-42b5-a81c-02d7a1da0455.png",
-      "width": 1536,
-      "height": 1024,
-      "mode": "RGB",
-      "sha256": "49365f10b1843e88729fcdaedb6e51c9ff4502ae2aa81c99dec9fdb522bc1521",
-      "layout": "Desktop only; complete centered app window"
-    },
-    {
       "file": "review-fix.png",
       "title": "Cross-agent code review and repair",
       "source_image": "exec-7714c169-b9c1-46dc-99da-902b94632e67.png",
@@ -157,16 +147,6 @@
       "height": 1024,
       "mode": "RGB",
       "sha256": "6d96cd799fb3616e0881cbfc2aed588a27a992413a592f826eb4388913ea40b9",
-      "layout": "Desktop first, corresponding phone second"
-    },
-    {
-      "file": "files-attachments.png",
-      "title": "Browse files and send attachments",
-      "source_image": "exec-67ca866e-40fa-499f-bc0f-9722455c3e64.png",
-      "width": 1536,
-      "height": 1024,
-      "mode": "RGB",
-      "sha256": "6bc4e186e5a0e3bc66c760aa5feb32af7e72b22afea6f225d9ed292e773d537f",
       "layout": "Desktop first, corresponding phone second"
     },
     {
