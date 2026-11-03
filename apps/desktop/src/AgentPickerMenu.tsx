@@ -18,13 +18,15 @@ export interface AgentPickerOption {
 /** The same menu for conversation, review, commit messages and run analysis.
  * Reading the context never starts a quota probe. Callers own selection effects.
  */
-export function AgentPickerMenu({ options, selectedKey, onSelect, title, label, quotas, loading = false, placement, role = "group" }: {
+export function AgentPickerMenu({ options, selectedKey, onSelect, title, label, quotas, antigravityModels, loading = false, placement, role = "group" }: {
   options: AgentPickerOption[];
   selectedKey: string;
   onSelect: (option: AgentPickerOption) => void;
   title: string;
   label: string;
   quotas?: QuotaSnapshotView[];
+  /** Selected model per Antigravity installation. Other providers ignore it. */
+  antigravityModels?: Record<string, string | null>;
   loading?: boolean;
   placement?: "bottom";
   role?: "group" | "dialog";
@@ -40,7 +42,7 @@ export function AgentPickerMenu({ options, selectedKey, onSelect, title, label, 
       return <button type="button" key={option.key} aria-label={providerLabel(option.executor.providerId)} className={`agent-picker-option${chosen ? " active" : ""}`} aria-pressed={chosen} onClick={() => onSelect(option)}>
         <AgentIcon providerId={option.executor.providerId} size="small"/>
         <span className="agent-option-label"><b>{providerLabel(option.executor.providerId)}</b></span>
-        <AgentQuotaRing quota={quota} providerId={option.executor.providerId}/>{chosen && <i>✓</i>}
+        <AgentQuotaRing quota={quota} providerId={option.executor.providerId} model={option.executor.providerId === "antigravity" ? antigravityModels?.[option.executor.installationId ?? ""] ?? null : null}/>
       </button>;
     })}
     {!loading && !visibleOptions.length && <p>{t("agentPicker.empty")}</p>}

@@ -2,7 +2,7 @@
   --agent-menu-bg: #292927; --agent-menu-fg: #c8c8c3; --agent-menu-muted: #777772;
   --agent-menu-border: #484844; --agent-menu-hover: #383835; --agent-menu-shadow: #000b;
   position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 8;
-  box-sizing: border-box; width: min(300px, calc(100vw - 32px)); padding: 7px;
+  box-sizing: border-box; width: min(440px, calc(100vw - 32px)); padding: 7px;
   max-height: min(440px, 60vh); overflow-y: auto;
   border: 1px solid var(--agent-menu-border); border-radius: 11px;
   background: var(--agent-menu-bg); color: var(--agent-menu-fg); box-shadow: 0 18px 52px var(--agent-menu-shadow);
@@ -11,8 +11,9 @@
 }
 .agent-picker-menu > header { padding: 7px 8px 8px; color: var(--agent-menu-muted); font-size: calc(13px * var(--ui-scale, 1)); letter-spacing: normal; }
 /* Specificity keeps file-list and run-panel button rules out of shared rows. */
+.agent-picker-menu[data-agent-picker] { width: max-content; max-width: calc(100vw - 32px); }
 .agent-picker-menu[data-agent-picker] > button.agent-picker-option {
-  width: 100%; display: grid; grid-template-columns: calc(28px * var(--ui-scale, 1)) minmax(0, 1fr) calc(58px * var(--ui-scale, 1)) 16px;
+  width: 100%; display: grid; grid-template-columns: calc(28px * var(--ui-scale, 1)) minmax(max-content, 1fr) max-content;
   align-items: center; justify-items: start; justify-content: normal; gap: 8px; height: auto; min-height: 44px;
   padding: 7px 8px; margin: 0; border: 0; border-radius: 8px;
   color: var(--agent-menu-fg); background: transparent; font: inherit; text-align: left; cursor: pointer;
@@ -21,11 +22,22 @@
 .agent-picker-menu[data-agent-picker] > button.agent-picker-option.active { background: var(--agent-menu-hover); }
 .agent-picker-menu[data-agent-picker] > button.agent-picker-option:focus-visible { outline: 2px solid #7e9eca; outline-offset: -2px; }
 .agent-picker-menu .agent-option-label { min-width: 0; display: grid; gap: 3px; }
-.agent-picker-menu[data-agent-picker] > button.agent-picker-option b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(14px * var(--ui-scale, 1)); line-height: 1.5; font-weight: 600; }
-.agent-picker-menu[data-agent-picker] > button.agent-picker-option i { justify-self: center; color: var(--green); font-style: normal; }
+.agent-picker-menu[data-agent-picker] .agent-option-label { min-width: max-content; }
+.agent-picker-menu[data-agent-picker] > button.agent-picker-option b { overflow: visible; text-overflow: clip; white-space: nowrap; font-size: calc(14px * var(--ui-scale, 1)); line-height: 1.5; font-weight: 600; }
 .agent-picker-menu[data-agent-picker] .agent-icon.small { width: calc(22px * var(--ui-scale, 1)); height: calc(22px * var(--ui-scale, 1)); margin: 0; align-self: center; }
-.agent-picker-menu[data-agent-picker] .agent-option-quota { display: inline-flex; align-items: center; justify-content: flex-start; gap: 4px; height: calc(20px * var(--ui-scale, 1)); margin: 0; white-space: nowrap; }
-.agent-picker-menu[data-agent-picker] .agent-option-quota > svg { width: calc(18px * var(--ui-scale, 1)); height: calc(18px * var(--ui-scale, 1)); fill: none; stroke: none; }
+.agent-picker-menu[data-agent-picker] .agent-option-quota { display: grid; grid-template-columns: 5.5em 64px 3.6em; align-items: center; justify-content: end; column-gap: 8px; row-gap: 4px; height: auto; margin: 0; white-space: nowrap; }
+.composer-controls .agent-picker > summary > .composer-control-label { overflow: visible; text-overflow: clip; flex: 0 0 auto; min-width: max-content; }
+.composer-controls .agent-picker > summary .agent-option-quota { display: grid; grid-template-columns: max-content 64px max-content; align-items: center; justify-content: start; column-gap: 8px; row-gap: 3px; width: max-content; height: auto; margin: 0; white-space: nowrap; }
+.composer-controls .agent-picker > summary .agent-option-quota:not(:has(.picker-quota-bar)) { grid-template-columns: max-content; }
+.composer-controls .agent-picker > summary .picker-quota-label { justify-self: start; }
+.composer-controls .agent-picker > summary .picker-quota-value { width: auto; }
+.composer-controls .agent-picker > summary .picker-quota-amount { grid-column: auto; justify-self: start; }
+.picker-quota-label, .picker-quota-value, .picker-quota-amount { color: var(--agent-menu-fg); font-size: calc(12px * var(--ui-scale, 1)); line-height: 1.2; }
+.picker-quota-label { justify-self: end; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+.picker-quota-bar { width: 64px; height: 4px; border-radius: 999px; background: rgba(128,128,128,.28); overflow: hidden; }
+.picker-quota-bar > span { display: block; height: 100%; max-width: 100%; border-radius: inherit; }
+.picker-quota-value { width: 3.6em; overflow: hidden; text-align: right; font-variant-numeric: tabular-nums; }
+.picker-quota-amount { grid-column: 1 / -1; justify-self: end; font-weight: 600; font-variant-numeric: tabular-nums; }
 .agent-picker-menu[data-agent-picker] > p { padding: 7px 8px; margin: 0; font-size: calc(12px * var(--ui-scale, 1)); color: var(--agent-menu-muted); }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) .agent-picker-menu { --agent-menu-bg: #fff; --agent-menu-fg: #3e3e3a; --agent-menu-muted: #8a8a85; --agent-menu-border: #d5d5d1; --agent-menu-hover: #eeeeec; --agent-menu-shadow: #0002; }

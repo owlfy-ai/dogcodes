@@ -8,12 +8,13 @@ pub(super) async fn read(
     driver: &ZcodeDriver,
     workspace: PathBuf,
 ) -> Result<driver_api::ModelCatalog, DriverError> {
-    // Cancellation while queued must not start a helper later.
-    let admission = driver.catalog_probe.clone().lock_owned().await;
+    // Cancellation while queued must not start a helper later. The same guard
+    // stays with both helpers until each process group is confirmed gone, so
+    // dropping this observer cannot admit the next probe while they are alive.
+    let admission = std::sync::Arc::new(driver.catalog_probe.clone().lock_owned().await);
     let launch = driver.launch.clone();
     let (observer, owner) = tokio::sync::watch::channel(false);
     let result = tokio::spawn(async move {
-        let _admission = admission;
         if owner.has_changed().is_err() {
             return Err(DriverError::Disconnected(
                 "ZCode catalog observer ended".into(),
@@ -21,8 +22,13 @@ pub(super) async fn read(
         }
         let mut connection = Connection::spawn(&launch)?;
         connection.observe_owner(owner);
+        connection
+            .native
+            .retain_until_confirmed(std::sync::Arc::clone(&admission));
         let result = AssertUnwindSafe(async {
-            connection.refresh_account(true).await?;
+            connection
+                .refresh_account_held(true, Some(std::sync::Arc::clone(&admission)))
+                .await?;
             read_native_catalog(&mut connection, &workspace).await
         })
         .catch_unwind()
@@ -36,6 +42,7 @@ pub(super) async fn read(
         // Keep its admission through unknown stop, without spawning or replaying.
         connection.native.request_close();
         connection.native.confirmed().await;
+        drop(admission);
         result.map(|state| models::catalog(&state))
     })
     .await

@@ -113,10 +113,11 @@ it("shares live quota readings with cached conversations and closes without a Cl
   const revision = {};
   const render = async (used: number) => act(async () => root.render(<AgentQuotaContext.Provider value={views(used)}><ConversationPages taskId="tsk_source" revision={revision}><TurnActions client={f.core} items={items} turnId="trn_old" startedAt={date} completedAt={date}/></ConversationPages></AgentQuotaContext.Provider>));
   await render(25); await click(button("选择审查 Agent"));
-  expect(container.querySelector('.agent-picker-menu .agent-option-quota')?.textContent).toBe("75%");
+  expect(container.querySelector('.agent-picker-menu .quota-ring-value')?.textContent).toBe("75%");
+  expect(container.querySelector('.agent-picker-menu .picker-quota-label')?.textContent).toBe("5 小时");
   expect(container.querySelector('.agent-picker-menu')?.textContent).not.toContain("关闭");
   await render(40);
-  expect(container.querySelector('.agent-picker-menu .agent-option-quota')?.textContent).toBe("60%");
+  expect(container.querySelector('.agent-picker-menu .quota-ring-value')?.textContent).toBe("60%");
   const rings = container.querySelectorAll('.agent-picker-menu .agent-option-quota');
   expect(rings[1].getAttribute('aria-label')).toContain("额度暂无读数");
   await act(async () => document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));

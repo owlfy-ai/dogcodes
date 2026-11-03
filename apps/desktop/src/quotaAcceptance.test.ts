@@ -39,6 +39,13 @@ describe("quota abnormal-state acceptance (fixed clock; no external requests)", 
     quota.windows.push({ id: "week", windowMinutes: 10080, usedPercent: 100 });
     expect(quotaIsExhausted(quota, now + 30_000)).toBe(true);
   });
+  it("keeps a weekly exhaustion visible after the cache TTL until that window resets", () => {
+    const quota = snapshot(0);
+    quota.staleAfterUnixMs = now - 1;
+    quota.windows.push({ id: "week", windowMinutes: 10080, usedPercent: 100, resetsAtUnix: now / 1000 + 23 * 3600 });
+    expect(quotaIsExhausted(quota, now)).toBe(true);
+    expect(quotaIsExhausted(quota, now + 23 * 3600 * 1000)).toBe(false);
+  });
   it("switches model groups without mutating the shared provider reading", () => {
     const quota = snapshot(100);
     quota.windows[0].scope = "Gemini Models";

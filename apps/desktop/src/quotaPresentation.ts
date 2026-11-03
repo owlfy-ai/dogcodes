@@ -18,6 +18,37 @@ export function quotaWindowLabel(minutes: number, windowId?: string, lang: Resol
   return t(`agentUi.${key}`, { count: minutes }, lang);
 }
 
+function byWindowLength(windows: QuotaWindow[]): QuotaWindow[] {
+  const rank = (minutes: number) => minutes === 0 ? Number.MAX_SAFE_INTEGER : minutes;
+  return [...windows].sort((left, right) => rank(left.windowMinutes) - rank(right.windowMinutes));
+}
+
+/** Picker rows list every window the user can act on. Antigravity always shows the Gemini pool. */
+export function pickerQuotaWindows(windows: QuotaWindow[], providerId?: string, _model?: string | null): QuotaWindow[] {
+  if (providerId === "cursor") {
+    return ["cursor-models", "cursor-other-models"].flatMap((id) => windows.filter((window) => window.id === id));
+  }
+  if (providerId === "antigravity") {
+    const group = "Gemini Models";
+    return byWindowLength(windows.filter((window) => window.scope === group || window.id.startsWith(`${group}:`)));
+  }
+  if (providerId === "opencode") {
+    const go = windows.filter((window) => window.id.startsWith("opencode-go-"));
+    return byWindowLength(go.length ? go : windows);
+  }
+  const account = windows.filter((window) => !window.scope);
+  const included = windows.every((window) => window.scope === "套餐内（终端读数）"
+    || (window.id === "kiro-included" && window.scope === "套餐内（Kiro）")) ? windows : [];
+  return byWindowLength(account.length ? account : included);
+}
+
+export function pickerWindowLabel(window: QuotaWindow, providerId?: string, lang: ResolvedLanguage = "zh-CN"): string {
+  const period = quotaWindowLabel(window.windowMinutes, window.id, lang);
+  if (providerId === "cursor" && window.id === "cursor-models") return t("quota.cursorPool", undefined, lang);
+  if (providerId === "cursor" && window.id === "cursor-other-models") return t("quota.otherPool", undefined, lang);
+  return period;
+}
+
 /** Overview rings use a named pool, never a synthetic total across model groups. */
 export function ringQuotaWindow(windows: QuotaWindow[], providerId?: string): QuotaWindow | null {
   if (providerId === "opencode") return windows.find(window => window.id === "opencode-go-rolling") ?? primaryQuotaWindow(windows);
@@ -68,13 +99,17 @@ export function quotaWindowHasReset(window: QuotaWindow, nowUnixMs = Date.now())
   return window.resetsAtUnix != null && window.resetsAtUnix * 1_000 <= nowUnixMs;
 }
 
-/** Any fresh, provider-reported active window at 0% can block sending. */
+/** A provider-reported account window at 0% stays exhausted until its reset.
+ *  Cache TTL only drops a window with no reset time, so a failed refresh cannot
+ *  block forever. A known future reset still shows exhausted after the TTL. */
 export function quotaIsExhausted(quota: QuotaSnapshot | null | undefined, nowUnixMs = Date.now()): boolean {
-  if (!quota || quota.confidence !== "provider_reported" || quotaIsStale(quota.staleAfterUnixMs, nowUnixMs)) return false;
+  if (!quota || quota.confidence !== "provider_reported") return false;
+  const stale = quotaIsStale(quota.staleAfterUnixMs, nowUnixMs);
   return quota.windows.some((window) => {
     if (window.scope) return false;
     if (quotaWindowHasReset(window, nowUnixMs)) return false;
-    return window.usedPercent != null && Number.isFinite(window.usedPercent) && window.usedPercent >= 100;
+    if (window.usedPercent == null || !Number.isFinite(window.usedPercent) || window.usedPercent < 100) return false;
+    return !(stale && window.resetsAtUnix == null);
   });
 }
 

@@ -1001,12 +1001,10 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
 .composer-controls > .composer-submit > svg { stroke-width: 2.4; }
 .composer footer.composer-controls > :not(.spacer) { flex: 0 0 auto; }
 .composer footer.composer-controls > .spacer { flex: 1 1 0; min-width: 0; }
-.composer footer[data-label-stage]:not([data-label-stage="0"]) .agent-picker > summary > :is(.composer-control-label, .dropdown-chevron),
 .composer footer:is([data-label-stage="2"], [data-label-stage="3"], [data-label-stage="4"]) .permission-trigger > :is(.composer-control-label, .dropdown-chevron),
 .composer footer:is([data-label-stage="3"], [data-label-stage="4"]) .quota-ring > .quota-ring-value,
 .composer footer[data-label-stage="4"] :is(.model-trigger, .thinking-trigger) > :is(.composer-control-label, .dropdown-chevron) { display: none; }
 .composer footer[data-label-stage="4"] .composer-compact-icon { display: block; }
-.composer footer[data-label-stage]:not([data-label-stage="0"]) .agent-picker > summary,
 .composer footer:is([data-label-stage="2"], [data-label-stage="3"], [data-label-stage="4"]) .permission-trigger,
 .composer footer[data-label-stage="4"] :is(.model-trigger, .thinking-trigger) {
   justify-content: center; gap: 0; padding: 6px; min-width: 30px; min-height: 30px; box-sizing: border-box;

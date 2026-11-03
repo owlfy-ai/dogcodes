@@ -33,7 +33,7 @@ import { focusComposerInput } from "./composerFocus";
 import { StartupShell } from "./StartupShell";
 import { StartupRecovery } from "./StartupGate";
 import { userFacingError } from "./userFacingError";
-import { AgentQuotaContext } from "./AgentQuotaRing";
+import { AgentQuotaContext, AgentQuotaRing } from "./AgentQuotaRing";
 import { AgentIcon, providerLabel } from "./agentPresentation";
 import { SidebarWindowControls } from "./SidebarWindowControls";
 import { isWindowsPlatform, WindowsBrand, WindowsCaptionButtons } from "./WindowsTitleBar";
@@ -55,7 +55,6 @@ import { useModelReadyExecutors } from "./useModelReadyExecutors";
 import { ModelCatalogCache } from "./modelCatalogCache";
 import { useModelCatalog } from "./useModelCatalog";
 import { useCatalogWarmup } from "./useCatalogWarmup";
-import { DropdownChevron } from "./DropdownChevron";
 import { PermissionPicker } from "./PermissionPicker";
 import { ModelPicker } from "./ModelPicker";
 import { useReviewWindow } from "./reviewWindow";
@@ -901,6 +900,18 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     );
     return executor.providerId === "antigravity" ? antigravityQuotaForModel(quota, activeModel) : quota;
   }, [quotaViews, quotaTaskId, selectedTaskId, selectedTask, activeModel]);
+  const antigravityModels = useMemo(() => {
+    const models: Record<string, string | null> = {};
+    const taskId = selectedTask?.taskId;
+    if (!taskId) return models;
+    for (const mapping of snapshot?.sessionMaps ?? []) {
+      if (mapping.taskId === taskId && mapping.executor.providerId === "antigravity" && mapping.executor.installationId)
+        models[mapping.executor.installationId] = mapping.model;
+    }
+    const current = selectedTask?.preferredExecutor;
+    if (current?.providerId === "antigravity" && current.installationId) models[current.installationId] = activeModel;
+    return models;
+  }, [snapshot?.sessionMaps, selectedTask, activeModel]);
   useEffect(() => {
     const executor = selectedTask?.preferredExecutor;
     if (!selectedTask?.activePrimaryRun || !executor?.installationId) return;
@@ -1285,6 +1296,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
               selectedQuota={selectedQuota}
               quotaDiagnosticCode={quotaViews.find(view => view.installationId === selectedTask.preferredExecutor.installationId)?.diagnostic}
               turnQuotaExhausted={selectedTurnQuotaExhausted}
+              antigravityModels={antigravityModels}
               executorOptions={executorOptions}
               selectedInstallationStatus={selectedInstallation?.status}
               sending={sending || attachments.pending > 0}
@@ -1318,6 +1330,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
                 selectedQuota={selectedQuota}
                 quotaDiagnosticCode={quotaViews.find(view => view.installationId === selectedTask.preferredExecutor.installationId)?.diagnostic}
                 turnQuotaExhausted={selectedTurnQuotaExhausted}
+                antigravityModels={antigravityModels}
                 executorOptions={executorOptions}
                 selectedInstallationStatus={selectedInstallation?.status}
                 sending={sending || attachments.pending > 0}
@@ -1455,6 +1468,7 @@ export function quotaDiagnostic(code?: string | null, lang?: ResolvedLanguage): 
 export function QuotaRing({ quota, providerId, diagnostic, turnQuotaExhausted = false, inline = false }: { quota: QuotaSnapshotView["quota"]; providerId?: string; diagnostic?: string | null; turnQuotaExhausted?: boolean; inline?: boolean }) {
   const { t } = useI18n();
   const [quotaOpen, setQuotaOpen] = useState(false);
+  if (inline) return <AgentQuotaRing quota={quota} providerId={providerId ?? ""} />;
   const primary = ringQuotaWindow(quota?.windows ?? [], providerId);
   const primaryReset = primary ? quotaWindowHasReset(primary) : false;
   const remaining = primaryReset ? null : remainingPercent(primary?.usedPercent);
@@ -1729,6 +1743,7 @@ export function ComposerFooter({
   selectedQuota,
   quotaDiagnosticCode,
   turnQuotaExhausted,
+  antigravityModels,
   executorOptions,
   selectedInstallationStatus,
   sending,
@@ -1749,6 +1764,7 @@ export function ComposerFooter({
   selectedQuota: QuotaSnapshotView["quota"];
   quotaDiagnosticCode?: string | null;
   turnQuotaExhausted: boolean;
+  antigravityModels?: Record<string, string | null>;
   executorOptions: ExecutorOption[];
   selectedInstallationStatus?: InstallationStatus;
   sending: boolean;
@@ -1759,6 +1775,7 @@ export function ComposerFooter({
   onCancel: () => void;
 }) {
   const quotaBlocked = quotaIsExhausted(selectedQuota);
+  const currentReading = executorOptions.find(option => option.executor.providerId === selectedTask.preferredExecutor.providerId && option.executor.installationId === selectedTask.preferredExecutor.installationId);
   const preferences = useAgentPreferences();
   const agentDisabled = preferences.disabled.includes(selectedTask.preferredExecutor.providerId) || (preferences.disabled.length > 0 && !executorOptions.length);
   const footerRef = useComposerLabels();
@@ -1774,8 +1791,9 @@ export function ComposerFooter({
         options={executorOptions}
         onSelect={onSelect}
         lang={lang}
+        antigravityModels={antigravityModels}
         quotaIndicator={<QuotaRing inline
-          quota={selectedQuota}
+          quota={currentReading ? currentReading.quota ?? null : selectedQuota}
           providerId={selectedTask.preferredExecutor.providerId}
           diagnostic={quotaDiagnosticCode}
           turnQuotaExhausted={turnQuotaExhausted}
@@ -1810,12 +1828,14 @@ function AgentPicker({
   options,
   onSelect,
   quotaIndicator,
+  antigravityModels,
   lang,
 }: {
   current: ExecutorRef;
   options: ExecutorOption[];
   onSelect: (executor: ExecutorRef) => void;
   quotaIndicator?: ReactNode;
+  antigravityModels?: Record<string, string | null>;
   lang?: ResolvedLanguage;
 }) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
@@ -1844,9 +1864,8 @@ function AgentPicker({
         <AgentIcon providerId={current.providerId} size="small" />
         <b className="composer-control-label">{providerLabel(current.providerId)}</b>
         {quotaIndicator}
-        <DropdownChevron />
       </summary>
-      <AgentPickerMenu options={options} selectedKey={executorKey(current)} title={t("composer.nextRoundAgent", undefined, lang)} label={t("app.agentList", undefined, lang)} onSelect={option => {
+      <AgentPickerMenu options={options} selectedKey={executorKey(current)} antigravityModels={antigravityModels} title={t("composer.nextRoundAgent", undefined, lang)} label={t("app.agentList", undefined, lang)} onSelect={option => {
         detailsRef.current?.removeAttribute("open");
         if (option.key !== executorKey(current)) onSelect(option.executor);
         focusComposerInput(detailsRef.current);

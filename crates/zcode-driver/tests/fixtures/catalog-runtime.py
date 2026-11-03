@@ -14,9 +14,11 @@ root = ((Path(request['request']['fixtureRoot']) if request['action'] == 'runtim
         else Path(sys.argv[1]).parents[2])
 mode = (root / 'metadata-mode').read_text().strip()
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
+# Stay in the helper's process group so its owner can prove the whole tree exited.
+group = os.getpgrp()
 child = subprocess.Popen([
     sys.executable, '-c',
-    'import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);time.sleep(60)',
+    'import os,signal,time;os.setpgid(0,%d);signal.signal(signal.SIGTERM,signal.SIG_IGN);time.sleep(60)' % group,
 ], stdout=subprocess.DEVNULL if account and mode != 'quota-inherited' else None,
    stderr=subprocess.DEVNULL if account else None)
 
@@ -36,6 +38,24 @@ def snapshot(identifier):
             'settings': {'model': {'available': [{'ref': {
                 'providerId': 'fixture', 'modelId': 'fixture-model'}}]}}}
 
+def launch_stamp(pid):
+    try:
+        stamp = subprocess.check_output(
+            ['ps', '-p', str(pid), '-o', 'lstart='], text=True, stderr=subprocess.DEVNULL)
+    except (subprocess.CalledProcessError, OSError):
+        return ''
+    return stamp.strip()
+
+def still_same(pid, stamp):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    # A recycled pid stays killable but has a different start time.
+    return not stamp or launch_stamp(pid) == stamp
+
+self_stamp = launch_stamp(os.getpid())
+child_stamp = launch_stamp(child.pid)
 prior = []
 if (root / 'catalog.jsonl').exists():
     for line in (root / 'catalog.jsonl').read_text().splitlines():
@@ -45,13 +65,12 @@ if (root / 'catalog.jsonl').exists():
             continue
         if row['method'] not in ('native.spawn', 'account.spawn'):
             continue
-        for pid in (row['pid'], row['child']):
-            try:
-                os.kill(pid, 0)
+        params = row.get('params') or {}
+        for pid, stamp in ((row['pid'], params.get('started')), (row['child'], params.get('childStarted'))):
+            if still_same(pid, stamp):
                 prior.append(pid)
-            except ProcessLookupError:
-                pass
 record('account.spawn' if account else 'native.spawn', {'priorAlive': prior,
+       'started': self_stamp, 'childStarted': child_stamp,
        'action': request.get('action') if account else None})
 if account:
     if request['action'] == 'runtime':

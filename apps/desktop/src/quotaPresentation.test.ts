@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { antigravityQuotaForModel, primaryQuotaWindow, quotaIsExhausted, quotaIsStale, remainingPercent, quotaNativeResetLabel, nativeResetDisplay, quotaPlanLabel, quotaWindowLabel, ringQuotaWindow, formatProviderBalance, formatQuotaPercent } from "./quotaPresentation";
+import { antigravityQuotaForModel, pickerQuotaWindows, pickerWindowLabel, primaryQuotaWindow, quotaIsExhausted, quotaIsStale, remainingPercent, quotaNativeResetLabel, nativeResetDisplay, quotaPlanLabel, quotaWindowLabel, ringQuotaWindow, formatProviderBalance, formatQuotaPercent } from "./quotaPresentation";
 
 describe("quota presentation", () => {
   it("formats quota windows and wallet amounts in the chosen UI language", () => {
@@ -87,6 +87,29 @@ describe("quota presentation", () => {
     expect(quotaIsExhausted({ windows, collectedAtUnixMs: 1000, staleAfterUnixMs: 2000,
       source: "native_pull", confidence: "provider_reported", parserVersion: "test" }, 1500)).toBe(false);
   });
+  it("lists every picker window, both Cursor pools, and the Gemini Antigravity pool", () => {
+    expect(pickerQuotaWindows([
+      { id: "secondary", windowMinutes: 10_080, usedPercent: 100 },
+      { id: "primary", windowMinutes: 300, usedPercent: 0 },
+    ]).map(window => window.id)).toEqual(["primary", "secondary"]);
+    const cursor = [
+      { id: "cursor-other-models", scope: "Other Models", windowMinutes: 0, usedPercent: 100 },
+      { id: "cursor-models", scope: "Cursor Models", windowMinutes: 0, usedPercent: 20 },
+    ];
+    expect(pickerQuotaWindows(cursor, "cursor").map(window => window.id)).toEqual(["cursor-models", "cursor-other-models"]);
+    expect(pickerWindowLabel(cursor[1], "cursor")).toBe("Cursor");
+    expect(pickerWindowLabel(cursor[0], "cursor")).toBe("其他");
+    const anti = [
+      { id: "g5", scope: "Gemini Models", windowMinutes: 300, usedPercent: 1 },
+      { id: "g7", scope: "Gemini Models", windowMinutes: 10_080, usedPercent: 2 },
+      { id: "c5", scope: "Claude and GPT models", windowMinutes: 300, usedPercent: 3 },
+      { id: "c7", scope: "Claude and GPT models", windowMinutes: 10_080, usedPercent: 4 },
+    ];
+    expect(pickerQuotaWindows(anti, "antigravity", "claude-sonnet-4-6").map(window => window.id)).toEqual(["g5", "g7"]);
+    expect(pickerQuotaWindows(anti, "antigravity", null).map(window => window.id)).toEqual(["g5", "g7"]);
+    expect(pickerWindowLabel(anti[0], "antigravity")).toBe("5 小时");
+  });
+
   it("prefers the five-hour account window even when input order differs", () => {
     const primary = primaryQuotaWindow([
       { id: "secondary", windowMinutes: 10_080, usedPercent: 63 },
@@ -121,6 +144,7 @@ describe("quota presentation", () => {
       parserVersion: "test",
     };
     expect(quotaIsExhausted(quota, 1_500)).toBe(true);
+    // No reset time: the cache TTL is the only bound, so a stale reading must not keep blocking.
     expect(quotaIsExhausted(quota, 2_000)).toBe(false);
     expect(quotaIsExhausted({ ...quota, windows: [] }, 1_500)).toBe(false);
     expect(quotaIsExhausted({
@@ -134,6 +158,20 @@ describe("quota presentation", () => {
         { id: "weekly", windowMinutes: 10_080, usedPercent: 100 },
       ],
     }, 1_500)).toBe(true);
+    expect(quotaIsExhausted({
+      ...quota,
+      windows: [
+        { id: "five-hour", windowMinutes: 300, usedPercent: 0, resetsAtUnix: 5_000 },
+        { id: "weekly", windowMinutes: 10_080, usedPercent: 100, resetsAtUnix: 90_000 },
+      ],
+    }, 2_000)).toBe(true);
+    expect(quotaIsExhausted({
+      ...quota,
+      windows: [
+        { id: "five-hour", windowMinutes: 300, usedPercent: 0, resetsAtUnix: 5_000 },
+        { id: "weekly", windowMinutes: 10_080, usedPercent: 100, resetsAtUnix: 90_000 },
+      ],
+    }, 90_000_000)).toBe(false);
     expect(quotaIsExhausted({ ...quota, confidence: "demo" }, 1_500)).toBe(false);
   });
 });

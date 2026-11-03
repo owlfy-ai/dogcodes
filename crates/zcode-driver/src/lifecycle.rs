@@ -134,7 +134,18 @@ impl NativeProcess {
         wait(self.exit.clone(), Duration::from_secs(8)).await
     }
     pub async fn confirmed(&self) {
+        Self::confirmed_exit(&mut self.exit.clone()).await;
+    }
+    /// Keeps an admission guard until this process group has actually exited.
+    /// Dropping the observer must not let the next probe start earlier.
+    pub fn retain_until_confirmed(&self, hold: impl Send + 'static) {
         let mut exit = self.exit.clone();
+        tokio::spawn(async move {
+            Self::confirmed_exit(&mut exit).await;
+            drop(hold);
+        });
+    }
+    async fn confirmed_exit(exit: &mut watch::Receiver<Outcome>) {
         loop {
             if matches!(*exit.borrow_and_update(), Some(Ok(()))) {
                 return;

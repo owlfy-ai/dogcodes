@@ -87,7 +87,7 @@ impl Account {
             json!({"action":if identity_only {"quota_identity"} else {"quota"},"builtinFile":account.builtin}),
             remaining,
             None,
-            Some(permit),
+            Some(std::sync::Arc::new(permit)),
         ).await?;
         if let Some(reason) = value["unavailable"].as_str() {
             return Err(DriverError::CapabilityUnavailable(
@@ -144,7 +144,7 @@ impl Account {
         input: Value,
         timeout: Duration,
         owner: Option<tokio::sync::watch::Receiver<bool>>,
-        permit: Option<tokio::sync::OwnedMutexGuard<()>>,
+        permit: Option<std::sync::Arc<tokio::sync::OwnedMutexGuard<()>>>,
     ) -> Result<Value, DriverError> {
         let fail = || {
             DriverError::NotConfigured(
@@ -259,6 +259,14 @@ impl Account {
 
 impl Connection {
     pub(super) async fn refresh_account(&mut self, force: bool) -> Result<(), DriverError> {
+        self.refresh_account_held(force, None).await
+    }
+
+    pub(super) async fn refresh_account_held(
+        &mut self,
+        force: bool,
+        hold: Option<std::sync::Arc<tokio::sync::OwnedMutexGuard<()>>>,
+    ) -> Result<(), DriverError> {
         let Some(account) = &self.account else {
             return Ok(());
         };
@@ -281,7 +289,7 @@ impl Connection {
                 json!({"action":"inspect","builtinFile":worker.builtin}),
                 Duration::from_secs(22),
                 Some(self.native.closing()),
-                None,
+                hold,
             )
             .await?;
         let result = self

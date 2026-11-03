@@ -22,9 +22,9 @@ describe("quota components", () => {
   it("keeps the inline ring visible when quota has not arrived or has no percentage", () => {
     for (const reading of [null, quota]) {
       const html = renderToStaticMarkup(createElement(components.QuotaRing, { inline: true, providerId: "codex", quota: reading }));
-      expect(html).toContain('class="quota-ring"');
-      expect(html).toContain('<svg');
-      expect(html).toContain('class="quota-ring-value" aria-hidden="true">?</span>');
+      expect(html).toContain("picker-quota");
+      expect(html).not.toContain("<svg");
+      expect(html).toContain(">?</span>");
     }
   });
   it("shows OpenCode Go's three windows while keeping other model providers usable", () => {
@@ -39,7 +39,7 @@ describe("quota components", () => {
     }));
     for (const value of ["OpenCode Go · 5 小时", "OpenCode Go · 每周", "OpenCode Go · 每月", "87.5%", "53%", "已用尽"]) expect(html).toContain(value);
     const picker = renderToStaticMarkup(createElement(AgentQuotaRing, { providerId: "opencode", quota: go }));
-    expect(picker).toContain("5 小时剩余额度 87.5%");
+    for (const value of ["5 小时", "87.5%", "每周", "用尽", "每月", "53%"]) expect(picker).toContain(value);
     expect(picker).not.toContain("额度已用尽");
   });
 
@@ -57,7 +57,10 @@ describe("quota components", () => {
     expect(html).not.toContain("暂无额度读数");
     const ring = renderToStaticMarkup(createElement(components.QuotaRing, { providerId: "pi", quota: money }));
     expect(ring).toContain("2 个供应商余额"); expect(ring).not.toContain("额度暂无读数");
-    expect(renderToStaticMarkup(createElement(AgentQuotaRing, { providerId: "pi", quota: money }))).toContain("余额");
+    const picker = renderToStaticMarkup(createElement(AgentQuotaRing, { providerId: "pi", quota: money }));
+    for (const value of ["CNY", "USD", "12.3456"]) expect(picker).toContain(value);
+    expect(picker).not.toContain("DeepSeek API");
+    expect(picker).not.toContain(">余额<");
   });
 
   it("shows ZCode account balances even when model execution is not configured", () => {
@@ -109,7 +112,22 @@ describe("quota components", () => {
     expect(ring).toContain("圆环：Cursor Models · 每月");
     expect(ring).not.toContain("Coding Agent 额度已用尽");
     const picker = renderToStaticMarkup(createElement(AgentQuotaRing, { quota: split, providerId: "cursor" }));
-    expect(picker).toContain("Cursor Models · 每月剩余额度 80%");
+    for (const value of ["Cursor", "80%", "其他", "用尽"]) expect(picker).toContain(value);
+    const grouped = { ...split, windows: [
+      ...split.windows,
+      { id: "gemini-5h", scope: "Gemini Models", windowMinutes: 300, usedPercent: 0 },
+      { id: "gemini-week", scope: "Gemini Models", windowMinutes: 10080, usedPercent: 40 },
+      { id: "claude-5h", scope: "Claude and GPT models", windowMinutes: 300, usedPercent: 10 },
+      { id: "claude-week", scope: "Claude and GPT models", windowMinutes: 10080, usedPercent: 80 },
+    ] };
+    const gemini = renderToStaticMarkup(createElement(AgentQuotaRing, { providerId: "antigravity", quota: grouped, model: "claude-sonnet-4-6" }));
+    for (const value of ["5 小时", "100%", "每周", "60%"]) expect(gemini).toContain(value);
+    expect(gemini).not.toContain("Gemini");
+    expect(gemini).not.toContain("Claude/GPT");
+    const unspecified = renderToStaticMarkup(createElement(AgentQuotaRing, { providerId: "antigravity", quota: grouped }));
+    expect(unspecified).toContain("5 小时");
+    expect(unspecified).not.toContain("Gemini");
+    expect(unspecified).not.toContain("模型组未确定");
     const panel = renderToStaticMarkup(createElement(components.QuotaPanel, {
       views: [{ providerId: "cursor", installationId: "ins_cursor", quota: split }],
       installations: [{ installationId: "ins_cursor", version: "2026.09.23" }],
@@ -219,6 +237,27 @@ describe("quota components", () => {
     expect(html).toContain("额度已用尽");
     expect(html).toContain("Gemini");
     expect(html).toContain("当前模型组未确定");
+  });
+
+  it("keeps showing exhausted after the cache TTL when another window is still empty", () => {
+    const stale = {
+      ...quota,
+      collectedAtUnixMs: Date.now() - 20_000,
+      staleAfterUnixMs: Date.now() - 1_000,
+      windows: [
+        { id: "five-hour", windowMinutes: 300, usedPercent: 0, resetsAtUnix: Math.floor(Date.now() / 1000) + 300 },
+        { id: "weekly", windowMinutes: 10080, usedPercent: 100, resetsAtUnix: Math.floor(Date.now() / 1000) + 23 * 3600 },
+      ],
+    };
+    const ring = renderToStaticMarkup(createElement(components.QuotaRing, { providerId: "codex", quota: stale }));
+    expect(ring).toContain("额度已用尽");
+    expect(ring).toContain('quota-ring-value" aria-hidden="true">!</span>');
+    const picker = renderToStaticMarkup(createElement(AgentQuotaRing, { providerId: "codex", quota: stale }));
+    expect(picker).toContain("5 小时");
+    expect(picker).toContain(">100%</span>");
+    expect(picker).toContain("每周");
+    expect(picker).toContain("用尽");
+    expect(picker).not.toContain(">!</span>");
   });
 
   it("renders an explicit exhausted state from a fresh window or a turn failure", () => {
