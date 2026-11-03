@@ -53,7 +53,7 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 Requires a compatible agent/CLI and system permissions. Pi is not supported; this feature requires macOS 13 or later on Mac.
 
-![Claude Code uses the computer to verify invoice filters and CSV export — desktop](docs/images/readme/en/computer-use.png)
+![Cursor uses the computer to verify invoice filters and CSV export — desktop](docs/images/readme/en/computer-use.png)
 
 ### Hand off work between agents seamlessly
 

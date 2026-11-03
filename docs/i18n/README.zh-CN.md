@@ -53,7 +53,7 @@ dog.codes 把编程 Agent、对话、代码变更和项目运行命令放进同�
 
 需要兼容的 Agent/CLI 及系统权限。Pi 暂不支持；Mac 上此功能需要 macOS 13 或更新版本。
 
-![Claude Code 操作电脑，验证发票筛选与 CSV 导出 — PC 端](../images/readme/en/computer-use.png)
+![Cursor 操作电脑，验证发票筛选与 CSV 导出 — PC 端](../images/readme/en/computer-use.png)
 
 ### 多 Agent 无缝接续任务
 

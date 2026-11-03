@@ -53,7 +53,7 @@ dog.codes は、コーディングエージェント、会話、コードの変�
 
 対応するエージェント／CLI と OS の権限が必要です。Pi は未対応です。Mac では、この機能に macOS 13 以降が必要です。
 
-![Claude Code が PC を操作し、請求書フィルターと CSV エクスポートを検証 — デスクトップ](../images/readme/en/computer-use.png)
+![Cursor が PC を操作し、請求書フィルターと CSV エクスポートを検証 — デスクトップ](../images/readme/en/computer-use.png)
 
 ### エージェント間でタスクをシームレスに引き継ぎ
 

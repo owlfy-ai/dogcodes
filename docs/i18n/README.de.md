@@ -53,7 +53,7 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 
 Erfordert einen kompatiblen Agenten bzw. eine kompatible CLI und Systemberechtigungen. Pi wird nicht unterstützt; auf dem Mac benötigt diese Funktion macOS 13 oder neuer.
 
-![Claude Code bedient den Computer und überprüft Rechnungsfilter und CSV-Export — Desktop](../images/readme/en/computer-use.png)
+![Cursor bedient den Computer und überprüft Rechnungsfilter und CSV-Export — Desktop](../images/readme/en/computer-use.png)
 
 ### Arbeit nahtlos zwischen Agenten übergeben
 

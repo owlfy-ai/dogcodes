@@ -117,6 +117,15 @@
     {
       "name": "permissions",
       "prompt": "One tiny branding correction only: the icon immediately to the LEFT of the main desktop conversation speaker label 'Claude Code' currently incorrectly shows the black Codex/OpenAI knot. Replace that one icon with the orange Claude Code sunburst used elsewhere in the same illustration. Preserve every other pixel, all text, cards, phone, controls, composition and colors."
+    },
+    {
+      "name": "computer-use",
+      "prompt": "Use case: precise-object-edit.\nImage 1 is the EDIT TARGET, the dog.codes Computer Use README illustration. Image 2 is the EXACT OFFICIAL dog.codes app logo from this repository, a black square with white negative-space side-profile sheepdog facing RIGHT with upright ear. Image 3 is the official Cursor branding reference (the white angular cube/pointer symbol on a dark background).\nMake ONLY these corrections, keeping every other part of image 1 unchanged:\n1. Replace BOTH incorrect cute front-facing puppy logos with the ACTUAL side-profile sheepdog from image 2. The bottom-left app icon should be a small BLACK rounded square containing that EXACT white sheepdog silhouette, NOT a lime green tile. The top background-activity caption icon should use that SAME EXACT right-facing sheepdog silhouette in white, matching the app's real luminance-mask treatment (black pixels transparent on the dark caption). Copy the shape accurately from image 2: upright triangular ear, sweeping forehead, round eye cutout, small black nose at right, smooth muzzle/neck. Do NOT invent, stylize, reinterpret, or draw a front-facing pet or another breed. No green ears.\n2. Replace the Claude Code orange sunburst agent icon above the assistant reply with the official Cursor angular cube/pointer logo from image 3, in a small dark tile. Replace the orange Claude Code icon in the composer agent selector with the same official Cursor icon.\n3. Replace composer placeholder 'Message Claude Code...' with 'Message Cursor...'. Replace agent selector text 'Claude Code' with 'Cursor'. There must be NO Claude Code name or orange sunburst anywhere in the final image.\nEverything else MUST remain identical: desktop-only composition, sidebar, task names, local browser, invoice table, all English chat text, activity disclosure rows, durations, counts, preferences menu, ON switch, green status caption, palette, canvas size 1536x1024, positions, proportions and soft shadows. No extra windows, phone, badges or decorations. Preserve readable text and the intended real product UI.",
+      "references": [
+        "computer-use.png (prior illustration)",
+        "apps/desktop/src-tauri/icons/128x128@2x.png (official app logo)",
+        "docs/images/readme/agents/cursor.png (official Cursor symbol)"
+      ]
     }
   ],
   "selectedImages": [
@@ -126,7 +135,7 @@
     },
     {
       "name": "computer-use",
-      "file": "exec-cde59831-4dca-42af-afe6-5dfd8c8e9121.png"
+      "file": "exec-10aa0b3b-8bbf-4a93-a895-d2d111a1ff50.png"
     },
     {
       "name": "switch-agent",

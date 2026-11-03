@@ -53,7 +53,7 @@ dog.codes은 코딩 에이전트, 대화, 코드 변경 사항, 프로젝트 실
 
 호환되는 에이전트/CLI와 시스템 권한이 필요합니다. Pi는 지원하지 않으며, Mac에서는 이 기능에 macOS 13 이상이 필요합니다.
 
-![Claude Code가 컴퓨터를 조작해 청구서 필터와 CSV 내보내기를 검증 — 데스크톱](../images/readme/en/computer-use.png)
+![Cursor가 컴퓨터를 조작해 청구서 필터와 CSV 내보내기를 검증 — 데스크톱](../images/readme/en/computer-use.png)
 
 ### 에이전트 간 작업을 끊김 없이 이어받기
 

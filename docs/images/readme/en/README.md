@@ -10,4 +10,4 @@
 
 Only existing capabilities are illustrated. Computer agent setup and updates remain desktop operations; phone views use the paired computer. The computer must remain online with dog.codes open or minimized.
 
-The Computer Use illustration follows the current global settings toggle and conversation activity rows. It shows Claude Code verifying a local Ledger web app. It does not represent a measured comparison with Codex.
+The Computer Use illustration follows the current global settings toggle and conversation activity rows. It shows Cursor verifying a local Ledger web app. It does not represent a measured comparison with Codex.

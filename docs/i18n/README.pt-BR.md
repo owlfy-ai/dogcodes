@@ -53,7 +53,7 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 
 Requer um agente/CLI compatível e permissões do sistema. Pi não é compatível; no Mac, este recurso exige macOS 13 ou posterior.
 
-![Claude Code opera o computador para verificar filtros de faturas e exportação CSV — desktop](../images/readme/en/computer-use.png)
+![Cursor opera o computador para verificar filtros de faturas e exportação CSV — desktop](../images/readme/en/computer-use.png)
 
 ### Passe o trabalho entre agentes sem interrupções
 

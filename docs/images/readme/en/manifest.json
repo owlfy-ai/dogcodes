@@ -19,13 +19,15 @@
     {
       "file": "computer-use.png",
       "title": "Codex-level computer use for every agent",
-      "source_image": "exec-cde59831-4dca-42af-afe6-5dfd8c8e9121.png",
+      "source_image": "exec-10aa0b3b-8bbf-4a93-a895-d2d111a1ff50.png",
       "width": 1536,
       "height": 1024,
       "mode": "RGB",
-      "sha256": "936f24d87e8214eb6f6155301a9b74f2004028a8335b06b18a5b5f1023994cdf",
+      "sha256": "045903d4370f887f1be3bd031a6186772d50516900fe2cd9e6238086a5abe674",
       "layout": "Desktop only; agent conversation and controlled local browser",
-      "scenario": "Claude Code verifies Ledger invoice filters and CSV export through real computer-use controls; curated illustration"
+      "scenario": "Cursor verifies Ledger invoice filters and CSV export through real computer-use controls; curated illustration",
+      "brand_reference": "apps/desktop/src-tauri/icons/128x128@2x.png",
+      "agent_reference": "apps/desktop/src/assets/cursor.svg"
     },
     {
       "file": "switch-agent.png",
