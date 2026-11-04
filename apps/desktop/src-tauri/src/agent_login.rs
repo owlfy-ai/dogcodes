@@ -182,7 +182,8 @@ async fn open_target(target: LoginTarget) -> Result<(), String> {
             .flat_map(u16::to_le_bytes)
             .collect::<Vec<_>>(),
     );
-    let mut launcher = tokio::process::Command::new("powershell.exe");
+    // Only the login terminal started below should be visible, not this launcher.
+    let mut launcher = agent_runtime::background_command("powershell.exe");
     launcher.args([
         "-NoProfile",
         "-Command",

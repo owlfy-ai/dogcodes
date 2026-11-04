@@ -16,12 +16,25 @@ pub fn external_path(path: impl AsRef<Path>) -> PathBuf {
     path.to_path_buf()
 }
 
+/// Start building a command that runs without a visible console window.
+/// Release builds use the Windows GUI subsystem, so a console child has no
+/// console to share and would otherwise open its own window. Debug builds keep
+/// a console, which is why a missing flag only shows up in the installed app.
+#[must_use]
+pub fn background_command(program: impl AsRef<OsStr>) -> tokio::process::Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut command = tokio::process::Command::new(program);
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    command
+}
+
 /// Start building an Agent command without exposing canonical Windows prefixes
 /// to its launcher. Arguments remain untouched: callers convert known path
 /// arguments explicitly, rather than changing prompts, JSON or shell source.
 #[must_use]
 pub fn agent_command(program: impl AsRef<OsStr>) -> tokio::process::Command {
-    tokio::process::Command::new(external_path(Path::new(program.as_ref())))
+    background_command(external_path(Path::new(program.as_ref())))
 }
 
 #[cfg(windows)]
@@ -160,6 +173,51 @@ mod tests {
         }
         assert_eq!(spec.executable, identity);
         assert!(spec.executable.to_string_lossy().starts_with(r"\\?\"));
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn children_of_a_consoleless_host_show_no_console_window() {
+        use std::os::windows::process::CommandExt;
+        const HOST: &str = "DOGCODES_CONSOLELESS_HOST";
+        const PROBE: &str = r#"Add-Type -Namespace Probe -Name Console -MemberDefinition '[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow(); [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);'; [Probe.Console]::IsWindowVisible([Probe.Console]::GetConsoleWindow())"#;
+        if std::env::var_os(HOST).is_some() {
+            let powershell = PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+                .join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
+            let mut spec = crate::ProcessSpec::probe(
+                powershell,
+                ["-NoProfile", "-NonInteractive", "-Command", PROBE]
+                    .map(str::to_owned)
+                    .to_vec(),
+            );
+            spec.timeout = std::time::Duration::from_mins(1);
+            for result in [
+                crate::run_bounded(&spec).await,
+                crate::run_scoped_bounded(&spec).await,
+            ] {
+                let result = result.unwrap();
+                assert!(result.success, "{}", result.stderr);
+                assert_eq!(result.stdout.trim(), "False");
+            }
+            return;
+        }
+        // Rerun this test detached, matching a release build's GUI subsystem
+        // host. A child with no window flag would then open a visible console.
+        let host = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "external_path::tests::children_of_a_consoleless_host_show_no_console_window",
+                "--nocapture",
+            ])
+            .env(HOST, "1")
+            .creation_flags(0x0000_0008) // DETACHED_PROCESS
+            .output()
+            .unwrap();
+        assert!(
+            host.status.success(),
+            "{}",
+            String::from_utf8_lossy(&host.stdout)
+        );
     }
 
     #[cfg(not(windows))]

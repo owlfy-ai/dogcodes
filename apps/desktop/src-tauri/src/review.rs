@@ -1024,7 +1024,7 @@ async fn run_commit_command_tagged(
     args: &[&str],
     reflog_action: Option<&str>,
 ) -> Result<std::process::Output, String> {
-    let mut command = tokio::process::Command::new("git");
+    let mut command = agent_runtime::background_command("git");
     command
         .current_dir(path)
         .args(args)

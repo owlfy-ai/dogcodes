@@ -9,7 +9,7 @@ pub use process_scope::OwnedChild;
 
 pub use electron::{electron_node_executable, electron_resources_directory};
 pub use environment::{apply_platform_environment, inherited_variable};
-pub use external_path::{agent_command, external_path};
+pub use external_path::{agent_command, background_command, external_path};
 pub use path_environment::{current_path, record_shell_path};
 pub use proxy::apply_proxy_environment;
 
