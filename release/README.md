@@ -241,11 +241,17 @@ the pre-release option for a stable release). Do not publish while an upload
 command is still running. This command does not replace already-published releases,
 move existing version tags, automatically commit code or push source branches.
 
+The website reads the latest published Release. Its macOS buttons use the signed
+Apple Silicon or Intel DMG, and its Windows button uses the signed x64 installer.
+Publishing the draft switches those links. Draft assets stay private, so the
+upload itself does not change the public website. Linux stays on the Release page.
+
 One-time prerequisites:
 
 - Commit and push the release scripts and intended product changes first. The
-  command rejects dirty worktrees, unpublished source commits and mismatched
-  version fields; it does not silently include local edits.
+  command rejects dirty worktrees and unpublished source commits. The product
+  version comes only from `Cargo.toml` `[workspace.package] version`; it does
+  not silently include local edits.
 - Install Node.js 22, pnpm, the pinned Rust toolchain and platform-native build
   prerequisites. The command installs the required Rust targets and JS
   dependencies with the frozen lockfile, and runs the release-script tests and
@@ -270,7 +276,7 @@ Resume requires the same source commit and unchanged verified local packages.
 Completed build receipts live under the ignored
 `release/private/release-state/<tag>/`. If CI fails, inspect and rerun the failed
 workflow first, then use `--upload-only`. If changing source is necessary after
-the tag was pushed, bump all four version fields and release a new tag.
+the tag was pushed, bump `[workspace.package] version` in `Cargo.toml` and release a new tag.
 
 Draft updates use an exclusive `RELEASE_UPLOAD_LOCK.json` asset, acquired without
 overwriting an existing lock, so simultaneous Mac/Windows uploads cannot race
@@ -282,8 +288,7 @@ are never automatically stolen based on time alone.
 ### Tag-triggered workflow
 
 Pushing a tag such as `v0.1.0` runs `.github/workflows/release.yml`. It first checks
-that the tag matches the versions in `package.json`, `apps/desktop/package.json`,
-`tauri.conf.json` and the Cargo workspace, then builds unsigned installers on
+that the tag matches `[workspace.package] version` in `Cargo.toml`, then builds unsigned installers on
 Windows (NSIS) and macOS (arm64 and x64 DMG), reuses the full
 desktop checks on those platforms, and creates a **draft pre-release** with those installers and
 `SHA256SUMS.txt`. Review the draft, install from it, and publish it by hand. Signed

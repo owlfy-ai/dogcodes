@@ -2,10 +2,13 @@
 // English lives in index.html (data-i18n) and below (dyn, ph); every other language is a pack in
 // ./i18n/<code>.js, loaded on demand: { name, short, htmlLang, ui, dyn, when, runs, os, ph }.
 // Set these once the public repository exists.
+import { chooseDownload, signedClientDownloads } from './downloads.mjs';
+
 const SITE = {
   github: 'https://github.com/owlfy-ai/dogcodes',
   releases: 'https://github.com/owlfy-ai/dogcodes/releases/latest',
 };
+let clientDownloads = null;
 
 const AGENTS = [
   ['Claude Code', 'claude-code.svg'], ['Codex', 'chatgpt.svg'], ['Grok Build', 'grok.svg'], ['Cursor', 'cursor.svg'],
@@ -100,29 +103,73 @@ async function applyLanguage(next) {
   $('#lang-cur').textContent = entry[2];
   document.querySelectorAll('#lang-list button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.lang === next)));
   try { localStorage.setItem('dogcodes.site.lang', next); } catch { /* storage is optional */ }
-  wireLinks(); osButton(); resetHandoff(); renderRemote(); renderQuota(); renderRuns(); countFindings();
+  await wireLinks(); await osButton(); resetHandoff(); renderRemote(); renderQuota(); renderRuns(); countFindings();
   setCommitLanguage(COMMIT_LANG[next] || 'en');
 }
 
-function wireLinks() {
-  document.querySelectorAll('[data-link="github"]').forEach(a => { a.href = SITE.github; a.target = '_blank'; a.rel = 'noopener'; });
-  document.querySelectorAll('[data-link="release"]').forEach(a => { a.href = SITE.releases; a.target = '_blank'; a.rel = 'noopener'; });
+function external(anchor, href) {
+  anchor.href = href;
+  anchor.target = '_blank';
+  anchor.rel = 'noopener';
 }
 
-function osButton() {
+async function macArch() {
+  try {
+    const architecture = (await navigator.userAgentData?.getHighEntropyValues?.(['architecture']))?.architecture;
+    if (architecture === 'arm') return 'arm';
+    if (architecture === 'x86') return 'intel';
+  } catch { /* Safari does not expose this hint. */ }
+  try {
+    const gl = document.createElement('canvas').getContext('webgl');
+    const info = gl?.getExtension('WEBGL_debug_renderer_info');
+    const renderer = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : '';
+    if (/Apple/.test(renderer)) return 'arm';
+    if (/Intel/.test(renderer)) return 'intel';
+  } catch { /* keep the Apple Silicon installer */ }
+  return 'arm';
+}
+
+async function downloadHref(os) {
+  const macArchName = os === 'mac' && /Mac/i.test(navigator.userAgent) ? await macArch() : 'arm';
+  return chooseDownload(clientDownloads, { os, macArch: macArchName }) || SITE.releases;
+}
+
+async function wireLinks() {
+  document.querySelectorAll('[data-link="github"]').forEach(a => external(a, SITE.github));
+  for (const a of document.querySelectorAll('[data-link="release"]')) external(a, await downloadHref(a.dataset.os));
+}
+
+async function osButton() {
   const ua = navigator.userAgent;
   const label = $('#hero-download span');
+  const button = $('#hero-download');
   // Phones and tablets are not install targets: offer the platform cards instead.
   if (/Android|iPhone|iPad|iPod/i.test(ua)) {
     label.textContent = pack.os.mobile;
-    $('#hero-download').href = '#download';
+    button.href = '#download';
+    button.removeAttribute('target');
+    button.removeAttribute('rel');
     return;
   }
   const os = /Windows/i.test(ua) ? 'win' : /Mac/i.test(ua) ? 'mac' : /Linux|X11/i.test(ua) ? 'linux' : 'mac';
   const names = { mac: 'macOS', win: 'Windows', linux: 'Linux' };
   label.textContent = pack.os.desktop(names[os]);
-  $('#hero-download').href = SITE.releases;
+  external(button, await downloadHref(os));
   document.querySelectorAll('.dl a').forEach(a => a.classList.toggle('primary', a.dataset.os === os));
+}
+
+async function loadClientDownloads() {
+  try {
+    const response = await fetch('https://api.github.com/repos/owlfy-ai/dogcodes/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json' },
+    });
+    if (!response.ok) return;
+    const release = await response.json();
+    if (release.draft || release.prerelease) return;
+    clientDownloads = signedClientDownloads(release.assets);
+  } catch { /* the release page remains available */ }
+  await wireLinks();
+  await osButton();
 }
 
 /* ---------------- Shared pieces ---------------- */
@@ -489,6 +536,7 @@ $('#copy-cmd').addEventListener('click', async e => {
   try { await navigator.clipboard.writeText('pnpm install && pnpm desktop:dev'); e.target.textContent = '✓'; } catch { e.target.textContent = '⌘C'; }
 });
 
+loadClientDownloads();
 heroLoop();
 if (!reduced) autoHandoff();
 // Show the run demo working without a click.

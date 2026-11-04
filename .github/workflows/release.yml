@@ -22,21 +22,15 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Tag must match every published version field
+      - name: Tag must match the Cargo workspace version
         env:
           TAG: ${{ github.ref_name }}
         run: |
           node -e '
             const fs = require("fs");
             const tag = process.env.TAG.replace(/^v/, "");
-            const versions = {
-              "package.json": JSON.parse(fs.readFileSync("package.json")).version,
-              "apps/desktop/package.json": JSON.parse(fs.readFileSync("apps/desktop/package.json")).version,
-              "tauri.conf.json": JSON.parse(fs.readFileSync("apps/desktop/src-tauri/tauri.conf.json")).version,
-              "Cargo.toml": (fs.readFileSync("Cargo.toml", "utf8").match(/\[workspace\.package\][^\[]*?\nversion\s*=\s*"([^"]+)"/) || [])[1],
-            };
-            const wrong = Object.entries(versions).filter(([, v]) => v !== tag);
-            if (wrong.length) { console.error(`Tag ${tag} does not match:`, wrong); process.exit(1); }
+            const version = (fs.readFileSync("Cargo.toml", "utf8").match(/\[workspace\.package\][^\[]*?\nversion\s*=\s*"([^"]+)"/) || [])[1];
+            if (version !== tag) { console.error(`Tag ${tag} does not match Cargo.toml version ${version}`); process.exit(1); }
           '
 
   installers:

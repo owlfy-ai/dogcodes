@@ -27,12 +27,9 @@ export function releaseArguments(args) {
 }
 
 export function releaseVersion(root) {
-  const json = path => JSON.parse(readFileSync(resolve(root, path), 'utf8'));
-  const version = json('package.json').version;
-  const cargo = readFileSync(resolve(root, 'Cargo.toml'), 'utf8').match(/\[workspace\.package\][^\[]*?\nversion\s*=\s*"([^"]+)"/)?.[1];
-  if (!/^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?(?:\+[\da-zA-Z.-]+)?$/.test(version)
-    || [json('apps/desktop/package.json').version, json('apps/desktop/src-tauri/tauri.conf.json').version, cargo].some(value => value !== version)) {
-    throw new Error('The four release version fields must contain the same semantic version.');
+  const version = readFileSync(resolve(root, 'Cargo.toml'), 'utf8').match(/\[workspace\.package\][^\[]*?\nversion\s*=\s*"([^"]+)"/)?.[1];
+  if (!version || !/^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?(?:\+[\da-zA-Z.-]+)?$/.test(version)) {
+    throw new Error('Cargo.toml [workspace.package] version must be a semantic version.');
   }
   return version;
 }
@@ -378,7 +375,7 @@ export async function releaseDesktop({ root = rootDirectory, platform = process.
   const stage = mkdtempSync(resolve(stateDirectory, 'upload-'));
   try {
     const ready = await uploadSignedPackages(client, receipt, stage);
-    console.log(ready ? 'Both signing platforms are ready; checksums updated. Review installation results and publish the draft manually.' : 'This platform is uploaded and checksums updated. Run the same command on the other signing machine.');
+    console.log(ready ? 'Both signing platforms are ready; checksums updated. Review installation results and publish the draft. The website macOS and Windows buttons use these installers once the release is public.' : 'This platform is uploaded and checksums updated. Run the same command on the other signing machine.');
     console.log(`https://github.com/${repo}/releases`);
   } finally { rmSync(stage, { recursive: true, force: true }); }
 }

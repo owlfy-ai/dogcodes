@@ -1,6 +1,5 @@
 {
   "name": "dogcodes",
-  "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.0.9",
   "scripts": {
@@ -9,7 +8,7 @@
     "desktop:dev": "pnpm --filter @dogcodes/desktop desktop:dev",
     "desktop:package": "node scripts/package-desktop.mjs",
     "desktop:release": "node scripts/desktop-release.mjs",
-    "test:release": "node --test scripts/package-desktop.test.mjs scripts/desktop-release.test.mjs scripts/prepare-computer-use.test.mjs",
+    "test:release": "node --test scripts/package-desktop.test.mjs scripts/desktop-release.test.mjs scripts/website-downloads.test.mjs scripts/prepare-computer-use.test.mjs",
     "test:desktop-dev": "node --test scripts/desktop-dev.test.mjs",
     "check:release-inputs": "node scripts/check-release-inputs.mjs",
     "build": "pnpm --filter @dogcodes/desktop build",

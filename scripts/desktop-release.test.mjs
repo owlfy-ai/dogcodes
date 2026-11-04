@@ -65,13 +65,13 @@ async function fixture(work) {
   finally { rmSync(root, { recursive: true, force: true }); }
 }
 
-test('release versions must agree, and origin must be a GitHub URL without embedded credentials', async () => fixture(({ root }) => {
-  mkdirSync(resolve(root, 'apps/desktop/src-tauri'), { recursive: true });
-  for (const path of ['package.json', 'apps/desktop/package.json', 'apps/desktop/src-tauri/tauri.conf.json']) writeFileSync(resolve(root, path), '{"version":"0.1.0"}');
+test('release version comes from the Cargo workspace, and origin must be a GitHub URL without embedded credentials', async () => fixture(({ root }) => {
   writeFileSync(resolve(root, 'Cargo.toml'), '[workspace.package]\nversion = "0.1.0"\n');
   assert.equal(releaseVersion(root), '0.1.0');
-  writeFileSync(resolve(root, 'apps/desktop/package.json'), '{"version":"0.2.0"}');
-  assert.throws(() => releaseVersion(root), /four release version/);
+  writeFileSync(resolve(root, 'package.json'), '{"version":"0.2.0"}\n');
+  assert.equal(releaseVersion(root), '0.1.0');
+  writeFileSync(resolve(root, 'Cargo.toml'), '[workspace.package]\nversion = "next"\n');
+  assert.throws(() => releaseVersion(root), /semantic version/);
   for (const remote of ['https://github.com/example/product.git', 'git@github.com:example/product.git', 'ssh://git@github.com/example/product.git']) assert.equal(githubRepository(remote), 'example/product');
   for (const remote of ['https://token@github.com/example/product.git', 'https://example.invalid/product', 'https://github.com/example/product/other']) assert.throws(() => githubRepository(remote));
   assert.deepEqual(releaseArguments(['--upload-only']), { check: false, uploadOnly: true });
@@ -80,8 +80,6 @@ test('release versions must agree, and origin must be a GitHub URL without embed
 }));
 
 test('dirty worktrees stop before any authentication, build or remote mutation', async () => fixture(async ({ root }) => {
-  mkdirSync(resolve(root, 'apps/desktop/src-tauri'), { recursive: true });
-  for (const path of ['package.json', 'apps/desktop/package.json', 'apps/desktop/src-tauri/tauri.conf.json']) writeFileSync(resolve(root, path), '{"version":"0.1.0"}');
   writeFileSync(resolve(root, 'Cargo.toml'), '[workspace.package]\nversion = "0.1.0"\n');
   const git = args => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
   git(['init', '--quiet']); git(['add', '.']);
