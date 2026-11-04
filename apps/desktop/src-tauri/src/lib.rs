@@ -8,6 +8,7 @@ mod computer_notice;
 mod computer_notice_layout;
 mod computer_use;
 pub mod daemon;
+mod execution_targets;
 mod external_links;
 mod project_registry;
 mod project_runs;
@@ -67,6 +68,19 @@ async fn core_remote_control(
     call: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     state.core.remote_control(call).await
+}
+
+/// Carries connection secrets, so only the main window may use it.
+#[tauri::command]
+async fn core_execution_target(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, DesktopState>,
+    call: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    if window.label() != "main" {
+        return Err("请从主窗口管理远程连接".into());
+    }
+    state.core.execution_target(call).await
 }
 
 struct DesktopState {
@@ -1278,6 +1292,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             core_remote_control,
+            core_execution_target,
             external_links::open_website,
             agent_login::open_agent_login,
             attachments::core_save_attachment,

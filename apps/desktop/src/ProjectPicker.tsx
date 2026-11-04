@@ -13,12 +13,13 @@ export function projectOptions(projects: ProjectSummary[], query: string, home: 
     && `${project.displayName} ${[project.path, ...project.additionalDirectories].flatMap(path => [path, homeRelativePath(path, home)]).join(" ")}`.toLocaleLowerCase().includes(search));
 }
 
-export function ProjectPicker({ projects, selectedProject, disabled, onSelect, onOpenFolder }: {
+export function ProjectPicker({ projects, selectedProject, disabled, onSelect, onOpenFolder, onNewConnection }: {
   projects: ProjectSummary[];
   selectedProject: ProjectSummary | null;
   disabled: boolean;
   onSelect: (id: ProjectId) => void;
   onOpenFolder: () => void;
+  onNewConnection?: () => void;
 }) {
   const { t } = useI18n();
   const home = useHomeDirectory();
@@ -76,6 +77,7 @@ export function ProjectPicker({ projects, selectedProject, disabled, onSelect, o
       </div>
       <div className="project-picker-actions">
         <button type="button" onClick={() => { setOpen(false); onOpenFolder(); }}><svg className="workspace-folder" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg>{t("projectPicker.createProject")}</button>
+        {onNewConnection && <button type="button" onClick={() => { setOpen(false); onNewConnection(); }}><svg className="workspace-folder" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5.5 15.5h9a3.5 3.5 0 0 0 .6-6.95 5 5 0 0 0-9.6-1A4 4 0 0 0 5.5 15.5Z" /></svg>{t("executionTargets.newConnection")}</button>}
         <button type="button" disabled={!scratch} aria-pressed={noProject} onClick={() => scratch && choose(scratch.projectId)}><svg className="workspace-folder" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M17 9.5a7 7 0 0 1-7 7H3l1-3A7 7 0 1 1 17 9.5Z" /></svg>{t("projectPicker.withoutProject")}{noProject && <span aria-hidden="true">✓</span>}</button>
       </div>
     </FloatingPopover>}

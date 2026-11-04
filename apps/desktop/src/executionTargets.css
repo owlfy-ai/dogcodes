@@ -1,0 +1,49 @@
+.target-page .target-new { margin-left: auto; flex: none; }
+.target-list { margin: 0; padding: 4px 22px; list-style: none; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+.target-row-error { color: color-mix(in srgb, #c35b4a 80%, CanvasText); font-size: .6875rem; line-height: 1.5; }
+.target-phase { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; flex: none; color: var(--muted); font-size: .6875rem; }
+.target-phase i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.target-phase.connected i { background: #639e57; }
+.target-phase.connecting i { background: #c79a3b; }
+.target-phase.failed i, .target-phase.disconnected i { background: #c35b4a; }
+.target-row-actions { display: flex; gap: 6px; flex: none; }
+.target-page .target-row-actions button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--muted); font-size: .6875rem; }
+.target-page .target-row-actions button:hover { border-color: var(--muted); color: inherit; }
+
+.project-dialog.target-dialog { width: min(560px, 92vw); }
+.target-route { display: block; margin-top: 4px; color: #888883; font-family: ui-monospace, monospace; font-size: .6875rem; overflow-wrap: anywhere; }
+.target-form, .target-progress { display: grid; gap: 14px; min-width: 0; }
+.project-dialog .target-form label { min-width: 0; }
+.project-dialog .target-form input:not([type="checkbox"]), .target-form select { width: 100%; box-sizing: border-box; }
+.target-hint { margin: 0; color: #888883; font-size: calc(12px * var(--ui-scale)); line-height: 1.5; }
+.target-form select { padding: 10px 11px; border: 1px solid #3c3c38; border-radius: 8px; color: inherit; background: transparent; font: inherit; }
+.target-row { display: grid; grid-template-columns: minmax(0, 1fr) 96px; gap: 10px; }
+.target-auth { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: calc(13px * var(--ui-scale)); }
+.target-auth > span { margin-right: 6px; color: #aaa9a4; }
+.target-auth button { padding: 7px 11px; border: 1px solid #3c3c38; border-radius: 8px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.target-auth button.selected { border-color: #8d9181; background: #8d918122; }
+.target-secret { display: flex; gap: 6px; }
+.target-secret input { flex: 1; min-width: 0; }
+.target-secret button { flex: none; padding: 0 10px; border: 1px solid #3c3c38; border-radius: 8px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.target-advanced summary, .target-log summary { color: #aaa9a4; font-size: calc(13px * var(--ui-scale)); cursor: pointer; }
+.target-advanced[open] { display: grid; gap: 12px; }
+.project-dialog .target-form > footer, .project-dialog .target-progress > footer { display: flex; justify-content: flex-end; gap: 8px; }
+.target-steps { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; font-size: calc(13px * var(--ui-scale)); }
+.target-steps li { display: flex; align-items: center; gap: 9px; color: #888883; }
+.target-steps li > span { display: grid; place-items: center; width: 16px; height: 16px; border: 1px solid currentColor; border-radius: 50%; font-size: 10px; }
+.target-steps li.active { color: inherit; font-weight: 550; }
+.target-steps li.active > span { border-color: #c79a3b; animation: target-pulse 1.2s ease-in-out infinite; }
+.target-steps li.done { color: inherit; }
+.target-steps li.done > span { border-color: #639e57; color: #639e57; }
+.target-steps li.failed { color: inherit; font-weight: 550; }
+.target-steps li.failed > span { border-color: #c35b4a; color: #c35b4a; }
+.target-steps small { margin-left: auto; color: #888883; font-weight: 400; }
+@keyframes target-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .target-steps li.active > span { animation: none; } }
+.target-prompt { display: grid; gap: 10px; padding: 13px; border: 1px solid #c79a3b66; border-radius: 10px; background: #c79a3b10; font-size: calc(13px * var(--ui-scale)); }
+.target-prompt pre, .target-log pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, monospace; font-size: .6875rem; line-height: 1.6; }
+.target-prompt p { margin: 0; color: #888883; line-height: 1.5; }
+.target-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.project-dialog label.target-check { display: flex; align-items: center; gap: 7px; }
+.target-log pre { max-height: 180px; margin-top: 8px; padding: 9px; overflow: auto; border: 1px solid #3c3c38; border-radius: 8px; }
+.target-connected { display: grid; gap: 3px; margin: 0; padding: 11px 13px; border: 1px solid #639e5766; border-radius: 10px; background: #639e5710; font-size: calc(13px * var(--ui-scale)); }

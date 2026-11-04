@@ -1,4 +1,5 @@
 import type { UiMessages } from "./en";
+import { executionTargetMessages } from "./executionTargets";
 
 export const uiJa: UiMessages = {
   activity: {
@@ -953,6 +954,7 @@ export const uiJa: UiMessages = {
     saveFailed: "プロジェクトを保存できませんでした。再試行してください。",
     scopeNote: "メインフォルダを選択し、必要に応じて関連フォルダを追加してください。Agent のファイルアクセスは、設定した権限に従います。",
   },
+  executionTargets: executionTargetMessages.ja,
   projectPicker: {
     createProject: "プロジェクトを作成…",
     directoryCount: "{count} 個のフォルダ",

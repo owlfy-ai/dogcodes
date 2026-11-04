@@ -1,4 +1,5 @@
 import type { UiMessages } from "./en";
+import { executionTargetMessages } from "./executionTargets";
 
 export const uiIt: UiMessages = {
   activity: {
@@ -953,6 +954,7 @@ export const uiIt: UiMessages = {
     saveFailed: "Impossibile salvare il progetto. Riprova.",
     scopeNote: "Scegli una cartella principale e, se vuoi, aggiungi cartelle correlate. L’accesso ai file dell’Agent segue i permessi che imposti.",
   },
+  executionTargets: executionTargetMessages.it,
   projectPicker: {
     createProject: "Crea progetto…",
     directoryCount: "{count} cartelle",

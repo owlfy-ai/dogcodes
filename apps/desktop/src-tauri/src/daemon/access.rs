@@ -86,6 +86,7 @@ pub(crate) fn method_access(method: &str) -> Option<MethodAccess> {
         "subscribe" | "subscribe_project" | "review_watch" | "project_runs_watch"
         | "submission_watch" | "workspace_watch" => Stream,
         "remote_control"
+        | "target_control"
         | "computer_use"
         | "computer_use_activity"
         | "computer_use_activity_watch"

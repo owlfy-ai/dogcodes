@@ -1,3 +1,4 @@
+import { executionTargetMessages } from "./executionTargets";
 // UI strings outside the older hand-written sections. English defines the key shape;
 // every other locale in ./ui implements UiMessages.
 export const uiEn = {
@@ -953,6 +954,7 @@ export const uiEn = {
     saveFailed: "The project couldn't be saved. Please retry.",
     scopeNote: "Choose a main folder and optionally add related folders. The Agent's file access follows the permissions you set.",
   },
+  executionTargets: executionTargetMessages.en,
   projectPicker: {
     createProject: "Create project…",
     directoryCount: "{count} folders",

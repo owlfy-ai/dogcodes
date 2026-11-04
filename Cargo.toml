@@ -5,6 +5,9 @@ members = [
   "crates/remote-endpoint",
   "crates/remote-desktop",
   "crates/remote-transport",
+  "crates/target-wire",
+  "crates/target-shim",
+  "crates/target-link",
   "crates/domain",
   "crates/protocol",
   "crates/driver-api",
@@ -74,6 +77,11 @@ large_futures = "allow"
 # proc macros fail to load. Shipped executables are unaffected and still stripped.
 [profile.release.build-override]
 strip = "none"
+
+# The shim is uploaded to servers, so its size matters more than its speed.
+[profile.release.package.target-shim]
+opt-level = "z"
+strip = "symbols"
 
 # Reviewed local extension of 0.21.1: TURN TCP/TLS. See vendor/webrtc/DOGCODES.md.
 [patch.crates-io]

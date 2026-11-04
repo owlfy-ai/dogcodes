@@ -1,4 +1,5 @@
 import type { UiMessages } from "./en";
+import { executionTargetMessages } from "./executionTargets";
 
 export const uiKo: UiMessages = {
   activity: {
@@ -953,6 +954,7 @@ export const uiKo: UiMessages = {
     saveFailed: "프로젝트를 저장하지 못했습니다. 다시 시도하세요.",
     scopeNote: "메인 폴더를 선택하고 필요하면 관련 폴더를 추가하세요. Agent의 파일 접근은 설정한 권한을 따릅니다.",
   },
+  executionTargets: executionTargetMessages.ko,
   projectPicker: {
     createProject: "프로젝트 생성…",
     directoryCount: "폴더 {count}개",

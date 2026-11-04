@@ -4,7 +4,7 @@ pub mod submission;
 
 use agent_domain::{
     ArtifactId, CommandId, CorrelationId, DeviceId, EventId, ExecutorRef, InstallationId,
-    ProjectId, RunId, RunState, SessionMapId, TaskId, TurnId,
+    ProjectId, RunId, RunState, SessionMapId, TargetId, TaskId, TurnId,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -228,6 +228,7 @@ impl NewEvent {
 pub enum CoreCommand {
     SetAgentPreferences(AgentPreferences),
     SetHistoryPreferences(HistoryPreferences),
+    SetExecutionTargets(ExecutionTargets),
     RegisterProject(RegisterProject),
     UpdateProject(RegisterProject),
     CreateTask(CreateTask),
@@ -279,6 +280,63 @@ pub struct HistoryPreferencesSnapshot {
     pub revision: u64,
     pub last_sequence: u64,
     pub preferences: HistoryPreferences,
+}
+
+/// How `ssh` authenticates. Secrets are never part of this record.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SshAuth {
+    /// Leave the decision to `ssh`: its config, default keys and agent.
+    #[default]
+    System,
+    Password,
+    PrivateKey,
+}
+
+/// `destination` is a host name, an address or an SSH config alias. A missing
+/// port or user lets `ssh` resolve it, so a config alias keeps its full meaning.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SshConnection {
+    pub destination: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    #[serde(default)]
+    pub auth: SshAuth,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_file: Option<String>,
+    /// Absolute directory replacing the default `~/.dogcodes` on the target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install_directory: Option<String>,
+}
+
+/// A saved machine that can run agents. The identity is local and independent
+/// of its address, so editing the route keeps projects bound to the same target.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExecutionTarget {
+    pub target_id: TargetId,
+    pub display_name: String,
+    pub connection: SshConnection,
+    /// Machine and account fingerprint recorded at the first successful connection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_identity: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExecutionTargets {
+    pub targets: Vec<ExecutionTarget>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionTargetsSnapshot {
+    pub revision: u64,
+    pub last_sequence: u64,
+    pub targets: ExecutionTargets,
 }
 
 /// Host-wide business settings; drafts and visual layout are deliberately absent.

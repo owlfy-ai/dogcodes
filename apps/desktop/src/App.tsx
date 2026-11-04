@@ -1,4 +1,5 @@
 import { RemoteDevices } from "./RemoteDevices";
+import { ExecutionTargets } from "./ExecutionTargets";
 import { ComputerUseControl } from "./ComputerUseControl";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { AttachmentUploadRecovery } from "./AttachmentUploadRecovery";
@@ -336,7 +337,9 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     await refresh();
     refreshQuotas.current();
   };
-  const [activeView, setActiveView] = useState<"conversation" | "quota" | "remote">("conversation");
+  const [activeView, setActiveView] = useState<"conversation" | "quota" | "remote" | "targets">("conversation");
+  const [newConnectionRequest, setNewConnectionRequest] = useState(0);
+  const openNewConnection = () => { setActiveView("targets"); setNewConnectionRequest(value => value + 1); };
   const [startupError, setStartupError] = useState(false);
   const [snapshot, setSnapshot] = useState<BootstrapSnapshot | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<TaskId | null>(null);
@@ -1185,6 +1188,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
           </button>
           <button ref={quotaButton} aria-keyshortcuts={`${shortcutKey}+U`} className={activeView === "quota" ? "active" : ""} type="button" onClick={() => setActiveView("quota")}><SidebarNavIcon kind="quota" /><b>{t("nav.agentManagement", undefined, resolvedLang)}</b><kbd>{shortcutModifier} U</kbd></button>
           <button className={activeView === "remote" ? "active" : ""} type="button" aria-current={activeView === "remote" ? "page" : undefined} onClick={() => setActiveView("remote")}><SidebarNavIcon kind="phone" /><b>{t("remoteDevices.title", undefined, resolvedLang)}</b></button>
+          {isTauri() && <button className={activeView === "targets" ? "active" : ""} type="button" aria-current={activeView === "targets" ? "page" : undefined} onClick={() => setActiveView("targets")}><SidebarNavIcon kind="server" /><b>{t("executionTargets.title", undefined, resolvedLang)}</b></button>}
         </nav>
         <div className="sidebar-divider" />
         <MemoConversationHistory onRevealProject={revealLocalProject} onCreateProjectConversation={createProjectConversation} createConversationDisabled={sending || creatingTask}
@@ -1234,6 +1238,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             ? <div className="task-heading"><h1>{t("agentManagement.title", undefined, resolvedLang)}</h1></div>
             : activeView === "remote"
             ? <div className="task-heading"><h1>{t("remoteDevices.title", undefined, resolvedLang)}</h1></div>
+            : activeView === "targets"
+            ? <div className="task-heading"><h1>{t("executionTargets.title", undefined, resolvedLang)}</h1></div>
             : <div className="task-heading"><h1>{taskDisplayTitle(selectedTask.title)}</h1><span>{selectedProject ? projectDisplayName(selectedProject.displayName) : t("header.temporaryWorkspace", undefined, resolvedLang)}</span></div>}
           <div className="task-tools">
             {activeView === "conversation" && <>
@@ -1248,7 +1254,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         </header>
       {activeView === "quota" ? (
         <QuotaCenter views={quotaViews} installations={snapshot.installations} agentUpdates={agentUpdates} refreshProgress={quotaRefreshProgress} onRefresh={() => refreshQuotasNow.current()} onDetect={detectAgents} lang={resolvedLang} />
-      ) : activeView === "remote" ? <RemoteDevices lang={resolvedLang} /> : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}
+      ) : activeView === "remote" ? <RemoteDevices lang={resolvedLang} /> : activeView === "targets" ? <ExecutionTargets requestNew={newConnectionRequest} /> : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}
         onDragEnter={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); dragDepth.current++; setDraggingFiles(true); } }}
         onDragOver={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = sending ? "none" : "copy"; } }}
         onDragLeave={event => { event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFiles(false); } }}
@@ -1280,7 +1286,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             {!selectedTaskId && <div className="welcome-project-bar"><ProjectPicker projects={snapshot.projects} selectedProject={selectedProject}
               disabled={creatingTask || sending || Boolean(selectedTask.activePrimaryRun)}
               onSelect={projectId => { if (projectId !== selectedTask.projectId) void createConversation(projectId); }}
-              onOpenFolder={() => void openProjectFolder()} /></div>}
+              onOpenFolder={() => void openProjectFolder()} onNewConnection={isTauri() ? openNewConnection : undefined} /></div>}
             <form className="composer" onSubmit={submit}>
             {error && <p className="error" role="alert">{error}</p>}
             <AttachmentPreviews items={attachments.items} remove={attachments.remove} disabled={sending} />

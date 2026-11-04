@@ -102,6 +102,7 @@ prefixed_id!(DeviceId, "dev");
 prefixed_id!(InstallationId, "ins");
 prefixed_id!(SessionMapId, "ses");
 prefixed_id!(ArtifactId, "art");
+prefixed_id!(TargetId, "tgt");
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ProviderId(String);

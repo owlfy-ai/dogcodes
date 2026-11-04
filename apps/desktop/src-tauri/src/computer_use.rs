@@ -2,6 +2,38 @@ use agent_core::Core;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
+fn application_config() -> serde_json::Value {
+    serde_json::from_str(include_str!("../tauri.conf.json")).expect("bundled application config")
+}
+
+fn packaged_resources(name: &str) -> Option<PathBuf> {
+    let config = application_config();
+    let package = tauri::utils::PackageInfo {
+        name: config["productName"]
+            .as_str()
+            .unwrap_or(env!("CARGO_PKG_NAME"))
+            .into(),
+        version: env!("CARGO_PKG_VERSION").parse().expect("Cargo version"),
+        authors: env!("CARGO_PKG_AUTHORS"),
+        description: env!("CARGO_PKG_DESCRIPTION"),
+        crate_name: env!("CARGO_PKG_NAME"),
+    };
+    tauri::utils::platform::resource_dir(&package, &tauri::utils::Env::default())
+        .ok()
+        .map(|resources| resources.join(name))
+}
+
+/// Where a named resource folder can be: packaged with the app, or in this checkout.
+pub(crate) fn resource_directories(name: &str) -> Vec<PathBuf> {
+    let development = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join(name);
+    packaged_resources(name)
+        .into_iter()
+        .chain([development])
+        .collect()
+}
+
 pub(crate) fn configure(core: Core, state: &Path) -> Core {
     // The pinned universal executable declares macOS 13.0 in LC_BUILD_VERSION;
     // the rest of dog.codes can still run on its older supported baseline.
@@ -25,24 +57,9 @@ pub(crate) fn configure(core: Core, state: &Path) -> Core {
     let Ok(proxy) = std::env::current_exe() else {
         return core;
     };
-    let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json"))
-        .expect("bundled application config");
-    let package = tauri::utils::PackageInfo {
-        name: config["productName"]
-            .as_str()
-            .unwrap_or(env!("CARGO_PKG_NAME"))
-            .into(),
-        version: env!("CARGO_PKG_VERSION").parse().expect("Cargo version"),
-        authors: env!("CARGO_PKG_AUTHORS"),
-        description: env!("CARGO_PKG_DESCRIPTION"),
-        crate_name: env!("CARGO_PKG_NAME"),
-    };
-    let mut candidates = vec![];
-    if let Ok(resources) =
-        tauri::utils::platform::resource_dir(&package, &tauri::utils::Env::default())
-    {
-        candidates.push(resources.join("computer-use"));
-    }
+    let mut candidates = packaged_resources("computer-use")
+        .into_iter()
+        .collect::<Vec<_>>();
     let development = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/computer-use");
     candidates.push(development.join(env!("DOGCODES_BUILD_TARGET")));
     let Some(directory) = candidates.into_iter().find(|path| verified(path)) else {
@@ -60,7 +77,7 @@ pub(crate) fn configure(core: Core, state: &Path) -> Core {
     );
     let core = if cfg!(target_os = "macos") {
         core.with_computer_use_bundle_id(
-            config["identifier"]
+            application_config()["identifier"]
                 .as_str()
                 .unwrap_or("codes.dog.desktop")
                 .into(),

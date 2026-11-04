@@ -1,4 +1,5 @@
 import type { UiMessages } from "./en";
+import { executionTargetMessages } from "./executionTargets";
 
 export const uiRu: UiMessages = {
   activity: {
@@ -953,6 +954,7 @@ export const uiRu: UiMessages = {
     saveFailed: "Не удалось сохранить проект. Повторите попытку.",
     scopeNote: "Выберите основную папку и при желании добавьте связанные. Доступ Agent к файлам определяется заданными вами разрешениями.",
   },
+  executionTargets: executionTargetMessages.ru,
   projectPicker: {
     createProject: "Создать проект…",
     directoryCount: "Папок: {count}",

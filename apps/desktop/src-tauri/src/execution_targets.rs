@@ -1,0 +1,1045 @@
+//! Saved SSH machines and their live connections. The service owns these so that
+//! later phases can run agents over a connection after the window has gone away.
+use agent_core::Core;
+use agent_domain::TargetId;
+use agent_protocol::{
+    ActorRef, CommandEnvelope, CoreCommand, ExecutionTarget, ExecutionTargets, SshAuth,
+    SshConnection,
+};
+use redaction::{DeterministicRedactor, SecretRedactor};
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::{BTreeSet, HashMap},
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
+use target_link::{
+    AskpassPrompt, ConnectError, ConnectErrorKind, ConnectObserver, ConnectRequest, ConnectStep,
+    PromptKind, ShimCatalog, TargetInfo, TargetLink,
+};
+use tokio::{sync::oneshot, task::JoinHandle};
+
+const MAX_LOG_LINES: usize = 200;
+const MAX_LOG_LINE: usize = 512;
+const SECRET_SERVICE: &str = "codes.dog.desktop.ssh";
+
+/// Secrets pass through here but are never logged, so this type has no `Debug`.
+#[derive(Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub(crate) enum TargetCall {
+    List,
+    Status {
+        target_id: TargetId,
+    },
+    Save {
+        target_id: Option<TargetId>,
+        display_name: String,
+        connection: SshConnection,
+    },
+    Remove {
+        target_id: TargetId,
+    },
+    Connect {
+        target_id: TargetId,
+        /// The password or key passphrase just typed in the connection form.
+        secret: Option<String>,
+    },
+    Disconnect {
+        target_id: TargetId,
+    },
+    Answer {
+        target_id: TargetId,
+        prompt_id: String,
+        answer: Option<String>,
+        remember: bool,
+    },
+    ConfigHosts,
+    ResolveHost {
+        alias: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Phase {
+    #[default]
+    Idle,
+    Connecting,
+    Connected,
+    Failed,
+    Disconnected,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PromptView {
+    id: String,
+    kind: PromptKind,
+    text: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ErrorView {
+    kind: ConnectErrorKind,
+    detail: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TargetStatus {
+    phase: Phase,
+    step: Option<ConnectStep>,
+    log: Vec<String>,
+    prompt: Option<PromptView>,
+    info: Option<TargetInfo>,
+    error: Option<ErrorView>,
+    /// Why an established connection ended.
+    closed_reason: Option<String>,
+    /// This route now reaches a different machine or account than before.
+    identity_changed: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TargetEntry {
+    target: ExecutionTarget,
+    status: TargetStatus,
+}
+
+/// Separate slots so a saved password is never offered as a key passphrase.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum SecretSlot {
+    Password,
+    Passphrase,
+}
+
+impl SecretSlot {
+    fn of(kind: PromptKind) -> Option<Self> {
+        match kind {
+            PromptKind::Password => Some(Self::Password),
+            PromptKind::Passphrase => Some(Self::Passphrase),
+            PromptKind::HostKey | PromptKind::Other => None,
+        }
+    }
+    fn of_auth(auth: SshAuth) -> Option<Self> {
+        match auth {
+            SshAuth::Password => Some(Self::Password),
+            SshAuth::PrivateKey => Some(Self::Passphrase),
+            SshAuth::System => None,
+        }
+    }
+    fn name(self) -> &'static str {
+        match self {
+            Self::Password => "password",
+            Self::Passphrase => "passphrase",
+        }
+    }
+}
+
+#[async_trait::async_trait]
+pub(crate) trait SecretStore: Send + Sync {
+    async fn get(&self, target: &TargetId, slot: SecretSlotName) -> Option<String>;
+    async fn set(&self, target: &TargetId, slot: SecretSlotName, value: String) -> bool;
+    async fn delete(&self, target: &TargetId, slot: SecretSlotName);
+}
+
+pub(crate) type SecretSlotName = &'static str;
+
+struct SystemSecrets;
+
+impl SystemSecrets {
+    fn entry(target: &TargetId, slot: SecretSlotName) -> Option<keyring::Entry> {
+        keyring::Entry::new(SECRET_SERVICE, &format!("{target}:{slot}")).ok()
+    }
+}
+
+#[async_trait::async_trait]
+impl SecretStore for SystemSecrets {
+    async fn get(&self, target: &TargetId, slot: SecretSlotName) -> Option<String> {
+        let entry = Self::entry(target, slot)?;
+        tokio::task::spawn_blocking(move || entry.get_password().ok())
+            .await
+            .ok()?
+    }
+    async fn set(&self, target: &TargetId, slot: SecretSlotName, value: String) -> bool {
+        let Some(entry) = Self::entry(target, slot) else {
+            return false;
+        };
+        tokio::task::spawn_blocking(move || entry.set_password(&value).is_ok())
+            .await
+            .unwrap_or(false)
+    }
+    async fn delete(&self, target: &TargetId, slot: SecretSlotName) {
+        if let Some(entry) = Self::entry(target, slot) {
+            let _ = tokio::task::spawn_blocking(move || entry.delete_credential()).await;
+        }
+    }
+}
+
+struct AnswerValue {
+    answer: Option<String>,
+    remember: bool,
+}
+
+#[derive(Default)]
+struct Connection {
+    status: Mutex<TargetStatus>,
+    waiting: Mutex<HashMap<String, oneshot::Sender<AnswerValue>>>,
+    worker: Mutex<Option<JoinHandle<()>>>,
+}
+
+impl Connection {
+    fn update(&self, change: impl FnOnce(&mut TargetStatus)) {
+        change(&mut self.status.lock().unwrap());
+    }
+    fn snapshot(&self) -> TargetStatus {
+        self.status.lock().unwrap().clone()
+    }
+    fn stop(&self) {
+        if let Some(worker) = self.worker.lock().unwrap().take() {
+            worker.abort();
+        }
+        self.waiting.lock().unwrap().clear();
+    }
+}
+
+fn log_line(line: &str) -> String {
+    let text = DeterministicRedactor.redact(line).text;
+    if text.len() <= MAX_LOG_LINE {
+        return text;
+    }
+    let mut end = MAX_LOG_LINE;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &text[..end])
+}
+
+/// One attempt's view of the secrets: each is offered once, so a wrong saved
+/// password falls through to asking the person instead of locking the account.
+struct Attempt {
+    connection: Arc<Connection>,
+    target_id: TargetId,
+    secrets: Arc<dyn SecretStore>,
+    supplied: Mutex<Option<(SecretSlot, String)>>,
+    tried: Mutex<BTreeSet<SecretSlot>>,
+    /// Typed secrets stay here until the connection proves them correct.
+    to_save: Mutex<Vec<(SecretSlot, String)>>,
+}
+
+impl Attempt {
+    async fn known_secret(&self, slot: SecretSlot) -> Option<String> {
+        if !self.tried.lock().unwrap().insert(slot) {
+            return None;
+        }
+        let supplied = {
+            let mut guard = self.supplied.lock().unwrap();
+            if guard.as_ref().is_some_and(|(owner, _)| *owner == slot) {
+                guard.take().map(|(_, value)| value)
+            } else {
+                None
+            }
+        };
+        if let Some(value) = supplied {
+            self.to_save.lock().unwrap().push((slot, value.clone()));
+            return Some(value);
+        }
+        self.secrets.get(&self.target_id, slot.name()).await
+    }
+
+    async fn ask_person(&self, prompt: AskpassPrompt) -> Option<String> {
+        let id = uuid::Uuid::new_v4().simple().to_string();
+        let (reply, answer) = oneshot::channel();
+        self.connection
+            .waiting
+            .lock()
+            .unwrap()
+            .insert(id.clone(), reply);
+        self.connection.update(|status| {
+            status.prompt = Some(PromptView {
+                id: id.clone(),
+                kind: prompt.kind,
+                text: prompt.text.clone(),
+            });
+        });
+        let answered = answer.await.ok();
+        self.connection.update(|status| {
+            if status.prompt.as_ref().is_some_and(|view| view.id == id) {
+                status.prompt = None;
+            }
+        });
+        let answered = answered?;
+        if answered.remember
+            && let (Some(slot), Some(value)) = (SecretSlot::of(prompt.kind), &answered.answer)
+        {
+            self.to_save.lock().unwrap().push((slot, value.clone()));
+        }
+        answered.answer
+    }
+
+    async fn save_proven_secrets(&self) {
+        let values = std::mem::take(&mut *self.to_save.lock().unwrap());
+        for (slot, value) in values {
+            if !self.secrets.set(&self.target_id, slot.name(), value).await {
+                self.log("credential store: the secret could not be saved");
+            }
+        }
+    }
+
+    fn log(&self, line: &str) {
+        ConnectObserver::log(self, line);
+    }
+}
+
+#[async_trait::async_trait]
+impl ConnectObserver for Attempt {
+    fn step(&self, step: ConnectStep) {
+        self.connection.update(|status| status.step = Some(step));
+    }
+    fn log(&self, line: &str) {
+        let line = log_line(line);
+        self.connection.update(|status| {
+            status.log.push(line);
+            if status.log.len() > MAX_LOG_LINES {
+                status.log.remove(0);
+            }
+        });
+    }
+    async fn prompt(&self, prompt: AskpassPrompt) -> Option<String> {
+        if let Some(slot) = SecretSlot::of(prompt.kind)
+            && let Some(secret) = self.known_secret(slot).await
+        {
+            return Some(secret);
+        }
+        self.ask_person(prompt).await
+    }
+}
+
+pub(crate) struct TargetHost {
+    connections: Mutex<HashMap<TargetId, Arc<Connection>>>,
+    edits: tokio::sync::Mutex<()>,
+    secrets: Arc<dyn SecretStore>,
+    shims: ShimCatalog,
+    config_file: Option<PathBuf>,
+}
+
+impl Default for TargetHost {
+    fn default() -> Self {
+        Self::new(
+            Arc::new(SystemSecrets),
+            ShimCatalog::new(crate::computer_use::resource_directories("shim")),
+            None,
+        )
+    }
+}
+
+impl TargetHost {
+    fn new(
+        secrets: Arc<dyn SecretStore>,
+        shims: ShimCatalog,
+        config_file: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            connections: Mutex::default(),
+            edits: tokio::sync::Mutex::default(),
+            secrets,
+            shims,
+            config_file,
+        }
+    }
+
+    pub(crate) fn has_connecting(&self) -> bool {
+        self.connections
+            .lock()
+            .unwrap()
+            .values()
+            .any(|connection| connection.snapshot().phase == Phase::Connecting)
+    }
+
+    pub(crate) async fn call(
+        self: &Arc<Self>,
+        core: &Arc<Core>,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let call: TargetCall = serde_json::from_value(args).map_err(|e| e.to_string())?;
+        let json =
+            |value: Result<serde_json::Value, serde_json::Error>| value.map_err(|e| e.to_string());
+        match call {
+            TargetCall::List => json(serde_json::to_value(self.list(core).await?)),
+            TargetCall::Status { target_id } => json(serde_json::to_value(self.status(&target_id))),
+            TargetCall::Save {
+                target_id,
+                display_name,
+                connection,
+            } => json(serde_json::to_value(
+                self.save(core, target_id, display_name, connection).await?,
+            )),
+            TargetCall::Remove { target_id } => {
+                self.remove(core, &target_id).await?;
+                Ok(serde_json::Value::Null)
+            }
+            TargetCall::Connect { target_id, secret } => {
+                self.connect(core, target_id, secret).await?;
+                Ok(serde_json::Value::Null)
+            }
+            TargetCall::Disconnect { target_id } => {
+                self.disconnect(&target_id);
+                Ok(serde_json::Value::Null)
+            }
+            TargetCall::Answer {
+                target_id,
+                prompt_id,
+                answer,
+                remember,
+            } => {
+                self.answer(&target_id, &prompt_id, answer, remember)?;
+                Ok(serde_json::Value::Null)
+            }
+            TargetCall::ConfigHosts => json(serde_json::to_value(self.config_hosts())),
+            TargetCall::ResolveHost { alias } => {
+                let program = target_link::find_ssh().await.map_err(|e| e.to_string())?;
+                json(serde_json::to_value(
+                    target_link::ssh_config::resolve(&program, &alias).await,
+                ))
+            }
+        }
+    }
+
+    fn status(&self, target: &TargetId) -> TargetStatus {
+        self.connections
+            .lock()
+            .unwrap()
+            .get(target)
+            .map(|connection| connection.snapshot())
+            .unwrap_or_default()
+    }
+
+    async fn list(&self, core: &Core) -> Result<Vec<TargetEntry>, String> {
+        let snapshot = core.execution_targets().await.map_err(|e| e.to_string())?;
+        Ok(snapshot
+            .targets
+            .targets
+            .into_iter()
+            .map(|target| TargetEntry {
+                status: self.status(&target.target_id),
+                target,
+            })
+            .collect())
+    }
+
+    /// Read and write under one lock: the service is the only writer of this stream.
+    async fn change(
+        &self,
+        core: &Arc<Core>,
+        change: impl FnOnce(&mut Vec<ExecutionTarget>) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let _edit = self.edits.lock().await;
+        let snapshot = core.execution_targets().await.map_err(|e| e.to_string())?;
+        let mut targets = snapshot.targets.targets;
+        change(&mut targets)?;
+        let mut envelope =
+            CommandEnvelope::local(CoreCommand::SetExecutionTargets(ExecutionTargets {
+                targets,
+            }));
+        envelope.actor = ActorRef::LocalUser;
+        envelope.expected_stream_version = Some(snapshot.revision);
+        core.execute(envelope).await.map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    async fn save(
+        &self,
+        core: &Arc<Core>,
+        target_id: Option<TargetId>,
+        display_name: String,
+        connection: SshConnection,
+    ) -> Result<TargetId, String> {
+        let id = target_id.unwrap_or_default();
+        let saved = id.clone();
+        self.change(core, move |targets| {
+            let existing = targets.iter_mut().find(|target| target.target_id == id);
+            match existing {
+                // The identity stays: it is what later detects a route to another machine.
+                Some(target) => {
+                    target.display_name = display_name;
+                    target.connection = connection;
+                }
+                None => targets.push(ExecutionTarget {
+                    target_id: id,
+                    display_name,
+                    connection,
+                    machine_identity: None,
+                }),
+            }
+            Ok(())
+        })
+        .await?;
+        Ok(saved)
+    }
+
+    async fn remove(&self, core: &Arc<Core>, target: &TargetId) -> Result<(), String> {
+        self.disconnect(target);
+        self.connections.lock().unwrap().remove(target);
+        let id = target.clone();
+        self.change(core, move |targets| {
+            targets.retain(|existing| existing.target_id != id);
+            Ok(())
+        })
+        .await?;
+        for slot in [SecretSlot::Password, SecretSlot::Passphrase] {
+            self.secrets.delete(target, slot.name()).await;
+        }
+        Ok(())
+    }
+
+    fn disconnect(&self, target: &TargetId) {
+        if let Some(connection) = self.connections.lock().unwrap().get(target) {
+            connection.stop();
+            connection.update(|status| {
+                status.phase = Phase::Idle;
+                status.step = None;
+                status.prompt = None;
+                status.info = None;
+            });
+        }
+    }
+
+    fn answer(
+        &self,
+        target: &TargetId,
+        prompt_id: &str,
+        answer: Option<String>,
+        remember: bool,
+    ) -> Result<(), String> {
+        let connections = self.connections.lock().unwrap();
+        let connection = connections.get(target).ok_or("连接不存在")?;
+        let waiting = connection
+            .waiting
+            .lock()
+            .unwrap()
+            .remove(prompt_id)
+            .ok_or("该问题已经失效")?;
+        let _ = waiting.send(AnswerValue { answer, remember });
+        Ok(())
+    }
+
+    fn config_hosts(&self) -> Vec<String> {
+        let Some(home) = agent_registry::home_directory() else {
+            return vec![];
+        };
+        let config = self
+            .config_file
+            .clone()
+            .unwrap_or_else(|| home.join(".ssh").join("config"));
+        target_link::ssh_config::list_hosts(&config, &home)
+    }
+
+    async fn connect(
+        self: &Arc<Self>,
+        core: &Arc<Core>,
+        target_id: TargetId,
+        secret: Option<String>,
+    ) -> Result<(), String> {
+        let snapshot = core.execution_targets().await.map_err(|e| e.to_string())?;
+        let target = snapshot
+            .targets
+            .targets
+            .into_iter()
+            .find(|target| target.target_id == target_id)
+            .ok_or("远程连接不存在")?;
+        let askpass_program = std::env::current_exe().map_err(|e| e.to_string())?;
+        let connection = {
+            let mut connections = self.connections.lock().unwrap();
+            if let Some(existing) = connections.get(&target_id)
+                && matches!(
+                    existing.snapshot().phase,
+                    Phase::Connecting | Phase::Connected
+                )
+            {
+                return Ok(());
+            }
+            let connection = Arc::new(Connection {
+                status: Mutex::new(TargetStatus {
+                    phase: Phase::Connecting,
+                    ..TargetStatus::default()
+                }),
+                ..Connection::default()
+            });
+            connections.insert(target_id.clone(), connection.clone());
+            connection
+        };
+        let attempt = Arc::new(Attempt {
+            connection: connection.clone(),
+            target_id: target_id.clone(),
+            secrets: self.secrets.clone(),
+            supplied: Mutex::new(
+                SecretSlot::of_auth(target.connection.auth)
+                    .zip(secret.filter(|value| !value.is_empty())),
+            ),
+            tried: Mutex::default(),
+            to_save: Mutex::default(),
+        });
+        let host = self.clone();
+        let core = core.clone();
+        let worker = tokio::spawn(async move {
+            let request = async {
+                Ok::<_, ConnectError>(ConnectRequest {
+                    program: target_link::find_ssh().await?,
+                    connection: target.connection.clone(),
+                    askpass_program,
+                    shims: host.shims.clone(),
+                    config_file: host.config_file.clone(),
+                })
+            };
+            let attempted = match request.await {
+                Ok(request) => target_link::connect(request, attempt.clone()).await,
+                Err(error) => Err(error),
+            };
+            match attempted {
+                Ok(link) => {
+                    attempt.save_proven_secrets().await;
+                    host.connected(&core, &target, &attempt.connection, link)
+                        .await;
+                }
+                Err(error) => {
+                    attempt.connection.update(|status| {
+                        // The step stays: it shows the person where the attempt stopped.
+                        status.phase = Phase::Failed;
+                        status.prompt = None;
+                        status.error = Some(ErrorView {
+                            kind: error.kind,
+                            detail: log_line(&error.detail),
+                        });
+                    });
+                }
+            }
+        });
+        *connection.worker.lock().unwrap() = Some(worker);
+        Ok(())
+    }
+
+    /// Holds the link for as long as the connection lives.
+    async fn connected(
+        &self,
+        core: &Arc<Core>,
+        target: &ExecutionTarget,
+        connection: &Arc<Connection>,
+        link: TargetLink,
+    ) {
+        let info = link.info().clone();
+        let identity = info.machine_identity.clone();
+        let identity_changed = target
+            .machine_identity
+            .as_ref()
+            .is_some_and(|known| *known != identity);
+        connection.update(|status| {
+            status.phase = Phase::Connected;
+            status.info = Some(info);
+            status.identity_changed = identity_changed;
+        });
+        if target.machine_identity.is_none() {
+            let id = target.target_id.clone();
+            let _ = self
+                .change(core, move |targets| {
+                    if let Some(target) = targets.iter_mut().find(|t| t.target_id == id) {
+                        target.machine_identity = Some(identity);
+                    }
+                    Ok(())
+                })
+                .await;
+        }
+        let mut closed = link.closed();
+        let reason = closed
+            .wait_for(Option::is_some)
+            .await
+            .ok()
+            .and_then(|reason| reason.clone());
+        connection.update(|status| {
+            status.phase = Phase::Disconnected;
+            status.step = None;
+            status.info = None;
+            status.closed_reason = reason.map(|reason| log_line(&reason));
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[derive(Default)]
+    struct MemorySecrets(Mutex<HashMap<String, String>>);
+
+    fn key(target: &TargetId, slot: SecretSlotName) -> String {
+        format!("{target}:{slot}")
+    }
+
+    #[async_trait::async_trait]
+    impl SecretStore for MemorySecrets {
+        async fn get(&self, target: &TargetId, slot: SecretSlotName) -> Option<String> {
+            self.0.lock().unwrap().get(&key(target, slot)).cloned()
+        }
+        async fn set(&self, target: &TargetId, slot: SecretSlotName, value: String) -> bool {
+            self.0.lock().unwrap().insert(key(target, slot), value);
+            true
+        }
+        async fn delete(&self, target: &TargetId, slot: SecretSlotName) {
+            self.0.lock().unwrap().remove(&key(target, slot));
+        }
+    }
+
+    fn attempt(secrets: Arc<MemorySecrets>, supplied: Option<(SecretSlot, &str)>) -> Arc<Attempt> {
+        Arc::new(Attempt {
+            connection: Arc::default(),
+            target_id: TargetId::new(),
+            secrets,
+            supplied: Mutex::new(supplied.map(|(slot, value)| (slot, value.to_owned()))),
+            tried: Mutex::default(),
+            to_save: Mutex::default(),
+        })
+    }
+
+    fn prompt(text: &str) -> AskpassPrompt {
+        AskpassPrompt::classify(text)
+    }
+
+    /// Answers whatever the attempt publishes as a question.
+    fn answer_when_asked(attempt: &Arc<Attempt>, value: &'static str, remember: bool) {
+        let attempt = attempt.clone();
+        tokio::spawn(async move {
+            loop {
+                let id = attempt.connection.snapshot().prompt.map(|prompt| prompt.id);
+                if let Some(id) = id {
+                    let reply = attempt.connection.waiting.lock().unwrap().remove(&id);
+                    if let Some(reply) = reply {
+                        let _ = reply.send(AnswerValue {
+                            answer: Some(value.to_owned()),
+                            remember,
+                        });
+                        return;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        });
+    }
+
+    #[tokio::test]
+    async fn a_typed_secret_is_used_once_and_saved_only_after_it_is_proven() {
+        let secrets = Arc::new(MemorySecrets::default());
+        let attempt = attempt(secrets.clone(), Some((SecretSlot::Password, "typed")));
+        let id = attempt.target_id.clone();
+        assert_eq!(
+            attempt
+                .prompt(prompt("dev@box's password: "))
+                .await
+                .as_deref(),
+            Some("typed")
+        );
+        assert!(secrets.get(&id, "password").await.is_none());
+        answer_when_asked(&attempt, "second", false);
+        assert_eq!(
+            attempt
+                .prompt(prompt("dev@box's password: "))
+                .await
+                .as_deref(),
+            Some("second")
+        );
+        attempt.save_proven_secrets().await;
+        assert_eq!(secrets.get(&id, "password").await.as_deref(), Some("typed"));
+    }
+
+    #[tokio::test]
+    async fn a_saved_password_that_fails_falls_through_to_asking() {
+        let secrets = Arc::new(MemorySecrets::default());
+        let attempt = attempt(secrets.clone(), None);
+        secrets
+            .set(&attempt.target_id, "password", "saved".into())
+            .await;
+        assert_eq!(
+            attempt.prompt(prompt("password: ")).await.as_deref(),
+            Some("saved")
+        );
+        answer_when_asked(&attempt, "new", true);
+        assert_eq!(
+            attempt.prompt(prompt("password: ")).await.as_deref(),
+            Some("new")
+        );
+        attempt.save_proven_secrets().await;
+        assert_eq!(
+            secrets.get(&attempt.target_id, "password").await.as_deref(),
+            Some("new")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_password_is_never_offered_as_a_passphrase_or_host_key_answer() {
+        let secrets = Arc::new(MemorySecrets::default());
+        let attempt = attempt(secrets.clone(), Some((SecretSlot::Password, "typed")));
+        answer_when_asked(&attempt, "yes", false);
+        assert_eq!(
+            attempt
+                .prompt(prompt(
+                    "Are you sure you want to continue connecting (yes/no)? "
+                ))
+                .await
+                .as_deref(),
+            Some("yes")
+        );
+        answer_when_asked(&attempt, "phrase", false);
+        assert_eq!(
+            attempt
+                .prompt(prompt("Enter passphrase for key '/k': "))
+                .await
+                .as_deref(),
+            Some("phrase")
+        );
+        attempt.save_proven_secrets().await;
+        assert!(secrets.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn log_lines_are_bounded_on_a_character_boundary() {
+        let line = log_line(&"密".repeat(1000));
+        assert!(line.len() <= MAX_LOG_LINE + "…".len());
+        assert!(line.ends_with('…'));
+    }
+
+    #[tokio::test]
+    async fn saving_keeps_the_identity_and_removing_forgets_secrets() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = agent_store::SqliteStore::open(directory.path().join("t.db")).unwrap();
+        let core = Arc::new(Core::new(Arc::new(store)));
+        let secrets = Arc::new(MemorySecrets::default());
+        let host = TargetHost::new(secrets.clone(), ShimCatalog::default(), None);
+        let connection = |destination: &str| SshConnection {
+            destination: destination.into(),
+            port: None,
+            user: None,
+            auth: SshAuth::System,
+            identity_file: None,
+            install_directory: None,
+        };
+        let id = host
+            .save(&core, None, "Build".into(), connection("old"))
+            .await
+            .unwrap();
+        let recorded = id.clone();
+        host.change(&core, move |targets| {
+            targets[0].machine_identity = Some(format!("{recorded}"));
+            Ok(())
+        })
+        .await
+        .unwrap();
+        host.save(&core, Some(id.clone()), "Build 2".into(), connection("new"))
+            .await
+            .unwrap();
+        let listed = host.list(&core).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].target.connection.destination, "new");
+        assert_eq!(listed[0].target.machine_identity, Some(id.to_string()));
+        secrets.set(&id, "password", "secret".into()).await;
+        host.remove(&core, &id).await.unwrap();
+        assert!(host.list(&core).await.unwrap().is_empty());
+        assert!(secrets.0.lock().unwrap().is_empty());
+    }
+
+    /// The whole service path against a private `sshd`, as the window would drive it:
+    /// `cargo build -p target-shim && cargo test -p desktop --lib execution_targets -- --ignored`
+    #[cfg(unix)]
+    #[tokio::test]
+    #[ignore = "needs an OpenSSH server binary"]
+    async fn the_service_connects_records_the_machine_and_disconnects() {
+        use std::process::{Command, Stdio};
+        let sshd = ["/usr/sbin/sshd", "/usr/local/sbin/sshd"]
+            .into_iter()
+            .find(|path| std::path::Path::new(path).exists())
+            .expect("an OpenSSH server binary");
+        let root = tempfile::tempdir().unwrap();
+        let path = |name: &str| root.path().join(name);
+        let text = |name: &str| path(name).to_str().unwrap().to_owned();
+        for key in ["host_key", "client_key"] {
+            assert!(
+                Command::new("ssh-keygen")
+                    .args(["-q", "-t", "ed25519", "-N", "", "-f", &text(key)])
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
+        std::fs::copy(path("client_key.pub"), path("authorized_keys")).unwrap();
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        std::fs::write(
+            path("sshd_config"),
+            format!(
+                "Port {port}\nListenAddress 127.0.0.1\nHostKey {}\nPidFile {}\nAuthorizedKeysFile {}\nStrictModes no\nPasswordAuthentication no\n",
+                text("host_key"),
+                text("sshd.pid"),
+                text("authorized_keys"),
+            ),
+        )
+        .unwrap();
+        let mut server = Command::new(sshd)
+            .args(["-D", "-e", "-f", &text("sshd_config")])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        for _ in 0..100 {
+            if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let host_key = std::fs::read_to_string(path("host_key.pub")).unwrap();
+        let host_key = host_key
+            .split_whitespace()
+            .take(2)
+            .collect::<Vec<_>>()
+            .join(" ");
+        std::fs::write(
+            path("known_hosts"),
+            format!("[127.0.0.1]:{port} {host_key}\n"),
+        )
+        .unwrap();
+        let user =
+            String::from_utf8(Command::new("id").arg("-un").output().unwrap().stdout).unwrap();
+        std::fs::write(
+            path("ssh_config"),
+            format!(
+                "Host box\n  HostName 127.0.0.1\n  Port {port}\n  User {}\n  IdentityFile {}\n  IdentitiesOnly yes\n  IdentityAgent none\n  UserKnownHostsFile {}\n  GlobalKnownHostsFile /dev/null\n",
+                user.trim(),
+                text("client_key"),
+                text("known_hosts"),
+            ),
+        )
+        .unwrap();
+        let triple = match (std::env::consts::OS, std::env::consts::ARCH) {
+            ("macos", "aarch64") => "aarch64-apple-darwin",
+            ("macos", _) => "x86_64-apple-darwin",
+            ("linux", "aarch64") => "aarch64-unknown-linux-musl",
+            _ => "x86_64-unknown-linux-musl",
+        };
+        std::fs::create_dir_all(path("shims").join(triple)).unwrap();
+        let built = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("dogcodes-shim");
+        std::fs::copy(built, path("shims").join(triple).join("dogcodes-shim")).unwrap();
+
+        let store = agent_store::SqliteStore::open(path("t.db")).unwrap();
+        let core = Arc::new(Core::new(Arc::new(store)));
+        let host = Arc::new(TargetHost::new(
+            Arc::new(MemorySecrets::default()),
+            ShimCatalog::new(vec![path("shims")]),
+            Some(path("ssh_config")),
+        ));
+        let connection = SshConnection {
+            destination: "box".into(),
+            port: None,
+            user: None,
+            auth: SshAuth::System,
+            identity_file: None,
+            install_directory: Some(text("install")),
+        };
+        let id: TargetId = serde_json::from_value(
+            host.call(
+                &core,
+                serde_json::json!({"type":"save","targetId":null,"displayName":"Box","connection":connection}),
+            )
+            .await
+            .unwrap(),
+        )
+        .unwrap();
+        host.call(
+            &core,
+            serde_json::json!({"type":"connect","targetId":id,"secret":null}),
+        )
+        .await
+        .unwrap();
+        assert!(host.has_connecting());
+        let mut status = TargetStatus::default();
+        for _ in 0..300 {
+            status = host.status(&id);
+            if status.phase != Phase::Connecting {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert_eq!(status.phase, Phase::Connected, "{:?}", status.error);
+        assert!(!status.identity_changed);
+        let identity = status.info.as_ref().unwrap().machine_identity.clone();
+        let mut recorded = None;
+        for _ in 0..50 {
+            recorded = host.list(&core).await.unwrap()[0]
+                .target
+                .machine_identity
+                .clone();
+            if recorded.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert_eq!(recorded, Some(identity));
+        host.call(
+            &core,
+            serde_json::json!({"type":"disconnect","targetId":id}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(host.status(&id).phase, Phase::Idle);
+        let marker = text("install");
+        let mut running = true;
+        for _ in 0..50 {
+            running = !Command::new("pgrep")
+                .args(["-f", &marker])
+                .output()
+                .unwrap()
+                .stdout
+                .is_empty();
+            if !running {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let _ = server.kill();
+        let _ = server.wait();
+        assert!(!running, "the shim kept running after disconnecting");
+    }
+
+    #[tokio::test]
+    async fn invalid_routes_never_reach_the_store() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = agent_store::SqliteStore::open(directory.path().join("t.db")).unwrap();
+        let core = Arc::new(Core::new(Arc::new(store)));
+        let host = TargetHost::new(
+            Arc::new(MemorySecrets::default()),
+            ShimCatalog::default(),
+            None,
+        );
+        let bad = SshConnection {
+            destination: "-oProxyCommand=touch /tmp/x".into(),
+            port: None,
+            user: None,
+            auth: SshAuth::System,
+            identity_file: None,
+            install_directory: None,
+        };
+        assert!(host.save(&core, None, "Bad".into(), bad).await.is_err());
+        assert!(host.list(&core).await.unwrap().is_empty());
+    }
+}

@@ -1713,6 +1713,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sysinfo",
+ "target-link",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -7014,6 +7015,44 @@ name = "target-lexicon"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
+
+[[package]]
+name = "target-link"
+version = "0.1.1"
+dependencies = [
+ "agent-protocol",
+ "agent-runtime",
+ "async-trait",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "target-wire",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "target-shim"
+version = "0.1.1"
+dependencies = [
+ "hex",
+ "nix 0.28.0",
+ "serde_json",
+ "sha2",
+ "target-wire",
+ "tokio",
+]
+
+[[package]]
+name = "target-wire"
+version = "0.1.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "tauri"

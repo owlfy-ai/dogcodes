@@ -1,4 +1,5 @@
 import type { UiMessages } from "./en";
+import { executionTargetMessages } from "./executionTargets";
 
 export const uiFr: UiMessages = {
   activity: {
@@ -953,6 +954,7 @@ export const uiFr: UiMessages = {
     saveFailed: "Le projet n’a pas pu être enregistré. Réessayez.",
     scopeNote: "Choisissez un dossier principal et ajoutez éventuellement des dossiers associés. L’accès de l’Agent aux fichiers suit les autorisations que vous avez définies.",
   },
+  executionTargets: executionTargetMessages.fr,
   projectPicker: {
     createProject: "Créer un projet…",
     directoryCount: "{count} dossiers",

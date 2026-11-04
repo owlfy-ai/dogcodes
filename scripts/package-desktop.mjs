@@ -7,6 +7,7 @@ import { parseEnv } from 'node:util';
 import { parseSigningConfig } from './signing-config.mjs';
 import { checkMacKeychain, buildMacKeychainPackage, runBuild } from './signing-macos.mjs';
 import { prepareComputerUse } from './prepare-computer-use.mjs';
+import { prepareShims } from './prepare-shims.mjs';
 import { renameReleaseInstallers } from './release-names.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -168,7 +169,10 @@ async function main() {
   const computerUse = await prepareComputerUse({ target,
     signingIdentity: signed ? env.APPLE_SIGNING_IDENTITY || config.bundle.macOS?.signingIdentity || '-' : '-',
     requireSigningIdentity: signed && process.platform === 'darwin' });
-  if (computerUse) config.bundle.resources = { '../../../LICENSE': 'licenses/dogcodes-LICENSE.txt', '../src/assets/licenses/': 'licenses/agent-icons/', [computerUse]: 'computer-use/' };
+  const shims = prepareShims({
+    signingIdentity: signed ? env.APPLE_SIGNING_IDENTITY || config.bundle.macOS?.signingIdentity || '-' : '-',
+    requireSigningIdentity: signed && process.platform === 'darwin' });
+  config.bundle.resources = { '../../../LICENSE': 'licenses/dogcodes-LICENSE.txt', '../src/assets/licenses/': 'licenses/agent-icons/', ...(computerUse ? { [computerUse]: 'computer-use/' } : {}), [shims]: 'shim/' };
   // Keep merged signing settings (including provider commands) out of argv.
   let stage;
   try {

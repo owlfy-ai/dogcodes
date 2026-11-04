@@ -60,6 +60,7 @@ __pycache__/
 /artifacts/
 /.local/
 /apps/desktop/src-tauri/resources/computer-use/
+/apps/desktop/src-tauri/resources/shim/
 
 # Tool caches, coverage and test reports.
 .pnpm-store/

@@ -1,0 +1,23 @@
+[package]
+name = "target-shim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "dogcodes-shim"
+path = "src/main.rs"
+
+[dependencies]
+hex.workspace = true
+sha2.workspace = true
+serde_json.workspace = true
+target-wire = { path = "../target-wire" }
+tokio = { workspace = true, features = ["io-std", "io-util", "rt", "macros", "time"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.28", features = ["user", "hostname"] }
+
+[lints]
+workspace = true

@@ -1,4 +1,5 @@
 import type { UiMessages } from "./en";
+import { executionTargetMessages } from "./executionTargets";
 
 export const uiDe: UiMessages = {
   activity: {
@@ -953,6 +954,7 @@ export const uiDe: UiMessages = {
     saveFailed: "Das Projekt konnte nicht gespeichert werden. Bitte erneut versuchen.",
     scopeNote: "Einen Hauptordner wählen und optional zugehörige Ordner hinzufügen. Der Dateizugriff des Agents folgt den von dir festgelegten Berechtigungen.",
   },
+  executionTargets: executionTargetMessages.de,
   projectPicker: {
     createProject: "Projekt erstellen…",
     directoryCount: "{count} Ordner",

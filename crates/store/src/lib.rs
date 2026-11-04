@@ -24,6 +24,7 @@ use sha2::{Digest, Sha256};
 
 mod agent_preferences;
 mod companion_reviews;
+mod execution_targets;
 mod history_preferences;
 mod shared_preferences;
 mod startup_reads;
@@ -235,6 +236,11 @@ impl CoreRepository for SqliteStore {
         &self,
     ) -> Result<agent_protocol::AgentPreferencesSnapshot, RepositoryError> {
         self.read_agent_preferences()
+    }
+    async fn execution_targets(
+        &self,
+    ) -> Result<agent_protocol::ExecutionTargetsSnapshot, RepositoryError> {
+        self.read_execution_targets()
     }
     async fn command_ack(
         &self,

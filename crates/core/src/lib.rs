@@ -6,6 +6,7 @@ pub mod approval_receipts;
 pub mod artifacts;
 mod autonomous_turns;
 mod auxiliary_session;
+pub mod execution_targets;
 pub mod history_preferences;
 mod turn_usage;
 pub use turn_usage::summarize_recorded_requests;
@@ -315,6 +316,13 @@ pub trait CoreRepository: Send + Sync {
     ) -> Result<agent_protocol::AgentPreferencesSnapshot, RepositoryError> {
         Err(RepositoryError::Unavailable(
             "shared agent preferences are unsupported".into(),
+        ))
+    }
+    async fn execution_targets(
+        &self,
+    ) -> Result<agent_protocol::ExecutionTargetsSnapshot, RepositoryError> {
+        Err(RepositoryError::Unavailable(
+            "execution targets are unsupported".into(),
         ))
     }
     async fn event_head(&self) -> Result<u64, RepositoryError> {
@@ -1031,6 +1039,9 @@ impl Core {
             }
             CoreCommand::SetAgentPreferences(preferences) => {
                 agent_preferences::validate(preferences, &envelope)?;
+            }
+            CoreCommand::SetExecutionTargets(targets) => {
+                execution_targets::validate(targets, &envelope)?;
             }
             CoreCommand::RegisterProject(command) => {
                 require_non_empty("displayName", &command.display_name)?;
@@ -2065,6 +2076,14 @@ impl Core {
                 },
                 history_preferences::EVENT_TYPE,
                 to_value(preferences)?,
+            ),
+            CoreCommand::SetExecutionTargets(targets) => (
+                StreamRef {
+                    stream_type: StreamType::System,
+                    stream_id: execution_targets::STREAM_ID.into(),
+                },
+                execution_targets::EVENT_TYPE,
+                to_value(targets)?,
             ),
             CoreCommand::SetAgentPreferences(preferences) => (
                 StreamRef {

@@ -38,6 +38,7 @@ plist = "1.10"
 quick-xml = { version = "0.41", features = ["serialize"] }
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 agent-runtime = { path = "../../../crates/runtime" }
+target-link = { path = "../../../crates/target-link" }
 notify = "8.2"
 globset = "0.4"
 agent-registry = { path = "../../../crates/agent-registry" }

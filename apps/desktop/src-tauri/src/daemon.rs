@@ -94,6 +94,10 @@ impl CoreClient {
         self.call("remote_control", call).await
     }
 
+    pub async fn execution_target(&self, call: Value) -> Result<Value, String> {
+        self.call("target_control", call).await
+    }
+
     pub async fn computer_use(&self, call: Value) -> Result<Value, String> {
         self.call("computer_use", call).await
     }
@@ -1322,6 +1326,7 @@ async fn read_frame<T: DeserializeOwned>(stream: &mut TcpStream) -> Result<T, St
 }
 struct ServiceControl {
     remote: Arc<remote::RemoteHost>,
+    targets: Arc<crate::execution_targets::TargetHost>,
     submissions: crate::submission_intents::SubmissionIntents,
     attachments: Arc<crate::attachment_service::AttachmentStore>,
     review: crate::review::ReviewHost,
@@ -1347,6 +1352,7 @@ impl ServiceControl {
             remote: Arc::new(remote::RemoteHost::for_default_service(
                 directory.join("remote"),
             )),
+            targets: Arc::default(),
             submissions: crate::submission_intents::SubmissionIntents::new(
                 directory.join("submission-intents"),
             ),
@@ -1375,6 +1381,10 @@ async fn dispatch_service(
     method: &str,
     args: Value,
 ) -> Result<Value, String> {
+    if method == "target_control" {
+        // Boxed: this state machine would otherwise grow every call through this function.
+        return Box::pin(control.targets.call(core, args)).await;
+    }
     if method == "submission_intents" {
         let call = serde_json::from_value(args).map_err(|e| e.to_string())?;
         return control.submissions.call(core, call).await;
@@ -1514,6 +1524,7 @@ async fn execute_task_delete(
 async fn service_idle(core: &Core, control: &ServiceControl) -> Result<bool, String> {
     let workspace = core.try_workspace_mutation();
     Ok(!control.startup_work.active()
+        && !control.targets.has_connecting()
         && workspace.is_ok()
         && !control.terminals.has_active()
         && !control.project_runs.has_active()

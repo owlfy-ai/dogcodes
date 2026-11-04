@@ -1,4 +1,5 @@
 import type { UiMessages } from "./en";
+import { executionTargetMessages } from "./executionTargets";
 
 export const uiZhTW: UiMessages = {
   activity: {
@@ -953,6 +954,7 @@ export const uiZhTW: UiMessages = {
     saveFailed: "專案未能儲存，請重試。",
     scopeNote: "選擇一個主資料夾，也可以添加相關資料夾。Agent 對檔案的存取遵循你設定的權限。",
   },
+  executionTargets: executionTargetMessages.zhTW,
   projectPicker: {
     createProject: "建立專案…",
     directoryCount: "{count} 個目錄",

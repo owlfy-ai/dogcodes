@@ -1,4 +1,5 @@
 import type { UiMessages } from "./en";
+import { executionTargetMessages } from "./executionTargets";
 
 export const uiZhCN: UiMessages = {
   activity: {
@@ -953,6 +954,7 @@ export const uiZhCN: UiMessages = {
     saveFailed: "项目未能保存，请重试。",
     scopeNote: "选择一个主文件夹，也可以添加相关文件夹。Agent 对文件的访问遵循你设置的权限。",
   },
+  executionTargets: executionTargetMessages.zhCN,
   projectPicker: {
     createProject: "创建项目…",
     directoryCount: "{count} 个目录",
