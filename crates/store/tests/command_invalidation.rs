@@ -16,6 +16,7 @@ async fn creation(core: &Arc<Core>) -> CommandEnvelope<CoreCommand> {
     let project_id = ProjectId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project_id.clone(),
             display_name: "fixture".into(),
             path: "/tmp".into(),

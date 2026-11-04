@@ -56,6 +56,7 @@ impl AgentDriver for Reviewer {
 async fn ready(f: &Fixture, provider: &str) -> ExecutorRef {
     let mut probe = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
         agent_protocol::RecordInstallationProbe {
+            target_id: None,
             provider_id: provider.into(),
             executable: format!("fixture:{provider}"),
             fingerprint: "fixture".into(),
@@ -159,6 +160,7 @@ async fn setup() -> Setup {
     f.core
         .execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 project_id: project.clone(),
                 display_name: "repair".into(),
                 path: path.to_string_lossy().into(),

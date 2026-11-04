@@ -2391,6 +2391,7 @@ mod tests {
 
     fn project() -> CommandEnvelope<CoreCommand> {
         CommandEnvelope::local(CoreCommand::RegisterProject(RegisterProject {
+            target_id: None,
             project_id: ProjectId::new(),
             display_name: "RPC fixture".into(),
             path: "/tmp".into(),
@@ -2763,6 +2764,7 @@ mod tests {
         f.client
             .execute(CommandEnvelope::local(CoreCommand::RegisterProject(
                 RegisterProject {
+                    target_id: None,
                     project_id: project_id.clone(),
                     display_name: "Input fixture".into(),
                     path: f.directory.path().to_string_lossy().into_owned(),
@@ -2885,6 +2887,7 @@ mod tests {
         f.client
             .execute(CommandEnvelope::local(CoreCommand::RegisterProject(
                 RegisterProject {
+                    target_id: None,
                     project_id: project_id.clone(),
                     display_name: "Terminal RPC".into(),
                     path: f.directory.path().to_string_lossy().into_owned(),
@@ -3014,6 +3017,7 @@ mod tests {
         f.client
             .execute(CommandEnvelope::local(CoreCommand::RegisterProject(
                 RegisterProject {
+                    target_id: None,
                     project_id: project_id.clone(),
                     display_name: "Terminal scope".into(),
                     path: root.path().to_string_lossy().into_owned(),
@@ -3093,6 +3097,7 @@ mod tests {
     ) -> CommandEnvelope<CoreCommand> {
         let mut command = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
             agent_protocol::RecordInstallationProbe {
+                target_id: None,
                 provider_id: "fake".into(),
                 executable: "test-chat-agent".into(),
                 fingerprint: "test-chat-agent-fingerprint".into(),
@@ -3354,6 +3359,7 @@ mod tests {
                 .is_none()
         );
         let wrong_command = CommandEnvelope::local(CoreCommand::RegisterProject(RegisterProject {
+            target_id: None,
             project_id: ProjectId::new(),
             display_name: "must not register".into(),
             path: "/tmp".into(),
@@ -3370,6 +3376,7 @@ mod tests {
         f.client
             .execute(CommandEnvelope::local(CoreCommand::RegisterProject(
                 RegisterProject {
+                    target_id: None,
                     project_id: project_id.clone(),
                     display_name: "fixture".into(),
                     path: f.directory.path().to_string_lossy().into_owned(),
@@ -3418,6 +3425,7 @@ mod tests {
         let f = fixture().await;
         let project_id = ProjectId::new();
         let registration = CommandEnvelope::local(CoreCommand::RegisterProject(RegisterProject {
+            target_id: None,
             project_id: project_id.clone(),
             display_name: "fixture".into(),
             path: f.directory.path().to_string_lossy().into_owned(),
@@ -3476,6 +3484,7 @@ mod tests {
     async fn command_identity_rpc_returns_original_ack_and_rejects_changed_payload() {
         let f = fixture().await;
         let original = CommandEnvelope::local(CoreCommand::RegisterProject(RegisterProject {
+            target_id: None,
             project_id: ProjectId::new(),
             display_name: "identity".into(),
             path: f.directory.path().to_string_lossy().into_owned(),
@@ -3535,6 +3544,7 @@ mod tests {
                 report: None,
             }),
             CoreCommand::RecordInstallationProbe(agent_protocol::RecordInstallationProbe {
+                target_id: None,
                 provider_id: "fake".into(),
                 executable: "fake".into(),
                 fingerprint: "fake".into(),
@@ -3581,6 +3591,7 @@ mod tests {
         f.client
             .execute(CommandEnvelope::local(CoreCommand::RegisterProject(
                 RegisterProject {
+                    target_id: None,
                     project_id: project_id.clone(),
                     display_name: "Run RPC".into(),
                     path: f.directory.path().to_string_lossy().into_owned(),
@@ -3984,6 +3995,7 @@ mod tests {
             .unwrap()
             .stream_version;
         let mut update = CommandEnvelope::local(CoreCommand::UpdateProject(RegisterProject {
+            target_id: None,
             project_id: project,
             display_name: "Changed".into(),
             path: changed.to_string_lossy().into_owned(),

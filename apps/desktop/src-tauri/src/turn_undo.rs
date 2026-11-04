@@ -100,6 +100,9 @@ pub(crate) async fn undo(state: &ReviewContext<'_>, request: UndoRequest) -> Res
         .iter()
         .find(|p| p.project_id == task.project_id)
         .ok_or("项目不存在")?;
+    if project.target_id.is_some() {
+        return Err("远程项目暂不支持撤销".into());
+    }
     let roots: Vec<String> = std::iter::once(project.path.clone())
         .chain(project.additional_directories.clone())
         .collect();

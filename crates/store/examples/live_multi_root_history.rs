@@ -167,6 +167,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             additional_directories: vec![secondary.to_string_lossy().into_owned()],
             project_id: project.clone(),
             display_name: "Live relay acceptance".into(),

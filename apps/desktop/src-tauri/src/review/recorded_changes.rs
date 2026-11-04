@@ -126,6 +126,7 @@ mod tests {
         let path = workspace.path().to_str().unwrap().to_owned();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 project_id: project.clone(),
                 display_name: "test".into(),
                 path: path.clone(),

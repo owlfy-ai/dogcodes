@@ -28,6 +28,7 @@ async fn probe(
 ) -> Result<(), Error> {
     let mut request = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
         RecordInstallationProbe {
+            target_id: None,
             provider_id: provider.into(),
             executable: format!("native-fixture:{provider}"),
             fingerprint: "isolated-native-harness".into(),

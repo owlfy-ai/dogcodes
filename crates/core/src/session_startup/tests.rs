@@ -130,6 +130,7 @@ async fn fixture(mode: Mode, close_error: bool) -> Fixture {
     let run = RunId::new();
     core.execute(agent_protocol::CommandEnvelope::local(
         agent_protocol::CoreCommand::RegisterProject(agent_protocol::RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "private startup".into(),
             path: "/tmp".into(),

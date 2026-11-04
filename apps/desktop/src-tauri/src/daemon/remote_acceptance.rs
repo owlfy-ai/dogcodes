@@ -108,6 +108,7 @@ pub(super) async fn run(service: String, directory: PathBuf) -> Result<(), Strin
     let project = agent_domain::ProjectId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         agent_protocol::RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "Remote fixture".into(),
             path: directory.to_string_lossy().into(),
@@ -118,6 +119,7 @@ pub(super) async fn run(service: String, directory: PathBuf) -> Result<(), Strin
     .map_err(failure)?;
     let mut probe = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
         agent_protocol::RecordInstallationProbe {
+            target_id: None,
             provider_id: "fake".into(),
             executable: "fixture:fake".into(),
             fingerprint: "isolated-remote-fixture".into(),

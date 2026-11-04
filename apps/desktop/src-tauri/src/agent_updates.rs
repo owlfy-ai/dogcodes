@@ -1396,6 +1396,7 @@ mod tests {
     }
     pub(super) fn installation_for(provider: &str, path: &Path, v: &str) -> InstallationSummary {
         InstallationSummary {
+            target_id: None,
             installation_id: agent_domain::InstallationId::new(),
             provider_id: provider.into(),
             executable: path.to_string_lossy().into(),

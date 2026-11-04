@@ -5,6 +5,7 @@ fn fixture(root: &Path) -> (ProjectRunHost, Arc<Core>, ProjectSummary) {
         agent_store::SqliteStore::open_in_memory().unwrap(),
     )));
     let project = ProjectSummary {
+        target_id: None,
         project_id: ProjectId::new(),
         path: root.to_string_lossy().into_owned(),
         additional_directories: vec![],
@@ -64,6 +65,7 @@ async fn analysis_driver(core: &Arc<Core>) -> (ExecutorRef, Arc<driver_api::Fake
     use driver_api::FakeDriver;
     let mut probe = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
         RecordInstallationProbe {
+            target_id: None,
             provider_id: "analysis-test".into(),
             executable: "fixture:analysis".into(),
             fingerprint: "test".into(),

@@ -175,6 +175,20 @@ impl TargetLink {
         self.core.closed.clone()
     }
 
+    /// The resolved path and its subdirectories, read on the target.
+    pub async fn list_directory(&self, path: &str) -> Result<(String, Vec<String>), String> {
+        let request = Request::ListDirectory {
+            path: path.to_owned(),
+        };
+        match tokio::time::timeout(REPLY_LIMIT, self.core.send_request(request)).await {
+            Ok(Ok(Response::Directory { path, directories })) => Ok((path, directories)),
+            Ok(Ok(Response::Error { message })) => Err(message),
+            Ok(Ok(_)) => Err("unexpected reply".into()),
+            Ok(Err(_)) => Err("connection closed".into()),
+            Err(_) => Err("timed out".into()),
+        }
+    }
+
     pub async fn ping(&self) -> Result<(), String> {
         match tokio::time::timeout(REPLY_LIMIT, self.core.send_request(Request::Ping)).await {
             Ok(Ok(Response::Pong)) => Ok(()),

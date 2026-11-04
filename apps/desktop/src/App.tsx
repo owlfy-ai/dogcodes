@@ -1,5 +1,5 @@
 import { RemoteDevices } from "./RemoteDevices";
-import { ExecutionTargets } from "./ExecutionTargets";
+import { ExecutionTargets, TargetOfflineBanner } from "./ExecutionTargets";
 import { ComputerUseControl } from "./ComputerUseControl";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { AttachmentUploadRecovery } from "./AttachmentUploadRecovery";
@@ -102,7 +102,7 @@ import { formatResetTime, formatProviderBalance, formatQuotaPercent, quotaScopeL
 import { createQuotaRefresh, type QuotaRefreshProgress } from "./quotaRefresh";
 import { useLoadingVisibility } from "./useLoadingVisibility";
 import { quotaShowsLastReading } from "./quotaFallback";
-import { currentAgentExecutor, readyAgentInstallations } from "./agentOptions";
+import { currentAgentExecutor, readyAgentInstallations, installationsOnTarget } from "./agentOptions";
 
 
 
@@ -119,8 +119,12 @@ function executorLabel(executor: ExecutorRef | null): string {
   return executor.installationId ? `${executor.providerId} (${executor.installationId.slice(0, 10)}…)` : executor.providerId;
 }
 
-function defaultExecutor(snapshot: BootstrapSnapshot, preferences: AgentPreferences): ExecutorRef {
-  const installation = enabledAgents(readyAgentInstallations(snapshot.installations), item => item.providerId, preferences)[0];
+function projectTarget(snapshot: BootstrapSnapshot | null | undefined, projectId: ProjectId | null | undefined): string | null {
+  return snapshot?.projects.find(project => project.projectId === projectId)?.targetId ?? null;
+}
+
+function defaultExecutor(snapshot: BootstrapSnapshot, preferences: AgentPreferences, targetId: string | null = null): ExecutorRef {
+  const installation = enabledAgents(readyAgentInstallations(installationsOnTarget(snapshot.installations, targetId)), item => item.providerId, preferences)[0];
   return installation ? { providerId: installation.providerId, installationId: installation.installationId } : { providerId: "fake", installationId: null };
 }
 
@@ -823,8 +827,11 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         const project = snapshot.projects.find(project => project.projectId === draftProjectId)
           ?? snapshot.projects.find(project => project.displayName === SCRATCH_PROJECT_NAME) ?? snapshot.projects[0];
         if (!project) return null;
+        const scoped = installationsOnTarget(snapshot.installations, project.targetId);
+        const usableDraft = draftExecutor && !agentPreferences.disabled.includes(draftExecutor.providerId)
+          && scoped.some(installation => installation.providerId === draftExecutor.providerId);
         return { taskId: "tsk_draft" as TaskId, projectId: project.projectId, title: UNTITLED_TASK_TITLE,
-          preferredExecutor: currentAgentExecutor((draftExecutor && !agentPreferences.disabled.includes(draftExecutor.providerId) ? draftExecutor : defaultExecutor(snapshot, agentPreferences)), snapshot.installations), activePrimaryRun: null, streamVersion: 0 };
+          preferredExecutor: currentAgentExecutor((usableDraft ? draftExecutor : defaultExecutor(snapshot, agentPreferences, project.targetId ?? null)), scoped), activePrimaryRun: null, streamVersion: 0 };
       }
       const task = snapshot?.tasks.find((item) => item.taskId === selectedTaskId);
       if (!task) return null;
@@ -832,16 +839,17 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       // Reloaded tasks and Fast Refresh state can retain a replaced installation.
       // Resolve all composer controls together, while preserving an in-flight run.
       return { ...task, preferredExecutor: task.activePrimaryRun ? preferredExecutor
-        : currentAgentExecutor(preferredExecutor, snapshot!.installations) };
+        : currentAgentExecutor(preferredExecutor, installationsOnTarget(snapshot!.installations, projectTarget(snapshot, task.projectId))) };
     },
     [selectedTaskId, snapshot, nextExecutors, draftProjectId, draftExecutor, agentPreferences],
   );
+  const selectedProjectTarget = projectTarget(snapshot, selectedTask?.projectId);
   const pendingExecutors = useMemo(() => snapshot
-    ? Object.fromEntries(Object.entries(nextExecutors).map(([taskId, executor]) => [taskId, currentAgentExecutor(executor, snapshot.installations)]))
+    ? Object.fromEntries(Object.entries(nextExecutors).map(([taskId, executor]) => [taskId, currentAgentExecutor(executor, installationsOnTarget(snapshot.installations, projectTarget(snapshot, snapshot.tasks.find(task => task.taskId === taskId)?.projectId)))]))
     : {}, [nextExecutors, snapshot]);
   const executorOptions = useMemo(() => {
     const options: ExecutorOption[] = [];
-    const visibleReadyInstallations = enabledAgents(readyAgentInstallations(snapshot?.installations ?? []), item => item.providerId, agentPreferences);
+    const visibleReadyInstallations = enabledAgents(readyAgentInstallations(installationsOnTarget(snapshot?.installations ?? [], selectedProjectTarget)), item => item.providerId, agentPreferences);
     for (const installation of visibleReadyInstallations) {
       const executor = {
         providerId: installation.providerId,
@@ -856,7 +864,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       });
     }
     return options;
-  }, [snapshot?.installations, quotaViews, agentPreferences]);
+  }, [snapshot?.installations, selectedProjectTarget, quotaViews, agentPreferences]);
 
 
   const selectedMapping = snapshot?.sessionMaps.find(mapping => mapping.taskId === selectedTask?.taskId
@@ -982,7 +990,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   );
 
   const selectedProject = snapshot?.projects.find((project) => project.projectId === selectedTask?.projectId) ?? null;
-  const preferredExecutor = selectedTask?.preferredExecutor ?? (snapshot ? defaultExecutor(snapshot, agentPreferences) : null);
+  const preferredExecutor = selectedTask?.preferredExecutor ?? (snapshot ? defaultExecutor(snapshot, agentPreferences, selectedProjectTarget) : null);
   const readyAgentCount = executorOptions.length;
 
 
@@ -991,7 +999,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     newDraftScope.current = `draft:${ulid()}`;
     composerContext.current++;
     setDraftProjectId(projectId ?? snapshot.projects.find(project => project.displayName === SCRATCH_PROJECT_NAME)?.projectId ?? null);
-    setDraftExecutor(selectedTask?.preferredExecutor ?? defaultExecutor(snapshot, agentPreferences));
+    setDraftExecutor(selectedTask?.preferredExecutor ?? defaultExecutor(snapshot, agentPreferences, projectTarget(snapshot, projectId)));
     selectTask(null);
     setSubagentItemId(null);
     setError(null);
@@ -1168,7 +1176,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
 
   if (welcomeOpen) return <I18nProvider language={uiLanguage}><AgentWelcome client={client}
     onDetected={(provider, detected) => setSnapshot(current => current ? { ...current,
-      installations: [...current.installations.filter(i => i.providerId !== provider), ...detected.installations.filter(i => i.providerId === provider)],
+      installations: [...current.installations.filter(i => i.providerId !== provider || i.targetId), ...detected.installations.filter(i => i.providerId === provider)],
     } : detected)} onContinue={closeWelcome} renderIcon={id => <AgentIcon providerId={id} />} /></I18nProvider>;
   if (!snapshot) return startupError ? <StartupRecovery status="unavailable" onRetry={() => { setStartupError(false); setError(null); void refresh(); }} /> : <StartupShell />;
   if (!selectedTask) {
@@ -1243,18 +1251,19 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             : <div className="task-heading"><h1>{taskDisplayTitle(selectedTask.title)}</h1><span>{selectedProject ? projectDisplayName(selectedProject.displayName) : t("header.temporaryWorkspace", undefined, resolvedLang)}</span></div>}
           <div className="task-tools">
             {activeView === "conversation" && <>
-            <button className="panel-toggle" type="button" aria-label={t("header.toggleTerminal", undefined, resolvedLang)} aria-expanded={terminalOpen} data-tooltip={terminalOpen ? t("header.collapseTerminal", undefined, resolvedLang) : t("header.toggleTerminal", undefined, resolvedLang)} onClick={() => { setTerminalLoaded(true); setTerminalOpen(open => !open); }}>
+            <button className="panel-toggle" type="button" disabled={Boolean(selectedProjectTarget)} aria-label={t("header.toggleTerminal", undefined, resolvedLang)} aria-expanded={terminalOpen} data-tooltip={selectedProjectTarget ? t("executionTargets.panelUnavailable", undefined, resolvedLang) : terminalOpen ? t("header.collapseTerminal", undefined, resolvedLang) : t("header.toggleTerminal", undefined, resolvedLang)} onClick={() => { setTerminalLoaded(true); setTerminalOpen(open => !open); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="m7 8 3 3-3 3m6 1h4" /></svg>
             </button>
-            <button className="panel-toggle" type="button" aria-label={t("header.toggleReview", undefined, resolvedLang)} disabled={!selectedTaskId} aria-expanded={reviewOpen && !reviewWindow.detached} data-tooltip={reviewWindow.detached ? t("header.detachedReview", undefined, resolvedLang) : t("header.toggleReview", undefined, resolvedLang)} onClick={() => { if (reviewWindow.detached) void reviewWindow.dock(); else setReviewOpen(open => !open); }}>
+            <button className="panel-toggle" type="button" aria-label={t("header.toggleReview", undefined, resolvedLang)} disabled={!selectedTaskId || Boolean(selectedProjectTarget)} aria-expanded={reviewOpen && !reviewWindow.detached} data-tooltip={selectedProjectTarget ? t("executionTargets.panelUnavailable", undefined, resolvedLang) : reviewWindow.detached ? t("header.detachedReview", undefined, resolvedLang) : t("header.toggleReview", undefined, resolvedLang)} onClick={() => { if (reviewWindow.detached) void reviewWindow.dock(); else setReviewOpen(open => !open); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M15 3v18m-7-12 3 3-3 3" /></svg>
             </button>
             </>}
           </div>
         </header>
+      {activeView === "conversation" && selectedProjectTarget && <TargetOfflineBanner targetId={selectedProjectTarget} onOpenConnections={() => setActiveView("targets")} />}
       {activeView === "quota" ? (
-        <QuotaCenter views={quotaViews} installations={snapshot.installations} agentUpdates={agentUpdates} refreshProgress={quotaRefreshProgress} onRefresh={() => refreshQuotasNow.current()} onDetect={detectAgents} lang={resolvedLang} />
-      ) : activeView === "remote" ? <RemoteDevices lang={resolvedLang} /> : activeView === "targets" ? <ExecutionTargets requestNew={newConnectionRequest} /> : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}
+        <QuotaCenter views={quotaViews} installations={installationsOnTarget(snapshot.installations, null)} agentUpdates={agentUpdates} refreshProgress={quotaRefreshProgress} onRefresh={() => refreshQuotasNow.current()} onDetect={detectAgents} lang={resolvedLang} />
+      ) : activeView === "remote" ? <RemoteDevices lang={resolvedLang} /> : activeView === "targets" ? <ExecutionTargets requestNew={newConnectionRequest} onProjectReady={async projectId => { await refresh(); createConversation(projectId as ProjectId); }} /> : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}
         onDragEnter={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); dragDepth.current++; setDraggingFiles(true); } }}
         onDragOver={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = sending ? "none" : "copy"; } }}
         onDragLeave={event => { event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFiles(false); } }}
@@ -1379,7 +1388,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       {terminalLoaded && selectedProject && <Suspense fallback={activeView === "conversation" && terminalOpen ? <LoadingStatus>{t("app.loadingTerminal")}</LoadingStatus> : null}><TerminalDock
         key={selectedProject.projectId} projectId={selectedProject.projectId}
         directories={[selectedProject.path, ...selectedProject.additionalDirectories]}
-        open={activeView === "conversation" && terminalOpen} onClose={() => setTerminalOpen(false)}
+        open={activeView === "conversation" && terminalOpen && !selectedProjectTarget} onClose={() => setTerminalOpen(false)}
         onEditProject={client.updateProject ? () => setEditingProject(selectedProject) : undefined} /></Suspense>}
       </div>
 
@@ -1398,7 +1407,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       {reviewWindow.error && <p className="review-window-error" role="alert">{reviewWindow.error}</p>}
       {activeView === "conversation" && selectedTaskId && reviewOpen && !reviewWindow.detached && <ReviewResizeHandle width={reviewWidth.width} max={reviewWidth.max} onResize={reviewWidth.setWidth} />}
       <PendingExecutorContext.Provider value={pendingExecutors}><AgentQuotaContext.Provider value={quotaViews}>
-        <ConversationReviewDocks workspaceNavigation onOpenConversation={taskId => { selectTask(taskId as TaskId); setActiveView("conversation"); setSubagentItemId(null); }} tasks={snapshot.tasks} selectedTaskId={selectedTaskId} onDetach={reviewWindow.available && !reviewWindow.opening ? view => void reviewWindow.detach(view) : undefined} open={activeView === "conversation" && reviewOpen && !reviewWindow.detached} fileRequest={reviewFileRequest} onClose={() => setReviewOpen(false)}
+        <ConversationReviewDocks workspaceNavigation onOpenConversation={taskId => { selectTask(taskId as TaskId); setActiveView("conversation"); setSubagentItemId(null); }} tasks={snapshot.tasks} selectedTaskId={selectedTaskId} onDetach={reviewWindow.available && !reviewWindow.opening ? view => void reviewWindow.detach(view) : undefined} open={activeView === "conversation" && reviewOpen && !reviewWindow.detached && !selectedProjectTarget} fileRequest={reviewFileRequest} onClose={() => setReviewOpen(false)}
           onEditProject={selectedProject && client.updateProject ? () => setEditingProject(selectedProject) : undefined} />
       </AgentQuotaContext.Provider></PendingExecutorContext.Provider>
 

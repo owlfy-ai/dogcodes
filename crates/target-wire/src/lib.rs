@@ -169,6 +169,10 @@ pub enum Request {
     Terminate {
         process: u32,
     },
+    /// Subdirectories of an absolute path, for choosing a project there.
+    ListDirectory {
+        path: String,
+    },
 }
 
 /// The process environment is exactly `env`: nothing is inherited from the shim.
@@ -197,8 +201,16 @@ pub enum Response {
     Pong,
     Ok,
     Info(TargetInfo),
-    Environment { values: BTreeMap<String, String> },
-    Error { message: String },
+    Environment {
+        values: BTreeMap<String, String>,
+    },
+    Directory {
+        path: String,
+        directories: Vec<String>,
+    },
+    Error {
+        message: String,
+    },
 }
 
 /// Everything the shim sends on the control stream.

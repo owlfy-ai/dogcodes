@@ -60,6 +60,7 @@ impl AgentDriver for Thinking {
 async fn ready(f: &Fixture, provider: &str) -> agent_domain::ExecutorRef {
     let mut probe = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
         agent_protocol::RecordInstallationProbe {
+            target_id: None,
             provider_id: provider.into(),
             executable: format!("fixture:{provider}"),
             fingerprint: "fixture".into(),
@@ -98,6 +99,7 @@ async fn finished_thinking_is_saved_with_its_text_for_history() {
     f.client
         .execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 project_id: project_id.clone(),
                 display_name: "thinking".into(),
                 path: f.directory.path().to_string_lossy().into(),

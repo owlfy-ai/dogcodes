@@ -373,6 +373,9 @@ pub struct RenameTask {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterProject {
+    /// The machine these directories live on; absent means this one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<TargetId>,
     #[serde(default)]
     pub additional_directories: Vec<String>,
     pub project_id: ProjectId,
@@ -522,6 +525,8 @@ pub struct TestReportV1 {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordInstallationProbe {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<TargetId>,
     pub provider_id: String,
     pub executable: String,
     pub fingerprint: String,
@@ -553,6 +558,8 @@ pub enum InstallationStatus {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstallationSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<TargetId>,
     pub installation_id: InstallationId,
     pub provider_id: String,
     pub executable: String,
@@ -568,6 +575,8 @@ pub struct InstallationSummary {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<TargetId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<DateTime<Utc>>,
     #[serde(default)]

@@ -36,6 +36,9 @@ pub async fn dispatch(
             {
                 return Err("会话不属于此项目".into());
             }
+            if project.target_id.is_some() {
+                return Err("远程项目暂不支持终端".into());
+            }
             let root = std::iter::once(&project.path)
                 .chain(&project.additional_directories)
                 .nth(intent.directory_index)

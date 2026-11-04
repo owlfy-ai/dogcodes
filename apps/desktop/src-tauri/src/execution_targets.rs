@@ -1,10 +1,12 @@
 //! Saved SSH machines and their live connections. The service owns these so that
 //! later phases can run agents over a connection after the window has gone away.
+mod agents;
+
 use agent_core::Core;
-use agent_domain::TargetId;
+use agent_domain::{ProjectId, TargetId};
 use agent_protocol::{
-    ActorRef, CommandEnvelope, CoreCommand, ExecutionTarget, ExecutionTargets, SshAuth,
-    SshConnection,
+    ActorRef, CommandEnvelope, CoreCommand, ExecutionTarget, ExecutionTargets, RegisterProject,
+    SshAuth, SshConnection,
 };
 use redaction::{DeterministicRedactor, SecretRedactor};
 use serde::{Deserialize, Serialize};
@@ -61,6 +63,16 @@ pub(crate) enum TargetCall {
     ResolveHost {
         alias: String,
     },
+    /// Subdirectories on the target; no path starts at the account's home.
+    Browse {
+        target_id: TargetId,
+        path: Option<String>,
+    },
+    CreateProject {
+        target_id: TargetId,
+        path: String,
+        display_name: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
@@ -102,6 +114,9 @@ pub(crate) struct TargetStatus {
     closed_reason: Option<String>,
     /// This route now reaches a different machine or account than before.
     identity_changed: bool,
+    /// Looking for agents on the machine after connecting.
+    scanning: bool,
+    agents: Vec<agents::TargetAgent>,
 }
 
 #[derive(Serialize)]
@@ -191,6 +206,7 @@ struct Connection {
     status: Mutex<TargetStatus>,
     waiting: Mutex<HashMap<String, oneshot::Sender<AnswerValue>>>,
     worker: Mutex<Option<JoinHandle<()>>>,
+    link: Mutex<Option<Arc<TargetLink>>>,
 }
 
 impl Connection {
@@ -205,6 +221,7 @@ impl Connection {
             worker.abort();
         }
         self.waiting.lock().unwrap().clear();
+        self.link.lock().unwrap().take();
     }
 }
 
@@ -388,7 +405,7 @@ impl TargetHost {
                 Ok(serde_json::Value::Null)
             }
             TargetCall::Disconnect { target_id } => {
-                self.disconnect(&target_id);
+                self.disconnect(core, &target_id).await;
                 Ok(serde_json::Value::Null)
             }
             TargetCall::Answer {
@@ -400,6 +417,20 @@ impl TargetHost {
                 self.answer(&target_id, &prompt_id, answer, remember)?;
                 Ok(serde_json::Value::Null)
             }
+            TargetCall::Browse { target_id, path } => {
+                let (path, directories) = self.browse(&target_id, path).await?;
+                json(Ok(
+                    serde_json::json!({ "path": path, "directories": directories }),
+                ))
+            }
+            TargetCall::CreateProject {
+                target_id,
+                path,
+                display_name,
+            } => json(serde_json::to_value(
+                self.create_project(core, &target_id, &path, &display_name)
+                    .await?,
+            )),
             TargetCall::ConfigHosts => json(serde_json::to_value(self.config_hosts())),
             TargetCall::ResolveHost { alias } => {
                 let program = target_link::find_ssh().await.map_err(|e| e.to_string())?;
@@ -483,7 +514,7 @@ impl TargetHost {
     }
 
     async fn remove(&self, core: &Arc<Core>, target: &TargetId) -> Result<(), String> {
-        self.disconnect(target);
+        self.disconnect(core, target).await;
         self.connections.lock().unwrap().remove(target);
         let id = target.clone();
         self.change(core, move |targets| {
@@ -497,16 +528,85 @@ impl TargetHost {
         Ok(())
     }
 
-    fn disconnect(&self, target: &TargetId) {
-        if let Some(connection) = self.connections.lock().unwrap().get(target) {
+    async fn disconnect(&self, core: &Core, target: &TargetId) {
+        let connection = self.connections.lock().unwrap().get(target).cloned();
+        if let Some(connection) = connection {
             connection.stop();
             connection.update(|status| {
                 status.phase = Phase::Idle;
                 status.step = None;
                 status.prompt = None;
                 status.info = None;
+                status.scanning = false;
+                status.agents.clear();
             });
         }
+        core.unregister_target_drivers(target).await;
+    }
+
+    fn link(&self, target: &TargetId) -> Result<Arc<TargetLink>, String> {
+        self.connections
+            .lock()
+            .unwrap()
+            .get(target)
+            .and_then(|connection| connection.link.lock().unwrap().clone())
+            .ok_or_else(|| "设备未连接".to_owned())
+    }
+
+    async fn browse(
+        &self,
+        target: &TargetId,
+        path: Option<String>,
+    ) -> Result<(String, Vec<String>), String> {
+        let link = self.link(target)?;
+        let path = path.unwrap_or_else(|| link.info().home.clone());
+        if !path.starts_with('/') {
+            return Err("请输入绝对路径".into());
+        }
+        link.list_directory(&path).await
+    }
+
+    /// Checked on the machine itself, where the path has a meaning, then stored as
+    /// resolved there. The same directory opened twice reuses its project.
+    async fn create_project(
+        &self,
+        core: &Arc<Core>,
+        target: &TargetId,
+        path: &str,
+        display_name: &str,
+    ) -> Result<ProjectId, String> {
+        let (path, _) = self.browse(target, Some(path.to_owned())).await?;
+        let _edit = self.edits.lock().await;
+        let snapshot = core.bootstrap().await.map_err(|e| e.to_string())?;
+        if let Some(project) = snapshot
+            .projects
+            .iter()
+            .find(|project| project.target_id.as_ref() == Some(target) && project.path == path)
+        {
+            return Ok(project.project_id.clone());
+        }
+        let project_id = ProjectId::new();
+        let name = display_name.trim();
+        let display_name = if name.is_empty() {
+            path.rsplit('/')
+                .find(|part| !part.is_empty())
+                .unwrap_or(&path)
+                .to_owned()
+        } else {
+            name.to_owned()
+        };
+        core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
+            RegisterProject {
+                target_id: Some(target.clone()),
+                additional_directories: vec![],
+                project_id: project_id.clone(),
+                display_name,
+                path,
+            },
+        )))
+        .await
+        .map_err(|e| e.to_string())?;
+        Ok(project_id)
     }
 
     fn answer(
@@ -631,7 +731,9 @@ impl TargetHost {
         connection: &Arc<Connection>,
         link: TargetLink,
     ) {
+        let link = Arc::new(link);
         let info = link.info().clone();
+        let os = info.os.clone();
         let identity = info.machine_identity.clone();
         let identity_changed = target
             .machine_identity
@@ -641,7 +743,9 @@ impl TargetHost {
             status.phase = Phase::Connected;
             status.info = Some(info);
             status.identity_changed = identity_changed;
+            status.scanning = true;
         });
+        *connection.link.lock().unwrap() = Some(link.clone());
         if target.machine_identity.is_none() {
             let id = target.target_id.clone();
             let _ = self
@@ -653,7 +757,13 @@ impl TargetHost {
                 })
                 .await;
         }
+        let found = agents::scan(core, &target.target_id, &link.target(), &os).await;
+        connection.update(|status| {
+            status.scanning = false;
+            status.agents = found;
+        });
         let mut closed = link.closed();
+        drop(link);
         let reason = closed
             .wait_for(Option::is_some)
             .await
@@ -663,8 +773,12 @@ impl TargetHost {
             status.phase = Phase::Disconnected;
             status.step = None;
             status.info = None;
+            status.scanning = false;
+            status.agents.clear();
             status.closed_reason = reason.map(|reason| log_line(&reason));
         });
+        connection.link.lock().unwrap().take();
+        core.unregister_target_drivers(&target.target_id).await;
     }
 }
 
@@ -1019,6 +1133,95 @@ mod tests {
         let _ = server.kill();
         let _ = server.wait();
         assert!(!running, "the shim kept running after disconnecting");
+    }
+
+    #[tokio::test]
+    async fn local_features_refuse_a_remote_project_instead_of_reading_this_machine() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = agent_store::SqliteStore::open(directory.path().join("t.db")).unwrap();
+        let core = Arc::new(Core::new(Arc::new(store)));
+        // The same path exists here, which is exactly what must not be reached.
+        let same_path = directory.path().to_str().unwrap().to_owned();
+        let project = ProjectId::new();
+        core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
+            RegisterProject {
+                target_id: Some(TargetId::new()),
+                additional_directories: vec![],
+                project_id: project.clone(),
+                display_name: "Remote".into(),
+                path: same_path,
+            },
+        )))
+        .await
+        .unwrap();
+        let task = agent_domain::TaskId::new();
+        core.execute(CommandEnvelope::local(CoreCommand::CreateTask(
+            agent_protocol::CreateTask {
+                task_id: task.clone(),
+                project_id: project,
+                title: "Task".into(),
+                preferred_executor: agent_domain::ExecutorRef {
+                    provider_id: agent_domain::ProviderId::parse("kimi").unwrap(),
+                    installation_id: None,
+                },
+            },
+        )))
+        .await
+        .unwrap();
+        assert!(
+            crate::workspace_service::project_paths(&core, task.as_str())
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn an_agent_on_another_machine_cannot_be_assigned_to_a_project() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = agent_store::SqliteStore::open(directory.path().join("t.db")).unwrap();
+        let core = Arc::new(Core::new(Arc::new(store)));
+        let mut probe = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
+            agent_protocol::RecordInstallationProbe {
+                target_id: Some(TargetId::new()),
+                provider_id: "kimi".into(),
+                executable: "/root/.kimi-code/bin/kimi".into(),
+                fingerprint: "f".into(),
+                status: agent_protocol::InstallationStatus::Ready,
+                version: Some("2.5.0".into()),
+                version_text: None,
+                diagnostic: None,
+                elapsed_millis: 1,
+            },
+        ));
+        probe.actor = ActorRef::SystemRecovery;
+        core.execute(probe).await.unwrap();
+        let installation = core.bootstrap().await.unwrap().installations.remove(0);
+        let project = ProjectId::new();
+        core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
+            RegisterProject {
+                target_id: None,
+                additional_directories: vec![],
+                project_id: project.clone(),
+                display_name: "Local".into(),
+                path: directory.path().to_str().unwrap().to_owned(),
+            },
+        )))
+        .await
+        .unwrap();
+        let created = core
+            .execute(CommandEnvelope::local(CoreCommand::CreateTask(
+                agent_protocol::CreateTask {
+                    task_id: agent_domain::TaskId::new(),
+                    project_id: project,
+                    title: "Task".into(),
+                    preferred_executor: agent_domain::ExecutorRef {
+                        provider_id: agent_domain::ProviderId::parse("kimi").unwrap(),
+                        installation_id: Some(installation.installation_id.to_string()),
+                    },
+                },
+            )))
+            .await;
+        assert!(created.is_err());
     }
 
     #[tokio::test]

@@ -42,6 +42,7 @@ async fn setup_repository(
     let project_id = ProjectId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project_id.clone(),
             display_name: "Fork test".into(),
             path: path.to_str().unwrap().into(),
@@ -512,6 +513,7 @@ async fn failed_fork_resumes_frozen_plan_after_source_changes_and_host_restart()
     core.execute(rename).await.unwrap();
     let project = snapshot.projects.first().unwrap();
     let mut update = CommandEnvelope::local(CoreCommand::UpdateProject(RegisterProject {
+        target_id: None,
         project_id: project.project_id.clone(),
         display_name: "Changed project".into(),
         path: project.path.clone(),
@@ -627,6 +629,7 @@ async fn active_fork_prevents_source_deletion_and_directory_rebinding_until_fini
     let extra = directory.path().join("extra");
     std::fs::create_dir(&extra).unwrap();
     let mut update = CommandEnvelope::local(CoreCommand::UpdateProject(RegisterProject {
+        target_id: None,
         project_id: project.project_id.clone(),
         display_name: project.display_name.clone(),
         path: project.path.clone(),

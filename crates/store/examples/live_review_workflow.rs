@@ -122,6 +122,7 @@ async fn run() -> Result<(), Error> {
     let probe = |status, version| {
         let mut command = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
             agent_protocol::RecordInstallationProbe {
+                target_id: None,
                 provider_id: name.clone(),
                 executable: format!("native-review-fixture:{name}"),
                 fingerprint: "isolated-native-review-harness".into(),
@@ -176,6 +177,7 @@ async fn run() -> Result<(), Error> {
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project_id.clone(),
             display_name: "Isolated real review".into(),
             path: project_path.to_string_lossy().into_owned(),

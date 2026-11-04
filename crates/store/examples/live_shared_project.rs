@@ -57,6 +57,7 @@ async fn run() -> Result<(), Error> {
     let project = ProjectId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "Shared native acceptance".into(),
             path: root.to_string_lossy().into_owned(),

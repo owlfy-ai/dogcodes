@@ -85,6 +85,7 @@ async fn two_real_directories_capture_history_and_restart_recovery() {
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "test".into(),
             path: paths[0].clone(),
@@ -352,6 +353,7 @@ async fn cancellation_preserves_second_root_and_failed_stop_restores_approval() 
         let task = TaskId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 project_id: project.clone(),
                 display_name: "cancel".into(),
                 path: primary.to_string_lossy().into_owned(),
@@ -516,6 +518,7 @@ async fn missing_additional_directory_fails_before_native_prompt() {
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "missing root".into(),
             path: temp.path().to_string_lossy().into_owned(),

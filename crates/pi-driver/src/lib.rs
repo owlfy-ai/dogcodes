@@ -18,7 +18,7 @@ use driver_api::{
 };
 use serde_json::{Value, json};
 use sessions::stale_scope;
-use std::{collections::HashMap, fmt::Write, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, fmt::Write, sync::Arc};
 use tokio::sync::{Mutex, watch};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use transport::Connection;
@@ -136,7 +136,7 @@ impl PiDriver {
     /// query. A business session still needs its own cwd and persistent file.
     pub async fn connect_ready(
         installation: &str,
-        executable: PathBuf,
+        executable: impl Into<TargetExecutable>,
         version: Option<String>,
     ) -> Result<Self, DriverError> {
         let driver = Self::new(installation, executable, version)

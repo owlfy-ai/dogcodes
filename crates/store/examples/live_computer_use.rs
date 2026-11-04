@@ -81,6 +81,7 @@ async fn run() -> Result<(), Error> {
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "Computer-use acceptance".into(),
             path: workspace.to_string_lossy().into_owned(),

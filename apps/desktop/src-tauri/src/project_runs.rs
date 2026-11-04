@@ -401,6 +401,10 @@ fn prepare_analysis(
 }
 
 fn roots(project: &ProjectSummary) -> Vec<String> {
+    // Nothing to analyze or launch here: those directories are on another machine.
+    if project.target_id.is_some() {
+        return vec![];
+    }
     std::iter::once(project.path.clone())
         .chain(project.additional_directories.clone())
         .collect()
@@ -1480,6 +1484,7 @@ mod tests {
             agent_store::SqliteStore::open_in_memory().unwrap(),
         )));
         let project = ProjectSummary {
+            target_id: None,
             project_id: ProjectId::new(),
             path: root.path().to_string_lossy().into_owned(),
             additional_directories: vec![],
@@ -1557,6 +1562,7 @@ mod tests {
         request.expected_stream_version = Some(0);
         core.execute(request).await.unwrap();
         let project = ProjectSummary {
+            target_id: None,
             project_id: ProjectId::new(),
             path: root.path().to_string_lossy().into_owned(),
             additional_directories: vec![],

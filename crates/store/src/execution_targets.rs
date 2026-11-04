@@ -46,6 +46,79 @@ mod tests {
         request
     }
 
+    fn probe(target: Option<TargetId>, executable: &str) -> CommandEnvelope<CoreCommand> {
+        let mut request = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
+            agent_protocol::RecordInstallationProbe {
+                target_id: target,
+                provider_id: "kimi".into(),
+                executable: executable.into(),
+                fingerprint: "fingerprint".into(),
+                status: agent_protocol::InstallationStatus::Ready,
+                version: Some("2.5.0".into()),
+                version_text: None,
+                diagnostic: None,
+                elapsed_millis: 1,
+            },
+        ));
+        request.actor = agent_protocol::ActorRef::SystemRecovery;
+        request
+    }
+
+    #[tokio::test]
+    async fn the_same_path_on_two_machines_is_two_installations() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(SqliteStore::open(dir.path().join("t.db")).unwrap());
+        let core = Arc::new(Core::new(store.clone()));
+        let target = TargetId::new();
+        let path = "/usr/local/bin/kimi";
+        core.execute(probe(None, path)).await.unwrap();
+        core.execute(probe(Some(target.clone()), path))
+            .await
+            .unwrap();
+        // Probing again updates each one instead of adding a third.
+        core.execute(probe(Some(target.clone()), path))
+            .await
+            .unwrap();
+        store.rebuild_projections().unwrap();
+        let installations = core.bootstrap().await.unwrap().installations;
+        assert_eq!(installations.len(), 2);
+        assert!(installations.iter().any(|i| i.target_id.is_none()));
+        assert!(
+            installations
+                .iter()
+                .any(|i| i.target_id == Some(target.clone()))
+        );
+        // Choosing a local installation must not hide the remote one.
+        core.select_installation("kimi", None).await;
+        let visible = core.bootstrap().await.unwrap().installations;
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].target_id, Some(target));
+    }
+
+    #[tokio::test]
+    async fn a_remote_project_keeps_its_machine_and_its_path_is_not_checked_here() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(SqliteStore::open(dir.path().join("t.db")).unwrap());
+        let core = Arc::new(Core::new(store.clone()));
+        let target = TargetId::new();
+        let project = agent_domain::ProjectId::new();
+        core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
+            agent_protocol::RegisterProject {
+                target_id: Some(target.clone()),
+                additional_directories: vec!["/only/on/that/machine".into()],
+                project_id: project.clone(),
+                display_name: "Remote".into(),
+                path: "/srv/app".into(),
+            },
+        )))
+        .await
+        .unwrap();
+        store.rebuild_projections().unwrap();
+        let snapshot = core.bootstrap().await.unwrap();
+        assert_eq!(snapshot.projects[0].target_id, Some(target));
+        assert_eq!(snapshot.projects[0].path, "/srv/app");
+    }
+
     #[tokio::test]
     async fn targets_survive_reopen_and_rebuild_and_stale_writes_are_rejected() {
         let dir = tempfile::tempdir().unwrap();

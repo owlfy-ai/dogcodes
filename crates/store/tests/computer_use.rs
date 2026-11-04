@@ -117,6 +117,7 @@ async fn global_default_preserves_images_deduplicates_actions_and_preempts_in_fl
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "fixture".into(),
             path: dir.path().to_string_lossy().into_owned(),

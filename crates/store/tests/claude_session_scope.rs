@@ -105,6 +105,7 @@ async fn hot_reused_claude_continuations_remain_approvable_and_cancellable_throu
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "private Claude scope fixture".into(),
             path: root.path().to_string_lossy().into_owned(),

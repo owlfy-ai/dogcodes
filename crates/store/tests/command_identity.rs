@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 fn command() -> CommandEnvelope<CoreCommand> {
     CommandEnvelope::local(CoreCommand::RegisterProject(RegisterProject {
+        target_id: None,
         project_id: ProjectId::new(),
         display_name: "original".into(),
         path: "/project".into(),

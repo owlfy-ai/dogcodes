@@ -261,6 +261,9 @@ async fn core_reveal_local_project(
         .into_iter()
         .find(|project| project.project_id == project_id)
         .ok_or("项目不存在")?;
+    if project.target_id.is_some() {
+        return Err("远程项目的目录在服务器上，无法在本机打开".into());
+    }
     let target = tokio::fs::canonicalize(&project.path)
         .await
         .map_err(|_| "项目目录不存在或无法访问")?;
@@ -1455,6 +1458,7 @@ async fn ensure_initial_conversation(core: Arc<Core>, scratch_path: std::path::P
         .iter()
         .filter(|installation| {
             installation.status == InstallationStatus::Ready
+                && installation.target_id.is_none()
                 && installation.provider_id.as_str() != "fake"
         })
         .min_by_key(|installation| {
@@ -1485,6 +1489,7 @@ async fn ensure_initial_conversation(core: Arc<Core>, scratch_path: std::path::P
     } else {
         let project_id = ProjectId::new();
         let mut register = CommandEnvelope::local(CoreCommand::RegisterProject(RegisterProject {
+            target_id: None,
             additional_directories: vec![],
             project_id: project_id.clone(),
             display_name: "快速对话".into(),
@@ -1528,7 +1533,7 @@ async fn scan_builtin_agents(core: Arc<Core>, app: Option<tauri::AppHandle>) {
     while scans.join_next().await.is_some() {}
 }
 
-const BUILTIN_AGENT_MANIFESTS: &[&str] = &[
+pub(crate) const BUILTIN_AGENT_MANIFESTS: &[&str] = &[
     include_str!("../../../../drivers/manifests/codex.toml"),
     include_str!("../../../../drivers/manifests/claude-code.toml"),
     include_str!("../../../../drivers/manifests/kimi.toml"),
@@ -1639,6 +1644,7 @@ async fn scan_discovered_agents(
         };
         let mut envelope = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
             RecordInstallationProbe {
+                target_id: None,
                 provider_id: report.provider_id.to_string(),
                 executable: report.executable.to_string_lossy().into_owned(),
                 fingerprint: report.fingerprint,
@@ -1654,12 +1660,13 @@ async fn scan_discovered_agents(
     }
 
     for installation in snapshot.installations.iter().filter(|installation| {
-        is_missing_from_successful_scan(
-            &installation.provider_id,
-            &installation.executable,
-            manifest.id.as_str(),
-            &discovered_paths,
-        )
+        installation.target_id.is_none()
+            && is_missing_from_successful_scan(
+                &installation.provider_id,
+                &installation.executable,
+                manifest.id.as_str(),
+                &discovered_paths,
+            )
     }) {
         let mut envelope = CommandEnvelope::local(CoreCommand::ReconcileMissingInstallation(
             ReconcileMissingInstallation {
@@ -1722,7 +1729,8 @@ async fn register_ready_acp_drivers(
         return;
     };
     for installation in snapshot.installations.iter().filter(|installation| {
-        installation.provider_id == manifest.id.as_str()
+        installation.target_id.is_none()
+            && installation.provider_id == manifest.id.as_str()
             && discovered_paths.contains(&installation.executable)
             && installation.status != InstallationStatus::UnsupportedVersion
     }) {
@@ -1809,7 +1817,8 @@ async fn register_ready_pi_drivers(
         return;
     };
     for installation in snapshot.installations.iter().filter(|i| {
-        i.provider_id == manifest.id.as_str()
+        i.target_id.is_none()
+            && i.provider_id == manifest.id.as_str()
             && paths.contains(&i.executable)
             && i.status != InstallationStatus::UnsupportedVersion
     }) {
@@ -1861,7 +1870,8 @@ async fn register_ready_claude_drivers(
         return;
     };
     for installation in snapshot.installations.iter().filter(|installation| {
-        installation.provider_id == manifest.id.as_str()
+        installation.target_id.is_none()
+            && installation.provider_id == manifest.id.as_str()
             && discovered_paths.contains(&installation.executable)
             && installation.status != InstallationStatus::UnsupportedVersion
     }) {
@@ -1922,7 +1932,8 @@ async fn register_ready_codex_drivers(core: Arc<Core>, discovered_paths: &BTreeS
         return;
     };
     for installation in snapshot.installations.iter().filter(|installation| {
-        installation.provider_id == "codex"
+        installation.target_id.is_none()
+            && installation.provider_id == "codex"
             && discovered_paths.contains(&installation.executable)
             && installation.status != InstallationStatus::UnsupportedVersion
     }) {
@@ -1989,7 +2000,8 @@ async fn register_ready_antigravity_drivers(
         return;
     };
     for installation in snapshot.installations.iter().filter(|installation| {
-        installation.provider_id == manifest.id.as_str()
+        installation.target_id.is_none()
+            && installation.provider_id == manifest.id.as_str()
             && discovered_paths.contains(&installation.executable)
             && installation.status != InstallationStatus::UnsupportedVersion
     }) {
@@ -2063,7 +2075,8 @@ async fn register_ready_zcode_drivers(
         return;
     };
     for installation in snapshot.installations.iter().filter(|installation| {
-        installation.provider_id == manifest.id.as_str()
+        installation.target_id.is_none()
+            && installation.provider_id == manifest.id.as_str()
             && discovered_paths.contains(&installation.executable)
             && installation.status != InstallationStatus::UnsupportedVersion
     }) {
@@ -2140,7 +2153,7 @@ async fn register_ready_zcode_drivers(
     }
 }
 
-async fn record_readiness(
+pub(crate) async fn record_readiness(
     core: &Arc<Core>,
     installation: &agent_protocol::InstallationSummary,
     status: InstallationStatus,
@@ -2149,6 +2162,7 @@ async fn record_readiness(
 ) {
     let mut envelope = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
         RecordInstallationProbe {
+            target_id: installation.target_id.clone(),
             provider_id: installation.provider_id.clone(),
             executable: installation.executable.clone(),
             fingerprint: installation.fingerprint.clone(),
@@ -2192,6 +2206,7 @@ mod tests {
         for provider in ["opencode", "pi", "deepseek-harness", "codebuddy"] {
             let mut command = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
                 RecordInstallationProbe {
+                    target_id: None,
                     provider_id: provider.into(),
                     executable: format!("/fixture/{provider}"),
                     fingerprint: "account-monitor-fixture".into(),
@@ -2272,6 +2287,7 @@ done
         let core = Arc::new(Core::new(Arc::new(SqliteStore::open_in_memory().unwrap())));
         let mut probe = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
             RecordInstallationProbe {
+                target_id: None,
                 provider_id: "zcode".into(),
                 executable: executable.to_string_lossy().into_owned(),
                 fingerprint: "fixture".into(),
@@ -2808,6 +2824,7 @@ esac
         let scratch = tempfile::tempdir().unwrap();
         let mut probe = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
             RecordInstallationProbe {
+                target_id: None,
                 provider_id: "codex".into(),
                 executable: "/opt/codex/bin/codex".into(),
                 fingerprint: "ready-codex".into(),

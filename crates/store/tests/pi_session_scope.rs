@@ -117,6 +117,7 @@ async fn hot_reused_pi_sessions_remain_answerable_and_cancellable_through_core()
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "private Pi scope fixture".into(),
             path: root.path().to_string_lossy().into_owned(),

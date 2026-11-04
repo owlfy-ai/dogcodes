@@ -6,7 +6,7 @@ import { useI18n } from "./i18n";
 import { userFacingError } from "./userFacingError";
 import {
   type SshAuth, type TargetApi, type TargetEntry, type TargetErrorKind, type TargetStatus,
-  connectionFromForm, stepStates, tauriTargetApi, targetRoute,
+  connectionFromForm, joinDirectory, parentDirectory, stepStates, tauriTargetApi, targetRoute,
 } from "./executionTargetClient";
 import "./executionTargets.css";
 
@@ -27,8 +27,86 @@ function useTargetText() {
   return (key: string, params?: Record<string, string | number>) => t(`executionTargets.${key}`, params);
 }
 
-function ConnectionProgress({ api, targetId, onEdit, onClose }: {
-  api: TargetApi; targetId: string; onEdit: () => void; onClose: () => void;
+const AGENT_STATUS_KEYS = { ready: "agentReady", installed: "agentNotReady", not_configured: "agentNeedsLogin", unsupported_version: "agentUnsupported", broken: "agentBroken" } as const;
+
+function RemoteProjectDialog({ api, targetId, onClose, onReady }: {
+  api: TargetApi; targetId: string; onClose: () => void; onReady: (projectId: string) => void | Promise<void>;
+}) {
+  const { t } = useI18n();
+  const text = useTargetText();
+  const [path, setPath] = useState("");
+  const [typed, setTyped] = useState("");
+  const [directories, setDirectories] = useState<string[] | null>(null);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const open = async (next: string | null) => {
+    setMessage("");
+    try {
+      const listing = await api.browse(targetId, next);
+      setPath(listing.path);
+      setTyped(listing.path);
+      setDirectories(listing.directories);
+    } catch (cause) {
+      setMessage(userFacingError(cause, text("browseFailed")));
+    }
+  };
+  useEffect(() => { void open(null); }, [api, targetId]);
+  const create = async () => {
+    if (busy || !path) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await onReady(await api.createProject(targetId, path, name));
+    } catch (cause) {
+      setMessage(userFacingError(cause, text("createProjectFailed")));
+      setBusy(false);
+    }
+  };
+  return <div className="target-browser">
+    <form className="target-browser-path" onSubmit={(event: FormEvent) => { event.preventDefault(); void open(typed.trim()); }}>
+      <input aria-label={text("browsePath")} value={typed} disabled={busy} onChange={event => setTyped(event.target.value)} />
+      <button className="secondary" disabled={busy || !typed.trim()}>{text("browseGo")}</button>
+    </form>
+    <ul className="target-browser-list" aria-label={text("browseTitle")}>
+      {path !== "/" && path && <li><button type="button" disabled={busy} onClick={() => void open(parentDirectory(path))}>..</button></li>}
+      {directories?.map(directory => <li key={directory}><button type="button" disabled={busy} onClick={() => void open(joinDirectory(path, directory))}>{directory}</button></li>)}
+      {directories?.length === 0 && <li className="target-browser-empty">{text("browseEmpty")}</li>}
+      {!directories && !message && <li className="target-browser-empty"><LoadingStatus>{text("loading")}</LoadingStatus></li>}
+    </ul>
+    <label>{text("name")}<input maxLength={120} disabled={busy} placeholder={path.split("/").filter(Boolean).pop() ?? ""} value={name} onChange={event => setName(event.target.value)} /></label>
+    {message && <div className="error" role="alert">{message}</div>}
+    <footer>
+      <button className="secondary" type="button" disabled={busy} onClick={onClose}>{t("common.cancel")}</button>
+      <button className="send" type="button" disabled={busy || !path} onClick={() => void create()}>{text("openHere")}</button>
+    </footer>
+  </div>;
+}
+
+/** Sending would fail anyway: say why, and where to fix it, before the person types. */
+export function TargetOfflineBanner({ api = tauriTargetApi, targetId, onOpenConnections }: {
+  api?: TargetApi; targetId: string; onOpenConnections: () => void;
+}) {
+  const text = useTargetText();
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    let closed = false;
+    const read = () => void api.status(targetId).then(status => {
+      if (!closed) setOffline(status.phase !== "connected");
+    }).catch(() => { if (!closed) setOffline(true); });
+    read();
+    const timer = setInterval(read, 3000);
+    return () => { closed = true; clearInterval(timer); };
+  }, [api, targetId]);
+  if (!offline) return null;
+  return <div className="target-offline" role="status">
+    <span>{text("offlineBanner")}</span>
+    <button type="button" onClick={onOpenConnections}>{text("openConnections")}</button>
+  </div>;
+}
+
+function ConnectionProgress({ api, targetId, onEdit, onClose, onBrowse }: {
+  api: TargetApi; targetId: string; onEdit: () => void; onClose: () => void; onBrowse?: () => void;
 }) {
   const text = useTargetText();
   const [status, setStatus] = useState<TargetStatus | null>(null);
@@ -86,7 +164,16 @@ function ConnectionProgress({ api, targetId, onEdit, onClose }: {
       {text("connectedSummary", { os: status.info.os, arch: status.info.arch, version: status.info.version })}
     </p>}
     {connected && status.identityChanged && <div className="error" role="alert">{text("identityChanged")}</div>}
-    {connected && <p className="target-hint">{text("nextPhase")}</p>}
+    {connected && status.scanning && <LoadingStatus>{text("scanningAgents")}</LoadingStatus>}
+    {connected && !status.scanning && (status.agents.length
+      ? <ul className="target-agents" aria-label={text("agentsTitle")}>
+        {status.agents.map(agent => <li key={agent.providerId}>
+          <strong>{agent.displayName}</strong>
+          {agent.version && <small>{agent.version}</small>}
+          <span className={`target-agent-status ${agent.status}`}>{text(AGENT_STATUS_KEYS[agent.status])}</span>
+        </li>)}
+      </ul>
+      : <p className="target-hint">{text("noAgents")}</p>)}
     {status.error && <div className="error" role="alert">{text(ERROR_KEYS[status.error.kind])}</div>}
     {status.phase === "disconnected" && <div className="error" role="alert">{text("connectionLost")}{status.closedReason ? ` ${status.closedReason}` : ""}</div>}
     {failure && <div className="error" role="alert">{failure}</div>}
@@ -100,19 +187,22 @@ function ConnectionProgress({ api, targetId, onEdit, onClose }: {
         <button className="send" type="button" onClick={() => void api.connect(targetId, null).catch(cause => setFailure(userFacingError(cause, text("loadFailed"))))}>{text("retry")}</button>
       </>}
       {status.phase === "connecting" && !prompt && <button className="secondary" type="button" onClick={() => { void api.disconnect(targetId).catch(() => {}); onEdit(); }}>{text("cancelConnecting")}</button>}
-      {connected && <button className="send" type="button" onClick={onClose}>{text("done")}</button>}
+      {connected && <button className={onBrowse ? "secondary" : "send"} type="button" onClick={onClose}>{text("done")}</button>}
+      {connected && onBrowse && <button className="send" type="button" disabled={status.scanning} onClick={onBrowse}>{text("openProject")}</button>}
     </footer>
   </div>;
 }
 
-export function TargetConnectionDialog({ api, entry, initialProgress = false, onClose, onChanged }: {
-  api: TargetApi; entry: TargetEntry | null; initialProgress?: boolean; onClose: () => void; onChanged: () => void;
+export function TargetConnectionDialog({ api, entry, initialProgress = false, initialBrowsing = false, onClose, onChanged, onProjectReady }: {
+  api: TargetApi; entry: TargetEntry | null; initialProgress?: boolean; initialBrowsing?: boolean; onClose: () => void; onChanged: () => void;
+  onProjectReady?: (projectId: string) => void | Promise<void>;
 }) {
   const { t } = useI18n();
   const text = useTargetText();
   const saved = entry?.target.connection;
   const [targetId, setTargetId] = useState<string | null>(entry?.target.targetId ?? null);
   const [progress, setProgress] = useState(initialProgress);
+  const [browsing, setBrowsing] = useState(initialBrowsing);
   const [name, setName] = useState(entry?.target.displayName ?? "");
   const [destination, setDestination] = useState(saved?.destination ?? "");
   const [port, setPort] = useState(saved?.port ? String(saved.port) : "");
@@ -166,7 +256,7 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, on
     }
   };
   const close = () => { if (!busy) { onChanged(); onClose(); } };
-  const title = progress ? name.trim() || destination.trim() : entry ? text("editTitle") : text("newTitle");
+  const title = browsing ? text("browseTitle") : progress ? name.trim() || destination.trim() : entry ? text("editTitle") : text("newTitle");
   const preview = destination.trim() ? targetRoute(connectionFromForm({ destination, port, user, auth, identityFile, installDirectory })) : "user@host:22";
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
     <div ref={dialog} className="project-dialog target-dialog" role="dialog" aria-modal="true" aria-labelledby="target-dialog-title"
@@ -175,8 +265,10 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, on
         <div><h2 id="target-dialog-title" tabIndex={-1} data-dialog-title>{title}</h2><small className="target-route">{resolved || preview}</small></div>
         <button type="button" aria-label={t("common.close")} disabled={busy} onClick={close}>×</button>
       </header>
-      {progress && targetId
-        ? <ConnectionProgress api={api} targetId={targetId} onEdit={() => setProgress(false)} onClose={close} />
+      {browsing && targetId && onProjectReady
+        ? <RemoteProjectDialog api={api} targetId={targetId} onClose={() => setBrowsing(false)} onReady={async projectId => { await onProjectReady(projectId); onClose(); }} />
+        : progress && targetId
+        ? <ConnectionProgress api={api} targetId={targetId} onEdit={() => setProgress(false)} onClose={close} onBrowse={onProjectReady ? () => setBrowsing(true) : undefined} />
         : <form className="target-form" onSubmit={submit}>
           {hosts.length > 0 && <label>{text("importConfig")}
             <select disabled={busy} value="" onChange={event => importHost(event.target.value)}>
@@ -219,11 +311,13 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, on
 
 const PHASE_KEYS = { idle: "statusIdle", connecting: "statusConnecting", connected: "statusConnected", failed: "statusFailed", disconnected: "statusDisconnected" } as const;
 
-export function ExecutionTargets({ api = tauriTargetApi, requestNew = 0 }: { api?: TargetApi; requestNew?: number }) {
+export function ExecutionTargets({ api = tauriTargetApi, requestNew = 0, onProjectReady }: {
+  api?: TargetApi; requestNew?: number; onProjectReady?: (projectId: string) => void | Promise<void>;
+}) {
   const text = useTargetText();
   const [entries, setEntries] = useState<TargetEntry[] | null>(null);
   const [failure, setFailure] = useState("");
-  const [dialog, setDialog] = useState<{ entry: TargetEntry | null; progress?: boolean } | null>(null);
+  const [dialog, setDialog] = useState<{ entry: TargetEntry | null; progress?: boolean; browsing?: boolean } | null>(null);
   const [revision, setRevision] = useState(0);
   useEffect(() => { if (requestNew > 0) setDialog({ entry: null }); }, [requestNew]);
   useEffect(() => {
@@ -260,6 +354,7 @@ export function ExecutionTargets({ api = tauriTargetApi, requestNew = 0 }: { api
             </div>
             <span className={`target-phase ${status.phase}`} role="status"><i aria-hidden="true" />{text(PHASE_KEYS[status.phase])}</span>
             <div className="target-row-actions">
+              {status.phase === "connected" && onProjectReady && <button type="button" onClick={() => setDialog({ entry, progress: true, browsing: true })}>{text("openProject")}</button>}
               {live
                 ? <button type="button" onClick={() => act(api.disconnect(target.targetId))}>{text("disconnect")}</button>
                 : <button type="button" onClick={() => { setDialog({ entry, progress: true }); act(api.connect(target.targetId, null)); }}>{text("connect")}</button>}
@@ -270,6 +365,6 @@ export function ExecutionTargets({ api = tauriTargetApi, requestNew = 0 }: { api
         })}
       </ul>}
     </div>
-    {dialog && <TargetConnectionDialog api={api} entry={dialog.entry} initialProgress={dialog.progress} onChanged={changed} onClose={() => setDialog(null)} />}
+    {dialog && <TargetConnectionDialog api={api} entry={dialog.entry} initialProgress={dialog.progress} initialBrowsing={dialog.browsing} onChanged={changed} onClose={() => setDialog(null)} onProjectReady={onProjectReady} />}
   </section>;
 }

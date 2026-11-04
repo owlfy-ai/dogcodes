@@ -205,6 +205,7 @@ async fn task_command(core: &Arc<Core>) -> CommandEnvelope<CoreCommand> {
     let project_id = agent_domain::ProjectId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         agent_protocol::RegisterProject {
+            target_id: None,
             project_id: project_id.clone(),
             display_name: "fixture".into(),
             path: "/tmp/fixture".into(),

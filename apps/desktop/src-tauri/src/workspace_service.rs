@@ -19,6 +19,11 @@ pub async fn project_paths(core: &Core, task_id: &str) -> Result<Vec<PathBuf>, S
         .iter()
         .find(|p| p.project_id == task.project_id)
         .ok_or("项目不存在")?;
+    // These paths belong to another machine. Reading them here could reach a
+    // different directory that happens to have the same name on this one.
+    if project.target_id.is_some() {
+        return Err("远程项目暂不支持这项操作".into());
+    }
     Ok(std::iter::once(project.path.clone())
         .chain(project.additional_directories.iter().cloned())
         .map(PathBuf::from)

@@ -1443,6 +1443,7 @@ mod tests {
         );
         let command = CommandEnvelope::local(CoreCommand::RegisterProject(
             agent_protocol::RegisterProject {
+                target_id: None,
                 project_id: agent_domain::ProjectId::new(),
                 display_name: "blocked".into(),
                 path: directory.path().to_string_lossy().into(),

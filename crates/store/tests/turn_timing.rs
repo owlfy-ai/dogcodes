@@ -23,6 +23,7 @@ async fn startup_trace_distinguishes_preparation_dispatch_first_text_and_failure
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "timing".into(),
             path: "/tmp".into(),

@@ -70,7 +70,7 @@ export function ProjectPicker({ projects, selectedProject, disabled, onSelect, o
       <div className="project-picker-list">
         {options.map(project => <button type="button" key={project.projectId}
           data-tooltip={[project.path, ...project.additionalDirectories].join("\n")} aria-pressed={project.projectId === selectedProject?.projectId} onClick={() => choose(project.projectId)}>
-          <FolderIcon /><span className="project-picker-copy">{project.displayName}<small>{homeRelativePath(project.path, home)}</small></span>
+          <FolderIcon /><span className="project-picker-copy">{project.displayName}<small>{project.targetId ? <><b className="project-target-badge">SSH</b> {project.path}</> : homeRelativePath(project.path, home)}</small></span>
           {project.projectId === selectedProject?.projectId && <span aria-hidden="true">✓</span>}
         </button>)}
         {options.length === 0 && <p className="project-picker-empty">{t(query ? "projectPicker.noMatches" : "projectPicker.noProjects")}</p>}

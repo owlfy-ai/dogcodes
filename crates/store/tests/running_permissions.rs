@@ -142,6 +142,7 @@ async fn setup(
     let project_id = ProjectId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project_id.clone(),
             display_name: "Test".into(),
             path: "/tmp".into(),

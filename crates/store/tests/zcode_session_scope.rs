@@ -131,6 +131,7 @@ async fn shared_zcode_worker_keeps_hot_turn_approvals_questions_and_cancellation
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "private ZCode scope fixture".into(),
             path: root.path().to_string_lossy().into_owned(),

@@ -623,6 +623,12 @@ impl AgentDriver for CodexDriver {
         DRIVER_VERSION
     }
 
+    /// App tools are started by the agent from a path on this machine, which means
+    /// nothing on another one. Context handoff stays available through the prompt.
+    fn supports_app_mcp(&self) -> bool {
+        self.executable.target.is_local()
+    }
+
     fn native_agent_version(&self) -> Option<&str> {
         Some(&self.native_agent_version)
     }

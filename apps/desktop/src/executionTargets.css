@@ -47,3 +47,23 @@
 .project-dialog label.target-check { display: flex; align-items: center; gap: 7px; }
 .target-log pre { max-height: 180px; margin-top: 8px; padding: 9px; overflow: auto; border: 1px solid #3c3c38; border-radius: 8px; }
 .target-connected { display: grid; gap: 3px; margin: 0; padding: 11px 13px; border: 1px solid #639e5766; border-radius: 10px; background: #639e5710; font-size: calc(13px * var(--ui-scale)); }
+
+.target-agents { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: calc(13px * var(--ui-scale)); }
+.target-agents li { display: flex; align-items: center; gap: 8px; padding: 8px 11px; border: 1px solid #3c3c38; border-radius: 8px; }
+.target-agents strong { font-weight: 550; }
+.target-agents small { color: #888883; }
+.target-agent-status { margin-left: auto; color: #888883; font-size: .6875rem; }
+.target-agent-status.ready { color: #639e57; }
+.target-agent-status.broken, .target-agent-status.unsupported_version { color: #c35b4a; }
+.target-agent-status.not_configured { color: #c79a3b; }
+.target-browser { display: grid; gap: 12px; min-width: 0; }
+.target-browser-path { display: flex; gap: 6px; }
+.target-browser-path input { flex: 1; min-width: 0; font-family: ui-monospace, monospace; }
+.target-browser-list { max-height: 260px; margin: 0; padding: 4px; overflow: auto; list-style: none; border: 1px solid #3c3c38; border-radius: 8px; }
+.target-browser-list button { width: 100%; padding: 6px 8px; border: 0; border-radius: 6px; color: inherit; background: transparent; font: inherit; font-size: calc(13px * var(--ui-scale)); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.target-browser-list button:hover:not(:disabled) { background: #8d918122; }
+.target-browser-empty { padding: 10px; color: #888883; font-size: calc(12px * var(--ui-scale)); }
+.project-dialog .target-browser > footer { display: flex; justify-content: flex-end; gap: 8px; }
+.target-offline { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 7px 14px; border-bottom: 1px solid #c79a3b55; background: #c79a3b14; font-size: .75rem; }
+.target-offline button { padding: 4px 9px; border: 1px solid #c79a3b88; border-radius: 6px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.project-target-badge { margin-right: 4px; padding: 0 4px; border: 1px solid currentColor; border-radius: 4px; font-size: .625rem; font-weight: 550; }

@@ -729,3 +729,23 @@ async fn the_target_reports_the_account_login_environment() {
     assert!(target.inherited("DEFINITELY_NOT_SET_ANYWHERE").is_none());
     assert!(target.temp_directory().is_absolute());
 }
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn directories_are_listed_and_resolved_on_the_target() {
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let root = server.root.path().join("listing");
+    std::fs::create_dir_all(root.join("beta")).unwrap();
+    std::fs::create_dir_all(root.join("alpha")).unwrap();
+    std::fs::write(root.join("file.txt"), "not a directory").unwrap();
+    let (path, directories) = link
+        .list_directory(root.join("alpha/../.").to_str().unwrap())
+        .await
+        .unwrap();
+    assert!(path.ends_with("/listing"));
+    assert_eq!(directories, ["alpha", "beta"]);
+    assert!(link.list_directory("/nonexistent-directory").await.is_err());
+    // A failed read is an answer, not a broken connection.
+    link.ping().await.unwrap();
+}

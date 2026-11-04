@@ -7,7 +7,7 @@ fn fixture(mode: &str) -> (tempfile::TempDir, PiDriver) {
     std::fs::write(root.path().join("fixture-mode"), mode).unwrap();
     let driver = PiDriver::new(
         &agent_domain::InstallationId::new().to_string(),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/catalog.py"),
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/catalog.py"),
         None,
     )
     .unwrap();

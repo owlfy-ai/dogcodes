@@ -552,37 +552,14 @@ pub async fn probe_installation(
     };
     match run_scoped_bounded(&spec).await {
         Ok(output) => {
-            let raw_version_text = first_nonempty(&output.stdout, &output.stderr);
-            let signature_matches = raw_version_text.as_deref().is_some_and(|text| {
-                let mut combined = identity_text.clone();
-                combined.push_str(text);
-                version_output_matches(&combined, &manifest.discovery.version_output_markers)
-            });
-            let version_text = raw_version_text.filter(|_| signature_matches);
-            let version = version_text.as_deref().and_then(extract_version);
-            let status = if !output.success || !signature_matches || version.is_none() {
-                InstallationStatus::Broken
-            } else if version
-                .as_ref()
-                .is_some_and(|version| !version_supported(version, &manifest.supported_versions))
-            {
-                InstallationStatus::UnsupportedVersion
-            } else {
-                // Authentication is deliberately not inferred from `--version`.
-                InstallationStatus::Installed
-            };
-            let diagnostic = if !output.success {
-                Some(format!(
-                    "version probe exited with code {:?}",
-                    output.exit_code
-                ))
-            } else if !signature_matches {
-                Some("version probe output did not match the provider signature".into())
-            } else if version.is_none() {
-                Some("version probe did not report a semantic version".into())
-            } else {
-                None
-            };
+            let (status, version, version_text, diagnostic) = version_verdict(
+                manifest,
+                &identity_text,
+                output.success,
+                output.exit_code,
+                &output.stdout,
+                &output.stderr,
+            );
             Ok(InstallationProbe {
                 provider_id: manifest.id.clone(),
                 executable,
@@ -605,6 +582,91 @@ pub async fn probe_installation(
             elapsed_millis: timeout_millis,
         }),
     }
+}
+
+/// What a version command's output says about an installation, wherever it ran.
+/// Markers are matched against the identity output joined with the version output,
+/// while the version itself is parsed from the version command only.
+#[must_use]
+pub fn version_verdict(
+    manifest: &ProviderManifest,
+    identity_text: &str,
+    success: bool,
+    exit_code: Option<i32>,
+    stdout: &str,
+    stderr: &str,
+) -> (
+    InstallationStatus,
+    Option<Version>,
+    Option<String>,
+    Option<String>,
+) {
+    let raw_version_text = first_nonempty(stdout, stderr);
+    let signature_matches = raw_version_text.as_deref().is_some_and(|text| {
+        let mut combined = identity_text.to_owned();
+        combined.push_str(text);
+        version_output_matches(&combined, &manifest.discovery.version_output_markers)
+    });
+    let version_text = raw_version_text.filter(|_| signature_matches);
+    let version = version_text.as_deref().and_then(extract_version);
+    let status = if !success || !signature_matches || version.is_none() {
+        InstallationStatus::Broken
+    } else if version
+        .as_ref()
+        .is_some_and(|version| !version_supported(version, &manifest.supported_versions))
+    {
+        InstallationStatus::UnsupportedVersion
+    } else {
+        // Authentication is deliberately not inferred from `--version`.
+        InstallationStatus::Installed
+    };
+    let diagnostic = if !success {
+        Some(format!("version probe exited with code {exit_code:?}"))
+    } else if !signature_matches {
+        Some("version probe output did not match the provider signature".into())
+    } else if version.is_none() {
+        Some("version probe did not report a semantic version".into())
+    } else {
+        None
+    };
+    (status, version, version_text, diagnostic)
+}
+
+/// Where a manifest expects this agent on a POSIX machine reached over a connection:
+/// paths are text here, since they follow that machine's rules and not this one's.
+#[must_use]
+pub fn target_candidates(
+    manifest: &ProviderManifest,
+    platform: Platform,
+    path_entries: &[String],
+    home: Option<&str>,
+) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut push = |candidate: String| {
+        if !found.contains(&candidate) {
+            found.push(candidate);
+        }
+    };
+    for directory in path_entries.iter().filter(|entry| entry.starts_with('/')) {
+        for name in &manifest.discovery.candidate_executables {
+            push(format!("{}/{name}", directory.trim_end_matches('/')));
+        }
+    }
+    if let Some(paths) = manifest.discovery.platform_paths.get(&platform) {
+        for path in paths {
+            push(path.to_string_lossy().into_owned());
+        }
+    }
+    if let (Some(home), Some(paths)) = (home, manifest.discovery.user_paths.get(&platform)) {
+        for relative in paths {
+            push(format!(
+                "{}/{}",
+                home.trim_end_matches('/'),
+                relative.to_string_lossy()
+            ));
+        }
+    }
+    found
 }
 
 fn installation_probe_timeout(requested: u64, executable: &Path) -> u64 {

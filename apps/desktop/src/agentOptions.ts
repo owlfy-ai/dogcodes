@@ -9,6 +9,11 @@ export function readyAgentInstallations(installations: InstallationSummary[]): I
   return visibleAgentInstallations(installations).filter(installation => installation.status === "ready");
 }
 
+/** An agent only works on directories on its own machine. */
+export function installationsOnTarget(installations: InstallationSummary[], targetId: string | null | undefined): InstallationSummary[] {
+  return installations.filter(installation => (installation.targetId ?? null) === (targetId ?? null));
+}
+
 /** Restore a selection against discovery's current executable for the same Agent. */
 export function currentAgentExecutor(executor: ExecutorRef, installations: InstallationSummary[]): ExecutorRef {
   const candidates = readyAgentInstallations(installations).filter(installation => installation.providerId === executor.providerId);

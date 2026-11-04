@@ -39,6 +39,9 @@ pub async fn list(core: &Core, task_id: &str) -> Result<Vec<ReviewWorkspace>, St
         .iter()
         .find(|p| p.project_id == source.project_id)
         .ok_or("项目已不存在")?;
+    if project.target_id.is_some() {
+        return Err("远程项目暂不支持这项操作".into());
+    }
     let git = GitReview::default();
     let identity = git.worktree_identity(Path::new(&project.path)).await?;
     // Current project comes first so its task and selected subdirectory win deduplication.
@@ -47,7 +50,7 @@ pub async fn list(core: &Core, task_id: &str) -> Result<Vec<ReviewWorkspace>, St
         snapshot
             .projects
             .iter()
-            .filter(|p| p.project_id != project.project_id),
+            .filter(|p| p.project_id != project.project_id && p.target_id.is_none()),
     );
     let mut seen = BTreeMap::<String, usize>::new();
     let mut result = Vec::<ReviewWorkspace>::new();
@@ -154,6 +157,7 @@ mod tests {
         let task_id = TaskId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 project_id: project_id.clone(),
                 display_name: name.into(),
                 path: path.to_str().unwrap().into(),

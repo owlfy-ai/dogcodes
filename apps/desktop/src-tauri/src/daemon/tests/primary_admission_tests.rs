@@ -27,6 +27,7 @@ async fn primary_admission_rpc_rejects_disabled_work_and_replays_accepted_work()
     f.client
         .execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 project_id: project_id.clone(),
                 display_name: "admission".into(),
                 path: f.directory.path().to_string_lossy().into(),
@@ -137,6 +138,7 @@ async fn primary_admission_rpc_rejects_disabled_work_and_replays_accepted_work()
 async fn ready(f: &Fixture, provider: &str) -> agent_domain::ExecutorRef {
     let mut probe = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
         agent_protocol::RecordInstallationProbe {
+            target_id: None,
             provider_id: provider.into(),
             executable: format!("fixture:{provider}"),
             fingerprint: "fixture".into(),
@@ -176,6 +178,7 @@ async fn primary_admission_rpc_requires_ready_explicit_current_installation() {
     f.client
         .execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 project_id: project_id.clone(),
                 display_name: "readiness".into(),
                 path: f.directory.path().to_string_lossy().into(),
@@ -219,6 +222,7 @@ async fn primary_admission_rpc_requires_ready_explicit_current_installation() {
     ] {
         let mut probe = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
             RecordInstallationProbe {
+                target_id: None,
                 provider_id: "fake".into(),
                 executable: "fixture:fake".into(),
                 fingerprint: "fixture".into(),

@@ -1124,6 +1124,7 @@ mod tests {
         ] {
             let mut command = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
                 RecordInstallationProbe {
+                    target_id: None,
                     provider_id: "claude-code".into(),
                     executable: path.into(),
                     fingerprint: path.into(),

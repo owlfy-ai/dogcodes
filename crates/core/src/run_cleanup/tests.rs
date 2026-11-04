@@ -214,6 +214,7 @@ async fn aborting_a_cleanup_waiter_keeps_the_run_lease_and_never_targets_registr
     let turn = TurnId::new();
     core.execute(agent_protocol::CommandEnvelope::local(
         agent_protocol::CoreCommand::RegisterProject(agent_protocol::RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "private run cleanup".into(),
             path: "/tmp".into(),

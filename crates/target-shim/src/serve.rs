@@ -26,6 +26,7 @@ const IDLE_LIMIT: Duration = Duration::from_secs(90);
 const LOGIN_ENVIRONMENT_LIMIT: Duration = Duration::from_secs(10);
 const ENVIRONMENT_MARKER: &str = "__DOGCODES_ENVIRONMENT__";
 const MAX_ENVIRONMENT_BYTES: usize = 512 * 1024;
+const MAX_DIRECTORY_ENTRIES: usize = 2000;
 
 type Outbound = mpsc::Sender<Frame>;
 
@@ -162,6 +163,15 @@ async fn handle_request(
                 Err(error) => report_failed_start(outbound, process, &error).await?,
             }
             respond(outbound, id, Response::Ok).await
+        }
+        Request::ListDirectory { path } => {
+            let response = match list_directory(&path).await {
+                Ok(listing) => listing,
+                Err(error) => Response::Error {
+                    message: error.to_string(),
+                },
+            };
+            respond(outbound, id, response).await
         }
         Request::Terminate { process } => {
             if let Some(terminate) = processes.get_mut(&process).and_then(|p| p.terminate.take()) {
@@ -373,6 +383,31 @@ async fn pump_output<R: AsyncRead + Unpin>(
             return;
         }
     }
+}
+
+/// The resolved path comes back so the desktop stores what actually exists.
+async fn list_directory(path: &str) -> io::Result<Response> {
+    let resolved = tokio::fs::canonicalize(path).await?;
+    let mut entries = tokio::fs::read_dir(&resolved).await?;
+    let mut directories = Vec::new();
+    while let Some(entry) = entries.next_entry().await? {
+        if directories.len() >= MAX_DIRECTORY_ENTRIES {
+            break;
+        }
+        // Follows symbolic links: a link to a directory is a place one can open.
+        if tokio::fs::metadata(entry.path())
+            .await
+            .is_ok_and(|metadata| metadata.is_dir())
+            && let Ok(name) = entry.file_name().into_string()
+        {
+            directories.push(name);
+        }
+    }
+    directories.sort_unstable();
+    Ok(Response::Directory {
+        path: resolved.to_string_lossy().into_owned(),
+        directories,
+    })
 }
 
 /// `sshd` commands usually skip the files that set `PATH` for version managers and

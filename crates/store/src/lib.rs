@@ -6,7 +6,9 @@ use agent_core::{
     AppendOutcome, AppendRequest, CoreRepository, PendingContextTransfer,
     PendingReconciliationOptOut, RepositoryError, StoredArtifact,
 };
-use agent_domain::{ArtifactId, ExecutorRef, InstallationId, ProviderId, RunState, TaskId};
+use agent_domain::{
+    ArtifactId, ExecutorRef, InstallationId, ProviderId, RunState, TargetId, TaskId,
+};
 use agent_protocol::{
     ActiveRunSummary, AgentSessionMapSummary, ArtifactCursor, ArtifactMetadata, BootstrapSnapshot,
     ChangeSummary, CommandAck, CompanionProjection, CompanionTerminal, CompanionWorkspace,
@@ -105,7 +107,7 @@ mod startup_tests;
 /// On-disk format of the database, stored in `PRAGMA user_version`. Bump it only
 /// when the schema changes. Pre-release builds initialize only an empty store;
 /// they do not adopt or upgrade an existing database with another format.
-pub const STORE_FORMAT_VERSION: i64 = 1;
+pub const STORE_FORMAT_VERSION: i64 = 2;
 /// Error text identifying a database written by a newer format.
 pub const NEWER_FORMAT_ERROR: &str = "database written by a newer dogcodes version";
 pub const UNSUPPORTED_FORMAT_ERROR: &str =
@@ -520,7 +522,7 @@ impl CoreRepository for SqliteStore {
             let mut statement = connection
                 .prepare(
                     "SELECT p.project_id, p.display_name, p.path, COUNT(t.task_id), p.additional_directories_json, p.stream_version,
-                            (SELECT occurred_at FROM events WHERE stream_type='project' AND stream_id=p.project_id ORDER BY stream_version DESC LIMIT 1)
+                            (SELECT occurred_at FROM events WHERE stream_type='project' AND stream_id=p.project_id ORDER BY stream_version DESC LIMIT 1), p.target_id
                      FROM projects p LEFT JOIN tasks t ON t.project_id = p.project_id
                      GROUP BY p.project_id ORDER BY p.display_name COLLATE NOCASE",
                 )
@@ -528,6 +530,7 @@ impl CoreRepository for SqliteStore {
             statement
                 .query_map([], |row| {
                     Ok(ProjectSummary {
+                        target_id: row.get::<_, Option<String>>(7)?.map(parse_id).transpose()?,
                         updated_at: row.get::<_, Option<i64>>(6)?.map(from_millis).transpose()?,
                         stream_version: row.get(5)?,
                         additional_directories: serde_json::from_str(&row.get::<_, String>(4)?)
@@ -937,6 +940,7 @@ impl CoreRepository for SqliteStore {
 
     async fn installation_id(
         &self,
+        target_id: Option<&TargetId>,
         provider_id: &str,
         executable: &str,
     ) -> Result<Option<InstallationId>, RepositoryError> {
@@ -944,8 +948,12 @@ impl CoreRepository for SqliteStore {
         connection
             .query_row(
                 "SELECT installation_id FROM installations
-                 WHERE provider_id = ?1 AND executable = ?2",
-                params![provider_id, executable],
+                 WHERE target_id = ?1 AND provider_id = ?2 AND executable = ?3",
+                params![
+                    target_id.map_or_else(String::new, ToString::to_string),
+                    provider_id,
+                    executable
+                ],
                 |row| parse_id(row.get::<_, String>(0)?),
             )
             .optional()
@@ -1181,14 +1189,15 @@ fn apply_projection(
                 serde_json::from_value(event.payload.clone()).map_err(json_error)?;
             transaction
                 .execute(
-                    "INSERT INTO projects(project_id, display_name, path, stream_version, additional_directories_json)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    "INSERT INTO projects(project_id, display_name, path, stream_version, additional_directories_json, target_id)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     params![
                         project.project_id.to_string(),
                         project.display_name,
                         project.path,
                         to_i64(event.stream_version)?,
                         serde_json::to_string(&project.additional_directories).map_err(json_error)?,
+                        project.target_id.as_ref().map(ToString::to_string),
                     ],
                 )
                 .map_err(storage_error)?;
@@ -1583,9 +1592,9 @@ fn apply_projection(
                     "INSERT INTO installations(
                         installation_id, provider_id, executable, fingerprint, status,
                         version, version_text, diagnostic, probe_elapsed_millis, probed_at,
-                        stream_version
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-                     ON CONFLICT(provider_id, executable) DO UPDATE SET
+                        stream_version, target_id
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                     ON CONFLICT(target_id, provider_id, executable) DO UPDATE SET
                         fingerprint = excluded.fingerprint,
                         status = excluded.status,
                         version = excluded.version,
@@ -1609,6 +1618,10 @@ fn apply_projection(
                         to_i64(installation.probe_elapsed_millis)?,
                         installation.probed_at.timestamp_millis(),
                         to_i64(event.stream_version)?,
+                        installation
+                            .target_id
+                            .as_ref()
+                            .map_or_else(String::new, ToString::to_string),
                     ],
                 )
                 .map_err(storage_error)?;
@@ -2685,7 +2698,7 @@ fn load_installations(
     let mut statement = connection
         .prepare(
             "SELECT installation_id, provider_id, executable, fingerprint, status,
-                    version, version_text, diagnostic, probe_elapsed_millis, probed_at
+                    version, version_text, diagnostic, probe_elapsed_millis, probed_at, target_id
              FROM installations ORDER BY provider_id, executable",
         )
         .map_err(storage_error)?;
@@ -2693,6 +2706,12 @@ fn load_installations(
         .query_map([], |row| {
             let status_json = format!("\"{}\"", row.get::<_, String>(4)?);
             Ok(InstallationSummary {
+                target_id: row
+                    .get::<_, String>(10)
+                    .ok()
+                    .filter(|target| !target.is_empty())
+                    .map(parse_id)
+                    .transpose()?,
                 installation_id: parse_id(row.get::<_, String>(0)?)?,
                 provider_id: row.get(1)?,
                 executable: row.get(2)?,
@@ -3119,6 +3138,7 @@ CREATE TABLE artifact_versions(
 );
 
 CREATE TABLE projects(
+  target_id TEXT,
   project_id TEXT PRIMARY KEY,
   display_name TEXT NOT NULL,
   path TEXT NOT NULL,
@@ -3237,7 +3257,8 @@ CREATE TABLE installations(
   probe_elapsed_millis INTEGER NOT NULL,
   probed_at INTEGER NOT NULL,
   stream_version INTEGER NOT NULL,
-  UNIQUE(provider_id, executable)
+  target_id TEXT NOT NULL DEFAULT '',
+  UNIQUE(target_id, provider_id, executable)
 );
 
 CREATE TABLE timeline_items(
@@ -3329,7 +3350,7 @@ mod tests {
         let task_id = TaskId::new().to_string();
         connection
             .execute(
-                "INSERT INTO projects VALUES (?1, 'Demo', '/tmp/demo', '[]', 1)",
+                "INSERT INTO projects(project_id, display_name, path, additional_directories_json, stream_version) VALUES (?1, 'Demo', '/tmp/demo', '[]', 1)",
                 params![project_id],
             )
             .unwrap();
@@ -3366,7 +3387,7 @@ mod tests {
         let task_id = TaskId::new().to_string();
         connection
             .execute(
-                "INSERT INTO projects VALUES (?1, 'Demo', '/tmp/demo', '[]', 1)",
+                "INSERT INTO projects(project_id, display_name, path, additional_directories_json, stream_version) VALUES (?1, 'Demo', '/tmp/demo', '[]', 1)",
                 params![project_id],
             )
             .unwrap();
@@ -3822,6 +3843,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Artifact access".into(),
@@ -4222,6 +4244,7 @@ mod tests {
     ) -> CommandEnvelope<CoreCommand> {
         let mut command = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
             RecordInstallationProbe {
+                target_id: None,
                 provider_id: "codex".into(),
                 executable: executable.into(),
                 fingerprint: fingerprint.into(),
@@ -4260,6 +4283,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: roots.clone(),
                 project_id: project_id.clone(),
                 display_name: "Demo".into(),
@@ -4304,6 +4328,7 @@ mod tests {
         let path = first.path().to_str().unwrap().to_owned();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 project_id: project_id.clone(),
                 display_name: "Before".into(),
                 path: path.clone(),
@@ -4329,6 +4354,7 @@ mod tests {
         let update = |name: &str, primary: &str, additional: Vec<String>, version| {
             let mut envelope =
                 CommandEnvelope::local(CoreCommand::UpdateProject(RegisterProject {
+                    target_id: None,
                     project_id: project_id.clone(),
                     display_name: name.into(),
                     path: primary.into(),
@@ -4412,6 +4438,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Demo".into(),
@@ -4468,6 +4495,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Demo".into(),
@@ -4560,6 +4588,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Demo".into(),
@@ -4725,6 +4754,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Tests".into(),
@@ -4825,6 +4855,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Queue".into(),
@@ -4903,6 +4934,7 @@ mod tests {
         let core = Arc::new(Core::new(store));
         let project_id = ProjectId::new();
         let command = CommandEnvelope::local(CoreCommand::RegisterProject(RegisterProject {
+            target_id: None,
             additional_directories: vec![],
             project_id: project_id.clone(),
             display_name: "Demo".into(),
@@ -4951,6 +4983,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Demo".into(),
@@ -5047,6 +5080,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Interrupt".into(),
@@ -5945,6 +5979,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Approvals".into(),
@@ -6091,6 +6126,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Approvals".into(),
@@ -6308,6 +6344,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Scripted".into(),
@@ -6348,6 +6385,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Diff artifact".into(),
@@ -6489,6 +6527,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Workspace snapshots".into(),
@@ -6678,6 +6717,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Resume failures".into(),
@@ -6862,6 +6902,7 @@ mod tests {
                 let task_id = TaskId::new();
                 core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
                     RegisterProject {
+                        target_id: None,
                         additional_directories: vec![],
                         project_id: project_id.clone(),
                         display_name: "Recovery".into(),
@@ -7140,6 +7181,7 @@ mod tests {
                 let task_id = TaskId::new();
                 core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
                     RegisterProject {
+                        target_id: None,
                         additional_directories: vec![secondary.to_string_lossy().into_owned()],
                         project_id: project_id.clone(),
                         display_name: "Recovery".into(),
@@ -7391,6 +7433,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "A-B-A".into(),
@@ -7685,6 +7728,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Opt-out".into(),
@@ -7824,6 +7868,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "Demo".into(),
@@ -7929,6 +7974,7 @@ mod streaming_read_tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 project_id: project_id.clone(),
                 display_name: "Stream".into(),
                 path: "/tmp/stream".into(),

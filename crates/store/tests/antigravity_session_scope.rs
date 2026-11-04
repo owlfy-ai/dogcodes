@@ -121,6 +121,7 @@ async fn hot_antigravity_alias_handoff_keeps_core_approvals_questions_and_cancel
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "private Antigravity scope fixture".into(),
             path: root.path().to_string_lossy().into_owned(),

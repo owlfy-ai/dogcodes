@@ -125,7 +125,8 @@ pub async fn register_as(
     let snapshot = core.bootstrap().await.map_err(|error| error.to_string())?;
     // Repeated submission is idempotent for the same name and canonical roots.
     if let Some(project) = snapshot.projects.into_iter().find(|project| {
-        (display_name.is_empty() || project.display_name == display_name)
+        project.target_id.is_none()
+            && (display_name.is_empty() || project.display_name == display_name)
             && project.additional_directories.len() == additional_directories.len()
             && project
                 .additional_directories
@@ -150,6 +151,7 @@ pub async fn register_as(
         display_name.to_owned()
     };
     let mut envelope = CommandEnvelope::local(CoreCommand::RegisterProject(RegisterProject {
+        target_id: None,
         additional_directories,
         project_id: project_id.clone(),
         display_name,
@@ -184,9 +186,30 @@ async fn update_inner(
     request: ProjectEdit,
     actor: Option<ActorRef>,
 ) -> Result<(), String> {
-    let (path, additional_directories) =
-        validate_directories(request.path, request.additional_directories).await?;
+    let snapshot = core.bootstrap().await.map_err(|error| error.to_string())?;
+    let remote = snapshot
+        .projects
+        .into_iter()
+        .find(|project| project.project_id == request.project_id && project.target_id.is_some());
+    let (path, additional_directories, target_id) = if let Some(project) = remote {
+        // Only its name can change here: these directories cannot be checked locally.
+        if project.path != request.path
+            || project.additional_directories != request.additional_directories
+        {
+            return Err("远程项目暂不支持修改目录".into());
+        }
+        (
+            request.path,
+            request.additional_directories,
+            project.target_id,
+        )
+    } else {
+        let (path, additional) =
+            validate_directories(request.path, request.additional_directories).await?;
+        (path, additional, None)
+    };
     let mut envelope = CommandEnvelope::local(CoreCommand::UpdateProject(RegisterProject {
+        target_id,
         project_id: request.project_id,
         display_name: request.display_name.trim().to_owned(),
         path,

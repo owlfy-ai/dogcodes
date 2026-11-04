@@ -65,6 +65,7 @@ async fn fixture(
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "test".into(),
             path: directory.path().to_string_lossy().into_owned(),

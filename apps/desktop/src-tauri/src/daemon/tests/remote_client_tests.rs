@@ -13,6 +13,7 @@ use agent_protocol::{
 async fn ready(f: &Fixture, provider: &str) -> ExecutorRef {
     let mut probe = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
         agent_protocol::RecordInstallationProbe {
+            target_id: None,
             provider_id: provider.into(),
             executable: format!("fixture:{provider}"),
             fingerprint: "fixture".into(),

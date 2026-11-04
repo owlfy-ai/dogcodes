@@ -76,6 +76,7 @@ pub async fn probe(core: &Arc<Core>, provider: &str) -> ExecutorRef {
     let executable = format!("fixture:{provider}");
     let mut command = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
         RecordInstallationProbe {
+            target_id: None,
             provider_id: provider.into(),
             executable: executable.clone(),
             fingerprint: "deterministic-test-fixture".into(),

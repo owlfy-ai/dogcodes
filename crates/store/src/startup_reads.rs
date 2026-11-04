@@ -33,10 +33,14 @@ pub(super) fn execution_state(
     };
     let workspace = connection
         .query_row(
-            "SELECT path, additional_directories_json FROM projects WHERE project_id = ?1",
+            "SELECT path, additional_directories_json, target_id FROM projects WHERE project_id = ?1",
             [task.project_id.as_str()],
             |row| {
                 Ok(TaskWorkspace {
+                    target_id: row
+                        .get::<_, Option<String>>(2)?
+                        .map(super::parse_id)
+                        .transpose()?,
                     path: row.get(0)?,
                     additional_directories: serde_json::from_str(&row.get::<_, String>(1)?)
                         .map_err(sql_json_error)?,

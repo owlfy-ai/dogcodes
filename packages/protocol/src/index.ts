@@ -82,6 +82,8 @@ export interface ActiveRunSummary {
 }
 
 export interface ProjectSummary {
+  /** The machine its directories are on; absent means this one. */
+  targetId?: string | null;
   updatedAt?: string | null;
   streamVersion?: number;
   additionalDirectories: string[];
@@ -132,6 +134,7 @@ export type InstallationStatus =
   | "broken";
 
 export interface InstallationSummary {
+  targetId?: string | null;
   installationId: `ins_${string}`;
   providerId: string;
   executable: string;

@@ -878,6 +878,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 project_id: project_id.clone(),
                 display_name: "fixture".into(),
                 path: dir.path().to_string_lossy().into(),
@@ -889,6 +890,7 @@ mod tests {
         // New sends are admitted only for a Ready installation, as in the app.
         let mut probe = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
             agent_protocol::RecordInstallationProbe {
+                target_id: None,
                 provider_id: "fake".into(),
                 executable: "fixture:fake".into(),
                 fingerprint: "deterministic-test-fixture".into(),
@@ -1697,6 +1699,7 @@ mod tests {
     async fn ready(core: &Arc<Core>, provider: &str) -> ExecutorRef {
         let mut probe = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
             agent_protocol::RecordInstallationProbe {
+                target_id: None,
                 provider_id: provider.into(),
                 executable: format!("fixture:{provider}"),
                 fingerprint: "deterministic-test-fixture".into(),

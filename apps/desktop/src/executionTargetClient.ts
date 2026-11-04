@@ -26,7 +26,17 @@ export type TargetErrorKind =
   | "host_unreachable" | "timeout" | "cancelled" | "account_restricted" | "unsupported_platform"
   | "shim_unavailable" | "home_missing" | "directory_unwritable" | "unsafe_directory"
   | "upload_failed" | "not_executable" | "bad_binary" | "protocol_mismatch" | "failed";
+export interface TargetAgent {
+  providerId: string;
+  displayName: string;
+  executable: string;
+  version: string | null;
+  status: "installed" | "not_configured" | "ready" | "unsupported_version" | "broken";
+  diagnostic: string | null;
+}
 export interface TargetStatus {
+  scanning: boolean;
+  agents: TargetAgent[];
   phase: TargetPhase;
   step: ConnectStep | null;
   log: string[];
@@ -37,6 +47,7 @@ export interface TargetStatus {
   identityChanged: boolean;
 }
 export interface TargetEntry { target: ExecutionTarget; status: TargetStatus }
+export interface TargetDirectory { path: string; directories: string[] }
 export interface ResolvedHost { host: string; user: string | null; port: number | null }
 
 /** The page takes this as a value so its visual fixture needs no native process. */
@@ -50,6 +61,8 @@ export interface TargetApi {
   answer(targetId: string, promptId: string, answer: string | null, remember: boolean): Promise<void>;
   configHosts(): Promise<string[]>;
   resolveHost(alias: string): Promise<ResolvedHost | null>;
+  browse(targetId: string, path: string | null): Promise<TargetDirectory>;
+  createProject(targetId: string, path: string, displayName: string): Promise<string>;
 }
 
 const call = <T,>(request: Record<string, unknown>) => invoke<T>("core_execution_target", { call: request });
@@ -64,12 +77,25 @@ export const tauriTargetApi: TargetApi = {
   answer: (targetId, promptId, answer, remember) => call<void>({ type: "answer", targetId, promptId, answer, remember }),
   configHosts: () => call<string[]>({ type: "config_hosts" }),
   resolveHost: alias => call<ResolvedHost | null>({ type: "resolve_host", alias }),
+  browse: (targetId, path) => call<TargetDirectory>({ type: "browse", targetId, path }),
+  createProject: (targetId, path, displayName) => call<string>({ type: "create_project", targetId, path, displayName }),
 };
 
 export function targetRoute(connection: SshConnection): string {
   const user = connection.user ? `${connection.user}@` : "";
   const port = connection.port ? `:${connection.port}` : "";
   return `${user}${connection.destination}${port}`;
+}
+
+/** The parent of a POSIX path, whichever system this app runs on. */
+export function parentDirectory(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  const slash = trimmed.lastIndexOf("/");
+  return slash <= 0 ? "/" : trimmed.slice(0, slash);
+}
+
+export function joinDirectory(path: string, name: string): string {
+  return `${path.replace(/\/+$/, "")}/${name}`;
 }
 
 /** Empty optional fields are left out so `ssh` resolves them from its own config. */

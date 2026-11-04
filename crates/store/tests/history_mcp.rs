@@ -157,6 +157,7 @@ async fn core_injects_out_of_band_and_revokes_on_cancel() {
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "test".into(),
             path: dir.path().to_string_lossy().into_owned(),
@@ -436,6 +437,7 @@ async fn builtin_history_tools_are_approved_once_but_external_tools_still_requir
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "test".into(),
             path: dir.path().to_string_lossy().into_owned(),

@@ -138,6 +138,7 @@ async fn child_history_uses_its_durable_installation_and_original_running_driver
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "private-history".into(),
             path: root.path().to_string_lossy().into_owned(),

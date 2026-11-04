@@ -292,6 +292,7 @@ struct Fixture {
 fn review_probe(status: agent_protocol::InstallationStatus) -> CommandEnvelope<CoreCommand> {
     let mut command = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
         agent_protocol::RecordInstallationProbe {
+            target_id: None,
             provider_id: "review-fixture".into(),
             executable: "test-review-agent".into(),
             fingerprint: "test-review-fingerprint".into(),
@@ -351,6 +352,7 @@ async fn fixture_with_capture(capture: bool) -> Fixture {
     let task = TaskId::new();
     core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
         RegisterProject {
+            target_id: None,
             project_id: project.clone(),
             display_name: "review".into(),
             path: dir.path().to_string_lossy().into_owned(),

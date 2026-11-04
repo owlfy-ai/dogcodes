@@ -2,13 +2,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { ExecutionTargets, TargetConnectionDialog } from "./ExecutionTargets";
+import { ExecutionTargets, TargetConnectionDialog, TargetOfflineBanner } from "./ExecutionTargets";
 import { I18nProvider } from "./i18n";
-import { connectionFromForm, stepStates, targetRoute, type TargetApi, type TargetStatus } from "./executionTargetClient";
+import { connectionFromForm, joinDirectory, parentDirectory, stepStates, targetRoute, type TargetApi, type TargetStatus } from "./executionTargetClient";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: vi.fn(() => false) }));
 
-const idle: TargetStatus = { phase: "idle", step: null, log: [], prompt: null, info: null, error: null, closedReason: null, identityChanged: false };
+const idle: TargetStatus = { scanning: false, agents: [], phase: "idle", step: null, log: [], prompt: null, info: null, error: null, closedReason: null, identityChanged: false };
 const emptyForm = { destination: "", port: "", user: "", auth: "system" as const, identityFile: "", installDirectory: "" };
 
 function fakeApi(status: TargetStatus, overrides: Partial<TargetApi> = {}): TargetApi {
@@ -22,6 +22,8 @@ function fakeApi(status: TargetStatus, overrides: Partial<TargetApi> = {}): Targ
     answer: vi.fn(async () => {}),
     configHosts: vi.fn(async () => []),
     resolveHost: vi.fn(async () => null),
+    browse: vi.fn(async (_, path) => ({ path: path ?? "/home/dev", directories: ["app"] })),
+    createProject: vi.fn(async () => "prj_new"),
     ...overrides,
   };
 }
@@ -135,6 +137,57 @@ describe("connection progress", () => {
   it("warns when a saved route reaches a different machine", async () => {
     await renderDialog(fakeApi({ ...idle, phase: "connected", identityChanged: true, info: { protocol: 1, version: "1", os: "linux", arch: "x86_64", home: "/h", shell: null, machineIdentity: "m" } }), true);
     expect(container.textContent).toContain("different machine");
+  });
+});
+
+describe("remote projects", () => {
+  const connected: TargetStatus = { ...idle, phase: "connected", step: { step: "ready" },
+    info: { protocol: 2, version: "1", os: "linux", arch: "x86_64", home: "/home/dev", shell: null, machineIdentity: "m" } };
+
+  it("lists the agents found and explains each state", async () => {
+    await act(async () => { root.render(<I18nProvider language="en"><TargetConnectionDialog api={fakeApi({ ...connected, agents: [
+      { providerId: "kimi", displayName: "Kimi Code", executable: "/k", version: "2.5.0", status: "ready", diagnostic: null },
+      { providerId: "codex", displayName: "Codex", executable: "/c", version: "1", status: "not_configured", diagnostic: "x" },
+    ] })} entry={entry} initialProgress onClose={() => {}} onChanged={() => {}} /></I18nProvider>); });
+    expect(container.textContent).toContain("Kimi Code");
+    expect(container.textContent).toContain("Sign in on the server");
+  });
+
+  it("waits for the scan before offering to open a project", async () => {
+    await act(async () => { root.render(<I18nProvider language="en"><TargetConnectionDialog api={fakeApi({ ...connected, scanning: true })} entry={entry} initialProgress onClose={() => {}} onChanged={() => {}} onProjectReady={() => {}} /></I18nProvider>); });
+    expect(button("Open a project")!.disabled).toBe(true);
+  });
+
+  it("browses from the home directory and creates the project where it stops", async () => {
+    const api = fakeApi(connected);
+    const ready = vi.fn();
+    await act(async () => { root.render(<I18nProvider language="en"><TargetConnectionDialog api={api} entry={entry} initialProgress initialBrowsing onClose={() => {}} onChanged={() => {}} onProjectReady={ready} /></I18nProvider>); });
+    expect(api.browse).toHaveBeenCalledWith("tgt_one", null);
+    await act(async () => { button("app")!.click(); });
+    expect(api.browse).toHaveBeenLastCalledWith("tgt_one", "/home/dev/app");
+    await act(async () => { button("Open here")!.click(); });
+    expect(api.createProject).toHaveBeenCalledWith("tgt_one", "/home/dev/app", "");
+    expect(ready).toHaveBeenCalledWith("prj_new");
+  });
+
+  it("names a machine that is not connected and leads to the connections page", async () => {
+    const opened = vi.fn();
+    await act(async () => { root.render(<I18nProvider language="en"><TargetOfflineBanner api={fakeApi(idle)} targetId="tgt_one" onOpenConnections={opened} /></I18nProvider>); });
+    expect(container.textContent).toContain("not connected");
+    await act(async () => { button("Open connections")!.click(); });
+    expect(opened).toHaveBeenCalled();
+  });
+
+  it("stays quiet while the machine is connected", async () => {
+    await act(async () => { root.render(<I18nProvider language="en"><TargetOfflineBanner api={fakeApi(connected)} targetId="tgt_one" onOpenConnections={() => {}} /></I18nProvider>); });
+    expect(container.textContent).toBe("");
+  });
+
+  it("walks POSIX paths whichever system runs the app", () => {
+    expect(parentDirectory("/home/dev/")).toBe("/home");
+    expect(parentDirectory("/home")).toBe("/");
+    expect(joinDirectory("/", "root")).toBe("/root");
+    expect(joinDirectory("/home/dev", "app")).toBe("/home/dev/app");
   });
 });
 

@@ -2305,6 +2305,12 @@ impl AgentDriver for AcpDriver {
         env!("CARGO_PKG_VERSION")
     }
 
+    /// App tools are started by the agent from a path on this machine, which means
+    /// nothing on another one. Context handoff stays available through the prompt.
+    fn supports_app_mcp(&self) -> bool {
+        self.shared.launch.executable.target.is_local()
+    }
+
     fn native_agent_version(&self) -> Option<&str> {
         self.native_version.as_deref()
     }

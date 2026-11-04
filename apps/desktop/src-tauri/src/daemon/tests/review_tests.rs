@@ -46,6 +46,7 @@ async fn register(f: &Fixture, path: &Path) -> (ProjectId, TaskId) {
     f.core
         .execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 project_id: project.clone(),
                 display_name: "review fixture".into(),
                 path: path.to_string_lossy().into(),
@@ -278,6 +279,7 @@ async fn review_rpc_file_actions_scope_checks_and_deletion_use_the_same_host() {
     std::fs::write(sub.join("allowed"), "ok").unwrap();
     let bootstrap = f.core.bootstrap().await.unwrap();
     let mut update = CommandEnvelope::local(CoreCommand::UpdateProject(RegisterProject {
+        target_id: None,
         project_id: project.clone(),
         display_name: "scope".into(),
         path: sub.to_string_lossy().into(),
@@ -575,6 +577,7 @@ async fn review_rpc_project_scope_changes_wait_for_accepted_workspace_operations
     std::fs::create_dir(&sub).unwrap();
     let bootstrap = f.core.bootstrap().await.unwrap();
     let mut update = CommandEnvelope::local(CoreCommand::UpdateProject(RegisterProject {
+        target_id: None,
         project_id: project.clone(),
         display_name: "narrow".into(),
         path: sub.to_string_lossy().into(),

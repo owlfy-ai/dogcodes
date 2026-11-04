@@ -96,6 +96,7 @@ impl Fixture {
         let task = TaskId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 project_id: project.clone(),
                 display_name: "Remote fixture".into(),
                 path: temp

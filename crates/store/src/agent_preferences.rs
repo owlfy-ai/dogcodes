@@ -101,6 +101,7 @@ mod tests {
         let project = || {
             CommandEnvelope::local(CoreCommand::RegisterProject(
                 agent_protocol::RegisterProject {
+                    target_id: None,
                     project_id: agent_domain::ProjectId::new(),
                     display_name: "settings cursor test".into(),
                     path: "/tmp".into(),

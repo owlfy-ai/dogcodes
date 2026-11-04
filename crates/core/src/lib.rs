@@ -69,8 +69,8 @@ mod multi_root_tests {
 use std::{collections::BTreeMap, sync::Arc};
 
 use agent_domain::{
-    ArtifactId, CommandId, ExecutorRef, InstallationId, ProviderId, RunId, RunState, SessionMapId,
-    TaskId, TurnId,
+    ArtifactId, CommandId, ExecutorRef, InstallationId, ProjectId, ProviderId, RunId, RunState,
+    SessionMapId, TargetId, TaskId, TurnId,
 };
 use agent_protocol::{
     ActorRef, ArtifactMetadata, BootstrapSnapshot, BuiltContextPackage, CancelTurn,
@@ -275,6 +275,7 @@ pub struct TaskExecutionState {
 
 #[derive(Clone, Debug)]
 pub struct TaskWorkspace {
+    pub target_id: Option<TargetId>,
     pub path: String,
     pub additional_directories: Vec<String>,
 }
@@ -371,6 +372,7 @@ pub trait CoreRepository: Send + Sync {
         Ok(Some(TaskExecutionState {
             task,
             workspace: TaskWorkspace {
+                target_id: project.target_id,
                 path: project.path,
                 additional_directories: project.additional_directories,
             },
@@ -587,6 +589,7 @@ pub trait CoreRepository: Send + Sync {
     ) -> Result<Option<ExecutorRef>, RepositoryError>;
     async fn installation_id(
         &self,
+        target_id: Option<&TargetId>,
         provider_id: &str,
         executable: &str,
     ) -> Result<Option<InstallationId>, RepositoryError>;
@@ -630,6 +633,7 @@ pub struct Core {
     events: broadcast::Sender<EventEnvelope>,
     live_thoughts: RwLock<BTreeMap<String, String>>,
     selected_installations: RwLock<BTreeMap<String, Option<String>>>,
+    target_executors: RwLock<BTreeMap<ExecutorRef, TargetId>>,
     running_permissions: running_permissions::RunningPermissions,
 }
 
@@ -830,6 +834,7 @@ impl Core {
             events,
             live_thoughts: RwLock::new(BTreeMap::new()),
             selected_installations: RwLock::new(BTreeMap::new()),
+            target_executors: RwLock::new(BTreeMap::new()),
             running_permissions: running_permissions::RunningPermissions::default(),
         }
     }
@@ -1046,9 +1051,12 @@ impl Core {
             CoreCommand::RegisterProject(command) => {
                 require_non_empty("displayName", &command.display_name)?;
                 require_non_empty("path", &command.path)?;
+                // A directory on another machine says nothing about this file system.
+                // The service checks it on the target before registering it.
                 for directory in &command.additional_directories {
-                    if !std::path::Path::new(directory).is_absolute()
-                        || !std::path::Path::new(directory).is_dir()
+                    if command.target_id.is_none()
+                        && (!std::path::Path::new(directory).is_absolute()
+                            || !std::path::Path::new(directory).is_dir())
                     {
                         return Err(CoreError::InvalidArgument(
                             "additional workspace directory must be an existing absolute directory"
@@ -1078,14 +1086,18 @@ impl Core {
                     .iter()
                     .find(|project| project.project_id == command.project_id)
                     .ok_or_else(|| CoreError::NotFound("项目不存在".into()))?;
+                if project.target_id != command.target_id {
+                    return Err(CoreError::InvalidArgument("项目不能更换所在的机器".into()));
+                }
                 let roots_changed = project.path != command.path
                     || project.additional_directories != command.additional_directories;
                 if roots_changed {
                     for directory in
                         std::iter::once(&command.path).chain(&command.additional_directories)
                     {
-                        if !std::path::Path::new(directory).is_absolute()
-                            || !std::path::Path::new(directory).is_dir()
+                        if command.target_id.is_none()
+                            && (!std::path::Path::new(directory).is_absolute()
+                                || !std::path::Path::new(directory).is_dir())
                         {
                             return Err(CoreError::InvalidArgument("请选择存在的本地目录".into()));
                         }
@@ -1119,6 +1131,11 @@ impl Core {
             }
             CoreCommand::CreateTask(command) => {
                 require_non_empty("title", &command.title)?;
+                self.require_executor_on_project_target(
+                    &command.project_id,
+                    &command.preferred_executor,
+                )
+                .await?;
                 let snapshot = self.repository.bootstrap().await?;
                 if !snapshot
                     .projects
@@ -1179,7 +1196,9 @@ impl Core {
                 }
             }
             CoreCommand::SetPreferredExecutor(command) => {
-                self.require_task(&command.task_id).await?;
+                let task = self.require_task(&command.task_id).await?;
+                self.require_executor_on_project_target(&task.project_id, &command.executor)
+                    .await?;
                 if envelope.expected_stream_version.is_none() {
                     return Err(CoreError::InvalidArgument(
                         "expectedStreamVersion is required when changing the preferred executor"
@@ -1249,13 +1268,13 @@ impl Core {
                     .await
                     .map_err(|error| CoreError::InvalidArgument(error.to_string()))?;
                 let task = self.require_task(&command.task_id).await?;
-                self.require_available_executor(
-                    command
-                        .executor_override
-                        .as_ref()
-                        .unwrap_or(&task.preferred_executor),
-                )
-                .await?;
+                let executor = command
+                    .executor_override
+                    .as_ref()
+                    .unwrap_or(&task.preferred_executor);
+                self.require_available_executor(executor).await?;
+                self.require_executor_on_project_target(&task.project_id, executor)
+                    .await?;
                 if task.active_primary_run.is_some() {
                     return Err(CoreError::Conflict(
                         "task already has an active primary run".into(),
@@ -1661,24 +1680,83 @@ impl Core {
             }
             selected.insert(provider_id.to_owned(), executable);
         }
+        let targeted = self.target_executors.read().await.clone();
+        let stays = |executor: &ExecutorRef| {
+            executor.provider_id.as_str() != provider_id || targeted.contains_key(executor)
+        };
         self.drivers
             .write()
             .await
-            .retain(|executor, _| executor.provider_id.as_str() != provider_id);
+            .retain(|executor, _| stays(executor));
         self.quota_providers
             .write()
             .await
-            .retain(|executor, _| executor.provider_id.as_str() != provider_id);
+            .retain(|executor, _| stays(executor));
+    }
+
+    /// A driver for an agent on another machine. It lives until that connection ends.
+    pub async fn register_target_driver(&self, target: TargetId, driver: Arc<dyn AgentDriver>) {
+        self.target_executors
+            .write()
+            .await
+            .insert(driver.executor().clone(), target);
+        self.register_driver(driver).await;
+    }
+
+    /// New work stops at once. Sessions already running learn from their own streams.
+    pub async fn unregister_target_drivers(&self, target: &TargetId) {
+        let _admission = self.agent_admission.write().await;
+        let mut executors = self.target_executors.write().await;
+        let mut drivers = self.drivers.write().await;
+        executors.retain(|executor, owner| {
+            let keep = owner != target;
+            if !keep {
+                drivers.remove(executor);
+            }
+            keep
+        });
+    }
+
+    /// An agent can only work on directories on its own machine.
+    pub(crate) async fn require_executor_on_project_target(
+        &self,
+        project_id: &ProjectId,
+        executor: &ExecutorRef,
+    ) -> Result<(), CoreError> {
+        let snapshot = self.repository.bootstrap().await?;
+        let project_target = snapshot
+            .projects
+            .iter()
+            .find(|project| &project.project_id == project_id)
+            .map(|project| project.target_id.clone());
+        let installation_target = snapshot
+            .installations
+            .iter()
+            .find(|installation| {
+                executor.installation_id.as_deref() == Some(installation.installation_id.as_str())
+            })
+            .map(|installation| installation.target_id.clone());
+        if let (Some(project), Some(installation)) = (project_target, installation_target)
+            && project != installation
+        {
+            return Err(CoreError::InvalidArgument(
+                "所选 Agent 不在这个项目所在的机器上".into(),
+            ));
+        }
+        Ok(())
     }
 
     pub async fn bootstrap(&self) -> Result<BootstrapSnapshot, CoreError> {
         let mut snapshot = self.repository.bootstrap().await?;
         let selected = self.selected_installations.read().await;
+        // The selection chooses among this machine's installations. Another machine's
+        // installation only serves projects there, so it never competes with it.
         snapshot.installations.retain(|installation| {
-            match selected.get(&installation.provider_id) {
-                Some(path) => path.as_deref() == Some(installation.executable.as_str()),
-                None => true,
-            }
+            installation.target_id.is_some()
+                || match selected.get(&installation.provider_id) {
+                    Some(path) => path.as_deref() == Some(installation.executable.as_str()),
+                    None => true,
+                }
         });
         Ok(snapshot)
     }
@@ -1884,7 +1962,11 @@ impl Core {
             boundary.recorded_at
         };
 
-        let mut workspace = self.workspace_context.collect(&project.path).await;
+        let mut workspace = if project.target_id.is_some() {
+            WorkspaceContextSnapshot::default()
+        } else {
+            self.workspace_context.collect(&project.path).await
+        };
         if let Some(git) = &workspace.git_snapshot {
             workspace.change_summary.artifact_ref = self
                 .repository
@@ -2230,7 +2312,11 @@ impl Core {
             CoreCommand::RecordInstallationProbe(command) => {
                 let installation_id = self
                     .repository
-                    .installation_id(&command.provider_id, &command.executable)
+                    .installation_id(
+                        command.target_id.as_ref(),
+                        &command.provider_id,
+                        &command.executable,
+                    )
                     .await?
                     .unwrap_or_default();
                 (
@@ -2241,6 +2327,7 @@ impl Core {
                     "agent.probe_completed",
                     json!({
                         "installationId": installation_id,
+                        "targetId": command.target_id,
                         "providerId": command.provider_id,
                         "executable": command.executable,
                         "fingerprint": command.fingerprint,
@@ -2349,6 +2436,11 @@ impl Core {
             .iter()
             .find(|project| project.project_id == task.project_id)
             .ok_or_else(|| CoreError::NotFound(format!("project {}", task.project_id)))?;
+        if project.target_id.is_some() {
+            return Err(CoreError::CapabilityUnavailable(
+                "远程项目暂不支持查看变更".into(),
+            ));
+        }
         let captured = self
             .workspace_context
             .capture_diff(&project.path)
@@ -3150,6 +3242,10 @@ impl Core {
         let state = self.repository.task_execution_state(task_id).await.ok()??;
         let active = state.task.active_primary_run?;
         let project = state.workspace;
+        // Its directories are not on this machine: nothing here may read them.
+        if project.target_id.is_some() {
+            return None;
+        }
         Some(TurnWorkspaceScope {
             task_id: task_id.clone(),
             turn_id: active.turn_id,
@@ -3297,12 +3393,16 @@ impl Core {
             .collect();
         drop(state_timing);
         let validation_timing = timing.stage("workspace_validation");
-        self.workspace_context
-            .validate_workspace_roots(&workspace_directories)
-            .await
-            .map_err(|_| {
-                CoreError::Internal("project directory unavailable before agent execution".into())
-            })?;
+        if project.target_id.is_none() {
+            self.workspace_context
+                .validate_workspace_roots(&workspace_directories)
+                .await
+                .map_err(|_| {
+                    CoreError::Internal(
+                        "project directory unavailable before agent execution".into(),
+                    )
+                })?;
+        }
         drop(validation_timing);
         let auxiliary_timing = timing.stage("auxiliary_context");
         let prompt = self.auxiliary_turn_context(task_id, prompt).await?;
@@ -5552,6 +5652,7 @@ mod tests {
                         let command: RegisterProject =
                             serde_json::from_value(event.payload.clone()).unwrap();
                         projects.push(agent_protocol::ProjectSummary {
+                            target_id: None,
                             updated_at: None,
                             stream_version: event.stream_version,
                             additional_directories: command.additional_directories,
@@ -5609,6 +5710,7 @@ mod tests {
                     .any(|project| project.project_id == task.project_id)
                 {
                     projects.push(agent_protocol::ProjectSummary {
+                        target_id: None,
                         updated_at: None,
                         stream_version: 1,
                         project_id: task.project_id.clone(),
@@ -5712,6 +5814,7 @@ mod tests {
 
         async fn installation_id(
             &self,
+            _target_id: Option<&TargetId>,
             provider_id: &str,
             executable: &str,
         ) -> Result<Option<InstallationId>, RepositoryError> {
@@ -5795,6 +5898,7 @@ mod tests {
         let core = Arc::new(Core::new(repository));
         let project_id = ProjectId::new();
         let mut register = CommandEnvelope::local(CoreCommand::RegisterProject(RegisterProject {
+            target_id: None,
             additional_directories: vec![],
             project_id: project_id.clone(),
             display_name: "dogcodes".into(),
@@ -5888,6 +5992,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "dogcodes".into(),
@@ -5950,6 +6055,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "dogcodes".into(),
@@ -6003,6 +6109,7 @@ mod tests {
         let project_id = ProjectId::new();
         core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
             RegisterProject {
+                target_id: None,
                 additional_directories: vec![],
                 project_id: project_id.clone(),
                 display_name: "dogcodes".into(),
