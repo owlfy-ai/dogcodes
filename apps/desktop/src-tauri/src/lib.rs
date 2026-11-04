@@ -1539,12 +1539,15 @@ async fn scan_builtin_agent(
     let key = format!("{:p}:{}", Arc::as_ptr(&core), manifest.id);
     let coordinator = SCANS.get_or_init(Default::default);
     let probe = async move {
-        tokio::time::timeout(
+        let mut diagnostic = agent_scan::ScanDiagnostic::begin(manifest.id.as_str(), fresh);
+        let result = tokio::time::timeout(
             std::time::Duration::from_secs(90),
             Box::pin(scan_builtin_agent_inner(core, source)),
         )
         .await
-        .map_err(|_| "agent detection timed out".to_string())?
+        .unwrap_or_else(|_| Err("agent detection timed out".to_string()));
+        diagnostic.finish(&result);
+        result
     };
     if fresh {
         coordinator.run_fresh(key, probe).await
@@ -1557,6 +1560,10 @@ async fn scan_builtin_agent_inner(core: Arc<Core>, source: &str) -> Result<(), S
     let manifest =
         ProviderManifest::parse_toml(source).map_err(|_| "invalid agent manifest".to_string())?;
     let context = DiscoveryContext::from_current_process();
+    service_diagnostics::record(
+        "agent_discovery_begin",
+        &format!("provider={}", manifest.id),
+    );
     let preferred = match terminal_installation::preferred_executable(&manifest, &context).await {
         Ok(path) => path,
         Err(error) => {
@@ -1564,6 +1571,16 @@ async fn scan_builtin_agent_inner(core: Arc<Core>, source: &str) -> Result<(), S
             return Err(error);
         }
     };
+    service_diagnostics::record(
+        "agent_discovery_end",
+        &format!(
+            "provider={} executable={}",
+            manifest.id,
+            preferred
+                .as_ref()
+                .map_or_else(|| "<not-found>".into(), |path| path.to_string_lossy())
+        ),
+    );
     core.select_installation(
         manifest.id.as_str(),
         preferred
@@ -1591,9 +1608,29 @@ async fn scan_discovered_agents(
     let registered = core.registered_executors().await;
     let mut readiness_paths = discovered_paths.clone();
     for executable in executables {
+        service_diagnostics::record(
+            "agent_version_probe_begin",
+            &format!(
+                "provider={} executable={}",
+                manifest.id,
+                executable.display()
+            ),
+        );
         let report = probe_installation(manifest, executable)
             .await
             .map_err(|_| "agent installation probe failed".to_string())?;
+        service_diagnostics::record(
+            "agent_version_probe_end",
+            &format!(
+                "provider={} executable={} status={:?} version={:?} elapsed_ms={} diagnostic={:?}",
+                manifest.id,
+                report.executable.display(),
+                report.status,
+                report.version,
+                report.elapsed_millis,
+                report.diagnostic
+            ),
+        );
         // agy holds its credential lock for the entire live session, including
         // the idle time between turns. Re-probing a verified, unchanged driver
         // would wait behind that session and downgrade Ready until scan timeout.
@@ -1657,6 +1694,13 @@ async fn scan_discovered_agents(
         let _ = core.execute(envelope).await;
     }
 
+    service_diagnostics::record(
+        "agent_readiness_begin",
+        &format!(
+            "provider={} protocol={}",
+            manifest.id, manifest.protocol.kind
+        ),
+    );
     match manifest.protocol.kind.as_str() {
         "app_server_json_rpc" => register_ready_codex_drivers(core, &discovered_paths).await,
         "acp" => register_ready_acp_drivers(core, manifest, &discovered_paths).await,
@@ -1674,6 +1718,7 @@ async fn scan_discovered_agents(
         // dedicated driver crate lands behind an M0 fact probe.
         _ => {}
     }
+    service_diagnostics::record("agent_readiness_end", &format!("provider={}", manifest.id));
     Ok(())
 }
 
@@ -2132,6 +2177,13 @@ async fn record_readiness(
     diagnostic: Option<String>,
     elapsed_millis: u64,
 ) {
+    service_diagnostics::record(
+        "agent_readiness_result",
+        &format!(
+            "provider={} status={status:?} elapsed_ms={elapsed_millis} diagnostic={diagnostic:?}",
+            installation.provider_id
+        ),
+    );
     let mut envelope = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
         RecordInstallationProbe {
             provider_id: installation.provider_id.clone(),

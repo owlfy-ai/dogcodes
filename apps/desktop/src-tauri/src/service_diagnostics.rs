@@ -165,6 +165,7 @@ pub fn install(directory: &Path) {
     if SERVICE_LOG.set(log).is_err() {
         return;
     }
+    agent_runtime::install_process_diagnostics(record);
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         record(
@@ -174,6 +175,23 @@ pub fn install(directory: &Path) {
         previous(info);
     }));
     record("started", env!("CARGO_PKG_VERSION"));
+    record(
+        "diagnostics_config",
+        &format!(
+            "schema=process-scan-v1 build={} os={} arch={} executable={} raw_cli_output=false arbitrary_args=false",
+            if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            },
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            std::env::current_exe().map_or_else(
+                |_| "<unavailable>".into(),
+                |path| path.to_string_lossy().into_owned()
+            ),
+        ),
+    );
 }
 
 /// Export only a bounded tail and apply the same rules again to older files.

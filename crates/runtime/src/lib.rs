@@ -5,7 +5,7 @@ mod environment;
 mod external_path;
 mod path_environment;
 mod proxy;
-pub use process_scope::OwnedChild;
+pub use process_scope::{OwnedChild, ProcessDiagnostic, install_process_diagnostics};
 
 pub use electron::{electron_node_executable, electron_resources_directory};
 pub use environment::{apply_platform_environment, inherited_variable};
@@ -207,12 +207,30 @@ async fn run_bytes(
         command.env("PATH", path);
     }
 
+    let mut diagnostic = (!scoped).then(|| {
+        ProcessDiagnostic::begin(
+            &command,
+            if cfg!(windows) {
+                "direct creation_flags=0x08000000 CREATE_NO_WINDOW=true"
+            } else {
+                "direct"
+            },
+        )
+    });
     let mut child = if scoped {
         OwnedChild::spawn(command).map(Process::Scoped)
     } else {
         command.spawn().map(Process::Direct)
     }
-    .map_err(|error| ProcessError::Spawn(error.to_string()))?;
+    .map_err(|error| {
+        if let Some(trace) = &mut diagnostic {
+            trace.failed("spawn", &error);
+        }
+        ProcessError::Spawn(error.to_string())
+    })?;
+    if let (Some(trace), Process::Direct(child)) = (&mut diagnostic, &child) {
+        trace.spawned(child.id());
+    }
     let (stdin, stdout, stderr) = match &mut child {
         Process::Direct(child) => (child.stdin.take(), child.stdout.take(), child.stderr.take()),
         Process::Scoped(child) => (child.stdin.take(), child.stdout.take(), child.stderr.take()),
@@ -236,12 +254,25 @@ async fn run_bytes(
     let status = if let Ok(result) = timeout(spec.timeout, execution).await {
         result.map_err(|error| ProcessError::Io(error.to_string()))?
     } else {
+        if let Some(trace) = &diagnostic {
+            trace.record(
+                "process_timeout",
+                &format!("timeout_ms={}", millis(spec.timeout)),
+            );
+        }
         let _ = child.terminate().await;
-        let _ = child.wait().await;
+        if let Ok(status) = child.wait().await
+            && let Some(trace) = &mut diagnostic
+        {
+            trace.exited(status);
+        }
         return Err(ProcessError::TimedOut {
             timeout_millis: millis(spec.timeout),
         });
     };
+    if let Some(trace) = &mut diagnostic {
+        trace.exited(status);
+    }
     let stdout = join_reader(stdout_task).await?;
     let stderr = join_reader(stderr_task).await?;
     Ok(output(status, stdout, stderr, started_at.elapsed()))

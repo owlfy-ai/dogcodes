@@ -5,6 +5,52 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tokio::sync::watch;
+
+pub(crate) struct ScanDiagnostic {
+    provider: String,
+    started: std::time::Instant,
+    completed: bool,
+}
+impl ScanDiagnostic {
+    pub(crate) fn begin(provider: &str, fresh: bool) -> Self {
+        let trace = Self {
+            provider: provider.into(),
+            started: std::time::Instant::now(),
+            completed: false,
+        };
+        trace.stage("begin", &format!("fresh={fresh}"));
+        trace
+    }
+    pub(crate) fn stage(&self, stage: &str, detail: &str) {
+        crate::service_diagnostics::record(
+            "agent_scan",
+            &format!(
+                "provider={} stage={stage} elapsed_ms={} {detail}",
+                self.provider,
+                self.started.elapsed().as_millis()
+            ),
+        );
+    }
+    pub(crate) fn finish(&mut self, result: &Result<(), String>) {
+        self.completed = true;
+        self.stage(
+            "end",
+            &format!(
+                "success={} error={:?}",
+                result.is_ok(),
+                result.as_ref().err()
+            ),
+        );
+    }
+}
+impl Drop for ScanDiagnostic {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.stage("interrupted", "completion_unconfirmed=true");
+        }
+    }
+}
+
 type Outcome = Option<Result<(), String>>;
 #[derive(Default)]
 pub(crate) struct ScanCoordinator {

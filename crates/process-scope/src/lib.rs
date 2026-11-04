@@ -1,12 +1,15 @@
 //! A subprocess scope whose shutdown proof includes its owned OS process group/job.
 use std::{io, process::ExitStatus, time::Duration};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
+mod diagnostics;
+pub use diagnostics::{ProcessDiagnostic, install_process_diagnostics};
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
 mod windows;
 
 pub struct OwnedChild {
+    diagnostic: ProcessDiagnostic,
     pub stdin: Option<ChildStdin>,
     pub stdout: Option<ChildStdout>,
     pub stderr: Option<ChildStderr>,
@@ -46,7 +49,18 @@ impl OwnedChild {
         let (parent_lifetime, _reader) = unix::attach(&mut command)?;
         #[cfg(windows)]
         command.creation_flags(0x0800_0000 | 0x0000_0004); // no window, suspended until job assignment
-        let mut child = command.spawn()?;
+        let mut diagnostic = ProcessDiagnostic::begin(
+            &command,
+            if cfg!(windows) {
+                "owned_job creation_flags=0x08000004 CREATE_NO_WINDOW=true CREATE_SUSPENDED=true"
+            } else {
+                "owned_process_group"
+            },
+        );
+        let mut child = command
+            .spawn()
+            .inspect_err(|error| diagnostic.failed("spawn", error))?;
+        diagnostic.spawned(child.id());
         #[cfg(unix)]
         let pid = nix::unistd::Pid::from_raw(
             i32::try_from(
@@ -57,8 +71,15 @@ impl OwnedChild {
             .map_err(io::Error::other)?,
         );
         #[cfg(windows)]
-        let job = windows::Job::assign(&mut child)?;
+        let job = windows::Job::assign(&mut child)
+            .inspect_err(|error| diagnostic.failed("job_assign_resume", error))?;
+        #[cfg(windows)]
+        diagnostic.record(
+            "process_scope_ready",
+            "job_assigned=true primary_thread_resumed=true",
+        );
         Ok(Self {
+            diagnostic,
             stdin: child.stdin.take(),
             stdout: child.stdout.take(),
             stderr: child.stderr.take(),
@@ -122,6 +143,9 @@ impl OwnedChild {
     pub async fn wait(&mut self) -> io::Result<ExitStatus> {
         loop {
             if self.confirmed {
+                if let Some(status) = self.status {
+                    self.diagnostic.exited(status);
+                }
                 return self
                     .status
                     .ok_or_else(|| io::Error::other("missing exit status"));
@@ -206,6 +230,9 @@ impl OwnedChild {
             self.status = Some(self.child.wait().await?);
         }
         self.confirmed = true;
+        if let Some(status) = self.status {
+            self.diagnostic.exited(status);
+        }
         Ok(())
     }
     #[cfg(unix)]
