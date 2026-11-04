@@ -276,6 +276,7 @@ impl Bridge {
             .arg(bridge.directory.path())
             .args(["--print=/hooks", "--output-format", "stream-json"])
             .env_clear()
+            .env("AGY_CLI_NONINTERACTIVE_HEADLESS", "1")
             .kill_on_drop(true)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

@@ -1,5 +1,5 @@
 import { spawn, execFile } from 'node:child_process';
-import { readFileSync, mkdirSync, mkdtempSync, rmSync, copyFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync, copyFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { resolve, join } from 'node:path';
 import { macReleaseDmgName } from './release-names.mjs';
@@ -49,6 +49,14 @@ export async function buildMacKeychainPackage({ root, env, config, cli, configAr
   const options = macPackageOptions({ target, bundles });
   const desktop = resolve(root, 'apps/desktop');
   const appConfig = JSON.parse(readFileSync(join(desktop, 'src-tauri/tauri.conf.json'), 'utf8'));
+  const cargoPath = resolve(root, 'Cargo.toml');
+  const cargoVersion = existsSync(cargoPath)
+    ? readFileSync(cargoPath, 'utf8').match(/\[workspace\.package\][^\[]*?\nversion\s*=\s*"([^"]+)"/)?.[1]
+    : undefined;
+  const version = cargoVersion || appConfig.version;
+  if (typeof version !== 'string' || !/^\d+\.\d+\.\d+/.test(version)) {
+    throw new Error('Product version is missing. Set [workspace.package] version in Cargo.toml.');
+  }
   const identity = config.bundle.macOS.signingIdentity;
   const team = identity.match(/\(([A-Z0-9]+)\)$/)[1];
   const buildEnv = { ...env };
@@ -80,7 +88,7 @@ export async function buildMacKeychainPackage({ root, env, config, cli, configAr
     await tool('xcrun', ['stapler', 'staple', app]);
     await tool('xcrun', ['stapler', 'validate', app]);
     await tool('spctl', ['--assess', '--type', 'execute', app]);
-    const output = resolve(root, 'release/installers', appConfig.version, options.target);
+    const output = resolve(root, 'release/installers', version, options.target);
     if (!options.dmg) {
       mkdirSync(output, { recursive: true });
       await tool('ditto', [app, join(output, `${appConfig.productName}.app`)]);
@@ -91,7 +99,7 @@ export async function buildMacKeychainPackage({ root, env, config, cli, configAr
     mkdirSync(image);
     await tool('ditto', [app, join(image, `${appConfig.productName}.app`)]);
     await tool('ln', ['-s', '/Applications', join(image, 'Applications')]);
-    const name = macReleaseDmgName(appConfig.productName, appConfig.version, options.target);
+    const name = macReleaseDmgName(appConfig.productName, version, options.target);
     const dmg = join(stage, name);
     await tool('hdiutil', ['create', '-volname', appConfig.productName, '-srcfolder', image, '-format', 'UDZO', dmg]);
     await tool('codesign', ['--sign', identity, '--timestamp', dmg]);

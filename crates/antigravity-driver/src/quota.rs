@@ -134,6 +134,9 @@ impl QuotaProvider for AntigravityDriver {
             command
                 .args(["--print=/usage", "--output-format", "stream-json"])
                 .env_clear()
+                // Silent auth can time out with valid credentials. Report
+                // failure instead of letting print mode launch OAuth.
+                .env("AGY_CLI_NONINTERACTIVE_HEADLESS", "1")
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null())
@@ -261,6 +264,59 @@ mod tests {
     use super::*;
     use driver_api::SessionResumeCapability;
     use serde_json::json;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn failed_silent_auth_never_opens_browser_and_quota_recovers() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let executable = root.path().join("agy");
+        std::fs::write(
+            &executable,
+            r#"#!/bin/sh
+root=$(dirname "$0")
+if [ ! -f "$root/recovered" ]; then
+    if [ "$AGY_CLI_NONINTERACTIVE_HEADLESS" != 1 ]; then
+        touch "$root/browser-opened"
+    fi
+    printf '%s\n' '{"event":"result","result":{"status":"ERROR","error":"authentication required: TLS handshake timeout"}}'
+    exit 1
+fi
+printf '%s\n' '{"event":"command_result","command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"gemini-5h","window":"5h","remaining_fraction":0.75,"reset_time":"2026-11-04T14:22:00Z"}]}]}}}'
+printf '%s\n' '{"event":"result","result":{"status":"SUCCESS"}}'
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let driver = crate::tests::test_driver(executable);
+        let stale = QuotaSnapshot {
+            collected_at_unix_ms: 1,
+            stale_after_unix_ms: 2,
+            source: "native_pull".into(),
+            ..Default::default()
+        };
+        *driver.quota_cache.lock().await = Some(stale.clone());
+
+        // A network failure retains the original reading and timestamp. A
+        // manual refresh reports failure without opening native OAuth UI.
+        assert_eq!(driver.read_quota(None).await.unwrap(), stale);
+        let error = driver
+            .read_quota_with_refresh(None, true)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, DriverError::CapabilityUnavailable(kind) if kind == "quota_network_error")
+        );
+        assert_eq!(*driver.quota_cache.lock().await, Some(stale));
+        assert!(!root.path().join("browser-opened").exists());
+
+        std::fs::write(root.path().join("recovered"), "").unwrap();
+        let snapshot = driver.read_quota_with_refresh(None, true).await.unwrap();
+        assert_eq!(snapshot.windows[0].used_percent, Some(25.0));
+        assert!(snapshot.collected_at_unix_ms > 1);
+        assert_eq!(driver.read_quota(None).await.unwrap(), snapshot);
+    }
 
     #[cfg(unix)]
     #[tokio::test]

@@ -744,8 +744,11 @@ fn spawn_workspace(
     if let Some(conversation_id) = resume_conversation {
         command.arg("--conversation").arg(conversation_id);
     }
+    // Sessions and readiness probes use pipes. Interactive OAuth belongs to
+    // the explicit native login action, outside the driver.
     command
         .env_clear()
+        .env("AGY_CLI_NONINTERACTIVE_HEADLESS", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

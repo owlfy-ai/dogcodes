@@ -17,6 +17,7 @@ pub(super) async fn read(
             .arg("models")
             .current_dir(std::env::temp_dir())
             .env_clear()
+            .env("AGY_CLI_NONINTERACTIVE_HEADLESS", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());

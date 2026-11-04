@@ -6,6 +6,19 @@
 
 更新日期：2026-09-07
 
+## 2026-11-04 后台查询误弹 OAuth 登录页
+
+`agy --print=/usage` 仍可能启动交互式登录：即使钥匙串 token 尚未过期，静默认证的网络请求
+超过 10 秒也会进入 `Print mode: triggering interactive OAuth`。本机 03:27 的日志记录了
+该分支；04:22 的后续查询则静默认证成功并正常执行 `/usage`，因此弹窗不等于登录失效。
+
+DogCodes 的额度查询、模型目录、readiness/会话和 Hook 验证子进程现在显式设置
+`AGY_CLI_NONINTERACTIVE_HEADLESS=1`，使用 CLI 的非交互认证分支，避免后台查询自动打开
+浏览器。用户主动打开原生客户端登录的入口不经过这些子进程配置。
+
+查询失败沿用现有缓存策略：临时网络错误保留原额度及采集时间，手动刷新返回错误；明确的
+账户拒绝仍使缓存失效。进程级回归覆盖认证超时无浏览器副作用、原缓存保留及后续查询恢复。
+
 ## 2026-09-11 审批实现修复
 
 参考本机 `codex-host/docs/antigravity-tool-approval.md` 和 `packages/adapters/antigravity/src/question-bridge.ts`，桌面审批采用私有 PreToolUse Hook，不是 stdin 原生审批响应。旧版“无交互审批面”的描述仅适用于原生 headless 通道。
