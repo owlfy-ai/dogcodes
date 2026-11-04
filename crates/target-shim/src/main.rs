@@ -4,17 +4,10 @@ use sha2::{Digest, Sha256};
 use std::{
     io::{self, Read},
     process::ExitCode,
-    time::Duration,
 };
-use target_wire::{
-    CHECK_PREFIX, PROTOCOL_VERSION, READY_PREFIX, Request, RequestEnvelope, Response,
-    ResponseEnvelope, TargetInfo, control_frame, parse_control, read_frame, write_frame,
-};
-use tokio::io::AsyncWriteExt;
+use target_wire::{CHECK_PREFIX, PROTOCOL_VERSION, TargetInfo};
 
-/// The desktop pings every 15 seconds. A silently lost network can leave stdin
-/// open for hours, so the shim also ends on its own when it stops hearing anything.
-const IDLE_LIMIT: Duration = Duration::from_secs(90);
+mod serve;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -63,13 +56,13 @@ fn executable_digest() -> io::Result<String> {
 
 fn serve_main(nonce: &str) -> ExitCode {
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-        .enable_time()
+        .enable_all()
         .build()
     else {
         eprintln!("runtime could not start");
         return ExitCode::from(70);
     };
-    match runtime.block_on(serve(nonce)) {
+    match runtime.block_on(serve::serve(nonce)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("shim stopped: {error}");
@@ -78,40 +71,7 @@ fn serve_main(nonce: &str) -> ExitCode {
     }
 }
 
-async fn serve(nonce: &str) -> io::Result<()> {
-    let mut input = tokio::io::stdin();
-    let mut output = tokio::io::stdout();
-    output
-        .write_all(format!("{READY_PREFIX} {nonce}\n").as_bytes())
-        .await?;
-    output.flush().await?;
-    loop {
-        let Ok(frame) = tokio::time::timeout(IDLE_LIMIT, read_frame(&mut input)).await else {
-            return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "no message from the desktop",
-            ));
-        };
-        let Some(frame) = frame? else {
-            return Ok(());
-        };
-        let envelope: RequestEnvelope = parse_control(&frame)?;
-        let response = ResponseEnvelope {
-            id: envelope.id,
-            response: respond(&envelope.request),
-        };
-        write_frame(&mut output, &control_frame(&response)?).await?;
-    }
-}
-
-fn respond(request: &Request) -> Response {
-    match request {
-        Request::Ping => Response::Pong,
-        Request::Info => Response::Info(target_info()),
-    }
-}
-
-fn target_info() -> TargetInfo {
+pub(crate) fn target_info() -> TargetInfo {
     TargetInfo {
         protocol: PROTOCOL_VERSION,
         version: env!("CARGO_PKG_VERSION").into(),

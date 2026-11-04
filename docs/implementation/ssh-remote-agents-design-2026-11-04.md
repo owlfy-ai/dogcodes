@@ -421,6 +421,49 @@ P2 完成前，远程项目的这些面板显示“暂不支持”，不能让�
 - **Release 流水线**：Windows/Linux 打包机只能构建 Linux 版 shim，要让所有安装包都带 macOS 版，需要在流水线增加先行构建 job。
 - **未做**：旧版本 shim 清理、断线自动重连（P3）、服务器文件清理、Agent 扫描（P1）。
 
+## 13. P1 第一步：进程启动接缝（2026-11-04）
+
+这一步没有功能变化，也还没有远端实现，目的是让 Driver 不再假定进程跑在本机：
+
+- `OwnedChild` 分为本地和远端两种 scope，stdio 改为 `ProcessInput` / `ProcessStream`，远端流是 `DuplexStream`，直接复用流量控制。
+- `crates/runtime/src/target.rs` 新增 `ExecutionTarget`、`TargetExecutable`、`TargetCommand`。环境变量默认不继承，`inherit` 取目标自己的值；本机代理和 npm Node 路径只用于本机目标。
+- Codex、Claude、ACP 系、Pi 的主进程启动改走接缝。公开构造函数接受 `impl Into<TargetExecutable>`，传本地路径的现有调用无需改动。
+
+**与 §6.4 的差异**：Antigravity 和 ZCode（P4）只换了流类型，启动仍是本地代码。以下辅助进程也仍在本机运行，P1 接入远端时必须按目标屏蔽或改造：Claude 额度、Cursor 钥匙串读取；Claude 的 `claude-mcp.json` 也还写在本机。
+
+## 14. P1 第二步：shim 进程监管与真实服务器实测（2026-11-04）
+
+**已实现：**
+
+- 协议增加 `Data`、`Eof`、`Credit` 帧。每条进程流独立的 256 KB 窗口，控制流不受影响。
+- shim 用 `process-scope` 监管进程：独立进程组，shim 退出时一并结束。退出消息在输出之后发送。
+- `target_link::TargetLink::target()` 提供远端 `ExecutionTarget`。环境变量来自 `$SHELL -lic` 捕获的登录环境。
+- 断线时等待方得到错误，不算退出证明。
+- `crates/target-link/examples/remote_agent_probe.rs`：真实服务器上驱动 ACP Agent 的探针。
+
+**实测**（Linux x86_64 服务器，root，密码登录；Kimi CLI 2.5.0）：
+
+| 项目 | 结果 |
+| --- | --- |
+| 真实 Linux 上部署与运行 shim | 通过 |
+| 密码登录，含输错后重试 | 通过 |
+| 再次连接不重复上传 | 通过 |
+| 登录环境中的 `PATH`，定位 `/root/.kimi-code/bin/kimi` | 通过 |
+| ACP 握手（约 1.3 秒）、模型列表、创建会话 | 通过 |
+| 一轮完整对话：提示词经 SSH 发出，流式回复 `OK` | 通过 |
+| 登录脚本向 stderr 输出杂讯（`flatpak: symbol lookup error`） | 不影响 |
+
+ACP 的协议代码没有为此改动。
+
+**实测发现并修复**：ACP 探测把本机临时目录作为 `cwd` 发给远端 Agent，导致 `session/new` 失败。现在按目标选择目录。
+
+**实测发现、尚未处理：**
+
+- 服务器主动断开（`Connection closed by`，推测是等密码超过 `LoginGraceTime`）只显示通用的“连接失败”，应给出明确提示。
+- 探针未走应用界面。真实服务器上断开后 shim 是否退出，尚未确认（私有 `sshd` 上已验证）。
+- 工具审批、中断、恢复、历史 MCP 和附件还没在远端测过。
+- shim 增大到约 1.26 MB（x86_64 Linux），仍未链接 `agent-workspace`。
+
 **本地开发**：连接前先构建当前机器和 Linux 的 shim。
 
 ```bash

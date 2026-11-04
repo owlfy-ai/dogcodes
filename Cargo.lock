@@ -7020,9 +7020,13 @@ checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 name = "target-link"
 version = "0.1.1"
 dependencies = [
+ "acp-driver",
+ "agent-domain",
  "agent-protocol",
  "agent-runtime",
  "async-trait",
+ "driver-api",
+ "futures",
  "hex",
  "serde",
  "serde_json",
@@ -7039,6 +7043,7 @@ version = "0.1.1"
 dependencies = [
  "hex",
  "nix 0.28.0",
+ "process-scope",
  "serde_json",
  "sha2",
  "target-wire",

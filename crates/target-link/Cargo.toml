@@ -18,8 +18,12 @@ tokio = { workspace = true, features = ["io-util", "net", "process", "time", "sy
 uuid.workspace = true
 
 [dev-dependencies]
+acp-driver = { path = "../acp-driver" }
+agent-domain = { path = "../domain" }
+driver-api = { path = "../driver-api" }
+futures.workspace = true
 tempfile = "3"
-tokio = { workspace = true, features = ["io-util", "net", "process", "time", "sync", "macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["io-util", "io-std", "net", "process", "time", "sync", "macros", "rt-multi-thread"] }
 
 [lints]
 workspace = true

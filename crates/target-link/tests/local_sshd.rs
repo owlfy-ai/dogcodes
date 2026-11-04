@@ -553,3 +553,179 @@ async fn the_system_config_alias_resolves_through_ssh_g() {
     assert_eq!(resolved.host, "example-host-for-test");
     assert!(server.port > 0);
 }
+
+/// Starts a process on the target through the same path a driver uses.
+async fn connected(server: &Sshd) -> (TargetLink, tempfile::TempDir) {
+    let (directory, shims) = catalog();
+    let link = attempt(server, server.connection(), shims, Recorder::answering(&[]))
+        .await
+        .unwrap();
+    (link, directory)
+}
+
+fn shell(link: &TargetLink, script: &str) -> agent_runtime::TargetCommand {
+    let mut command = agent_runtime::TargetCommand::new(link.target(), "/bin/sh");
+    command.args(["-c", script]);
+    command
+}
+
+async fn read_all(stream: &mut Option<agent_runtime::ProcessStream>) -> String {
+    use tokio::io::AsyncReadExt;
+    let mut text = String::new();
+    stream
+        .take()
+        .unwrap()
+        .read_to_string(&mut text)
+        .await
+        .unwrap();
+    text
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn a_process_runs_on_the_target_with_separate_streams_and_exit_code() {
+    use tokio::io::AsyncWriteExt;
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let mut child = shell(&link, "cat; echo problem >&2; exit 7")
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(b"hello over ssh\n").await.unwrap();
+    stdin.shutdown().await.unwrap();
+    assert_eq!(read_all(&mut child.stdout).await, "hello over ssh\n");
+    assert_eq!(read_all(&mut child.stderr).await, "problem\n");
+    assert_eq!(child.wait().await.unwrap().code(), Some(7));
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn a_process_sees_only_the_environment_it_was_given() {
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let mut command = shell(&link, "echo \"$NAMED:${HOME-unset}\"; pwd");
+    command.env("NAMED", "value").current_dir("/tmp");
+    let mut child = command.spawn().unwrap();
+    let output = read_all(&mut child.stdout).await;
+    let mut lines = output.lines();
+    assert_eq!(lines.next(), Some("value:unset"));
+    assert!(lines.next().unwrap().ends_with("/tmp"));
+    child.wait().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn large_output_survives_a_reader_slower_than_the_window() {
+    use tokio::io::AsyncReadExt;
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let mut child = shell(&link, "head -c 3000000 /dev/zero").spawn().unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let mut buffer = vec![0; 16 * 1024];
+    let mut total = 0;
+    let mut pauses = 0;
+    loop {
+        let count = stdout.read(&mut buffer).await.unwrap();
+        if count == 0 {
+            break;
+        }
+        total += count;
+        pauses += 1;
+        if pauses % 40 == 0 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+    assert_eq!(total, 3_000_000);
+    assert!(child.wait().await.unwrap().success());
+    // Control traffic kept working through all of it.
+    link.ping().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn a_blocked_process_does_not_block_another() {
+    use tokio::io::AsyncReadExt;
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    // Nobody reads this one, so it stalls on its window.
+    let _stalled = shell(&link, "head -c 5000000 /dev/zero; sleep 30")
+        .spawn()
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let mut other = shell(&link, "echo through").spawn().unwrap();
+    let mut text = String::new();
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        other.stdout.take().unwrap().read_to_string(&mut text),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(text, "through\n");
+    link.ping().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn terminating_ends_the_whole_process_group() {
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let marker = format!("dogcodes-test-{}", server.port);
+    let script = format!("sh -c 'sleep 60; echo {marker}' & sleep 60; echo {marker}");
+    let mut child = shell(&link, &script).spawn().unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(shims_running(&format!("echo {marker}")));
+    child.terminate().await.unwrap();
+    child.wait().await.unwrap();
+    assert!(!shims_running(&format!("echo {marker}")));
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn a_missing_program_is_reported_through_its_exit_status() {
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let mut child = agent_runtime::TargetCommand::new(link.target(), "/nonexistent/agent")
+        .spawn()
+        .unwrap();
+    assert_eq!(read_all(&mut child.stdout).await, "");
+    assert_eq!(child.wait().await.unwrap().code(), Some(127));
+    link.ping().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn losing_the_link_is_an_error_and_never_an_exit_proof() {
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let marker = format!("dogcodes-lost-{}", server.port);
+    let mut child = shell(&link, &format!("sleep 60; echo {marker}"))
+        .spawn()
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let mut closed = link.closed();
+    drop(link);
+    closed.wait_for(Option::is_some).await.unwrap();
+    assert_eq!(read_all(&mut child.stdout).await, "");
+    assert!(child.wait().await.is_err());
+    // The shim ended with its connection, and took the process group with it.
+    for _ in 0..50 {
+        if !shims_running(&format!("echo {marker}")) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("the remote process outlived its connection");
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn the_target_reports_the_account_login_environment() {
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let target = link.target();
+    assert!(!target.is_local());
+    assert!(target.inherited("PATH").is_some());
+    assert!(target.inherited("DEFINITELY_NOT_SET_ANYWHERE").is_none());
+    assert!(target.temp_directory().is_absolute());
+}

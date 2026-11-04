@@ -3,10 +3,10 @@
 //! The shim is uploaded by the same app build that talks to it, so there is no
 //! compatibility layer: a version mismatch is a deployment fault, not a dialect.
 use serde::{Deserialize, Serialize};
-use std::io;
+use std::{collections::BTreeMap, io};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 /// Printed once by `serve`, after which stdout carries only frames.
 pub const READY_PREFIX: &str = "DOGCODES-SHIM-READY";
 /// Printed by `--self-check` with the SHA-256 of the running executable.
@@ -14,20 +14,90 @@ pub const CHECK_PREFIX: &str = "DOGCODES-SHIM-CHECK";
 pub const MAX_PAYLOAD: usize = 1024 * 1024;
 pub const CONTROL_STREAM: u32 = 0;
 const HEADER: usize = 9;
+/// Unacknowledged bytes allowed on one process stream, so a slow reader stops its
+/// writer without blocking the control channel or any other process.
+pub const STREAM_WINDOW: u32 = 256 * 1024;
+pub const STREAM_CHUNK: u32 = 32 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum FrameKind {
     Control = 0,
+    Data = 1,
+    Eof = 2,
+    /// The receiver consumed this many bytes (big-endian `u32` payload).
+    Credit = 3,
 }
 
 impl FrameKind {
     fn parse(value: u8) -> io::Result<Self> {
         match value {
             0 => Ok(Self::Control),
+            1 => Ok(Self::Data),
+            2 => Ok(Self::Eof),
+            3 => Ok(Self::Credit),
             other => Err(invalid(format!("unknown frame kind {other}"))),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Channel {
+    Stdin = 0,
+    Stdout = 1,
+    Stderr = 2,
+}
+
+/// Process streams start after the control stream.
+#[must_use]
+pub fn stream_id(process: u32, channel: Channel) -> u32 {
+    process * 4 + channel as u32
+}
+
+#[must_use]
+pub fn split_stream(stream: u32) -> Option<(u32, Channel)> {
+    let channel = match stream % 4 {
+        0 => Channel::Stdin,
+        1 => Channel::Stdout,
+        2 => Channel::Stderr,
+        _ => return None,
+    };
+    let process = stream / 4;
+    (process > 0).then_some((process, channel))
+}
+
+#[must_use]
+pub fn data_frame(stream: u32, payload: Vec<u8>) -> Frame {
+    Frame {
+        stream,
+        kind: FrameKind::Data,
+        payload,
+    }
+}
+
+#[must_use]
+pub fn eof_frame(stream: u32) -> Frame {
+    Frame {
+        stream,
+        kind: FrameKind::Eof,
+        payload: vec![],
+    }
+}
+
+#[must_use]
+pub fn credit_frame(stream: u32, bytes: u32) -> Frame {
+    Frame {
+        stream,
+        kind: FrameKind::Credit,
+        payload: bytes.to_be_bytes().to_vec(),
+    }
+}
+
+#[must_use]
+pub fn parse_credit(frame: &Frame) -> Option<u32> {
+    Some(u32::from_be_bytes(
+        frame.payload.as_slice().try_into().ok()?,
+    ))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -93,6 +163,26 @@ pub async fn write_frame<W: AsyncWrite + Unpin>(writer: &mut W, frame: &Frame) -
 pub enum Request {
     Ping,
     Info,
+    /// The account's environment as its login shell sets it up.
+    LoginEnvironment,
+    Spawn(SpawnRequest),
+    Terminate {
+        process: u32,
+    },
+}
+
+/// The process environment is exactly `env`: nothing is inherited from the shim.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SpawnRequest {
+    /// Chosen by the desktop, so streams can be registered before the process starts.
+    pub process: u32,
+    pub program: String,
+    pub args: Vec<String>,
+    pub env: BTreeMap<String, String>,
+    pub cwd: Option<String>,
+    pub stdin: bool,
+    pub stdout: bool,
+    pub stderr: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -105,8 +195,24 @@ pub struct RequestEnvelope {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Response {
     Pong,
+    Ok,
     Info(TargetInfo),
+    Environment { values: BTreeMap<String, String> },
     Error { message: String },
+}
+
+/// Everything the shim sends on the control stream.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ShimMessage {
+    Response(ResponseEnvelope),
+    /// The process group has ended, or the process never started (`error`).
+    Exited {
+        process: u32,
+        code: Option<i32>,
+        signal: Option<i32>,
+        error: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -184,6 +290,27 @@ mod tests {
         let (mut left, mut right) = tokio::io::duplex(64);
         left.write_all(&[0, 0, 0, 0, 0, 0, 0, 0, 9]).await.unwrap();
         assert!(read_frame(&mut right).await.is_err());
+    }
+
+    #[test]
+    fn process_streams_never_collide_with_control() {
+        assert_eq!(split_stream(CONTROL_STREAM), None);
+        assert_eq!(split_stream(3), None);
+        for process in [1, 7, 1000] {
+            for channel in [Channel::Stdin, Channel::Stdout, Channel::Stderr] {
+                assert_eq!(
+                    split_stream(stream_id(process, channel)),
+                    Some((process, channel))
+                );
+            }
+        }
+        assert_eq!(split_stream(stream_id(1, Channel::Stdin) + 3), None);
+    }
+
+    #[test]
+    fn a_malformed_credit_is_refused_rather_than_read_as_zero() {
+        assert_eq!(parse_credit(&credit_frame(4, 9)), Some(9));
+        assert_eq!(parse_credit(&eof_frame(4)), None);
     }
 
     #[tokio::test]
