@@ -944,7 +944,7 @@ mod tests {
                     manifest.id.as_str(),
                     &agent_domain::InstallationId::new().to_string(),
                     acp_driver::AcpLaunch {
-                        executable: path,
+                        executable: (path).into(),
                         args: manifest.discovery.launch_args,
                     },
                     report.version.map(|version| version.to_string()),

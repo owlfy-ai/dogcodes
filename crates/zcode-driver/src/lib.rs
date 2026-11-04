@@ -33,6 +33,7 @@ mod resume_tests;
 mod scope_tests;
 mod scopes;
 mod session_usage;
+use agent_runtime::ProcessStream;
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -54,7 +55,6 @@ use futures::StreamExt;
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, BufReader},
-    process::ChildStdout,
     sync::mpsc,
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -852,7 +852,7 @@ fn label_differs(params: &Value, key: &str, expected: Option<&str>) -> bool {
 }
 
 /// Reads stdout lines into the shared frame channel until EOF.
-async fn read_frames(stdout: ChildStdout, frames: mpsc::UnboundedSender<Incoming>) {
+async fn read_frames(stdout: ProcessStream, frames: mpsc::UnboundedSender<Incoming>) {
     let mut reader = BufReader::new(stdout);
     loop {
         let mut bytes = Vec::new();

@@ -105,6 +105,7 @@ async fn malformed_prompt_response_invalidates_residency_and_concurrent_restore_
         command_rx,
         cancel_rx,
         ConnectionTasks {
+            target: agent_runtime::local_target(),
             owner: None,
             background: lifecycle::Tasks::new(),
             updates: Arc::new(std::sync::Mutex::new(None)),

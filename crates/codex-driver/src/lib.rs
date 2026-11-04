@@ -14,6 +14,8 @@ mod metadata_tests;
 #[cfg(test)]
 mod retained_readiness_tests;
 mod session_scope;
+use agent_runtime::ProcessInput;
+use agent_runtime::TargetExecutable;
 use session_scope::{
     ResidentSession, Scope, ScopedCommand, SessionSender, next_command, stale_scope,
 };
@@ -26,7 +28,6 @@ mod transport_recovery_tests;
 use std::{
     collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
-    process::Stdio,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -45,7 +46,6 @@ use driver_api::{
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader},
-    process::ChildStdin,
     sync::{Mutex, mpsc, oneshot, watch},
     time::timeout,
 };
@@ -291,7 +291,7 @@ fn now_unix_ms_i64() -> i64 {
 
 pub struct CodexDriver {
     executor: ExecutorRef,
-    executable: PathBuf,
+    executable: TargetExecutable,
     native_agent_version: String,
     sessions: Arc<Mutex<BTreeMap<String, ResidentSession>>>,
     stopping: watch::Sender<bool>,
@@ -311,13 +311,19 @@ impl Drop for CodexDriver {
 
 impl CodexDriver {
     pub fn new(
-        executable: &Path,
+        executable: impl Into<TargetExecutable>,
         installation_id: String,
         native_agent_version: String,
     ) -> Result<Self, DriverError> {
-        let executable = std::fs::canonicalize(executable)
-            .map_err(|_| stable_error("codex executable is unavailable"))?;
-        if !executable.is_file() || native_agent_version.trim().is_empty() {
+        let mut executable = executable.into();
+        if executable.target.is_local() {
+            executable.path = std::fs::canonicalize(&executable.path)
+                .map_err(|_| stable_error("codex executable is unavailable"))?;
+            if !executable.path.is_file() {
+                return Err(stable_error("codex installation is invalid"));
+            }
+        }
+        if native_agent_version.trim().is_empty() {
             return Err(stable_error("codex installation is invalid"));
         }
         Ok(Self {
@@ -354,9 +360,12 @@ impl CodexDriver {
     }
 
     /// Performs initialize + account/read without starting a Thread or model Turn.
-    pub async fn probe_ready(executable: &Path) -> Result<(), DriverError> {
-        let executable = std::fs::canonicalize(executable)
-            .map_err(|_| stable_error("codex executable is unavailable"))?;
+    pub async fn probe_ready(executable: impl Into<TargetExecutable>) -> Result<(), DriverError> {
+        let mut executable = executable.into();
+        if executable.target.is_local() {
+            executable.path = std::fs::canonicalize(&executable.path)
+                .map_err(|_| stable_error("codex executable is unavailable"))?;
+        }
         let mut connection = Connection::spawn(&executable).await?;
         let result = connection.check_account().await;
         connection.shutdown().await?;
@@ -366,7 +375,7 @@ impl CodexDriver {
     /// Retain the authenticated, thread-free process for catalog reads.
     /// Business threads still use their own workspace and MCP configuration.
     pub async fn connect_ready(
-        executable: &Path,
+        executable: impl Into<TargetExecutable>,
         installation_id: String,
         native_agent_version: String,
     ) -> Result<Self, DriverError> {
@@ -1955,7 +1964,7 @@ struct Connection {
     full_review: bool,
     native: Arc<lifecycle::NativeProcess>,
     quota: Option<Arc<QuotaState>>,
-    transport: JsonlTransport<tokio::io::DuplexStream, ChildStdin>,
+    transport: JsonlTransport<tokio::io::DuplexStream, ProcessInput>,
     thread_id: String,
     selection: Option<(String, Option<String>)>,
     #[cfg(test)]
@@ -2045,14 +2054,14 @@ impl Connection {
         Ok(())
     }
 
-    async fn spawn(executable: &Path) -> Result<Self, DriverError> {
+    async fn spawn(executable: &TargetExecutable) -> Result<Self, DriverError> {
         let mut connection = Self::create(executable)?;
         connection.initialize().await?;
         Ok(connection)
     }
 
     async fn spawn_for_apps(
-        executable: &Path,
+        executable: &TargetExecutable,
         apps: &[driver_api::AppMcp],
         cwd: &str,
     ) -> Result<Self, DriverError> {
@@ -2089,23 +2098,23 @@ impl Connection {
         Ok(connection)
     }
 
-    fn create(executable: &Path) -> Result<Self, DriverError> {
+    fn create(executable: &TargetExecutable) -> Result<Self, DriverError> {
         Self::create_for_apps(executable, &[])
     }
 
     fn create_for_apps(
-        executable: &Path,
+        executable: &TargetExecutable,
         apps: &[driver_api::AppMcp],
     ) -> Result<Self, DriverError> {
         Self::create_configured(executable, apps, &[])
     }
 
     fn create_configured(
-        executable: &Path,
+        executable: &TargetExecutable,
         apps: &[driver_api::AppMcp],
         disabled_skills: &[String],
     ) -> Result<Self, DriverError> {
-        let mut command = agent_runtime::agent_command(executable);
+        let mut command = executable.command();
         if !disabled_skills.is_empty() {
             let entries = disabled_skills
                 .iter()
@@ -2129,13 +2138,7 @@ impl Connection {
         }
         command
             .args(["app-server", "--listen", "stdio://"])
-            .current_dir(std::env::temp_dir())
-            .env_clear()
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        agent_runtime::apply_platform_environment(&mut command);
+            .current_dir(executable.target.temp_directory());
         for name in [
             "PATH",
             "HOME",
@@ -2144,12 +2147,10 @@ impl Connection {
             "LOCALAPPDATA",
             "APPDATA",
         ] {
-            if let Some(value) = agent_runtime::inherited_variable(name) {
-                command.env(name, value);
-            }
+            command.inherit(name);
         }
-        agent_runtime::apply_proxy_environment(&mut command);
-        let child = agent_runtime::OwnedChild::spawn(command)
+        let child = command
+            .spawn()
             .map_err(|_| DriverError::Disconnected("codex app-server could not start".into()))?;
         let (native, stdout, stdin) = lifecycle::NativeProcess::start(child)?;
         let mut transport = JsonlTransport::new(stdout, stdin);
@@ -3106,7 +3107,7 @@ mod shutdown_tests {
     fn driver() -> Arc<CodexDriver> {
         Arc::new(
             CodexDriver::new(
-                &std::env::current_exe().unwrap(),
+                std::env::current_exe().unwrap(),
                 "fixture".into(),
                 "fixture".into(),
             )

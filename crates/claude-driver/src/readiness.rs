@@ -3,17 +3,17 @@ use super::{
     Classified, ClaudeDriver, ClaudeLaunch, DriverError, PROBE_TIMEOUT, native::NativeProcess,
     read_until, spawn,
 };
+use agent_runtime::ProcessInput;
 use futures::FutureExt;
-use std::{panic::AssertUnwindSafe, path::Path, time::Duration};
+use std::{panic::AssertUnwindSafe, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, DuplexStream},
-    process::ChildStdin,
     sync::watch,
 };
 
 pub(super) struct ReadyConnection {
     pub native: std::sync::Arc<NativeProcess>,
-    pub stdin: ChildStdin,
+    pub stdin: ProcessInput,
     pub stdout: BufReader<DuplexStream>,
 }
 
@@ -39,7 +39,7 @@ pub(super) async fn connect(driver: &ClaudeDriver) -> Result<ReadyConnection, Dr
         },
         &uuid::Uuid::new_v4().to_string(),
         false,
-        Some(&std::env::temp_dir().to_string_lossy()),
+        Some(&driver.executable.target.temp_directory().to_string_lossy()),
     )?;
     let (native, stdin, stdout) = NativeProcess::start_with_grace(child, Duration::from_secs(5))?;
     native.observe_owner(driver.stopping.subscribe());
@@ -80,18 +80,18 @@ pub(super) async fn connect(driver: &ClaudeDriver) -> Result<ReadyConnection, Dr
     Ok(connection)
 }
 
-pub(super) async fn probe(executable: &Path) -> Result<(), DriverError> {
-    let executable = executable.to_path_buf();
+pub(super) async fn probe(executable: agent_runtime::TargetExecutable) -> Result<(), DriverError> {
     let (observer, owner) = watch::channel(false);
     let result = tokio::spawn(async move {
         if owner.has_changed().is_err() {
             return Err(DriverError::Disconnected("Claude probe observer ended".into()));
         }
+        let temp_directory = executable.target.temp_directory();
         let child = spawn(
             &ClaudeLaunch { executable },
             &uuid::Uuid::new_v4().to_string(),
             false,
-            Some(&std::env::temp_dir().to_string_lossy()),
+            Some(&temp_directory.to_string_lossy()),
         )?;
         // The existing supervisor drains stderr without retaining diagnostics,
         // bounds the stdout pipe, and owns physical cleanup independently of UI.

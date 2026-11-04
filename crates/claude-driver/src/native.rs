@@ -1,5 +1,6 @@
 //! A session's OS process group/job outlives protocol observers until proven closed.
 use agent_runtime::OwnedChild;
+use agent_runtime::ProcessInput;
 use driver_api::DriverError;
 use std::{
     sync::{
@@ -8,7 +9,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::{io::DuplexStream, process::ChildStdin, sync::watch};
+use tokio::{io::DuplexStream, sync::watch};
 
 pub(super) struct NativeProcess {
     stopping: AtomicBool,
@@ -17,7 +18,9 @@ pub(super) struct NativeProcess {
 }
 
 impl NativeProcess {
-    pub fn start(child: OwnedChild) -> Result<(Arc<Self>, ChildStdin, DuplexStream), DriverError> {
+    pub fn start(
+        child: OwnedChild,
+    ) -> Result<(Arc<Self>, ProcessInput, DuplexStream), DriverError> {
         Self::start_with_grace(child, Duration::from_millis(300))
     }
     /// Readiness closes stdin after initialize and preserves the CLI's existing
@@ -25,7 +28,7 @@ impl NativeProcess {
     pub fn start_with_grace(
         mut child: OwnedChild,
         grace: Duration,
-    ) -> Result<(Arc<Self>, ChildStdin, DuplexStream), DriverError> {
+    ) -> Result<(Arc<Self>, ProcessInput, DuplexStream), DriverError> {
         let stdin = child.stdin.take().ok_or_else(unavailable)?;
         let mut stdout = child.stdout.take().ok_or_else(unavailable)?;
         let mut stderr = child.stderr.take().ok_or_else(unavailable)?;

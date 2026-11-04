@@ -5,7 +5,13 @@ mod environment;
 mod external_path;
 mod path_environment;
 mod proxy;
-pub use process_scope::OwnedChild;
+mod target;
+pub use process_scope::ProcessOutput as ProcessStream;
+pub use process_scope::{OwnedChild, ProcessFuture, ProcessInput, RemoteProcess};
+pub use target::{
+    ExecutionTarget, Pipe, ProcessRequest, SharedTarget, TargetCommand, TargetExecutable,
+    local_target,
+};
 
 pub use electron::{electron_node_executable, electron_resources_directory};
 pub use environment::{apply_platform_environment, inherited_variable};
@@ -214,7 +220,11 @@ async fn run_bytes(
     }
     .map_err(|error| ProcessError::Spawn(error.to_string()))?;
     let (stdin, stdout, stderr) = match &mut child {
-        Process::Direct(child) => (child.stdin.take(), child.stdout.take(), child.stderr.take()),
+        Process::Direct(child) => (
+            child.stdin.take().map(ProcessInput::from),
+            child.stdout.take().map(ProcessStream::from),
+            child.stderr.take().map(ProcessStream::from),
+        ),
         Process::Scoped(child) => (child.stdin.take(), child.stdout.take(), child.stderr.take()),
     };
     let stdout = stdout.ok_or_else(|| ProcessError::Io("stdout pipe was not created".into()))?;

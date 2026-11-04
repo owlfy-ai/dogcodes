@@ -11,6 +11,7 @@ use crate::{
 };
 use agent_protocol::{SshAuth, SshConnection};
 use agent_runtime::OwnedChild;
+use agent_runtime::{ProcessInput, ProcessStream};
 use serde::Serialize;
 use std::{
     ffi::OsString,
@@ -23,10 +24,7 @@ use std::{
     time::{Duration, Instant},
 };
 use target_wire::READY_PREFIX;
-use tokio::{
-    io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader},
-    process::{ChildStdin, ChildStdout},
-};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 
 /// Time without progress before giving up; a pending question pauses it.
 const STALL_LIMIT: Duration = Duration::from_secs(45);
@@ -299,8 +297,8 @@ fn attribute_end(code: Option<i32>, stderr: &str) -> ConnectErrorKind {
 }
 
 struct Boot {
-    reader: BufReader<ChildStdout>,
-    writer: ChildStdin,
+    reader: BufReader<ProcessStream>,
+    writer: ProcessInput,
     prompts: Arc<Prompts>,
     nonce: String,
     observer: Arc<dyn ConnectObserver>,

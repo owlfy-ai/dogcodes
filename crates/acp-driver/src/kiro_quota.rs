@@ -163,7 +163,7 @@ mod tests {
             "kiro",
             &agent_domain::InstallationId::new().to_string(),
             AcpLaunch {
-                executable: PathBuf::from("/missing-kiro-must-not-spawn"),
+                executable: (PathBuf::from("/missing-kiro-must-not-spawn")).into(),
                 args: vec![],
             },
             None,
@@ -186,7 +186,7 @@ mod tests {
             "kiro",
             &agent_domain::InstallationId::new().to_string(),
             AcpLaunch {
-                executable,
+                executable: executable.into(),
                 args: ["acp", "--agent-engine", "v3", "--auth-method", "cli"]
                     .map(str::to_owned)
                     .to_vec(),

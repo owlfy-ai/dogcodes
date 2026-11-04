@@ -25,7 +25,7 @@ fn driver(provider: &str, override_path: Option<String>) -> Result<Drivers, Erro
     };
     Ok(match provider {
         "codex" => pair(codex_driver::CodexDriver::new(
-            &path(
+            path(
                 "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
             ),
             id,
@@ -76,7 +76,7 @@ fn driver(provider: &str, override_path: Option<String>) -> Result<Drivers, Erro
                 provider,
                 &id,
                 acp_driver::AcpLaunch {
-                    executable: path(binary),
+                    executable: (path(binary)).into(),
                     args: args.into_iter().map(String::from).collect(),
                 },
                 None,

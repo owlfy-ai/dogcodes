@@ -62,11 +62,12 @@ pub(super) async fn read_with_auto(
         let mut connection = if let Some(connection) = prepared {
             connection
         } else {
+            let temp_directory = executable.target.temp_directory();
             let child = spawn(
                 &ClaudeLaunch { executable },
                 &uuid::Uuid::new_v4().to_string(),
                 false,
-                Some(workspace.as_deref().unwrap_or(&std::env::temp_dir().to_string_lossy())),
+                Some(workspace.as_deref().unwrap_or(&temp_directory.to_string_lossy())),
             )?;
             // Reuse the business-session supervisor: drain both pipes and retain
             // the original OS scope independently of this observer's lifetime.
@@ -110,7 +111,7 @@ pub(super) async fn read_with_auto(
 }
 
 async fn read_catalog(
-    stdin: &mut tokio::process::ChildStdin,
+    stdin: &mut agent_runtime::ProcessInput,
     stdout: &mut BufReader<tokio::io::DuplexStream>,
 ) -> Result<(ModelCatalog, bool), DriverError> {
     stdin.write_all(b"{\"type\":\"control_request\",\"request_id\":\"model-catalog\",\"request\":{\"subtype\":\"initialize\",\"hooks\":{}}}\n").await.map_err(|_| DriverError::Disconnected("Claude model request failed".into()))?;
@@ -211,7 +212,7 @@ mod installed_tests {
         let driver = ClaudeDriver::new(
             "claude-code",
             &agent_domain::InstallationId::new().to_string(),
-            path.into(),
+            std::path::PathBuf::from(path),
             None,
             driver_api::SessionResumeCapability::Supported,
         )

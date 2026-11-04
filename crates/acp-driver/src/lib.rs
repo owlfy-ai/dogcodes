@@ -29,10 +29,10 @@ mod session_usage;
 mod sessions;
 mod turn;
 
+use agent_runtime::{Pipe, SharedTarget, TargetExecutable};
 use std::{
     collections::{HashMap, HashSet},
-    path::{Path, PathBuf},
-    process::Stdio,
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -112,10 +112,10 @@ fn now_unix_ms() -> i64 {
 /// Use the CLI's loopback management endpoint without opening a browser.
 /// No model turn is sent. All reads are bounded and credentials stay in memory.
 async fn read_kimi_web_usage(
-    executable: &Path,
+    executable: &TargetExecutable,
     permit: tokio::sync::OwnedMutexGuard<()>,
 ) -> Result<serde_json::Value, DriverError> {
-    let executable = executable.to_path_buf();
+    let executable = executable.clone();
     let (mut reply, result) = oneshot::channel();
     tokio::spawn(async move {
         let _permit = permit;
@@ -136,26 +136,19 @@ async fn read_kimi_web_usage(
 }
 
 async fn read_kimi_web_usage_owned(
-    executable: &Path,
+    executable: &TargetExecutable,
     reply: &mut oneshot::Sender<Result<serde_json::Value, DriverError>>,
 ) -> Result<Option<serde_json::Value>, DriverError> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
-    let mut command = agent_runtime::agent_command(executable);
+    let mut command = executable.command();
     command
         .args(["web", "--port", "0", "--no-open"])
-        .env_clear()
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    agent_runtime::apply_platform_environment(&mut command);
+        .stdio(Pipe::Null, Pipe::Piped, Pipe::Null);
     for variable in ENV_ALLOWLIST {
-        if let Some(value) = agent_runtime::inherited_variable(variable) {
-            command.env(variable, value);
-        }
+        command.inherit(variable);
     }
-    agent_runtime::apply_proxy_environment(&mut command);
-    let mut child = agent_runtime::OwnedChild::spawn(command)
+    let mut child = command
+        .spawn()
         .map_err(|_| DriverError::Disconnected("Kimi usage server could not start".into()))?;
     let stdout = child.stdout.take();
     // The temporary web helper has no stdin-driven shutdown. Terminate its
@@ -704,7 +697,7 @@ impl AcpQuotaState {
 /// arguments (for example `kimi acp` or `grok agent stdio`).
 #[derive(Clone, Debug)]
 pub struct AcpLaunch {
-    pub executable: PathBuf,
+    pub executable: TargetExecutable,
     pub args: Vec<String>,
 }
 
@@ -906,7 +899,9 @@ impl AcpDriver {
                         started.elapsed().as_millis()
                     );
                     let session = connection
-                        .send_request(NewSessionRequest::new(std::env::temp_dir()))
+                        .send_request(NewSessionRequest::new(
+                            launch.executable.target.temp_directory(),
+                        ))
                         .block_task()
                         .await?;
                     eprintln!(
@@ -1103,6 +1098,7 @@ impl AcpDriver {
                 .reset_connection();
         }
         let shared = ConnectionTasks {
+            target: launch.executable.target.clone(),
             owner: Some(Arc::downgrade(&self.shared)),
             updates: Arc::clone(&self.shared.updates),
             pending: Arc::clone(&self.shared.pending_permissions),
@@ -1149,6 +1145,7 @@ impl AcpDriver {
 }
 
 struct ConnectionTasks {
+    target: SharedTarget,
     owner: Option<std::sync::Weak<Shared>>,
     updates: Updates,
     pending: PendingPermissions,
@@ -1210,28 +1207,15 @@ fn spawn_agent_in(
     cwd: Option<&std::path::Path>,
     stderr_tail: Option<StderrTail>,
 ) -> Result<(lifecycle::Process, AgentTransport), DriverError> {
-    let mut command = agent_runtime::agent_command(&launch.executable);
-    command
-        .args(&launch.args)
-        .env_clear()
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    agent_runtime::apply_platform_environment(&mut command);
+    let mut command = launch.executable.command();
+    command.args(&launch.args);
     for variable in ENV_ALLOWLIST {
-        if let Some(value) = agent_runtime::inherited_variable(variable) {
-            command.env(variable, value);
-        }
+        command.inherit(variable);
     }
-    agent_runtime::apply_proxy_environment(&mut command);
-    command.current_dir(agent_runtime::external_path(
-        cwd.unwrap_or(&std::env::temp_dir()),
-    ));
-    if let Some(path) = agent_runtime::installed_node_path(&launch.executable) {
-        command.env("PATH", path);
-    }
-    let mut child = agent_runtime::OwnedChild::spawn(command).map_err(|error| {
+    let temp_directory = launch.executable.target.temp_directory();
+    command.current_dir(agent_runtime::external_path(cwd.unwrap_or(&temp_directory)));
+    command.prefer_installed_node(&launch.executable.path);
+    let mut child = command.spawn().map_err(|error| {
         if matches!(error.kind(), std::io::ErrorKind::NotFound) {
             DriverError::NotConfigured("ACP agent executable is missing".into())
         } else {
@@ -1301,7 +1285,9 @@ async fn run_connection(
     mut cancels: mpsc::UnboundedReceiver<Arc<turn::Turn>>,
     tasks: ConnectionTasks,
 ) {
+    let target = tasks.target.clone();
     let permission_tasks = ConnectionTasks {
+        target: tasks.target.clone(),
         owner: tasks.owner.clone(),
         updates: Arc::clone(&tasks.updates),
         pending: Arc::clone(&tasks.pending),
@@ -1538,9 +1524,9 @@ async fn run_connection(
                         if matches!(command, Command::CloseSession { .. } | Command::Prompt { .. } | Command::ReadGrokBilling { .. } | Command::ReadKiroUsage { .. } | Command::ReadKiroContext { .. }) {
                             // Prompts run on their own task so session/cancel
                             // stays responsive while a turn is in flight.
-                            command_background.spawn(handle_command(connection.clone(), command, multi_root, initial_models.clone(), Arc::clone(&session_states), Arc::clone(&command_quota)));
+                            command_background.spawn(handle_command(connection.clone(), target.clone(), command, multi_root, initial_models.clone(), Arc::clone(&session_states), Arc::clone(&command_quota)));
                         } else {
-                            handle_command(connection.clone(), command, multi_root, initial_models.clone(), Arc::clone(&session_states), Arc::clone(&command_quota)).await;
+                            handle_command(connection.clone(), target.clone(), command, multi_root, initial_models.clone(), Arc::clone(&session_states), Arc::clone(&command_quota)).await;
                         }
                     }
                     cancel = cancels.recv() => {
@@ -1593,8 +1579,33 @@ mod multi_root_tests {
     }
 }
 
+/// An empty place for a probe session, on the machine the agent runs on. A local
+/// path would mean nothing to a remote agent; there the shared temporary directory
+/// stands in, since creating and removing one per probe would cost a round trip.
+enum ProbeDirectory {
+    Local(tempfile::TempDir),
+    Target(PathBuf),
+}
+
+impl ProbeDirectory {
+    fn create(target: &SharedTarget) -> std::io::Result<Self> {
+        if target.is_local() {
+            tempfile::tempdir().map(Self::Local)
+        } else {
+            Ok(Self::Target(target.temp_directory()))
+        }
+    }
+    fn path(&self) -> &std::path::Path {
+        match self {
+            Self::Local(directory) => directory.path(),
+            Self::Target(path) => path,
+        }
+    }
+}
+
 async fn handle_command(
     connection: ConnectionTo<Agent>,
+    target: SharedTarget,
     command: Command,
     multi_root: bool,
     initial_models: serde_json::Value,
@@ -1630,7 +1641,7 @@ async fn handle_command(
                         "agent negotiated an unsupported ACP protocol version".into(),
                     ));
                 }
-                let directory = tempfile::tempdir().map_err(|_| {
+                let directory = ProbeDirectory::create(&target).map_err(|_| {
                     DriverError::Protocol("cannot create ACP probe directory".into())
                 })?;
                 let state = models::session_request(
@@ -1678,7 +1689,7 @@ async fn handle_command(
                 return;
             }
             let result=async {
-                let directory=tempfile::tempdir().map_err(|_|DriverError::Protocol("无法创建权限探测目录".into()))?;
+                let directory=ProbeDirectory::create(&target).map_err(|_|DriverError::Protocol("无法创建权限探测目录".into()))?;
                 let state=models::session_request(&connection,"session/new",serde_json::json!({"cwd":workspace.as_deref().unwrap_or(directory.path()),"mcpServers":[]}),Some(&quota.stderr_tail)).await?;
                 Ok(permissions::catalog(&state))
             }.await;
@@ -1697,7 +1708,7 @@ async fn handle_command(
                 Ok(initial)
             } else {
                 async {
-                    let directory = tempfile::tempdir().map_err(|_| DriverError::Protocol("无法创建模型探测工作区".into()))?;
+                    let directory = ProbeDirectory::create(&target).map_err(|_| DriverError::Protocol("无法创建模型探测工作区".into()))?;
                     let mut state = models::session_request(&connection,"session/new",serde_json::json!({"cwd":workspace.as_deref().unwrap_or(directory.path()),"mcpServers":[]}),Some(&quota.stderr_tail)).await?;
                     let known = models::catalog(&state);
                     if let Some(model) = model {
@@ -3634,7 +3645,7 @@ mod tests {
                         let states = Arc::new(std::sync::Mutex::new(session_state::SessionStates::default()));
                         for turn in 0..2 {
                             let (reply, response) = oneshot::channel();
-                            handle_command(connection.clone(), Command::Prompt {
+                            handle_command(connection.clone(), agent_runtime::local_target(), Command::Prompt {
                             turn: None,
                                 session_id: SessionId::new("stderr-test"),
                                 blocks: vec![ContentBlock::Text(TextContent::new("probe"))],
@@ -3783,7 +3794,7 @@ mod tests {
             "kimi",
             &agent_domain::InstallationId::new().to_string(),
             AcpLaunch {
-                executable: PathBuf::from("/missing-kimi-test"),
+                executable: (PathBuf::from("/missing-kimi-test")).into(),
                 args: vec!["acp".into()],
             },
             None,
@@ -3816,7 +3827,7 @@ mod tests {
             "kimi",
             &agent_domain::InstallationId::new().to_string(),
             AcpLaunch {
-                executable,
+                executable: executable.into(),
                 args: vec!["acp".into()],
             },
             None,
@@ -3848,7 +3859,7 @@ mod tests {
     #[allow(dead_code)]
     fn launches_are_structured() {
         let launch = AcpLaunch {
-            executable: PathBuf::from("/usr/local/bin/kimi"),
+            executable: (PathBuf::from("/usr/local/bin/kimi")).into(),
             args: vec!["acp".into()],
         };
         assert!(launch.args.iter().all(|arg| !arg.starts_with('-')));
@@ -4141,6 +4152,7 @@ mod tests {
                 let (commands_tx, commands_rx) = mpsc::unbounded_channel();
                 let (_cancel_tx, cancel_rx) = mpsc::unbounded_channel();
                 let tasks = ConnectionTasks {
+                    target: agent_runtime::local_target(),
                     owner: None,
                     background: lifecycle::Tasks::new(),
                     activity: Arc::new(std::sync::Mutex::new(activity::Activities::default())),
@@ -4274,7 +4286,7 @@ mod real_installations {
 
     async fn probe(name: &str, executable: &str, args: &[&str]) {
         let launch = AcpLaunch {
-            executable: PathBuf::from(executable),
+            executable: (PathBuf::from(executable)).into(),
             args: args.iter().map(|arg| (*arg).to_owned()).collect(),
         };
         match AcpDriver::probe_ready(&launch).await {
@@ -4474,7 +4486,7 @@ mod real_turn_acceptance {
     fn home_executable(relative: &str, args: &[&str]) -> AcpLaunch {
         let home = std::env::var("HOME").expect("HOME");
         AcpLaunch {
-            executable: PathBuf::from(format!("{home}/{relative}")),
+            executable: (PathBuf::from(format!("{home}/{relative}"))).into(),
             args: args.iter().map(|arg| (*arg).to_owned()).collect(),
         }
     }
@@ -4648,7 +4660,7 @@ mod real_resume_acceptance {
     fn home_executable(relative: &str, args: &[&str]) -> AcpLaunch {
         let home = std::env::var("HOME").expect("HOME");
         AcpLaunch {
-            executable: PathBuf::from(format!("{home}/{relative}")),
+            executable: (PathBuf::from(format!("{home}/{relative}"))).into(),
             args: args.iter().map(|arg| (*arg).to_owned()).collect(),
         }
     }
@@ -4681,7 +4693,7 @@ mod real_resume_acceptance {
         run_resume(
             "codebuddy",
             AcpLaunch {
-                executable,
+                executable: executable.into(),
                 args: vec!["--acp".into()],
             },
         )
@@ -4712,7 +4724,7 @@ mod real_kimi_quota_probe {
     async fn kimi_usage_update_feeds_context_quota() {
         let home = std::env::var("HOME").expect("HOME");
         let launch = AcpLaunch {
-            executable: PathBuf::from(format!("{home}/.kimi-code/bin/kimi")),
+            executable: (PathBuf::from(format!("{home}/.kimi-code/bin/kimi"))).into(),
             args: ["acp"].iter().map(|arg| (*arg).to_owned()).collect(),
         };
         let report = AcpDriver::probe_ready(&launch)
@@ -4796,7 +4808,7 @@ mod real_quota_probe {
     async fn probes_the_current_users_grok_billing_extension() {
         let home = std::env::var("HOME").expect("HOME");
         let launch = AcpLaunch {
-            executable: PathBuf::from(format!("{home}/.local/bin/grok")),
+            executable: (PathBuf::from(format!("{home}/.local/bin/grok"))).into(),
             args: ["--permission-mode", "default", "agent", "stdio"]
                 .iter()
                 .map(|arg| (*arg).to_owned())

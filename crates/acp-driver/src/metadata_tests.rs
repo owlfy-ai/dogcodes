@@ -45,7 +45,7 @@ fn fixture(mode: &str) -> (tempfile::TempDir, Arc<AcpDriver>) {
         "kimi",
         &agent_domain::InstallationId::new().to_string(),
         AcpLaunch {
-            executable: file,
+            executable: (file).into(),
             args: vec![],
         },
         None,

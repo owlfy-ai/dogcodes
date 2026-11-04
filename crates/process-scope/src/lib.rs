@@ -1,15 +1,115 @@
 //! A subprocess scope whose shutdown proof includes its owned OS process group/job.
-use std::{io, process::ExitStatus, time::Duration};
-use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
+use std::{
+    future::Future,
+    io,
+    pin::Pin,
+    process::ExitStatus,
+    task::{Context, Poll},
+    time::Duration,
+};
+use tokio::{
+    io::{AsyncRead, AsyncWrite, DuplexStream, ReadBuf},
+    process::{Child, ChildStderr, ChildStdin, ChildStdout, Command},
+};
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
 mod windows;
 
+/// A process input, whichever machine the process runs on.
+pub enum ProcessInput {
+    Local(ChildStdin),
+    Stream(DuplexStream),
+}
+
+impl From<ChildStdin> for ProcessInput {
+    fn from(value: ChildStdin) -> Self {
+        Self::Local(value)
+    }
+}
+
+impl AsyncWrite for ProcessInput {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bytes: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        match self.get_mut() {
+            Self::Local(inner) => Pin::new(inner).poll_write(cx, bytes),
+            Self::Stream(inner) => Pin::new(inner).poll_write(cx, bytes),
+        }
+    }
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match self.get_mut() {
+            Self::Local(inner) => Pin::new(inner).poll_flush(cx),
+            Self::Stream(inner) => Pin::new(inner).poll_flush(cx),
+        }
+    }
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match self.get_mut() {
+            Self::Local(inner) => Pin::new(inner).poll_shutdown(cx),
+            Self::Stream(inner) => Pin::new(inner).poll_shutdown(cx),
+        }
+    }
+}
+
+/// A process output stream, whichever machine the process runs on.
+pub enum ProcessOutput {
+    Stdout(ChildStdout),
+    Stderr(ChildStderr),
+    Stream(DuplexStream),
+}
+
+impl From<ChildStdout> for ProcessOutput {
+    fn from(value: ChildStdout) -> Self {
+        Self::Stdout(value)
+    }
+}
+
+impl From<ChildStderr> for ProcessOutput {
+    fn from(value: ChildStderr) -> Self {
+        Self::Stderr(value)
+    }
+}
+
+impl AsyncRead for ProcessOutput {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buffer: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        match self.get_mut() {
+            Self::Stdout(inner) => Pin::new(inner).poll_read(cx, buffer),
+            Self::Stderr(inner) => Pin::new(inner).poll_read(cx, buffer),
+            Self::Stream(inner) => Pin::new(inner).poll_read(cx, buffer),
+        }
+    }
+}
+
+pub type ProcessFuture<'a, T> = Pin<Box<dyn Future<Output = io::Result<T>> + Send + 'a>>;
+
+/// A process owned by something other than this machine's kernel. The same contract
+/// as a local scope applies: both futures are cancellation-safe, and losing contact
+/// with the process is an error, never a positive proof that it exited.
+pub trait RemoteProcess: Send {
+    fn id(&self) -> Option<u32>;
+    fn wait(&mut self) -> ProcessFuture<'_, ExitStatus>;
+    fn terminate(&mut self) -> ProcessFuture<'_, ()>;
+}
+
 pub struct OwnedChild {
-    pub stdin: Option<ChildStdin>,
-    pub stdout: Option<ChildStdout>,
-    pub stderr: Option<ChildStderr>,
+    pub stdin: Option<ProcessInput>,
+    pub stdout: Option<ProcessOutput>,
+    pub stderr: Option<ProcessOutput>,
+    scope: Scope,
+}
+
+enum Scope {
+    Local(Box<LocalScope>),
+    Remote(Box<dyn RemoteProcess>),
+}
+
+struct LocalScope {
     child: Child,
     #[cfg(unix)]
     pid: nix::unistd::Pid,
@@ -59,24 +159,44 @@ impl OwnedChild {
         #[cfg(windows)]
         let job = windows::Job::assign(&mut child)?;
         Ok(Self {
-            stdin: child.stdin.take(),
-            stdout: child.stdout.take(),
-            stderr: child.stderr.take(),
-            child,
-            #[cfg(unix)]
-            pid,
-            #[cfg(unix)]
-            _parent_lifetime: parent_lifetime,
-            #[cfg(windows)]
-            job,
-            signalled: false,
-            status: None,
-            confirmed: false,
+            stdin: child.stdin.take().map(ProcessInput::from),
+            stdout: child.stdout.take().map(ProcessOutput::from),
+            stderr: child.stderr.take().map(ProcessOutput::from),
+            scope: Scope::Local(Box::new(LocalScope {
+                child,
+                #[cfg(unix)]
+                pid,
+                #[cfg(unix)]
+                _parent_lifetime: parent_lifetime,
+                #[cfg(windows)]
+                job,
+                signalled: false,
+                status: None,
+                confirmed: false,
+            })),
         })
+    }
+    /// Wraps a process that runs elsewhere, under the same ownership contract.
+    #[must_use]
+    pub fn remote(
+        process: Box<dyn RemoteProcess>,
+        stdin: Option<DuplexStream>,
+        stdout: Option<DuplexStream>,
+        stderr: Option<DuplexStream>,
+    ) -> Self {
+        Self {
+            stdin: stdin.map(ProcessInput::Stream),
+            stdout: stdout.map(ProcessOutput::Stream),
+            stderr: stderr.map(ProcessOutput::Stream),
+            scope: Scope::Remote(process),
+        }
     }
     #[must_use]
     pub fn id(&self) -> Option<u32> {
-        self.child.id()
+        match &self.scope {
+            Scope::Local(scope) => scope.child.id(),
+            Scope::Remote(process) => process.id(),
+        }
     }
     /// Collect bounded output under supervision of the original process tree.
     /// Output and read errors are delivered after confirmed retirement. Once
@@ -117,9 +237,24 @@ impl OwnedChild {
             io::Error::other("managed output worker ended without confirmed retirement")
         })?
     }
+    pub async fn wait(&mut self) -> io::Result<ExitStatus> {
+        match &mut self.scope {
+            Scope::Local(scope) => scope.wait().await,
+            Scope::Remote(process) => process.wait().await,
+        }
+    }
+    pub async fn terminate(&mut self) -> io::Result<()> {
+        match &mut self.scope {
+            Scope::Local(scope) => scope.terminate().await,
+            Scope::Remote(process) => process.terminate().await,
+        }
+    }
+}
+
+impl LocalScope {
     /// Wait naturally. On Unix, observe the leader without reaping it, retaining
     /// the PID/group reservation until remaining group members have been signalled.
-    pub async fn wait(&mut self) -> io::Result<ExitStatus> {
+    async fn wait(&mut self) -> io::Result<ExitStatus> {
         loop {
             if self.confirmed {
                 return self
@@ -155,7 +290,7 @@ impl OwnedChild {
     }
     /// Cancellation-safe: a subsequent caller continues the same termination,
     /// never resends a Unix signal after the leader has been reaped.
-    pub async fn terminate(&mut self) -> io::Result<()> {
+    async fn terminate(&mut self) -> io::Result<()> {
         if self.confirmed {
             return Ok(());
         }
@@ -264,7 +399,7 @@ async fn read_output<R: tokio::io::AsyncRead + Unpin>(
     }
     Ok(bytes)
 }
-impl Drop for OwnedChild {
+impl Drop for LocalScope {
     fn drop(&mut self) {
         #[cfg(unix)]
         if !self.signalled && self.status.is_none() {

@@ -10,7 +10,7 @@ async fn retained_readiness_codebuddy_retires_the_probe_before_changing_workspac
         "codebuddy",
         &agent_domain::InstallationId::new().to_string(),
         AcpLaunch {
-            executable: fixture.executable.clone(),
+            executable: (fixture.executable.clone()).into(),
             args: vec![],
         },
         None,

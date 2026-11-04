@@ -159,7 +159,7 @@ fn fixture_as(mode: &str, provider: &str) -> (tempfile::TempDir, Arc<AcpDriver>)
         provider,
         &agent_domain::InstallationId::new().to_string(),
         AcpLaunch {
-            executable: file,
+            executable: (file).into(),
             args: vec![],
         },
         None,

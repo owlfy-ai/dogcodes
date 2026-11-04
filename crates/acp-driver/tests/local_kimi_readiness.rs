@@ -8,7 +8,7 @@ async fn local_kimi_reports_readiness_or_an_explicit_login_requirement() {
         std::fs::canonicalize(std::path::PathBuf::from(home).join(".kimi-code/bin/kimi.exe"))
             .unwrap();
     let launch = acp_driver::AcpLaunch {
-        executable,
+        executable: executable.into(),
         args: vec!["acp".into()],
     };
     match acp_driver::AcpDriver::connect_ready(

@@ -30,12 +30,12 @@ pub async fn driver(name: &str, installation: &str) -> Result<Arc<dyn AgentDrive
                 _ => (".local/bin/cursor-agent", vec!["acp"]),
             };
             let launch = acp_driver::AcpLaunch {
-                executable: PathBuf::from(&home).join(path),
+                executable: (PathBuf::from(&home).join(path)).into(),
                 args: args.into_iter().map(String::from).collect(),
             };
             let mut report = acp_driver::AcpDriver::probe_ready(&launch).await?;
             if report.native_version.is_none() {
-                let output = std::process::Command::new(&launch.executable)
+                let output = std::process::Command::new(&launch.executable.path)
                     .arg("--version")
                     .output()?;
                 report.native_version = Some(String::from_utf8(output.stdout)?.trim().to_owned());

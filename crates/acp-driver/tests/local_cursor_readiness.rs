@@ -9,7 +9,7 @@ async fn local_cursor_uses_its_own_launcher_and_reports_readiness() {
     )
     .unwrap();
     let launch = acp_driver::AcpLaunch {
-        executable,
+        executable: executable.into(),
         args: vec!["--disable-auto-update".into(), "acp".into()],
     };
     match acp_driver::AcpDriver::connect_ready(

@@ -97,7 +97,7 @@ pub async fn connect(
                 provider,
                 identity,
                 acp_driver::AcpLaunch {
-                    executable,
+                    executable: executable.into(),
                     args: manifest.discovery.launch_args,
                 },
                 version,

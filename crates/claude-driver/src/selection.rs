@@ -152,7 +152,7 @@ mod tests {
         let driver = crate::ClaudeDriver::new(
             "claude-code",
             &agent_domain::InstallationId::new().to_string(),
-            executable.into(),
+            std::path::PathBuf::from(executable),
             None,
             SessionResumeCapability::Supported,
         )

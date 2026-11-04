@@ -5,7 +5,7 @@
 async fn local_grok_reports_readiness_or_an_explicit_login_requirement() {
     let home = std::env::var_os("USERPROFILE").expect("USERPROFILE");
     let launch = acp_driver::AcpLaunch {
-        executable: std::path::PathBuf::from(home).join(".grok/bin/grok.exe"),
+        executable: (std::path::PathBuf::from(home).join(".grok/bin/grok.exe")).into(),
         args: vec!["agent".into(), "stdio".into()],
     };
     let result = acp_driver::AcpDriver::connect_ready(

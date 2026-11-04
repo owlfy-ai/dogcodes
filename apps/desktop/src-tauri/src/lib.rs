@@ -1728,7 +1728,7 @@ async fn register_ready_acp_drivers(
     }) {
         register_provider_account_monitor(&core, installation, None).await;
         let mut launch = acp_driver::AcpLaunch {
-            executable: std::path::PathBuf::from(&installation.executable),
+            executable: (std::path::PathBuf::from(&installation.executable)).into(),
             args: manifest.discovery.launch_args.clone(),
         };
         // Trusted adapter option, not a manifest-supplied flag. Probing and

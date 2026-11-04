@@ -1,6 +1,7 @@
 //! Ownership of the private CLI worker, separate from the sessions it serves.
 use super::{Connection, DriverError, Incoming, SessionState, read_frames};
 use agent_runtime::OwnedChild;
+use agent_runtime::ProcessInput;
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -12,14 +13,13 @@ use std::{
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    process::ChildStdin,
     sync::{mpsc, watch},
 };
 type Outcome = Option<Result<(), DriverError>>;
 pub(super) struct NativeProcess {
     #[cfg(all(test, unix))]
     pid: Option<u32>,
-    input: Arc<tokio::sync::Mutex<Option<ChildStdin>>>,
+    input: Arc<tokio::sync::Mutex<Option<ProcessInput>>>,
     stopping: Arc<AtomicBool>,
     close: watch::Sender<bool>,
     exit: watch::Receiver<Outcome>,

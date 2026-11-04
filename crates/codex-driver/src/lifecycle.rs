@@ -1,6 +1,7 @@
 //! A private app-server scope, supervised independently of callers and actors.
 use super::{DriverError, drain_stderr};
 use agent_runtime::OwnedChild;
+use agent_runtime::ProcessInput;
 use std::{
     sync::{
         Arc,
@@ -8,7 +9,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::{io::DuplexStream, process::ChildStdin, sync::watch};
+use tokio::{io::DuplexStream, sync::watch};
 
 type Outcome = Option<Result<(), DriverError>>;
 pub(super) struct NativeProcess {
@@ -19,7 +20,7 @@ pub(super) struct NativeProcess {
 impl NativeProcess {
     pub fn start(
         mut child: OwnedChild,
-    ) -> Result<(Arc<Self>, DuplexStream, ChildStdin), DriverError> {
+    ) -> Result<(Arc<Self>, DuplexStream, ProcessInput), DriverError> {
         let input = child
             .stdin
             .take()

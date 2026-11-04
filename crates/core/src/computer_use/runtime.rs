@@ -32,8 +32,8 @@ pub(super) const INSTRUCTIONS: &str = include_str!("workflow.md");
 
 pub(super) struct Driver {
     child: OwnedChild,
-    input: tokio::process::ChildStdin,
-    output: BufReader<tokio::process::ChildStdout>,
+    input: process_scope::ProcessInput,
+    output: BufReader<process_scope::ProcessOutput>,
     next_id: u64,
     catalog: Value,
 }

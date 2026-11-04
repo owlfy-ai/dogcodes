@@ -12,6 +12,7 @@
 //! decisions; it is not native stdin approval support. Resume capability is
 //! recorded separately from permission support.
 
+use agent_runtime::ProcessInput;
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -34,7 +35,6 @@ use futures::StreamExt;
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    process::ChildStdin,
     sync::{mpsc, oneshot},
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -340,7 +340,7 @@ struct SessionProcess {
     input_failed: AtomicBool,
     // Drop the pipe to deliver EOF; AsyncWrite::shutdown alone does not close
     // this handle, leaving the native process and global spawn slot alive.
-    stdin: tokio::sync::Mutex<Option<ChildStdin>>,
+    stdin: tokio::sync::Mutex<Option<ProcessInput>>,
     updates: std::sync::Mutex<Option<mpsc::UnboundedSender<DriverEvent>>>,
     turn_active: AtomicBool,
     interrupt_requested: AtomicBool,
@@ -864,7 +864,7 @@ async fn run_session(
     completed.send_replace(Some(Ok(())));
 }
 
-async fn stream_session(stdout: tokio::process::ChildStdout, process: Arc<SessionProcess>) {
+async fn stream_session(stdout: agent_runtime::ProcessStream, process: Arc<SessionProcess>) {
     let startup_clock = std::time::Instant::now();
     let mut first_text_seen = false;
     let mut reader = BufReader::new(stdout);

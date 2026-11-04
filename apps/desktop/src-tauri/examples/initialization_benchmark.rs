@@ -88,7 +88,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .map(str::to_owned)
             .collect();
             let launch = AcpLaunch {
-                executable,
+                executable: executable.into(),
                 args: native_args,
             };
             if provider == "cursor" || std::env::var_os("DOGCODES_BENCH_RETAIN_PROBE").is_some() {

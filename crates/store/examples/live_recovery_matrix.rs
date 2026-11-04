@@ -33,7 +33,7 @@ async fn driver(name: &str, installation: &str) -> Result<Arc<dyn AgentDriver>, 
                 _ => (".local/bin/cursor-agent", vec!["acp"]),
             };
             let launch = acp_driver::AcpLaunch {
-                executable: PathBuf::from(&home).join(path),
+                executable: (PathBuf::from(&home).join(path)).into(),
                 args: args.into_iter().map(String::from).collect(),
             };
             let report = acp_driver::AcpDriver::probe_ready(&launch).await?;

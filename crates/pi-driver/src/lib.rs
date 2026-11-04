@@ -10,6 +10,7 @@ mod selection;
 mod sessions;
 mod transport;
 use agent_domain::{ExecutorRef, ProviderId, QuestionAnswer};
+use agent_runtime::TargetExecutable;
 use async_trait::async_trait;
 use driver_api::{
     AgentDriver, DriverError, DriverEventStream, ModelCatalog, PermissionCatalog, PromptRequest,
@@ -40,7 +41,7 @@ impl Drop for PendingPromptDispatch {
 }
 pub struct PiDriver {
     executor: ExecutorRef,
-    executable: PathBuf,
+    executable: TargetExecutable,
     version: Option<String>,
     sessions: Mutex<HashMap<String, Session>>,
     stopping: watch::Sender<bool>,
@@ -83,7 +84,7 @@ fn session_request(cwd: &str) -> SessionRequest {
 impl PiDriver {
     pub fn new(
         installation: &str,
-        executable: PathBuf,
+        executable: impl Into<TargetExecutable>,
         version: Option<String>,
     ) -> Result<Self, agent_domain::DomainError> {
         Ok(Self {
@@ -91,7 +92,7 @@ impl PiDriver {
                 provider_id: ProviderId::parse("pi")?,
                 installation_id: Some(installation.to_owned()),
             },
-            executable,
+            executable: executable.into(),
             version,
             sessions: Mutex::new(HashMap::new()),
             stopping: watch::channel(false).0,
@@ -118,10 +119,11 @@ impl PiDriver {
         }
         Ok(())
     }
-    pub async fn probe_ready(executable: &std::path::Path) -> Result<(), DriverError> {
+    pub async fn probe_ready(executable: impl Into<TargetExecutable>) -> Result<(), DriverError> {
+        let executable = executable.into();
         let connection = Connection::spawn(
-            executable,
-            &std::env::temp_dir().to_string_lossy(),
+            &executable,
+            &executable.target.temp_directory().to_string_lossy(),
             None,
             true,
         )?;
@@ -141,7 +143,7 @@ impl PiDriver {
             .map_err(|_| DriverError::Protocol("invalid Pi installation".into()))?;
         let connection = Connection::spawn(
             &driver.executable,
-            &std::env::temp_dir().to_string_lossy(),
+            &driver.executable.target.temp_directory().to_string_lossy(),
             None,
             true,
         )?;

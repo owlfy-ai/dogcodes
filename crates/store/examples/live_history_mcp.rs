@@ -16,14 +16,14 @@ fn driver(name: &str, id: &str) -> Result<Arc<dyn AgentDriver>, Box<dyn std::err
     let supported = SessionResumeCapability::Supported;
     Ok(match name {
         "codex" => Arc::new(codex_driver::CodexDriver::new(
-            &PathBuf::from("/Applications/ChatGPT.app/Contents/Resources/codex"),
+            PathBuf::from("/Applications/ChatGPT.app/Contents/Resources/codex"),
             id.into(),
             "0.153.4".into(),
         )?),
         "claude" => Arc::new(claude_driver::ClaudeDriver::new(
             name,
             id,
-            format!("{home}/.local/bin/claude").into(),
+            std::path::PathBuf::from(format!("{home}/.local/bin/claude")),
             None,
             supported,
         )?),

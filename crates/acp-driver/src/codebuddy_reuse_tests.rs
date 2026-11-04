@@ -45,7 +45,7 @@ async fn normal_turns_reuse_but_cancel_and_failure_retire_the_connection() {
             "codebuddy",
             &agent_domain::InstallationId::new().to_string(),
             AcpLaunch {
-                executable: root.path().join("missing-agent"),
+                executable: (root.path().join("missing-agent")).into(),
                 args: vec![],
             },
             None,
@@ -168,7 +168,7 @@ async fn local_codebuddy_reuses_success_and_recovers_after_cancel() {
         "codebuddy",
         &agent_domain::InstallationId::new().to_string(),
         AcpLaunch {
-            executable,
+            executable: executable.into(),
             args: vec!["--acp".into()],
         },
         None,

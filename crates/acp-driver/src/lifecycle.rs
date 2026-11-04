@@ -1,5 +1,6 @@
 //! Independently owned native scopes and the tasks using an ACP connection.
 use agent_runtime::OwnedChild;
+use agent_runtime::{ProcessInput, ProcessStream};
 use driver_api::DriverError;
 use std::{
     future::Future,
@@ -14,7 +15,6 @@ use std::{
 };
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
-    process::{ChildStdin, ChildStdout},
     sync::watch,
     task::{JoinHandle, JoinSet},
 };
@@ -139,7 +139,7 @@ fn failure(reason: &str) -> DriverError {
 }
 
 pub(super) struct Input {
-    pub inner: ChildStdin,
+    pub inner: ProcessInput,
     pub control: Arc<Control>,
 }
 impl AsyncWrite for Input {
@@ -181,7 +181,7 @@ impl Drop for Input {
     }
 }
 pub(super) struct Output {
-    pub inner: ChildStdout,
+    pub inner: ProcessStream,
     pub control: Arc<Control>,
     pub line_bytes: usize,
 }

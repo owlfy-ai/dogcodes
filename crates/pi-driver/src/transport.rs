@@ -1,18 +1,17 @@
 //! Pi RPC: correlate control replies by ID while continuously draining events.
 use crate::events::Turn;
 use agent_runtime::OwnedChild;
+use agent_runtime::ProcessInput;
+use agent_runtime::{Pipe, TargetExecutable};
 use driver_api::{DriverError, DriverEvent, SessionHandle};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
-    path::Path,
-    process::Stdio,
     sync::{Arc, Mutex},
     time::Duration,
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    process::ChildStdin,
     sync::{mpsc, oneshot, watch},
 };
 
@@ -32,7 +31,7 @@ pub(crate) struct State {
 }
 pub(crate) struct Connection {
     pub admission: tokio::sync::Mutex<()>,
-    input: Arc<tokio::sync::Mutex<Option<ChildStdin>>>,
+    input: Arc<tokio::sync::Mutex<Option<ProcessInput>>>,
     pub(super) closing: watch::Sender<bool>,
     pub(super) cleanup: watch::Receiver<Option<Result<(), DriverError>>>,
     pub state: Arc<Mutex<State>>,
@@ -82,21 +81,16 @@ impl State {
 }
 impl Connection {
     pub fn spawn(
-        executable: &Path,
+        executable: &TargetExecutable,
         cwd: &str,
         session: Option<&str>,
         ephemeral: bool,
     ) -> Result<Self, DriverError> {
-        let mut command = agent_runtime::agent_command(executable);
+        let mut command = executable.command();
         command
             .args(["--mode", "rpc"])
             .current_dir(agent_runtime::external_path(cwd))
-            .env_clear()
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .kill_on_drop(true);
-        agent_runtime::apply_platform_environment(&mut command);
+            .stdio(Pipe::Piped, Pipe::Piped, Pipe::Null);
         // Use Pi's own auth store. Only explicitly named Pi/provider configuration
         // enters the subprocess; never forward the host's complete environment.
         for key in [
@@ -116,21 +110,17 @@ impl Connection {
             "XAI_API_KEY",
             "GROQ_API_KEY",
         ] {
-            if let Some(value) = agent_runtime::inherited_variable(key) {
-                command.env(key, value);
-            }
+            command.inherit(key);
         }
-        agent_runtime::apply_proxy_environment(&mut command);
-        if let Some(path) = agent_runtime::installed_node_path(executable) {
-            command.env("PATH", path);
-        }
+        command.prefer_installed_node(&executable.path);
         if ephemeral {
             command.arg("--no-session");
         }
         if let Some(path) = session {
             command.args(["--session", path]);
         }
-        let mut child = OwnedChild::spawn(command)
+        let mut child = command
+            .spawn()
             .map_err(|_| DriverError::NotConfigured("Pi executable unavailable".into()))?;
         let input = child.stdin.take().ok_or_else(disconnected)?;
         let stdout = child.stdout.take().ok_or_else(disconnected)?;
@@ -521,7 +511,7 @@ impl Drop for Connection {
 async fn supervise(
     mut child: OwnedChild,
     mut reader: tokio::task::JoinHandle<()>,
-    input: Arc<tokio::sync::Mutex<Option<ChildStdin>>>,
+    input: Arc<tokio::sync::Mutex<Option<ProcessInput>>>,
     state: Arc<Mutex<State>>,
     settled: Arc<tokio::sync::Notify>,
     mut closing: watch::Receiver<bool>,

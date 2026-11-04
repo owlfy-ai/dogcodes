@@ -27,13 +27,14 @@ mod readiness_tests;
 #[cfg(test)]
 mod retained_readiness_tests;
 mod session_scope;
+use agent_runtime::ProcessInput;
+use agent_runtime::TargetExecutable;
 use session_scope::{NativeAttempt, stale_scope};
 mod request_usage;
 mod selection;
 use std::{
     collections::HashMap,
     path::PathBuf,
-    process::Stdio,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -53,7 +54,6 @@ use futures::StreamExt;
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::ChildStdin,
     sync::{mpsc, oneshot, watch},
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -97,7 +97,7 @@ fn bypass_permissions_available() -> bool {
 }
 
 pub struct ClaudeLaunch {
-    pub executable: PathBuf,
+    pub executable: TargetExecutable,
 }
 
 /// Protocol arguments every session uses; the driver owns them so manifests
@@ -383,7 +383,7 @@ struct SessionProcess {
     scope: std::sync::Mutex<SessionHandle>,
     admission: tokio::sync::Mutex<()>,
     native: Arc<native::NativeProcess>,
-    stdin: tokio::sync::Mutex<Option<ChildStdin>>,
+    stdin: tokio::sync::Mutex<Option<ProcessInput>>,
     permission_mode: Option<String>,
     updates: std::sync::Mutex<Option<mpsc::UnboundedSender<DriverEvent>>>,
     child_events: std::sync::Mutex<child_events::ChildEvents>,
@@ -457,7 +457,7 @@ impl SessionProcess {
 pub struct ClaudeDriver {
     startup_catalogs: std::sync::Mutex<driver_api::models::StartupCatalogs>,
     executor: ExecutorRef,
-    executable: PathBuf,
+    executable: TargetExecutable,
     native_version: Option<String>,
     resume_capability: SessionResumeCapability,
     processes: tokio::sync::Mutex<HashMap<String, Arc<SessionProcess>>>,
@@ -477,7 +477,7 @@ impl ClaudeDriver {
     pub fn new(
         provider_id: &str,
         installation_id: &str,
-        executable: PathBuf,
+        executable: impl Into<TargetExecutable>,
         native_version: Option<String>,
         resume_capability: SessionResumeCapability,
     ) -> Result<Self, agent_domain::DomainError> {
@@ -493,7 +493,7 @@ impl ClaudeDriver {
                         .to_string(),
                 ),
             },
-            executable,
+            executable: executable.into(),
             native_version,
             resume_capability,
             processes: tokio::sync::Mutex::new(HashMap::new()),
@@ -631,8 +631,8 @@ impl ClaudeDriver {
     ///
     /// Returns [`DriverError::NotConfigured`] when the executable cannot start
     /// and [`DriverError::Protocol`] when the handshake fails or times out.
-    pub async fn probe_ready(executable: &std::path::Path) -> Result<(), DriverError> {
-        readiness::probe(executable).await
+    pub async fn probe_ready(executable: impl Into<TargetExecutable>) -> Result<(), DriverError> {
+        readiness::probe(executable.into()).await
     }
 
     /// Retain the initialized control channel for unscoped catalog
@@ -640,7 +640,7 @@ impl ClaudeDriver {
     pub async fn connect_ready(
         provider_id: &str,
         installation_id: &str,
-        executable: PathBuf,
+        executable: impl Into<TargetExecutable>,
         native_version: Option<String>,
         resume_capability: SessionResumeCapability,
     ) -> Result<Self, DriverError> {
@@ -798,7 +798,7 @@ fn spawn_selected(
         analysis_only,
     } = selection;
     // The app retains the private configuration directory for the live session.
-    let mut command = agent_runtime::agent_command(&launch.executable);
+    let mut command = launch.executable.command();
     if analysis_only {
         command.args([
             "--tools",
@@ -860,24 +860,14 @@ fn spawn_selected(
             args.push("--allow-dangerously-skip-permissions".into());
         }
     }
-    command
-        .args(args)
-        .env_clear()
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
+    command.args(args);
     if let Some(directory) = working_directory {
         command.current_dir(agent_runtime::external_path(directory));
     }
-    agent_runtime::apply_platform_environment(&mut command);
     for variable in ENV_ALLOWLIST {
-        if let Some(value) = agent_runtime::inherited_variable(variable) {
-            command.env(variable, value);
-        }
+        command.inherit(variable);
     }
-    agent_runtime::apply_proxy_environment(&mut command);
-    OwnedChild::spawn(command).map_err(|error| {
+    command.spawn().map_err(|error| {
         if matches!(error.kind(), std::io::ErrorKind::NotFound) {
             DriverError::NotConfigured("claude executable is missing".into())
         } else {

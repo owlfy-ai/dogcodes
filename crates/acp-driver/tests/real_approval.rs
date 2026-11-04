@@ -114,7 +114,8 @@ fn string_leaf_facts(value: &serde_json::Value, output: &mut Vec<(usize, bool, b
 
 async fn verify(provider: &str, relative: &str, args: &[&str]) {
     let launch = AcpLaunch {
-        executable: std::path::PathBuf::from(std::env::var("HOME").unwrap()).join(relative),
+        executable: (std::path::PathBuf::from(std::env::var("HOME").unwrap()).join(relative))
+            .into(),
         args: args.iter().map(|arg| (*arg).into()).collect(),
     };
     let report = AcpDriver::probe_ready(&launch)

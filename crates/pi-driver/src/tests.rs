@@ -368,7 +368,7 @@ async fn real_pi_metadata() {
     PiDriver::probe_ready(Path::new(&binary)).await.unwrap();
     let driver = PiDriver::new(
         &agent_domain::InstallationId::new().to_string(),
-        binary.into(),
+        std::path::PathBuf::from(binary),
         None,
     )
     .unwrap();
@@ -392,7 +392,7 @@ async fn real_pi_metadata() {
 async fn real_pi_turn_resume_and_cancel() {
     let driver = PiDriver::new(
         &agent_domain::InstallationId::new().to_string(),
-        std::env::var("DOGCODES_PI_BINARY").unwrap().into(),
+        std::path::PathBuf::from(std::env::var("DOGCODES_PI_BINARY").unwrap()),
         None,
     )
     .unwrap();
