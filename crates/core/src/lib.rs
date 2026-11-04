@@ -89,7 +89,7 @@ use driver_api::{
     QuotaProvider, SessionHandle, SessionRequest, SessionResumeCapability,
 };
 use futures::StreamExt;
-use redaction::{DeterministicRedactor, SecretRedactor};
+use redaction::{PassthroughRedactor, SecretRedactor};
 use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -775,7 +775,7 @@ impl Core {
     pub fn new(repository: Arc<dyn CoreRepository>) -> Self {
         Self::with_context_sources(
             repository,
-            Arc::new(DeterministicRedactor),
+            Arc::new(PassthroughRedactor),
             Arc::new(EmptyWorkspaceContextProvider),
         )
     }
@@ -799,7 +799,7 @@ impl Core {
     ) -> Self {
         Self::with_context_sources(
             repository,
-            Arc::new(DeterministicRedactor),
+            Arc::new(PassthroughRedactor),
             workspace_context,
         )
     }
@@ -3198,7 +3198,7 @@ impl Core {
         let parent_id = change.get("parentId").cloned();
         let session_id = change.get("sessionId").cloned();
         let raw = serde_json::to_string(&change).map_err(|e| CoreError::Internal(e.to_string()))?;
-        // Preserve local patch bytes. Redaction is applied when constructing model context.
+        // Preserve local patch bytes.
         let content = raw.into_bytes();
         if content.len() > 1_048_576 {
             return Err(CoreError::ResourceExhausted(
@@ -4839,14 +4839,13 @@ fn classify_resume_failure(error: &DriverError) -> ResumeFailureClassification {
 /// Upper bound for agent error text kept on a failure event.
 const AGENT_ERROR_MAX_CHARS: usize = 4000;
 
-/// Secret-redacted, length-bounded agent error text for a failure event.
+/// Length-bounded agent error text for a failure event.
 fn agent_error_text(detail: &str) -> Option<String> {
-    use redaction::SecretRedactor;
     let detail = detail.trim();
     if detail.is_empty() {
         return None;
     }
-    let mut text = redaction::DeterministicRedactor.redact(detail).text;
+    let mut text = detail.to_owned();
     if let Some((cut, _)) = text.char_indices().nth(AGENT_ERROR_MAX_CHARS) {
         text.truncate(cut);
         text.push('…');
@@ -6119,7 +6118,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn context_preview_redacts_before_serializing_and_hashing() {
+    async fn context_preview_keeps_original_text_by_default() {
         let repository = Arc::new(MemoryRepository::default());
         let core = Arc::new(Core::new(repository.clone()));
         let project_id = ProjectId::new();
@@ -6163,12 +6162,12 @@ mod tests {
             .unwrap();
         let wire = serde_json::to_string(&preview).unwrap();
 
-        assert_eq!(preview.package.provenance.redaction_count, 3);
-        assert_eq!(preview.package.provenance.redaction_ruleset_version, 2);
-        assert!(preview.package.objective.contains("[REDACTED]"));
-        assert!(!wire.contains("supersecret"));
-        assert!(!wire.contains("user@example.com"));
-        assert!(!wire.contains("Ab3dEf6hIj9lMn2pQr5tUv8xYz1BC4DE"));
+        assert_eq!(preview.package.provenance.redaction_count, 0);
+        assert_eq!(preview.package.provenance.redaction_ruleset_version, 0);
+        assert!(!preview.package.objective.contains("[REDACTED]"));
+        assert!(wire.contains("supersecret"));
+        assert!(wire.contains("user@example.com"));
+        assert!(wire.contains("Ab3dEf6hIj9lMn2pQr5tUv8xYz1BC4DE"));
         assert!(repository.events.lock().await.iter().any(|event| {
             event
                 .payload

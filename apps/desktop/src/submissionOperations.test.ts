@@ -56,14 +56,11 @@ it("trusts only the service's record of this exact identity after a lost reply",
   expect(f.submissionContinue).not.toHaveBeenCalled();
 });
 
-it("continues or retires with the original identity and lists only service-pending originals", async () => {
+it("retires with the original identity and lists only service-pending originals", async () => {
   const f = fixture();
   const original = intent("cmd_original");
-  f.submissionContinue.mockResolvedValue(submitted("cmd_original"));
   f.submissionRetire.mockResolvedValue({ state: "closed", fingerprint: "bound", resolution: { status: "invalidated", taskId: "tsk_test" } });
-  expect(await operations.resume(f.client, original)).toMatchObject({ status: "submitted" });
   expect(await operations.retire(f.client, original)).toEqual({ status: "invalidated", taskId: "tsk_test" });
-  expect(f.submissionContinue).toHaveBeenCalledExactlyOnceWith("cmd_original");
   expect(f.submissionRetire).toHaveBeenCalledExactlyOnceWith("cmd_original");
 
   f.submissionIntentList.mockResolvedValue({ operationIds: ["cmd_original", "cmd_done"], nextCursor: null });
@@ -98,18 +95,15 @@ it("keeps an unknown outcome with its original identity until verified, without 
   expect(f.submissionStart).toHaveBeenCalledTimes(1);
 });
 
-it("resends an unconfirmed request only with its original identity, and drops it once absence is verified", async () => {
+it("keeps an unconfirmed request while checking it and drops it once absence is verified", async () => {
   const f = fixture();
-  let id = "";
-  f.submissionStart.mockImplementationOnce(async call => { id = call.operationId; throw new Error("reply lost"); });
+  f.submissionStart.mockRejectedValueOnce(new Error("reply lost"));
   f.submissionIntentGet.mockRejectedValueOnce(new Error("offline"));
   const { request: original } = await operations.start(f.client, request).catch(cause => cause) as UnconfirmedSubmissionError;
   f.submissionIntentGet.mockResolvedValueOnce(null);
   expect(await operations.verifyUnconfirmed(f.client, original)).toEqual({ status: "not_received" });
   expect(JSON.parse(operations.unconfirmed()).records).toHaveLength(1);
-  f.submissionStart.mockImplementationOnce(async call => submitted(call.operationId));
-  expect(await operations.resendUnconfirmed(f.client, original)).toMatchObject({ status: "submitted" });
-  expect(f.submissionStart.mock.calls[1][0].operationId).toBe(id);
+  operations.abandonUnconfirmed(original);
   expect(JSON.parse(operations.unconfirmed()).records).toEqual([]);
 
   // Verified absent after a failed start: nothing is kept, so the composer may take the text back.
@@ -125,27 +119,6 @@ it("sends nothing when the retry identity cannot be stored first", async () => {
   vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => { throw new Error("quota"); });
   await expect(operations.start(f.client, request)).rejects.toThrow("quota");
   expect(f.submissionStart).not.toHaveBeenCalled();
-});
-
-it("keeps the original message and attachments when an explicit recovery retry is rejected", async () => {
-  const f = fixture();
-  const originalRequest = { ...request, input: { ...input, attachments: [{ name: "notes.txt", path: "/app/notes.txt", mimeType: "text/plain" }] } };
-  f.submissionStart.mockRejectedValueOnce(new Error("reply lost"));
-  f.submissionIntentGet.mockRejectedValueOnce(new Error("offline"));
-  const failure = await operations.start(f.client, originalRequest).catch(cause => cause) as UnconfirmedSubmissionError;
-  const original = failure.request;
-  f.submissionIntentGet.mockResolvedValue(null);
-  expect(await operations.verifyUnconfirmed(f.client, original)).toEqual({ status: "not_received" });
-  f.submissionStart.mockRejectedValueOnce(new Error("conversation busy"));
-  await expect(operations.resendUnconfirmed(f.client, original)).rejects.toThrow("conversation busy");
-  expect(JSON.parse(operations.unconfirmed()).records).toEqual([original]);
-  expect(f.submissionStart.mock.calls[1][0].operationId).toBe(original.operationId);
-  expect(f.submissionIntentGet).toHaveBeenLastCalledWith(original.operationId, undefined,
-    { ...originalRequest, operationId: original.operationId });
-  f.submissionStart.mockImplementationOnce(async call => submitted(call.operationId));
-  await expect(operations.resendUnconfirmed(f.client, original)).resolves.toMatchObject({ status: "submitted" });
-  expect(f.submissionStart.mock.calls[2][0].operationId).toBe(original.operationId);
-  expect(JSON.parse(operations.unconfirmed()).records).toEqual([]);
 });
 
 it("does not turn a changed request's rejection into the previous send's success", async () => {

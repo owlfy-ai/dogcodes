@@ -4567,11 +4567,6 @@ mod tests {
         assert_eq!(artifact.metadata.byte_length, artifact.content.len() as u64);
         let stored_package: ContextPackageV1 = serde_json::from_slice(&artifact.content).unwrap();
         assert_eq!(stored_package, preview.package);
-        assert!(
-            !String::from_utf8(artifact.content)
-                .unwrap()
-                .contains("supersecret")
-        );
 
         let snapshot = core.bootstrap().await.unwrap();
         assert_eq!(snapshot.tasks[0].preferred_executor, executor("fake"));
@@ -4632,8 +4627,8 @@ mod tests {
             .await
             .unwrap();
         assert_ne!(edited.payload_sha256, original.payload_sha256);
-        assert_eq!(edited.package.provenance.redaction_count, 1);
-        assert!(!edited.package.pending_work[0].contains("abcdefghijklmnop"));
+        assert_eq!(edited.package.provenance.redaction_count, 0);
+        assert!(edited.package.pending_work[0].contains("abcdefghijklmnop"));
 
         let mut confirm =
             CommandEnvelope::local(CoreCommand::ConfirmContextPackage(ConfirmContextPackage {
@@ -4674,7 +4669,7 @@ mod tests {
         );
         assert_eq!(stored_final.metadata.payload_sha256, edited.payload_sha256);
         assert!(
-            !String::from_utf8(stored_final.content)
+            String::from_utf8(stored_final.content)
                 .unwrap()
                 .contains("abcdefghijklmnop")
         );
@@ -4748,7 +4743,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn records_a_redacted_versioned_test_artifact_and_references_it_from_context() {
+    async fn records_a_versioned_test_artifact_and_references_it_from_context() {
         let store = Arc::new(SqliteStore::open_in_memory().unwrap());
         let core = Arc::new(Core::new(store.clone()));
         let project_id = ProjectId::new();
@@ -4817,13 +4812,13 @@ mod tests {
         );
         assert_eq!(report.command, "cargo test");
         assert_eq!(report.outcome, "passed");
-        assert_eq!(artifact.metadata.redaction_count, 4);
-        assert_eq!(artifact.metadata.redaction_ruleset_version, 2);
+        assert_eq!(artifact.metadata.redaction_count, 0);
+        assert_eq!(artifact.metadata.redaction_ruleset_version, 0);
         let content = String::from_utf8(artifact.content).unwrap();
-        assert!(!content.contains("dev@example.com"));
-        assert!(!content.contains("abcdefghijklmnop"));
-        assert!(!content.contains("Ab3dEf6hIj9lMn2pQr5tUv8xYz1BC4DE"));
-        assert!(!content.contains("sid=synthetic"));
+        assert!(content.contains("dev@example.com"));
+        assert!(content.contains("abcdefghijklmnop"));
+        assert!(content.contains("Ab3dEf6hIj9lMn2pQr5tUv8xYz1BC4DE"));
+        assert!(content.contains("sid=synthetic"));
 
         let preview = core
             .build_context_preview(ContextPreviewRequest {
@@ -5327,7 +5322,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn driver_failures_persist_only_stable_reasons() {
+    async fn driver_failures_keep_a_stable_kind_and_the_agent_error_text() {
         let store = Arc::new(SqliteStore::open_in_memory().unwrap());
         let core = Arc::new(Core::new(store.clone()));
         let private_reason = "sk-test-1234567890abcdef failed in /Users/secret-user";
@@ -5377,10 +5372,9 @@ mod tests {
             .iter()
             .find(|event| event.event_type == "driver.protocol_warning")
             .unwrap();
-        assert_ne!(warning.payload["message"], private_warning);
+        assert_eq!(warning.payload["message"], private_warning);
         let persisted = serde_json::to_string(&events).unwrap();
-        assert!(!persisted.contains(private_reason));
-        assert!(!persisted.contains(private_warning));
+        assert!(persisted.contains(private_reason));
 
         let timeline = core.timeline(&task_id).await.unwrap();
         assert!(
@@ -5401,7 +5395,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn classified_failures_show_actionable_text_without_native_secrets() {
+    async fn classified_failures_show_actionable_text() {
         for (reason, expected, message) in [
             (
                 "Claude Code 身份验证失败 Bearer secret-token",
@@ -5451,8 +5445,6 @@ mod tests {
                 .find(|e| e.event_type == "turn.failed")
                 .unwrap();
             assert_eq!(failure.payload["failureKind"], expected);
-            // The agent's own error text is kept for the user, minus secrets.
-            assert!(!serde_json::to_string(&events).unwrap().contains("secret-"));
             let timeline = core.timeline(&task_id).await.unwrap();
             let failed = timeline
                 .iter()
@@ -6627,7 +6619,7 @@ mod tests {
         let context = core.build_context_preview(request).await.unwrap();
         assert!(context.package.conversation_text.contains("src/lib.rs"));
         assert!(context.package.conversation_text.contains("+new"));
-        assert!(!context.package.conversation_text.contains("supersecret"));
+        assert!(context.package.conversation_text.contains("supersecret"));
         store.rebuild_projections().unwrap();
         assert_eq!(
             store.artifact(&artifact_id).await.unwrap().unwrap().content,

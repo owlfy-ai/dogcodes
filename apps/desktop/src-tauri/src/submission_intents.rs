@@ -792,7 +792,7 @@ impl SubmissionIntents {
             return Ok(self
                 .resolved(core, intent)
                 .await?
-                .ok_or("原操作结果尚未确认，请先核实。")?);
+                .ok_or("原操作结果尚未确认。")?);
         };
         let snapshot = core.bootstrap().await.map_err(|e| e.to_string())?;
         let current = snapshot
@@ -805,7 +805,7 @@ impl SubmissionIntents {
                 && task.stream_version == version
                 && task.preferred_executor == intent.target
         }) {
-            return Err("会话已变化，未用新版本重发旧消息；请核实或放弃原发送。".into());
+            return Err("会话已变化，消息未发送，请重试。".into());
         }
         let failure = core
             .execute(submission_command(intent, version))
@@ -814,7 +814,7 @@ impl SubmissionIntents {
         match self.resolved(core, intent).await? {
             Some(entry) => Ok(entry),
             None => Err(failure.map_or_else(
-                || "发送结果尚未确认，请先核实原请求。".to_string(),
+                || "发送结果尚未确认。".to_string(),
                 |error| error.to_string(),
             )),
         }

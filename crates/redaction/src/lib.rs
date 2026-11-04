@@ -142,6 +142,24 @@ impl SecretRedactor for DeterministicRedactor {
     }
 }
 
+/// Keeps text as written: agents already have full access to what they report, and
+/// heuristic rules were corrupting ordinary paths. Version 0 means "not redacted".
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PassthroughRedactor;
+
+impl SecretRedactor for PassthroughRedactor {
+    fn redact(&self, input: &str) -> RedactedText {
+        RedactedText {
+            text: input.to_owned(),
+            finding_counts: BTreeMap::new(),
+        }
+    }
+
+    fn ruleset_version(&self) -> u16 {
+        0
+    }
+}
+
 fn apply(
     text: &mut String,
     kind: &'static str,

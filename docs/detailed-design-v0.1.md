@@ -1334,6 +1334,8 @@ Quota 卡按 Provider 原生窗口分组，显示 scope、来源、可信度、�
 
 Redactor 依次执行：已知敏感字段名 → Provider 特定规则 → Authorization/URL userinfo → 常见 Key 模式 → 高熵候选。脱敏保留类型和尾部少量辨识符但不可复用。Raw Frame、诊断导出和崩溃上下文必须经过 Redactor；Canonical 用户消息不擅自改写，但导出前给用户预览。
 
+2026-11-04 起，Agent 对话链路不再脱敏：Core 默认使用 `PassthroughRedactor`（规则版本 0），工具调用、思考、错误、上下文包和测试报告都保留原文，并原样进入历史查询和远程读取。理由是 Agent 本身有完全访问权限，而启发式规则会破坏普通路径。上述 Redactor 只继续用于诊断报告、SSH 目标日志和 Git 推送错误这类会被分享或可能带凭据的文本。已写入的历史不会恢复。
+
 ### 19.4 本地数据说明
 
 dogcodes 不上传 Canonical History、代码、Artifact 或额度。项目文件仍由 Agent 在用户选择的工作目录执行；Hub 本地保存统一时间线和协作所需证据。首版不做应用层加密，依赖 OS 账户权限和磁盘加密；未来若增加加密，必须覆盖 DB、FTS、CAS 和日志整体，不能只加密 SQLite。未来硬件配对密钥属于 dogcodes 自有设备身份，不是第三方 Agent 凭据，应保存在 macOS Keychain/Windows Credential Manager，而不是普通 SQLite 字段。

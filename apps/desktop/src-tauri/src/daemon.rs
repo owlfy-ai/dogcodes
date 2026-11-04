@@ -177,8 +177,9 @@ impl CoreClient {
     async fn call<T: DeserializeOwned>(&self, method: &str, args: Value) -> Result<T, String> {
         #[cfg(any(test, feature = "review-acceptance"))]
         if let Self::Local(core, services) = self {
+            // Boxed: dispatch_service would otherwise be inlined into every caller's state machine.
             return serde_json::from_value(
-                dispatch_service(core, &services.control, method, args).await?,
+                Box::pin(dispatch_service(core, &services.control, method, args)).await?,
             )
             .map_err(|e| e.to_string());
         }
@@ -1395,7 +1396,13 @@ async fn dispatch_service(
     }
     if method == "review" {
         let request = serde_json::from_value(args).map_err(|e| e.to_string())?;
-        return crate::review::service::dispatch(core, &control.review, request).await;
+        // Boxed for the same reason as target_control above.
+        return Box::pin(crate::review::service::dispatch(
+            core,
+            &control.review,
+            request,
+        ))
+        .await;
     }
     if method == "review_repair" {
         let (call,): (crate::review_repairs::RepairCall,) =

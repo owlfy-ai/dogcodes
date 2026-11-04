@@ -80,8 +80,7 @@ it("ignores other modifiers, composition, repeats, dialogs and disabled actions"
   expect(button("正在创建").disabled).toBe(true);
   await pressShortcut("n", { ctrlKey: true });
   await act(async () => reject(new Error("测试创建失败")));
-  expect(element.querySelector("textarea")?.value).toBe("");
-  expect(element.querySelector('[aria-label="待核实的发送请求"]')?.textContent).toContain("保留正在输入的草稿");
+  expect(element.querySelector("textarea")?.value).toBe("保留正在输入的草稿");
 });
 
 it("keeps repeated new conversations and project choices local until the first message", async () => {
@@ -100,18 +99,19 @@ it("keeps repeated new conversations and project choices local until the first m
   expect((await client.bootstrap()).tasks).toHaveLength(original + 1);
 });
 
-it("creates an unassigned conversation only on send and explicitly recovers its original send", async () => {
+it("creates an unassigned conversation only on send and retries a failed send in that conversation", async () => {
   const scratch = (await client.bootstrap()).projects.find(p => p.displayName === "快速对话")!;
   vi.mocked(client.submitTurn).mockRejectedValueOnce(new Error("发送失败测试"));
   await click(button("新建对话"));
   await typePrompt("无项目消息"); await send();
   expect(client.createTask).toHaveBeenCalledExactlyOnceWith(scratch.projectId, "新对话", expect.any(Object), expect.objectContaining({ operationId: expect.any(String), taskId: expect.any(String) }));
-  expect(element.querySelector("textarea")?.value).toBe("");
-  expect(element.querySelector('[aria-label="待核实的发送请求"]')?.textContent).toContain("无项目消息");
-  await click(button("核实发送结果"));
-  await click(button("继续原发送"));
+  expect(element.querySelector("textarea")?.value).toBe("无项目消息");
+  expect(element.querySelector("form.composer [role=alert]")?.textContent).toContain("发送失败测试");
+  expect(element.textContent).not.toContain("核实发送结果");
+  await send();
   expect(client.createTask).toHaveBeenCalledTimes(1);
   expect(client.submitTurn).toHaveBeenCalledTimes(2);
+  expect(element.querySelector("textarea")?.value).toBe("");
 });
 
 it("shows a blank conversation area instead of the welcome page while history loads", async () => {
@@ -218,8 +218,7 @@ it("shows an agent loading indicator immediately while submit is pending and cle
   expect(element.querySelector('.agent-pending')?.textContent).toContain("正在响应");
   await act(async () => reject(new Error("测试发送失败")));
   expect(element.querySelector('.agent-pending')).toBeNull();
-  expect(element.querySelector('textarea')?.value).toBe("");
-  expect(element.querySelector('[aria-label="待核实的发送请求"]')?.textContent).toContain("等待首个回复");
+  expect(element.querySelector('textarea')?.value).toBe("等待首个回复");
 });
 
 it("shows the selected agent even before a new conversation has been created", async () => {
@@ -349,8 +348,7 @@ it("removes the optimistic prompt and retains the original send after task creat
   expect(visible(".user-message")).toHaveLength(0);
   expect(visible(".agent-pending")).toHaveLength(0);
   expect(element.querySelector(".welcome-stage textarea")).not.toBeNull();
-  expect(element.querySelector("textarea")?.value).toBe("");
-  expect(element.querySelector('[aria-label="待核实的发送请求"]')?.textContent).toContain("失败时保留消息");
+  expect(element.querySelector("textarea")?.value).toBe("失败时保留消息");
   expect(element.querySelector('[role="alert"]')?.textContent).toContain("创建失败");
 });
 it("starts an empty draft in the project selected by the sidebar plus button", async () => {
@@ -387,20 +385,29 @@ it("does not overwrite a newer draft when an older creation fails", async () => 
   await typePrompt("newer draft");
   await act(async () => reject(new Error("lost response")));
   expect(element.querySelector("textarea")?.value).toBe("newer draft");
-  expect(element.querySelector('[aria-label="待核实的发送请求"]')?.textContent).toContain("original request");
 });
 
-it("keeps unresolved sends visible after reopening without creating or sending again", async () => {
+it("blocks the conversation while a failed send can't be stopped and returns its text once it is", async () => {
   vi.mocked(client.submitTurn).mockRejectedValueOnce(new Error("offline"));
+  vi.spyOn(client, "submissionRetire").mockRejectedValueOnce(new Error("service busy"));
   await typePrompt("recover after reopen"); await send();
   const calls = vi.mocked(client.submitTurn).mock.calls.length;
+  expect(element.querySelector("textarea")?.value).toBe("");
   await act(async () => root.unmount()); root = createRoot(element);
   await act(async () => root.render(<App client={client}/>));
-  expect(element.querySelector('[aria-label="待核实的发送请求"]')?.textContent).toContain("recover after reopen");
   expect(client.submitTurn).toHaveBeenCalledTimes(calls);
   await typePrompt("another message"); await send();
   expect(client.submitTurn).toHaveBeenCalledTimes(calls);
   expect(element.querySelector<HTMLButtonElement>('[aria-label="发送"]')?.disabled).toBe(true);
+  const now = Date.now();
+  vi.spyOn(Date, "now").mockReturnValue(now + 3 * 60_000);
+  await act(async () => root.unmount()); root = createRoot(element);
+  await act(async () => root.render(<App client={client}/>));
+  await vi.waitFor(async () => {
+    await act(async () => {});
+    expect(element.querySelector("textarea")?.value).toBe("recover after reopen");
+  });
+  expect(client.submitTurn).toHaveBeenCalledTimes(calls);
 });
 
 it("does not mistake another command's identical message for the pending submission", async () => {
@@ -416,7 +423,7 @@ it("does not mistake another command's identical message for the pending submiss
   expect(visible(".user-message").filter(node => node.textContent === "identical message")).toHaveLength(2);
   await act(async () => reject(new Error("version changed")));
   expect(visible(".user-message").filter(node => node.textContent === "identical message")).toHaveLength(1);
-  expect(element.querySelector('[aria-label="待核实的发送请求"]')?.textContent).toContain("identical message");
+  expect(element.querySelector("textarea")?.value).toBe("identical message");
 });
 
 it("does not restore a failed old send into a different selected conversation", async () => {
@@ -429,37 +436,21 @@ it("does not restore a failed old send into a different selected conversation", 
   await act(async () => reject(new Error("old creation failed")));
   expect(element.querySelector("textarea")?.value).toBe("draft for selected conversation");
   expect(element.querySelector("form.composer [role=alert]")).toBeNull();
-  expect(element.querySelector('[aria-label="待核实的发送请求"]')?.textContent).toContain("old conversation request");
 });
 
-it("keeps a send with an unknown outcome out of the composer and blocks a fresh send until it is verified", async () => {
+it("blocks a fresh send while the outcome is unknown and returns the text once the service never received it", async () => {
+  vi.useFakeTimers();
   const start = vi.spyOn(client, "submissionStart").mockRejectedValueOnce(new Error("reply lost"));
-  const lookup = vi.spyOn(client, "submissionIntentGet").mockRejectedValueOnce(new Error("service restarting"));
+  const lookup = vi.spyOn(client, "submissionIntentGet").mockRejectedValue(new Error("offline"));
   await typePrompt("结果未知的消息"); await send();
-  const original = start.mock.calls[0][0].operationId;
   expect(element.querySelector("textarea")?.value).toBe("");
-  expect(element.querySelector('[aria-label="结果未知的发送请求"]')?.textContent).toContain("结果未知的消息");
   await typePrompt("另一条消息"); await send();
   expect(start).toHaveBeenCalledTimes(1);
-  // Verification finds no record: resending reuses the original identity.
-  lookup.mockResolvedValueOnce(null);
-  await click(button("核实发送结果"));
-  await act(async () => { button("重新发送原内容").click(); await new Promise(resolve => setTimeout(resolve, 900)); });
-  expect(start).toHaveBeenCalledTimes(2);
-  expect(start.mock.calls[1][0].operationId).toBe(original);
-  expect(element.querySelector('[aria-label="结果未知的发送请求"]')).toBeNull();
-});
-
-it("returns the text to the draft only after verifying the service never received it", async () => {
-  vi.spyOn(client, "submissionStart").mockRejectedValueOnce(new Error("reply lost"));
-  const lookup = vi.spyOn(client, "submissionIntentGet").mockRejectedValueOnce(new Error("offline"));
-  await typePrompt("要放回的消息"); await send();
-  expect(element.querySelector("textarea")?.value).toBe("");
-  lookup.mockResolvedValueOnce(null);
-  await click(button("核实发送结果"));
-  await click(button("放弃并放回输入框"));
-  expect(element.querySelector("textarea")?.value).toBe("要放回的消息");
-  expect(element.querySelector('[aria-label="结果未知的发送请求"]')).toBeNull();
+  expect(element.querySelector<HTMLButtonElement>('[aria-label="发送"]')?.disabled).toBe(true);
+  lookup.mockResolvedValue(null);
+  await act(async () => { await vi.advanceTimersByTimeAsync(16_000); });
+  expect(element.querySelector("textarea")?.value).toBe("结果未知的消息\n\n另一条消息");
+  expect(localStorage.getItem("dogcodes:unconfirmed-send:" + start.mock.calls[0][0].operationId)).toBeNull();
 });
 
 

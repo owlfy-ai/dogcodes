@@ -5,8 +5,8 @@ import { translate as t } from "./i18n";
 
 // The service freezes each send, creates the conversation or switches the Agent
 // when needed, and submits the message with fixed identities. This client only
-// starts, continues or retires originals and lists the ones still pending, so a
-// send started on another window or device is recoverable here as well.
+// starts or retires originals and lists the ones still pending, so a send left
+// unfinished on another window or device can be ended here as well.
 export type PendingSubmission = SubmissionIntent;
 export type SubmissionResult = SubmissionResolution | { status: "pending"; taskId: TaskId };
 
@@ -128,7 +128,7 @@ function startRequest(record: UnconfirmedSubmission) {
   const { schemaVersion: _schema, requestedAt: _at, ...call } = record;
   return call;
 }
-async function send(service: ReturnType<typeof api>, client: CoreClient, record: UnconfirmedSubmission, keepIfAbsent = false): Promise<SubmissionResolution> {
+async function send(service: ReturnType<typeof api>, client: CoreClient, record: UnconfirmedSubmission): Promise<SubmissionResolution> {
   const call = startRequest(record);
   remember(record);
   try {
@@ -147,9 +147,7 @@ async function send(service: ReturnType<typeof api>, client: CoreClient, record:
       if (latest.state === "closed") return latest.resolution;
       throw new PendingSubmissionError(latest.intent, cause);
     }
-    // The initial composer can restore a rejected message. Recovery retries have
-    // no composer owner: retain their original text/attachments until resolved.
-    if (!keepIfAbsent) forgetUnconfirmed(record.operationId);
+    forgetUnconfirmed(record.operationId);
     throw cause; // Verified absent: the caller may return the content to the composer.
   } finally { void discover(client); }
 }
@@ -161,35 +159,18 @@ async function verifyUnconfirmed(client: CoreClient, record: UnconfirmedSubmissi
   void discover(client);
   return latest.state === "closed" ? latest.resolution : { status: "pending", taskId: latest.intent.task.taskId };
 }
-/** Sends the original request again with its original identity; the service deduplicates. */
-async function resendUnconfirmed(client: CoreClient, record: UnconfirmedSubmission): Promise<SubmissionResolution> {
-  const service = api(client);
-  return withClientOperationLock(`submission:${record.scope}`, () => send(service, client, record, true));
-}
 /** Only after verification found no record: stop tracking without sending. */
 function abandonUnconfirmed(record: UnconfirmedSubmission) { forgetUnconfirmed(record.operationId); }
 
-function original(action: "continue" | "retire") {
-  return async (client: CoreClient, record: PendingSubmission): Promise<SubmissionResult> => {
-    const service = api(client);
-    return withClientOperationLock(`submission:${record.scope}`, async () => {
-      try {
-        const entry = action === "continue" ? await service.submissionContinue(record.operationId) : await service.submissionRetire(record.operationId);
-        return entry.state === "closed" ? entry.resolution : { status: "pending", taskId: record.task.taskId };
-      } finally { void discover(client); }
-    });
-  };
-}
-/** Read only: proves how the original ended, without executing anything. */
-async function check(client: CoreClient, record: PendingSubmission): Promise<SubmissionResult> {
-  const entry = await api(client).submissionIntentGet(record.operationId);
-  if (entry?.state === "closed") { void discover(client); return entry.resolution; }
-  const resolution = await client.submissionIntentResolve?.(record) ?? null;
-  if (!resolution) return { status: "pending", taskId: record.task.taskId };
-  // Persist the proven ending so no client lists the original again; the service re-verifies it.
-  const closed = await client.submissionIntentClose?.(record);
-  void discover(client);
-  return closed?.state === "closed" ? closed.resolution : resolution;
+/** Stops the original from being accepted later; one already accepted reports its result. */
+async function retire(client: CoreClient, record: PendingSubmission): Promise<SubmissionResult> {
+  const service = api(client);
+  return withClientOperationLock(`submission:${record.scope}`, async () => {
+    try {
+      const entry = await service.submissionRetire(record.operationId);
+      return entry.state === "closed" ? entry.resolution : { status: "pending", taskId: record.task.taskId };
+    } finally { void discover(client); }
+  });
 }
 
 const watchers = new WeakMap<CoreClient, { count: number; stop: () => void }>();
@@ -218,10 +199,10 @@ function watch(client: CoreClient) {
 }
 
 export const submissionOperations = {
-  start, check, resume: original("continue"), retire: original("retire"), discover, watch,
+  start, retire, discover, watch,
   list: (client: CoreClient) => cache(client).records,
   unconfirmed: () => JSON.stringify(unconfirmed()),
-  verifyUnconfirmed, resendUnconfirmed, abandonUnconfirmed,
+  verifyUnconfirmed, abandonUnconfirmed,
   snapshot: (client: CoreClient) => cache(client).snapshot,
   subscribe(listener: () => void) {
     listeners.add(listener); window.addEventListener("storage", listener);
