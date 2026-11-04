@@ -30,6 +30,13 @@ const MAX_DIRECTORY_ENTRIES: usize = 2000;
 
 type Outbound = mpsc::Sender<Frame>;
 
+/// Fixed once at startup, read when the desktop asks about this shim.
+static RELAY_SOCKET: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+pub(crate) fn relay_socket() -> Option<String> {
+    RELAY_SOCKET.get().cloned()
+}
+
 struct Supervised {
     stdin: Option<mpsc::UnboundedSender<Vec<u8>>>,
     stdout_credit: Arc<Semaphore>,
@@ -64,8 +71,23 @@ pub(crate) async fn serve(nonce: &str) -> io::Result<()> {
     });
     let (exited, mut finished) = mpsc::unbounded_channel::<u32>();
     let mut processes: HashMap<u32, Supervised> = HashMap::new();
+    // Agents reach this machine's desktop only through here. Without the socket
+    // everything else still works; only app tools are unavailable.
+    let (relays, mut opened) = mpsc::unbounded_channel::<OpenedRelay>();
+    #[cfg(unix)]
+    let _listener = crate::relay::listen(nonce, relays)
+        .ok()
+        .inspect(|listener| {
+            let _ = RELAY_SOCKET.set(listener.path().to_owned());
+        });
+    #[cfg(not(unix))]
+    drop(relays);
     let result = loop {
         tokio::select! {
+            Some(relay) = opened.recv() => {
+                let id = relay.id;
+                processes.insert(id, start_relay(relay, outbound.clone(), exited.clone()));
+            }
             frame = incoming.recv() => {
                 let frame = match frame {
                     Some(Ok(Some(frame))) => frame,
@@ -222,6 +244,57 @@ async fn report_failed_start(
         },
     )
     .await
+}
+
+/// An accepted helper connection, holding the token it presented.
+pub(crate) struct OpenedRelay {
+    pub id: u32,
+    pub token: String,
+    pub reader: Box<dyn AsyncRead + Unpin + Send>,
+    pub writer: Box<dyn AsyncWrite + Unpin + Send>,
+}
+
+fn start_relay(
+    relay: OpenedRelay,
+    outbound: Outbound,
+    exited: mpsc::UnboundedSender<u32>,
+) -> Supervised {
+    let OpenedRelay {
+        id,
+        token,
+        reader,
+        writer,
+    } = relay;
+    let credit = Arc::new(Semaphore::new(STREAM_WINDOW as usize));
+    let (sender, receiver) = mpsc::unbounded_channel();
+    tokio::spawn(pump_stdin(
+        writer,
+        receiver,
+        outbound.clone(),
+        stream_id(id, Channel::Stdin),
+    ));
+    let announce = outbound.clone();
+    let announced = async move {
+        let _ = send_message(&announce, &ShimMessage::RelayOpened { relay: id, token }).await;
+    };
+    let pump = pump_output(
+        reader,
+        outbound,
+        stream_id(id, Channel::Stdout),
+        credit.clone(),
+    );
+    tokio::spawn(async move {
+        // The desktop must know the relay before its first bytes arrive.
+        announced.await;
+        pump.await;
+        let _ = exited.send(id);
+    });
+    Supervised {
+        stdin: Some(sender),
+        stdout_credit: credit,
+        stderr_credit: Arc::new(Semaphore::new(0)),
+        terminate: None,
+    }
 }
 
 fn start(

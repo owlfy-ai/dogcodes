@@ -1,5 +1,6 @@
 // Strings for SSH connections, one block per language so a change is reviewed in one place.
 const en = {
+  errorConnectionClosed: "The server closed the connection. If you were entering a password, the server may have stopped waiting. Please try again.",
   agentBroken: "Can't start",
   agentNeedsLogin: "Sign in on the server",
   agentNotReady: "Not ready",
@@ -109,6 +110,7 @@ const en = {
 export type ExecutionTargetMessages = typeof en;
 
 const zhCN: ExecutionTargetMessages = {
+  errorConnectionClosed: "服务器断开了连接。如果刚才在输入密码，可能是服务器等待超时，请重试。",
   agentBroken: "无法启动",
   agentNeedsLogin: "请在服务器上登录",
   agentNotReady: "未就绪",
@@ -218,6 +220,7 @@ const zhCN: ExecutionTargetMessages = {
 
 const zhTW: ExecutionTargetMessages = {
   ...zhCN,
+  errorConnectionClosed: "伺服器中斷了連線。如果剛才在輸入密碼，可能是伺服器等待逾時，請重試。",
   agentBroken: "無法啟動",
   agentNeedsLogin: "請在伺服器上登入",
   agentNotReady: "未就緒",
@@ -323,6 +326,7 @@ const zhTW: ExecutionTargetMessages = {
 
 const ja: ExecutionTargetMessages = {
   ...en,
+  errorConnectionClosed: "サーバーが接続を閉じました。パスワード入力中だった場合は、サーバーの待機時間が切れた可能性があります。もう一度お試しください。",
   agentBroken: "起動できません",
   agentNeedsLogin: "サーバーでサインインしてください",
   agentNotReady: "未準備",
@@ -431,6 +435,7 @@ const ja: ExecutionTargetMessages = {
 
 const ko: ExecutionTargetMessages = {
   ...en,
+  errorConnectionClosed: "서버가 연결을 닫았습니다. 비밀번호를 입력하던 중이었다면 서버 대기 시간이 끝났을 수 있습니다. 다시 시도해 주세요.",
   agentBroken: "시작할 수 없음",
   agentNeedsLogin: "서버에서 로그인하세요",
   agentNotReady: "준비되지 않음",
@@ -539,6 +544,7 @@ const ko: ExecutionTargetMessages = {
 
 const fr: ExecutionTargetMessages = {
   ...en,
+  errorConnectionClosed: "Le serveur a fermé la connexion. Si vous saisissiez un mot de passe, il a peut-être cessé d'attendre. Veuillez réessayer.",
   agentBroken: "Démarrage impossible",
   agentNeedsLogin: "Connectez-vous sur le serveur",
   agentNotReady: "Pas prêt",
@@ -647,6 +653,7 @@ const fr: ExecutionTargetMessages = {
 
 const de: ExecutionTargetMessages = {
   ...en,
+  errorConnectionClosed: "Der Server hat die Verbindung geschlossen. Falls du gerade ein Passwort eingegeben hast, hat er womöglich nicht länger gewartet. Bitte erneut versuchen.",
   agentBroken: "Startet nicht",
   agentNeedsLogin: "Auf dem Server anmelden",
   agentNotReady: "Nicht bereit",
@@ -755,6 +762,7 @@ const de: ExecutionTargetMessages = {
 
 const es: ExecutionTargetMessages = {
   ...en,
+  errorConnectionClosed: "El servidor cerró la conexión. Si estabas escribiendo una contraseña, puede que haya dejado de esperar. Inténtalo de nuevo.",
   agentBroken: "No se puede iniciar",
   agentNeedsLogin: "Inicia sesión en el servidor",
   agentNotReady: "No está listo",
@@ -863,6 +871,7 @@ const es: ExecutionTargetMessages = {
 
 const ptBR: ExecutionTargetMessages = {
   ...en,
+  errorConnectionClosed: "O servidor fechou a conexão. Se você estava digitando uma senha, ele pode ter parado de esperar. Tente novamente.",
   agentBroken: "Não é possível iniciar",
   agentNeedsLogin: "Faça login no servidor",
   agentNotReady: "Não está pronto",
@@ -971,6 +980,7 @@ const ptBR: ExecutionTargetMessages = {
 
 const ru: ExecutionTargetMessages = {
   ...en,
+  errorConnectionClosed: "Сервер закрыл соединение. Если вы вводили пароль, возможно, сервер перестал ждать. Повторите попытку.",
   agentBroken: "Не запускается",
   agentNeedsLogin: "Войдите на сервере",
   agentNotReady: "Не готов",
@@ -1079,6 +1089,7 @@ const ru: ExecutionTargetMessages = {
 
 const it: ExecutionTargetMessages = {
   ...en,
+  errorConnectionClosed: "Il server ha chiuso la connessione. Se stavi inserendo una password, potrebbe aver smesso di attendere. Riprova.",
   agentBroken: "Avvio non riuscito",
   agentNeedsLogin: "Accedi sul server",
   agentNotReady: "Non pronto",

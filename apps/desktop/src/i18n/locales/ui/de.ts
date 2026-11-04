@@ -1828,6 +1828,8 @@ export const uiDe: UiMessages = {
     targetSessionMissing: "Die ursprüngliche Unterhaltung existiert im Agent nicht mehr. Agent erneut wählen und per Kontextübergabe fortfahren.",
     targetSessionIncompatible: "Der Agent kann die ursprüngliche Unterhaltung nicht fortsetzen oder unterstützt diese Aktion nicht. Agent erneut wählen und per Kontextübergabe fortfahren.",
     driverProtocolError: "Der Agent hat eine nicht verarbeitbare Antwort geliefert. Prüfen, ob der native Client normal funktioniert, ihn aktualisieren und den Agent erneut erkennen.",
+    targetNotConnected: "Der Server dieses Agents ist nicht verbunden. Verbinde ihn und versuche es erneut.",
+    attachmentUploadFailed: "Der Anhang konnte nicht auf den Server hochgeladen werden. Prüfe die Verbindung und den Speicherplatz.",
     driverUnavailable: "Der Agent ist noch nicht verbunden. Unter „Agents verbinden“ erneut erkennen und dann wiederholen.",
     interrupted: "Dieser Lauf wurde gestoppt. Senden Sie eine Nachricht, um fortzufahren.",
     genericFailure: "Der Agent konnte die Anfrage nicht abschließen und hat keinen erkennbaren Grund genannt. Zuerst prüfen, ob der native Client normal funktioniert; bleibt das Problem bestehen, siehe Diagnose unter „Hilfe und Wiederherstellung“.",

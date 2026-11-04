@@ -7,6 +7,8 @@ use std::{
 };
 use target_wire::{CHECK_PREFIX, PROTOCOL_VERSION, TargetInfo};
 
+#[cfg(unix)]
+mod relay;
 mod serve;
 
 fn main() -> ExitCode {
@@ -15,6 +17,8 @@ fn main() -> ExitCode {
     match args.as_slice() {
         ["--self-check"] => self_check(),
         ["serve", "--nonce", nonce] if valid_nonce(nonce) => serve_main(nonce),
+        #[cfg(unix)]
+        ["mcp-relay", socket, token] => relay_main(socket, token),
         _ => {
             eprintln!("usage: dogcodes-shim --self-check | serve --nonce <hex>");
             ExitCode::from(64)
@@ -54,6 +58,26 @@ fn executable_digest() -> io::Result<String> {
     }
 }
 
+#[cfg(unix)]
+fn relay_main(socket: &str, token: &str) -> ExitCode {
+    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    else {
+        return ExitCode::from(70);
+    };
+    let result = runtime.block_on(relay::client(socket, token));
+    // A blocking read of stdin would otherwise hold up the runtime's shutdown forever.
+    runtime.shutdown_background();
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("relay stopped: {error}");
+            ExitCode::from(74)
+        }
+    }
+}
+
 fn serve_main(nonce: &str) -> ExitCode {
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -62,7 +86,10 @@ fn serve_main(nonce: &str) -> ExitCode {
         eprintln!("runtime could not start");
         return ExitCode::from(70);
     };
-    match runtime.block_on(serve::serve(nonce)) {
+    let result = runtime.block_on(serve::serve(nonce));
+    // Giving up on a silent desktop must not wait on the read of its silent stdin.
+    runtime.shutdown_background();
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("shim stopped: {error}");
@@ -81,6 +108,11 @@ pub(crate) fn target_info() -> TargetInfo {
         shell: std::env::var("SHELL")
             .ok()
             .filter(|shell| !shell.is_empty()),
+        root: is_root(),
+        executable: std::env::current_exe()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        relay_socket: serve::relay_socket(),
         machine_identity: machine_identity(),
     }
 }
@@ -93,6 +125,16 @@ fn machine_identity() -> String {
     hasher.update(b"|");
     hasher.update(account_id().as_bytes());
     hex::encode(hasher.finalize())[..32].to_owned()
+}
+
+#[cfg(unix)]
+fn is_root() -> bool {
+    nix::unistd::geteuid().is_root()
+}
+
+#[cfg(not(unix))]
+fn is_root() -> bool {
+    false
 }
 
 #[cfg(unix)]

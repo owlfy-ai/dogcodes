@@ -83,15 +83,23 @@ const ENV_ALLOWLIST: &[&str] = &[
 
 /// Mirrors Claude Code's startup rule: root may bypass permissions only
 /// inside a declared sandbox, otherwise the CLI exits before the first turn.
-fn bypass_permissions_available() -> bool {
-    #[cfg(unix)]
-    let root = nix::unistd::geteuid().is_root();
-    #[cfg(not(unix))]
-    let root = false;
+fn bypass_permissions_available(target: &agent_runtime::SharedTarget) -> bool {
+    let root = if target.is_local() {
+        #[cfg(unix)]
+        let root = nix::unistd::geteuid().is_root();
+        #[cfg(not(unix))]
+        let root = false;
+        root
+    } else {
+        target.runs_as_root()
+    };
     let declared = |name: &str| {
-        std::env::var(name).is_ok_and(|value| {
-            ["1", "true", "yes", "on"].contains(&value.trim().to_ascii_lowercase().as_str())
-        })
+        target
+            .inherited(name)
+            .and_then(|value| value.into_string().ok())
+            .is_some_and(|value| {
+                ["1", "true", "yes", "on"].contains(&value.trim().to_ascii_lowercase().as_str())
+            })
     };
     !root || declared("IS_SANDBOX") || declared("CLAUDE_CODE_BUBBLEWRAP")
 }
@@ -376,6 +384,8 @@ struct ClaudeQuotaState {
 }
 
 struct SessionProcess {
+    /// False on another machine, where the paths it reports mean nothing here.
+    reads_local_files: bool,
     app_mcps: Vec<driver_api::AppMcp>,
     working_directory: PathBuf,
     quota: std::sync::Arc<ClaudeQuotaState>,
@@ -670,6 +680,7 @@ impl ClaudeDriver {
         let (autonomous_tx, autonomous_rx) = mpsc::unbounded_channel();
         let (commands, command_rx) = mpsc::unbounded_channel();
         let process = Arc::new(SessionProcess {
+            reads_local_files: self.executable.target.is_local(),
             app_mcps: initialize_history.to_vec(),
             working_directory,
             quota: Arc::clone(&self.quota),
@@ -826,13 +837,20 @@ fn spawn_selected(
                 (mcp.name.clone(), server)
             })
             .collect();
-        let path = std::path::Path::new(&mcp.directory).join("claude-mcp.json");
-        std::fs::write(&path, json!({"mcpServers":servers}).to_string()).map_err(|_| {
-            DriverError::Disconnected("history MCP configuration unavailable".into())
-        })?;
-        command
-            .arg("--mcp-config")
-            .arg(agent_runtime::external_path(path));
+        let config = json!({"mcpServers":servers}).to_string();
+        // A local file means nothing to a process on another machine. Claude takes
+        // the configuration itself as an argument just as well.
+        if launch.executable.target.is_local() {
+            let path = std::path::Path::new(&mcp.directory).join("claude-mcp.json");
+            std::fs::write(&path, config).map_err(|_| {
+                DriverError::Disconnected("history MCP configuration unavailable".into())
+            })?;
+            command
+                .arg("--mcp-config")
+                .arg(agent_runtime::external_path(path));
+        } else {
+            command.arg("--mcp-config").arg(config);
+        }
     }
     if let Some(model) = model.filter(|m| *m != "default") {
         command.arg("--model").arg(model);
@@ -850,8 +868,11 @@ fn spawn_selected(
             .arg("--add-dir")
             .arg(agent_runtime::external_path(directory));
     }
-    driver_api::permissions::claude_for(true, bypass_permissions_available())
-        .validate(permission)?;
+    driver_api::permissions::claude_for(
+        true,
+        bypass_permissions_available(&launch.executable.target),
+    )
+    .validate(permission)?;
     let mut args = session_args(session_uuid, resume);
     if let Some(mode) = permission {
         let index = args.iter().position(|a| a == "--permission-mode").unwrap();
@@ -1035,11 +1056,14 @@ async fn run_session(
             {
                 process.close_agent_interactions(None, true).await;
             }
-            background_outputs.observe(
-                &raw,
-                &process.child_events.lock().expect("child events"),
-                current.as_ref(),
-            );
+            // Those output files are on the agent's machine, not this one.
+            if process.reads_local_files {
+                background_outputs.observe(
+                    &raw,
+                    &process.child_events.lock().expect("child events"),
+                    current.as_ref(),
+                );
+            }
             background_outputs.settle(&mut raw).await;
             process
                 .child_events
@@ -1471,7 +1495,7 @@ impl AgentDriver for ClaudeDriver {
         additional: &[String],
     ) -> Result<SessionHandle, DriverError> {
         // Without a usable bypass the review runner answers native approvals.
-        let review_permission = if bypass_permissions_available() {
+        let review_permission = if bypass_permissions_available(&self.executable.target) {
             "bypassPermissions"
         } else {
             "default"
@@ -1511,7 +1535,7 @@ impl AgentDriver for ClaudeDriver {
         let (_, auto) = models::read_with_auto(self, workspace).await?;
         Ok(driver_api::permissions::claude_for(
             auto,
-            bypass_permissions_available(),
+            bypass_permissions_available(&self.executable.target),
         ))
     }
     fn executor(&self) -> &ExecutorRef {
@@ -1522,10 +1546,20 @@ impl AgentDriver for ClaudeDriver {
         env!("CARGO_PKG_VERSION")
     }
 
-    /// App tools are started by the agent from a path on this machine, which means
-    /// nothing on another one. Context handoff stays available through the prompt.
-    fn supports_app_mcp(&self) -> bool {
+    fn runs_on_this_machine(&self) -> bool {
         self.executable.target.is_local()
+    }
+    fn prepare_app_mcp(&self, mcp: driver_api::AppMcp) -> Result<driver_api::AppMcp, DriverError> {
+        mcp.for_target(&self.executable.target)
+    }
+    async fn prepare_attachments(
+        &self,
+        items: &mut [agent_domain::PromptAttachment],
+    ) -> Result<(), DriverError> {
+        if self.executable.target.is_local() {
+            return Ok(());
+        }
+        driver_api::attachments::deliver_to_target(&self.executable.target, items).await
     }
 
     fn native_agent_version(&self) -> Option<&str> {

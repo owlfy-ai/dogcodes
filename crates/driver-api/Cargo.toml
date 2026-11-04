@@ -10,6 +10,7 @@ base64 = "0.22"
 sha2.workspace = true
 async-trait.workspace = true
 agent-domain = { path = "../domain" }
+agent-runtime = { path = "../runtime" }
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true

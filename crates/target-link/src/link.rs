@@ -4,6 +4,7 @@
 use crate::error::{ConnectError, ConnectErrorKind};
 use agent_runtime::{
     ExecutionTarget, OwnedChild, Pipe, ProcessFuture, ProcessRequest, RemoteProcess, SharedTarget,
+    TargetCommand, local_target,
 };
 use std::{
     collections::{BTreeMap, HashMap},
@@ -23,7 +24,7 @@ use target_wire::{
     eof_frame, parse_control, parse_credit, read_frame, split_stream, stream_id, write_frame,
 };
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     sync::{Notify, Semaphore, mpsc, oneshot, watch},
 };
 
@@ -61,6 +62,15 @@ struct Core {
     shutdown: Notify,
     closed: watch::Receiver<Option<String>>,
     runtime: tokio::runtime::Handle,
+    /// Local programs agents may reach, by the token handed to them. The target only
+    /// ever names a token: it cannot choose what runs on this machine.
+    app_tools: Mutex<HashMap<String, AppTool>>,
+}
+
+#[derive(Clone, Eq, Hash, PartialEq)]
+struct AppTool {
+    command: String,
+    args: Vec<String>,
 }
 
 impl Core {
@@ -120,6 +130,7 @@ impl TargetLink {
             shutdown: Notify::new(),
             closed,
             runtime: tokio::runtime::Handle::current(),
+            app_tools: Mutex::default(),
         });
         tokio::spawn(run(
             core.clone(),
@@ -154,6 +165,9 @@ impl TargetLink {
         let target: SharedTarget = Arc::new(LinkTarget {
             core: core.clone(),
             environment,
+            root: info.root,
+            shim: info.executable.clone(),
+            relay_socket: info.relay_socket.clone(),
         });
         Ok(Self { info, core, target })
     }
@@ -289,6 +303,7 @@ fn route(core: &Core, frame: Frame) -> Result<(), String> {
                         let _ = reply.send(envelope.response);
                     }
                 }
+                ShimMessage::RelayOpened { relay, token } => open_relay(core, relay, &token),
                 ShimMessage::Exited {
                     process,
                     code,
@@ -331,9 +346,61 @@ fn route(core: &Core, frame: Frame) -> Result<(), String> {
     Ok(())
 }
 
+/// Connects one helper on the target to a fresh copy of the local program, using
+/// the same streams and credit windows as a process running over there.
+fn open_relay(core: &Core, relay: u32, token: &str) {
+    let refuse = |core: &Core| {
+        let _ = core
+            .outbound
+            .send(eof_frame(stream_id(relay, Channel::Stdin)));
+    };
+    let tool = core.app_tools.lock().unwrap().get(token).cloned();
+    let Some(tool) = tool else {
+        return refuse(core);
+    };
+    let mut command = TargetCommand::new(local_target(), &tool.command);
+    command
+        .args(&tool.args)
+        .stdio(Pipe::Piped, Pipe::Piped, Pipe::Null);
+    let Ok(mut child) = command.spawn() else {
+        return refuse(core);
+    };
+    let (Some(input), Some(output)) = (child.stdin.take(), child.stdout.take()) else {
+        return refuse(core);
+    };
+    let credit = Arc::new(Semaphore::new(STREAM_WINDOW as usize));
+    let (requests, receiver) = mpsc::unbounded_channel();
+    let (exit, _) = watch::channel(ExitState::Running);
+    core.processes.lock().unwrap().insert(
+        relay,
+        ProcessRoute {
+            stdin_credit: credit.clone(),
+            stdout: Some(requests),
+            stderr: None,
+            exit,
+        },
+    );
+    core.runtime.spawn(pump_output(
+        input,
+        receiver,
+        core.outbound.clone(),
+        stream_id(relay, Channel::Stdout),
+    ));
+    let outbound = core.outbound.clone();
+    core.runtime.spawn(async move {
+        // Ends with the local program, which ends when the helper's input does.
+        pump_stdin(output, outbound, stream_id(relay, Channel::Stdin), credit).await;
+        let _ = child.wait().await;
+        let _ = child.terminate().await;
+    });
+}
+
 struct LinkTarget {
     core: Arc<Core>,
     environment: BTreeMap<String, String>,
+    root: bool,
+    shim: String,
+    relay_socket: Option<String>,
 }
 
 impl ExecutionTarget for LinkTarget {
@@ -351,6 +418,38 @@ impl ExecutionTarget for LinkTarget {
     }
     fn spawn(&self, request: ProcessRequest) -> io::Result<OwnedChild> {
         spawn(&self.core, request)
+    }
+    fn runs_as_root(&self) -> bool {
+        self.root
+    }
+    /// The same tool keeps one token, so its command compares equal between turns
+    /// and a live session is not rebuilt merely because a turn started.
+    fn app_tool_command(
+        &self,
+        command: &str,
+        args: &[String],
+    ) -> io::Result<(String, Vec<String>)> {
+        let socket = self.relay_socket.as_ref().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::Unsupported, "the target has no relay socket")
+        })?;
+        let tool = AppTool {
+            command: command.to_owned(),
+            args: args.to_vec(),
+        };
+        let mut tools = self.core.app_tools.lock().unwrap();
+        let existing = tools
+            .iter()
+            .find(|(_, known)| **known == tool)
+            .map(|(token, _)| token.clone());
+        let token = existing.unwrap_or_else(|| {
+            let token = uuid::Uuid::new_v4().simple().to_string();
+            tools.insert(token.clone(), tool);
+            token
+        });
+        Ok((
+            self.shim.clone(),
+            vec!["mcp-relay".into(), socket.clone(), token],
+        ))
     }
 }
 
@@ -443,8 +542,8 @@ fn spawn(core: &Arc<Core>, request: ProcessRequest) -> io::Result<OwnedChild> {
     ))
 }
 
-async fn pump_stdin(
-    mut local: DuplexStream,
+async fn pump_stdin<R: AsyncRead + Unpin>(
+    mut local: R,
     outbound: mpsc::UnboundedSender<Frame>,
     stream: u32,
     credit: Arc<Semaphore>,
@@ -472,8 +571,8 @@ async fn pump_stdin(
 
 /// Credit goes back once the local reader has taken the bytes, so a driver that
 /// stops reading stops the remote process, exactly as a local pipe would.
-async fn pump_output(
-    mut local: DuplexStream,
+async fn pump_output<W: AsyncWrite + Unpin>(
+    mut local: W,
     mut receiver: mpsc::UnboundedReceiver<Vec<u8>>,
     outbound: mpsc::UnboundedSender<Frame>,
     stream: u32,

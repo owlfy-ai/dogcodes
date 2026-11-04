@@ -1828,6 +1828,8 @@ export const uiKo: UiMessages = {
     targetSessionMissing: "Agent에 원래 대화가 더 이상 없습니다. Agent를 다시 선택하고 컨텍스트 인계로 대화를 이어가세요.",
     targetSessionIncompatible: "Agent가 원래 대화를 이어갈 수 없거나 이 작업을 지원하지 않습니다. Agent를 다시 선택하고 컨텍스트 인계로 대화를 이어가세요.",
     driverProtocolError: "Agent가 처리할 수 없는 응답을 반환했습니다. 네이티브 클라이언트가 정상적으로 대화되는지 확인하고, 업데이트한 뒤 Agent를 다시 감지하세요.",
+    targetNotConnected: "이 Agent의 서버가 연결되어 있지 않습니다. 연결한 후 다시 시도하세요.",
+    attachmentUploadFailed: "첨부 파일을 서버에 업로드하지 못했습니다. 연결과 디스크 공간을 확인하세요.",
     driverUnavailable: "현재 Agent가 아직 연결되지 않았습니다. \"Agent 연결\"에서 다시 감지한 뒤 재시도하세요.",
     interrupted: "이번 실행이 중지되었습니다. 메시지를 보내 계속할 수 있습니다.",
     genericFailure: "Agent가 이번 요청을 완료하지 못했으며 구체적인 원인도 제공하지 않았습니다. 먼저 네이티브 클라이언트가 정상적으로 대화되는지 확인하고, 계속되면 \"도움말 및 복구\"의 진단 정보를 확인하세요.",

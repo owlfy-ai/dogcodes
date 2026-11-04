@@ -23,7 +23,7 @@ export interface TargetPrompt { id: string; kind: "password" | "passphrase" | "h
 export interface TargetInfo { protocol: number; version: string; os: string; arch: string; home: string; shell: string | null; machineIdentity: string }
 export type TargetErrorKind =
   | "ssh_missing" | "ssh_too_old" | "auth_failed" | "host_key_changed" | "host_key_rejected"
-  | "host_unreachable" | "timeout" | "cancelled" | "account_restricted" | "unsupported_platform"
+  | "host_unreachable" | "connection_closed" | "timeout" | "cancelled" | "account_restricted" | "unsupported_platform"
   | "shim_unavailable" | "home_missing" | "directory_unwritable" | "unsafe_directory"
   | "upload_failed" | "not_executable" | "bad_binary" | "protocol_mismatch" | "failed";
 export interface TargetAgent {

@@ -14,7 +14,7 @@ const POLL_MILLISECONDS = 400;
 const ERROR_KEYS: Record<TargetErrorKind, string> = {
   ssh_missing: "errorSshMissing", ssh_too_old: "errorSshTooOld", auth_failed: "errorAuthFailed",
   host_key_changed: "errorHostKeyChanged", host_key_rejected: "errorHostKeyRejected",
-  host_unreachable: "errorHostUnreachable", timeout: "errorTimeout", cancelled: "errorCancelled",
+  host_unreachable: "errorHostUnreachable", connection_closed: "errorConnectionClosed", timeout: "errorTimeout", cancelled: "errorCancelled",
   account_restricted: "errorAccountRestricted", unsupported_platform: "errorUnsupportedPlatform",
   shim_unavailable: "errorShimUnavailable", home_missing: "errorHomeMissing",
   directory_unwritable: "errorDirectoryUnwritable", unsafe_directory: "errorUnsafeDirectory",

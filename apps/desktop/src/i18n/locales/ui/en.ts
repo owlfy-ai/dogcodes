@@ -1828,6 +1828,8 @@ export const uiEn = {
     targetSessionMissing: "The original conversation no longer exists in the agent. Choose an agent again and continue through context handoff.",
     targetSessionIncompatible: "The agent cannot continue the original conversation or does not support this action. Choose an agent again and continue through context handoff.",
     driverProtocolError: "The agent returned a response that could not be processed. Check that the native client chats normally, update it, then detect the agent again.",
+    targetNotConnected: "This Agent's server is not connected. Connect it, then try again.",
+    attachmentUploadFailed: "A file attachment couldn't be uploaded to the server. Check the connection and free disk space.",
     driverUnavailable: "The agent is not connected yet. Detect it again under \"Connect agents\", then retry.",
     interrupted: "This run was stopped. Send a message to continue.",
     genericFailure: "The agent could not complete this request and gave no identifiable reason. First check that the native client chats normally; if the problem persists, see the diagnostics under \"Help & recovery\".",

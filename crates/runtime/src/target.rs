@@ -50,6 +50,19 @@ pub trait ExecutionTarget: Send + Sync {
     fn inherited(&self, name: &str) -> Option<OsString>;
     fn temp_directory(&self) -> PathBuf;
     fn spawn(&self, request: ProcessRequest) -> io::Result<OwnedChild>;
+    /// A command an agent on this target can run to reach `command` on the machine
+    /// hosting this app. A local agent can simply run it.
+    fn app_tool_command(
+        &self,
+        command: &str,
+        args: &[String],
+    ) -> io::Result<(String, Vec<String>)> {
+        Ok((command.to_owned(), args.to_vec()))
+    }
+    /// Only meaningful remotely: a local process checks its own account directly.
+    fn runs_as_root(&self) -> bool {
+        false
+    }
 }
 
 pub type SharedTarget = Arc<dyn ExecutionTarget>;
@@ -96,6 +109,45 @@ impl ExecutionTarget for LocalTarget {
 }
 
 static LOCAL: LazyLock<SharedTarget> = LazyLock::new(|| Arc::new(LocalTarget));
+
+/// Writes a private file on the target, creating its directory, through a shell so
+/// it needs nothing but the running connection.
+pub async fn write_target_file(target: &SharedTarget, path: &str, bytes: &[u8]) -> io::Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut command = TargetCommand::new(target.clone(), "/bin/sh");
+    command
+        .args([
+            "-c",
+            r#"umask 077; mkdir -p "$(dirname "$1")" && cat > "$1""#,
+            "sh",
+            path,
+        ])
+        .inherit("PATH")
+        .stdio(Pipe::Piped, Pipe::Null, Pipe::Piped);
+    let mut child = command.spawn()?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| io::Error::other("stdin unavailable"))?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| io::Error::other("stderr unavailable"))?;
+    let writer = async {
+        stdin.write_all(bytes).await?;
+        stdin.shutdown().await
+    };
+    let mut message = String::new();
+    let mut limited = (&mut stderr).take(4096);
+    let (written, _, status) =
+        tokio::join!(writer, limited.read_to_string(&mut message), child.wait());
+    written?;
+    if status?.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(message.trim().to_owned()))
+    }
+}
 
 #[must_use]
 pub fn local_target() -> SharedTarget {

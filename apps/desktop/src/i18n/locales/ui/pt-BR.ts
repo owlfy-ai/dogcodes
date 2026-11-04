@@ -1828,6 +1828,8 @@ export const uiPtBR: UiMessages = {
     targetSessionMissing: "A conversa original não existe mais no agente. Escolha um agente novamente e continue por meio da transferência de contexto.",
     targetSessionIncompatible: "O agente não consegue continuar a conversa original ou não oferece suporte a esta ação. Escolha um agente novamente e continue por meio da transferência de contexto.",
     driverProtocolError: "O agente retornou uma resposta que não pôde ser processada. Verifique se o cliente nativo conversa normalmente, atualize-o e detecte o agente novamente.",
+    targetNotConnected: "O servidor deste Agent não está conectado. Conecte-o e tente novamente.",
+    attachmentUploadFailed: "Não foi possível enviar o anexo ao servidor. Verifique a conexão e o espaço em disco.",
     driverUnavailable: "O agente ainda não está conectado. Detecte-o novamente em «Conectar agentes» e tente de novo.",
     interrupted: "Esta execução foi interrompida. Envie uma mensagem para continuar.",
     genericFailure: "O agente não conseguiu concluir esta solicitação e não informou um motivo identificável. Primeiro verifique se o cliente nativo conversa normalmente; se o problema persistir, veja os diagnósticos em «Ajuda e recuperação».",

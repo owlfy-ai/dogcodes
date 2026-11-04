@@ -1828,6 +1828,8 @@ export const uiEs: UiMessages = {
     targetSessionMissing: "La conversación original ya no existe en el agente. Elige un agente de nuevo y continúa mediante el traspaso de contexto.",
     targetSessionIncompatible: "El agente no puede continuar la conversación original o no admite esta acción. Elige un agente de nuevo y continúa mediante el traspaso de contexto.",
     driverProtocolError: "El agente devolvió una respuesta que no se pudo procesar. Comprueba que el cliente nativo conversa con normalidad, actualízalo y vuelve a detectar el agente.",
+    targetNotConnected: "El servidor de este Agent no está conectado. Conéctalo e inténtalo de nuevo.",
+    attachmentUploadFailed: "No se pudo subir el adjunto al servidor. Revisa la conexión y el espacio en disco.",
     driverUnavailable: "El agente aún no está conectado. Vuelve a detectarlo en «Conectar agentes» y reintenta.",
     interrupted: "Esta ejecución se detuvo. Envía un mensaje para continuar.",
     genericFailure: "El agente no pudo completar esta solicitud y no indicó ningún motivo identificable. Primero comprueba que el cliente nativo conversa con normalidad; si el problema continúa, consulta los diagnósticos en «Ayuda y recuperación».",

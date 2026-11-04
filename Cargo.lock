@@ -1920,6 +1920,7 @@ name = "driver-api"
 version = "0.1.1"
 dependencies = [
  "agent-domain",
+ "agent-runtime",
  "async-trait",
  "base64 0.22.1",
  "futures",
@@ -7047,6 +7048,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "target-wire",
+ "tempfile",
  "tokio",
 ]
 

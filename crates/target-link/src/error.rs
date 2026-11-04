@@ -11,6 +11,8 @@ pub enum ConnectErrorKind {
     HostKeyChanged,
     HostKeyRejected,
     HostUnreachable,
+    /// The server hung up before sign-in finished, often after waiting too long.
+    ConnectionClosed,
     Timeout,
     Cancelled,
     /// Authenticated, but the account may not run commands (`git-shell`, `ForceCommand`).
@@ -72,6 +74,8 @@ pub(crate) fn classify_ssh_failure(stderr: &str) -> ConnectErrorKind {
         || has("network is unreachable")
     {
         ConnectErrorKind::HostUnreachable
+    } else if has("connection closed by") || has("connection reset") {
+        ConnectErrorKind::ConnectionClosed
     } else if has("timed out") {
         ConnectErrorKind::Timeout
     } else {
@@ -124,9 +128,14 @@ mod tests {
                 ConnectErrorKind::Timeout,
             ),
             (
-                "kex_exchange_identification: read: Connection reset",
-                ConnectErrorKind::Failed,
+                "Connection closed by 203.0.113.9 port 22",
+                ConnectErrorKind::ConnectionClosed,
             ),
+            (
+                "kex_exchange_identification: read: Connection reset",
+                ConnectErrorKind::ConnectionClosed,
+            ),
+            ("ssh: something unexpected", ConnectErrorKind::Failed),
         ] {
             assert_eq!(classify_ssh_failure(text), kind, "{text}");
         }

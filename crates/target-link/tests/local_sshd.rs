@@ -749,3 +749,133 @@ async fn directories_are_listed_and_resolved_on_the_target() {
     // A failed read is an answer, not a broken connection.
     link.ping().await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn an_agent_reaches_a_local_program_through_the_relay() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let target = link.target();
+    // A local program standing in for the app's tool server, marking what it serves.
+    let (command, args) = target
+        .app_tool_command("/bin/sh", &["-c".into(), "echo from-local; cat".into()])
+        .unwrap();
+    assert_eq!(args[0], "mcp-relay");
+    let (_, again) = target
+        .app_tool_command("/bin/sh", &["-c".into(), "echo from-local; cat".into()])
+        .unwrap();
+    assert_eq!(args, again, "the same tool must keep comparing equal");
+    let mut helper = agent_runtime::TargetCommand::new(target.clone(), &command);
+    helper.args(&args);
+    let mut helper = helper.spawn().unwrap();
+    let mut stdin = helper.stdin.take().unwrap();
+    let mut stdout = helper.stdout.take().unwrap();
+    stdin.write_all(b"request\n").await.unwrap();
+    let mut seen = Vec::new();
+    let mut buffer = [0; 256];
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while !String::from_utf8_lossy(&seen).contains("request") {
+            let count = stdout.read(&mut buffer).await.unwrap();
+            assert!(
+                count > 0,
+                "ended early: {:?}",
+                String::from_utf8_lossy(&seen)
+            );
+            seen.extend_from_slice(&buffer[..count]);
+        }
+    })
+    .await
+    .unwrap();
+    assert!(String::from_utf8_lossy(&seen).starts_with("from-local\n"));
+    // Ending the input ends the local program, and then the helper.
+    stdin.shutdown().await.unwrap();
+    drop(stdin);
+    assert!(
+        tokio::time::timeout(Duration::from_secs(10), helper.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .success()
+    );
+    link.ping().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn an_unknown_relay_token_cannot_run_anything_locally() {
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let target = link.target();
+    let (command, mut args) = target.app_tool_command("/bin/cat", &[]).unwrap();
+    *args.last_mut().unwrap() = "not-a-real-token".into();
+    let mut helper = agent_runtime::TargetCommand::new(target.clone(), &command);
+    helper.args(&args);
+    let mut helper = helper.spawn().unwrap();
+    let output = tokio::time::timeout(Duration::from_secs(20), read_all(&mut helper.stdout)).await;
+    assert_eq!(output.unwrap(), "");
+    link.ping().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn files_are_written_privately_on_the_target() {
+    use std::os::unix::fs::PermissionsExt;
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let file = server.root.path().join("uploads/deep/report.txt");
+    agent_runtime::write_target_file(&link.target(), file.to_str().unwrap(), b"contents")
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&file).unwrap(), b"contents");
+    assert_eq!(
+        std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert!(
+        agent_runtime::write_target_file(&link.target(), "/nonexistent-root/a/b", b"x")
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn file_attachments_reach_the_target_and_images_stay_in_the_prompt() {
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let local = tempfile::tempdir().unwrap();
+    let file = local.path().join("report.txt");
+    std::fs::write(&file, b"attached contents").unwrap();
+    let image = local.path().join("picture.png");
+    std::fs::write(&image, b"\x89PNG\r\n\x1a\n").unwrap();
+    let attachment = |name: &str, path: &Path, mime: &str| agent_domain::PromptAttachment {
+        delivered_path: None,
+        name: name.into(),
+        path: path.to_str().unwrap().into(),
+        mime_type: mime.into(),
+        integrity: None,
+    };
+    let mut items = [
+        // A name must not choose where the file lands.
+        attachment("../../outside.txt", &file, "text/plain"),
+        attachment("picture.png", &image, "image/png"),
+    ];
+    driver_api::attachments::deliver_to_target(&link.target(), &mut items)
+        .await
+        .unwrap();
+    let delivered = items[0].delivered_path.clone().unwrap();
+    assert!(delivered.contains("/dogcodes-attachments/"));
+    assert!(delivered.ends_with("/outside.txt"));
+    assert_eq!(std::fs::read(&delivered).unwrap(), b"attached contents");
+    assert_eq!(items[1].delivered_path, None);
+    let reference = driver_api::attachments::file_text(&items[0]);
+    assert!(reference["text"].as_str().unwrap().contains(&delivered));
+    assert!(
+        !reference["text"]
+            .as_str()
+            .unwrap()
+            .contains(file.to_str().unwrap())
+    );
+    std::fs::remove_file(&delivered).unwrap();
+}

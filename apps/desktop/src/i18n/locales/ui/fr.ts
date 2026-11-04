@@ -1828,6 +1828,8 @@ export const uiFr: UiMessages = {
     targetSessionMissing: "La conversation d'origine n'existe plus dans l'agent. Choisissez à nouveau un agent et poursuivez via le transfert de contexte.",
     targetSessionIncompatible: "L'agent ne peut pas poursuivre la conversation d'origine ou ne prend pas en charge cette action. Choisissez à nouveau un agent et poursuivez via le transfert de contexte.",
     driverProtocolError: "L'agent a renvoyé une réponse non exploitable. Vérifiez que le client natif discute normalement, mettez-le à jour, puis détectez à nouveau l'agent.",
+    targetNotConnected: "Le serveur de cet Agent n'est pas connecté. Connectez-le, puis réessayez.",
+    attachmentUploadFailed: "Impossible d'envoyer la pièce jointe au serveur. Vérifiez la connexion et l'espace disque.",
     driverUnavailable: "L'agent n'est pas encore connecté. Détectez-le à nouveau dans « Connecter des agents », puis réessayez.",
     interrupted: "Cette exécution a été arrêtée. Envoyez un message pour continuer.",
     genericFailure: "L'agent n'a pas pu terminer cette requête et n'a fourni aucune cause identifiable. Vérifiez d'abord que le client natif discute normalement ; si le problème persiste, consultez les diagnostics dans « Aide et récupération ».",

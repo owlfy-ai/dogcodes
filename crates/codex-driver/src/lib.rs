@@ -623,10 +623,20 @@ impl AgentDriver for CodexDriver {
         DRIVER_VERSION
     }
 
-    /// App tools are started by the agent from a path on this machine, which means
-    /// nothing on another one. Context handoff stays available through the prompt.
-    fn supports_app_mcp(&self) -> bool {
+    fn runs_on_this_machine(&self) -> bool {
         self.executable.target.is_local()
+    }
+    fn prepare_app_mcp(&self, mcp: driver_api::AppMcp) -> Result<driver_api::AppMcp, DriverError> {
+        mcp.for_target(&self.executable.target)
+    }
+    async fn prepare_attachments(
+        &self,
+        items: &mut [agent_domain::PromptAttachment],
+    ) -> Result<(), DriverError> {
+        if self.executable.target.is_local() {
+            return Ok(());
+        }
+        driver_api::attachments::deliver_to_target(&self.executable.target, items).await
     }
 
     fn native_agent_version(&self) -> Option<&str> {
@@ -1015,6 +1025,8 @@ impl QuotaProvider for CodexDriver {
     ) -> Option<driver_api::usage::SessionUsageSnapshot> {
         let mut usage = self.quota.usage.get(Some(id)).unwrap_or_default();
         let binding = self.quota.rollouts.lock().unwrap().get(id).cloned();
+        // That path is on the agent's machine; here it could name an unrelated file.
+        let binding = binding.filter(|_| self.executable.target.is_local());
         if let Some((path, turn)) = binding {
             let thread = id.to_owned();
             let reader = self

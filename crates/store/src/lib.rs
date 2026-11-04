@@ -6294,6 +6294,7 @@ mod tests {
         let path = dir.path().join("file with spaces.txt");
         std::fs::write(&path, "fixture").unwrap();
         let attachments = vec![agent_domain::PromptAttachment {
+            delivered_path: None,
             integrity: None,
             name: "file with spaces.txt".into(),
             path: path.to_string_lossy().into(),

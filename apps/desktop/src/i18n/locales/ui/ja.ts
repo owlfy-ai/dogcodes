@@ -1828,6 +1828,8 @@ export const uiJa: UiMessages = {
     targetSessionMissing: "Agent 内の元の会話は存在しません。Agent を選び直し、コンテキストの引き継ぎで会話を続けてください。",
     targetSessionIncompatible: "Agent は元の会話を続行できないか、この操作に対応していません。Agent を選び直し、コンテキストの引き継ぎで会話を続けてください。",
     driverProtocolError: "Agent が処理できない応答を返しました。ネイティブクライアントが正常に会話できるか確認し、更新してから Agent を再検出してください。",
+    targetNotConnected: "この Agent のサーバーは接続されていません。接続してからやり直してください。",
+    attachmentUploadFailed: "添付ファイルをサーバーにアップロードできませんでした。接続と空き容量を確認してください。",
     driverUnavailable: "この Agent はまだ接続されていません。「Agent に接続」で再検出してから再試行してください。",
     interrupted: "今回の実行は停止しました。メッセージを送信して続行できます。",
     genericFailure: "Agent はこのリクエストを完了できず、特定できる理由も示しませんでした。まずネイティブクライアントで正常に会話できるか確認し、解決しない場合は「ヘルプと復旧」の診断情報を確認してください。",

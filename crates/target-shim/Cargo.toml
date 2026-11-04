@@ -15,10 +15,13 @@ process-scope = { path = "../process-scope" }
 sha2.workspace = true
 serde_json.workspace = true
 target-wire = { path = "../target-wire" }
-tokio = { workspace = true, features = ["io-std", "io-util", "rt", "macros", "time", "process", "sync", "fs"] }
+tokio = { workspace = true, features = ["net", "io-std", "io-util", "rt", "macros", "time", "process", "sync", "fs"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.28", features = ["user", "hostname"] }
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true

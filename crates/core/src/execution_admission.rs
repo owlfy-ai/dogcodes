@@ -71,15 +71,21 @@ impl Core {
     ) -> Result<ExecutionAdmission<'_>, CoreError> {
         let guard = self.agent_admission.read().await;
         self.require_available_executor(executor).await?;
-        let driver = self
-            .drivers
-            .read()
-            .await
-            .get(executor)
-            .cloned()
-            .ok_or_else(|| {
-                CoreError::CapabilityUnavailable("所选 Agent 驱动不可用，请重新检测".into())
-            })?;
+        let driver = self.drivers.read().await.get(executor).cloned();
+        let Some(driver) = driver else {
+            let on_target = self.bootstrap().await?.installations.iter().any(|item| {
+                executor.installation_id.as_deref() == Some(item.installation_id.as_str())
+                    && item.target_id.is_some()
+            });
+            return Err(CoreError::CapabilityUnavailable(
+                if on_target {
+                    "这个 Agent 所在的服务器未连接，请先连接后重试"
+                } else {
+                    "所选 Agent 驱动不可用，请重新检测"
+                }
+                .into(),
+            ));
+        };
         Ok(ExecutionAdmission {
             _guard: guard,
             execution: AcceptedExecution {

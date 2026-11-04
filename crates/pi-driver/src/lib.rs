@@ -348,6 +348,18 @@ impl AgentDriver for PiDriver {
     fn supports_app_mcp(&self) -> bool {
         false
     }
+    fn runs_on_this_machine(&self) -> bool {
+        self.executable.target.is_local()
+    }
+    async fn prepare_attachments(
+        &self,
+        items: &mut [agent_domain::PromptAttachment],
+    ) -> Result<(), DriverError> {
+        if self.executable.target.is_local() {
+            return Ok(());
+        }
+        attachments::deliver_to_target(&self.executable.target, items).await
+    }
     async fn permission_catalog(&self, _: Option<&str>) -> Result<PermissionCatalog, DriverError> {
         Ok(permissions())
     }

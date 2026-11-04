@@ -154,8 +154,8 @@ async fn run() -> Result<(), Error> {
             permission_mode: scope.permission_mode, context: vec![],
             prompt: "Read the two user attachments. Describe the image's large letter and background color. Read the attached text file and repeat its exact ATTACHMENT_TEST_TOKEN. Use native read tools if needed. If no file reader exists, a read-only /bin/cat command for the attached text file is allowed. Do not execute other commands, edit files, or delegate.".into(),
             attachments: vec![
-                agent_domain::PromptAttachment { integrity: None, name:"sample.svg".into(), path:image.to_string_lossy().into(), mime_type:"image/svg+xml".into() },
-                agent_domain::PromptAttachment { integrity: None, name:"reference #1.txt".into(), path:file.to_string_lossy().into(), mime_type:"text/plain".into() },
+                agent_domain::PromptAttachment { delivered_path: None, integrity: None, name:"sample.svg".into(), path:image.to_string_lossy().into(), mime_type:"image/svg+xml".into() },
+                agent_domain::PromptAttachment { delivered_path: None, integrity: None, name:"reference #1.txt".into(), path:file.to_string_lossy().into(), mime_type:"text/plain".into() },
             ],
         }).await?;
         let mut answer = String::new();

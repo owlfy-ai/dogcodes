@@ -69,6 +69,7 @@ impl AttachmentStore {
     }
     fn reference(directory: &Path, request: &AttachmentUploadRequest) -> PromptAttachment {
         PromptAttachment {
+            delivered_path: None,
             name: request.name.clone(),
             mime_type: request.mime_type.clone(),
             path: directory

@@ -1828,6 +1828,8 @@ export const uiIt: UiMessages = {
     targetSessionMissing: "La conversazione originale non esiste più nell'agente. Scegli di nuovo un agente e continua tramite il passaggio di contesto.",
     targetSessionIncompatible: "L'agente non può continuare la conversazione originale o non supporta questa azione. Scegli di nuovo un agente e continua tramite il passaggio di contesto.",
     driverProtocolError: "L'agente ha restituito una risposta non elaborabile. Verifica che il client nativo conversi normalmente, aggiornalo e rileva di nuovo l'agente.",
+    targetNotConnected: "Il server di questo Agent non è connesso. Connettilo e riprova.",
+    attachmentUploadFailed: "Impossibile caricare l'allegato sul server. Controlla la connessione e lo spazio su disco.",
     driverUnavailable: "L'agente non è ancora connesso. Rilevalo di nuovo in «Connetti agenti», poi riprova.",
     interrupted: "Questa esecuzione è stata interrotta. Invia un messaggio per continuare.",
     genericFailure: "L'agente non ha potuto completare la richiesta e non ha indicato una causa identificabile. Verifica prima che il client nativo conversi normalmente; se il problema persiste, consulta la diagnostica in «Guida e ripristino».",

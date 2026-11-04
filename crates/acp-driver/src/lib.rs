@@ -2220,6 +2220,18 @@ fn grok_image_compatibility(provider: &str, version: Option<&str>) -> bool {
 fn supports_prompt_images(initial: &serde_json::Value, compatibility: bool) -> bool {
     initial["agentCapabilities"]["promptCapabilities"]["image"] == true || compatibility
 }
+/// The agent's own copy is a path on its machine, so this machine's path rules, which
+/// would refuse it on Windows, do not apply to it.
+fn attachment_uri(item: &agent_domain::PromptAttachment) -> Result<url::Url, DriverError> {
+    let invalid = || DriverError::CapabilityUnavailable("附件路径无效".into());
+    let Some(delivered) = &item.delivered_path else {
+        return url::Url::from_file_path(&item.path).map_err(|()| invalid());
+    };
+    let mut uri = url::Url::parse("file:///").map_err(|_| invalid())?;
+    uri.set_path(delivered);
+    Ok(uri)
+}
+
 async fn attachment_blocks(
     provider: &str,
     items: &[agent_domain::PromptAttachment],
@@ -2229,14 +2241,13 @@ async fn attachment_blocks(
         let value = if driver_api::attachments::is_image(item) {
             serde_json::json!({"type":"image","mimeType":item.mime_type,"data":driver_api::attachments::image_data(item).await?})
         } else {
-            let uri = url::Url::from_file_path(&item.path)
-                .map_err(|()| DriverError::CapabilityUnavailable("附件路径无效".into()))?;
+            let uri = attachment_uri(item)?;
             // CodeBuddy uses name before decoding uri into its native @file mention.
             // A basename would resolve against cwd and lose an out-of-workspace attachment.
             let name = if provider == "codebuddy" {
-                &item.path
+                driver_api::attachments::agent_path(item)
             } else {
-                &item.name
+                item.name.as_str()
             };
             serde_json::json!({"type":"resource_link","uri":uri.as_str(),"name":name,"mimeType":item.mime_type})
         };
@@ -2305,10 +2316,21 @@ impl AgentDriver for AcpDriver {
         env!("CARGO_PKG_VERSION")
     }
 
-    /// App tools are started by the agent from a path on this machine, which means
-    /// nothing on another one. Context handoff stays available through the prompt.
-    fn supports_app_mcp(&self) -> bool {
+    fn runs_on_this_machine(&self) -> bool {
         self.shared.launch.executable.target.is_local()
+    }
+    fn prepare_app_mcp(&self, mcp: driver_api::AppMcp) -> Result<driver_api::AppMcp, DriverError> {
+        mcp.for_target(&self.shared.launch.executable.target)
+    }
+    async fn prepare_attachments(
+        &self,
+        items: &mut [agent_domain::PromptAttachment],
+    ) -> Result<(), DriverError> {
+        if self.shared.launch.executable.target.is_local() {
+            return Ok(());
+        }
+        driver_api::attachments::deliver_to_target(&self.shared.launch.executable.target, items)
+            .await
     }
 
     fn native_agent_version(&self) -> Option<&str> {
@@ -4881,6 +4903,7 @@ mod attachment_tests {
     #[tokio::test]
     async fn codebuddy_reference_name_retains_the_full_path_for_native_mentions() {
         let item = agent_domain::PromptAttachment {
+            delivered_path: None,
             integrity: None,
             name: "reference #1.txt".into(),
             path: std::env::temp_dir()
@@ -4899,6 +4922,38 @@ mod attachment_tests {
         assert!(wire[0].get("data").is_none());
     }
     #[tokio::test]
+    async fn an_agent_on_another_machine_is_given_its_own_copy() {
+        let item = agent_domain::PromptAttachment {
+            delivered_path: Some("/tmp/dogcodes-attachments/abc/设计 #1.txt".into()),
+            integrity: None,
+            name: "设计 #1.txt".into(),
+            path: std::env::temp_dir()
+                .join("this-machine-only.txt")
+                .to_string_lossy()
+                .into(),
+            mime_type: "text/plain".into(),
+        };
+        for provider in ["kimi", "codebuddy"] {
+            let blocks = attachment_blocks(provider, std::slice::from_ref(&item))
+                .await
+                .unwrap();
+            let wire = serde_json::to_value(blocks).unwrap();
+            let uri = url::Url::parse(wire[0]["uri"].as_str().unwrap()).unwrap();
+            assert_eq!(uri.scheme(), "file");
+            assert_eq!(
+                uri.path(),
+                "/tmp/dogcodes-attachments/abc/%E8%AE%BE%E8%AE%A1%20%231.txt"
+            );
+            assert!(uri.fragment().is_none());
+            assert!(!wire.to_string().contains("this-machine-only"));
+        }
+        let blocks = attachment_blocks("codebuddy", std::slice::from_ref(&item))
+            .await
+            .unwrap();
+        let wire = serde_json::to_value(blocks).unwrap();
+        assert_eq!(wire[0]["name"].as_str(), item.delivered_path.as_deref());
+    }
+    #[tokio::test]
     async fn resource_links_preserve_spaces_unicode_and_hash_in_paths() {
         let path = std::env::temp_dir()
             .join("设计 #1.txt")
@@ -4907,6 +4962,7 @@ mod attachment_tests {
         let blocks = attachment_blocks(
             "kimi",
             &[agent_domain::PromptAttachment {
+                delivered_path: None,
                 integrity: None,
                 name: "设计 #1.txt".into(),
                 path: path.clone(),

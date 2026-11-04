@@ -392,6 +392,10 @@ pub struct PromptAttachment {
     /// Absent only for references written before managed uploads were introduced.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub integrity: Option<AttachmentIntegrity>,
+    /// Where the agent can read this file, when it runs on another machine. Set just
+    /// before delivery; `path` stays this machine's copy, which is what gets verified.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivered_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

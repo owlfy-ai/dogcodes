@@ -610,6 +610,7 @@ async fn accepted_cancellation_takes_precedence_over_late_attachment_revalidatio
         &f.core,
         &f.task,
         vec![agent_domain::PromptAttachment {
+            delivered_path: None,
             name: "attachment.txt".into(),
             path: path.to_string_lossy().into_owned(),
             mime_type: "text/plain".into(),

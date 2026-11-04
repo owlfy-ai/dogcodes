@@ -1828,6 +1828,8 @@ export const uiZhCN: UiMessages = {
     targetSessionMissing: "Agent 中的原会话已不存在。请重新选择 Agent，并通过上下文交接继续对话。",
     targetSessionIncompatible: "Agent 无法继续原会话或不支持本次操作。请重新选择 Agent，并通过上下文交接继续对话。",
     driverProtocolError: "Agent 返回了无法处理的响应。请检查原生客户端能否正常对话，更新客户端后重新检测 Agent。",
+    targetNotConnected: "这个 Agent 所在的服务器未连接，请先连接后重试",
+    attachmentUploadFailed: "附件无法上传到服务器，请检查连接和磁盘空间",
     driverUnavailable: "当前 Agent 尚未连接。请在“连接 Agent”中重新检测后重试。",
     interrupted: "本次执行已停止，可以发送消息继续。",
     genericFailure: "Agent 未能完成本次请求，未提供可识别的具体原因。请先确认原生客户端能否正常对话；仍有问题时可查看“帮助与恢复”中的诊断信息。",

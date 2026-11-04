@@ -106,6 +106,19 @@ impl AppMcp {
         config
     }
 
+    /// The same tool, as an agent on `target` can start it.
+    pub fn for_target(self, target: &agent_runtime::SharedTarget) -> Result<Self, DriverError> {
+        let (command, args) = target
+            .app_tool_command(&self.command, &self.args)
+            .map_err(|error| DriverError::CapabilityUnavailable(error.to_string()))?;
+        Ok(Self {
+            name: self.name,
+            command,
+            args,
+            directory: target.temp_directory().to_string_lossy().into_owned(),
+        })
+    }
+
     #[must_use]
     pub fn is_computer(&self) -> bool {
         self.args.first().is_some_and(|arg| arg == "--computer-mcp")
@@ -407,6 +420,21 @@ pub trait AgentDriver: Send + Sync {
     /// Consume default metadata obtained during readiness without another query.
     fn take_startup_catalogs(&self) -> models::StartupCatalogs {
         models::StartupCatalogs::default()
+    }
+    /// False for an agent on another machine: it cannot use this machine's desktop.
+    fn runs_on_this_machine(&self) -> bool {
+        true
+    }
+    /// Rewrites an app tool so this agent can start it from where it runs.
+    fn prepare_app_mcp(&self, mcp: AppMcp) -> Result<AppMcp, DriverError> {
+        Ok(mcp)
+    }
+    /// Makes file attachments readable from where this agent runs.
+    async fn prepare_attachments(
+        &self,
+        _items: &mut [agent_domain::PromptAttachment],
+    ) -> Result<(), DriverError> {
+        Ok(())
     }
     /// Whether the native transport accepts app-provided stdio MCP servers.
     /// Context handoff in the prompt remains available independently of MCP.

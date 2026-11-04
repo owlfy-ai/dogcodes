@@ -18,6 +18,8 @@ const HEADER: usize = 9;
 /// writer without blocking the control channel or any other process.
 pub const STREAM_WINDOW: u32 = 256 * 1024;
 pub const STREAM_CHUNK: u32 = 32 * 1024;
+/// Relays are numbered by the shim, processes by the desktop: separate ranges.
+pub const FIRST_RELAY: u32 = 0x1000_0000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -213,11 +215,18 @@ pub enum Response {
     },
 }
 
+/// A relay looks like a process from both ends: `Stdout` carries what the agent's
+/// helper wrote, `Stdin` carries the local program's replies.
 /// Everything the shim sends on the control stream.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ShimMessage {
     Response(ResponseEnvelope),
+    /// An agent started a relay helper and presented this token.
+    RelayOpened {
+        relay: u32,
+        token: String,
+    },
     /// The process group has ended, or the process never started (`error`).
     Exited {
         process: u32,
@@ -243,6 +252,10 @@ pub struct TargetInfo {
     pub arch: String,
     pub home: String,
     pub shell: Option<String>,
+    pub root: bool,
+    /// Where this shim is, so agents on the target can start its relay command.
+    pub executable: String,
+    pub relay_socket: Option<String>,
     /// Stable hash of the machine and the account, never the raw machine id.
     pub machine_identity: String,
 }

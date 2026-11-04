@@ -3339,16 +3339,26 @@ impl Core {
         let _permission_lease =
             self.running_permissions
                 .track(task_id, &active, permission_mode.as_deref());
+        let driver = self.run_driver(&active.run_id, &active.executor)?;
+        let mut attachments = attachments;
+        driver
+            .prepare_attachments(&mut attachments)
+            .await
+            .map_err(|error| CoreError::InvalidArgument(error.to_string()))?;
         let mut attachment_directories = Vec::new();
         for attachment in &attachments {
-            if let Some(parent) = std::path::Path::new(&attachment.path).parent() {
+            // Directories the agent may read, in terms of the machine it runs on.
+            // An image that stays here travels inside the prompt instead.
+            let readable = attachment.delivered_path.as_deref().or(driver
+                .runs_on_this_machine()
+                .then_some(attachment.path.as_str()));
+            if let Some(parent) = readable.and_then(|path| std::path::Path::new(path).parent()) {
                 let path = parent.to_string_lossy().into_owned();
                 if !attachment_directories.contains(&path) {
                     attachment_directories.push(path);
                 }
             }
         }
-        let driver = self.run_driver(&active.run_id, &active.executor)?;
 
         let mut pending_transfer = self
             .repository
@@ -3417,7 +3427,8 @@ impl Core {
         };
         drop(history_timing);
         let context_timing = timing.stage("session_context");
-        let mut computer_lease = if driver.supports_app_mcp() {
+        // On another machine there is no desktop of ours to operate.
+        let mut computer_lease = if driver.supports_app_mcp() && driver.runs_on_this_machine() {
             self.computer_use_lease(task_id, &active.turn_id, &active.executor.provider_id)
                 .await?
                 .map(Arc::new)
@@ -3430,6 +3441,11 @@ impl Core {
             .into_iter()
             .collect();
         app_mcps.extend(computer_lease.as_ref().map(|lease| lease.descriptor()));
+        // A tool the agent cannot reach is left out: the prompt still carries the context.
+        let app_mcps: Vec<_> = app_mcps
+            .into_iter()
+            .filter_map(|mcp| driver.prepare_app_mcp(mcp).ok())
+            .collect();
         let prompt = if computer_lease.is_some() {
             format!(
                 "[dog.codes computer use enabled]\n{}\n[/dog.codes computer use]\n\n{prompt}",

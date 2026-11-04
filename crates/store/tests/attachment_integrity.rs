@@ -93,6 +93,7 @@ async fn fixture(
         permission_mode: None,
         executor_override: None,
         attachments: vec![PromptAttachment {
+            delivered_path: None,
             name: "file.txt".into(),
             path: path.to_string_lossy().into_owned(),
             mime_type: "text/plain".into(),
