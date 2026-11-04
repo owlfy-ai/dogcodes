@@ -53,7 +53,7 @@ pub(super) fn deepseek(payload: &Value) -> Result<Vec<ProviderBalance>, DriverEr
         .filter_map(|row| {
             balance(
                 "DeepSeek API",
-                &row["total_balance"],
+                &row["topped_up_balance"],
                 row["currency"].as_str()?,
             )
         })
@@ -63,7 +63,7 @@ pub(super) fn deepseek(payload: &Value) -> Result<Vec<ProviderBalance>, DriverEr
     }
     Ok(balances)
 }
-/// Platform summary keeps recharge and bonus wallets apart; they are never summed.
+/// Only recharge wallets are projected; bundled bonus data is ignored.
 pub(super) fn deepseek_platform(payload: &Value) -> Result<Vec<ProviderBalance>, DriverError> {
     match payload["code"].as_i64() {
         Some(0) => {}
@@ -72,17 +72,11 @@ pub(super) fn deepseek_platform(payload: &Value) -> Result<Vec<ProviderBalance>,
         _ => return Err(invalid()),
     }
     let data = &payload["data"]["biz_data"];
-    let mut balances = Vec::new();
-    for (field, label) in [
-        ("normal_wallets", "DeepSeek"),
-        ("bonus_wallets", "DeepSeek bonus"),
-    ] {
-        let rows = data[field].as_array().ok_or_else(invalid)?;
-        balances.extend(
-            rows.iter()
-                .filter_map(|row| balance(label, &row["balance"], row["currency"].as_str()?)),
-        );
-    }
+    let rows = data["normal_wallets"].as_array().ok_or_else(invalid)?;
+    let balances: Vec<_> = rows
+        .iter()
+        .filter_map(|row| balance("DeepSeek", &row["balance"], row["currency"].as_str()?))
+        .collect();
     if balances.is_empty() {
         return Err(invalid());
     }

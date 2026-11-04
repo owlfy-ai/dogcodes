@@ -109,8 +109,8 @@ fn go_projects_all_three_native_windows_without_a_global_model_gate() {
 #[test]
 fn money_preserves_zero_and_currency_and_omits_unlimited_or_unknown_balances() {
     let balances = projection::deepseek(&json!({"balance_infos":[
-        {"currency":"CNY","total_balance":"0.00","granted_balance":"99"},
-        {"currency":"USD","total_balance":"1.2345"}
+        {"currency":"CNY","total_balance":"99.00","granted_balance":"99","topped_up_balance":"0.00"},
+        {"currency":"USD","total_balance":"7.2345","granted_balance":"6","topped_up_balance":"1.2345"}
     ]}))
     .unwrap();
     assert!(balances[0].amount.abs() < f64::EPSILON);
@@ -118,7 +118,8 @@ fn money_preserves_zero_and_currency_and_omits_unlimited_or_unknown_balances() {
     assert!((balances[1].amount - 1.2345).abs() < f64::EPSILON);
     for bad in [
         json!({}),
-        json!({"balance_infos":[{"currency":"USD","total_balance":"NaN"}]}),
+        json!({"balance_infos":[{"currency":"USD","total_balance":"99","topped_up_balance":"NaN"}]}),
+        json!({"balance_infos":[{"currency":"USD","total_balance":"99","granted_balance":"99"}]}),
     ] {
         assert!(projection::deepseek(&bad).is_err());
     }
@@ -353,18 +354,28 @@ fn dsh_platform_grant_is_a_fallback_bound_to_its_official_issuer() {
 }
 
 #[test]
-fn deepseek_platform_keeps_recharge_and_bonus_wallets_apart() {
+fn deepseek_platform_only_keeps_recharge_wallets_and_ignores_bonus_data() {
     let balances =
         projection::deepseek_platform(&json!({"code":0,"data":{"biz_code":0,"biz_data":{
             "normal_wallets":[{"currency":"CNY","balance":"0E-16"}],
             "bonus_wallets":[{"currency":"CNY","balance":"6.0000000000000000"}]
         }}}))
         .unwrap();
-    assert_eq!(balances.len(), 2);
+    assert_eq!(balances.len(), 1);
     assert_eq!(balances[0].label, "DeepSeek");
     assert!(balances[0].amount.abs() < f64::EPSILON);
-    assert_eq!(balances[1].label, "DeepSeek bonus");
-    assert!((balances[1].amount - 6.0).abs() < f64::EPSILON);
+    for bonus in [None, Some(json!("not a wallet list"))] {
+        let mut payload = json!({"code":0,"data":{"biz_data":{
+            "normal_wallets":[{"currency":"USD","balance":"2.5"}]
+        }}});
+        if let Some(bonus) = bonus {
+            payload["data"]["biz_data"]["bonus_wallets"] = bonus;
+        }
+        let balances = projection::deepseek_platform(&payload).unwrap();
+        assert_eq!(balances.len(), 1);
+        assert_eq!(balances[0].currency, "USD");
+        assert!((balances[0].amount - 2.5).abs() < f64::EPSILON);
+    }
     let expired = projection::deepseek_platform(
         &json!({"code":40003,"msg":"Authorization Failed (invalid token)","data":null}),
     )
@@ -377,6 +388,7 @@ fn deepseek_platform_keeps_recharge_and_bonus_wallets_apart() {
         json!({}),
         json!({"code":0,"data":{"biz_data":{"normal_wallets":[]}}}),
         json!({"code":0,"data":{"biz_data":{"normal_wallets":[],"bonus_wallets":[]}}}),
+        json!({"code":0,"data":{"biz_data":{"normal_wallets":[],"bonus_wallets":[{"currency":"CNY","balance":"6"}]}}}),
     ] {
         assert!(projection::deepseek_platform(&bad).is_err());
     }
@@ -386,14 +398,17 @@ fn deepseek_platform_keeps_recharge_and_bonus_wallets_apart() {
 async fn dsh_platform_grant_is_sent_only_in_the_dsh_header() {
     let root = tempfile::tempdir().unwrap();
     let body = json!({"code":0,"data":{"biz_data":{
-        "normal_wallets":[{"currency":"CNY","balance":"1.5"}],"bonus_wallets":[]
+        "normal_wallets":[{"currency":"CNY","balance":"1.5"}],
+        "bonus_wallets":[{"currency":"CNY","balance":"100"}]
     }}});
     let (url, task) = server(vec![(200, body.to_string())]).await;
     dsh_platform_grant(root.path(), "https://platform.deepseek.com");
     let mut m = monitor("deepseek-harness", root.path());
     m.endpoints = Some((url.clone(), url));
     let quota = m.read_quota(None).await.unwrap();
+    assert_eq!(quota.balances.len(), 1);
     assert_eq!(quota.balances[0].label, "DeepSeek");
+    assert!((quota.balances[0].amount - 1.5).abs() < f64::EPSILON);
     assert!(!serde_json::to_string(&quota).unwrap().contains("private"));
     let request = task.await.unwrap().remove(0).to_ascii_lowercase();
     assert!(request.contains("x-dsh-auth-token: grant-private"));
