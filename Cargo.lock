@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "acp-driver"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-client-protocol",
  "agent-domain",
@@ -28,7 +28,7 @@ dependencies = [
 
 [[package]]
 name = "acp-probe"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-client-protocol",
  "serde_json",
@@ -115,7 +115,7 @@ dependencies = [
 
 [[package]]
 name = "agent-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-domain",
  "agent-protocol",
@@ -139,7 +139,7 @@ dependencies = [
 
 [[package]]
 name = "agent-domain"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "regex",
  "serde",
@@ -150,7 +150,7 @@ dependencies = [
 
 [[package]]
 name = "agent-protocol"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-domain",
  "chrono",
@@ -160,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "agent-registry"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-domain",
  "agent-runtime",
@@ -174,7 +174,7 @@ dependencies = [
 
 [[package]]
 name = "agent-runtime"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "core-foundation 0.9.4",
  "plist",
@@ -189,7 +189,7 @@ dependencies = [
 
 [[package]]
 name = "agent-store"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "acp-driver",
  "agent-core",
@@ -218,7 +218,7 @@ dependencies = [
 
 [[package]]
 name = "agent-workspace"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-core",
  "agent-domain",
@@ -297,7 +297,7 @@ checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
 name = "antigravity-driver"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-domain",
  "agent-runtime",
@@ -1120,7 +1120,7 @@ dependencies = [
 
 [[package]]
 name = "claude-driver"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-domain",
  "agent-runtime",
@@ -1156,7 +1156,7 @@ dependencies = [
 
 [[package]]
 name = "codex-app-server-probe"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-runtime",
  "hex",
@@ -1171,7 +1171,7 @@ dependencies = [
 
 [[package]]
 name = "codex-driver"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-domain",
  "agent-runtime",
@@ -1668,7 +1668,7 @@ dependencies = [
 
 [[package]]
 name = "desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "acp-driver",
  "agent-core",
@@ -1828,7 +1828,7 @@ dependencies = [
 
 [[package]]
 name = "dogcodes-remote-desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arboard",
  "base64 0.22.1",
@@ -1871,7 +1871,7 @@ dependencies = [
 
 [[package]]
 name = "dogcodes-remote-transport"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1916,7 +1916,7 @@ dependencies = [
 
 [[package]]
 name = "driver-api"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-domain",
  "async-trait",
@@ -4104,7 +4104,7 @@ dependencies = [
 
 [[package]]
 name = "native-acl"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "exacl",
  "libc",
@@ -4755,7 +4755,7 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "open-with"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "gio 0.18.4",
@@ -4963,7 +4963,7 @@ dependencies = [
 
 [[package]]
 name = "pi-driver"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-domain",
  "agent-runtime",
@@ -5240,7 +5240,7 @@ dependencies = [
 
 [[package]]
 name = "process-scope"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "nix 0.28.0",
  "tokio",
@@ -5249,7 +5249,7 @@ dependencies = [
 
 [[package]]
 name = "provider-quota"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-domain",
  "async-trait",
@@ -5533,7 +5533,7 @@ dependencies = [
 
 [[package]]
 name = "redaction"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "regex",
  "serde",
@@ -9265,7 +9265,7 @@ dependencies = [
 
 [[package]]
 name = "zcode-driver"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agent-domain",
  "agent-runtime",
