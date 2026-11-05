@@ -27,10 +27,6 @@
 .review-controls .review-parent-select { flex: 0 1 7em; width: 7em; }
 .review-scope-note { font-size: calc(13px * var(--ui-scale, 1)); margin: 8px 0; overflow-wrap: anywhere; }
 .review-scope-note summary { cursor: pointer; }
-.review-confirmation { position: fixed; margin: auto; width: min(640px, calc(100vw - 40px)); max-height: calc(100dvh - 40px); overflow: auto; box-sizing: border-box; background: #202020; color: inherit; border: 1px solid #888; border-radius: 12px; padding: 20px; overflow-wrap: anywhere; }
-.review-confirmation::backdrop { background: #0006; }
-.review-confirmation button { margin-right: 8px; }
-[data-theme="light"] .review-confirmation { background: white; }
 
 /* Changes: a quiet editor surface with a compact source-control tree. */
 .review-panel { position: fixed; z-index: 25; top: 54px; right: 0; bottom: 0; display: flex; flex-direction: column; font: calc(13px * var(--ui-scale, 1)) system-ui, -apple-system, sans-serif; border-left: 1px solid; --review-bg: #181a1f; --review-sidebar: #1d2026; --review-border: #ffffff12; --review-muted: #9299a6; --review-hover: #ffffff08; --review-selected: #73a9ee20; box-sizing: border-box; width: min(1320px, 92vw); padding: 0; gap: 0; background: var(--review-bg); color: #d5dae3; border-color: var(--review-border); box-shadow: -16px 0 60px #0003; }
@@ -159,7 +155,6 @@
 .review-refresh[data-changed]::after { content: ""; position: absolute; top: 2px; right: 2px; width: calc(5px * var(--ui-scale, 1)); height: calc(5px * var(--ui-scale, 1)); border-radius: 50%; background: var(--green, #78a7e8); }
 .review-icon-button:disabled { cursor: default; }
 .review-sidebar-actions { gap: 3px; }
-.review-confirmation textarea { display: block; width: 100%; min-height: 80px; box-sizing: border-box; margin: 12px 0; padding: 8px; background: transparent; color: inherit; border: 1px solid var(--review-border); border-radius: 6px; }
 .review-sidebar-actions > span { display: inline-flex; }
 
 
@@ -277,7 +272,6 @@
 .workspace-file-search { padding: 2px 10px 10px; }
 .workspace-files nav > div:not(.workspace-file-search) { padding-inline: 8px; }
 .review-image-preview { gap: 16px; padding: 16px; }
-.review-confirmation, [data-theme="light"] .review-confirmation { background: var(--review-bg); border-color: var(--review-border); }
 .review-resize-handle:hover::after, .review-resize-handle:focus-visible::after, .review-resize-handle.is-dragging::after { background: var(--muted); }
 
 .review-total { padding-bottom: 10px; border-bottom: 1px solid var(--review-border); }
@@ -420,10 +414,9 @@
 .review-remote-status { flex-shrink: 0; margin: 0; padding: 8px 12px; color: var(--review-muted); font-size: calc(12px * var(--ui-scale, 1)); }
 .review-remote-status p { margin: 0 0 6px; line-height: 1.5; }
 
-.review-git-menu-anchor .review-confirmation { font-size: calc(13px * var(--ui-scale, 1)); line-height: 1.6; }
-.review-panel .review-git-menu, .review-git-menu-anchor .review-confirmation { color: #dededb; line-height: 1.5; }
-:root[data-theme="light"] .review-git-menu, :root[data-theme="light"] .review-git-menu-anchor .review-confirmation { color: #292927; }
-@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .review-git-menu, :root:not([data-theme="dark"]) .review-git-menu-anchor .review-confirmation { color: #292927; } }
+.review-panel .review-git-menu { color: #dededb; line-height: 1.5; }
+:root[data-theme="light"] .review-git-menu { color: #292927; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .review-git-menu { color: #292927; } }
 
 /* Panel polish: the mode picker and file toolbar read as one block, the list shares the
    panel surface, and quiet controls only gain weight on hover. */

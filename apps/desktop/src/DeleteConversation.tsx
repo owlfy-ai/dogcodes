@@ -1,7 +1,6 @@
-import { useEffect, useId, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useRef, useState } from "react";
 import type { TaskSummary } from "@dogcodes/protocol";
-import { focusDialogTitle } from "./dialogFocus";
+import { ConfirmDialog } from "./AppDialog";
 import { userFacingError } from "./userFacingError";
 import { translate as t } from "./i18n";
 import { taskDisplayTitle } from "./displayNames";
@@ -15,14 +14,7 @@ export function DeleteConversation({ task, blocked, onDelete, text = false }: {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const guard = useRef(false), dialog = useRef<HTMLDialogElement>(null), trigger = useRef<HTMLButtonElement>(null);
-  const titleId = useId();
-  useEffect(() => {
-    if (!confirming) return;
-    const element = dialog.current;
-    element?.showModal(); focusDialogTitle(element);
-    return () => { element?.close(); trigger.current?.focus(); };
-  }, [confirming]);
+  const guard = useRef(false), trigger = useRef<HTMLButtonElement>(null);
   async function remove() {
     if (guard.current || blocked) return;
     guard.current = true; setBusy(true); setError("");
@@ -35,15 +27,12 @@ export function DeleteConversation({ task, blocked, onDelete, text = false }: {
       aria-label={t("nav.deleteTask")} disabled={blocked} onClick={() => { setError(""); setConfirming(true); }}>
       {text ? t("common.delete") : <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M7 5V3h6v2M5 5l1 12h8l1-12M8 8v6m4-6v6" /></svg>}
     </button>
-    {confirming && createPortal(<dialog ref={dialog} className="turn-undo-dialog" aria-labelledby={titleId}
-      onCancel={event => { event.preventDefault(); if (!guard.current) setConfirming(false); }}>
-      <h2 id={titleId} tabIndex={-1} data-dialog-title>{t("deleteTask.title")}</h2>
+    {confirming && <ConfirmDialog returnFocus={trigger} title={t("deleteTask.title")} tone="danger" icon="trash" busy={busy} disabled={blocked}
+      confirmLabel={t(busy ? "deleteTask.deleting" : "deleteTask.confirm")} onConfirm={() => void remove()} onCancel={() => setConfirming(false)}>
       <p>{t("deleteTask.warning", { title: taskDisplayTitle(task.title) })}</p>
       <p>{t("deleteTask.keeps")}</p>
       {blocked && <p role="alert">{t("deleteTask.blocked")}</p>}
       {error && <p role="alert">{error}</p>}
-      <footer><button type="button" disabled={busy} onClick={() => setConfirming(false)}>{t("common.cancel")}</button>
-        <button className="turn-undo-confirm" type="button" disabled={busy || blocked} onClick={() => void remove()}>{t(busy ? "deleteTask.deleting" : "deleteTask.confirm")}</button></footer>
-    </dialog>, document.body)}
+    </ConfirmDialog>}
   </>;
 }

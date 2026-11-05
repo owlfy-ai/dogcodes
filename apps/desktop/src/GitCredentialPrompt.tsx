@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { AppDialog, DialogButton } from "./AppDialog";
 import { gitOperations } from "./gitOperations";
 import { useI18n } from "./i18n";
 import { userFacingError } from "./userFacingError";
-import "./gitCredentialPrompt.css";
 
 interface CredentialPrompt { id: number; text: string; secret: boolean }
 
@@ -38,28 +38,21 @@ export function GitCredentialPrompt({ taskId, api = tauriApi }: { taskId: string
 
 function CredentialDialog({ prompt, onAnswer }: { prompt: CredentialPrompt; onAnswer: (answer: string | null) => Promise<void> }) {
   const { t } = useI18n();
-  const dialog = useRef<HTMLDialogElement>(null);
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => { const element = dialog.current; element?.showModal(); return () => element?.close(); }, []);
   const send = (answer: string | null) => {
     setBusy(true); setError("");
     void onAnswer(answer).catch(cause => { setBusy(false); setError(userFacingError(cause, t("gitCredential.failed"))); });
   };
-  const submit = (event: FormEvent) => { event.preventDefault(); send(value); };
-  return <dialog ref={dialog} className="git-credential" aria-labelledby="git-credential-title" onCancel={event => { event.preventDefault(); send(null); }}>
-    <form onSubmit={submit}>
-      <h3 id="git-credential-title">{t("gitCredential.title")}</h3>
-      <label>{prompt.text}
-        <input autoFocus type={prompt.secret ? "password" : "text"} autoComplete="off" autoCapitalize="off" spellCheck={false} value={value} onChange={event => setValue(event.target.value)} />
-      </label>
-      <p>{t("gitCredential.hint")}</p>
-      {error && <p role="alert">{error}</p>}
-      <footer>
-        <button type="button" disabled={busy} onClick={() => send(null)}>{t("common.cancel")}</button>
-        <button type="submit" disabled={busy}>{t("gitCredential.submit")}</button>
-      </footer>
-    </form>
-  </dialog>;
+  return <AppDialog title={t("gitCredential.title")} onSubmit={() => send(value)} onCancel={() => send(null)} actions={<>
+    <DialogButton icon="cancel" disabled={busy} onClick={() => send(null)}>{t("common.cancel")}</DialogButton>
+    <DialogButton type="submit" tone="primary" icon="check" disabled={busy}>{t("gitCredential.submit")}</DialogButton>
+  </>}>
+    <label>{prompt.text}
+      <input data-dialog-default type={prompt.secret ? "password" : "text"} autoComplete="off" autoCapitalize="off" spellCheck={false} value={value} onChange={event => setValue(event.target.value)} />
+    </label>
+    <p>{t("gitCredential.hint")}</p>
+    {error && <p role="alert">{error}</p>}
+  </AppDialog>;
 }

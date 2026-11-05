@@ -1,6 +1,5 @@
-import { focusDialogTitle } from "./dialogFocus";
+import { AppDialog, DialogButton } from "./AppDialog";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { subscribeReviewChanges } from "./reviewWatch";
 import { mutationArguments, reviewMutations, type PendingMutation } from "./reviewMutations";
@@ -16,7 +15,7 @@ export function TurnUndoAction({ taskId, metadata, count }: { taskId: TaskId; me
   const saved = JSON.parse(raw) as PendingMutation[] | { error: string };
   const pending = !Array.isArray(saved) || saved.some(item => item.request.command === "core_turn_undo" && mutationArguments(item).artifactId === metadata.artifactId);
   const statusRevision = useRef(0), refreshStatus = useRef<() => void>(() => {});
-  const dialog = useRef<HTMLDialogElement>(null), trigger = useRef<HTMLButtonElement>(null), guard = useRef(false);
+  const trigger = useRef<HTMLButtonElement>(null), guard = useRef(false);
   useEffect(() => {
     let active = true;
     setUndone(false);
@@ -32,12 +31,6 @@ export function TurnUndoAction({ taskId, metadata, count }: { taskId: TaskId; me
     const stop = subscribeReviewChanges(taskId, () => { void refresh(); });
     return () => { active = false; statusRevision.current++; stop(); };
   }, [taskId, metadata.artifactId]);
-  useEffect(() => {
-    if (!confirming) return;
-    dialog.current?.showModal();
-    focusDialogTitle(dialog.current);
-    return () => { dialog.current?.close(); trigger.current?.focus(); };
-  }, [confirming]);
   async function undo() {
     if (guard.current || pending || undone) return;
     guard.current = true; setBusy(true); setError("");
@@ -54,16 +47,15 @@ export function TurnUndoAction({ taskId, metadata, count }: { taskId: TaskId; me
       {!undone && <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="m6 3-4 4 4 4M2 7h7a4 4 0 0 1 0 8" /></svg>}
       {t(pending ? "undo.verify" : undone ? "undo.undone" : "undo.action")}
     </button>
-    {confirming && createPortal(<dialog ref={dialog} className="turn-undo-dialog" aria-labelledby="turn-undo-title"
-      onClick={event => event.stopPropagation()} onCancel={event => { event.preventDefault(); if (!guard.current) setConfirming(false); }}>
-      <h2 id="turn-undo-title" tabIndex={-1} data-dialog-title>{t("undo.title")}</h2>
+    {confirming && <AppDialog returnFocus={trigger} title={t("undo.title")} onCancel={() => { if (!guard.current) setConfirming(false); }} actions={<>
+      <DialogButton icon="cancel" disabled={busy} onClick={() => setConfirming(false)}>{t("common.cancel")}</DialogButton>
+      {!pending && !undone && <DialogButton tone="danger" icon="undo" disabled={busy} onClick={() => void undo()}>{t(busy ? "undo.undoing" : "undo.confirm")}</DialogButton>}
+    </>}>
       <p>{t("undo.description", { count })}</p>
-      <p className="turn-undo-hint">{t("undo.hint")}</p>
+      <p>{t("undo.hint")}</p>
       {statusError && <p role="status">{statusError}</p>}
       {error && <p role="alert">{error}</p>}
       <ReviewMutationRecovery taskId={taskId} artifactId={metadata.artifactId} onChanged={() => { setError(""); refreshStatus.current(); }} />
-      <footer><button type="button" disabled={busy} onClick={() => setConfirming(false)}>{t("common.cancel")}</button>
-        {!pending && !undone && <button className="turn-undo-confirm" type="button" disabled={busy} onClick={() => void undo()}>{t(busy ? "undo.undoing" : "undo.confirm")}</button>}</footer>
-    </dialog>, document.body)}
+    </AppDialog>}
   </>;
 }

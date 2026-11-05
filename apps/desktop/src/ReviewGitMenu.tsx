@@ -1,7 +1,7 @@
 import { gitOperations } from "./gitOperations";
 import { useEffect, useRef, useState } from "react";
 import { FloatingPopover } from "./FloatingPopover";
-import { focusDialogTitle } from "./dialogFocus";
+import { ConfirmDialog } from "./AppDialog";
 import { LoadingStatus } from "./LoadingStatus";
 import { reviewGitFailure, type ReviewGitFailure } from "./reviewGitError";
 import { InlineError } from "./InlineError";
@@ -26,7 +26,7 @@ export function ReviewGitMenu({ taskId, root, disabled, visible, onBusy, onChang
   onBusy: (value: boolean) => void; onChanged: () => void; onCompleted: (action: RemoteAction) => void; onNotice: (notice: GitRemoteNotice) => void;
 }) {
   const [open, setOpen] = useState(false), [confirm, setConfirm] = useState(false), [busy, setBusy] = useState(false);
-  const host = useRef<HTMLSpanElement>(null), trigger = useRef<HTMLButtonElement>(null), dialog = useRef<HTMLDialogElement>(null);
+  const host = useRef<HTMLSpanElement>(null), trigger = useRef<HTMLButtonElement>(null);
   const guard = useRef(false), mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => { if (!visible) { setOpen(false); if (!guard.current) setConfirm(false); } }, [visible]);
@@ -39,11 +39,6 @@ export function ReviewGitMenu({ taskId, root, disabled, visible, onBusy, onChang
     document.addEventListener("pointerdown", outside); document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
   }, [open]);
-  useEffect(() => {
-    if (!confirm) return;
-    const node = dialog.current; node?.showModal(); focusDialogTitle(node);
-    return () => { node?.close(); trigger.current?.focus({ preventScroll: true }); };
-  }, [confirm]);
   const blocked = disabled || busy || !root?.git;
   const run = async (action: RemoteAction) => {
     if (blocked || guard.current || !root) return;
@@ -73,10 +68,8 @@ export function ReviewGitMenu({ taskId, root, disabled, visible, onBusy, onChang
       <button type="button" role="menuitem" disabled={blocked} data-tooltip={t(root?.git ? "gitMenu.pullTooltip" : "gitCommit.notGit")} onClick={() => void run("pull")}>{t("gitMenu.pull")}</button>
       <button type="button" role="menuitem" disabled={blocked} data-tooltip={t(root?.git ? "gitMenu.syncTooltip" : "gitCommit.notGit")} onClick={() => { close(); setConfirm(true); }}>{t("gitMenu.syncEllipsis")}</button>
     </FloatingPopover>}
-    {confirm && <dialog ref={dialog} className="review-confirmation" aria-label={t("gitMenu.confirmSync")} onCancel={event => { event.preventDefault(); setConfirm(false); }}>
-      <h3 tabIndex={-1} data-dialog-title>{t("gitMenu.syncTitle")}</h3>
-      <p>{root?.path}</p><p>{t("gitMenu.syncDescription")}</p>
-      <button type="button" onClick={() => setConfirm(false)}>{t("common.cancel")}</button><button type="button" disabled={blocked} onClick={() => void run("sync")}>{t("gitMenu.sync")}</button>
-    </dialog>}
+    {confirm && <ConfirmDialog returnFocus={trigger} title={t("gitMenu.syncTitle")} icon="refresh" disabled={blocked} confirmLabel={t("gitMenu.sync")} onCancel={() => setConfirm(false)} onConfirm={() => void run("sync")}>
+      <p className="app-dialog-path">{root?.path}</p><p>{t("gitMenu.syncDescription")}</p>
+    </ConfirmDialog>}
   </span>;
 }

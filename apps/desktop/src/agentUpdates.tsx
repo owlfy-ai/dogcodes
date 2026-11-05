@@ -1,9 +1,8 @@
 import { t, useI18n } from "./i18n";
 import { localizedAgentMessage, localizedUpdateSource } from "./agentI18n";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { focusDialogTitle } from "./dialogFocus";
 import type { AgentUpdate, BootstrapSnapshot, CoreClient, InstallationSummary } from "@dogcodes/protocol";
+import { ConfirmDialog } from "./AppDialog";
 import "./agentUpdates.css";
 import { compareVersions } from "./agentOptions";
 
@@ -95,21 +94,13 @@ export type AgentUpdateActions = { updates: Record<string, AgentUpdate>; check: 
 
 function UpgradeConfirmation({ update, actions }: { update: AgentUpdate; actions: AgentUpdateActions }) {
   const { resolvedLanguage: lang } = useI18n();
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    dialog.current?.showModal(); focusDialogTitle(dialog.current);
-    return () => { dialog.current?.close(); if (previous?.isConnected) previous.focus(); };
-  }, []);
   const usage = update.inUse!;
-  return createPortal(<dialog ref={dialog} className="agent-upgrade-dialog" aria-labelledby="agent-upgrade-title"
-    onCancel={event => { event.preventDefault(); actions.cancelUpgrade?.(update.installationId); }}>
-    <h2 id="agent-upgrade-title" tabIndex={-1} data-dialog-title>{t("agentUi.agentInUse", undefined, lang)}</h2>
+  const cancel = () => actions.cancelUpgrade?.(update.installationId);
+  return <ConfirmDialog title={t("agentUi.agentInUse", undefined, lang)} tone="danger" icon="upgrade" cancelLabel={t("agentUi.cancelUpgrade", undefined, lang)}
+    confirmLabel={t("agentUi.stopAndUpgrade", undefined, lang)} onCancel={cancel} onConfirm={() => actions.upgrade(update.installationId, usage.token)}>
     <p>{t("agentUi.inUseDetail", { tasks: usage.taskCount, processes: usage.processCount }, lang)}</p>
     <p>{t("agentUi.interruptWarning", undefined, lang)}</p>
-    <footer><button type="button" onClick={() => actions.cancelUpgrade?.(update.installationId)}>{t("agentUi.cancelUpgrade", undefined, lang)}</button>
-      <button className="agent-upgrade-confirm" type="button" onClick={() => actions.upgrade(update.installationId, usage.token)}>{t("agentUi.stopAndUpgrade", undefined, lang)}</button></footer>
-  </dialog>, document.body);
+  </ConfirmDialog>;
 }
 function UpdateIcon({ kind }: { kind: "upgrade" | "retry" | "external" | "done" }) {
   const paths = {

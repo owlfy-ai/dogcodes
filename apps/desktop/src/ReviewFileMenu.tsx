@@ -1,4 +1,4 @@
-import { focusDialogTitle } from "./dialogFocus";
+import { ConfirmDialog } from "./AppDialog";
 import { useEffect, useRef, useState } from "react";
 import { FloatingPopover } from "./FloatingPopover";
 import { InlineError } from "./InlineError";
@@ -11,7 +11,7 @@ export function ReviewFileMenu({ target, taskId, disabled, onClose, onOpenChange
   onOpenFile: (version: "working" | "head") => void; onRevealTree: () => void; onChanged: () => void; onBusy: (busy: boolean) => void; api?: typeof reviewClient;
 }) {
   const [confirm, setConfirm] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
-  const host = useRef<HTMLDivElement>(null), dialog = useRef<HTMLDialogElement>(null), guard = useRef(false);
+  const host = useRef<HTMLDivElement>(null), guard = useRef(false);
   const { root, file, snapshotId } = target;
   const gitlink = file.before?.kind === "gitlink" || file.after?.kind === "gitlink";
   const working = ["uncommitted", "unstaged", "session"].includes(root.mode);
@@ -26,11 +26,6 @@ export function ReviewFileMenu({ target, taskId, disabled, onClose, onOpenChange
     return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); window.removeEventListener("resize", resize); };
   }, [confirm]);
   useEffect(() => () => { if (target.trigger.isConnected) target.trigger.focus(); }, [target]);
-  useEffect(() => {
-    if (!confirm) return;
-    const node = dialog.current; node?.showModal(); focusDialogTitle(node);
-    return () => node?.close();
-  }, [confirm]);
   const run = async (action: () => Promise<unknown>, fallback: string, changed = false) => {
     if ((changed && disabled) || guard.current) return;
     guard.current = true; setBusy(true); onBusy(true); setError("");
@@ -63,14 +58,13 @@ export function ReviewFileMenu({ target, taskId, disabled, onClose, onOpenChange
       <button role="menuitem" type="button" disabled={missing} onClick={() => choose(onRevealTree)}>{t("fileMenu.revealTree")}</button>
       {error && <InlineError>{error}</InlineError>}
     </FloatingPopover>}
-    {confirm && <dialog ref={dialog} className="review-confirmation" role="dialog" aria-modal="true" aria-label={t("fileMenu.discardLabel")} onCancel={event => { event.preventDefault(); close(); }}>
-      <h3 tabIndex={-1} data-dialog-title>{t("fileMenu.discardTitle")}</h3>
-      {[file.previousPath, file.path].filter(Boolean).map(path => <p key={path}>{root.root.path}/{path}</p>)}
+    {confirm && <ConfirmDialog title={t("fileMenu.discardTitle")} tone="danger" icon="trash" busy={busy} disabled={blocked} wide
+      confirmLabel={t(busy ? "gitCommit.processing" : "fileMenu.discard")} onCancel={close}
+      onConfirm={() => void run(() => api.discard({ taskId, snapshotId, rootId: root.root.id, path: file.path, confirmed: true }), t("fileMenu.discardFailed"), true)}>
+      {[file.previousPath, file.path].filter(Boolean).map(path => <p className="app-dialog-path" key={path}>{root.root.path}/{path}</p>)}
       {file.previousPath && <p>{t("fileMenu.bothPaths")}</p>}
       <p>{t("fileMenu.discardDescription", { base: t(root.mode === "session" ? "fileMenu.base.session" : root.mode === "unstaged" ? "fileMenu.base.index" : "fileMenu.base.head") })}</p>
       {error && <InlineError>{error}</InlineError>}
-      <button type="button" disabled={busy} onClick={close}>{t("common.cancel")}</button>
-      <button type="button" disabled={blocked} onClick={() => void run(() => api.discard({ taskId, snapshotId, rootId: root.root.id, path: file.path, confirmed: true }), t("fileMenu.discardFailed"), true)}>{t(busy ? "gitCommit.processing" : "fileMenu.discard")}</button>
-    </dialog>}
+    </ConfirmDialog>}
   </div>;
 }

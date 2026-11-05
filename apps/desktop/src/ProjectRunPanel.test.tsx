@@ -20,7 +20,7 @@ function fixture() {
   return { api, stop };
 }
 const click = async (label: string) => act(async () => {
-  const button = [...element.querySelectorAll<HTMLButtonElement>("button")].find(b => b.textContent === label || b.getAttribute("aria-label") === label)!;
+  const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(b => b.textContent === label || b.getAttribute("aria-label") === label)!;
   expect(button).toBeDefined(); button.click();
 });
 it("places Run after Files with keyboard tab navigation", async () => {
@@ -126,11 +126,11 @@ it("edits, pins and deletes items without launching them and confirms overwritin
   expect(element.textContent).not.toContain("启动服务");
   expect(api.launch).not.toHaveBeenCalled();
   await click("重新分析运行命令");
-  expect(element.querySelector("dialog[open]")?.textContent).toContain("覆盖未固定");
-  expect(element.querySelector("dialog")?.textContent).toContain("已固定的运行项及其名称、命令将保留");
+  expect(document.querySelector("dialog[open]")?.textContent).toContain("覆盖未固定");
+  expect(document.querySelector("dialog")?.textContent).toContain("已固定的运行项及其名称、命令将保留");
   expect(api.analyze).not.toHaveBeenCalled();
   await click("取消");
-  expect(element.querySelector("dialog")).toBeNull();
+  expect(document.querySelector("dialog")).toBeNull();
   await click("重新分析运行命令");
   await click("重新分析");
   expect(api.analyze).toHaveBeenCalledWith("task", catalog.executor, current.generation, current.generation);
@@ -157,7 +157,7 @@ it("requests fresh confirmation if another window edits the saved list", async (
   vi.mocked(api.get).mockResolvedValue({ ...catalog, generation: "newer", directories: [{ ...catalog.directories[0], userModified: true }] });
   vi.mocked(api.analyze).mockRejectedValueOnce(new RunOperationRejected("confirmation_required", "需要确认覆盖"));
   await click("重新分析运行命令");
-  expect(element.querySelector("dialog[open]")).not.toBeNull();
+  expect(document.querySelector("dialog[open]")).not.toBeNull();
   await click("重新分析");
   expect(api.analyze).toHaveBeenLastCalledWith("task", catalog.executor, "newer", "newer");
 });
@@ -213,10 +213,10 @@ it("guides users with no available Agent and still confirms before regenerating 
   vi.mocked(api.executors).mockResolvedValue([catalog.executor!]);
   await act(async () => root.render(<ProjectRunPanel key="with-agent" taskId="task" visible api={api} />));
   await click("重新分析");
-  expect(element.querySelector("dialog[open]")).not.toBeNull();
+  expect(document.querySelector("dialog[open]")).not.toBeNull();
   expect(api.analyze).not.toHaveBeenCalled();
   await click("取消");
-  expect(element.querySelector("dialog[open]")).toBeNull();
+  expect(document.querySelector("dialog[open]")).toBeNull();
 });
 
 const restoredRun = (status: "running" | "unknown") => ({ id: "restored", epoch: "epoch", projectId: "project", taskId: "task", commandId: "api", directoryIndex: 1, label: "启动服务", cwd: "/project/api", command: "go run ./cmd/server", status, exitCode: null, error: null, outputEnd: 0, createdAt: 1 });
@@ -228,14 +228,14 @@ it("asks before closing a running command, and stops it only when confirmed", as
   expect(api.restore).toHaveBeenCalledTimes(1); expect(api.launch).not.toHaveBeenCalled();
   expect(element.querySelectorAll('[data-terminal]')).toHaveLength(1);
   await click("关闭输出 启动服务");
-  expect(element.querySelector("dialog[open]")?.textContent).toContain("启动服务");
-  expect(element.querySelector("dialog[open]")?.textContent).not.toContain("后台");
+  expect(document.querySelector("dialog[open]")?.textContent).toContain("启动服务");
+  expect(document.querySelector("dialog[open]")?.textContent).not.toContain("后台");
   await click("取消");
   expect(stop).not.toHaveBeenCalled(); expect(element.querySelectorAll('[data-terminal]')).toHaveLength(1);
   await click("关闭输出 启动服务");
   await click("停止并关闭");
   expect(stop).toHaveBeenCalledTimes(1); expect(element.querySelectorAll('[data-terminal]')).toHaveLength(0);
-  expect(element.querySelector("dialog[open]")).toBeNull();
+  expect(document.querySelector("dialog[open]")).toBeNull();
   expect(element.textContent).not.toContain("恢复运行输出");
 });
 
@@ -254,7 +254,7 @@ it("closes without asking when the process cannot be confirmed", async () => {
   vi.mocked(api.list).mockResolvedValue([restoredRun("unknown")]);
   await act(async () => root.render(<ProjectRunPanel taskId="task" visible api={api} />));
   await click("关闭输出 启动服务");
-  expect(element.querySelector("dialog[open]")).toBeNull();
+  expect(document.querySelector("dialog[open]")).toBeNull();
   expect(stop).toHaveBeenCalledTimes(1); expect(element.querySelectorAll('[data-terminal]')).toHaveLength(0);
 });
 
@@ -278,7 +278,7 @@ it("keeps an analysis rejection visible after the catalog refresh", async () => 
   await click("重新分析运行命令");
   expect(vi.mocked(api.get).mock.calls.length).toBeGreaterThan(reads);
   expect(element.querySelector('[role="alert"]')?.textContent).toContain("分析 Agent 当前不可用或已禁用");
-  expect(element.querySelector("dialog[open]")).toBeNull();
+  expect(document.querySelector("dialog[open]")).toBeNull();
 });
 it("refreshes a conflicting edit without replaying it and uses the new version on the next gesture", async () => {
   const { api } = fixture();
@@ -297,7 +297,7 @@ it("does not mistake an unstructured failure for overwrite authorization", async
   api.discardPending = vi.fn();
   vi.mocked(api.analyze).mockRejectedValueOnce("run_commands_confirmation_required");
   await click("重新分析运行命令");
-  expect(element.querySelector("dialog[open]")).toBeNull();
+  expect(document.querySelector("dialog[open]")).toBeNull();
   expect(api.discardPending).not.toHaveBeenCalled();
   expect(element.querySelector('[role="alert"]')?.textContent).toContain("分析运行命令失败");
 });

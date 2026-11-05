@@ -495,7 +495,7 @@ it("hides the commit composer for unmanaged directories", async () => {
   expect(container.querySelector('[aria-label="提交说明"]')).toBeNull();
   expect(container.querySelector('[aria-label="选择 Agent 生成提交说明"]')).toBeNull();
   expect(container.querySelector(".review-commit")).toBeNull();
-  expect(container.querySelector("dialog")).toBeNull();
+  expect(document.querySelector("dialog")).toBeNull();
 });
 
 it("switches workspace tabs while preserving the selected diff", async () => {
@@ -641,14 +641,14 @@ it("confirms paired discard, keeps errors in the dialog and blocks dismissal dur
   api.query.mockResolvedValue({ ...snapshot, roots: [{ ...snapshot.roots[0], files: [{ path: 'new', previousPath: 'old', kind: 'renamed', before: null, after: null }] }] });
   let reject!: (error: Error) => void; api.discard.mockImplementation(() => new Promise((_, fail) => { reject = fail; }));
   await render(); await openMenu('new'); await click(menuItem('丢弃更改…'));
-  const dialog = container.querySelector('dialog')!;
+  const dialog = document.querySelector('dialog')!;
   expect(dialog.open).toBe(true); expect(dialog.textContent).toContain('repo/old'); expect(dialog.textContent).toContain('repo/new');
   expect(api.discard).not.toHaveBeenCalled(); expect(api.batchFiles).not.toHaveBeenCalled(); expect(document.activeElement).toBe(dialog.querySelector('[data-dialog-title]')); 
   await click(dialog.querySelectorAll('button')[1]);
   expect(api.discard).toHaveBeenCalledWith({ taskId: 'task', snapshotId: 'snapshot', rootId: 'repo', path: 'new', confirmed: true });
-  await act(async () => { dialog.dispatchEvent(new Event('cancel', { cancelable: true })); }); expect(container.querySelector('dialog')).toBe(dialog);
+  await act(async () => { dialog.dispatchEvent(new Event('cancel', { cancelable: true })); }); expect(document.querySelector('dialog')).toBe(dialog);
   await act(async () => { reject(new Error('文件已被其他程序修改')); }); expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('文件已被其他程序修改');
-  await click(dialog.querySelector('button')!); expect(container.querySelector('dialog')).toBeNull();
+  await click(dialog.querySelector('button')!); expect(document.querySelector('dialog')).toBeNull();
   expect(document.activeElement?.getAttribute('aria-label')).toBe('new');
 });
 it("disables mutations during runs while allowing read actions and reports stale index errors", async () => {
@@ -924,19 +924,19 @@ const batchMenuItem = (label: string) => [...container.querySelectorAll<HTMLButt
 it("confirms the exact selection before discarding and prevents duplicate batch requests", async () => {
   await render(); await selectAllFiles(); await openMenu("a");
   await click(batchMenuItem("丢弃所选更改…"));
-  let dialog = container.querySelector<HTMLDialogElement>('dialog[aria-label="丢弃所选文件更改"]')!;
+  let dialog = document.querySelector<HTMLDialogElement>('dialog')!;
   expect(dialog.open).toBe(true); expect(dialog.textContent).toContain("丢弃所选 2 个文件的更改");
   expect([...dialog.querySelectorAll("li")].map(item => item.textContent)).toEqual(["a", "b"]);
   expect(api.discard).not.toHaveBeenCalled(); expect(api.batchFiles).not.toHaveBeenCalled();
   await click([...dialog.querySelectorAll("button")].find(button => button.textContent === "取消")!);
   expect(api.discard).not.toHaveBeenCalled(); expect(api.batchFiles).not.toHaveBeenCalled();
   await openMenu("a"); await click(batchMenuItem("丢弃所选更改…"));
-  dialog = container.querySelector<HTMLDialogElement>('dialog[aria-label="丢弃所选文件更改"]')!;
+  dialog = document.querySelector<HTMLDialogElement>('dialog')!;
   const pending = deferred<{ completed: string[]; error: string | null }>(); api.batchFiles.mockReturnValueOnce(pending.promise);
   const confirm = [...dialog.querySelectorAll("button")].find(button => button.textContent === "丢弃 2 个文件的更改")!;
   await click(confirm); await click(confirm); expect(api.batchFiles).toHaveBeenCalledExactlyOnceWith({ taskId: "task", snapshotId: "snapshot", rootId: "repo", paths: ["a", "b"], action: "discard", confirmed: true });
   await act(async () => pending.resolve({ completed: ["a", "b"], error: null }));
-  expect(container.querySelector('dialog[aria-label="丢弃所选文件更改"]')).toBeNull();
+  expect(document.querySelector('dialog')).toBeNull();
   expect(container.querySelectorAll('.review-file-entry[aria-pressed="true"]')).toHaveLength(0);
 });
 it("ignores all selected untracked files and retains unfinished files after a failure", async () => {
@@ -962,24 +962,24 @@ it("blocks bulk ignore for tracked files and bulk discard for staged changes", a
 const selectionMenu = () => openMenu("a");
 it("previews the exact batch discard list and cancelling never writes files", async () => {
   await render(); await selectAllFiles(); await selectionMenu(); await click(menuItem("丢弃所选更改…"));
-  const dialog = container.querySelector<HTMLDialogElement>('[aria-label="丢弃所选文件更改"]')!;
+  const dialog = document.querySelector<HTMLDialogElement>("dialog")!;
   expect(dialog.open).toBe(true); expect(dialog.textContent).toContain("2 个文件"); expect(dialog.textContent).toContain("Git 暂存区保持不变");
   expect([...dialog.querySelectorAll("li")].map(item => item.textContent)).toEqual(["a", "b"]);
   expect(document.activeElement).toBe(dialog.querySelector('[data-dialog-title]'));
   expect(api.batchFiles).not.toHaveBeenCalled();
   await click([...dialog.querySelectorAll("button")].find(button => button.textContent === "取消")!);
-  expect(api.batchFiles).not.toHaveBeenCalled(); expect(container.querySelector("dialog")).toBeNull();
+  expect(api.batchFiles).not.toHaveBeenCalled(); expect(document.querySelector("dialog")).toBeNull();
 });
 it("confirms batch discard, blocks dismissal while working, and keeps failed members selected", async () => {
   const pending = deferred<{ completed: string[]; error: string | null }>(); api.batchFiles.mockReturnValue(pending.promise);
   await render(); await selectAllFiles(); await selectionMenu(); await click(menuItem("丢弃所选更改…"));
-  const dialog = container.querySelector<HTMLDialogElement>('[aria-label="丢弃所选文件更改"]')!;
+  const dialog = document.querySelector<HTMLDialogElement>("dialog")!;
   await click([...dialog.querySelectorAll("button")].find(button => button.textContent === "丢弃 2 个文件的更改")!);
   expect(api.batchFiles).toHaveBeenCalledExactlyOnceWith({ taskId: "task", snapshotId: "snapshot", rootId: "repo", paths: ["a", "b"], action: "discard", confirmed: true });
   await act(async () => { dialog.dispatchEvent(new Event("cancel", { cancelable: true })); }); expect(dialog.open).toBe(true);
   expect([...dialog.querySelectorAll("button")].every(button => button.disabled)).toBe(true);
   await act(async () => pending.resolve({ completed: ["a"], error: "b 在预览后有修改" }));
-  expect(container.querySelector("dialog")).toBeNull(); expect(container.textContent).toContain("已完成 1 个文件，其余未完成");
+  expect(document.querySelector("dialog")).toBeNull(); expect(container.textContent).toContain("已完成 1 个文件，其余未完成");
   expect(container.querySelector('.review-file-entry[aria-label="a"]')?.getAttribute("aria-pressed")).toBe("false");
   expect(container.querySelector('.review-file-entry[aria-label="b"]')?.getAttribute("aria-pressed")).toBe("true");
   expect(api.query).toHaveBeenCalledTimes(2);

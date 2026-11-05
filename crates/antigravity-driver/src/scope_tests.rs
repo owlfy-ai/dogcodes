@@ -178,6 +178,23 @@ async fn busy_reconfiguration_does_not_close_the_current_scope() {
     drop(stream);
 }
 
+/// The shell creates the file before writing to it, so it can be seen empty.
+async fn written_pid(path: &std::path::Path) -> u32 {
+    tokio::time::timeout(Duration::from_secs(6), async {
+        loop {
+            if let Some(pid) = std::fs::read_to_string(path)
+                .ok()
+                .and_then(|written| written.trim().parse().ok())
+            {
+                return pid;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap()
+}
+
 async fn until_file(path: &std::path::Path) {
     tokio::time::timeout(Duration::from_secs(4), async {
         while !path.exists() {
@@ -208,12 +225,7 @@ async fn cancelled_hook_probe_retains_auth_exclusion_until_original_exit() {
         async move { driver.create_session(req).await }
     });
     let marker = exe.with_extension("verify-pid");
-    until_file(&marker).await;
-    let original: u32 = std::fs::read_to_string(marker)
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
+    let original = written_pid(&marker).await;
     creating.abort();
     assert!(creating.await.unwrap_err().is_cancelled());
     assert!(alive(original));
@@ -312,12 +324,7 @@ case "$*" in"#,
         let driver = driver.clone();
         async move { driver.available_models().await }
     });
-    until_file(&exe.with_extension("models-pid")).await;
-    let original: u32 = std::fs::read_to_string(exe.with_extension("models-pid"))
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
+    let original = written_pid(&exe.with_extension("models-pid")).await;
     read.abort();
     assert!(read.await.unwrap_err().is_cancelled());
     assert!(alive(original));
@@ -398,12 +405,7 @@ case "$*" in"#,
         let driver = driver.clone();
         async move { driver.read_quota_with_refresh(None, true).await }
     });
-    until_file(&exe.with_extension("quota-pid")).await;
-    let original: u32 = std::fs::read_to_string(exe.with_extension("quota-pid"))
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
+    let original = written_pid(&exe.with_extension("quota-pid")).await;
     read.abort();
     assert!(read.await.unwrap_err().is_cancelled());
     assert!(alive(original));

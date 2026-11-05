@@ -1,4 +1,5 @@
 import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { ConfirmDialog } from "./AppDialog";
 import { LoadingStatus } from "./LoadingStatus";
 import { ReviewEmptyState } from "./ReviewEmptyState";
 import { SidebarNavIcon } from "./SidebarNavIcon";
@@ -355,6 +356,7 @@ export function ExecutionTargets({ api = tauriTargetApi, requestNew = 0, onProje
   const [entries, setEntries] = useState<TargetEntry[] | null>(null);
   const [failure, setFailure] = useState("");
   const [dialog, setDialog] = useState<{ entry: TargetEntry | null; progress?: boolean; browsing?: boolean } | null>(null);
+  const [removing, setRemoving] = useState<TargetEntry | null>(null);
   const [revision, setRevision] = useState(0);
   useEffect(() => { if (requestNew > 0) setDialog({ entry: null }); }, [requestNew]);
   useEffect(() => {
@@ -396,12 +398,16 @@ export function ExecutionTargets({ api = tauriTargetApi, requestNew = 0, onProje
                 ? <button type="button" onClick={() => act(api.disconnect(target.targetId))}>{text("disconnect")}</button>
                 : <button type="button" onClick={() => { setDialog({ entry, progress: true }); act(api.connect(target.targetId, null)); }}>{text("connect")}</button>}
               <button type="button" onClick={() => setDialog({ entry })}>{text("edit")}</button>
-              <button type="button" onClick={() => { if (window.confirm(text("removeConfirm", { name: target.displayName }))) act(api.remove(target.targetId)); }}>{text("remove")}</button>
+              <button type="button" onClick={() => setRemoving(entry)}>{text("remove")}</button>
             </div>
           </li>;
         })}
       </ul>}
     </div>
+    {removing && <ConfirmDialog title={text("remove")} tone="danger" icon="trash" confirmLabel={text("remove")} onCancel={() => setRemoving(null)}
+      onConfirm={() => { setRemoving(null); act(api.remove(removing.target.targetId)); }}>
+      <p>{text("removeConfirm", { name: removing.target.displayName })}</p>
+    </ConfirmDialog>}
     {dialog && <TargetConnectionDialog api={api} entry={dialog.entry} initialProgress={dialog.progress} initialBrowsing={dialog.browsing} onChanged={changed} onClose={() => setDialog(null)} onProjectReady={onProjectReady} />}
   </section>;
 }

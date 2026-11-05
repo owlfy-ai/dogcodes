@@ -17,11 +17,3 @@
 .agent-update-spinner { display: inline-block; width: .8rem; height: .8rem; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: agent-update-spin .8s linear infinite; }
 @keyframes agent-update-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .agent-update-spinner { animation: none; } }
-.agent-upgrade-dialog { width: min(440px, calc(100vw - 40px)); box-sizing: border-box; padding: 22px; border: 1px solid var(--line); border-radius: 16px; color: inherit; background: var(--panel); box-shadow: 0 18px 60px #0003; font-size: calc(14px * var(--ui-scale, 1)); }
-.agent-upgrade-dialog::backdrop { background: #0005; }
-.agent-upgrade-dialog h2 { margin: 0 0 12px; font-size: 1.15em; }
-.agent-upgrade-dialog p { margin: 10px 0; line-height: 1.6; }
-.agent-upgrade-dialog p + p { color: var(--muted); }
-.agent-upgrade-dialog footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-.agent-upgrade-dialog button { padding: 8px 13px; border: 1px solid var(--line); border-radius: 9px; font: inherit; color: inherit; background: var(--panel); cursor: pointer; }
-.agent-upgrade-dialog .agent-upgrade-confirm { background: #b94335; border-color: #b94335; color: white; }

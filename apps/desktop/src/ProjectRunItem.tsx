@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ProjectRunCommand, ProjectRunEdit } from "./projectRunClient";
 import { useI18n } from "./i18n";
+import { ConfirmDialog } from "./AppDialog";
 
 function Icon({ path }: { path: string }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d={path} /></svg>;
@@ -40,23 +41,15 @@ export function ProjectRunItem({ command, path, running, disabled, onRun, onEdit
 
 export function RunAnalysisConfirmation({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
   const { t } = useI18n();
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => { const element = dialog.current; element?.showModal(); return () => element?.close(); }, []);
-  return <dialog ref={dialog} className="project-run-confirm" aria-labelledby="run-analysis-confirm-title" onCancel={event => { event.preventDefault(); onCancel(); }}>
-    <h3 id="run-analysis-confirm-title">{t("projectRun.reanalyzeTitle")}</h3>
+  return <ConfirmDialog title={t("projectRun.reanalyzeTitle")} icon="refresh" confirmLabel={t("projectRun.reanalyze")} onCancel={onCancel} onConfirm={onConfirm}>
     <p>{t("projectRun.reanalyzeWarning")}</p>
     <p>{t("projectRun.reanalyzeKeeps")}</p>
-    <footer><button type="button" autoFocus onClick={onCancel}>{t("common.cancel")}</button><button type="button" onClick={onConfirm}>{t("projectRun.reanalyze")}</button></footer>
-  </dialog>;
+  </ConfirmDialog>;
 }
 
 export function RunCloseConfirmation({ label, onCancel, onConfirm }: { label: string; onCancel: () => void; onConfirm: () => void }) {
   const { t } = useI18n();
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => { const element = dialog.current; element?.showModal(); return () => element?.close(); }, []);
-  return <dialog ref={dialog} className="project-run-confirm" aria-labelledby="run-close-confirm-title" onCancel={event => { event.preventDefault(); onCancel(); }}>
-    <h3 id="run-close-confirm-title">{t("projectRun.closeRunningTitle")}</h3>
+  return <ConfirmDialog title={t("projectRun.closeRunningTitle")} icon="stop" focusConfirm confirmLabel={t("projectRun.stopAndClose")} onCancel={onCancel} onConfirm={onConfirm}>
     <p>{t("projectRun.closeRunningWarning", { label })}</p>
-    <footer><button type="button" onClick={onCancel}>{t("common.cancel")}</button><button type="button" autoFocus onClick={onConfirm}>{t("projectRun.stopAndClose")}</button></footer>
-  </dialog>;
+  </ConfirmDialog>;
 }

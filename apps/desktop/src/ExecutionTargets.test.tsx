@@ -32,6 +32,8 @@ let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  HTMLDialogElement.prototype.close = function () { this.open = false; };
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -56,7 +58,7 @@ const setValue = async (input: HTMLInputElement, value: string) => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 };
-const button = (text: string) => [...container.querySelectorAll("button")].find(item => item.textContent === text);
+const button = (text: string) => [...document.querySelectorAll("button")].find(item => item.textContent === text);
 
 describe("connection values", () => {
   it("leaves empty fields out so ssh resolves them from its config", () => {
@@ -279,13 +281,15 @@ describe("connections page", () => {
 
   it("removes a connection only after confirmation", async () => {
     const api = fakeApi(idle, { list: vi.fn(async () => [entry]) });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const inDialog = (text: string) => [...document.querySelectorAll<HTMLButtonElement>("dialog button")].find(item => item.textContent === text)!;
     await act(async () => { root.render(<I18nProvider language="en"><ExecutionTargets api={api} /></I18nProvider>); });
     await act(async () => { button("Remove")!.click(); });
+    expect(document.querySelector("dialog")?.textContent).toContain("Build");
+    await act(async () => { inDialog("Cancel").click(); });
     expect(api.remove).not.toHaveBeenCalled();
-    confirm.mockReturnValue(true);
     await act(async () => { button("Remove")!.click(); });
+    await act(async () => { inDialog("Remove").click(); });
     expect(api.remove).toHaveBeenCalledWith("tgt_one");
-    confirm.mockRestore();
+    expect(document.querySelector("dialog")).toBeNull();
   });
 });

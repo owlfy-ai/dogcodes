@@ -13,7 +13,7 @@ function Screen({ disabled = false, git = true, visible = true }) {
   return <><ReviewGitMenu taskId="task" root={{ id: "repo", path: "/project/repo", git, scopes: [""] }} disabled={disabled} visible={visible} onBusy={onBusy} onChanged={onChanged} onCompleted={onCompleted} onNotice={setNotice}/><ReviewGitRemoteStatus notice={notice}/></>;
 }
 const render = (props = {}) => act(async () => root.render(<Screen {...props}/>));
-const button = (label: string) => [...host.querySelectorAll<HTMLButtonElement>("button")].find(node => node.getAttribute("aria-label") === label || node.textContent === label)!;
+const button = (label: string) => [...document.querySelectorAll<HTMLButtonElement>("button")].find(node => node.getAttribute("aria-label") === label || node.textContent === label)!;
 const click = (label: string) => act(async () => { expect(button(label)).toBeTruthy(); button(label).click(); });
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
@@ -42,11 +42,11 @@ it("pulls the selected repository, reports progress and completion, and refreshe
 });
 it("confirms synchronization, cancels without invoking Git, and sends only sync after confirmation", async () => {
   await click("更多 Git 操作"); await click("同步更改…");
-  expect(host.querySelector("dialog")?.open).toBe(true); expect(document.activeElement).toBe(host.querySelector('[data-dialog-title]'));
+  expect(document.querySelector("dialog")?.open).toBe(true); expect(document.activeElement).toBe(document.querySelector('[data-dialog-title]'));
   expect(invoke).not.toHaveBeenCalled(); await click("取消"); expect(invoke).not.toHaveBeenCalled();
   await click("更多 Git 操作"); await click("同步更改…"); await click("同步更改");
   expect(invoke).toHaveBeenCalledExactlyOnceWith("core_review_git_action", { taskId: "task", rootId: "repo", action: "sync", message: "", stageAll: false });
-  expect(host.querySelector("dialog")).toBeNull(); expect(host.textContent).toContain("同步完成"); expect(onCompleted).toHaveBeenCalledExactlyOnceWith("sync");
+  expect(document.querySelector("dialog")).toBeNull(); expect(host.textContent).toContain("同步完成"); expect(onCompleted).toHaveBeenCalledExactlyOnceWith("sync");
 });
 it("refreshes partial pull results and collapses conflict details without reporting sync success", async () => {
   vi.mocked(invoke).mockRejectedValueOnce("CONFLICT (content): Merge conflict in file");

@@ -40,11 +40,6 @@
 .project-run-item-actions .is-pinned { color: inherit; background: var(--review-selected); }
 .project-run-rename { display: flex; flex: 1; min-width: 0; align-items: center; gap: 3px; padding: 3px 4px; }
 .project-run-rename input { width: 0; flex: 1; min-width: 0; }
-.project-run-confirm { width: min(420px, 90vw); padding: 22px; border: 1px solid var(--review-border); border-radius: 12px; color: inherit; background: var(--review-bg); box-shadow: 0 16px 60px #0003; }
-.project-run-confirm::backdrop { background: #0005; }
-.project-run-confirm h3 { margin: 0 0 12px; font-size: calc(16px * var(--ui-scale, 1)); }
-.project-run-confirm p { line-height: 1.7; color: var(--review-muted); }
-.project-run-confirm footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 @media (hover: none) { .project-run-item-actions button { opacity: 1; } }
 
 .project-run-directories--empty { display: flex; min-height: 0; padding: 0; }

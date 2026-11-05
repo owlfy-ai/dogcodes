@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FloatingPopover } from "./FloatingPopover";
-import { focusDialogTitle } from "./dialogFocus";
+import { ConfirmDialog } from "./AppDialog";
 import { directoryName } from "./ReviewFileTree";
 import type { FileMenuTarget } from "./ReviewFileMenu";
 import { reviewClient, type ReviewSnapshot } from "./reviewClient";
@@ -16,7 +16,7 @@ export function ReviewSelectionActions({ taskId, snapshot, selected, disabled, o
   menu: FileMenuTarget | null; onCloseMenu: () => void;
 }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
-  const guard = useRef(false), menuHost = useRef<HTMLDivElement>(null), dialog = useRef<HTMLDialogElement>(null);
+  const guard = useRef(false), menuHost = useRef<HTMLDivElement>(null);
   const groups = snapshot.roots.map(root => ({ root, files: root.files.filter(file => selected.has(reviewFileKey(root.root.id, file.path))) })).filter(group => group.files.length);
   const count = groups.reduce((total, group) => total + group.files.length, 0);
   const [confirmation, setConfirmation] = useState<{ groups: typeof groups; snapshotId: string; count: number } | null>(null);
@@ -37,11 +37,6 @@ export function ReviewSelectionActions({ taskId, snapshot, selected, disabled, o
     document.addEventListener("pointerdown", outside); document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); if (activeMenu.trigger.isConnected) activeMenu.trigger.focus(); };
   }, [activeMenu, closeMenu]);
-  useEffect(() => {
-    if (!confirmation) return;
-    const node = dialog.current; node?.showModal(); focusDialogTitle(node);
-    return () => node?.close();
-  }, [confirmation]);
   const allowed = (operation: BatchAction) => operation === "discard" ? discardAllowed : operation === "ignore" ? ignoreAllowed : operation === action;
   const run = async (operation: BatchAction) => {
     if (blocked || guard.current || !allowed(operation) || operation === "discard" && !confirmation) return;
@@ -86,12 +81,11 @@ export function ReviewSelectionActions({ taskId, snapshot, selected, disabled, o
       <hr role="separator" />
       <button role="menuitem" type="button" disabled={blocked || !discardAllowed} data-tooltip={!discardAllowed ? t("selection.discardTooltip") : undefined} onClick={confirmDiscard}>{t("selection.discardEllipsis")}</button>
     </FloatingPopover></div>}
-    {confirmation && <dialog ref={dialog} className="review-confirmation" aria-label={t("selection.discardLabel")} aria-modal="true" onCancel={event => { event.preventDefault(); if (!guard.current) setConfirmation(null); }}>
-      <h3 tabIndex={-1} data-dialog-title>{t("selection.discardTitle", { count: confirmation.count })}</h3>
+    {confirmation && <ConfirmDialog title={t("selection.discardTitle", { count: confirmation.count })} tone="danger" icon="trash" busy={busy} disabled={blocked} wide
+      confirmLabel={busy ? t("gitCommit.processing") : t("selection.discardConfirm", { count: confirmation.count })}
+      onCancel={() => { if (!guard.current) setConfirmation(null); }} onConfirm={() => void run("discard")}>
       <p>{t("selection.discardDescription")}</p>
       <div className="review-batch-file-list">{confirmation.groups.map(({ root, files }) => <section key={root.root.id}><strong data-tooltip={root.root.path}>{root.root.path} · {t(root.mode === "session" ? "fileMenu.base.session" : root.mode === "unstaged" ? "fileMenu.base.index" : "fileMenu.base.head")}</strong><ul>{files.map(file => <li key={file.path}>{file.previousPath ? `${file.previousPath} → ${file.path}` : file.path}</li>)}</ul></section>)}</div>
-      <button type="button" disabled={busy} onClick={() => setConfirmation(null)}>{t("common.cancel")}</button>
-      <button type="button" className="review-discard-confirm" disabled={blocked} onClick={() => void run("discard")}>{busy ? t("gitCommit.processing") : t("selection.discardConfirm", { count: confirmation.count })}</button>
-    </dialog>}
+    </ConfirmDialog>}
   </>;
 }

@@ -23,6 +23,17 @@
 - 更新 UI 测试和验收脚本时，优先使用角色和可访问名称定位；检查提示内容时读取 `data-tooltip` 或实际的 `[role="tooltip"]`。
 - 修改提示行为后运行 `Tooltips.test.tsx`；`tooltipConvention.test.ts` 检查源码，防止重新引入原生 `title` 提示。
 
+## 弹窗
+
+小型弹窗统一使用 `AppDialog.tsx`，不要新写 `<dialog>`、`showModal` 或 `window.confirm`。
+
+- 确认类用 `ConfirmDialog`；需要表单或自定义按钮时用 `AppDialog` 加 `DialogButton`。打开、Esc、焦点和 portal 都由组件处理。
+- 按钮语气：`primary` 是默认操作；`danger` 用于不可撤销的操作，比如删除和丢弃。图标从 `DialogIcon` 里选。
+- 焦点默认落在标题上。需要立刻输入或可以直接回车的控件，加 `data-dialog-default`。
+- 从按钮打开时传 `returnFocus`：WebKit 点击按钮不会让它获得焦点，不能依赖“之前的焦点”。
+- 弹窗渲染在 `document.body` 下，测试里要用 `document` 查询。
+- 查看文件、差异、产物这类大内容的查看器不属于这里。
+
 ## Agent 选择
 
 - Agent 的排序和启用状态统一使用 `agentPreferences.ts`，按 providerId 保存；管理页与所有选择菜单使用同一顺序。
