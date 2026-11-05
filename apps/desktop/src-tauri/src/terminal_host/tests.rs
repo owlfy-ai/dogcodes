@@ -640,9 +640,11 @@ mod on_a_target {
                     .await
                     .is_ok_and(|outcome| outcome.unwrap_or(false));
                 if exited {
-                    std::process::Command::new("/bin/sh")
-                        .args(["-c", "exit 3"])
-                        .status()
+                    #[cfg(unix)]
+                    let status = <std::process::ExitStatus as std::os::unix::process::ExitStatusExt>::from_raw(3 << 8);
+                    #[cfg(windows)]
+                    let status = <std::process::ExitStatus as std::os::windows::process::ExitStatusExt>::from_raw(3);
+                    Ok(status)
                 } else {
                     Err(std::io::Error::other("contact was lost"))
                 }
