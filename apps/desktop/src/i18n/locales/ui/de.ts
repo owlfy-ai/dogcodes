@@ -1813,6 +1813,7 @@ export const uiDe: UiMessages = {
     driverProtocolError: "Der Agent hat eine nicht verarbeitbare Antwort geliefert. Prüfen, ob der native Client normal funktioniert, ihn aktualisieren und den Agent erneut erkennen.",
     targetNotConnected: "Der Server dieses Agents ist nicht verbunden. Verbinde ihn und versuche es erneut.",
     attachmentUploadFailed: "Der Anhang konnte nicht auf den Server hochgeladen werden. Prüfe die Verbindung und den Speicherplatz.",
+    invalidProxyAddress: "Die Proxy-Adresse ist ungültig.",
     projectTargetNotConnected: "Der Server dieses Projekts ist nicht verbunden. Verbinde ihn und versuche es erneut.",
     fileOnServer: "Diese Datei liegt auf dem Server und kann auf diesem Computer nicht geöffnet werden.",
     operationResultUnknown: "Die Verbindung zum Server wurde getrennt, das Ergebnis dieses Vorgangs ist unbekannt. Verbinde dich neu und prüfe es.",

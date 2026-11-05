@@ -8,7 +8,10 @@ export interface SshConnection {
   auth: SshAuth;
   identityFile?: string;
   installDirectory?: string;
+  proxy?: SshProxy;
 }
+export type SshProxyKind = "socks5" | "http";
+export type SshProxy = { mode: "system" } | { mode: "custom"; kind: SshProxyKind; host: string; port: number };
 export interface ExecutionTarget {
   targetId: string;
   displayName: string;
@@ -25,7 +28,7 @@ export type TargetErrorKind =
   | "ssh_missing" | "ssh_too_old" | "auth_failed" | "host_key_changed" | "host_key_rejected"
   | "host_unreachable" | "connection_closed" | "timeout" | "cancelled" | "account_restricted" | "unsupported_platform"
   | "shim_unavailable" | "home_missing" | "directory_unwritable" | "unsafe_directory"
-  | "upload_failed" | "not_executable" | "bad_binary" | "protocol_mismatch" | "failed";
+  | "upload_failed" | "not_executable" | "bad_binary" | "protocol_mismatch" | "proxy_unavailable" | "failed";
 export interface TargetAgent {
   providerId: string;
   displayName: string;
@@ -99,13 +102,21 @@ export function joinDirectory(path: string, name: string): string {
 }
 
 /** Empty optional fields are left out so `ssh` resolves them from its own config. */
+export type ProxyChoice = "none" | "system" | "custom";
+
 export function connectionFromForm(form: {
   destination: string; port: string; user: string; auth: SshAuth; identityFile: string; installDirectory: string;
+  proxyMode?: ProxyChoice; proxyKind?: SshProxyKind; proxyHost?: string; proxyPort?: string;
 }): SshConnection {
   const port = Number.parseInt(form.port.trim(), 10);
   const user = form.user.trim();
   const installDirectory = form.installDirectory.trim();
   const identityFile = form.identityFile.trim();
+  const proxyHost = form.proxyHost?.trim() ?? "";
+  const proxyPort = Number.parseInt(form.proxyPort?.trim() ?? "", 10);
+  const proxy: SshProxy | null = form.proxyMode === "system" ? { mode: "system" }
+    : form.proxyMode === "custom" ? { mode: "custom", kind: form.proxyKind ?? "socks5", host: proxyHost, port: Number.isInteger(proxyPort) ? proxyPort : 0 }
+    : null;
   return {
     destination: form.destination.trim(),
     auth: form.auth,
@@ -113,6 +124,7 @@ export function connectionFromForm(form: {
     ...(user ? { user } : {}),
     ...(form.auth === "private_key" && identityFile ? { identityFile } : {}),
     ...(installDirectory ? { installDirectory } : {}),
+    ...(proxy ? { proxy } : {}),
   };
 }
 

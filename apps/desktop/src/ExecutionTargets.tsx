@@ -7,7 +7,7 @@ import { focusDialogTitle } from "./dialogFocus";
 import { useI18n } from "./i18n";
 import { userFacingError } from "./userFacingError";
 import {
-  type SshAuth, type TargetApi, type TargetEntry, type TargetErrorKind, type TargetStatus,
+  type ProxyChoice, type SshAuth, type SshProxyKind, type TargetApi, type TargetEntry, type TargetErrorKind, type TargetStatus,
   connectionFromForm, joinDirectory, parentDirectory, stepStates, tauriTargetApi, targetRoute,
 } from "./executionTargetClient";
 import { needsPerson, useTargetConnection } from "./targetConnection";
@@ -22,7 +22,7 @@ const ERROR_KEYS: Record<TargetErrorKind, string> = {
   shim_unavailable: "errorShimUnavailable", home_missing: "errorHomeMissing",
   directory_unwritable: "errorDirectoryUnwritable", unsafe_directory: "errorUnsafeDirectory",
   upload_failed: "errorUploadFailed", not_executable: "errorNotExecutable", bad_binary: "errorBadBinary",
-  protocol_mismatch: "errorProtocolMismatch", failed: "errorFailed",
+  protocol_mismatch: "errorProtocolMismatch", proxy_unavailable: "errorProxyUnavailable", failed: "errorFailed",
 };
 
 function useTargetText() {
@@ -250,6 +250,11 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
   const [secret, setSecret] = useState("");
   const [showSecret, setShowSecret] = useState(false);
   const [installDirectory, setInstallDirectory] = useState(saved?.installDirectory ?? "");
+  const savedProxy = saved?.proxy;
+  const [proxyMode, setProxyMode] = useState<ProxyChoice>(savedProxy?.mode ?? "none");
+  const [proxyKind, setProxyKind] = useState<SshProxyKind>(savedProxy?.mode === "custom" ? savedProxy.kind : "socks5");
+  const [proxyHost, setProxyHost] = useState(savedProxy?.mode === "custom" ? savedProxy.host : "");
+  const [proxyPort, setProxyPort] = useState(savedProxy?.mode === "custom" ? String(savedProxy.port) : "");
   const [hosts, setHosts] = useState<string[]>([]);
   const [resolved, setResolved] = useState("");
   const [busy, setBusy] = useState(false);
@@ -279,7 +284,7 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
     setBusy(true);
     setMessage("");
     try {
-      const connection = connectionFromForm({ destination, port, user, auth, identityFile, installDirectory });
+      const connection = connectionFromForm({ destination, port, user, auth, identityFile, installDirectory, proxyMode, proxyKind, proxyHost, proxyPort });
       const id = await api.save(targetId, name.trim() || destination.trim(), connection);
       setTargetId(id);
       onChanged();
@@ -295,7 +300,7 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
   };
   const close = () => { if (!busy) { onChanged(); onClose(); } };
   const title = browsing ? text("browseTitle") : progress ? name.trim() || destination.trim() : entry ? text("editTitle") : text("newTitle");
-  const preview = destination.trim() ? targetRoute(connectionFromForm({ destination, port, user, auth, identityFile, installDirectory })) : "user@host:22";
+  const preview = destination.trim() ? targetRoute(connectionFromForm({ destination, port, user, auth, identityFile, installDirectory, proxyMode, proxyKind, proxyHost, proxyPort })) : "user@host:22";
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
     <div ref={dialog} className="project-dialog target-dialog" role="dialog" aria-modal="true" aria-labelledby="target-dialog-title"
       onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); close(); } }}>
@@ -336,6 +341,20 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
             <label>{text("name")}<input maxLength={120} disabled={busy} placeholder={destination || text("namePlaceholder")} value={name} onChange={event => setName(event.target.value)} /></label>
             <label>{text("installDirectory")}<input maxLength={1024} disabled={busy} placeholder="~/.dogcodes" value={installDirectory} onChange={event => setInstallDirectory(event.target.value)} /></label>
             <p className="target-hint">{text("installDirectoryHint")}</p>
+            <label>{text("proxy")}<select disabled={busy} value={proxyMode} onChange={event => setProxyMode(event.target.value as ProxyChoice)}>
+              <option value="none">{text("proxyNone")}</option>
+              <option value="system">{text("proxySystem")}</option>
+              <option value="custom">{text("proxyCustom")}</option>
+            </select></label>
+            {proxyMode === "custom" && <div className="target-proxy">
+              <label>{text("proxyType")}<select disabled={busy} value={proxyKind} onChange={event => setProxyKind(event.target.value as SshProxyKind)}>
+                <option value="socks5">SOCKS5</option>
+                <option value="http">HTTP</option>
+              </select></label>
+              <label>{text("proxyHost")}<input maxLength={255} disabled={busy} autoCapitalize="off" spellCheck={false} placeholder="127.0.0.1" value={proxyHost} onChange={event => setProxyHost(event.target.value)} /></label>
+              <label>{text("proxyPort")}<input inputMode="numeric" maxLength={5} disabled={busy} placeholder="7890" value={proxyPort} onChange={event => setProxyPort(event.target.value)} /></label>
+            </div>}
+            <p className="target-hint">{text("proxyHint")}</p>
           </details>
           {message && <div className="error" role="alert">{message}</div>}
           <footer>

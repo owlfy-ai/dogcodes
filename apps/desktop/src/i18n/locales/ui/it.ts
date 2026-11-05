@@ -1813,6 +1813,7 @@ export const uiIt: UiMessages = {
     driverProtocolError: "L'agente ha restituito una risposta non elaborabile. Verifica che il client nativo conversi normalmente, aggiornalo e rileva di nuovo l'agente.",
     targetNotConnected: "Il server di questo Agent non è connesso. Connettilo e riprova.",
     attachmentUploadFailed: "Impossibile caricare l'allegato sul server. Controlla la connessione e lo spazio su disco.",
+    invalidProxyAddress: "L’indirizzo del proxy non è valido.",
     projectTargetNotConnected: "Il server di questo progetto non è connesso. Connettilo e riprova.",
     fileOnServer: "Questo file si trova sul server e non può essere aperto su questo computer.",
     operationResultUnknown: "La connessione al server si è interrotta, quindi il risultato di questa operazione è sconosciuto. Riconnettiti e verifica.",

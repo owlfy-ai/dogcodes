@@ -1813,6 +1813,7 @@ export const uiPtBR: UiMessages = {
     driverProtocolError: "O agente retornou uma resposta que não pôde ser processada. Verifique se o cliente nativo conversa normalmente, atualize-o e detecte o agente novamente.",
     targetNotConnected: "O servidor deste Agent não está conectado. Conecte-o e tente novamente.",
     attachmentUploadFailed: "Não foi possível enviar o anexo ao servidor. Verifique a conexão e o espaço em disco.",
+    invalidProxyAddress: "O endereço do proxy é inválido.",
     projectTargetNotConnected: "O servidor deste projeto não está conectado. Conecte-o e tente novamente.",
     fileOnServer: "Este arquivo está no servidor e não pode ser aberto neste computador.",
     operationResultUnknown: "A conexão com o servidor foi perdida, então o resultado desta operação é desconhecido. Reconecte e verifique.",

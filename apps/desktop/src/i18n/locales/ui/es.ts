@@ -1813,6 +1813,7 @@ export const uiEs: UiMessages = {
     driverProtocolError: "El agente devolvió una respuesta que no se pudo procesar. Comprueba que el cliente nativo conversa con normalidad, actualízalo y vuelve a detectar el agente.",
     targetNotConnected: "El servidor de este Agent no está conectado. Conéctalo e inténtalo de nuevo.",
     attachmentUploadFailed: "No se pudo subir el adjunto al servidor. Revisa la conexión y el espacio en disco.",
+    invalidProxyAddress: "La dirección del proxy no es válida.",
     projectTargetNotConnected: "El servidor de este proyecto no está conectado. Conéctalo e inténtalo de nuevo.",
     fileOnServer: "Este archivo está en el servidor y no se puede abrir en este equipo.",
     operationResultUnknown: "Se perdió la conexión con el servidor, así que se desconoce el resultado de esta operación. Vuelve a conectarte y compruébalo.",

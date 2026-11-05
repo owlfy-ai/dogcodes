@@ -163,6 +163,7 @@ impl Sshd {
             auth: SshAuth::System,
             identity_file: None,
             install_directory: Some(self.install_directory()),
+            proxy: None,
         }
     }
 }
@@ -555,6 +556,72 @@ async fn the_system_config_alias_resolves_through_ssh_g() {
 }
 
 /// Starts a process on the target through the same path a driver uses.
+/// A proxy in front of anything: it records what it was asked to reach and relays.
+async fn test_proxy(
+    kind: agent_protocol::SshProxyKind,
+) -> (u16, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use agent_protocol::SshProxyKind;
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = asked.clone();
+    tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let recorded = recorded.clone();
+            tokio::spawn(async move {
+                let destination = match kind {
+                    SshProxyKind::Socks5 => {
+                        let mut greeting = [0; 3];
+                        socket.read_exact(&mut greeting).await.unwrap();
+                        socket.write_all(&[5, 0]).await.unwrap();
+                        let mut head = [0; 4];
+                        socket.read_exact(&mut head).await.unwrap();
+                        let host = match head[3] {
+                            1 => {
+                                let mut address = [0; 4];
+                                socket.read_exact(&mut address).await.unwrap();
+                                std::net::Ipv4Addr::from(address).to_string()
+                            }
+                            3 => {
+                                let length = socket.read_u8().await.unwrap();
+                                let mut name = vec![0; usize::from(length)];
+                                socket.read_exact(&mut name).await.unwrap();
+                                String::from_utf8(name).unwrap()
+                            }
+                            other => panic!("unexpected address type {other}"),
+                        };
+                        let port = socket.read_u16().await.unwrap();
+                        socket
+                            .write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0])
+                            .await
+                            .unwrap();
+                        format!("{host}:{port}")
+                    }
+                    SshProxyKind::Http => {
+                        let mut reader = BufReader::new(&mut socket);
+                        let mut request = String::new();
+                        reader.read_line(&mut request).await.unwrap();
+                        let mut line = String::new();
+                        while line != "\r\n" {
+                            line.clear();
+                            reader.read_line(&mut line).await.unwrap();
+                        }
+                        drop(reader);
+                        socket.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
+                        request.split_whitespace().nth(1).unwrap().to_owned()
+                    }
+                };
+                recorded.lock().unwrap().push(destination.clone());
+                let mut server = tokio::net::TcpStream::connect(destination).await.unwrap();
+                let _ = tokio::io::copy_bidirectional(&mut socket, &mut server).await;
+            });
+        }
+    });
+    (port, asked)
+}
+
 async fn connected(server: &Sshd) -> (TargetLink, tempfile::TempDir) {
     let (directory, shims) = catalog();
     let link = attempt(server, server.connection(), shims, Recorder::answering(&[]))
@@ -716,6 +783,56 @@ async fn losing_the_link_is_an_error_and_never_an_exit_proof() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     panic!("the remote process outlived its connection");
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn the_connection_goes_through_a_chosen_proxy() {
+    use agent_protocol::{SshProxy, SshProxyKind};
+    for kind in [SshProxyKind::Socks5, SshProxyKind::Http] {
+        let server = Sshd::start("", "");
+        let (port, asked) = test_proxy(kind).await;
+        let mut connection = server.connection();
+        connection.proxy = Some(SshProxy::Custom {
+            kind,
+            host: "127.0.0.1".into(),
+            port,
+        });
+        let (_directory, shims) = catalog();
+        let link = attempt(&server, connection, shims, Recorder::answering(&[]))
+            .await
+            .unwrap();
+        // The connection really works, and it really went through the proxy.
+        let mut child = shell(&link, "printf through").spawn().unwrap();
+        assert_eq!(read_all(&mut child.stdout).await, "through");
+        assert!(!asked.lock().unwrap().is_empty(), "{kind:?}");
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn a_proxy_that_cannot_be_used_is_reported_as_such_and_never_bypassed() {
+    use agent_protocol::{SshProxy, SshProxyKind};
+    let server = Sshd::start("", "");
+    // Bound and released, so nothing is listening there.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let mut connection = server.connection();
+    connection.proxy = Some(SshProxy::Custom {
+        kind: SshProxyKind::Socks5,
+        host: "127.0.0.1".into(),
+        port,
+    });
+    let (_directory, shims) = catalog();
+    let Err(error) = attempt(&server, connection, shims, Recorder::answering(&[])).await else {
+        panic!("connected directly instead of through the proxy");
+    };
+    assert_eq!(
+        error.kind,
+        target_link::ConnectErrorKind::ProxyUnavailable,
+        "{error:?}"
+    );
 }
 
 #[tokio::test]

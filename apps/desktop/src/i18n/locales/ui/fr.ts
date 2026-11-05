@@ -1813,6 +1813,7 @@ export const uiFr: UiMessages = {
     driverProtocolError: "L'agent a renvoyé une réponse non exploitable. Vérifiez que le client natif discute normalement, mettez-le à jour, puis détectez à nouveau l'agent.",
     targetNotConnected: "Le serveur de cet Agent n'est pas connecté. Connectez-le, puis réessayez.",
     attachmentUploadFailed: "Impossible d'envoyer la pièce jointe au serveur. Vérifiez la connexion et l'espace disque.",
+    invalidProxyAddress: "L’adresse du proxy n’est pas valide.",
     projectTargetNotConnected: "Le serveur de ce projet n'est pas connecté. Connectez-le, puis réessayez.",
     fileOnServer: "Ce fichier se trouve sur le serveur et ne peut pas être ouvert sur cet ordinateur.",
     operationResultUnknown: "La connexion au serveur a été perdue : le résultat de cette opération est inconnu. Reconnectez-vous et vérifiez.",

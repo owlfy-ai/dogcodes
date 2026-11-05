@@ -1813,6 +1813,7 @@ export const uiJa: UiMessages = {
     driverProtocolError: "Agent が処理できない応答を返しました。ネイティブクライアントが正常に会話できるか確認し、更新してから Agent を再検出してください。",
     targetNotConnected: "この Agent のサーバーは接続されていません。接続してからやり直してください。",
     attachmentUploadFailed: "添付ファイルをサーバーにアップロードできませんでした。接続と空き容量を確認してください。",
+    invalidProxyAddress: "プロキシのアドレスが無効です。",
     projectTargetNotConnected: "このプロジェクトのサーバーは接続されていません。接続してからやり直してください。",
     fileOnServer: "このファイルはサーバー上にあるため、このコンピューターでは開けません。",
     operationResultUnknown: "サーバーとの接続が切れたため、この操作の結果は不明です。再接続して確認してください。",

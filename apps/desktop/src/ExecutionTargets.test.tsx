@@ -61,6 +61,17 @@ const setValue = async (input: HTMLInputElement, value: string) => {
 const button = (text: string) => [...document.querySelectorAll("button")].find(item => item.textContent === text);
 
 describe("connection values", () => {
+  it("saves a proxy only when one is chosen", () => {
+    const base = { ...emptyForm, destination: "a" };
+    expect(connectionFromForm({ ...base, proxyMode: "none", proxyHost: "ignored", proxyPort: "1" })).not.toHaveProperty("proxy");
+    expect(connectionFromForm({ ...base, proxyMode: "system" }).proxy).toEqual({ mode: "system" });
+    expect(connectionFromForm({ ...base, proxyMode: "custom", proxyKind: "http", proxyHost: " 127.0.0.1 ", proxyPort: "7890" }).proxy)
+      .toEqual({ mode: "custom", kind: "http", host: "127.0.0.1", port: 7890 });
+    // Left for the service to refuse, rather than quietly connecting without a proxy.
+    expect(connectionFromForm({ ...base, proxyMode: "custom", proxyHost: "", proxyPort: "" }).proxy)
+      .toEqual({ mode: "custom", kind: "socks5", host: "", port: 0 });
+  });
+
   it("leaves empty fields out so ssh resolves them from its config", () => {
     expect(connectionFromForm({ ...emptyForm, destination: " gpu-box " })).toEqual({ destination: "gpu-box", auth: "system" });
   });

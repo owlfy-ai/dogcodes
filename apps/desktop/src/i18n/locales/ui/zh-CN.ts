@@ -1813,6 +1813,7 @@ export const uiZhCN: UiMessages = {
     driverProtocolError: "Agent 返回了无法处理的响应。请检查原生客户端能否正常对话，更新客户端后重新检测 Agent。",
     targetNotConnected: "这个 Agent 所在的服务器未连接，请先连接后重试",
     attachmentUploadFailed: "附件无法上传到服务器，请检查连接和磁盘空间",
+    invalidProxyAddress: "代理地址无效。",
     projectTargetNotConnected: "这个项目所在的服务器未连接，请先连接后重试",
     fileOnServer: "这个文件在服务器上，无法在本机打开",
     operationResultUnknown: "与服务器的连接已断开，这项操作的结果未知，请重新连接后核实",

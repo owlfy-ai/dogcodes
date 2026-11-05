@@ -43,6 +43,69 @@ pub fn apply_proxy_environment(command: &mut Command) {
     }
 }
 
+/// What the system says about reaching the outside, for tools that take one proxy.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SystemProxy {
+    None,
+    /// Decided by a script for each address, which can't be reduced to one proxy.
+    AutoConfig,
+    Url {
+        url: String,
+        no_proxy: String,
+    },
+}
+
+#[must_use]
+pub fn system_proxy() -> SystemProxy {
+    let environment = resolved_proxy_environment();
+    let value = |name: &str| {
+        environment
+            .get(name)
+            .and_then(|value| value.to_str())
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    match value("ALL_PROXY")
+        .or_else(|| value("HTTPS_PROXY"))
+        .or_else(|| value("HTTP_PROXY"))
+    {
+        Some(url) => SystemProxy::Url {
+            url,
+            no_proxy: value("NO_PROXY").unwrap_or_default(),
+        },
+        None if system_uses_auto_config() => SystemProxy::AutoConfig,
+        None => SystemProxy::None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn system_uses_auto_config() -> bool {
+    let read = || {
+        let store = SCDynamicStoreBuilder::new("dogcodes proxy reader").build()?;
+        let proxies = store.get_proxies()?;
+        let data = create_data(proxies.as_CFTypeRef(), kCFPropertyListXMLFormat_v1_0).ok()?;
+        let value = PlistValue::from_reader_xml(data.bytes()).ok()?;
+        let dictionary = value.as_dictionary()?;
+        Some(macos_integer(dictionary, "ProxyAutoConfigEnable") == Some(1))
+    };
+    read().unwrap_or(false)
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn system_uses_auto_config() -> bool {
+    proxy_watch::read().is_ok_and(|config| {
+        matches!(
+            config.effective,
+            ProxyMode::Pac { .. } | ProxyMode::PacInline { .. }
+        )
+    })
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+fn system_uses_auto_config() -> bool {
+    false
+}
+
 fn resolved_proxy_environment() -> BTreeMap<String, OsString> {
     let inherited: BTreeMap<String, OsString> = PROXY_PAIRS
         .into_iter()

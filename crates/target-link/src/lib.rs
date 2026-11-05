@@ -6,6 +6,7 @@ mod connect;
 mod error;
 mod link;
 mod program;
+pub mod proxy;
 mod shims;
 pub mod ssh_config;
 

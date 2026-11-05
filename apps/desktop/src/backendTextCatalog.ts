@@ -20,6 +20,7 @@ export const backendMessages: [string, string][] = [
   ["这个 Agent 所在的服务器未连接，请先连接后重试", "targetNotConnected"],
   ["附件无法上传到服务器，请检查连接和磁盘空间", "attachmentUploadFailed"],
   ["这个项目所在的服务器未连接，请先连接后重试", "projectTargetNotConnected"],
+  ["代理地址无效", "invalidProxyAddress"],
   ["这个文件在服务器上，无法在本机打开", "fileOnServer"],
   ["与服务器的连接已断开，这项操作的结果未知，请重新连接后核实", "operationResultUnknown"],
   ["这个项目在另一台机器上", "projectOnOtherMachine"],

@@ -38,6 +38,7 @@ mod tests {
                         auth: SshAuth::System,
                         identity_file: None,
                         install_directory: None,
+                        proxy: None,
                     },
                     machine_identity: None,
                 }],

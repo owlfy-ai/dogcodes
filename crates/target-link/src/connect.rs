@@ -94,6 +94,7 @@ pub(crate) fn ssh_arguments(
     connection: &SshConnection,
     batch: bool,
     config_file: Option<&PathBuf>,
+    proxy_command: Option<&OsString>,
     remote_command: &str,
 ) -> Vec<OsString> {
     let mut args: Vec<OsString> = vec!["-T".into()];
@@ -122,6 +123,11 @@ pub(crate) fn ssh_arguments(
     ] {
         args.push("-o".into());
         args.push(option.into());
+    }
+    // The first value given wins, so this also overrides `~/.ssh/config`.
+    if let Some(command) = proxy_command {
+        args.push("-o".into());
+        args.push(command.into());
     }
     if let Some(port) = connection.port {
         args.push("-p".into());
@@ -171,12 +177,26 @@ pub async fn connect(
         .map_err(|error| ConnectError::new(ConnectErrorKind::Failed, error.to_string()))?;
     let nonce = uuid::Uuid::new_v4().simple().to_string();
     let batch = !program.supports_askpass();
+    let chosen = connection.proxy.clone();
+    let proxy = tokio::task::spawn_blocking(move || {
+        crate::proxy::resolve(chosen.as_ref(), crate::proxy::system_proxy)
+    })
+    .await
+    .map_err(|error| ConnectError::new(ConnectErrorKind::Failed, error.to_string()))?
+    .map_err(|detail| ConnectError::new(ConnectErrorKind::ProxyUnavailable, detail))?;
+    if let Some(proxy) = &proxy {
+        observer.log(&format!("Using proxy {}:{}", proxy.host, proxy.port));
+    }
+    let proxy_command = proxy
+        .as_ref()
+        .map(|proxy| crate::proxy::proxy_command(&askpass_program, proxy));
     let mut command = agent_runtime::agent_command(&program.path);
     command
         .args(ssh_arguments(
             &connection,
             batch,
             config_file.as_ref(),
+            proxy_command.as_ref(),
             &boot::remote_command(&nonce),
         ))
         .stdin(Stdio::piped())
@@ -463,6 +483,7 @@ mod tests {
             auth: SshAuth::System,
             identity_file: None,
             install_directory: None,
+            proxy: None,
         }
     }
 
@@ -473,8 +494,28 @@ mod tests {
     }
 
     #[test]
+    fn a_proxy_command_comes_before_the_destination() {
+        let command = OsString::from("ProxyCommand=helper");
+        let args = strings(&ssh_arguments(
+            &connection(),
+            false,
+            None,
+            Some(&command),
+            "cmd",
+        ));
+        let at = args
+            .iter()
+            .position(|arg| arg == "ProxyCommand=helper")
+            .unwrap();
+        assert_eq!(args[at - 1], "-o");
+        assert!(at < args.iter().position(|arg| arg == "--").unwrap());
+        let args = strings(&ssh_arguments(&connection(), false, None, None, "cmd"));
+        assert!(!args.iter().any(|arg| arg.starts_with("ProxyCommand")));
+    }
+
+    #[test]
     fn a_config_alias_is_left_for_ssh_to_resolve() {
-        let args = strings(&ssh_arguments(&connection(), false, None, "cmd"));
+        let args = strings(&ssh_arguments(&connection(), false, None, None, "cmd"));
         assert!(
             !args
                 .iter()
@@ -490,7 +531,7 @@ mod tests {
         value.user = Some("dev".into());
         value.auth = SshAuth::PrivateKey;
         value.identity_file = Some("~/.ssh/id_ed25519".into());
-        let args = strings(&ssh_arguments(&value, false, None, "cmd"));
+        let args = strings(&ssh_arguments(&value, false, None, None, "cmd"));
         let end = args.iter().position(|arg| arg == "--").unwrap();
         assert_eq!(args[end + 1], "box");
         for flag in ["-p", "-l", "-i"] {
@@ -500,7 +541,7 @@ mod tests {
 
     #[test]
     fn forwarding_is_off_whatever_the_user_config_says() {
-        let args = strings(&ssh_arguments(&connection(), false, None, "cmd"));
+        let args = strings(&ssh_arguments(&connection(), false, None, None, "cmd"));
         for option in [
             "ForwardAgent=no",
             "ClearAllForwardings=yes",
@@ -512,7 +553,7 @@ mod tests {
 
     #[test]
     fn a_client_that_cannot_prompt_through_us_never_waits_for_input() {
-        let args = strings(&ssh_arguments(&connection(), true, None, "cmd"));
+        let args = strings(&ssh_arguments(&connection(), true, None, None, "cmd"));
         assert!(args.iter().any(|arg| arg == "BatchMode=yes"));
     }
 

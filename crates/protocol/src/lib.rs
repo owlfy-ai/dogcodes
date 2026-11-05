@@ -311,6 +311,28 @@ pub struct SshConnection {
     /// Absolute directory replacing the default `~/.dogcodes` on the target.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub install_directory: Option<String>,
+    /// What to reach the server through. Unset leaves it to `ssh` and its own config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<SshProxy>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SshProxyKind {
+    Socks5,
+    Http,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum SshProxy {
+    /// Read from the system each time, so it follows changes to the setting.
+    System,
+    Custom {
+        kind: SshProxyKind,
+        host: String,
+        port: u16,
+    },
 }
 
 /// A saved machine that can run agents. The identity is local and independent

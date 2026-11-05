@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    if target_link::proxy::run_if_requested() {
+        return;
+    }
     workspace_ops::review::git_credentials::run_if_requested();
     if target_link::askpass::run_if_requested() {
         return;

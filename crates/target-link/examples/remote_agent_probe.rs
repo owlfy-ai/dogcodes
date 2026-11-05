@@ -111,6 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 auth: SshAuth::System,
                 identity_file: None,
                 install_directory: None,
+                proxy: None,
             },
             program: target_link::find_ssh().await?,
             askpass_program: std::env::current_exe()?,

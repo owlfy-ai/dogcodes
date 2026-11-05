@@ -1813,6 +1813,7 @@ export const uiEn = {
     driverProtocolError: "The agent returned a response that could not be processed. Check that the native client chats normally, update it, then detect the agent again.",
     targetNotConnected: "This Agent's server is not connected. Connect it, then try again.",
     attachmentUploadFailed: "A file attachment couldn't be uploaded to the server. Check the connection and free disk space.",
+    invalidProxyAddress: "The proxy address isn't valid.",
     projectTargetNotConnected: "This project's server is not connected. Connect it, then try again.",
     fileOnServer: "This file is on the server and can't be opened on this computer.",
     operationResultUnknown: "The connection to the server was lost, so the result of this operation is unknown. Reconnect and check.",

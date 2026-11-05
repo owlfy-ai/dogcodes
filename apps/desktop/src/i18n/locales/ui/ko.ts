@@ -1813,6 +1813,7 @@ export const uiKo: UiMessages = {
     driverProtocolError: "Agent가 처리할 수 없는 응답을 반환했습니다. 네이티브 클라이언트가 정상적으로 대화되는지 확인하고, 업데이트한 뒤 Agent를 다시 감지하세요.",
     targetNotConnected: "이 Agent의 서버가 연결되어 있지 않습니다. 연결한 후 다시 시도하세요.",
     attachmentUploadFailed: "첨부 파일을 서버에 업로드하지 못했습니다. 연결과 디스크 공간을 확인하세요.",
+    invalidProxyAddress: "프록시 주소가 잘못되었습니다.",
     projectTargetNotConnected: "이 프로젝트의 서버가 연결되어 있지 않습니다. 연결한 후 다시 시도하세요.",
     fileOnServer: "이 파일은 서버에 있어 이 컴퓨터에서 열 수 없습니다.",
     operationResultUnknown: "서버 연결이 끊어져 이 작업의 결과를 알 수 없습니다. 다시 연결한 후 확인하세요.",

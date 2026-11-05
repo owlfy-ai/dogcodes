@@ -28,6 +28,8 @@ pub enum ConnectErrorKind {
     /// The binary ran and reported a different digest, or could not run at all.
     BadBinary,
     ProtocolMismatch,
+    /// The chosen proxy could not be used, or refused to reach the server.
+    ProxyUnavailable,
     Failed,
 }
 
@@ -60,7 +62,10 @@ impl std::error::Error for ConnectError {}
 pub(crate) fn classify_ssh_failure(stderr: &str) -> ConnectErrorKind {
     let text = stderr.to_ascii_lowercase();
     let has = |needle: &str| text.contains(needle);
-    if has("remote host identification has changed") {
+    // First: its own words may repeat what follows, such as "connection refused".
+    if has(crate::proxy::ERROR_PREFIX) {
+        ConnectErrorKind::ProxyUnavailable
+    } else if has("remote host identification has changed") {
         ConnectErrorKind::HostKeyChanged
     } else if has("host key verification failed") {
         ConnectErrorKind::HostKeyRejected

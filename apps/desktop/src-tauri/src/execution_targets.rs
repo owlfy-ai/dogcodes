@@ -956,6 +956,7 @@ mod tests {
             auth: SshAuth::System,
             identity_file: None,
             install_directory: None,
+            proxy: None,
         };
         let id = host
             .save(&core, None, "Build".into(), connection("old"))
@@ -1086,6 +1087,7 @@ mod tests {
             auth: SshAuth::System,
             identity_file: None,
             install_directory: Some(text("install")),
+            proxy: None,
         };
         let id: TargetId = serde_json::from_value(
             host.call(
@@ -1258,6 +1260,7 @@ mod tests {
             auth: SshAuth::System,
             identity_file: None,
             install_directory: None,
+            proxy: None,
         };
         assert!(host.save(&core, None, "Bad".into(), bad).await.is_err());
         assert!(host.list(&core).await.unwrap().is_empty());

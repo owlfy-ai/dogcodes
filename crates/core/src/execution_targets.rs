@@ -93,7 +93,21 @@ pub fn validate_connection(connection: &SshConnection) -> Result<(), CoreError> 
             "远端安装目录必须是绝对路径".into(),
         ));
     }
+    if let Some(agent_protocol::SshProxy::Custom { host, port, .. }) = &connection.proxy
+        && (*port == 0 || !valid_proxy_host(host))
+    {
+        return Err(CoreError::InvalidArgument("代理地址无效".into()));
+    }
     Ok(())
+}
+
+/// Becomes part of a command `ssh` hands to a shell.
+fn valid_proxy_host(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 255
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':'))
 }
 
 fn valid_ssh_word(value: &str) -> bool {
@@ -133,6 +147,7 @@ mod tests {
             auth: SshAuth::System,
             identity_file: None,
             install_directory: None,
+            proxy: None,
         }
     }
 
@@ -177,6 +192,30 @@ mod tests {
         assert!(validate_connection(&value).is_ok());
         value.auth = SshAuth::Password;
         assert!(validate_connection(&value).is_err());
+    }
+
+    #[test]
+    fn a_proxy_address_cannot_carry_a_command() {
+        let mut value = connection("host");
+        let custom = |host: &str, port| {
+            Some(agent_protocol::SshProxy::Custom {
+                kind: agent_protocol::SshProxyKind::Socks5,
+                host: host.to_owned(),
+                port,
+            })
+        };
+        value.proxy = Some(agent_protocol::SshProxy::System);
+        assert!(validate_connection(&value).is_ok());
+        for host in ["127.0.0.1", "proxy.example.com", "::1"] {
+            value.proxy = custom(host, 7890);
+            assert!(validate_connection(&value).is_ok(), "{host}");
+        }
+        value.proxy = custom("127.0.0.1", 0);
+        assert!(validate_connection(&value).is_err());
+        for host in ["", "a b", "a;id", "$(id)", "`id`"] {
+            value.proxy = custom(host, 7890);
+            assert!(validate_connection(&value).is_err(), "{host}");
+        }
     }
 
     #[test]
