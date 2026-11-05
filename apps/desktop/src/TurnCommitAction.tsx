@@ -141,26 +141,43 @@ export function TurnCommitAction({ taskId, data, providerId }: { taskId: string;
     </button>
     {open && createPortal(<dialog ref={dialog} className="turn-undo-dialog turn-commit-dialog" aria-labelledby="turn-commit-title" aria-busy={busy}
       onClick={event => event.stopPropagation()} onCancel={event => { event.preventDefault(); if (phase !== "committing") void close(); }}>
-      <h2 id="turn-commit-title" tabIndex={-1} data-dialog-title>{t("turnCommit.title")}</h2>
+      <header className="turn-commit-header">
+        <h2 id="turn-commit-title" tabIndex={-1} data-dialog-title>{t("turnCommit.title")}</h2>
+        <button className="turn-commit-close" type="button" aria-label={t("common.close")} disabled={phase === "committing"} onClick={() => void close()}>
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8" /></svg>
+        </button>
+      </header>
       {targets.length > 1 && <label className="turn-commit-root">{t("turnCommit.repository")}
         <select value={rootId} disabled={busy} onChange={event => void switchRoot(event.target.value)}>
           {targets.map(target => <option key={target.rootId} value={target.rootId}>{target.rootPath.split("/").pop() || target.rootPath}</option>)}
         </select></label>}
       {phase === "empty" && !error && <p>{t("turnCommit.empty")}</p>}
       {staged && <p className="turn-undo-hint">{staged.extra ? t("turnCommit.stagedWithExtra", { count: staged.files.length, extra: staged.extra }) : t("turnCommit.staged", { count: staged.files.length })}</p>}
-      {(phase === "ready" || phase === "committing" || phase === "committed" || (phase === "summarizing" && message)) &&
-        <textarea className="turn-commit-message" aria-label={t("gitCommit.message")} rows={3} value={message} disabled={busy || phase === "committed"} onChange={event => setMessage(event.target.value)} />}
-      {status && <p role="status">{status}</p>}
-      {done && <p role="status">{done}</p>}
+      {phase !== "empty" && <div className="turn-commit-editor">
+        <textarea className="turn-commit-message" aria-label={t("gitCommit.message")} rows={3} value={message} disabled={busy || phase === "committed"} onChange={event => setMessage(event.target.value)} />
+        <div className="turn-commit-tools">
+          <span className="turn-commit-status" role="status">{status || done}</span>
+          {phase !== "committed" && <button className="turn-commit-generate" type="button" disabled={busy || !staged} onClick={() => { const target = targets.find(x => x.rootId === rootId); if (target) { const id = ++run.current; void prepare(target, id).catch(cause => { if (id === run.current) { setError(userFacingError(cause, t("gitCommit.generateFailed"))); setPhase("ready"); } }); } }}>
+            <svg className={phase === "summarizing" ? "spinning" : undefined} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true"><path d="m10 3 2.4 6.6L19 12l-6.6 2.4L10 21l-2.4-6.6L1 12l6.6-2.4L10 3Zm10-2 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z" /></svg>
+            <span>{t("turnCommit.regenerate")}</span>
+          </button>}
+        </div>
+      </div>}
       {error && <p role="alert">{error}</p>}
-      <footer>
-        <button type="button" disabled={phase === "committing"} onClick={() => void close()}>{phase === "committed" ? t("turnCommit.done") : t("common.cancel")}</button>
-        {phase !== "committed" && phase !== "empty" && <>
-          <button type="button" disabled={busy || !staged} onClick={() => { const target = targets.find(x => x.rootId === rootId); if (target) { const id = ++run.current; void prepare(target, id).catch(cause => { if (id === run.current) { setError(userFacingError(cause, t("gitCommit.generateFailed"))); setPhase("ready"); } }); } }}>{t("turnCommit.regenerate")}</button>
-          <button type="button" disabled={busy || !message.trim()} onClick={() => void commit(false)}>{t("gitCommit.commit")}</button>
-          <button className="turn-commit-confirm" type="button" disabled={busy || !message.trim()} onClick={() => void commit(true)}>{t("gitCommit.commitPush")}</button>
-        </>}
-      </footer>
+      {phase !== "empty" && <footer>
+        {phase === "committed"
+          ? <button type="button" onClick={() => void close()}>{t("turnCommit.done")}</button>
+          : <>
+            <button type="button" disabled={busy || !message.trim()} onClick={() => void commit(false)}>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3" /><path d="M1.5 8H5m6 0h3.5" /></svg>
+              <span>{t("gitCommit.commit")}</span>
+            </button>
+            <button className="turn-commit-confirm" type="button" disabled={busy || !message.trim()} onClick={() => void commit(true)}>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3V1.5h10V3M8 14V5M4.5 8.5 8 5l3.5 3.5" /></svg>
+              <span>{t("gitCommit.commitPush")}</span>
+            </button>
+          </>}
+      </footer>}
     </dialog>, document.body)}
   </>;
 }

@@ -72,11 +72,13 @@ it("stages only this turn's files, generates the message from them and commits",
   expect(button("已提交").disabled).toBe(true);
 });
 
-it("cancel restores the index entries it staged", async () => {
+it("closing restores the index entries it staged", async () => {
   const index = backend();
   await act(async () => view.render(<TurnCommitAction taskId="tsk" data={data} />));
   await act(async () => button("提交").click());
-  await act(async () => button("取消").click());
+  expect(button("取消")).toBeUndefined();
+  expect(document.querySelector(".turn-commit-editor .turn-commit-generate")?.textContent).toBe("重新生成");
+  await act(async () => document.querySelector<HTMLButtonElement>('dialog header button[aria-label="关闭"]')!.click());
   expect([...index]).toEqual(["already.txt"]);
   expect(invoke.mock.calls.some(([name]) => name === "core_review_git_action")).toBe(false);
 });

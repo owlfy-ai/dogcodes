@@ -41,7 +41,28 @@
 :root[data-theme="light"] .turn-undo-dialog { background: #fff; color: #292d2b; }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .turn-undo-dialog { background: #fff; color: #292d2b; } }
 .turn-commit-dialog { width: min(520px, calc(100vw - 40px)); }
-.turn-commit-dialog .turn-commit-message { box-sizing: border-box; width: 100%; margin: 6px 0; padding: 8px 10px; border: 1px solid #8884; border-radius: 8px; font: inherit; color: inherit; background: transparent; resize: vertical; }
+.turn-commit-dialog .turn-commit-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.turn-commit-dialog .turn-commit-header h2 { margin: 0; line-height: 28px; }
+.turn-commit-dialog .turn-commit-close { display: flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px; margin: 0 -6px 0 0; padding: 0; border: 0; border-radius: 6px; opacity: .65; }
+.turn-commit-dialog .turn-commit-close:not(:disabled):hover { background: #8882; opacity: 1; }
+.turn-commit-dialog .turn-undo-hint { margin: 0 0 14px; }
+.turn-commit-dialog .turn-commit-editor { display: flex; flex-direction: column; border: 1px solid #8884; border-radius: 10px; transition: border-color .12s, box-shadow .12s; }
+.turn-commit-dialog .turn-commit-editor:has(textarea:focus) { border-color: #8889; box-shadow: 0 0 0 1px #8889; }
+.turn-commit-dialog .turn-commit-message { display: block; box-sizing: border-box; width: 100%; min-height: 76px; padding: 10px 12px 4px; border: 0; outline: 0; font: inherit; line-height: 1.5; color: inherit; background: transparent; resize: none; }
+.turn-commit-dialog .turn-commit-message:disabled { opacity: .7; }
+.turn-commit-dialog .turn-commit-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; padding: 0 5px 5px 12px; }
+.turn-commit-dialog .turn-commit-status { min-width: 0; overflow: hidden; font-size: .88em; text-overflow: ellipsis; white-space: nowrap; opacity: .65; }
+.turn-commit-dialog .turn-commit-generate { display: flex; flex: none; align-items: center; gap: 5px; min-height: 26px; padding: 3px 7px; border: 0; border-radius: 6px; font-size: .92em; }
+.turn-commit-dialog .turn-commit-generate:not(:disabled):hover { background: #8882; }
+.turn-commit-dialog .turn-commit-generate > svg { width: 14px; height: 14px; color: var(--accent, #78a91f); }
+.turn-commit-dialog .turn-commit-generate > svg.spinning { animation: turn-commit-spark 1.1s ease-in-out infinite; }
+@keyframes turn-commit-spark { 50% { opacity: .35; transform: scale(.85); } }
+@media (prefers-reduced-motion: reduce) { .turn-commit-dialog .turn-commit-generate > svg.spinning { animation: none; } }
+.turn-commit-dialog footer button { display: inline-flex; align-items: center; gap: 6px; }
+.turn-commit-dialog footer button > svg { width: 15px; height: 15px; }
+.turn-commit-dialog footer button:not(:disabled):hover { background: #8882; }
+.turn-commit-dialog :is(.turn-commit-close, .turn-commit-generate, footer button):focus-visible { outline: 2px solid var(--accent, #78a91f); outline-offset: 1px; }
 .turn-commit-dialog .turn-commit-root { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
 .turn-commit-dialog .turn-commit-root select { font: inherit; color: inherit; background: transparent; border: 1px solid #8884; border-radius: 6px; padding: 3px 6px; }
-.turn-commit-dialog .turn-commit-confirm { background: var(--accent, #78a91f); color: white; border-color: transparent; }
+.turn-commit-dialog footer .turn-commit-confirm, .turn-commit-dialog footer .turn-commit-confirm:not(:disabled):hover { background: var(--accent, #78a91f); color: white; border-color: transparent; }
+.turn-commit-dialog footer .turn-commit-confirm:not(:disabled):hover { filter: brightness(1.06); }
