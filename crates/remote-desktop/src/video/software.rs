@@ -673,9 +673,13 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     static CAPTURE_TEST: Mutex<()> = Mutex::new(());
+    // Guards no data: a poisoned lock only means an earlier test already failed.
+    fn capture_serial() -> std::sync::MutexGuard<'static, ()> {
+        CAPTURE_TEST.lock().unwrap_or_else(|e| e.into_inner())
+    }
     #[test]
     fn unchanged_pixels_still_deliver_pointer_mode_changes_through_scaling() {
-        let _serial = CAPTURE_TEST.lock().unwrap();
+        let _serial = capture_serial();
         wait_for(|| CAPTURES.load(Ordering::Acquire) == 0);
         let frames = Arc::new(Mutex::new(Vec::new()));
         let output = frames.clone();
@@ -1041,7 +1045,7 @@ mod tests {
     }
     #[test]
     fn polling_suppresses_static_frames_and_surfaces_capture_errors() {
-        let _serial = CAPTURE_TEST.lock().unwrap();
+        let _serial = capture_serial();
         wait_for(|| CAPTURES.load(Ordering::Acquire) == 0);
         let count = Arc::new(AtomicUsize::new(0));
         let copy = count.clone();
@@ -1075,7 +1079,7 @@ mod tests {
     }
     #[test]
     fn changed_geometry_retires_capture_without_delivering_new_size_or_a_terminal_error() {
-        let _serial = CAPTURE_TEST.lock().unwrap();
+        let _serial = capture_serial();
         wait_for(|| CAPTURES.load(Ordering::Acquire) == 0);
         let changed = Arc::new(AtomicBool::new(false));
         let frames = Arc::new(Mutex::new(Vec::new()));
@@ -1117,7 +1121,7 @@ mod tests {
     }
     #[test]
     fn recovery_delivers_an_identical_cached_picture_before_resuming_publication() {
-        let _serial = CAPTURE_TEST.lock().unwrap();
+        let _serial = capture_serial();
         wait_for(|| CAPTURES.load(Ordering::Acquire) == 0);
         let paused = Arc::new(AtomicBool::new(false));
         let source_pause = paused.clone();
@@ -1171,7 +1175,7 @@ mod tests {
     }
     #[test]
     fn startup_timeouts_bound_stragglers_and_never_publish_a_late_frame() {
-        let _serial = CAPTURE_TEST.lock().unwrap();
+        let _serial = capture_serial();
         wait_for(|| CAPTURES.load(Ordering::Acquire) == 0);
         let frames = Arc::new(AtomicUsize::new(0));
         let mut releases = Vec::new();
@@ -1214,7 +1218,7 @@ mod tests {
     }
     #[test]
     fn closing_does_not_wait_for_a_blocked_os_call_or_deliver_its_frame() {
-        let _serial = CAPTURE_TEST.lock().unwrap();
+        let _serial = capture_serial();
         wait_for(|| CAPTURES.load(Ordering::Acquire) == 0);
         let (entered_tx, entered_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
@@ -1256,7 +1260,7 @@ mod tests {
         );
         assert_eq!(std::env::var("DISPLAY").as_deref(), Ok(":99"));
         assert_eq!(std::env::var("XDG_SESSION_TYPE").as_deref(), Ok("x11"));
-        let _serial = CAPTURE_TEST.lock().unwrap();
+        let _serial = capture_serial();
         let monitor = xcap::Monitor::all()
             .unwrap()
             .into_iter()

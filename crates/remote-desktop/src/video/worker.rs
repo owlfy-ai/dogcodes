@@ -83,17 +83,31 @@ impl Kind {
 }
 #[cfg(test)]
 pub(super) static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// Waits for a previous fixture's workers to return their permits. Native
+/// destruction happens on the old worker after its owner is gone, and a
+/// saturated machine can take a while to schedule it.
 #[cfg(test)]
-pub(super) fn isolated_capture() -> std::sync::MutexGuard<'static, ()> {
-    static CAPTURE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let guard = CAPTURE_LOCK.lock().unwrap();
-    for _ in 0..1000 {
-        if CAPTURES.load(Ordering::Acquire) == 0 {
-            return guard;
+fn settled(count: &AtomicUsize) -> bool {
+    let until = Instant::now() + Duration::from_secs(10);
+    while count.load(Ordering::Acquire) != 0 {
+        if Instant::now() >= until {
+            return false;
         }
         std::thread::sleep(Duration::from_millis(1));
     }
-    panic!("previous capture fixture did not exit");
+    true
+}
+// These locks guard no data and each fixture re-checks the worker counts, so a
+// poisoned lock only means an earlier test failed. Unwrapping it here would
+// report every later test as failed too, burying the one that actually broke.
+#[cfg(test)]
+pub(super) fn isolated_capture() -> std::sync::MutexGuard<'static, ()> {
+    static CAPTURE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let guard = CAPTURE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    assert!(settled(&CAPTURES), "previous capture fixture did not exit");
+    guard
 }
 #[cfg(test)]
 pub(super) fn capture_count() -> usize {
@@ -101,16 +115,13 @@ pub(super) fn capture_count() -> usize {
 }
 #[cfg(test)]
 pub(super) fn isolated() -> std::sync::MutexGuard<'static, ()> {
-    let guard = TEST_LOCK.lock().unwrap();
-    // Native destruction happens on the old worker after its owner is gone.
-    // A new fixture starts only after the previous fixture returned its permit.
-    for _ in 0..1000 {
-        if WORKERS.load(Ordering::Acquire) == 0 {
-            return guard;
-        }
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    panic!("previous native fixture did not exit");
+    let guard = TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    assert!(settled(&WORKERS), "previous native fixture did not exit");
+    #[cfg(target_os = "macos")]
+    super::platform::finish_cold_codec_startup();
+    guard
 }
 struct Permit(Kind);
 impl Permit {
@@ -602,13 +613,19 @@ mod tests {
         }
     }
     fn idle() {
-        for _ in 0..1000 {
-            if WORKERS.load(Ordering::Acquire) == 0 {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        panic!("native worker did not exit");
+        assert!(settled(&WORKERS), "native worker did not exit");
+    }
+    #[test]
+    fn a_panicking_fixture_does_not_fail_the_tests_after_it() {
+        let failed = std::thread::spawn(|| {
+            let _captures = isolated_capture();
+            let _codecs = isolated();
+            panic!("deliberate fixture failure");
+        });
+        assert!(failed.join().is_err());
+        assert!(TEST_LOCK.is_poisoned());
+        let _captures = isolated_capture();
+        let _codecs = isolated();
     }
     #[test]
     fn cold_initialization_does_not_relax_the_running_request_deadline() {

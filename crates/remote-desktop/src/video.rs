@@ -1158,6 +1158,27 @@ mod platform {
         unsafe { VTSessionSetProperty(session, key, Some(value)) }
     }
 
+    /// The first VideoToolbox session in a process makes CFBundle scan the
+    /// main bundle. For an unbundled test binary that is `target/*/deps`, so the
+    /// cost grows with the build directory (seconds, and several times that on
+    /// a loaded machine) rather than with the codec. Tests assert the admission
+    /// and encode budgets, so pay this once outside them. The budgets themselves
+    /// stay as shipped: an app bundle has no such directory to scan.
+    #[cfg(test)]
+    pub(super) fn finish_cold_codec_startup() {
+        static STARTED: std::sync::Once = std::sync::Once::new();
+        STARTED.call_once(|| {
+            // A host without an encoder fails in the test that needs one.
+            drop(Native::with_profile(
+                480,
+                320,
+                30,
+                800_000,
+                VideoProfile::ConstrainedBaseline31,
+            ));
+        });
+    }
+
     impl Native {
         pub fn with_profile(
             width: u32,
@@ -1703,7 +1724,6 @@ mod platform {
             // Even this direct native test creates, uses and drops the codec
             // on the same owned thread. Only the credit counter crosses it.
             let worker = std::thread::spawn(move || {
-                let initializing = Instant::now();
                 let mut encoder = Native::with_profile(
                     480,
                     320,
@@ -1712,7 +1732,6 @@ mod platform {
                     VideoProfile::ConstrainedBaseline31,
                 )
                 .unwrap();
-                eprintln!("native fixture initialized in {:?}", initializing.elapsed());
                 let resume = Mutex::new(resume);
                 let first = std::sync::atomic::AtomicBool::new(true);
                 encoder._callback.observing = Some(std::sync::Arc::new(move || {
