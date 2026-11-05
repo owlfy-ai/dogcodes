@@ -7,7 +7,7 @@ use std::path::Path;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct RepositoryTarget {
+pub struct RepositoryTarget {
     worktree: String,
     git_directory: String,
     branch: String,
@@ -18,7 +18,7 @@ pub(crate) struct RepositoryTarget {
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct PushTarget {
+pub struct PushTarget {
     repository: RepositoryTarget,
     oid: String,
 }

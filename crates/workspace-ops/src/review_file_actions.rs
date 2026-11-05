@@ -1,8 +1,6 @@
 use crate::{
-    DesktopState,
-    review::service::{ReviewCall, ReviewContext, roots},
-    review_window::require_task_window,
-    workspace_browser::{Preview, preview_bytes},
+    review::service::{ReviewContext, roots},
+    workspace_service::{Preview, preview_bytes},
 };
 use agent_workspace::review::{
     FileChange,
@@ -60,30 +58,7 @@ pub enum PreviewVersion {
     Head,
 }
 
-#[tauri::command]
-pub async fn core_review_preview(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-    snapshot_id: String,
-    root_id: String,
-    path: String,
-    version: PreviewVersion,
-) -> Result<Preview, String> {
-    require_task_window(window.label(), &task_id)?;
-    state
-        .core
-        .review(ReviewCall::Preview {
-            task_id,
-            snapshot_id,
-            root_id,
-            path,
-            version,
-        })
-        .await
-}
-
-pub(crate) async fn preview(
+pub async fn preview(
     state: &ReviewContext<'_>,
     task_id: String,
     snapshot_id: String,
@@ -123,29 +98,7 @@ pub(crate) async fn preview(
     }
 }
 
-#[tauri::command]
-pub async fn core_review_reveal(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-    snapshot_id: String,
-    root_id: String,
-    path: String,
-) -> Result<(), String> {
-    require_task_window(window.label(), &task_id)?;
-    let target = state
-        .core
-        .review(ReviewCall::RevealPath {
-            task_id,
-            snapshot_id,
-            root_id,
-            path,
-        })
-        .await?;
-    reveal_file(target).await
-}
-
-pub(crate) async fn reveal_path(
+pub async fn reveal_path(
     state: &ReviewContext<'_>,
     task_id: String,
     snapshot_id: String,
@@ -158,7 +111,7 @@ pub(crate) async fn reveal_path(
         .map_err(|e| e.to_string())?
 }
 
-pub(crate) async fn reveal_file(target: PathBuf) -> Result<(), String> {
+pub async fn reveal_file(target: PathBuf) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let mut command = {
         let mut command = tokio::process::Command::new("/usr/bin/open");
@@ -189,45 +142,19 @@ pub(crate) async fn reveal_file(target: PathBuf) -> Result<(), String> {
     }
 }
 
-#[tauri::command]
-pub async fn core_review_ignore(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    operation_id: String,
-    task_id: String,
-    snapshot_id: String,
-    root_id: String,
-    path: String,
-) -> Result<(), String> {
-    require_task_window(window.label(), &task_id)?;
-    state
-        .core
-        .review(ReviewCall::Ignore {
-            operation_id,
-            task_id,
-            snapshot_id,
-            root_id,
-            path,
-        })
-        .await
-}
-
-pub(crate) async fn ignore(
+pub async fn ignore(
     state: &ReviewContext<'_>,
     task_id: String,
     snapshot_id: String,
     root_id: String,
     path: String,
 ) -> Result<(), String> {
-    let _access = state
-        .core
-        .try_workspace_mutation()
-        .map_err(|e| e.to_string())?;
+    let _access = state.core.try_workspace_mutation().await?;
     let (root, _) = target(state, &task_id, &snapshot_id, &root_id, &path).await?;
     if !root.git {
         return Err("当前目录未受 Git 管理".into());
     }
-    let snapshot = state.core.bootstrap().await.map_err(|e| e.to_string())?;
+    let snapshot = state.core.bootstrap().await?;
     if snapshot
         .tasks
         .iter()

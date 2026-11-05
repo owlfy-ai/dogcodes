@@ -1,21 +1,18 @@
 //! Discover durable operations without any caller-local request cache. Read-only.
 use super::{
-    git_operations::GitOutcome,
-    mutation_operations::MutationOutcome,
-    service::{ReviewCall, ReviewContext},
+    git_operations::GitOutcome, mutation_operations::MutationOutcome, service::ReviewContext,
 };
-use crate::{DesktopState, review_window::require_task_window};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum OperationKind {
+pub enum OperationKind {
     Git,
     File,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct HistoryQuery {
+pub struct HistoryQuery {
     pub task_id: String,
     pub kind: OperationKind,
     pub after: Option<String>,
@@ -23,7 +20,7 @@ pub(crate) struct HistoryQuery {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct OperationSummary {
+pub struct OperationSummary {
     operation_id: String,
     action: String,
     status: String,
@@ -34,7 +31,7 @@ pub(crate) struct OperationSummary {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct HistoryPage {
+pub struct HistoryPage {
     entries: Vec<OperationSummary>,
     next_cursor: Option<String>,
 }
@@ -190,14 +187,4 @@ pub(super) async fn query(
     })
     .await
     .map_err(|_| "操作记录读取中断，请重新查询")?
-}
-
-#[tauri::command]
-pub async fn core_review_operations(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    request: HistoryQuery,
-) -> Result<HistoryPage, String> {
-    require_task_window(window.label(), &request.task_id)?;
-    state.core.review(ReviewCall::Operations(request)).await
 }

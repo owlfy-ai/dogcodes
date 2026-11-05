@@ -10,6 +10,8 @@ use target_wire::{CHECK_PREFIX, PROTOCOL_VERSION, TargetInfo};
 #[cfg(unix)]
 mod relay;
 mod serve;
+#[cfg(unix)]
+mod terminal;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -79,7 +81,8 @@ fn relay_main(socket: &str, token: &str) -> ExitCode {
 }
 
 fn serve_main(nonce: &str) -> ExitCode {
-    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+    let Ok(runtime) = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
         .enable_all()
         .build()
     else {

@@ -15,10 +15,12 @@ process-scope = { path = "../process-scope" }
 sha2.workspace = true
 serde_json.workspace = true
 target-wire = { path = "../target-wire" }
-tokio = { workspace = true, features = ["net", "io-std", "io-util", "rt", "macros", "time", "process", "sync", "fs"] }
+workspace-ops = { path = "../workspace-ops" }
+tokio = { workspace = true, features = ["net", "io-std", "io-util", "rt", "rt-multi-thread", "macros", "time", "process", "sync", "fs"] }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.28", features = ["user", "hostname"] }
+nix = { version = "0.28", features = ["user", "hostname", "signal", "process"] }
+portable-pty = "0.9.0"
 
 [dev-dependencies]
 tempfile = "3"

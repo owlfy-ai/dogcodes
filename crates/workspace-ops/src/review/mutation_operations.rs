@@ -7,7 +7,7 @@ use serde_json::Value;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct MutationRequest {
+pub struct MutationRequest {
     pub operation_id: String,
     pub task_id: String,
     pub command: String,
@@ -15,14 +15,14 @@ pub(crate) struct MutationRequest {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
-pub(crate) enum MutationOutcome {
+pub enum MutationOutcome {
     Running,
     Succeeded { result: Value },
     Failed { message: String },
     Unknown,
 }
-pub(crate) type MutationReceipt = OperationReceipt<MutationRequest, MutationOutcome>;
-pub(crate) type MutationOperations = OperationJournal<MutationRequest, MutationOutcome>;
+pub type MutationReceipt = OperationReceipt<MutationRequest, MutationOutcome>;
+pub type MutationOperations = OperationJournal<MutationRequest, MutationOutcome>;
 impl JournalRequest for MutationRequest {
     fn task_id(&self) -> &str {
         &self.task_id

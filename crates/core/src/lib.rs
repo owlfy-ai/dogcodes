@@ -1,5 +1,8 @@
 //! `dogcodes` application services. This crate has no UI or database dependency.
 
+pub use agent_protocol::workspace_context::{
+    WorkspaceContextProvider, WorkspaceContextSnapshot, WorkspaceDiffCapture, WorkspaceTurnCapture,
+};
 pub mod agent_preferences;
 mod approval_details;
 pub mod approval_receipts;
@@ -74,13 +77,12 @@ use agent_domain::{
 };
 use agent_protocol::{
     ActorRef, ArtifactMetadata, BootstrapSnapshot, BuiltContextPackage, CancelTurn,
-    CaptureWorkspaceDiff, ChangeSummary, CommandAck, CommandEnvelope, ConfirmContextPackage,
-    ContextEditRequest, ContextPackageKind, ContextPackageV1, ContextPreviewRequest, CoreCommand,
-    EventEnvelope, EventSource, GitWorkspaceSnapshotV1, NewEvent, OptOutReconciliation,
-    PendingApproval, RecordTestResult, RelevantFile, RespondToApproval, ResumeCapability,
-    SCHEMA_VERSION, SessionMapStatus, SetPreferredExecutor, StreamRef, StreamType, TaskSummary,
-    TestReportV1, TimelineItem, WorkspaceCollectionDiagnostic, WorkspaceDiagnosticKind,
-    WorkspaceSnapshotSummary,
+    CaptureWorkspaceDiff, CommandAck, CommandEnvelope, ConfirmContextPackage, ContextEditRequest,
+    ContextPackageKind, ContextPackageV1, ContextPreviewRequest, CoreCommand, EventEnvelope,
+    EventSource, NewEvent, OptOutReconciliation, PendingApproval, RecordTestResult,
+    RespondToApproval, ResumeCapability, SCHEMA_VERSION, SessionMapStatus, SetPreferredExecutor,
+    StreamRef, StreamType, TaskSummary, TestReportV1, TimelineItem, WorkspaceCollectionDiagnostic,
+    WorkspaceDiagnosticKind, WorkspaceSnapshotSummary,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -149,95 +151,18 @@ pub struct PendingReconciliationOptOut {
     pub opted_out_sequence: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WorkspaceContextSnapshot {
-    pub relevant_files: Vec<RelevantFile>,
-    pub dependency_changes: Vec<RelevantFile>,
-    pub change_summary: ChangeSummary,
-    pub git_snapshot: Option<GitWorkspaceSnapshotV1>,
-    pub diagnostic: Option<WorkspaceCollectionDiagnostic>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WorkspaceDiffCapture {
-    pub base: String,
-    pub status_fingerprint: String,
-    pub content: Vec<u8>,
-}
+/// A machine that is not connected: nothing about its directories is known.
+struct UnreachableWorkspace;
 
 #[async_trait]
-pub trait WorkspaceTurnCapture: Send + Sync {
-    async fn checkpoint(&self) -> Result<Option<Value>, WorkspaceCollectionDiagnostic> {
-        Ok(None)
-    }
-    async fn finish(&self) -> Result<Value, WorkspaceCollectionDiagnostic>;
-}
-
-impl Default for WorkspaceContextSnapshot {
-    fn default() -> Self {
-        Self {
-            relevant_files: vec![],
-            dependency_changes: vec![],
-            change_summary: ChangeSummary {
-                base: "unknown".into(),
-                head: "unknown".into(),
-                diff_stat: "unknown".into(),
-                artifact_ref: None,
-            },
-            git_snapshot: None,
-            diagnostic: None,
+impl WorkspaceContextProvider for UnreachableWorkspace {
+    async fn collect(&self, _workspace_path: &str) -> WorkspaceContextSnapshot {
+        WorkspaceContextSnapshot {
+            diagnostic: Some(WorkspaceCollectionDiagnostic {
+                kind: WorkspaceDiagnosticKind::WorkspaceUnavailable,
+            }),
+            ..WorkspaceContextSnapshot::default()
         }
-    }
-}
-
-#[async_trait]
-pub trait WorkspaceContextProvider: Send + Sync {
-    /// Persist the complete Git file state independently of bounded review diffs.
-    async fn capture_fork_snapshot(&self, _paths: &[String]) -> Result<Value, String> {
-        Err("当前环境不支持保存 worktree 快照".into())
-    }
-
-    /// Restore immutable turn snapshots into isolated checkouts, in root order.
-    async fn fork_worktrees(&self, _snapshot: Value, _name: &str) -> Result<Vec<String>, String> {
-        Err("当前环境不支持创建 Git worktree".into())
-    }
-
-    async fn delete_task_review_data(&self, _task_id: &str) -> Result<(), String> {
-        Ok(())
-    }
-
-    async fn validate_workspace_roots(
-        &self,
-        _directories: &[String],
-    ) -> Result<(), WorkspaceCollectionDiagnostic> {
-        Ok(())
-    }
-    async fn recover_turn(
-        &self,
-        _workspace_path: &str,
-        _checkpoint: Value,
-    ) -> Result<Value, WorkspaceCollectionDiagnostic> {
-        Err(WorkspaceCollectionDiagnostic {
-            kind: WorkspaceDiagnosticKind::WorkspaceUnavailable,
-        })
-    }
-    async fn begin_turn(
-        &self,
-        _workspace_path: &str,
-    ) -> Result<Box<dyn WorkspaceTurnCapture>, WorkspaceCollectionDiagnostic> {
-        Err(WorkspaceCollectionDiagnostic {
-            kind: WorkspaceDiagnosticKind::WorkspaceUnavailable,
-        })
-    }
-    async fn collect(&self, workspace_path: &str) -> WorkspaceContextSnapshot;
-
-    async fn capture_diff(
-        &self,
-        _workspace_path: &str,
-    ) -> Result<WorkspaceDiffCapture, WorkspaceCollectionDiagnostic> {
-        Err(WorkspaceCollectionDiagnostic {
-            kind: WorkspaceDiagnosticKind::WorkspaceUnavailable,
-        })
     }
 }
 
@@ -293,6 +218,9 @@ pub trait CoreRepository: Send + Sync {
     }
 
     async fn pending_task_cleanups(&self) -> Result<Vec<TaskId>, RepositoryError> {
+        Ok(vec![])
+    }
+    async fn permanently_deleted_tasks(&self) -> Result<Vec<TaskId>, RepositoryError> {
         Ok(vec![])
     }
     async fn complete_task_cleanup(&self, _task_id: &TaskId) -> Result<(), RepositoryError> {
@@ -634,6 +562,8 @@ pub struct Core {
     live_thoughts: RwLock<BTreeMap<String, String>>,
     selected_installations: RwLock<BTreeMap<String, Option<String>>>,
     target_executors: RwLock<BTreeMap<ExecutorRef, TargetId>>,
+    /// The working directories of connected machines' projects.
+    target_workspaces: std::sync::RwLock<BTreeMap<TargetId, Arc<dyn WorkspaceContextProvider>>>,
     running_permissions: running_permissions::RunningPermissions,
 }
 
@@ -797,11 +727,7 @@ impl Core {
         repository: Arc<dyn CoreRepository>,
         workspace_context: Arc<dyn WorkspaceContextProvider>,
     ) -> Self {
-        Self::with_context_sources(
-            repository,
-            Arc::new(PassthroughRedactor),
-            workspace_context,
-        )
+        Self::with_context_sources(repository, Arc::new(PassthroughRedactor), workspace_context)
     }
 
     #[must_use]
@@ -835,6 +761,7 @@ impl Core {
             live_thoughts: RwLock::new(BTreeMap::new()),
             selected_installations: RwLock::new(BTreeMap::new()),
             target_executors: RwLock::new(BTreeMap::new()),
+            target_workspaces: std::sync::RwLock::new(BTreeMap::new()),
             running_permissions: running_permissions::RunningPermissions::default(),
         }
     }
@@ -1695,6 +1622,39 @@ impl Core {
     }
 
     /// A driver for an agent on another machine. It lives until that connection ends.
+    /// Who answers about directories on a machine, while it is connected.
+    pub fn register_target_workspace(
+        &self,
+        target: TargetId,
+        workspace: Arc<dyn WorkspaceContextProvider>,
+    ) {
+        if let Ok(mut workspaces) = self.target_workspaces.write() {
+            workspaces.insert(target, workspace);
+        }
+    }
+
+    pub fn unregister_target_workspace(&self, target: &TargetId) {
+        if let Ok(mut workspaces) = self.target_workspaces.write() {
+            workspaces.remove(target);
+        }
+    }
+
+    /// A project's directories are only ever read on the machine they belong to. An
+    /// unreachable machine answers that it is unavailable, never with this one's files.
+    pub(crate) fn workspace_for(
+        &self,
+        target: Option<&TargetId>,
+    ) -> Arc<dyn WorkspaceContextProvider> {
+        let Some(target) = target else {
+            return self.workspace_context.clone();
+        };
+        self.target_workspaces
+            .read()
+            .ok()
+            .and_then(|workspaces| workspaces.get(target).cloned())
+            .unwrap_or_else(|| Arc::new(UnreachableWorkspace))
+    }
+
     pub async fn register_target_driver(&self, target: TargetId, driver: Arc<dyn AgentDriver>) {
         self.target_executors
             .write()
@@ -1962,11 +1922,10 @@ impl Core {
             boundary.recorded_at
         };
 
-        let mut workspace = if project.target_id.is_some() {
-            WorkspaceContextSnapshot::default()
-        } else {
-            self.workspace_context.collect(&project.path).await
-        };
+        let mut workspace = self
+            .workspace_for(project.target_id.as_ref())
+            .collect(&project.path)
+            .await;
         if let Some(git) = &workspace.git_snapshot {
             workspace.change_summary.artifact_ref = self
                 .repository
@@ -2436,13 +2395,8 @@ impl Core {
             .iter()
             .find(|project| project.project_id == task.project_id)
             .ok_or_else(|| CoreError::NotFound(format!("project {}", task.project_id)))?;
-        if project.target_id.is_some() {
-            return Err(CoreError::CapabilityUnavailable(
-                "远程项目暂不支持查看变更".into(),
-            ));
-        }
         let captured = self
-            .workspace_context
+            .workspace_for(project.target_id.as_ref())
             .capture_diff(&project.path)
             .await
             .map_err(|diagnostic| {
@@ -3014,9 +2968,7 @@ impl Core {
         drop(scope_timing);
         let capture_timing = timing.stage("workspace_capture_begin");
         let mut capture = if let Some(scope) = &workspace_scope {
-            Some(
-                multi_workspace::begin(self.workspace_context.as_ref(), &scope.project_paths).await,
-            )
+            Some(multi_workspace::begin(scope.workspace.as_ref(), &scope.project_paths).await)
         } else {
             None
         };
@@ -3242,11 +3194,8 @@ impl Core {
         let state = self.repository.task_execution_state(task_id).await.ok()??;
         let active = state.task.active_primary_run?;
         let project = state.workspace;
-        // Its directories are not on this machine: nothing here may read them.
-        if project.target_id.is_some() {
-            return None;
-        }
         Some(TurnWorkspaceScope {
+            workspace: self.workspace_for(project.target_id.as_ref()),
             task_id: task_id.clone(),
             turn_id: active.turn_id,
             run_id: active.run_id,
@@ -3259,7 +3208,7 @@ impl Core {
 
     async fn capture_turn_workspace(&self, scope: &TurnWorkspaceScope, phase: &'static str) {
         for workspace_path in &scope.project_paths {
-            let snapshot = self.workspace_context.collect(workspace_path).await;
+            let snapshot = scope.workspace.collect(workspace_path).await;
             let (event_type, payload) = if let Some(git) = snapshot.git_snapshot {
                 (
                     "workspace.snapshot_captured",
@@ -3403,16 +3352,12 @@ impl Core {
             .collect();
         drop(state_timing);
         let validation_timing = timing.stage("workspace_validation");
-        if project.target_id.is_none() {
-            self.workspace_context
-                .validate_workspace_roots(&workspace_directories)
-                .await
-                .map_err(|_| {
-                    CoreError::Internal(
-                        "project directory unavailable before agent execution".into(),
-                    )
-                })?;
-        }
+        self.workspace_for(project.target_id.as_ref())
+            .validate_workspace_roots(&workspace_directories)
+            .await
+            .map_err(|_| {
+                CoreError::Internal("project directory unavailable before agent execution".into())
+            })?;
         drop(validation_timing);
         let auxiliary_timing = timing.stage("auxiliary_context");
         let prompt = self.auxiliary_turn_context(task_id, prompt).await?;
@@ -3834,7 +3779,7 @@ impl Core {
         // Independent interval snapshots preserve per-operation versions even for shell writes.
         // Parallel/external writes are explicitly attributed to the observed interval.
         let mut operation_capture = if let Some(scope) = workspace_scope {
-            multi_workspace::begin(self.workspace_context.as_ref(), &scope.project_paths)
+            multi_workspace::begin(scope.workspace.as_ref(), &scope.project_paths)
                 .await
                 .ok()
         } else {
@@ -4221,7 +4166,7 @@ impl Core {
                         .await;
                 }
                 operation_capture =
-                    multi_workspace::begin(self.workspace_context.as_ref(), &scope.project_paths)
+                    multi_workspace::begin(scope.workspace.as_ref(), &scope.project_paths)
                         .await
                         .ok();
             }
@@ -4785,8 +4730,9 @@ fn bounded_text(message: &str) -> String {
     message.chars().take(DIAGNOSTIC_TEXT_BUDGET).collect()
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone)]
 struct TurnWorkspaceScope {
+    workspace: Arc<dyn WorkspaceContextProvider>,
     task_id: TaskId,
     turn_id: TurnId,
     run_id: RunId,
@@ -5526,13 +5472,13 @@ mod tests {
         async fn collect(&self, _workspace_path: &str) -> WorkspaceContextSnapshot {
             let revision = self.revision.load(Ordering::Acquire);
             WorkspaceContextSnapshot {
-                relevant_files: vec![RelevantFile {
+                relevant_files: vec![agent_protocol::RelevantFile {
                     path: "src/lib.rs".into(),
                     status: "modified".into(),
                     content_hash: Some(format!("revision-{revision}")),
                 }],
                 dependency_changes: vec![],
-                change_summary: ChangeSummary {
+                change_summary: agent_protocol::ChangeSummary {
                     base: "base".into(),
                     head: format!("working-tree-{revision}"),
                     diff_stat: "1 file changed".into(),
@@ -6214,6 +6160,50 @@ impl ThoughtSegment {
         }
         self.text.push_str(&delta[..end]);
         self.truncated = true;
+    }
+}
+
+#[cfg(test)]
+mod target_workspace_tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct Marked;
+
+    #[async_trait]
+    impl WorkspaceContextProvider for Marked {
+        async fn collect(&self, _workspace_path: &str) -> WorkspaceContextSnapshot {
+            WorkspaceContextSnapshot {
+                change_summary: agent_protocol::ChangeSummary {
+                    base: "marked".into(),
+                    head: String::new(),
+                    diff_stat: String::new(),
+                    artifact_ref: None,
+                },
+                ..WorkspaceContextSnapshot::default()
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_projects_directories_are_only_read_on_its_own_machine() {
+        let store = Arc::new(tests::MemoryRepository::default());
+        let local: Arc<dyn WorkspaceContextProvider> = Arc::new(Marked);
+        let core = Core::with_workspace_context(store, local.clone());
+        let target = TargetId::new();
+        assert!(Arc::ptr_eq(&core.workspace_for(None), &local));
+        // Not connected: an answer of "unavailable", never this machine's files.
+        let unreachable = core.workspace_for(Some(&target));
+        assert!(!Arc::ptr_eq(&unreachable, &local));
+        let snapshot = unreachable.collect("/srv/project").await;
+        assert!(snapshot.diagnostic.is_some());
+        assert_ne!(snapshot.change_summary.base, "marked");
+        assert!(unreachable.begin_turn("/srv/project").await.is_err());
+        let remote: Arc<dyn WorkspaceContextProvider> = Arc::new(Marked);
+        core.register_target_workspace(target.clone(), remote.clone());
+        assert!(Arc::ptr_eq(&core.workspace_for(Some(&target)), &remote));
+        core.unregister_target_workspace(&target);
+        assert!(!Arc::ptr_eq(&core.workspace_for(Some(&target)), &remote));
     }
 }
 

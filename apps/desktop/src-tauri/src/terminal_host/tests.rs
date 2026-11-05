@@ -604,3 +604,176 @@ async fn terminal_host_stop_checks_the_target_after_waiting_for_admission() {
     host.stop(&info.id, &next_epoch).await.unwrap();
     finished(&host, &info.id).await;
 }
+
+mod on_a_target {
+    use super::*;
+    use agent_runtime::{
+        ExecutionTarget, OwnedChild, ProcessFuture, ProcessRequest, RemoteProcess, TerminalChild,
+    };
+    use std::ffi::OsString;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// A process on another machine: an echo over streams, ended by a chosen outcome.
+    struct FarProcess(tokio::sync::watch::Receiver<Option<bool>>);
+
+    impl RemoteProcess for FarProcess {
+        fn id(&self) -> Option<u32> {
+            Some(7)
+        }
+        fn wait(&mut self) -> ProcessFuture<'_, std::process::ExitStatus> {
+            Box::pin(async move {
+                let exited = self
+                    .0
+                    .wait_for(Option::is_some)
+                    .await
+                    .is_ok_and(|outcome| outcome.unwrap_or(false));
+                if exited {
+                    std::process::Command::new("/bin/sh")
+                        .args(["-c", "exit 3"])
+                        .status()
+                } else {
+                    Err(std::io::Error::other("contact was lost"))
+                }
+            })
+        }
+        fn terminate(&mut self) -> ProcessFuture<'_, ()> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[derive(Default)]
+    struct FarMachine {
+        seen: Mutex<Option<ProcessRequest>>,
+        sizes: Arc<Mutex<Vec<(u16, u16)>>>,
+        outcome: Mutex<Option<tokio::sync::watch::Sender<Option<bool>>>>,
+    }
+
+    impl ExecutionTarget for FarMachine {
+        fn is_local(&self) -> bool {
+            false
+        }
+        fn inherited(&self, name: &str) -> Option<OsString> {
+            (name == "SHELL").then(|| "/bin/far-zsh/zsh".into())
+        }
+        fn temp_directory(&self) -> PathBuf {
+            "/tmp".into()
+        }
+        fn login_environment(&self) -> std::collections::BTreeMap<OsString, OsString> {
+            std::collections::BTreeMap::from([("HOME".into(), "/home/far".into())])
+        }
+        fn spawn(&self, _request: ProcessRequest) -> std::io::Result<OwnedChild> {
+            Err(std::io::ErrorKind::Unsupported.into())
+        }
+        fn spawn_terminal(
+            &self,
+            request: ProcessRequest,
+            cols: u16,
+            rows: u16,
+        ) -> std::io::Result<TerminalChild> {
+            *self.seen.lock().unwrap() = Some(request);
+            self.sizes.lock().unwrap().push((cols, rows));
+            let (near_in, mut far_in) = tokio::io::duplex(4096);
+            let (mut far_out, near_out) = tokio::io::duplex(4096);
+            tokio::spawn(async move {
+                let mut buffer = [0; 256];
+                while let Ok(count @ 1..) = far_in.read(&mut buffer).await {
+                    if far_out.write_all(&buffer[..count]).await.is_err() {
+                        return;
+                    }
+                }
+            });
+            let (outcome, watched) = tokio::sync::watch::channel(None);
+            *self.outcome.lock().unwrap() = Some(outcome);
+            let sizes = self.sizes.clone();
+            Ok(TerminalChild {
+                child: OwnedChild::remote(
+                    Box::new(FarProcess(watched)),
+                    Some(near_in),
+                    Some(near_out),
+                    None,
+                ),
+                resize: Box::new(move |cols, rows| {
+                    sizes.lock().unwrap().push((cols, rows));
+                    Ok(())
+                }),
+            })
+        }
+    }
+
+    async fn settled(host: &TerminalHost, id: &str) -> TerminalInfo {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let info = host.get(id).unwrap();
+                if !info.status.active() {
+                    return info;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the session should settle")
+    }
+
+    fn far_intent() -> LaunchIntent {
+        // A path that does not exist here must still reach the other machine.
+        intent(Path::new("/srv/only-on-the-server"), None)
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_shell_runs_there_with_that_machines_environment_and_its_exit_is_recorded() {
+        let host = TerminalHost::default();
+        let far = Arc::new(FarMachine::default());
+        let info = host.start_on(far_intent(), far.clone()).await.unwrap();
+        assert_eq!(info.status, TerminalStatus::Running);
+        assert_eq!(info.cwd, Path::new("/srv/only-on-the-server"));
+        let request = far.seen.lock().unwrap().clone().unwrap();
+        assert_eq!(request.program, "/bin/far-zsh/zsh");
+        assert_eq!(request.args, ["-l"]);
+        assert_eq!(
+            request.cwd.as_deref(),
+            Some(Path::new("/srv/only-on-the-server"))
+        );
+        assert_eq!(request.env[&OsString::from("HOME")], "/home/far");
+        assert_eq!(request.env[&OsString::from("TERM")], "xterm-256color");
+
+        host.write(&info.id, b"hello\n".to_vec()).await.unwrap();
+        read_until(&host, &info.id, "hello").await;
+        host.resize(&info.id, 120, 40).await.unwrap();
+        assert_eq!(far.sizes.lock().unwrap().as_slice(), &[(80, 24), (120, 40)]);
+        assert_eq!(host.get(&info.id).unwrap().cols, 120);
+
+        // Input closes, the far side's output ends, and its exit status is the proof.
+        far.outcome
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap()
+            .send(Some(true))
+            .unwrap();
+        host.session(&info.id).unwrap().input.lock().unwrap().take();
+        let ended = settled(&host, &info.id).await;
+        assert_eq!(ended.status, TerminalStatus::Exited);
+        assert_eq!(ended.exit_code, Some(3));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn losing_contact_is_recorded_as_unknown_and_not_as_an_exit() {
+        let host = TerminalHost::default();
+        let far = Arc::new(FarMachine::default());
+        let info = host.start_on(far_intent(), far.clone()).await.unwrap();
+        far.outcome
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap()
+            .send(Some(false))
+            .unwrap();
+        // The far side's streams end with the connection.
+        let session = host.session(&info.id).unwrap();
+        session.input.lock().unwrap().take();
+        let settled = settled(&host, &info.id).await;
+        assert_eq!(settled.status, TerminalStatus::Unknown);
+        assert_eq!(settled.exit_code, None);
+        assert!(settled.error.unwrap().contains("contact was lost"));
+    }
+}

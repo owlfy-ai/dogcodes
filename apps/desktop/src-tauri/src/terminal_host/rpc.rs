@@ -5,9 +5,17 @@ use agent_core::Core;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-pub async fn dispatch(
+/// Whether a directory is inside a root, by name alone: both are on another machine.
+fn within_remote_root(root: &str, cwd: &std::path::Path) -> bool {
+    cwd.components()
+        .all(|part| !matches!(part, std::path::Component::ParentDir))
+        && cwd.starts_with(root)
+}
+
+pub(crate) async fn dispatch(
     core: &Arc<Core>,
     terminals: &TerminalHost,
+    targets: &crate::execution_targets::TargetHost,
     method: &str,
     args: Value,
 ) -> Result<Value, String> {
@@ -36,13 +44,17 @@ pub async fn dispatch(
             {
                 return Err("会话不属于此项目".into());
             }
-            if project.target_id.is_some() {
-                return Err("远程项目暂不支持终端".into());
-            }
             let root = std::iter::once(&project.path)
                 .chain(&project.additional_directories)
                 .nth(intent.directory_index)
                 .ok_or("项目目录不存在")?;
+            if let Some(target) = &project.target_id {
+                if !within_remote_root(root, &intent.cwd) {
+                    return Err("终端目录不在项目范围内".into());
+                }
+                let target = targets.target(target)?;
+                return Ok(json!(terminals.start_on(intent, target).await?));
+            }
             let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
             let cwd = std::fs::canonicalize(&intent.cwd).map_err(|e| e.to_string())?;
             if !cwd.starts_with(&root) || !cwd.is_dir() {

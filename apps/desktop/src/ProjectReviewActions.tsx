@@ -6,7 +6,7 @@ import { ulid } from "ulid";
 import type { CoreClient, ExecutorRef, ProjectReviewRequest, ReviewKind, ReviewFinding, TaskId, TurnReviewRun } from "@dogcodes/protocol";
 import { AgentQuotaContext } from "./AgentQuotaRing";
 import { TauriCoreClient } from "./tauriClient";
-import { reviewAgentExecutors } from "./agentOptions";
+import { installationsForTask, reviewAgentExecutors } from "./agentOptions";
 import { ProjectReviewHistory, ProjectReviewPage, ReviewHistoryTitle, newestReviews, reviewActive as active } from "./ProjectReviewHistory";
 import { ReviewActionButton, ReviewAgentPicker, reviewKinds, reviewLabels as labels } from "./ReviewActions";
 import { ReviewResult } from "./ReviewResult";
@@ -57,11 +57,11 @@ export function ProjectReviewActions({ taskId, snapshot, disabled, onReviewFindi
   useEffect(() => {
     let valid = true;
     void Promise.all([client.bootstrap(), client.reviewExecutors?.() ?? []]).then(([bootstrap, connected]) => {
-      if (valid) { setExecutors(reviewAgentExecutors(bootstrap.installations, connected)); setAgentError(""); }
+      if (valid) { setExecutors(reviewAgentExecutors(installationsForTask(bootstrap, taskId), connected)); setAgentError(""); }
     }).catch(() => { if (valid) setAgentError(t("projectReview.agentsFailed")); })
       .finally(() => { if (valid) setAgentsLoaded(true); });
     return () => { valid = false; };
-  }, [client, menu]);
+  }, [client, menu, taskId]);
   useEffect(() => {
     if (!visible) return;
     let valid = true; let timer: ReturnType<typeof setTimeout>;

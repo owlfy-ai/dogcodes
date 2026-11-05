@@ -193,11 +193,7 @@ impl Core {
         let scope = self.turn_workspace_scope(task).await;
         let capture = if let Some(scope) = &scope {
             Some(
-                crate::multi_workspace::begin(
-                    self.workspace_context.as_ref(),
-                    &scope.project_paths,
-                )
-                .await,
+                crate::multi_workspace::begin(scope.workspace.as_ref(), &scope.project_paths).await,
             )
         } else {
             None

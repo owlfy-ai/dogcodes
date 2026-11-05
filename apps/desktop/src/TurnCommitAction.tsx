@@ -33,7 +33,7 @@ export function TurnCommitAction({ taskId, data, providerId }: { taskId: string;
   }, [open]);
 
   async function executor(): Promise<ExecutorRef> {
-    const available = await availableAgentExecutors();
+    const available = await availableAgentExecutors(taskId);
     const saved = readSummaryAgent();
     const chosen = (saved && available.find(item => agentChoiceKey(item) === agentChoiceKey(saved)))
       ?? available.find(item => item.providerId === providerId) ?? available[0];

@@ -380,7 +380,7 @@ mod tests {
     }
     #[tokio::test]
     async fn actual_git_capture_undo_preserves_prior_dirty_work_and_index() {
-        use agent_core::WorkspaceContextProvider;
+        use agent_protocol::workspace_context::WorkspaceContextProvider;
         let root = tempfile::tempdir().unwrap();
         let storage = tempfile::tempdir().unwrap();
         let git = |args: &[&str]| {
@@ -454,7 +454,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn git_subdirectory_handles_executable_and_symlink_without_touching_siblings() {
-        use agent_core::WorkspaceContextProvider;
+        use agent_protocol::workspace_context::WorkspaceContextProvider;
         use std::os::unix::fs::{PermissionsExt, symlink};
         let repo = tempfile::tempdir().unwrap();
         let storage = tempfile::tempdir().unwrap();

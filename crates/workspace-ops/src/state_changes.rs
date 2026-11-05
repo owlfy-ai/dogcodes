@@ -3,11 +3,17 @@ use crate::workspace_service::watch::WatchMessage;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
 
-pub(crate) struct Changes {
+pub struct Changes {
     version: watch::Sender<u64>,
     slots: Arc<Semaphore>,
 }
+impl Default for Changes {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl Changes {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             version: watch::channel(0).0,
@@ -30,12 +36,13 @@ impl Changes {
             _permit: permit,
         })
     }
-    #[cfg(test)]
+    #[doc(hidden)]
+    #[must_use]
     pub fn active_count(&self) -> usize {
         64 - self.slots.available_permits()
     }
 }
-pub(crate) struct Subscription {
+pub struct Subscription {
     receiver: watch::Receiver<u64>,
     initial: bool,
     _permit: OwnedSemaphorePermit,

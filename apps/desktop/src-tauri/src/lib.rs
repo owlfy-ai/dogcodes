@@ -12,14 +12,13 @@ mod execution_targets;
 mod external_links;
 mod project_registry;
 mod project_runs;
-mod review;
+mod remote_workspace;
 #[cfg(feature = "review-acceptance")]
 mod review_acceptance;
-mod review_file_actions;
+mod review_commands;
 mod review_repairs;
 mod review_window;
 mod service_diagnostics;
-mod state_changes;
 mod submission_intents;
 mod task_deletion;
 mod terminal;
@@ -27,10 +26,8 @@ pub mod terminal_host;
 mod terminal_installation;
 mod turn_review;
 mod turn_timing;
-mod turn_undo;
 mod window_geometry;
 mod workspace_browser;
-mod workspace_service;
 
 use agent_protocol::{
     ArtifactChunk, ArtifactCursor, ArtifactExportRequest, ArtifactPage, ArtifactReadRequest,
@@ -60,6 +57,7 @@ use codex_driver::CodexDriver;
 use driver_api::{AgentDriver, FakeDriver};
 use tauri::{Emitter, Manager, ipc::Channel};
 use tokio::sync::{broadcast::error::RecvError, oneshot};
+pub(crate) use workspace_ops::{review, review_file_actions, state_changes, workspace_service};
 use zcode_driver::ZcodeDriver;
 
 #[tauri::command]
@@ -1324,12 +1322,12 @@ pub fn run() {
             review_window::core_review_window_close,
             review_window::core_review_window_is_open,
             review_window::core_review_window_running,
-            review::core_review_query,
-            review::workspaces::core_review_workspaces,
+            review_commands::core_review_query,
+            review_commands::core_review_workspaces,
             task_deletion::core_task_deletion,
-            review::core_open_workspace_file,
-            review::core_workspace_file_applications,
-            review::core_reveal_workspace_file,
+            review_commands::core_open_workspace_file,
+            review_commands::core_workspace_file_applications,
+            review_commands::core_reveal_workspace_file,
             workspace_browser::bridges::core_workspace_watch,
             workspace_browser::bridges::core_workspace_unwatch,
             workspace_browser::core_workspace_find_files,
@@ -1337,27 +1335,27 @@ pub fn run() {
             workspace_browser::core_workspace_directory,
             workspace_browser::core_workspace_preview,
             core_subagent_history,
-            review::core_review_snapshot_lease,
-            review::core_review_file,
-            review::core_review_git_action,
-            review::core_review_git_operation,
-            review::git_workflow::core_review_git_advance,
-            review::git_workflow::core_review_git_close,
-            review::core_review_file_operation,
-            review::core_review_file_close,
+            review_commands::core_review_snapshot_lease,
+            review_commands::core_review_file,
+            review_commands::core_review_git_action,
+            review_commands::core_review_git_operation,
+            review_commands::core_review_git_advance,
+            review_commands::core_review_git_close,
+            review_commands::core_review_file_operation,
+            review_commands::core_review_file_close,
             review_repairs::core_review_repair,
-            review::operation_history::core_review_operations,
-            review::watch::core_review_watch,
-            review::watch::core_review_unwatch,
-            review::core_review_commit_summary,
-            review::core_review_history,
-            review::core_review_branches,
-            review::core_review_index,
-            review::core_review_discard,
-            review::batch_file_actions::core_review_batch_files,
-            review_file_actions::core_review_preview,
-            review_file_actions::core_review_reveal,
-            review_file_actions::core_review_ignore,
+            review_commands::core_review_operations,
+            review_commands::core_review_watch,
+            review_commands::core_review_unwatch,
+            review_commands::core_review_commit_summary,
+            review_commands::core_review_history,
+            review_commands::core_review_branches,
+            review_commands::core_review_index,
+            review_commands::core_review_discard,
+            review_commands::core_review_batch_files,
+            review_commands::core_review_preview,
+            review_commands::core_review_reveal,
+            review_commands::core_review_ignore,
             core_pick_project_directory,
             core_reveal_local_project,
             core_register_local_project,
@@ -1403,8 +1401,8 @@ pub fn run() {
             core_pending_approvals,
             core_workspace_snapshots,
             core_task_artifacts,
-            turn_undo::core_turn_undo,
-            turn_undo::core_turn_undo_status,
+            review_commands::core_turn_undo,
+            review_commands::core_turn_undo_status,
             core_read_artifact,
             core_export_artifact,
             core_build_context_preview,

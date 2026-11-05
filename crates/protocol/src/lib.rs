@@ -1,4 +1,5 @@
 //! Transport-neutral command, event, and query data transfer objects.
+pub mod workspace_context;
 
 pub mod submission;
 

@@ -1547,13 +1547,19 @@ mod tests {
         let changes = crate::review::watch::Changes::new();
         assert!(
             changes
-                .open(core.clone(), intent.task.task_id.to_string())
+                .open(
+                    std::sync::Arc::new(core.clone()),
+                    intent.task.task_id.to_string()
+                )
                 .await
                 .is_err()
         );
         core.execute(stage_command(&intent).unwrap()).await.unwrap();
         let mut subscription = changes
-            .open(core.clone(), intent.task.task_id.to_string())
+            .open(
+                std::sync::Arc::new(core.clone()),
+                intent.task.task_id.to_string(),
+            )
             .await
             .unwrap();
         assert!(matches!(

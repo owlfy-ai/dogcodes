@@ -541,6 +541,7 @@ impl TargetHost {
                 status.agents.clear();
             });
         }
+        core.unregister_target_workspace(target);
         core.unregister_target_drivers(target).await;
     }
 
@@ -551,6 +552,13 @@ impl TargetHost {
             .get(target)
             .and_then(|connection| connection.link.lock().unwrap().clone())
             .ok_or_else(|| "设备未连接".to_owned())
+    }
+
+    /// The machine a project on this target runs things on, while it is connected.
+    pub(crate) fn target(&self, target: &TargetId) -> Result<agent_runtime::SharedTarget, String> {
+        self.link(target)
+            .map(|link| link.target())
+            .map_err(|_| "这个项目所在的服务器未连接，请先连接后重试".to_owned())
     }
 
     async fn browse(
@@ -746,6 +754,14 @@ impl TargetHost {
             status.scanning = true;
         });
         *connection.link.lock().unwrap() = Some(link.clone());
+        core.register_target_workspace(
+            target.target_id.clone(),
+            Arc::new(workspace_ops::operation::RemoteWorkspace::new(
+                link.target(),
+            )),
+        );
+        let (cleaning, cleaned) = (core.clone(), target.target_id.clone());
+        tokio::spawn(async move { cleaning.clean_deleted_tasks_on(&cleaned).await });
         if target.machine_identity.is_none() {
             let id = target.target_id.clone();
             let _ = self
@@ -778,6 +794,7 @@ impl TargetHost {
             status.closed_reason = reason.map(|reason| log_line(&reason));
         });
         connection.link.lock().unwrap().take();
+        core.unregister_target_workspace(&target.target_id);
         core.unregister_target_drivers(&target.target_id).await;
     }
 }

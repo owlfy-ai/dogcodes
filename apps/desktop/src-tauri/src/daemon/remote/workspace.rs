@@ -83,7 +83,8 @@ pub(super) async fn call(
                 return Err("remote review operation unavailable".into());
             }
         }
-        return crate::review::service::dispatch(core, &control.review, request).await;
+        return crate::remote_workspace::review(core, &control.targets, &control.review, request)
+            .await;
     }
     if method == "terminal_read" {
         parse_sequence(args.get_mut(1))?;
@@ -106,12 +107,14 @@ pub(super) async fn call(
 
 enum Subscription {
     Workspace(crate::workspace_service::watch::Subscription),
+    Server(crate::remote_workspace::RemoteWatch),
     Changes(crate::review::watch::Subscription),
 }
 impl Subscription {
     async fn next(&mut self) -> Result<WatchMessage, String> {
         match self {
             Self::Workspace(stream) => stream.next().await,
+            Self::Server(stream) => stream.next().await,
             Self::Changes(stream) => stream.next().await,
         }
     }
@@ -126,17 +129,26 @@ pub(super) async fn subscribe(
     id: &str,
 ) -> Result<(), String> {
     let mut subscription = match method {
-        "workspace_watch" => Subscription::Workspace(
-            control
-                .workspace_watchers
-                .open(core.clone(), serde_json::from_value(args).map_err(failure)?)
-                .await?,
-        ),
+        "workspace_watch" => {
+            let request = serde_json::from_value(args).map_err(failure)?;
+            match crate::remote_workspace::watch(core, &control.targets, &request).await? {
+                Some(watch) => Subscription::Server(watch),
+                None => Subscription::Workspace(
+                    control
+                        .workspace_watchers
+                        .open(Arc::new(core.clone()), request)
+                        .await?,
+                ),
+            }
+        }
         "review_watch" | "project_runs_watch" => Subscription::Changes(
             control
                 .review
                 .changes
-                .open(core.clone(), serde_json::from_value(args).map_err(failure)?)
+                .open(
+                    Arc::new(core.clone()),
+                    serde_json::from_value(args).map_err(failure)?,
+                )
                 .await?,
         ),
         _ => return Err("remote stream unavailable".into()),

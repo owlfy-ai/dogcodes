@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, io};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 /// Printed once by `serve`, after which stdout carries only frames.
 pub const READY_PREFIX: &str = "DOGCODES-SHIM-READY";
 /// Printed by `--self-check` with the SHA-256 of the running executable.
@@ -171,6 +171,12 @@ pub enum Request {
     Terminate {
         process: u32,
     },
+    /// The new size of a process started with a terminal.
+    Resize {
+        process: u32,
+        cols: u16,
+        rows: u16,
+    },
     /// Subdirectories of an absolute path, for choosing a project there.
     ListDirectory {
         path: String,
@@ -179,6 +185,8 @@ pub enum Request {
 
 /// The process environment is exactly `env`: nothing is inherited from the shim.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+// A wire message: each flag is an independent fact about the process.
+#[allow(clippy::struct_excessive_bools)]
 pub struct SpawnRequest {
     /// Chosen by the desktop, so streams can be registered before the process starts.
     pub process: u32,
@@ -189,6 +197,18 @@ pub struct SpawnRequest {
     pub stdin: bool,
     pub stdout: bool,
     pub stderr: bool,
+    /// Runs under a new terminal of this size, which carries stdin and stdout.
+    #[serde(default)]
+    pub terminal: Option<TerminalSize>,
+    /// Not a program: a workspace operation inside the shim, using the same streams.
+    #[serde(default)]
+    pub operation: bool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TerminalSize {
+    pub cols: u16,
+    pub rows: u16,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

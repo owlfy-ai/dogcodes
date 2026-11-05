@@ -1,14 +1,13 @@
 //! Non-Git comparisons reuse undo records; no session baseline or migration.
 use super::ReviewRoot;
 use agent_domain::TaskId;
-use agent_protocol::ActorRef;
 use serde_json::Value;
 use std::{collections::BTreeMap, path::Path};
 
 pub(super) type RecordedChanges = BTreeMap<String, BTreeMap<String, Value>>;
 
 pub(super) async fn load(
-    core: &agent_core::Core,
+    core: &dyn crate::ReviewFacts,
     task_id: &str,
     roots: &[ReviewRoot],
 ) -> Result<RecordedChanges, String> {
@@ -20,10 +19,7 @@ pub(super) async fn load(
     let mut result = BTreeMap::new();
     let mut remaining = 32 * 1024 * 1024u64;
     loop {
-        let page = core
-            .task_artifacts(&ActorRef::LocalUser, &task, cursor.as_ref(), 100)
-            .await
-            .map_err(|e| e.to_string())?;
+        let page = core.task_artifacts(&task, cursor.as_ref(), 100).await?;
         // Artifact pages are newest first. Older versions overwrite newer ones
         // so each file starts at its first recorded modification in this task.
         for entry in page.items {
@@ -39,14 +35,8 @@ pub(super) async fn load(
                 .checked_sub(metadata.byte_length)
                 .ok_or("修改记录过多，请从具体轮次查看差异")?;
             let artifact = core
-                .verified_local_artifact(
-                    &ActorRef::LocalUser,
-                    &task,
-                    &metadata.artifact_id,
-                    &metadata.payload_sha256,
-                )
-                .await
-                .map_err(|e| e.to_string())?;
+                .verified_artifact(&task, &metadata.artifact_id, &metadata.payload_sha256)
+                .await?;
             let data = serde_json::from_slice(&artifact.content).map_err(|_| "修改记录无法读取")?;
             collect(&mut result, &data, roots)?;
         }
@@ -100,7 +90,7 @@ fn collect(result: &mut RecordedChanges, data: &Value, roots: &[ReviewRoot]) -> 
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "core"))]
 mod tests {
     use super::*;
     use serde_json::json;

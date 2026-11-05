@@ -1008,7 +1008,7 @@ mod tests {
 
     #[tokio::test]
     async fn startup_validates_roots_without_creating_review_data() {
-        use agent_core::WorkspaceContextProvider;
+        use agent_protocol::workspace_context::WorkspaceContextProvider;
         let workspace = tempfile::tempdir().unwrap();
         let data = tempfile::tempdir().unwrap();
         let storage = data.path().join("not-created");

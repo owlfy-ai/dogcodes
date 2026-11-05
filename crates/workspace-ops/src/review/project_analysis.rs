@@ -1,12 +1,25 @@
 //! Pass comparison metadata to the Agent; Diff blobs belong to preview/undo only.
 use super::ReviewSnapshot;
 use super::service::ReviewContext;
-use agent_core::turn_review::ReviewRequest;
+use agent_domain::{RunId, TaskId, TurnId};
+use serde::Deserialize;
 use serde_json::{Value, json};
 
-pub(crate) async fn project_review_packet(
+/// The parts of the core's review request that select what to analyze.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectReviewRequest {
+    pub task_id: TaskId,
+    pub turn_id: Option<TurnId>,
+    #[serde(default)]
+    pub source_snapshot: Option<String>,
+    pub run_id: RunId,
+    pub retry_of: Option<RunId>,
+}
+
+pub async fn project_review_packet(
     state: &ReviewContext<'_>,
-    request: &ReviewRequest,
+    request: &ProjectReviewRequest,
 ) -> Result<Value, String> {
     let _gate = state.review.gate.lock().await;
     let snapshot = {

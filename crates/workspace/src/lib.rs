@@ -12,7 +12,9 @@ use std::{
     time::Duration,
 };
 
-use agent_core::{WorkspaceContextProvider, WorkspaceContextSnapshot, WorkspaceDiffCapture};
+use agent_protocol::workspace_context::{
+    WorkspaceContextProvider, WorkspaceContextSnapshot, WorkspaceDiffCapture,
+};
 use agent_protocol::{
     ChangeSummary, GitWorkspaceSnapshotV1, RelevantFile, WorkspaceCollectionDiagnostic,
     WorkspaceDiagnosticKind,
@@ -784,7 +786,10 @@ impl WorkspaceContextProvider for GitWorkspaceContextProvider {
     async fn begin_turn(
         &self,
         workspace_path: &str,
-    ) -> Result<Box<dyn agent_core::WorkspaceTurnCapture>, WorkspaceCollectionDiagnostic> {
+    ) -> Result<
+        Box<dyn agent_protocol::workspace_context::WorkspaceTurnCapture>,
+        WorkspaceCollectionDiagnostic,
+    > {
         // A missing repository is a filesystem fact, not any failed Git command.
         // Broken/inaccessible .git entries must continue through the Git backend.
         let workspace = Path::new(workspace_path);
@@ -842,7 +847,10 @@ impl WorkspaceContextProvider for GitWorkspaceContextProvider {
         }
         .await;
         result
-            .map(|capture| Box::new(capture) as Box<dyn agent_core::WorkspaceTurnCapture>)
+            .map(|capture| {
+                Box::new(capture)
+                    as Box<dyn agent_protocol::workspace_context::WorkspaceTurnCapture>
+            })
             .map_err(|e| WorkspaceCollectionDiagnostic { kind: e.into() })
     }
     async fn collect(&self, workspace_path: &str) -> WorkspaceContextSnapshot {
@@ -905,7 +913,7 @@ impl TurnCapture {
 }
 
 #[async_trait]
-impl agent_core::WorkspaceTurnCapture for TurnCapture {
+impl agent_protocol::workspace_context::WorkspaceTurnCapture for TurnCapture {
     async fn checkpoint(&self) -> Result<Option<serde_json::Value>, WorkspaceCollectionDiagnostic> {
         let result = async {
             let listing = self.provider.git_with_options(&self.workspace, &["ls-tree", "-r", "-z", &self.before, "--", "."], self.environment.clone(), GIT_OUTPUT_LIMIT).await?;
@@ -1163,15 +1171,44 @@ fn git_path_argument(value: &str) -> String {
     }
 }
 
+static GIT_SEARCH_PATH: std::sync::OnceLock<std::ffi::OsString> = std::sync::OnceLock::new();
+
+/// Adds a search path for a process whose own `PATH` is not the account's, as with a
+/// command started by `sshd`. Takes effect for providers created after this call.
+pub fn extend_git_search_path(path: std::ffi::OsString) {
+    let _ = GIT_SEARCH_PATH.set(path);
+}
+
+#[must_use]
+pub fn git_is_installed() -> bool {
+    discover_git().is_some()
+}
+
 fn discover_git() -> Option<PathBuf> {
-    let known = ["/usr/bin/git", "/opt/homebrew/bin/git"]
-        .into_iter()
-        .map(PathBuf::from);
     let path = std::env::var_os("PATH").unwrap_or_default();
-    let candidates = std::env::split_paths(&path)
+    find_git(
+        ["/usr/bin/git", "/opt/homebrew/bin/git"],
+        [
+            Some(path.as_os_str()),
+            GIT_SEARCH_PATH.get().map(AsRef::as_ref),
+        ]
+        .into_iter()
+        .flatten(),
+    )
+}
+
+fn find_git<'a>(
+    known: impl IntoIterator<Item = &'a str>,
+    search_paths: impl IntoIterator<Item = &'a std::ffi::OsStr>,
+) -> Option<PathBuf> {
+    let candidates = search_paths
+        .into_iter()
+        .flat_map(std::env::split_paths)
         .filter(|directory| directory.is_absolute())
         .map(|directory| directory.join(if cfg!(windows) { "git.exe" } else { "git" }));
     known
+        .into_iter()
+        .map(PathBuf::from)
         .chain(candidates)
         .filter(|path| path.is_absolute() && path.is_file())
         .find_map(|path| path.canonicalize().ok())
@@ -1179,6 +1216,25 @@ fn discover_git() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn git_is_found_on_a_later_search_path() {
+        let empty = tempfile::tempdir().unwrap();
+        let manager = tempfile::tempdir().unwrap();
+        let installed = manager
+            .path()
+            .join(if cfg!(windows) { "git.exe" } else { "git" });
+        std::fs::write(&installed, "").unwrap();
+        assert_eq!(
+            super::find_git([], [empty.path().as_os_str()]),
+            None,
+            "nothing is installed on the first path"
+        );
+        assert_eq!(
+            super::find_git([], [empty.path().as_os_str(), manager.path().as_os_str()]),
+            Some(installed.canonicalize().unwrap())
+        );
+    }
+
     #[test]
     fn git_argv_translates_verbatim_windows_paths_without_changing_other_arguments() {
         assert_eq!(

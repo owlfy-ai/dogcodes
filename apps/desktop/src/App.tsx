@@ -1285,10 +1285,10 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             : <div className="task-heading"><h1>{taskDisplayTitle(selectedTask.title)}</h1><span>{selectedProject ? projectDisplayName(selectedProject.displayName) : t("header.temporaryWorkspace", undefined, resolvedLang)}</span></div>}
           <div className="task-tools">
             {activeView === "conversation" && <>
-            <button className="panel-toggle" type="button" disabled={Boolean(selectedProjectTarget)} aria-label={t("header.toggleTerminal", undefined, resolvedLang)} aria-expanded={terminalOpen} data-tooltip={selectedProjectTarget ? t("executionTargets.panelUnavailable", undefined, resolvedLang) : terminalOpen ? t("header.collapseTerminal", undefined, resolvedLang) : t("header.toggleTerminal", undefined, resolvedLang)} onClick={() => { setTerminalLoaded(true); setTerminalOpen(open => !open); }}>
+            <button className="panel-toggle" type="button" aria-label={t("header.toggleTerminal", undefined, resolvedLang)} aria-expanded={terminalOpen} data-tooltip={terminalOpen ? t("header.collapseTerminal", undefined, resolvedLang) : t("header.toggleTerminal", undefined, resolvedLang)} onClick={() => { setTerminalLoaded(true); setTerminalOpen(open => !open); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="m7 8 3 3-3 3m6 1h4" /></svg>
             </button>
-            <button className="panel-toggle" type="button" aria-label={t("header.toggleReview", undefined, resolvedLang)} disabled={!selectedTaskId || Boolean(selectedProjectTarget)} aria-expanded={reviewOpen && !reviewWindow.detached} data-tooltip={selectedProjectTarget ? t("executionTargets.panelUnavailable", undefined, resolvedLang) : reviewWindow.detached ? t("header.detachedReview", undefined, resolvedLang) : t("header.toggleReview", undefined, resolvedLang)} onClick={() => { if (reviewWindow.detached) void reviewWindow.dock(); else setReviewOpen(open => !open); }}>
+            <button className="panel-toggle" type="button" aria-label={t("header.toggleReview", undefined, resolvedLang)} disabled={!selectedTaskId} aria-expanded={reviewOpen && !reviewWindow.detached} data-tooltip={reviewWindow.detached ? t("header.detachedReview", undefined, resolvedLang) : t("header.toggleReview", undefined, resolvedLang)} onClick={() => { if (reviewWindow.detached) void reviewWindow.dock(); else setReviewOpen(open => !open); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M15 3v18m-7-12 3 3-3 3" /></svg>
             </button>
             </>}
@@ -1405,7 +1405,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       {terminalLoaded && selectedProject && <Suspense fallback={activeView === "conversation" && terminalOpen ? <LoadingStatus>{t("app.loadingTerminal")}</LoadingStatus> : null}><TerminalDock
         key={selectedProject.projectId} projectId={selectedProject.projectId}
         directories={[selectedProject.path, ...selectedProject.additionalDirectories]}
-        open={activeView === "conversation" && terminalOpen && !selectedProjectTarget} onClose={() => setTerminalOpen(false)}
+        open={activeView === "conversation" && terminalOpen} onClose={() => setTerminalOpen(false)}
         onEditProject={client.updateProject ? () => setEditingProject(selectedProject) : undefined} /></Suspense>}
       </div>
 

@@ -217,6 +217,16 @@ impl Core {
             // even if the independent review-file cleanup needs another attempt.
             self.forget_deleted_history(&task).await;
             self.forget_deleted_computer_use(&task).await;
+            // The task's project may be gone, so every connected machine is told. One
+            // that is not connected is told when it next connects.
+            let remote: Vec<_> = self
+                .target_workspaces
+                .read()
+                .map(|workspaces| workspaces.values().cloned().collect())
+                .unwrap_or_default();
+            for workspace in remote {
+                let _ = workspace.delete_task_review_data(task.as_str()).await;
+            }
             match self
                 .workspace_context
                 .delete_task_review_data(task.as_str())
@@ -231,6 +241,25 @@ impl Core {
             }
         }
         failure.map_or(Ok(()), Err)
+    }
+
+    /// Catches a machine up on tasks deleted while it was away. Deleting absent data
+    /// does nothing, so nothing needs recording per machine. A failure stops here and
+    /// the next connection tries again.
+    pub async fn clean_deleted_tasks_on(&self, target: &agent_domain::TargetId) {
+        let workspace = self.workspace_for(Some(target));
+        let Ok(tasks) = self.repository.permanently_deleted_tasks().await else {
+            return;
+        };
+        for task in tasks {
+            if workspace
+                .delete_task_review_data(task.as_str())
+                .await
+                .is_err()
+            {
+                return;
+            }
+        }
     }
 
     /// Called exclusively during startup, before accepting commands or registering drivers.
@@ -331,7 +360,7 @@ impl Core {
                     && let Ok(value) = serde_json::from_slice(&artifact.content)
                 {
                     result = crate::multi_workspace::recover(
-                        self.workspace_context.as_ref(),
+                        scope.workspace.as_ref(),
                         &scope.project_paths,
                         value,
                     )

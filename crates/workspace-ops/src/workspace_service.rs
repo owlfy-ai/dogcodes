@@ -1,4 +1,4 @@
-use agent_core::Core;
+use crate::ReviewFacts;
 use agent_domain::TaskId;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -6,9 +6,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub async fn project_paths(core: &Core, task_id: &str) -> Result<Vec<PathBuf>, String> {
+pub async fn project_paths(core: &dyn ReviewFacts, task_id: &str) -> Result<Vec<PathBuf>, String> {
     let id = TaskId::parse(task_id).map_err(|e| e.to_string())?;
-    let snapshot = core.bootstrap().await.map_err(|e| e.to_string())?;
+    let snapshot = core.bootstrap().await?;
     let task = snapshot
         .tasks
         .iter()
@@ -21,8 +21,8 @@ pub async fn project_paths(core: &Core, task_id: &str) -> Result<Vec<PathBuf>, S
         .ok_or("项目不存在")?;
     // These paths belong to another machine. Reading them here could reach a
     // different directory that happens to have the same name on this one.
-    if project.target_id.is_some() {
-        return Err("远程项目暂不支持这项操作".into());
+    if project.target_id.is_some() && core.on_hub() {
+        return Err("这个项目在另一台机器上".into());
     }
     Ok(std::iter::once(project.path.clone())
         .chain(project.additional_directories.iter().cloned())
@@ -30,7 +30,7 @@ pub async fn project_paths(core: &Core, task_id: &str) -> Result<Vec<PathBuf>, S
         .collect())
 }
 
-pub(super) fn resolve(base: &Path, path: &str) -> Result<PathBuf, String> {
+pub fn resolve(base: &Path, path: &str) -> Result<PathBuf, String> {
     if Path::new(path)
         .components()
         .any(|c| !matches!(c, std::path::Component::Normal(_)))
@@ -106,7 +106,7 @@ fn read_preview(base: &Path, path: &str) -> Result<Preview, String> {
     preview_bytes(bytes, path)
 }
 
-pub(crate) fn preview_bytes(bytes: Vec<u8>, path: &str) -> Result<Preview, String> {
+pub fn preview_bytes(bytes: Vec<u8>, path: &str) -> Result<Preview, String> {
     if bytes.len() > 20 * 1024 * 1024 {
         return Err("文件超过 20 MB，暂不支持预览".into());
     }
@@ -174,8 +174,10 @@ struct NoiseRules {
 }
 fn is_noise_name(name: &str) -> bool {
     static RULES: std::sync::LazyLock<NoiseRules> = std::sync::LazyLock::new(|| {
-        serde_json::from_str(include_str!("../../src/workspaceNoise.json"))
-            .expect("valid bundled workspace filter rules")
+        serde_json::from_str(include_str!(
+            "../../../apps/desktop/src/workspaceNoise.json"
+        ))
+        .expect("valid bundled workspace filter rules")
     });
     let name = name.to_lowercase();
     name.starts_with('.')
@@ -397,7 +399,10 @@ pub struct DirectoryRequest {
     pub path: String,
 }
 
-pub async fn directory_base(core: &Core, request: &DirectoryRequest) -> Result<PathBuf, String> {
+pub async fn directory_base(
+    core: &dyn ReviewFacts,
+    request: &DirectoryRequest,
+) -> Result<PathBuf, String> {
     project_paths(core, &request.task_id)
         .await?
         .get(request.root)
@@ -405,7 +410,7 @@ pub async fn directory_base(core: &Core, request: &DirectoryRequest) -> Result<P
         .ok_or("目录不存在".into())
 }
 pub async fn dispatch(
-    core: &Core,
+    core: &dyn ReviewFacts,
     method: &str,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {

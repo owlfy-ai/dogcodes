@@ -211,8 +211,8 @@ impl Core {
         }))
     }
     pub(crate) async fn record_fork_snapshot(&self, scope: &TurnWorkspaceScope) {
-        let result = match self
-            .workspace_context
+        let result = match scope
+            .workspace
             .capture_fork_snapshot(&scope.project_paths)
             .await
         {
@@ -579,7 +579,7 @@ impl Core {
                 self.record_fork_progress(request, "restoring_worktrees", None)
                     .await?;
                 let paths = self
-                    .workspace_context
+                    .workspace_for(plan.project.target_id.as_ref())
                     .fork_worktrees(turn_snapshot, request.new_task_id.as_str())
                     .await
                     .map_err(CoreError::InvalidArgument)?;
@@ -592,7 +592,7 @@ impl Core {
                         stream_id: id.to_string(),
                     },
                     "project.registered",
-                    json!({"projectId":id,"displayName":format!("{} · Fork", plan.project.display_name),"path":path,"additionalDirectories":directories}),
+                    json!({"targetId":plan.project.target_id,"projectId":id,"displayName":format!("{} · Fork", plan.project.display_name),"path":path,"additionalDirectories":directories}),
                 );
                 let outcome = self
                     .repository

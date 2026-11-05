@@ -16,7 +16,7 @@ impl CoreClient {
                     .control
                     .review
                     .changes
-                    .open(core.clone(), task)
+                    .open(std::sync::Arc::new(core.clone()), task)
                     .await?,
             ));
         }
@@ -40,7 +40,7 @@ impl CoreClient {
                     .control
                     .review
                     .changes
-                    .open(core.clone(), task)
+                    .open(std::sync::Arc::new(core.clone()), task)
                     .await?,
             ));
         }
@@ -102,7 +102,7 @@ pub(super) async fn serve(
         _ = stream.read_u8() => return Ok(()),
         result = async {
             let task: String = serde_json::from_value(args).map_err(|e| e.to_string())?;
-            changes.open(core.clone(), task).await.map(LocalSubscription::Review)
+            changes.open(Arc::new(core.clone()), task).await.map(LocalSubscription::Review)
         } => result,
     };
     forward(stream, subscription).await

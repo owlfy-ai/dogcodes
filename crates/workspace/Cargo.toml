@@ -6,21 +6,24 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
+default = ["sqlite-index"]
+# The compact tombstone index. A build for a server without a C toolchain to hand
+# keeps tombstones in a plain file instead.
+sqlite-index = ["dep:rusqlite"]
 review-acceptance = []
 
 [dependencies]
 agent-domain = { path = "../domain" }
 cap-std = "3"
 async-trait.workspace = true
-agent-core = { path = "../core" }
 agent-protocol = { path = "../protocol" }
-agent-runtime = { path = "../runtime" }
+agent-runtime = { path = "../runtime", default-features = false }
 hex.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 similar = "2.7"
-rusqlite.workspace = true
+rusqlite = { workspace = true, optional = true }
 tokio.workspace = true
 tempfile = "3"
 

@@ -1,6 +1,6 @@
 //! Ephemeral subscriptions owned by the service connection, not a UI window.
 use super::{DirectoryRequest, directory_base, resolve};
-use agent_core::Core;
+use crate::ReviewFacts;
 use notify::Watcher;
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -33,8 +33,9 @@ impl Default for WatchService {
     }
 }
 impl WatchService {
-    #[cfg(test)]
-    pub(crate) fn active_count(&self) -> usize {
+    #[doc(hidden)]
+    #[must_use]
+    pub fn active_count(&self) -> usize {
         64 - self.slots.available_permits()
     }
     fn worker_slot(&self) -> Result<OwnedSemaphorePermit, String> {
@@ -45,7 +46,7 @@ impl WatchService {
     }
     pub async fn open(
         &self,
-        core: Arc<Core>,
+        core: Arc<dyn ReviewFacts>,
         request: DirectoryRequest,
     ) -> Result<Subscription, String> {
         let permit = self
@@ -53,7 +54,7 @@ impl WatchService {
             .clone()
             .try_acquire_owned()
             .map_err(|_| "展开的监听目录过多，请先折叠部分目录")?;
-        let base = directory_base(&core, &request).await?;
+        let base = directory_base(core.as_ref(), &request).await?;
         let registered_base = base.clone();
         let path = request.path.clone();
         let target = tokio::task::spawn_blocking(move || {
@@ -185,7 +186,7 @@ async fn ready_before(
 }
 
 pub struct Subscription {
-    core: Arc<Core>,
+    core: Arc<dyn ReviewFacts>,
     request: DirectoryRequest,
     target: PathBuf,
     registered_base: PathBuf,
@@ -219,7 +220,7 @@ impl Subscription {
         if let Some(error) = self.worker.changes.borrow().error.clone() {
             return Err(error);
         }
-        let base = directory_base(&self.core, &self.request).await?;
+        let base = directory_base(self.core.as_ref(), &self.request).await?;
         // Compare the declared root before resolving the old relative path: it
         // may no longer exist under the newly selected project directory.
         if base != self.registered_base {

@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct GitRequest {
+pub struct GitRequest {
     pub operation_id: String,
     pub task_id: String,
     pub root_id: String,
@@ -15,7 +15,7 @@ pub(crate) struct GitRequest {
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "status", rename_all = "snake_case")]
-pub(crate) enum GitOutcome {
+pub enum GitOutcome {
     Running,
     Succeeded {
         completed: bool,
@@ -30,7 +30,7 @@ pub(crate) enum GitOutcome {
     Unknown,
 }
 #[derive(Clone, Debug)]
-pub(crate) struct GitCompletion {
+pub struct GitCompletion {
     pub completed: bool,
     pub target: Option<super::git_push_target::PushTarget>,
     pub target_error: Option<String>,
@@ -44,8 +44,8 @@ impl From<bool> for GitCompletion {
         }
     }
 }
-pub(crate) type GitReceipt = super::operation_journal::OperationReceipt<GitRequest, GitOutcome>;
-pub(crate) type GitOperations = super::operation_journal::OperationJournal<GitRequest, GitOutcome>;
+pub type GitReceipt = super::operation_journal::OperationReceipt<GitRequest, GitOutcome>;
+pub type GitOperations = super::operation_journal::OperationJournal<GitRequest, GitOutcome>;
 impl super::operation_journal::JournalRequest for GitRequest {
     fn task_id(&self) -> &str {
         &self.task_id

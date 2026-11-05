@@ -54,7 +54,7 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
     if (!menu) { generateOnPick.current = false; return; }
     let active = true;
     setLoadingAgents(true); setError(null);
-    void availableAgentExecutors().then(items => { if (active) { setAgents(items); setAgentsLoaded(true); } })
+    void availableAgentExecutors(taskId).then(items => { if (active) { setAgents(items); setAgentsLoaded(true); } })
       .catch(cause => { if (active) { setAgents([]); setError({ message: userFacingError(cause, t("gitCommit.agentsFailed")) }); } })
       .finally(() => { if (active) setLoadingAgents(false); });
     return () => { active = false; };
@@ -126,7 +126,7 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
     if (selected) {
       setLoadingAgents(true);
       try {
-        const items = await availableAgentExecutors();
+        const items = await availableAgentExecutors(taskId);
         if (!mounted.current) return;
         setAgents(items); setAgentsLoaded(true);
         const available = enabledAgents(items, item => item.providerId, readAgentPreferences());

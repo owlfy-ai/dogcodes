@@ -1,0 +1,39 @@
+[package]
+name = "workspace-ops"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Git, review and file operations for a project's directories, wherever they are."
+
+[features]
+# The hub's own answers to what these operations ask. Off in the shim, which asks the
+# desktop over the connection instead and must stay free of the application core.
+core = ["dep:agent-core"]
+
+[dependencies]
+agent-core = { path = "../core", optional = true }
+agent-domain = { path = "../domain" }
+agent-protocol = { path = "../protocol" }
+agent-runtime = { path = "../runtime", default-features = false }
+agent-workspace = { path = "../workspace", default-features = false }
+async-trait.workspace = true
+base64 = "0.22"
+chrono.workspace = true
+globset = "0.4"
+notify = "8.2"
+redaction = { path = "../redaction" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+tempfile = "3"
+tokio.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+agent-store = { path = "../store" }
+tempfile = "3"
+
+[lints]
+workspace = true

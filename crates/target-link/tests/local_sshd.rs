@@ -879,3 +879,406 @@ async fn file_attachments_reach_the_target_and_images_stay_in_the_prompt() {
     );
     std::fs::remove_file(&delivered).unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs an OpenSSH server binary"]
+async fn a_terminal_on_the_target_has_input_output_size_and_ends_when_stopped() {
+    use agent_runtime::{Pipe, ProcessRequest};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let request = ProcessRequest {
+        program: "/bin/sh".into(),
+        args: vec![
+            "-c".into(),
+            "stty size; read line; stty size; echo \"got:$line\"; sleep 100".into(),
+        ],
+        env: std::collections::BTreeMap::from([("TERM".into(), "xterm".into())]),
+        cwd: Some(server.root.path().to_owned()),
+        stdin: Pipe::Piped,
+        stdout: Pipe::Piped,
+        stderr: Pipe::Null,
+    };
+    let mut terminal = link.target().spawn_terminal(request, 91, 17).unwrap();
+    let mut input = terminal.child.stdin.take().unwrap();
+    let mut output = terminal.child.stdout.take().unwrap();
+    let mut seen = String::new();
+    let until = async |output: &mut agent_runtime::ProcessStream, seen: &mut String, text: &str| {
+        let mut buffer = [0; 4096];
+        while !seen.contains(text) {
+            let count = tokio::time::timeout(Duration::from_secs(20), output.read(&mut buffer))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(count > 0, "{seen}");
+            seen.push_str(&String::from_utf8_lossy(&buffer[..count]));
+        }
+    };
+    until(&mut output, &mut seen, "17 91").await;
+    (terminal.resize)(120, 40).unwrap();
+    // The resize frame goes first on the same channel as this input.
+    input.write_all(b"hello\n").await.unwrap();
+    until(&mut output, &mut seen, "got:hello").await;
+    assert!(seen.contains("40 120"), "{seen}");
+    tokio::time::timeout(Duration::from_secs(20), terminal.child.terminate())
+        .await
+        .unwrap()
+        .unwrap();
+    let status = terminal.child.wait().await.unwrap();
+    assert!(!status.success());
+}
+
+mod workspace_operations {
+    use super::*;
+    use agent_core::Core;
+    use agent_domain::{ProjectId, ProviderId, TargetId, TaskId};
+    use agent_protocol::{CommandEnvelope, CoreCommand, CreateTask, RegisterProject};
+    use agent_store::SqliteStore;
+    use serde_json::{Value, json};
+    use workspace_ops::{
+        operation::{self, Operation, RemoteWorkspace, RunningOperation},
+        review::{ReviewQuery, service::ReviewCall},
+        workspace_service::DirectoryRequest,
+    };
+
+    fn git(path: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(path)
+            .args(["-c", "user.name=T", "-c", "user.email=t@example.com"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// A task whose project lives on the target, in a real repository there.
+    async fn project(path: &Path) -> (Arc<Core>, TaskId) {
+        let (core, task, _) = project_with_store(path).await;
+        (core, task)
+    }
+
+    async fn project_with_store(path: &Path) -> (Arc<Core>, TaskId, Arc<SqliteStore>) {
+        std::fs::create_dir_all(path).unwrap();
+        git(path, &["init", "-b", "main"]);
+        std::fs::write(path.join("kept.txt"), "before\n").unwrap();
+        git(path, &["add", "."]);
+        git(path, &["commit", "-m", "base"]);
+        let store = Arc::new(SqliteStore::open_in_memory().unwrap());
+        let core = Arc::new(Core::new(store.clone()));
+        let project_id = ProjectId::new();
+        let task = TaskId::new();
+        core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
+            RegisterProject {
+                target_id: Some(TargetId::new()),
+                project_id: project_id.clone(),
+                display_name: "Remote".into(),
+                path: path.to_str().unwrap().into(),
+                additional_directories: vec![],
+            },
+        )))
+        .await
+        .unwrap();
+        core.execute(CommandEnvelope::local(CoreCommand::CreateTask(
+            CreateTask {
+                task_id: task.clone(),
+                project_id,
+                title: "Conversation".into(),
+                preferred_executor: agent_domain::ExecutorRef {
+                    provider_id: ProviderId::parse("fake").unwrap(),
+                    installation_id: None,
+                },
+            },
+        )))
+        .await
+        .unwrap();
+        (core, task, store)
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "needs an OpenSSH server binary"]
+    async fn git_review_runs_on_the_target_and_snapshots_last_between_calls() {
+        let server = Sshd::start("", "");
+        let (link, _directory) = connected(&server).await;
+        let target = link.target();
+        let repository = server.root.path().join("repo");
+        let (core, task) = project(&repository).await;
+        std::fs::write(repository.join("kept.txt"), "after\n").unwrap();
+        let review = |call: ReviewCall| {
+            let target = target.clone();
+            let core = core.clone();
+            async move { operation::call(&target, &core, &Operation::Review(call)).await }
+        };
+        let query = |mode: &str| {
+            ReviewCall::Query(
+                serde_json::from_value::<ReviewQuery>(json!({
+                    "taskId": task.as_str(), "rootId": null, "mode": mode,
+                    "reference": null, "parent": null,
+                }))
+                .unwrap(),
+            )
+        };
+        let snapshot = review(query("uncommitted")).await.unwrap();
+        let root = &snapshot["roots"][0];
+        assert_eq!(root["files"][0]["path"], "kept.txt", "{snapshot}");
+        assert_eq!(root["statistics"]["kept.txt"]["additions"], 1);
+        let root_id = root["root"]["id"].as_str().unwrap().to_owned();
+        let snapshot_id = snapshot["id"].as_str().unwrap().to_owned();
+        // The frozen snapshot lives on the target, in the shim, across operations.
+        let file = review(ReviewCall::File {
+            task_id: task.to_string(),
+            snapshot_id: snapshot_id.clone(),
+            root_id: root_id.clone(),
+            path: "kept.txt".into(),
+        })
+        .await
+        .unwrap();
+        assert_eq!(file["text"]["after"][0], "after\n");
+        assert_eq!(file["text"]["before"][0], "before\n");
+        // A mutation changes the server's repository, under this side's guard.
+        let stage = serde_json::from_value::<ReviewCall>(json!({
+            "operation": "index",
+            "arguments": {
+                "operationId": uuid::Uuid::new_v4().to_string(),
+                "taskId": task.as_str(), "snapshotId": snapshot_id, "rootId": root_id,
+                "paths": ["kept.txt"], "action": "stage",
+            },
+        }))
+        .unwrap();
+        review(stage).await.unwrap();
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(&repository)
+            .args(["diff", "--cached", "--name-only"])
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "kept.txt");
+        assert!(
+            core.try_workspace_mutation().is_ok(),
+            "the guard was released"
+        );
+        // While an agent holds the workspace, nothing mutates it over there either.
+        let held = core.try_workspace_mutation().unwrap();
+        let snapshot = review(query("staged")).await.unwrap();
+        let root = &snapshot["roots"][0];
+        let blocked = serde_json::from_value::<ReviewCall>(json!({
+            "operation": "index",
+            "arguments": {
+                "operationId": uuid::Uuid::new_v4().to_string(),
+                "taskId": task.as_str(), "snapshotId": snapshot["id"], "rootId": root["root"]["id"],
+                "paths": ["kept.txt"], "action": "unstage",
+            },
+        }))
+        .unwrap();
+        assert!(review(blocked).await.is_err());
+        drop(held);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "needs an OpenSSH server binary"]
+    async fn files_are_listed_previewed_found_and_watched_on_the_target() {
+        let server = Sshd::start("", "");
+        let (link, _directory) = connected(&server).await;
+        let target = link.target();
+        let repository = server.root.path().join("repo");
+        let (core, task) = project(&repository).await;
+        let call = |method: &str, args: Value| {
+            let operation = Operation::Workspace {
+                method: method.to_owned(),
+                args,
+            };
+            let target = target.clone();
+            let core = core.clone();
+            async move { operation::call(&target, &core, &operation).await }
+        };
+        let request = json!({"taskId": task.as_str(), "root": 0, "path": ""});
+        let entries = call("workspace_directory", request.clone()).await.unwrap();
+        assert!(
+            entries
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["name"] == "kept.txt"),
+            "{entries}"
+        );
+        let preview = call(
+            "workspace_preview",
+            json!({"taskId": task.as_str(), "root": 0, "path": "kept.txt"}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(preview["text"], "before\n");
+        let found = call("workspace_find_files", json!((task.as_str(), "kept", true)))
+            .await
+            .unwrap();
+        assert_eq!(found["files"][0]["path"], "kept.txt");
+        // Reading out of the project is refused over there, as it is here.
+        assert!(
+            call(
+                "workspace_preview",
+                json!({"taskId": task.as_str(), "root": 0, "path": "../sshd_config"}),
+            )
+            .await
+            .is_err()
+        );
+        let operation =
+            Operation::WatchDirectory(serde_json::from_value::<DirectoryRequest>(request).unwrap());
+        let mut watch = RunningOperation::start(&target, &operation).await.unwrap();
+        assert_eq!(watch.next_event(&core).await.unwrap(), json!("ready"));
+        std::fs::write(repository.join("new.txt"), "x").unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(20), watch.next_event(&core))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_ne!(event, json!("ready"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "needs an OpenSSH server binary"]
+    async fn the_core_sees_turns_and_snapshots_of_directories_on_the_target() {
+        use agent_protocol::workspace_context::WorkspaceContextProvider;
+        let server = Sshd::start("", "");
+        let (link, _directory) = connected(&server).await;
+        let repository = server.root.path().join("repo");
+        let _ = project(&repository).await;
+        let path = repository.to_str().unwrap();
+        let workspace = RemoteWorkspace::new(link.target());
+        assert!(
+            workspace
+                .validate_workspace_roots(&[path.to_owned()])
+                .await
+                .is_ok()
+        );
+        let capture = workspace.begin_turn(path).await.unwrap();
+        std::fs::write(repository.join("kept.txt"), "changed by a turn\n").unwrap();
+        let finished = capture.finish().await.unwrap();
+        assert!(finished.to_string().contains("kept.txt"), "{finished}");
+        let snapshot = workspace.collect(path).await;
+        assert!(snapshot.git_snapshot.is_some());
+        let diff = workspace.capture_diff(path).await.unwrap();
+        assert!(String::from_utf8_lossy(&diff.content).contains("changed by a turn"));
+        assert!(
+            workspace
+                .validate_workspace_roots(&["/nonexistent/dogcodes".to_owned()])
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "needs an OpenSSH server binary"]
+    async fn a_fork_restores_a_worktree_on_the_target_and_a_turn_can_be_undone_there() {
+        use agent_protocol::workspace_context::WorkspaceContextProvider;
+        let server = Sshd::start("", "");
+        let (link, _directory) = connected(&server).await;
+        let target = link.target();
+        let repository = server.root.path().join("repo");
+        let (core, task, store) = project_with_store(&repository).await;
+        let path = repository.to_str().unwrap().to_owned();
+        let workspace = RemoteWorkspace::new(target.clone());
+        std::fs::write(repository.join("kept.txt"), "in the fork\n").unwrap();
+        let snapshot = workspace
+            .capture_fork_snapshot(std::slice::from_ref(&path))
+            .await
+            .unwrap();
+        let paths = workspace
+            .fork_worktrees(snapshot, TaskId::new().as_str())
+            .await
+            .unwrap();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(
+            std::fs::read_to_string(Path::new(&paths[0]).join("kept.txt")).unwrap(),
+            "in the fork\n"
+        );
+        std::fs::write(repository.join("kept.txt"), "before\n").unwrap();
+
+        // Undo reads the turn's record through this side and rewrites files over there.
+        let capture = workspace.begin_turn(&path).await.unwrap();
+        std::fs::write(repository.join("kept.txt"), "by the turn\n").unwrap();
+        let mut record = capture.finish().await.unwrap();
+        // The core adds which directories a turn covered when it records the changes.
+        record["workspacePaths"] = json!([path]);
+        let content = serde_json::to_vec(&record).unwrap();
+        let sha256 = {
+            use sha2::{Digest, Sha256};
+            hex::encode(Sha256::digest(&content))
+        };
+        let artifact = agent_domain::ArtifactId::new();
+        let media_type = if record["schemaVersion"] == 2 {
+            "application/vnd.dogcodes.turn-changes.v2+json"
+        } else {
+            "application/vnd.dogcodes.turn-changes.v1+json"
+        };
+        let metadata = agent_protocol::ArtifactMetadata {
+            artifact_id: artifact.clone(),
+            media_type: media_type.into(),
+            payload_sha256: sha256.clone(),
+            byte_length: content.len() as u64,
+            created_at: chrono::Utc::now(),
+            redaction_ruleset_version: 0,
+            redaction_count: 0,
+        };
+        agent_core::CoreRepository::append(
+            store.as_ref(),
+            agent_core::AppendRequest {
+                request_fingerprint: None,
+                command_id: agent_domain::CommandId::new(),
+                idempotency_key: agent_domain::CommandId::new().to_string(),
+                expected_stream_version: None,
+                artifacts: vec![agent_core::NewArtifact {
+                    metadata: metadata.clone(),
+                    content,
+                }],
+                events: vec![agent_protocol::NewEvent::hub(
+                    agent_protocol::StreamRef {
+                        stream_type: agent_protocol::StreamType::Task,
+                        stream_id: task.to_string(),
+                    },
+                    "workspace.turn_changes_captured",
+                    json!({"taskId": task, "turnId": agent_domain::TurnId::new(), "runId": agent_domain::RunId::new(), "artifact": metadata}),
+                )],
+            },
+        )
+        .await
+        .unwrap();
+        let undo = serde_json::from_value::<ReviewCall>(json!({
+            "operation": "undo",
+            "arguments": {
+                "operationId": uuid::Uuid::new_v4().to_string(),
+                "request": {
+                    "taskId": task, "artifactId": artifact,
+                    "expectedPayloadSha256": sha256, "confirmed": true,
+                },
+            },
+        }))
+        .unwrap();
+        operation::call(&target, &core, &Operation::Review(undo))
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(repository.join("kept.txt")).unwrap(),
+            "before\n"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "needs an OpenSSH server binary"]
+    async fn an_answer_never_arrives_after_the_connection_ends() {
+        let server = Sshd::start("", "");
+        let (link, _directory) = connected(&server).await;
+        let target = link.target();
+        let repository = server.root.path().join("repo");
+        let (core, task) = project(&repository).await;
+        drop(link);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let operation = Operation::Workspace {
+            method: "workspace_roots".into(),
+            args: json!(task.as_str()),
+        };
+        assert!(operation::call(&target, &core, &operation).await.is_err());
+    }
+}

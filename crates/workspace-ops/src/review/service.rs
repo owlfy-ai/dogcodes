@@ -8,15 +8,15 @@ use super::{
     recorded_changes, remote_actions, require_git_success, run_commit_command, select_query_roots,
     validate_commit_preview, workspaces,
 };
-use agent_core::Core;
+use crate::ReviewFacts;
 use serde_json::Value;
 
-pub(crate) struct ReviewContext<'a> {
-    pub core: &'a Arc<Core>,
+pub struct ReviewContext<'a> {
+    pub core: &'a dyn ReviewFacts,
     pub review: &'a ReviewHost,
 }
 
-pub(crate) async fn roots(core: &Arc<Core>, task: &str) -> Result<Vec<ReviewRoot>, String> {
+pub async fn roots(core: &dyn ReviewFacts, task: &str) -> Result<Vec<ReviewRoot>, String> {
     let paths = crate::workspace_service::project_paths(core, task).await?;
     let paths: Vec<_> = paths
         .into_iter()
@@ -229,10 +229,7 @@ pub(super) async fn index(
     paths: Vec<String>,
     action: IndexAction,
 ) -> Result<(), String> {
-    let _workspace_access = state
-        .core
-        .try_workspace_mutation()
-        .map_err(|e| e.to_string())?;
+    let _workspace_access = state.core.try_workspace_mutation().await?;
     let expected = {
         let cache = state
             .review
@@ -254,7 +251,7 @@ pub(super) async fn index(
     if current_root.path != expected.root.path || current_root.scopes != expected.root.scopes {
         return Err("项目目录范围已改变，请刷新".into());
     }
-    let metadata = state.core.bootstrap().await.map_err(|_| "任务状态不可用")?;
+    let metadata = state.core.bootstrap().await?;
     if metadata
         .tasks
         .iter()
@@ -294,10 +291,7 @@ pub(super) async fn discard(
     if !request.confirmed {
         return Err("丢弃修改需要明确确认".into());
     }
-    let _access = state
-        .core
-        .try_workspace_mutation()
-        .map_err(|e| e.to_string())?;
+    let _access = state.core.try_workspace_mutation().await?;
     let result = {
         let cache = state
             .review
@@ -453,10 +447,7 @@ pub(super) async fn git_action(
         .ok_or("当前目录未受 Git 管理")?;
     match action.as_str() {
         "commit" if !message.trim().is_empty() => {
-            let _access = state
-                .core
-                .try_workspace_mutation()
-                .map_err(|e| e.to_string())?;
+            let _access = state.core.try_workspace_mutation().await?;
             let expected = state
                 .review
                 .snapshots
@@ -482,21 +473,10 @@ pub(super) async fn git_action(
             .await
         }
         "pull" | "sync" => {
-            let _access = state
-                .core
-                .try_workspace_mutation()
-                .map_err(|e| e.to_string())?;
-            if state
-                .core
-                .bootstrap()
-                .await
-                .map_err(|e| e.to_string())?
-                .tasks
-                .iter()
-                .any(|task| {
-                    task.task_id.to_string() == task_id && task.active_primary_run.is_some()
-                })
-            {
+            let _access = state.core.try_workspace_mutation().await?;
+            if state.core.bootstrap().await?.tasks.iter().any(|task| {
+                task.task_id.to_string() == task_id && task.active_primary_run.is_some()
+            }) {
                 return Err("Agent 正在运行，请等待结束后操作".into());
             }
             let outcome =
@@ -658,7 +638,7 @@ pub(super) async fn commit_summary(
     };
     state
         .core
-        .summarize_commit(executor, changes, language.as_deref())
+        .summarize_commit(executor, changes, language)
         .await
 }
 
@@ -672,7 +652,7 @@ pub(super) async fn commit_summary(
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
-pub(crate) enum ReviewCall {
+pub enum ReviewCall {
     Query(ReviewQuery),
     Operations(operation_history::HistoryQuery),
     Lease(LeaseRequest),
@@ -769,11 +749,50 @@ pub(crate) enum ReviewCall {
         task_id: String,
         path: String,
     },
-    StartProjectReview(agent_core::turn_review::ReviewRequest),
+    StartProjectReview(Value),
 }
 
-pub(crate) async fn dispatch(
-    core: &Arc<Core>,
+impl ReviewCall {
+    /// The task this call acts for, which decides the machine it runs on.
+    #[must_use]
+    pub fn task_id(&self) -> Option<String> {
+        use ReviewCall::{
+            BatchFiles, Branches, CommitSummary, Discard, File, FileClose, FileOperation,
+            GitAction, GitAdvance, GitClose, GitOperation, History, Ignore, Index, Lease,
+            Operations, Preview, Query, RevealPath, StartProjectReview, Undo, UndoStatus,
+            WorkspacePath, Workspaces,
+        };
+        match self {
+            Query(request) => Some(request.task_id.clone()),
+            Operations(request) => Some(request.task_id.clone()),
+            Lease(request) => Some(request.task_id.clone()),
+            Discard { request, .. } => Some(request.task_id.clone()),
+            GitAction(request) => Some(request.task_id.clone()),
+            BatchFiles { request, .. } => Some(request.task_id.clone()),
+            Undo { request, .. } => Some(request.task_id.to_string()),
+            UndoStatus { task_id, .. } => Some(task_id.to_string()),
+            StartProjectReview(raw) => raw["taskId"].as_str().map(str::to_owned),
+            File { task_id, .. }
+            | History { task_id, .. }
+            | Branches { task_id, .. }
+            | Index { task_id, .. }
+            | GitClose { task_id, .. }
+            | GitAdvance { task_id, .. }
+            | GitOperation { task_id, .. }
+            | CommitSummary { task_id, .. }
+            | FileOperation { task_id, .. }
+            | FileClose { task_id, .. }
+            | Preview { task_id, .. }
+            | Ignore { task_id, .. }
+            | RevealPath { task_id, .. }
+            | Workspaces { task_id }
+            | WorkspacePath { task_id, .. } => Some(task_id.clone()),
+        }
+    }
+}
+
+pub async fn dispatch(
+    core: &dyn ReviewFacts,
     review: &ReviewHost,
     request: ReviewCall,
 ) -> Result<Value, String> {
@@ -979,34 +998,28 @@ pub(crate) async fn dispatch(
         }
         Workspaces { task_id } => response!(workspaces::list(core, &task_id).await?),
         WorkspacePath { task_id, path } => response!(workspace_path(core, &task_id, &path).await?),
-        StartProjectReview(request) => {
+        StartProjectReview(raw) => {
+            let request: project_analysis::ProjectReviewRequest =
+                serde_json::from_value(raw.clone()).map_err(|e| e.to_string())?;
             if request.turn_id.is_some() || request.source_snapshot.is_none() {
                 return Err("项目审查来源无效".into());
             }
-            let existing = core
-                .turn_reviews(&request.task_id)
-                .await
-                .map_err(|e| e.to_string())?;
-            // Core verifies the original immutable request/packet when replaying.
+            // The core verifies the original immutable request/packet when replaying.
             let input = if request.retry_of.is_some()
-                || existing
-                    .iter()
-                    .any(|run| run.request.run_id == request.run_id)
+                || core
+                    .review_run_exists(&request.task_id, &request.run_id)
+                    .await?
             {
                 None
             } else {
                 Some(project_analysis::project_review_packet(state, &request).await?)
             };
-            response!(
-                core.start_project_review(request, input)
-                    .await
-                    .map_err(|e| e.to_string())?
-            )
+            core.start_project_review(raw, input).await
         }
     }
 }
 
-async fn workspace_path(core: &Arc<Core>, task: &str, path: &str) -> Result<PathBuf, String> {
+async fn workspace_path(core: &dyn ReviewFacts, task: &str, path: &str) -> Result<PathBuf, String> {
     let all = roots(core, task).await?;
     let path = PathBuf::from(path);
     tokio::task::spawn_blocking(move || {
@@ -1042,12 +1055,11 @@ async fn workspace_path(core: &Arc<Core>, task: &str, path: &str) -> Result<Path
     .map_err(|e| e.to_string())?
 }
 
-pub(super) async fn require_task(core: &Core, task: &str) -> Result<(), String> {
+pub(super) async fn require_task(core: &dyn ReviewFacts, task: &str) -> Result<(), String> {
     let task = TaskId::parse(task).map_err(|_| "无效的会话标识")?;
     if core
         .bootstrap()
-        .await
-        .map_err(|e| e.to_string())?
+        .await?
         .tasks
         .iter()
         .any(|entry| entry.task_id == task)

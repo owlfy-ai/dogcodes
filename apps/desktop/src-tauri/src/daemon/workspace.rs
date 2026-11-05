@@ -40,7 +40,7 @@ impl CoreClient {
                 services
                     .control
                     .workspace_watchers
-                    .open(core.clone(), request)
+                    .open(std::sync::Arc::new(core.clone()), request)
                     .await?,
             ));
         }
@@ -72,8 +72,21 @@ impl WorkspaceWatchStream {
         }
     }
 }
+enum Watching {
+    Here(crate::workspace_service::watch::Subscription),
+    There(crate::remote_workspace::RemoteWatch),
+}
+impl Watching {
+    async fn next(&mut self) -> Result<WatchMessage, String> {
+        match self {
+            Self::Here(subscription) => subscription.next().await,
+            Self::There(watch) => watch.next().await,
+        }
+    }
+}
 pub(super) async fn serve_watch(
     core: &Arc<Core>,
+    targets: &crate::execution_targets::TargetHost,
     watches: &WatchService,
     stream: &mut TcpStream,
     args: Value,
@@ -82,7 +95,10 @@ pub(super) async fn serve_watch(
         _ = stream.read_u8() => return Ok(()),
         result = async {
             let request: DirectoryRequest = serde_json::from_value(args).map_err(|e| e.to_string())?;
-            watches.open(core.clone(), request).await
+            match crate::remote_workspace::watch(core, targets, &request).await? {
+                Some(watch) => Ok(Watching::There(watch)),
+                None => watches.open(Arc::new(core.clone()), request).await.map(Watching::Here),
+            }
         } => result,
     };
     write_frame(

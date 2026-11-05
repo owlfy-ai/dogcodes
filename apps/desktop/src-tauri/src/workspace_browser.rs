@@ -1,6 +1,5 @@
 //! Desktop access checks and adapters for service-owned workspace operations.
 use crate::workspace_service::DirectoryRequest;
-pub(crate) use crate::workspace_service::preview_bytes;
 pub use crate::workspace_service::{Entry, FileMatches, Preview};
 use crate::{DesktopState, review_window::require_task_window};
 use std::path::PathBuf;

@@ -18,6 +18,10 @@ tokio = { workspace = true, features = ["io-util", "net", "process", "time", "sy
 uuid.workspace = true
 
 [dev-dependencies]
+agent-core = { path = "../core" }
+agent-store = { path = "../store" }
+chrono.workspace = true
+workspace-ops = { path = "../workspace-ops", features = ["core"] }
 acp-driver = { path = "../acp-driver" }
 agent-domain = { path = "../domain" }
 driver-api = { path = "../driver-api" }

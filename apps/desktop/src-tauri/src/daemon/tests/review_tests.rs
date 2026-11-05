@@ -771,20 +771,20 @@ async fn review_watch_limits_release_and_reconnect_invalidate_without_replaying_
     for _ in 0..64 {
         subscriptions.push(
             changes
-                .open(f.core.clone(), task.to_string())
+                .open(std::sync::Arc::new(f.core.clone()), task.to_string())
                 .await
                 .unwrap(),
         );
     }
     assert!(
         changes
-            .open(f.core.clone(), task.to_string())
+            .open(std::sync::Arc::new(f.core.clone()), task.to_string())
             .await
             .is_err()
     );
     subscriptions.pop();
     let mut replacement = changes
-        .open(f.core.clone(), task.to_string())
+        .open(std::sync::Arc::new(f.core.clone()), task.to_string())
         .await
         .unwrap();
     assert!(matches!(

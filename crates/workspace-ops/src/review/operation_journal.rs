@@ -7,13 +7,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-pub(crate) trait JournalRequest:
-    Clone + PartialEq + Serialize + serde::de::DeserializeOwned
-{
+pub trait JournalRequest: Clone + PartialEq + Serialize + serde::de::DeserializeOwned {
     fn task_id(&self) -> &str;
     fn operation_id(&self) -> &str;
 }
-pub(crate) trait JournalOutcome: Clone + Serialize + serde::de::DeserializeOwned {
+pub trait JournalOutcome: Clone + Serialize + serde::de::DeserializeOwned {
     type Output;
     fn running() -> Self;
     fn unknown() -> Self;
@@ -24,7 +22,7 @@ pub(crate) trait JournalOutcome: Clone + Serialize + serde::de::DeserializeOwned
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct OperationReceipt<R, O> {
+pub struct OperationReceipt<R, O> {
     pub request: R,
     pub outcome: O,
     #[serde(default)]
@@ -32,18 +30,18 @@ pub(crate) struct OperationReceipt<R, O> {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct JournalEntry<R, O> {
+pub struct JournalEntry<R, O> {
     pub operation_id: String,
     pub receipt: Option<OperationReceipt<R, O>>,
     pub error: Option<String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct JournalPage<R, O> {
+pub struct JournalPage<R, O> {
     pub entries: Vec<JournalEntry<R, O>>,
     pub next_cursor: Option<String>,
 }
-pub(crate) struct OperationJournal<R, O> {
+pub struct OperationJournal<R, O> {
     directory: PathBuf,
     gate: Mutex<()>,
     active: Arc<Mutex<BTreeSet<String>>>,

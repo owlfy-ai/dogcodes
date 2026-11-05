@@ -769,7 +769,7 @@ impl CoreClient {
     }
     pub async fn start_project_review(&self, request: ReviewRequest) -> Result<ReviewRun, String> {
         self.review(crate::review::service::ReviewCall::StartProjectReview(
-            request,
+            serde_json::to_value(&request).map_err(|e| e.to_string())?,
         ))
         .await
     }
@@ -1349,11 +1349,13 @@ impl ServiceControl {
         let mut project_runs =
             crate::project_runs::ProjectRunHost::new(directory.join("project-runs"));
         project_runs.changes = changes.clone();
+        let targets: Arc<crate::execution_targets::TargetHost> = Arc::default();
+        project_runs.targets = targets.clone();
         Self {
             remote: Arc::new(remote::RemoteHost::for_default_service(
                 directory.join("remote"),
             )),
-            targets: Arc::default(),
+            targets,
             submissions: crate::submission_intents::SubmissionIntents::new(
                 directory.join("submission-intents"),
             ),
@@ -1397,8 +1399,9 @@ async fn dispatch_service(
     if method == "review" {
         let request = serde_json::from_value(args).map_err(|e| e.to_string())?;
         // Boxed for the same reason as target_control above.
-        return Box::pin(crate::review::service::dispatch(
+        return Box::pin(crate::remote_workspace::review(
             core,
+            &control.targets,
             &control.review,
             request,
         ))
@@ -1461,10 +1464,17 @@ async fn dispatch_service(
         method,
         "workspace_roots" | "workspace_directory" | "workspace_preview" | "workspace_find_files"
     ) {
-        return crate::workspace_service::dispatch(core, method, args).await;
+        return crate::remote_workspace::workspace(core, &control.targets, method, args).await;
     }
     if method.starts_with("terminal_") {
-        return crate::terminal_host::rpc::dispatch(core, &control.terminals, method, args).await;
+        return crate::terminal_host::rpc::dispatch(
+            core,
+            &control.terminals,
+            &control.targets,
+            method,
+            args,
+        )
+        .await;
     }
     if method.starts_with("project_run") {
         return crate::project_runs::dispatch(
@@ -1614,6 +1624,7 @@ async fn serve_connection(
         drop(request_guard);
         return workspace::serve_watch(
             &core,
+            &control.targets,
             &control.workspace_watchers,
             &mut stream,
             request.args,

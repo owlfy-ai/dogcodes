@@ -601,8 +601,8 @@ impl GitWorkspaceContextProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_core::WorkspaceContextProvider;
     use agent_domain::TaskId;
+    use agent_protocol::workspace_context::WorkspaceContextProvider;
     use std::process::Command;
 
     fn git(root: &Path, args: &[&str]) -> String {

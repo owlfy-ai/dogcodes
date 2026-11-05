@@ -1,7 +1,5 @@
 //! Worktree navigation resolves only persisted projects and task IDs.
-use super::service::ReviewCall;
-use crate::{DesktopState, review_window::require_task_window};
-use agent_core::Core;
+use crate::ReviewFacts;
 use agent_domain::TaskId;
 use agent_workspace::review::git::{GitReview, worktrees::WorktreeStatus};
 use serde::{Deserialize, Serialize};
@@ -12,23 +10,23 @@ use std::{collections::BTreeMap, path::Path};
 // A serialized view model: each flag is an independent fact shown in the UI.
 #[allow(clippy::struct_excessive_bools)]
 pub struct ReviewWorkspace {
-    task_id: String,
+    pub task_id: String,
     name: String,
     conversation_title: String,
     path: String,
     branch: Option<String>,
     head: Option<String>,
     changed_files: Option<usize>,
-    current: bool,
+    pub current: bool,
     primary: bool,
     git: bool,
     running: bool,
     error: Option<String>,
 }
 
-pub async fn list(core: &Core, task_id: &str) -> Result<Vec<ReviewWorkspace>, String> {
+pub async fn list(core: &dyn ReviewFacts, task_id: &str) -> Result<Vec<ReviewWorkspace>, String> {
     let id = TaskId::parse(task_id).map_err(|_| "会话标识无效")?;
-    let snapshot = core.bootstrap().await.map_err(|_| "无法读取工作区列表")?;
+    let snapshot = core.bootstrap().await?;
     let source = snapshot
         .tasks
         .iter()
@@ -39,8 +37,8 @@ pub async fn list(core: &Core, task_id: &str) -> Result<Vec<ReviewWorkspace>, St
         .iter()
         .find(|p| p.project_id == source.project_id)
         .ok_or("项目已不存在")?;
-    if project.target_id.is_some() {
-        return Err("远程项目暂不支持这项操作".into());
+    if project.target_id.is_some() && core.on_hub() {
+        return Err("这个项目在另一台机器上".into());
     }
     let git = GitReview::default();
     let identity = git.worktree_identity(Path::new(&project.path)).await?;
@@ -50,7 +48,7 @@ pub async fn list(core: &Core, task_id: &str) -> Result<Vec<ReviewWorkspace>, St
         snapshot
             .projects
             .iter()
-            .filter(|p| p.project_id != project.project_id && p.target_id.is_none()),
+            .filter(|p| p.project_id != project.project_id && p.target_id == project.target_id),
     );
     let mut seen = BTreeMap::<String, usize>::new();
     let mut result = Vec::<ReviewWorkspace>::new();
@@ -125,25 +123,7 @@ pub async fn list(core: &Core, task_id: &str) -> Result<Vec<ReviewWorkspace>, St
     Ok(result)
 }
 
-#[tauri::command]
-pub async fn core_review_workspaces(
-    window: tauri::Window,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-) -> Result<Vec<ReviewWorkspace>, String> {
-    require_task_window(window.label(), &task_id)?;
-    let mut items: Vec<ReviewWorkspace> = state
-        .core
-        .review(ReviewCall::Workspaces { task_id })
-        .await?;
-    // Detached windows retain their original task permission boundary.
-    if window.label() != "main" {
-        items.retain(|item| item.current);
-    }
-    Ok(items)
-}
-
-#[cfg(test)]
+#[cfg(all(test, feature = "core"))]
 mod tests {
     use super::*;
     use agent_core::Core;

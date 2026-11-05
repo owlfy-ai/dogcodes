@@ -5,9 +5,15 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+default = ["system-proxy"]
+# Reads the desktop's proxy settings. A server has no desktop settings to read, and
+# the Linux desktop libraries would keep a build for one from being static.
+system-proxy = ["dep:proxy-watch"]
+
 [dependencies]
 process-scope = { path = "../process-scope" }
-proxy-watch = { version = "0.1.0", default-features = false, features = ["linux-gnome", "linux-kde"] }
+proxy-watch = { version = "0.1.0", default-features = false, features = ["linux-gnome", "linux-kde"], optional = true }
 serde.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "process"] }

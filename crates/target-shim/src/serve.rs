@@ -27,8 +27,9 @@ const LOGIN_ENVIRONMENT_LIMIT: Duration = Duration::from_secs(10);
 const ENVIRONMENT_MARKER: &str = "__DOGCODES_ENVIRONMENT__";
 const MAX_ENVIRONMENT_BYTES: usize = 512 * 1024;
 const MAX_DIRECTORY_ENTRIES: usize = 2000;
+const PIPE_BUFFER: usize = 64 * 1024;
 
-type Outbound = mpsc::Sender<Frame>;
+pub(crate) type Outbound = mpsc::Sender<Frame>;
 
 /// Fixed once at startup, read when the desktop asks about this shim.
 static RELAY_SOCKET: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -42,6 +43,8 @@ struct Supervised {
     stdout_credit: Arc<Semaphore>,
     stderr_credit: Arc<Semaphore>,
     terminate: Option<oneshot::Sender<()>>,
+    #[cfg(unix)]
+    terminal: Option<crate::terminal::Terminal>,
 }
 
 pub(crate) async fn serve(nonce: &str) -> io::Result<()> {
@@ -178,7 +181,18 @@ async fn handle_request(
         }
         Request::Spawn(request) => {
             let process = request.process;
-            match start(request, outbound.clone(), exited.clone()) {
+            let started = if request.operation {
+                Ok(start_operation(
+                    request.process,
+                    outbound.clone(),
+                    exited.clone(),
+                ))
+            } else if request.terminal.is_some() {
+                start_terminal(request, outbound.clone(), exited.clone())
+            } else {
+                start(request, outbound.clone(), exited.clone())
+            };
+            match started {
                 Ok(supervised) => {
                     processes.insert(process, supervised);
                 }
@@ -194,6 +208,19 @@ async fn handle_request(
                 },
             };
             respond(outbound, id, response).await
+        }
+        Request::Resize {
+            process,
+            cols,
+            rows,
+        } => {
+            #[cfg(unix)]
+            if let Some(terminal) = processes.get(&process).and_then(|p| p.terminal.as_ref()) {
+                terminal.resize(cols, rows);
+            }
+            #[cfg(not(unix))]
+            let _ = (process, cols, rows);
+            respond(outbound, id, Response::Ok).await
         }
         Request::Terminate { process } => {
             if let Some(terminate) = processes.get_mut(&process).and_then(|p| p.terminate.take()) {
@@ -212,7 +239,7 @@ async fn respond(outbound: &Outbound, id: u64, response: Response) -> io::Result
     .await
 }
 
-async fn send_message(outbound: &Outbound, message: &ShimMessage) -> io::Result<()> {
+pub(crate) async fn send_message(outbound: &Outbound, message: &ShimMessage) -> io::Result<()> {
     outbound
         .send(control_frame(message)?)
         .await
@@ -294,7 +321,127 @@ fn start_relay(
         stdout_credit: credit,
         stderr_credit: Arc::new(Semaphore::new(0)),
         terminate: None,
+        #[cfg(unix)]
+        terminal: None,
     }
+}
+
+/// A workspace operation, wired up exactly like a process: its input and output use
+/// the same credit windows, and terminating it abandons the work.
+fn start_operation(
+    process: u32,
+    outbound: Outbound,
+    exited: mpsc::UnboundedSender<u32>,
+) -> Supervised {
+    let (input, operation_input) = tokio::io::duplex(PIPE_BUFFER);
+    let (operation_output, output) = tokio::io::duplex(PIPE_BUFFER);
+    let (sender, receiver) = mpsc::unbounded_channel();
+    tokio::spawn(pump_stdin(
+        input,
+        receiver,
+        outbound.clone(),
+        stream_id(process, Channel::Stdin),
+    ));
+    let credit = Arc::new(Semaphore::new(STREAM_WINDOW as usize));
+    let pump = tokio::spawn(pump_output(
+        output,
+        outbound.clone(),
+        stream_id(process, Channel::Stdout),
+        credit.clone(),
+    ));
+    let (terminate, terminated) = oneshot::channel();
+    tokio::spawn(async move {
+        let _ = outbound
+            .send(eof_frame(stream_id(process, Channel::Stderr)))
+            .await;
+        let mut work = tokio::spawn(async move {
+            look_for_git_beyond_sshd_path().await;
+            workspace_ops::operation::serve(machine(), operation_input, operation_output).await;
+        });
+        let code = tokio::select! {
+            _ = &mut work => 0,
+            _ = terminated => {
+                work.abort();
+                let _ = work.await;
+                1
+            }
+        };
+        let _ = tokio::time::timeout(Duration::from_secs(1), pump).await;
+        let message = ShimMessage::Exited {
+            process,
+            code: Some(code),
+            signal: None,
+            error: None,
+        };
+        let _ = send_message(&outbound, &message).await;
+        let _ = exited.send(process);
+    });
+    Supervised {
+        stdin: Some(sender),
+        stdout_credit: credit,
+        stderr_credit: Arc::new(Semaphore::new(0)),
+        terminate: Some(terminate),
+        #[cfg(unix)]
+        terminal: None,
+    }
+}
+
+/// One for the life of this shim: review snapshots live here between operations.
+/// `git` from a version manager is only on the login shell's `PATH`. Shell profiles
+/// can be slow, so this asks them only when `sshd`'s own environment finds no `git`,
+/// and before `machine()` settles on one.
+async fn look_for_git_beyond_sshd_path() {
+    static ASKED: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
+    ASKED
+        .get_or_init(|| async {
+            if workspace_ops::git_is_installed() {
+                return;
+            }
+            if let Some(path) = login_environment().await.remove("PATH") {
+                workspace_ops::extend_git_search_path(path.into());
+            }
+        })
+        .await;
+}
+
+fn machine() -> Arc<workspace_ops::operation::Machine> {
+    static MACHINE: std::sync::OnceLock<Arc<workspace_ops::operation::Machine>> =
+        std::sync::OnceLock::new();
+    MACHINE
+        .get_or_init(|| {
+            // Beside the versions in the install root: `<root>/shim/<version>/<binary>`.
+            let directory = std::env::current_exe()
+                .ok()
+                .and_then(|path| path.ancestors().nth(3).map(|root| root.join("data")))
+                .unwrap_or_else(|| std::env::temp_dir().join("dogcodes-data"));
+            Arc::new(workspace_ops::operation::Machine::new(directory))
+        })
+        .clone()
+}
+
+#[cfg(unix)]
+fn start_terminal(
+    request: SpawnRequest,
+    outbound: Outbound,
+    exited: mpsc::UnboundedSender<u32>,
+) -> io::Result<Supervised> {
+    let parts = crate::terminal::start(request, outbound, exited)?;
+    Ok(Supervised {
+        stdin: Some(parts.stdin),
+        stdout_credit: parts.credit,
+        stderr_credit: Arc::new(Semaphore::new(0)),
+        terminate: Some(parts.terminate),
+        terminal: Some(parts.terminal),
+    })
+}
+
+#[cfg(not(unix))]
+fn start_terminal(
+    _request: SpawnRequest,
+    _outbound: Outbound,
+    _exited: mpsc::UnboundedSender<u32>,
+) -> io::Result<Supervised> {
+    Err(io::ErrorKind::Unsupported.into())
 }
 
 fn start(
@@ -369,6 +516,8 @@ fn start(
         stdout_credit,
         stderr_credit,
         terminate: Some(terminate),
+        #[cfg(unix)]
+        terminal: None,
     })
 }
 
@@ -577,6 +726,8 @@ mod tests {
             stdin: true,
             stdout: true,
             stderr: true,
+            terminal: None,
+            operation: false,
         }
     }
 

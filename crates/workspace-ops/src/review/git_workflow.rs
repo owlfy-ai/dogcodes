@@ -1,14 +1,13 @@
 //! Commit-and-push links are durable request data, independent of any window.
 use super::{
     git_operations::{GitCompletion, GitOperations, GitOutcome, GitReceipt, GitRequest},
-    service::{ReviewCall, ReviewContext, require_task},
+    service::{ReviewContext, require_task},
 };
-use crate::{DesktopState, review_window::require_task_window};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct GitWorkflow {
+pub struct GitWorkflow {
     pub next_operation_id: String,
     pub parent_operation_id: Option<String>,
 }
@@ -283,37 +282,4 @@ pub(super) async fn advance(
     }
     result?;
     Err("Git 接续结果尚未核实，请查询原操作记录".into())
-}
-#[tauri::command]
-pub async fn core_review_git_advance(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-    operation_id: String,
-) -> Result<GitReceipt, String> {
-    require_task_window(window.label(), &task_id)?;
-    state
-        .core
-        .review(ReviewCall::GitAdvance {
-            task_id,
-            operation_id,
-        })
-        .await
-}
-
-#[tauri::command]
-pub async fn core_review_git_close(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-    operation_id: String,
-) -> Result<GitReceipt, String> {
-    require_task_window(window.label(), &task_id)?;
-    state
-        .core
-        .review(ReviewCall::GitClose {
-            task_id,
-            operation_id,
-        })
-        .await
 }

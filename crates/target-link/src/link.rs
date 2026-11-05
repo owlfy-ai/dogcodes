@@ -4,7 +4,7 @@
 use crate::error::{ConnectError, ConnectErrorKind};
 use agent_runtime::{
     ExecutionTarget, OwnedChild, Pipe, ProcessFuture, ProcessRequest, RemoteProcess, SharedTarget,
-    TargetCommand, local_target,
+    TargetCommand, TerminalChild, local_target,
 };
 use std::{
     collections::{BTreeMap, HashMap},
@@ -20,8 +20,9 @@ use std::{
 };
 use target_wire::{
     Channel, Frame, FrameKind, PROTOCOL_VERSION, Request, RequestEnvelope, Response, STREAM_CHUNK,
-    STREAM_WINDOW, ShimMessage, SpawnRequest, TargetInfo, control_frame, credit_frame, data_frame,
-    eof_frame, parse_control, parse_credit, read_frame, split_stream, stream_id, write_frame,
+    STREAM_WINDOW, ShimMessage, SpawnRequest, TargetInfo, TerminalSize, control_frame,
+    credit_frame, data_frame, eof_frame, parse_control, parse_credit, read_frame, split_stream,
+    stream_id, write_frame,
 };
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -417,7 +418,46 @@ impl ExecutionTarget for LinkTarget {
             .map_or_else(|| PathBuf::from("/tmp"), PathBuf::from)
     }
     fn spawn(&self, request: ProcessRequest) -> io::Result<OwnedChild> {
-        spawn(&self.core, request)
+        spawn(&self.core, request, Start::Program).map(|(child, _)| child)
+    }
+    fn spawn_operation(&self) -> io::Result<OwnedChild> {
+        let request = ProcessRequest {
+            stdin: Pipe::Piped,
+            stdout: Pipe::Piped,
+            stderr: Pipe::Null,
+            ..ProcessRequest::default()
+        };
+        spawn(&self.core, request, Start::Operation).map(|(child, _)| child)
+    }
+    fn spawn_terminal(
+        &self,
+        request: ProcessRequest,
+        cols: u16,
+        rows: u16,
+    ) -> io::Result<TerminalChild> {
+        let (child, process) = spawn(
+            &self.core,
+            request,
+            Start::Terminal(TerminalSize { cols, rows }),
+        )?;
+        let core = self.core.clone();
+        Ok(TerminalChild {
+            child,
+            resize: Box::new(move |cols, rows| {
+                core.send_command(Request::Resize {
+                    process,
+                    cols,
+                    rows,
+                });
+                Ok(())
+            }),
+        })
+    }
+    fn login_environment(&self) -> BTreeMap<OsString, OsString> {
+        self.environment
+            .iter()
+            .map(|(name, value)| (name.into(), value.into()))
+            .collect()
     }
     fn runs_as_root(&self) -> bool {
         self.root
@@ -460,7 +500,14 @@ fn text(value: &OsStr) -> io::Result<String> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "value is not UTF-8"))
 }
 
-fn spawn(core: &Arc<Core>, request: ProcessRequest) -> io::Result<OwnedChild> {
+#[derive(Clone, Copy)]
+enum Start {
+    Program,
+    Terminal(TerminalSize),
+    Operation,
+}
+
+fn spawn(core: &Arc<Core>, request: ProcessRequest, start: Start) -> io::Result<(OwnedChild, u32)> {
     if core.closed.borrow().is_some() {
         return Err(io::Error::new(
             io::ErrorKind::NotConnected,
@@ -488,6 +535,11 @@ fn spawn(core: &Arc<Core>, request: ProcessRequest) -> io::Result<OwnedChild> {
         stdin: request.stdin == Pipe::Piped,
         stdout: request.stdout == Pipe::Piped,
         stderr: request.stderr == Pipe::Piped,
+        terminal: match start {
+            Start::Terminal(size) => Some(size),
+            _ => None,
+        },
+        operation: matches!(start, Start::Operation),
     };
     let process = spawn.process;
     let stdin_credit = Arc::new(Semaphore::new(STREAM_WINDOW as usize));
@@ -529,16 +581,19 @@ fn spawn(core: &Arc<Core>, request: ProcessRequest) -> io::Result<OwnedChild> {
         },
     );
     core.send_command(Request::Spawn(spawn));
-    Ok(OwnedChild::remote(
-        Box::new(TargetProcess {
-            core: core.clone(),
-            process,
-            exit: exit_state,
-            termination_sent: false,
-        }),
-        stdin,
-        stdout,
-        stderr,
+    Ok((
+        OwnedChild::remote(
+            Box::new(TargetProcess {
+                core: core.clone(),
+                process,
+                exit: exit_state,
+                termination_sent: false,
+            }),
+            stdin,
+            stdout,
+            stderr,
+        ),
+        process,
     ))
 }
 

@@ -153,6 +153,7 @@ name = "agent-protocol"
 version = "0.1.1"
 dependencies = [
  "agent-domain",
+ "async-trait",
  "chrono",
  "serde",
  "serde_json",
@@ -220,7 +221,6 @@ dependencies = [
 name = "agent-workspace"
 version = "0.1.1"
 dependencies = [
- "agent-core",
  "agent-domain",
  "agent-protocol",
  "agent-runtime",
@@ -1679,6 +1679,7 @@ dependencies = [
  "agent-store",
  "agent-workspace",
  "antigravity-driver",
+ "anyhow",
  "async-trait",
  "base64 0.22.1",
  "chrono",
@@ -1723,6 +1724,7 @@ dependencies = [
  "tokio-tungstenite",
  "ulid",
  "uuid",
+ "workspace-ops",
  "zcode-driver",
 ]
 
@@ -7022,10 +7024,13 @@ name = "target-link"
 version = "0.1.1"
 dependencies = [
  "acp-driver",
+ "agent-core",
  "agent-domain",
  "agent-protocol",
  "agent-runtime",
+ "agent-store",
  "async-trait",
+ "chrono",
  "driver-api",
  "futures",
  "hex",
@@ -7036,6 +7041,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "uuid",
+ "workspace-ops",
 ]
 
 [[package]]
@@ -7044,12 +7050,14 @@ version = "0.1.1"
 dependencies = [
  "hex",
  "nix 0.28.0",
+ "portable-pty",
  "process-scope",
  "serde_json",
  "sha2",
  "target-wire",
  "tempfile",
  "tokio",
+ "workspace-ops",
 ]
 
 [[package]]
@@ -8943,6 +8951,31 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
+
+[[package]]
+name = "workspace-ops"
+version = "0.1.1"
+dependencies = [
+ "agent-core",
+ "agent-domain",
+ "agent-protocol",
+ "agent-runtime",
+ "agent-store",
+ "agent-workspace",
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "globset",
+ "hex",
+ "notify",
+ "redaction",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
 
 [[package]]
 name = "writeable"

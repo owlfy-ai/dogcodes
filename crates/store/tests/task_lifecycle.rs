@@ -106,6 +106,41 @@ fn review(task: &TaskId) -> ReviewRun {
         repairs: vec![],
     }
 }
+#[derive(Default)]
+struct RecordingMachine(std::sync::Mutex<Vec<String>>);
+
+#[async_trait::async_trait]
+impl agent_protocol::workspace_context::WorkspaceContextProvider for RecordingMachine {
+    async fn collect(
+        &self,
+        _: &str,
+    ) -> agent_protocol::workspace_context::WorkspaceContextSnapshot {
+        agent_protocol::workspace_context::WorkspaceContextSnapshot::default()
+    }
+    async fn delete_task_review_data(&self, task_id: &str) -> Result<(), String> {
+        self.0.lock().unwrap().push(task_id.to_owned());
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn a_machine_away_during_deletion_is_told_when_it_connects() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = Arc::new(SqliteStore::open(directory.path().join("fixture.db")).unwrap());
+    let (core, task) = setup(store).await;
+    let version = core.bootstrap().await.unwrap().tasks[0].stream_version;
+    core.execute(command(&task, false, Some(version)))
+        .await
+        .unwrap();
+
+    let target = agent_domain::TargetId::new();
+    let machine = Arc::new(RecordingMachine::default());
+    core.register_target_workspace(target.clone(), machine.clone());
+    core.clean_deleted_tasks_on(&target).await;
+
+    assert_eq!(*machine.0.lock().unwrap(), vec![task.to_string()]);
+}
+
 #[tokio::test]
 async fn permanent_deletion_removes_history_reviews_and_sessions_after_rebuild() {
     let directory = tempfile::tempdir().unwrap();

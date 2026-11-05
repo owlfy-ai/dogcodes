@@ -4,20 +4,24 @@ mod electron;
 mod environment;
 mod external_path;
 mod path_environment;
+#[cfg(feature = "system-proxy")]
 mod proxy;
 mod target;
 pub use process_scope::ProcessOutput as ProcessStream;
 pub use process_scope::{OwnedChild, ProcessFuture, ProcessInput, RemoteProcess};
 pub use target::{
     ExecutionTarget, Pipe, ProcessRequest, SharedTarget, TargetCommand, TargetExecutable,
-    local_target, write_target_file,
+    TerminalChild, local_target, write_target_file,
 };
 
 pub use electron::{electron_node_executable, electron_resources_directory};
 pub use environment::{apply_platform_environment, inherited_variable};
 pub use external_path::{agent_command, background_command, external_path};
 pub use path_environment::{current_path, record_shell_path};
+#[cfg(feature = "system-proxy")]
 pub use proxy::apply_proxy_environment;
+#[cfg(not(feature = "system-proxy"))]
+pub fn apply_proxy_environment(_command: &mut tokio::process::Command) {}
 
 use std::{
     collections::{BTreeMap, BTreeSet},

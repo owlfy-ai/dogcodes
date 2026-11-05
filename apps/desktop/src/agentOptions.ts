@@ -1,4 +1,4 @@
-import type { ExecutorRef, InstallationSummary } from "@dogcodes/protocol";
+import type { BootstrapSnapshot, ExecutorRef, InstallationSummary } from "@dogcodes/protocol";
 
 /** The backend resolves the user's command and returns one installation per Agent. */
 export function visibleAgentInstallations(installations: InstallationSummary[]): InstallationSummary[] {
@@ -12,6 +12,13 @@ export function readyAgentInstallations(installations: InstallationSummary[]): I
 /** An agent only works on directories on its own machine. */
 export function installationsOnTarget(installations: InstallationSummary[], targetId: string | null | undefined): InstallationSummary[] {
   return installations.filter(installation => (installation.targetId ?? null) === (targetId ?? null));
+}
+
+/** The agents that can work on this conversation's project. */
+export function installationsForTask(snapshot: Pick<BootstrapSnapshot, "installations"> & Partial<Pick<BootstrapSnapshot, "projects" | "tasks">>, taskId: string): InstallationSummary[] {
+  const projectId = snapshot.tasks?.find(task => task.taskId === taskId)?.projectId;
+  const targetId = snapshot.projects?.find(project => project.projectId === projectId)?.targetId;
+  return installationsOnTarget(snapshot.installations, targetId);
 }
 
 /** Restore a selection against discovery's current executable for the same Agent. */

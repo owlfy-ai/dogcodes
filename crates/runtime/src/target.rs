@@ -44,12 +44,37 @@ pub struct ProcessRequest {
     pub stderr: Pipe,
 }
 
+/// A process under a terminal, whose size can change while it runs.
+pub struct TerminalChild {
+    pub child: OwnedChild,
+    pub resize: Box<dyn Fn(u16, u16) -> io::Result<()> + Send + Sync>,
+}
+
 pub trait ExecutionTarget: Send + Sync {
     fn is_local(&self) -> bool;
     /// The value this variable has on the target.
     fn inherited(&self, name: &str) -> Option<OsString>;
     fn temp_directory(&self) -> PathBuf;
     fn spawn(&self, request: ProcessRequest) -> io::Result<OwnedChild>;
+    /// Starts `request` under a new terminal on the target. This machine's terminals
+    /// have their own host, so only another machine answers this.
+    fn spawn_terminal(
+        &self,
+        _request: ProcessRequest,
+        _cols: u16,
+        _rows: u16,
+    ) -> io::Result<TerminalChild> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+    /// Starts an operation on the target, spoken over its stdin and stdout. Work on
+    /// this machine's projects is called directly and never comes through here.
+    fn spawn_operation(&self) -> io::Result<OwnedChild> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+    /// The whole login environment on the target, for processes a person works in.
+    fn login_environment(&self) -> BTreeMap<OsString, OsString> {
+        BTreeMap::new()
+    }
     /// A command an agent on this target can run to reach `command` on the machine
     /// hosting this app. A local agent can simply run it.
     fn app_tool_command(

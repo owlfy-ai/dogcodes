@@ -10,7 +10,6 @@ use agent_protocol::ProjectSummary;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
-    io::Read,
     path::{Component, Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -19,6 +18,7 @@ pub mod operations;
 pub mod watch;
 use operations::StoredCatalog;
 pub use operations::{AnalyzeRequest, EditRequest, MutationError, RunOperation};
+use workspace_ops::project_scan::{InputFile, scan};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,6 +66,7 @@ pub struct ProjectRunHost {
     finalizations: Arc<Mutex<HashMap<String, StoredCatalog>>>,
     cleanup_pending: Arc<Mutex<HashSet<(String, String)>>>,
     pub(crate) changes: Arc<crate::state_changes::Changes>,
+    pub(crate) targets: Arc<crate::execution_targets::TargetHost>,
 }
 impl ProjectRunHost {
     pub fn new(directory: PathBuf) -> Self {
@@ -79,7 +80,19 @@ impl ProjectRunHost {
             finalizations: Arc::default(),
             cleanup_pending: Arc::default(),
             changes: Arc::new(crate::state_changes::Changes::new()),
+            targets: Arc::default(),
         }
+    }
+    /// The machine a project's commands run on, when it is not this one.
+    fn target_of(
+        &self,
+        project: &ProjectSummary,
+    ) -> Result<Option<agent_runtime::SharedTarget>, String> {
+        project
+            .target_id
+            .as_ref()
+            .map(|target| self.targets.target(target))
+            .transpose()
     }
     fn file(&self, id: &str) -> PathBuf {
         self.directory
@@ -400,11 +413,24 @@ fn prepare_analysis(
         .collect())
 }
 
-fn roots(project: &ProjectSummary) -> Vec<String> {
-    // Nothing to analyze or launch here: those directories are on another machine.
+/// Recorded with a catalog, so commands are never offered on a kind of system they
+/// were not written for. Every server the shim runs on has a POSIX shell.
+fn platform(project: &ProjectSummary) -> &'static str {
     if project.target_id.is_some() {
-        return vec![];
+        SERVER_PLATFORM
+    } else {
+        std::env::consts::OS
     }
+}
+const SERVER_PLATFORM: &str = "server";
+fn shell_for(project: &ProjectSummary) -> &'static str {
+    if project.target_id.is_some() {
+        "POSIX sh"
+    } else {
+        shell()
+    }
+}
+fn roots(project: &ProjectSummary) -> Vec<String> {
     std::iter::once(project.path.clone())
         .chain(project.additional_directories.clone())
         .collect()
@@ -473,15 +499,30 @@ async fn analyze_recorded(
     }
     if !force
         && let Some(cached) = &cached
-        && cached.platform == std::env::consts::OS
+        && cached.platform == platform(&project)
         && (cached.directories.iter().map(|d| &d.path).eq(paths.iter()) || has_user_edits(cached))
     {
         return Ok(cached.catalog.clone());
     }
-    let available = core
+    let target = host.target_of(&project);
+    let mut available = core
         .available_execution_candidates()
         .await
         .map_err(|e| e.to_string())?;
+    // An agent reads and runs where it is installed, so only one on the project's own
+    // machine can say anything about this project's commands.
+    let installations = core
+        .bootstrap()
+        .await
+        .map_err(|e| e.to_string())?
+        .installations;
+    available.retain(|executor| {
+        let on = installations
+            .iter()
+            .find(|item| executor.installation_id.as_deref() == Some(item.installation_id.as_str()))
+            .and_then(|item| item.target_id.as_ref());
+        on == project.target_id.as_ref()
+    });
     if executor
         .as_ref()
         .is_some_and(|executor| !available.contains(executor))
@@ -525,8 +566,8 @@ async fn analyze_recorded(
     let generation = uuid::Uuid::new_v4().to_string();
     let mut catalog = RunCatalog {
         project_id: id.clone(),
-        platform: std::env::consts::OS.into(),
-        shell: shell().into(),
+        platform: platform(&project).into(),
+        shell: shell_for(&project).into(),
         generation: generation.clone(),
         executor: chosen.clone(),
         directories: vec![],
@@ -592,6 +633,8 @@ async fn analyze_recorded(
         id.clone(),
         generation.clone(),
     ));
+    let packet_platform = platform(&project);
+    let packet_shell = shell_for(&project);
     tokio::spawn(async move {
         for (index, path) in paths.iter().enumerate() {
             let Ok(_permit) = host.gate.acquire().await else {
@@ -607,11 +650,15 @@ async fn analyze_recorded(
             let result = async {
                 let execution = execution.as_ref().ok_or("没有可用的分析 Agent，请连接 Agent 后重新分析")?;
                 let root = PathBuf::from(path); let scan_root = root.clone();
-                let files = tokio::task::spawn_blocking(move || scan(&scan_root)).await.map_err(|_| "读取目录失败")??;
+                let on_target = project_target(&target)?;
+                let files = match &on_target {
+                    Some(target) => workspace_ops::operation::scan_project(target, path).await?,
+                    None => tokio::task::spawn_blocking(move || scan(&scan_root)).await.map_err(|_| "读取目录失败")??,
+                };
                 if files.is_empty() { return Ok(vec![]); }
-                let packet = serde_json::json!({ "platform": std::env::consts::OS, "shell": shell(), "files": files }).to_string();
+                let packet = serde_json::json!({ "platform": packet_platform, "shell": packet_shell, "files": files }).to_string();
                 let response = execution.analyze_project_commands_with_lifetime(packet, running.clone()).await?;
-                parse_commands(&response, &root, &files)
+                parse_commands(&response, &root, &files, on_target.is_none())
             }.await;
             if running.stopped.load(std::sync::atomic::Ordering::Acquire)
                 || !host.finish(&id, &generation, index, result)
@@ -622,6 +669,12 @@ async fn analyze_recorded(
     });
     drop(agent_admission);
     Ok(catalog)
+}
+
+fn project_target(
+    target: &Result<Option<agent_runtime::SharedTarget>, String>,
+) -> Result<Option<agent_runtime::SharedTarget>, String> {
+    target.clone()
 }
 
 struct ActiveAnalysis {
@@ -791,7 +844,7 @@ async fn launch(
         .load(project.project_id.as_str())?
         .ok_or("请先分析项目")?;
     if catalog.generation != request.generation
-        || catalog.platform != std::env::consts::OS
+        || catalog.platform != platform(&project)
         || !catalog
             .directories
             .iter()
@@ -810,22 +863,29 @@ async fn launch(
         .iter()
         .find(|c| c.id == request.command_id)
         .ok_or("运行命令已变化，请刷新")?;
-    let cwd = resolve_cwd(Path::new(&directory.path), &command.cwd)?;
-    terminals
-        .start(LaunchIntent {
-            project_launch: Some(request.clone()),
-            operation_id: request.operation_id,
-            project_id: project.project_id.to_string(),
-            directory_index: request.directory_index,
-            task_id: Some(request.task_id),
-            command_id: Some(request.command_id),
-            label: command.label.clone(),
-            cwd,
-            command: Some(command.command.clone()),
-            cols: request.cols,
-            rows: request.rows,
-        })
-        .await
+    let target = host.target_of(&project)?;
+    let cwd = if target.is_some() {
+        resolve_remote_cwd(Path::new(&directory.path), &command.cwd)?
+    } else {
+        resolve_cwd(Path::new(&directory.path), &command.cwd)?
+    };
+    let intent = LaunchIntent {
+        project_launch: Some(request.clone()),
+        operation_id: request.operation_id,
+        project_id: project.project_id.to_string(),
+        directory_index: request.directory_index,
+        task_id: Some(request.task_id),
+        command_id: Some(request.command_id),
+        label: command.label.clone(),
+        cwd,
+        command: Some(command.command.clone()),
+        cols: request.cols,
+        rows: request.rows,
+    };
+    match target {
+        Some(target) => terminals.start_on(intent, target).await,
+        None => terminals.start(intent).await,
+    }
 }
 
 pub async fn dispatch(
@@ -920,146 +980,21 @@ pub async fn dispatch(
     }
 }
 
-#[derive(Clone, Serialize)]
-struct InputFile {
-    path: String,
-    text: String,
-    truncated: bool,
-    executable: Option<bool>,
+fn inside_project(relative: &str) -> bool {
+    !relative.contains('\\')
+        && Path::new(relative)
+            .components()
+            .all(|c| matches!(c, Component::CurDir | Component::Normal(_)))
 }
-fn executable(path: &Path) -> Option<bool> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        Some(std::fs::metadata(path).ok()?.permissions().mode() & 0o111 != 0)
+/// By name only: the directory is on another machine, which reports if it is missing.
+fn resolve_remote_cwd(root: &Path, relative: &str) -> Result<PathBuf, String> {
+    if !inside_project(relative) {
+        return Err("运行目录必须位于项目内".into());
     }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        None
-    }
-}
-fn relevant(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    name.starts_with("readme")
-        || [
-            "package.json",
-            "pyproject.toml",
-            "cargo.toml",
-            "go.mod",
-            "pom.xml",
-            "build.gradle",
-            "build.gradle.kts",
-            "makefile",
-            "justfile",
-            "dockerfile",
-            "compose.yml",
-            "compose.yaml",
-            "docker-compose.yml",
-            "docker-compose.yaml",
-            "procfile",
-            "deno.json",
-            "deno.jsonc",
-            "pubspec.yaml",
-            "gemfile",
-            "pnpm-lock.yaml",
-            "package-lock.json",
-            "yarn.lock",
-            "bun.lock",
-            "bun.lockb",
-        ]
-        .contains(&name.as_str())
-        || [".sh", ".ps1", ".cmd", ".bat"]
-            .iter()
-            .any(|suffix| name.ends_with(suffix))
-}
-fn scan(root: &Path) -> Result<Vec<InputFile>, String> {
-    let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
-    let mut queue = std::collections::VecDeque::from([(root.clone(), 0)]);
-    let mut files = vec![];
-    let mut budget = 96_000_usize;
-    let mut visited = 0;
-    while let Some((directory, depth)) = queue.pop_front() {
-        let mut entries = std::fs::read_dir(&directory)
-            .map_err(|e| e.to_string())?
-            .flatten()
-            .take(4001 - visited)
-            .collect::<Vec<_>>();
-        entries.sort_by_key(std::fs::DirEntry::file_name);
-        for entry in entries {
-            visited += 1;
-            if visited > 4000 || files.len() >= 120 || budget == 0 {
-                return Ok(files);
-            }
-            let kind = entry.file_type().map_err(|e| e.to_string())?;
-            if kind.is_symlink() {
-                continue;
-            }
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.')
-                || [
-                    "node_modules",
-                    "target",
-                    "vendor",
-                    "dist",
-                    "build",
-                    "coverage",
-                    "venv",
-                    "__pycache__",
-                ]
-                .contains(&name.as_str())
-            {
-                continue;
-            }
-            if kind.is_dir() && depth < 3 {
-                queue.push_back((entry.path(), depth + 1));
-            } else if kind.is_file() && relevant(&name) {
-                let relative = entry
-                    .path()
-                    .strip_prefix(&root)
-                    .map_err(|e| e.to_string())?
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                if name.contains("lock") && name != "Dockerfile" {
-                    files.push(InputFile {
-                        path: relative,
-                        text: "[lockfile present]".into(),
-                        truncated: true,
-                        executable: None,
-                    });
-                    continue;
-                }
-                let limit = budget.min(12_000);
-                let mut bytes = vec![];
-                std::fs::File::open(entry.path())
-                    .map_err(|e| e.to_string())?
-                    .take((limit + 1) as u64)
-                    .read_to_end(&mut bytes)
-                    .map_err(|e| e.to_string())?;
-                let truncated = bytes.len() > limit;
-                bytes.truncate(limit);
-                budget -= bytes.len();
-                if bytes.contains(&0) {
-                    continue;
-                }
-                let text = String::from_utf8_lossy(&bytes).into_owned();
-                files.push(InputFile {
-                    path: relative,
-                    text,
-                    truncated,
-                    executable: executable(&entry.path()),
-                });
-            }
-        }
-    }
-    Ok(files)
+    Ok(root.join(relative))
 }
 fn resolve_cwd(root: &Path, relative: &str) -> Result<PathBuf, String> {
-    if relative.contains('\\')
-        || Path::new(relative)
-            .components()
-            .any(|c| !matches!(c, Component::CurDir | Component::Normal(_)))
-    {
+    if !inside_project(relative) {
         return Err("运行目录必须位于项目内".into());
     }
     let root = root.canonicalize().map_err(|e| e.to_string())?;
@@ -1072,7 +1007,12 @@ fn resolve_cwd(root: &Path, relative: &str) -> Result<PathBuf, String> {
     }
     Ok(target)
 }
-fn parse_commands(text: &str, root: &Path, files: &[InputFile]) -> Result<Vec<RunCommand>, String> {
+fn parse_commands(
+    text: &str,
+    root: &Path,
+    files: &[InputFile],
+    local: bool,
+) -> Result<Vec<RunCommand>, String> {
     #[derive(Deserialize)]
     struct Response {
         commands: Vec<Recipe>,
@@ -1116,7 +1056,11 @@ fn parse_commands(text: &str, root: &Path, files: &[InputFile]) -> Result<Vec<Ru
         {
             return Err("Agent 返回的命令缺少有效名称、来源或单行命令，请重新分析".into());
         }
-        resolve_cwd(root, &recipe.cwd)?;
+        if local {
+            resolve_cwd(root, &recipe.cwd)?;
+        } else {
+            resolve_remote_cwd(root, &recipe.cwd)?;
+        }
         if seen.insert((recipe.cwd.clone(), command.to_owned())) {
             result.push(RunCommand {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -1171,8 +1115,13 @@ mod tests {
         }];
         let recipe = serde_json::json!({"label":"运行本地调试", "command":"npm run dev", "cwd":".", "source":"package.json"});
         let response = serde_json::json!({"commands":[recipe.clone(), recipe.clone()]}).to_string();
-        let commands =
-            parse_commands(&format!("```json\n{response}\n```"), root.path(), &files).unwrap();
+        let commands = parse_commands(
+            &format!("```json\n{response}\n```"),
+            root.path(),
+            &files,
+            true,
+        )
+        .unwrap();
         assert_eq!(commands.len(), 1);
         assert_eq!(commands[0].command, "npm run dev");
         for (field, value) in [
@@ -1188,13 +1137,14 @@ mod tests {
                 parse_commands(
                     &serde_json::json!({"commands":[invalid]}).to_string(),
                     root.path(),
-                    &files
+                    &files,
+                    true
                 )
                 .is_err()
             );
         }
         assert!(
-            parse_commands("{\"commands\":[]}", root.path(), &files)
+            parse_commands("{\"commands\":[]}", root.path(), &files, true)
                 .unwrap()
                 .is_empty()
         );

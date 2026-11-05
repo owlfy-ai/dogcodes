@@ -16,6 +16,10 @@ mod task_deletion;
 pub use maintenance::{StorageCleanupPlan, StorageCleanupResult};
 mod owners;
 mod quota;
+#[cfg(feature = "sqlite-index")]
+mod retired;
+#[cfg(not(feature = "sqlite-index"))]
+#[path = "storage/retired_file.rs"]
 mod retired;
 pub use cleanup::{CleanupPlan, CleanupResult};
 pub use metadata::MetadataCleanupPlan;

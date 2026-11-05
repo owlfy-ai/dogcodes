@@ -3,12 +3,12 @@ import { reviewStartOperations } from "./reviewStartOperations";
 import { useEnabledAgents } from "./agentPreferences";
 import { useContext, useEffect, useRef, useState } from "react";
 import { ulid } from "ulid";
-import type { CoreClient, ExecutorRef, HistoricalReviewKind, ReviewKind, TaskId, TimelineItem, TurnReviewRequest, TurnReviewRun } from "@dogcodes/protocol";
+import type { BootstrapSnapshot, CoreClient, ExecutorRef, HistoricalReviewKind, ReviewKind, TaskId, TimelineItem, TurnReviewRequest, TurnReviewRun } from "@dogcodes/protocol";
 import { reviewFindingPath } from "./reviewTarget";
 import { ReviewResult } from "./ReviewResult";
 import { ReviewFailure } from "./reviewFailure";
 import { AgentIcon, providerLabel } from "./agentPresentation";
-import { reviewAgentExecutors } from "./agentOptions";
+import { installationsForTask, reviewAgentExecutors } from "./agentOptions";
 import { AgentQuotaContext } from "./AgentQuotaRing";
 import { ActionIcon, ReviewActionButton, ReviewAgentPicker, reviewKinds } from "./ReviewActions";
 import "./turnActions.css";
@@ -24,15 +24,13 @@ const supportedKind = (kind: HistoricalReviewKind): kind is ReviewKind => kind =
 const states = { queued: "queued", running: "running", cancelling: "cancelling", completed: "completed", failed: "failed", cancelled: "cancelled", interrupted: "interrupted" };
 const active = (r: TurnReviewRun) => ["queued", "running", "cancelling"].includes(r.status);
 const executorKey = (e: ExecutorRef) => `${e.providerId}:${e.installationId ?? ""}`;
-const executorCache = new WeakMap<CoreClient, { at: number; promise: Promise<ExecutorRef[]> }>();
-function availableReviewExecutors(client: CoreClient, refresh = false): Promise<ExecutorRef[]> {
+const executorCache = new WeakMap<CoreClient, { at: number; promise: Promise<[BootstrapSnapshot, ExecutorRef[]]> }>();
+function availableReviewExecutors(client: CoreClient, taskId: string, refresh = false): Promise<ExecutorRef[]> {
   if (!client.reviewExecutors) return Promise.resolve([]);
   const cached = executorCache.get(client);
-  if (!refresh && cached && Date.now() - cached.at < 1000) return cached.promise;
-  const promise = Promise.all([client.bootstrap(), client.reviewExecutors()])
-    .then(([snapshot, connected]) => reviewAgentExecutors(snapshot.installations, connected));
-  executorCache.set(client, { at: Date.now(), promise });
-  return promise;
+  const promise = !refresh && cached && Date.now() - cached.at < 1000 ? cached.promise : Promise.all([client.bootstrap(), client.reviewExecutors()]);
+  if (promise !== cached?.promise) executorCache.set(client, { at: Date.now(), promise });
+  return promise.then(([snapshot, connected]) => reviewAgentExecutors(installationsForTask(snapshot, taskId), connected));
 }
 const cache = new WeakMap<CoreClient, Map<TaskId, { at: number; promise: Promise<TurnReviewRun[]> }>>();
 function reviews(client: CoreClient, taskId: TaskId, force = false) {
@@ -61,13 +59,13 @@ export function TurnActions({ client, items, turnId, completedAt, startedAt, onR
   const busyRef = useRef(false);
   useEffect(() => {
     mounted.current = true;
-    void availableReviewExecutors(client).then(list => { if (mounted.current) setExecutors(list); }).catch(() => { if (mounted.current) setError(t("turnActions.agentsFailed")); });
+    void availableReviewExecutors(client, taskId).then(list => { if (mounted.current) setExecutors(list); }).catch(() => { if (mounted.current) setError(t("turnActions.agentsFailed")); });
     return () => { mounted.current = false; };
   }, [client]);
   useEffect(() => {
     if (!agentMenu) return;
     let valid = true;
-    void availableReviewExecutors(client, true).then(list => { if (valid) setExecutors(list); }).catch(() => { if (valid) setError(t("turnActions.agentsFailed")); });
+    void availableReviewExecutors(client, taskId, true).then(list => { if (valid) setExecutors(list); }).catch(() => { if (valid) setError(t("turnActions.agentsFailed")); });
     return () => { valid = false; };
   }, [agentMenu, client]);
   useEffect(() => {

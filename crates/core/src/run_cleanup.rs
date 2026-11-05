@@ -394,6 +394,7 @@ impl Core {
             return Ok(());
         };
         let scope = crate::TurnWorkspaceScope {
+            workspace: self.workspace_for(state.workspace.target_id.as_ref()),
             task_id: task.clone(),
             turn_id: run.turn_id.clone(),
             run_id: run.run_id,

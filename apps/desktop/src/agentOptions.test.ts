@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { InstallationSummary } from "@dogcodes/protocol";
-import { currentAgentExecutor, visibleAgentInstallations, readyAgentInstallations, reviewAgentExecutors } from "./agentOptions";
+import { currentAgentExecutor, installationsForTask, visibleAgentInstallations, readyAgentInstallations, reviewAgentExecutors } from "./agentOptions";
 const installation = (providerId: string, installationId: string, status = "ready") => ({ providerId, installationId, status }) as InstallationSummary;
 it("uses the backend-selected installations and hides the internal driver", () => {
   const selected = [installation("claude-code", "ins_terminal"), installation("codex", "ins_codex", "broken"), installation("fake", "ins_fake")];
@@ -25,4 +25,15 @@ it("reconciles replaced or missing installation IDs without changing Agents", ()
   expect(currentAgentExecutor(selected, [installation("cursor", "ins_new", "broken")])).toBe(selected);
   expect(currentAgentExecutor(selected, [])).toBe(selected);
   expect(currentAgentExecutor(selected, [installation("cursor", "ins_a"), installation("cursor", "ins_b")])).toBe(selected);
+});
+
+it("offers only the agents on the machine holding the conversation's project", () => {
+  const on = (installationId: string, targetId: string | null) => ({ installationId, targetId, providerId: "kimi" }) as unknown as InstallationSummary;
+  const snapshot = {
+    installations: [on("here", null), on("server", "tgt_1"), on("other", "tgt_2")],
+    projects: [{ projectId: "prj_local", targetId: null }, { projectId: "prj_remote", targetId: "tgt_1" }],
+    tasks: [{ taskId: "tsk_local", projectId: "prj_local" }, { taskId: "tsk_remote", projectId: "prj_remote" }],
+  } as unknown as Parameters<typeof installationsForTask>[0];
+  expect(installationsForTask(snapshot, "tsk_remote").map(item => item.installationId)).toEqual(["server"]);
+  expect(installationsForTask(snapshot, "tsk_local").map(item => item.installationId)).toEqual(["here"]);
 });

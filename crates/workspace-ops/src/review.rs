@@ -1,30 +1,30 @@
 //! Host boundary: resolve workspace roots from Task IDs, never client paths.
 pub mod batch_file_actions;
-pub(crate) mod git_operations;
+pub mod git_operations;
 mod git_push_target;
-pub(crate) mod git_workflow;
-pub(crate) mod mutation_operations;
-pub(crate) mod operation_history;
+pub mod git_workflow;
+pub mod mutation_operations;
+pub mod operation_history;
 mod operation_journal;
 mod project_analysis;
 mod recorded_changes;
 mod remote_actions;
-pub(crate) mod service;
+pub mod service;
 mod snapshot_leases;
-pub(crate) mod watch;
-use snapshot_leases::{LeaseRequest, SnapshotLeases};
+pub mod watch;
+pub use snapshot_leases::LeaseRequest;
+use snapshot_leases::SnapshotLeases;
 pub mod workspaces;
 
-use crate::{DesktopState, review_window::require_task_window};
 use agent_domain::{ArtifactId, TaskId};
+pub use agent_workspace::review::git::{BranchSummary, CommitSummary};
 use agent_workspace::review::text::{TextBlock, TextComparison};
 use agent_workspace::review::{
     CompareMode, FileChange, ReviewStore,
-    git::{BranchSummary, CommitSummary, GitReview, ReviewRoot},
+    git::{GitReview, ReviewRoot},
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
-use tauri::Manager;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,9 +99,9 @@ fn prepare_statistics(root: &mut RootChanges, store: &ReviewStore) {
 }
 
 pub struct ReviewHost {
-    pub(crate) git_operations: Arc<git_operations::GitOperations>,
-    pub(crate) mutations: Arc<mutation_operations::MutationOperations>,
-    pub(crate) changes: watch::Changes,
+    pub git_operations: Arc<git_operations::GitOperations>,
+    pub mutations: Arc<mutation_operations::MutationOperations>,
+    pub changes: watch::Changes,
     pub directory: PathBuf,
     pub gate: tokio::sync::Mutex<()>,
     snapshots: std::sync::Mutex<BTreeMap<String, ReviewSnapshot>>,
@@ -110,6 +110,7 @@ pub struct ReviewHost {
 }
 
 impl ReviewHost {
+    #[must_use]
     pub fn new(directory: PathBuf) -> Self {
         let changes = watch::Changes::new();
         Self {
@@ -130,12 +131,12 @@ impl ReviewHost {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn has_snapshot(&self, id: &str) -> bool {
+    #[doc(hidden)]
+    pub fn has_snapshot(&self, id: &str) -> bool {
         self.snapshots.lock().unwrap().contains_key(id)
     }
 
-    pub(crate) fn forget_task(&self, task: &str) -> Result<(), String> {
+    pub fn forget_task(&self, task: &str) -> Result<(), String> {
         self.git_operations.forget_task(task)?;
         self.mutations.forget_task(task)?;
         self.changes.changed();
@@ -155,7 +156,7 @@ impl ReviewHost {
         Ok(())
     }
 
-    pub(crate) fn file_change(
+    pub fn file_change(
         &self,
         task_id: &str,
         snapshot_id: &str,
@@ -366,16 +367,6 @@ fn select_query_roots(
     Ok(selected)
 }
 
-#[tauri::command]
-pub async fn core_review_query(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    query: ReviewQuery,
-) -> Result<ReviewSnapshot, String> {
-    require_task_window(window.label(), &query.task_id)?;
-    state.core.review(service::ReviewCall::Query(query)).await
-}
-
 fn publish_snapshot(
     cache: &mut BTreeMap<String, ReviewSnapshot>,
     leases: &mut SnapshotLeases,
@@ -398,16 +389,6 @@ fn publish_snapshot(
     leases.publish(&snapshot.id, now);
     cache.insert(snapshot.id.clone(), snapshot);
     Ok(evicted)
-}
-
-#[tauri::command]
-pub async fn core_review_snapshot_lease(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    request: LeaseRequest,
-) -> Result<(), String> {
-    require_task_window(window.label(), &request.task_id)?;
-    state.core.review(service::ReviewCall::Lease(request)).await
 }
 
 #[derive(Serialize, Deserialize)]
@@ -434,7 +415,8 @@ fn image_preview(
     Ok(image_data_url(&bytes, path))
 }
 
-pub(crate) fn image_data_url(bytes: &[u8], path: &str) -> Option<String> {
+#[must_use]
+pub fn image_data_url(bytes: &[u8], path: &str) -> Option<String> {
     use base64::Engine;
     // SVG stays in an img resource: never inject its markup into the webview.
     let mime = if path.to_ascii_lowercase().ends_with(".svg") {
@@ -460,60 +442,6 @@ pub(crate) fn image_data_url(bytes: &[u8], path: &str) -> Option<String> {
     ))
 }
 
-#[tauri::command]
-pub async fn core_review_file(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-    snapshot_id: String,
-    root_id: String,
-    path: String,
-) -> Result<ReviewFile, String> {
-    require_task_window(window.label(), &task_id)?;
-    state
-        .core
-        .review(service::ReviewCall::File {
-            task_id,
-            snapshot_id,
-            root_id,
-            path,
-        })
-        .await
-}
-
-#[tauri::command]
-pub async fn core_review_history(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-    root_id: String,
-    skip: usize,
-) -> Result<Vec<CommitSummary>, String> {
-    require_task_window(window.label(), &task_id)?;
-    state
-        .core
-        .review(service::ReviewCall::History {
-            task_id,
-            root_id,
-            skip,
-        })
-        .await
-}
-
-#[tauri::command]
-pub async fn core_review_branches(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-    root_id: String,
-) -> Result<Vec<BranchSummary>, String> {
-    require_task_window(window.label(), &task_id)?;
-    state
-        .core
-        .review(service::ReviewCall::Branches { task_id, root_id })
-        .await
-}
-
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IndexAction {
@@ -522,31 +450,6 @@ pub enum IndexAction {
 }
 
 // Tauri maps each frontend argument to its own parameter.
-#[allow(clippy::too_many_arguments)]
-#[tauri::command]
-pub async fn core_review_index(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    operation_id: String,
-    task_id: String,
-    snapshot_id: String,
-    root_id: String,
-    paths: Vec<String>,
-    action: IndexAction,
-) -> Result<(), String> {
-    require_task_window(window.label(), &task_id)?;
-    state
-        .core
-        .review(service::ReviewCall::Index {
-            operation_id,
-            task_id,
-            snapshot_id,
-            root_id,
-            paths,
-            action,
-        })
-        .await
-}
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -558,42 +461,12 @@ pub struct DiscardRequest {
     pub confirmed: bool,
 }
 
-#[tauri::command]
-pub async fn core_review_discard(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    operation_id: String,
-    request: DiscardRequest,
-) -> Result<String, String> {
-    require_task_window(window.label(), &request.task_id)?;
-    state
-        .core
-        .review(service::ReviewCall::Discard {
-            operation_id,
-            request,
-        })
-        .await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use agent_workspace::review::ChangeKind;
     use agent_workspace::review::{SnapshotBudget, compare_snapshots};
     use std::fmt::Write;
-
-    #[test]
-    fn file_options_keep_the_resolved_path_when_application_discovery_fails() {
-        let path = PathBuf::from("/workspace/history/report.html");
-        for result in [Ok(Vec::new()), Err("应用查询暂时失败".into())] {
-            let failed = result.is_err();
-            let options = WorkspaceFileApplications::from_result(path.clone(), result);
-            let json = serde_json::to_value(options).unwrap();
-            assert_eq!(json["absolutePath"], "/workspace/history/report.html");
-            assert!(json["applications"].is_array());
-            assert_eq!(json["error"].is_string(), failed);
-        }
-    }
 
     #[tokio::test]
     async fn directory_scope_filters_git_modes_and_freezes_each_repository() {
@@ -907,112 +780,6 @@ mod tests {
     }
 }
 
-/// Resolve and confine every file-open request on the host, including app discovery.
-async fn workspace_file(
-    state: &DesktopState,
-    task_id: &str,
-    path: &str,
-) -> Result<PathBuf, String> {
-    state
-        .core
-        .review(service::ReviewCall::WorkspacePath {
-            task_id: task_id.into(),
-            path: path.into(),
-        })
-        .await
-}
-
-#[tauri::command]
-pub async fn core_reveal_workspace_file(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-    path: String,
-) -> Result<(), String> {
-    require_task_window(window.label(), &task_id)?;
-    let path = workspace_file(&state, &task_id, &path).await?;
-    crate::review_file_actions::reveal_file(path).await
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceFileApplications {
-    absolute_path: String,
-    applications: Vec<open_with::Application>,
-    error: Option<String>,
-}
-
-impl WorkspaceFileApplications {
-    fn from_result(path: PathBuf, result: Result<Vec<open_with::Application>, String>) -> Self {
-        let (applications, error) = match result {
-            Ok(applications) => (applications, None),
-            Err(error) => (Vec::new(), Some(error)),
-        };
-        Self {
-            absolute_path: path.to_string_lossy().into_owned(),
-            applications,
-            error,
-        }
-    }
-}
-
-#[tauri::command]
-pub async fn core_workspace_file_applications(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-    path: String,
-) -> Result<WorkspaceFileApplications, String> {
-    require_task_window(window.label(), &task_id)?;
-    let path = workspace_file(&state, &task_id, &path).await?;
-    let icon_path = path.clone();
-    let applications = tokio::task::spawn_blocking(move || open_with::applications(&icon_path))
-        .await
-        .unwrap_or_else(|_| Err("查询打开方式失败".into()));
-    // Discovery and copying share one authorized resolution. A discovery error
-    // must not discard the resolved file path or disable the fixed footer.
-    Ok(WorkspaceFileApplications::from_result(path, applications))
-}
-
-/// Application IDs are re-resolved against the current system recommendations;
-/// the frontend cannot supply arbitrary executable paths or command arguments.
-#[tauri::command]
-pub async fn core_open_workspace_file(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-    path: String,
-    application_id: Option<String>,
-) -> Result<(), String> {
-    require_task_window(window.label(), &task_id)?;
-    let candidate = workspace_file(&state, &task_id, &path).await?;
-    if let Some(id) = application_id {
-        return tokio::task::spawn_blocking(move || open_with::open_with(&candidate, &id))
-            .await
-            .map_err(|_| "打开文件失败")?;
-    }
-    #[cfg(target_os = "macos")]
-    let mut command = tokio::process::Command::new("/usr/bin/open");
-    #[cfg(target_os = "windows")]
-    let mut command = {
-        let mut command = tokio::process::Command::new("rundll32.exe");
-        command.arg("url.dll,FileProtocolHandler");
-        command
-    };
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    let mut command = tokio::process::Command::new("xdg-open");
-    command.arg(candidate).kill_on_drop(true);
-    let status = tokio::time::timeout(std::time::Duration::from_secs(10), command.status())
-        .await
-        .map_err(|_| "打开文件超时")?
-        .map_err(|_| "无法打开文件")?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err("无法打开文件，请检查此文件类型的默认应用设置".into())
-    }
-}
-
 async fn run_commit_command(
     path: &std::path::Path,
     args: &[&str],
@@ -1136,37 +903,6 @@ async fn validate_commit_preview(
 }
 
 // Tauri maps each frontend argument to its own parameter.
-#[allow(clippy::too_many_arguments)]
-#[tauri::command]
-pub async fn core_review_git_action(
-    window: tauri::WebviewWindow,
-    operation_id: String,
-    task_id: String,
-    root_id: String,
-    action: String,
-    message: String,
-    stage_all: Option<bool>,
-    snapshot_id: Option<String>,
-    workflow: Option<git_workflow::GitWorkflow>,
-) -> Result<bool, String> {
-    require_task_window(window.label(), &task_id)?;
-    let state = window
-        .try_state::<DesktopState>()
-        .ok_or("Desktop state unavailable")?;
-    state
-        .core
-        .review(service::ReviewCall::GitAction(git_operations::GitRequest {
-            operation_id,
-            task_id,
-            root_id,
-            action,
-            message,
-            stage_all,
-            snapshot_id,
-            workflow,
-        }))
-        .await
-}
 
 #[cfg(test)]
 mod smart_commit_tests {
@@ -1306,27 +1042,6 @@ mod smart_commit_tests {
     }
 }
 
-#[tauri::command]
-pub async fn core_review_commit_summary(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-    root_id: String,
-    executor: agent_domain::ExecutorRef,
-    language: Option<String>,
-) -> Result<String, String> {
-    require_task_window(window.label(), &task_id)?;
-    state
-        .core
-        .review(service::ReviewCall::CommitSummary {
-            task_id,
-            root_id,
-            executor,
-            language,
-        })
-        .await
-}
-
 #[cfg(test)]
 mod svg_preview_tests {
     use super::*;
@@ -1342,40 +1057,6 @@ mod svg_preview_tests {
                 .starts_with("data:image/png;base64,")
         );
     }
-}
-
-#[tauri::command]
-pub async fn core_review_git_operation(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-    operation_id: String,
-) -> Result<Option<git_operations::GitReceipt>, String> {
-    require_task_window(window.label(), &task_id)?;
-    state
-        .core
-        .review(service::ReviewCall::GitOperation {
-            task_id,
-            operation_id,
-        })
-        .await
-}
-
-#[tauri::command]
-pub async fn core_review_file_operation(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-    operation_id: String,
-) -> Result<Option<mutation_operations::MutationReceipt>, String> {
-    require_task_window(window.label(), &task_id)?;
-    state
-        .core
-        .review(service::ReviewCall::FileOperation {
-            task_id,
-            operation_id,
-        })
-        .await
 }
 
 #[cfg(all(test, unix))]
@@ -1406,21 +1087,4 @@ mod timeout_tests {
         assert!(error.starts_with(UNKNOWN_GIT_EFFECT));
         assert_eq!(std::fs::read_to_string(effect).unwrap(), "done");
     }
-}
-
-#[tauri::command]
-pub async fn core_review_file_close(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    task_id: String,
-    operation_id: String,
-) -> Result<mutation_operations::MutationReceipt, String> {
-    require_task_window(window.label(), &task_id)?;
-    state
-        .core
-        .review(service::ReviewCall::FileClose {
-            task_id,
-            operation_id,
-        })
-        .await
 }

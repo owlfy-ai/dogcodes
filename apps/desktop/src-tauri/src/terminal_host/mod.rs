@@ -2,6 +2,7 @@
 //! independent of subscribers. Launch intent is recorded before spawning.
 mod input_stream;
 mod launch_intents;
+mod remote;
 #[cfg(any(windows, test))]
 mod startup;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
@@ -525,11 +526,22 @@ impl TerminalHost {
         .await;
         self.start_resolved(intent, shell).await
     }
+    /// The same session on another machine. Its directory is checked over there.
+    pub async fn start_on(
+        &self,
+        intent: LaunchIntent,
+        target: agent_runtime::SharedTarget,
+    ) -> Result<TerminalInfo, String> {
+        self.start_at(intent, Place::Target(target)).await
+    }
     async fn start_resolved(
         &self,
         intent: LaunchIntent,
         shell: Option<PathBuf>,
     ) -> Result<TerminalInfo, String> {
+        self.start_at(intent, Place::Here { shell }).await
+    }
+    async fn start_at(&self, intent: LaunchIntent, place: Place) -> Result<TerminalInfo, String> {
         let _admission = self.admission.lock().await;
         if let Some(error) = &self.recovery_error {
             return Err(error.clone());
@@ -560,11 +572,17 @@ impl TerminalHost {
         {
             return Err("无效的终端启动请求".into());
         }
-        let cwd =
-            std::fs::canonicalize(&intent.cwd).map_err(|e| format!("无法打开项目目录：{e}"))?;
-        if !cwd.is_dir() {
-            return Err("项目目录不存在".into());
-        }
+        let cwd = match &place {
+            Place::Here { .. } => {
+                let cwd = std::fs::canonicalize(&intent.cwd)
+                    .map_err(|e| format!("无法打开项目目录：{e}"))?;
+                if !cwd.is_dir() {
+                    return Err("项目目录不存在".into());
+                }
+                cwd
+            }
+            Place::Target(_) => intent.cwd.clone(),
+        };
         let info = TerminalInfo {
             id: intent.operation_id.clone(),
             epoch: self.epoch.clone(),
@@ -608,14 +626,7 @@ impl TerminalHost {
         let directory = self.directory.clone();
         let sessions = self.sessions.clone();
         let result = tokio::task::spawn_blocking(move || {
-            spawn(
-                spawning,
-                cwd,
-                dimensions,
-                shell.as_deref(),
-                directory,
-                sessions,
-            )
+            spawn(spawning, cwd, dimensions, &place, directory, sessions)
         })
         .await;
         let failure = match result {
@@ -812,14 +823,26 @@ fn command(text: Option<&str>, shell: Option<&Path>, cwd: &Path) -> CommandBuild
     command.arg(text);
     command
 }
-fn spawn(
-    session: Arc<Session>,
+/// Where a session runs. Only how it starts differs: everything after that treats
+/// the terminal and its process alike.
+enum Place {
+    Here { shell: Option<PathBuf> },
+    Target(agent_runtime::SharedTarget),
+}
+
+struct Started {
+    master: Box<dyn MasterPty + Send>,
+    child: Box<dyn Child + Send + Sync>,
+    reader: Box<dyn Read + Send>,
+    writer: Box<dyn Write + Send>,
+}
+
+fn start_here(
+    command_text: Option<&str>,
     cwd: PathBuf,
     dimensions: PtySize,
     shell: Option<&Path>,
-    directory: Option<PathBuf>,
-    sessions: Sessions,
-) -> Result<(), String> {
+) -> Result<Started, String> {
     let pair = native_pty_system()
         .openpty(dimensions)
         .map_err(|e| e.to_string())?;
@@ -834,9 +857,9 @@ fn spawn(
         )
         .map_err(|e| e.to_string())?;
     }
-    let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
-    let mut command = command(session.intent.command.as_deref(), shell, &cwd);
+    let mut command = command(command_text, shell, &cwd);
     command.cwd(cwd);
     command.env("TERM", "xterm-256color");
     let child = pair
@@ -844,8 +867,34 @@ fn spawn(
         .spawn_command(command)
         .map_err(|e| e.to_string())?;
     drop(pair.slave);
-    let mut process = Process {
+    Ok(Started {
         master: pair.master,
+        child,
+        reader,
+        writer,
+    })
+}
+
+fn spawn(
+    session: Arc<Session>,
+    cwd: PathBuf,
+    dimensions: PtySize,
+    place: &Place,
+    directory: Option<PathBuf>,
+    sessions: Sessions,
+) -> Result<(), String> {
+    let command_text = session.intent.command.as_deref();
+    let Started {
+        master,
+        child,
+        mut reader,
+        writer,
+    } = match place {
+        Place::Here { shell } => start_here(command_text, cwd, dimensions, shell.as_deref())?,
+        Place::Target(target) => remote::start(target, command_text, &cwd, dimensions)?,
+    };
+    let mut process = Process {
+        master,
         pid: child.process_id(),
         child,
         armed: true,

@@ -1,5 +1,5 @@
 //! Bounded filesystem snapshots. No Git initialization, symlink traversal or watchers.
-use agent_core::WorkspaceTurnCapture;
+use agent_protocol::workspace_context::WorkspaceTurnCapture;
 use agent_protocol::{WorkspaceCollectionDiagnostic, WorkspaceDiagnosticKind};
 use async_trait::async_trait;
 use serde_json::{Value, json};

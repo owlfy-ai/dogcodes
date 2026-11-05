@@ -311,6 +311,16 @@ impl CoreRepository for SqliteStore {
             .map_err(storage_error)
     }
 
+    async fn permanently_deleted_tasks(&self) -> Result<Vec<TaskId>, RepositoryError> {
+        let connection = self.connection.lock().map_err(poison_error)?;
+        let mut statement = connection.prepare("SELECT stream_id FROM events WHERE stream_type='task' AND event_type='task.deleted' AND json_extract(payload_json,'$.permanent')=1").map_err(storage_error)?;
+        statement
+            .query_map([], |row| parse_id(row.get(0)?))
+            .map_err(storage_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(storage_error)
+    }
+
     async fn complete_task_cleanup(&self, task_id: &TaskId) -> Result<(), RepositoryError> {
         let connection = self.connection.lock().map_err(poison_error)?;
         connection.execute("UPDATE events SET payload_json=json_set(payload_json,'$.cleanupPending',json('false')) WHERE stream_type='task' AND stream_id=?1 AND event_type='task.deleted' AND json_extract(payload_json,'$.permanent')=1", [task_id.as_str()]).map_err(storage_error)?;

@@ -144,7 +144,7 @@ fn preview_location(value: &str, port: u16) -> String {
     relative
 }
 impl Host {
-    async fn target(&self, core: &Core, id: &str) -> Result<u16, String> {
+    async fn target(&self, core: &Arc<Core>, id: &str) -> Result<u16, String> {
         let (port, task) = {
             let mut targets = self.targets.lock().await;
             let target = targets.get_mut(id).ok_or("预览已结束，请重新打开")?;
@@ -157,7 +157,7 @@ impl Host {
         crate::workspace_service::project_paths(core, &task).await?;
         Ok(port)
     }
-    async fn web(&self, core: &Core, id: &str) -> Result<Arc<Web>, String> {
+    async fn web(&self, core: &Arc<Core>, id: &str) -> Result<Arc<Web>, String> {
         let web = self
             .webs
             .lock()

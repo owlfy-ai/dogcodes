@@ -1,7 +1,6 @@
 use super::{
-    CompareMode, DesktopState, FileChange, GitReview, ReviewStore, RootChanges,
-    require_task_window,
-    service::{ReviewCall, ReviewContext, roots},
+    CompareMode, FileChange, GitReview, ReviewStore, RootChanges,
+    service::{ReviewContext, roots},
 };
 use agent_workspace::review::{FileKind, recovery::batch::FileBatchResult};
 use serde::{Deserialize, Serialize};
@@ -20,7 +19,7 @@ pub enum BatchFileAction {
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BatchFileRequest {
-    pub(super) task_id: String,
+    pub task_id: String,
     snapshot_id: String,
     root_id: String,
     paths: Vec<String>,
@@ -118,23 +117,6 @@ async fn discard_selected(
     .map_err(|_| "文件操作中断，请刷新检查；已准备的备份保留在恢复记录中")?
 }
 
-#[tauri::command]
-pub async fn core_review_batch_files(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, DesktopState>,
-    operation_id: String,
-    request: BatchFileRequest,
-) -> Result<FileBatchResult, String> {
-    require_task_window(window.label(), &request.task_id)?;
-    state
-        .core
-        .review(ReviewCall::BatchFiles {
-            operation_id,
-            request,
-        })
-        .await
-}
-
 pub(super) async fn execute(
     state: &ReviewContext<'_>,
     request: BatchFileRequest,
@@ -142,10 +124,7 @@ pub(super) async fn execute(
     if matches!(request.action, BatchFileAction::Discard) && !request.confirmed {
         return Err("批量丢弃修改需要明确确认".into());
     }
-    let _access = state
-        .core
-        .try_workspace_mutation()
-        .map_err(|e| e.to_string())?;
+    let _access = state.core.try_workspace_mutation().await?;
     let result = state
         .review
         .snapshots
@@ -172,17 +151,9 @@ pub(super) async fn execute(
     {
         return Err("项目目录范围已改变，请刷新".into());
     }
-    if state
-        .core
-        .bootstrap()
-        .await
-        .map_err(|e| e.to_string())?
-        .tasks
-        .iter()
-        .any(|task| {
-            task.task_id.to_string() == request.task_id && task.active_primary_run.is_some()
-        })
-    {
+    if state.core.bootstrap().await?.tasks.iter().any(|task| {
+        task.task_id.to_string() == request.task_id && task.active_primary_run.is_some()
+    }) {
         return Err("Agent 正在运行，请等待结束后操作".into());
     }
     let changes = selected_changes(&result, &request.paths, &request.action)?;
