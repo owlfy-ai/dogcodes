@@ -1,6 +1,9 @@
 import { type FormEvent, type MouseEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ConfirmDialog } from "./AppDialog";
 import { HostTerminalTab } from "./HostTerminalTab";
+import { orderAgents, useAgentPreferences } from "./agentPreferences";
+import { AgentIcon, providerLabel } from "./agentPresentation";
 import { LoadingStatus } from "./LoadingStatus";
 import { ReviewEmptyState } from "./ReviewEmptyState";
 import { SidebarNavIcon } from "./SidebarNavIcon";
@@ -113,6 +116,8 @@ function useReconnect(api: TargetApi, targetId: string, automatic = false) {
     return () => clearTimeout(timer);
   }, [automatic, phase, errorKind, targetId]);
   return {
+    status: state.status,
+    connect: () => reconnect(owner),
     offline: state.offline,
     failure: state.failure ? userFacingError(state.failure, text("loadFailed")) : phase === "failed" && errorKind ? text(ERROR_KEYS[errorKind]) : "",
     button: { disabled: connecting, label: text(connecting ? "reconnecting" : "reconnect"), onClick: () => void reconnect(owner) },
@@ -162,8 +167,10 @@ export function TargetOfflinePanel({ api = tauriTargetApi, targetId, visible, st
   </>;
 }
 
-function ConnectionProgress({ api, targetId, onEdit, onClose, onBrowse, onCancel, autoBrowse = false }: {
+function ConnectionProgress({ api, targetId, onEdit, onClose, onBrowse, onCancel, autoBrowse = false, waitForScan = false }: {
   api: TargetApi; targetId: string; onEdit: () => void; onClose: () => void; onBrowse?: () => void;
+  /** Connected only to find its agents, so finishing before that would throw it away. */
+  waitForScan?: boolean;
   /** Goes on to the folders once connected, unless there is something to read here first. */
   autoBrowse?: boolean;
   /** Where cancelling leads, when this is shown in a tab instead of the settings dialog. */
@@ -250,7 +257,7 @@ function ConnectionProgress({ api, targetId, onEdit, onClose, onBrowse, onCancel
         <button className="send" type="button" onClick={() => void api.connect(targetId, null).catch(cause => setFailure(userFacingError(cause, text("loadFailed"))))}>{text("retry")}</button>
       </>}
       {status.phase === "connecting" && !prompt && <button className="secondary" type="button" onClick={() => { void api.disconnect(targetId).catch(() => {}); (onCancel ?? onEdit)(); }}>{text("cancelConnecting")}</button>}
-      {connected && <button className={onBrowse ? "secondary" : "send"} type="button" onClick={onClose}>{text("done")}</button>}
+      {connected && <button className={onBrowse ? "secondary" : "send"} type="button" disabled={waitForScan && status.scanning} onClick={onClose}>{text("done")}</button>}
       {connected && onBrowse && <button className="send" type="button" disabled={status.scanning} onClick={onBrowse}>{text("openProject")}</button>}
     </footer>
   </div>;
@@ -265,6 +272,8 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
   const { t } = useI18n();
   const text = useTargetText();
   const saved = entry?.target.connection;
+  // A new host connects right away, to find out which agents it has.
+  const connects = forProject || !entry;
   const [targetId, setTargetId] = useState<string | null>(entry?.target.targetId ?? null);
   const [progress, setProgress] = useState(initialProgress);
   const [browsing, setBrowsing] = useState(initialBrowsing);
@@ -318,7 +327,7 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
       onChanged();
       // Sessions on an open link keep the old route, so only a changed route ends them.
       if (saved && !sameRoute(saved, connection)) await api.disconnect(id);
-      if (!forProject) return onClose();
+      if (!connects) return onClose();
       await api.connect(id, null);
       setProgress(true);
     } catch (cause) {
@@ -330,8 +339,8 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
   const madeProject = useRef(false);
   const close = () => {
     if (busy) return;
-    // A connection opened only to choose a folder isn't needed once that is abandoned.
-    if (forProject && targetId && !madeProject.current) void api.release(targetId).catch(() => {});
+    // A connection opened only to look around isn't needed once that is over.
+    if (connects && targetId && !madeProject.current) void api.release(targetId).catch(() => {});
     onChanged();
     onClose();
   };
@@ -343,7 +352,9 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
   }, [api]);
   const title = browsing ? text("browseTitle") : progress ? name.trim() || destination.trim() : entry ? text("editHost") : text("newHost");
   const preview = destination.trim() ? targetRoute(connectionFromForm({ destination, port, user, auth, identityFile, installDirectory, proxyMode, proxyKind, proxyHost, proxyPort })) : "user@host:22";
-  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
+  // Both host-page and new-conversation entry points use this same modal. Keep
+  // it outside their layout/style scopes (notably .remote-page button).
+  return createPortal(<div className="modal-backdrop" role="presentation" onClick={event => event.stopPropagation()} onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
     <div ref={dialog} className="project-dialog target-dialog" role="dialog" aria-modal="true" aria-labelledby="target-dialog-title"
       onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); close(); } }}>
       <header>
@@ -351,9 +362,9 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
         <button type="button" aria-label={t("common.close")} disabled={busy} onClick={close}>×</button>
       </header>
       {browsing && targetId && onProjectReady
-        ? <RemoteProjectDialog api={api} targetId={targetId} onClose={() => setBrowsing(false)} onReady={async projectId => { madeProject.current = true; await onProjectReady(projectId); onClose(); }} />
+        ? <RemoteProjectDialog api={api} targetId={targetId} onClose={close} onReady={async projectId => { madeProject.current = true; await onProjectReady(projectId); onClose(); }} />
         : progress && targetId
-        ? <ConnectionProgress api={api} targetId={targetId} onEdit={() => setProgress(false)} onClose={close} onBrowse={onProjectReady ? () => setBrowsing(true) : undefined} autoBrowse={forProject} />
+        ? <ConnectionProgress api={api} targetId={targetId} onEdit={() => setProgress(false)} onClose={close} onBrowse={onProjectReady ? () => setBrowsing(true) : undefined} autoBrowse={forProject} waitForScan={!entry && !forProject} />
         : <form className="target-form" onSubmit={submit}>
           <label>{text("alias")}<input maxLength={120} disabled={busy} placeholder={destination || text("namePlaceholder")} value={name} onChange={event => setName(event.target.value)} /></label>
           {hosts.length > 0 && <label>{text("importConfig")}
@@ -401,11 +412,11 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
           {message && <div className="error" role="alert">{message}</div>}
           <footer>
             <button className="secondary" type="button" disabled={busy} onClick={close}>{t("common.cancel")}</button>
-            <button className="send" disabled={busy || !destination.trim()}>{text(!forProject ? "saveHost" : entry ? "saveAndConnect" : "addAndConnect")}</button>
+            <button className="send" disabled={busy || !destination.trim()}>{text(!connects ? "saveHost" : entry ? "saveAndConnect" : "addAndConnect")}</button>
           </footer>
         </form>}
     </div>
-  </div>;
+  </div>, document.body);
 }
 
 /** From a host to a project on it: connect if needed, then choose a folder. With no
@@ -420,6 +431,48 @@ const HOST_LIST = "hosts";
 
 function ActionButton({ label, path, onClick }: { label: string; path: string; onClick: (event: MouseEvent) => void }) {
   return <button type="button" aria-label={label} data-tooltip={label} onClick={onClick}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={path} /></svg></button>;
+}
+
+/** The agents found on a host, shown whether or not it is connected. Refreshing a host
+ * nothing else is using connects only for that long. */
+function HostAgents({ api, entry, inUse, onAct, onChanged }: {
+  api: TargetApi; entry: TargetEntry; inUse: boolean; onAct: (work: Promise<unknown>) => void; onChanged: () => void;
+}) {
+  const text = useTargetText();
+  const { resolvedLanguage: lang } = useI18n();
+  const preferences = useAgentPreferences();
+  const { targetId } = entry.target;
+  const { status: live, connect, dialog } = useReconnect(api, targetId);
+  const [connectedToLook, setConnectedToLook] = useState(false);
+  useEffect(() => {
+    if (!connectedToLook) return;
+    if (live?.phase === "failed" || live?.phase === "disconnected") setConnectedToLook(false);
+    // The page's own reading: it follows closely while a scan runs. It wasn't connected
+    // when the refresh was clicked, so this can only be the connection just made.
+    if (entry.status.phase !== "connected" || entry.status.scanning) return;
+    setConnectedToLook(false);
+    if (!inUse) void api.release(targetId).catch(() => {}).finally(onChanged);
+  }, [connectedToLook, live?.phase, entry.status.phase, entry.status.scanning, inUse]);
+  const refresh = () => {
+    if (entry.status.phase === "connected") return onAct(api.rescan(targetId));
+    void connect().then(() => { setConnectedToLook(true); onChanged(); });
+  };
+  const busy = connectedToLook || entry.status.scanning || entry.status.phase === "connecting";
+  const agents = orderAgents(entry.agents, agent => agent.providerId, preferences);
+  return <div className="target-card-agents">
+    {agents.length > 0
+      ? <ul aria-label={text("agentsTitle")}>{agents.map(agent => {
+        const label = `${providerLabel(agent.providerId, lang)} · ${text(AGENT_STATUS_KEYS[agent.status])}`;
+        return <li key={agent.providerId} role="img" aria-label={label} data-tooltip={label} className={agent.status === "ready" ? undefined : "target-card-agent-unready"}><AgentIcon providerId={agent.providerId} size="small" /></li>;
+      })}</ul>
+      : !busy && <span className="target-hint">{text("noAgentsOnHost")}</span>}
+    {busy
+      ? <LoadingStatus>{text("scanningAgents")}</LoadingStatus>
+      : <div className="target-row-actions target-card-connect" onDoubleClick={event => event.stopPropagation()}>
+        <ActionButton label={text("refreshAgents")} path="M20 11a8 8 0 0 0-14-4.5L4 9m0-5v5h5m-5 4a8 8 0 0 0 14 4.5l2-2.5m0 5v-5h-5" onClick={refresh} />
+      </div>}
+    {dialog}
+  </div>;
 }
 
 interface HostTab {
@@ -449,7 +502,7 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
   latestTabs.current = tabs;
   const restored = useRef(false);
   // A tab waiting for its connection should follow it closely.
-  const waiting = tabs.some(tab => !tab.status);
+  const waiting = tabs.some(tab => !tab.status) || !!entries?.some(({ status }) => status.scanning || status.phase === "connecting");
   useEffect(() => {
     if (!visible) return;
     let closed = false;
@@ -461,19 +514,31 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
     return () => { closed = true; clearInterval(timer); };
   }, [api, revision, visible, waiting]);
   // Shells outlive this page and the window, so put back the tabs of those still there.
+  // One that a restart took with it can't come back, and its output is gone too. A new
+  // shell runs nothing by itself, so its tab simply carries on with one.
   useEffect(() => {
     if (!entries || restored.current) return;
     restored.current = true;
-    for (const { target: { targetId } } of entries) {
-      void terminals(targetId).list(hostTerminalScope(targetId)).then(shells => setTabs(current => {
-        const next = [...current];
-        for (const info of [...shells].reverse()) {
-          if (terminalEnded(info) || next.some(tab => tab.operationId === info.id)) continue;
-          next.push({ id: crypto.randomUUID(), targetId, operationId: info.id, resourceId: info.id, status: info.status, epoch: info.epoch,
-            ordinal: Math.max(0, ...next.filter(tab => tab.targetId === targetId).map(tab => tab.ordinal)) + 1 });
-        }
-        return next;
-      })).catch(() => {});
+    for (const entry of entries) {
+      const { targetId } = entry.target;
+      const client = terminals(targetId);
+      void client.list(hostTerminalScope(targetId)).then(shells => {
+        const open = [...shells].reverse().filter(info => !terminalEnded(info));
+        const lost = open.filter(info => info.status === "unknown");
+        for (const info of lost) void client.close(info.id, info.epoch).catch(() => {});
+        setTabs(current => {
+          const next = [...current];
+          for (const info of open) {
+            if (next.some(tab => tab.operationId === info.id)) continue;
+            const ordinal = Math.max(0, ...next.filter(tab => tab.targetId === targetId).map(tab => tab.ordinal)) + 1;
+            next.push({ id: crypto.randomUUID(), targetId, ordinal, ...(info.status === "unknown"
+              ? { operationId: crypto.randomUUID() }
+              : { operationId: info.id, resourceId: info.id, status: info.status, epoch: info.epoch }) });
+          }
+          return next;
+        });
+        if (lost.length) connect(entry);
+      }).catch(() => {});
     }
   }, [entries, terminals]);
   const changed = () => setRevision(value => value + 1);
@@ -509,6 +574,8 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
     }
   };
   const reconnectTab = (tab: HostTab, entry: TargetEntry) => {
+    // Otherwise it would come back as a tab of its own after the next start.
+    if (tab.status === "unknown" && tab.epoch) void terminals(tab.targetId).close(tab.resourceId ?? tab.operationId, tab.epoch).catch(() => {});
     updateTab(tab.id, { operationId: crypto.randomUUID(), resourceId: undefined, status: undefined, epoch: undefined });
     connect(entry);
   };
@@ -567,6 +634,7 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
               <div className="target-row-actions target-card-connect" onDoubleClick={event => event.stopPropagation()}>
                 <ActionButton label={text("connect")} path="M5 12h14m-6-6 6 6-6 6" onClick={event => { if (event.detail <= 1) openTerminal(entry); }} />
               </div>
+              <HostAgents api={api} entry={entry} inUse={tabs.some(tab => tab.targetId === target.targetId)} onAct={act} onChanged={changed} />
             </li>;
           })}
         </ul>}
@@ -587,7 +655,7 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
       onConfirm={() => { setRemoving(null); act(remove(removing)); }}>
       <p>{text("removeConfirm", { name: removing.target.displayName })}</p>
     </ConfirmDialog>}
-    {dialog && (dialog.forProject && dialog.entry
+    {visible && dialog && (dialog.forProject && dialog.entry
       ? <HostProjectDialog api={api} entry={dialog.entry} onChanged={changed} onClose={() => setDialog(null)} onProjectReady={onProjectReady} />
       : <TargetConnectionDialog api={api} entry={dialog.entry} onChanged={changed} onClose={() => setDialog(null)} />)}
   </section>;

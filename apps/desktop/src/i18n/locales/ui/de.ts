@@ -57,6 +57,7 @@ export const uiDe: UiMessages = {
     you: "Du",
   },
   agentPending: {
+    connecting: "Verbindung zu {agent} wird hergestellt",
     label: "Warten auf die Antwort des Agents",
     responding: "Antwortet",
   },

@@ -1,5 +1,6 @@
 //! Read-only subscription lookup using Claude's existing OAuth credentials.
 //! Never refresh/write credentials or send a model prompt.
+use agent_runtime::SharedTarget;
 use driver_api::{QuotaSnapshot, QuotaWindow};
 use serde_json::Value;
 use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
@@ -9,6 +10,8 @@ use tokio::{
     sync::Mutex,
 };
 
+const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+const WRITE_OUT: &str = "\n%header{retry-after}\n%{http_code}";
 const RATE_LIMITED: &str = "claude_quota_rate_limited";
 /// Claude Code renews its own access token whenever it runs; this driver never does.
 const TOKEN_EXPIRED: &str = "claude_quota_token_expired";
@@ -59,13 +62,14 @@ impl Cache {
         &mut self,
         force: bool,
         version: Option<&str>,
+        target: &SharedTarget,
     ) -> Option<QuotaSnapshot> {
         let now = chrono::Utc::now().timestamp_millis();
         if self.due(now, force) {
             self.next_attempt = now + 60_000;
             match tokio::time::timeout(
                 Duration::from_secs(20),
-                pull(now, version, self.admission.clone()),
+                pull(now, version, self.admission.clone(), target),
             )
             .await
             {
@@ -160,11 +164,15 @@ async fn credentials(admission: Arc<Mutex<()>>) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
-async fn pull(
-    now: i64,
-    version: Option<&str>,
-    admission: Arc<Mutex<()>>,
-) -> Result<QuotaSnapshot, PullError> {
+/// What an account has on the machine it is signed in on.
+struct Account {
+    settings: Option<Value>,
+    stored: Option<Value>,
+    base_url: Option<String>,
+    token: Option<String>,
+}
+
+async fn local_account(admission: Arc<Mutex<()>>) -> Account {
     let directory = std::env::var_os("CLAUDE_CONFIG_DIR")
         .map(PathBuf::from)
         .or_else(|| {
@@ -172,14 +180,69 @@ async fn pull(
                 .or_else(|| std::env::var_os("USERPROFILE"))
                 .map(|home| PathBuf::from(home).join(".claude"))
         });
-    let settings: Option<Value> = match directory {
-        Some(directory) => tokio::fs::read(directory.join("settings.json"))
-            .await
-            .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok()),
-        None => None,
+    Account {
+        settings: match directory {
+            Some(directory) => tokio::fs::read(directory.join("settings.json"))
+                .await
+                .ok()
+                .and_then(|bytes| serde_json::from_slice(&bytes).ok()),
+            None => None,
+        },
+        stored: credentials(admission).await,
+        base_url: std::env::var("ANTHROPIC_BASE_URL").ok(),
+        token: std::env::var("CLAUDE_CODE_OAUTH_TOKEN").ok(),
+    }
+}
+
+/// The login on the target. Without a custom directory a Mac keeps it in its keychain.
+const TARGET_CREDENTIALS_SCRIPT: &str = r#"if [ -z "$1" ] && [ -x /usr/bin/security ]; then
+    /usr/bin/security find-generic-password -w -s "Claude Code-credentials" 2>/dev/null && exit 0
+fi
+cat "${1:-$HOME/.claude}/.credentials.json""#;
+const TARGET_SETTINGS_SCRIPT: &str = r#"cat "${1:-$HOME/.claude}/settings.json""#;
+
+async fn target_account(target: &SharedTarget) -> Account {
+    let inherited = |name: &str| target.inherited(name)?.into_string().ok();
+    let directory = inherited("CLAUDE_CONFIG_DIR").unwrap_or_default();
+    let read = |script| {
+        let directory = directory.as_str();
+        async move {
+            let output =
+                agent_runtime::target_script_output(target, script, &[directory], 1024 * 1024)
+                    .await
+                    .ok()?;
+            if !output.status.success() {
+                return None;
+            }
+            serde_json::from_slice::<Value>(&output.stdout).ok()
+        }
     };
-    let base = std::env::var("ANTHROPIC_BASE_URL").ok().or_else(|| {
+    let (settings, stored) = tokio::join!(
+        read(TARGET_SETTINGS_SCRIPT),
+        read(TARGET_CREDENTIALS_SCRIPT)
+    );
+    Account {
+        settings,
+        stored,
+        base_url: inherited("ANTHROPIC_BASE_URL"),
+        token: inherited("CLAUDE_CODE_OAUTH_TOKEN"),
+    }
+}
+
+async fn pull(
+    now: i64,
+    version: Option<&str>,
+    admission: Arc<Mutex<()>>,
+    target: &SharedTarget,
+) -> Result<QuotaSnapshot, PullError> {
+    // Whichever machine the agent runs on holds the account to report.
+    let account = if target.is_local() {
+        local_account(admission.clone()).await
+    } else {
+        target_account(target).await
+    };
+    let settings = account.settings;
+    let base = account.base_url.or_else(|| {
         settings.as_ref()?["env"]["ANTHROPIC_BASE_URL"]
             .as_str()
             .map(str::to_owned)
@@ -187,9 +250,9 @@ async fn pull(
     if base.is_some_and(|base| base.trim_end_matches('/') != "https://api.anthropic.com") {
         return Err("claude_quota_custom_provider".into());
     }
-    let stored = credentials(admission.clone()).await;
+    let stored = account.stored;
     let oauth = stored.as_ref().and_then(|v| v.get("claudeAiOauth"));
-    let configured = std::env::var("CLAUDE_CODE_OAUTH_TOKEN").ok().or_else(|| {
+    let configured = account.token.or_else(|| {
         settings.as_ref()?["env"]["CLAUDE_CODE_OAUTH_TOKEN"]
             .as_str()
             .map(str::to_owned)
@@ -210,27 +273,6 @@ async fn pull(
     {
         return Err("claude_quota_login_required".into());
     }
-    let mut command = Command::new("curl");
-    command
-        .args([
-            "--disable",
-            "--silent",
-            "--fail",
-            "--max-time",
-            "12",
-            "--max-filesize",
-            "1048576",
-            "--write-out",
-            "\n%header{retry-after}\n%{http_code}",
-            "--config",
-            "-",
-            "https://api.anthropic.com/api/oauth/usage",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    agent_runtime::apply_proxy_environment(&mut command);
     // Identify as Claude Code so the service answers with its real status codes.
     let agent = version
         .filter(|v| {
@@ -239,16 +281,50 @@ async fn pull(
                     .all(|b| b.is_ascii_alphanumeric() || b"._-+".contains(&b))
         })
         .map_or_else(|| "claude-code".to_owned(), |v| format!("claude-code/{v}"));
-    let config = format!(
-        "header = \"Authorization: Bearer {token}\"\nheader = \"anthropic-beta: oauth-2025-04-20\"\nuser-agent = \"{agent}\"\n"
-    );
-    let output = command_output(
-        command,
-        Some(config.into_bytes()),
-        1024 * 1024 + 4096,
-        admission,
-    )
-    .await?;
+    let output = if target.is_local() {
+        let mut command = Command::new("curl");
+        command
+            .args([
+                "--disable",
+                "--silent",
+                "--fail",
+                "--max-time",
+                "12",
+                "--max-filesize",
+                "1048576",
+                "--write-out",
+                WRITE_OUT,
+                "--config",
+                "-",
+                USAGE_URL,
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        agent_runtime::apply_proxy_environment(&mut command);
+        let config = format!(
+            "header = \"Authorization: Bearer {token}\"\nheader = \"anthropic-beta: oauth-2025-04-20\"\nuser-agent = \"{agent}\"\n"
+        );
+        command_output(
+            command,
+            Some(config.into_bytes()),
+            1024 * 1024 + 4096,
+            admission,
+        )
+        .await?
+    } else {
+        let user_agent = format!("User-Agent: {agent}");
+        let _permit = admission.lock_owned().await;
+        agent_runtime::target_curl(
+            target,
+            &token,
+            &["anthropic-beta: oauth-2025-04-20", user_agent.as_str()],
+            &["--fail", "--write-out", WRITE_OUT, USAGE_URL],
+        )
+        .await
+        .map_err(|_| PullError::from("claude_quota_network_error"))?
+    };
     // The body is followed by a Retry-After line and the status line.
     let split = output
         .stdout
@@ -417,7 +493,12 @@ mod tests {
     async fn real_usage_read_only() {
         let result = tokio::time::timeout(
             Duration::from_secs(20),
-            pull(chrono::Utc::now().timestamp_millis(), None, Arc::default()),
+            pull(
+                chrono::Utc::now().timestamp_millis(),
+                None,
+                Arc::default(),
+                &agent_runtime::local_target(),
+            ),
         )
         .await;
         let snapshot = result
@@ -429,6 +510,80 @@ mod tests {
             snapshot.windows.len()
         );
     }
+    /// Runs here, but counts as another machine with only the values it was given.
+    #[cfg(unix)]
+    struct Elsewhere(std::collections::BTreeMap<String, String>);
+
+    #[cfg(unix)]
+    impl agent_runtime::ExecutionTarget for Elsewhere {
+        fn is_local(&self) -> bool {
+            false
+        }
+        fn inherited(&self, name: &str) -> Option<std::ffi::OsString> {
+            self.0.get(name).map(Into::into)
+        }
+        fn temp_directory(&self) -> PathBuf {
+            std::env::temp_dir()
+        }
+        fn spawn(
+            &self,
+            request: agent_runtime::ProcessRequest,
+        ) -> std::io::Result<agent_runtime::OwnedChild> {
+            agent_runtime::local_target().spawn(request)
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_agent_elsewhere_reports_the_login_on_its_own_machine() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let curl = directory.path().join("curl");
+        std::fs::write(
+            &curl,
+            "#!/bin/sh\ncat > \"$0.stdin\"\nprintf '{\"five_hour\":{\"utilization\":40}}\\n\\n200'\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&curl, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(
+            directory.path().join(".credentials.json"),
+            r#"{"claudeAiOauth":{"accessToken":"target-token","subscriptionType":"max"}}"#,
+        )
+        .unwrap();
+        let target: SharedTarget = Arc::new(Elsewhere(std::collections::BTreeMap::from([
+            (
+                "PATH".to_owned(),
+                format!("{}:/usr/bin:/bin", directory.path().display()),
+            ),
+            (
+                "CLAUDE_CONFIG_DIR".to_owned(),
+                directory.path().display().to_string(),
+            ),
+        ])));
+
+        let snapshot = pull(10, Some("2.0.0"), Arc::default(), &target)
+            .await
+            .unwrap();
+
+        assert_eq!(snapshot.windows[0].used_percent, Some(40.0));
+        assert_eq!(snapshot.plan_type.as_deref(), Some("max"));
+        let config = std::fs::read_to_string(curl.with_extension("stdin")).unwrap();
+        assert!(config.contains("Bearer target-token"));
+        assert!(config.contains("User-Agent: claude-code/2.0.0"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_agent_elsewhere_without_a_login_never_borrows_this_machines() {
+        let directory = tempfile::tempdir().unwrap();
+        let target: SharedTarget = Arc::new(Elsewhere(std::collections::BTreeMap::from([(
+            "CLAUDE_CONFIG_DIR".to_owned(),
+            directory.path().display().to_string(),
+        )])));
+        let failure = pull(10, None, Arc::default(), &target).await.unwrap_err();
+        assert_eq!(failure.reason, "claude_quota_login_required");
+    }
+
     #[test]
     fn rate_limits_back_off_even_for_forced_refreshes() {
         let mut cache = Cache::default();

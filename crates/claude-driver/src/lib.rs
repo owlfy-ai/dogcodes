@@ -1977,7 +1977,13 @@ impl QuotaProvider for ClaudeDriver {
     ) -> Result<QuotaSnapshot, DriverError> {
         let pulled = {
             let mut cache = self.quota.pull.lock().await;
-            let pulled = cache.read(force, self.native_version.as_deref()).await;
+            let pulled = cache
+                .read(
+                    force,
+                    self.native_version.as_deref(),
+                    &self.executable.target,
+                )
+                .await;
             // Account onboarding must not mask a rejected OAuth credential with
             // an earlier stream push. Session context remains independently usable.
             if (force && cache.failure.is_some())

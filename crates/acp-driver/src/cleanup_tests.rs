@@ -49,6 +49,7 @@ for line in sys.stdin:
   if method=='session/cancel' and pending and mode!='stop-stuck' and not (mode.startswith('native-close') and pending['params']['sessionId']=='s-1'):
    if mode=='late-permission':permission(r['params']['sessionId'])
    if mode=='delayed-stop':time.sleep(0.3)
+   if mode=='slow-cursor-stop':time.sleep(1.2)
    reply(pending,{'stopReason':'cancelled'});pending=None
   continue
  if method=='initialize':

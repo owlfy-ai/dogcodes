@@ -30,6 +30,7 @@ struct Driver {
     close: Semaphore,
     mode: PromptMode,
     creates: AtomicUsize,
+    catalog_reads: AtomicUsize,
     create_rejected: AtomicBool,
     resumes: AtomicUsize,
     resume_error: AtomicBool,
@@ -76,9 +77,10 @@ impl AgentDriver for Driver {
         true
     }
     async fn model_catalog(&self) -> Result<ModelCatalog, DriverError> {
+        self.catalog_reads.fetch_add(1, Ordering::AcqRel);
         Ok(ModelCatalog {
             models: vec![ModelOption::new("changed", "Changed")],
-            ..Default::default()
+            default_model: Some("changed".into()),
         })
     }
     async fn current_session_handle(&self, id: &str) -> Option<SessionHandle> {
@@ -274,18 +276,29 @@ async fn fixture_with_store(
     closing: usize,
     store: SqliteStore,
 ) -> Fixture {
+    fixture_with_provider(mode, creating, dispatching, closing, store, "fake").await
+}
+async fn fixture_with_provider(
+    mode: PromptMode,
+    creating: usize,
+    dispatching: usize,
+    closing: usize,
+    store: SqliteStore,
+    provider: &str,
+) -> Fixture {
     let root = tempfile::tempdir().unwrap();
     let core = Arc::new(Core::with_workspace_context(
         Arc::new(store),
         Arc::new(Workspace),
     ));
     let driver = Arc::new(Driver {
-        executor: installations::probe(&core, "fake").await,
+        executor: installations::probe(&core, provider).await,
         create: Semaphore::new(creating),
         dispatch: Semaphore::new(dispatching),
         close: Semaphore::new(closing),
         mode,
         creates: AtomicUsize::new(0),
+        catalog_reads: AtomicUsize::new(0),
         create_rejected: AtomicBool::new(false),
         resumes: AtomicUsize::new(0),
         resume_error: AtomicBool::new(false),
@@ -655,6 +668,41 @@ async fn selected_submit(f: &Fixture) {
             .stream_version,
     );
     f.core.execute(command).await.unwrap();
+}
+
+#[tokio::test]
+async fn cursor_submission_reuses_inventory_but_native_selection_still_gates_the_prompt() {
+    let f = fixture_with_provider(
+        PromptMode::Complete,
+        10,
+        10,
+        10,
+        SqliteStore::open_in_memory().unwrap(),
+        "cursor",
+    )
+    .await;
+    // Populate the same inventory used by the model picker before Send.
+    f.core
+        .cached_model_catalog(&f.driver.executor, None, Some(&f.task), false)
+        .await
+        .unwrap();
+    let reads = f.driver.catalog_reads.load(Ordering::Acquire);
+    assert_eq!(reads, 1);
+    f.driver.create_rejected.store(true, Ordering::Release);
+    selected_submit(&f).await;
+    idle(&f.core, &f.task).await;
+    assert_eq!(f.driver.catalog_reads.load(Ordering::Acquire), reads);
+    assert_eq!(f.driver.creates.load(Ordering::Acquire), 1);
+    assert_eq!(f.driver.prompts.load(Ordering::Acquire), 0);
+    let events = f.core.sync_events(0, 1000).await.unwrap();
+    assert!(events.iter().any(|event| event.event_type == "turn.failed"
+        && event.payload["failureKind"] == "selection_rejected"));
+
+    f.driver.create_rejected.store(false, Ordering::Release);
+    selected_submit(&f).await;
+    idle(&f.core, &f.task).await;
+    assert_eq!(f.driver.prompts.load(Ordering::Acquire), 1);
+    assert_eq!(f.driver.catalog_reads.load(Ordering::Acquire), reads);
 }
 
 #[tokio::test]

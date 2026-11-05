@@ -1,5 +1,6 @@
 //! Read-only Cursor `DashboardService` adapter using the CLI's native OAuth store.
 //! Credentials stay in memory; no terminal, model prompt or credential refresh.
+use agent_runtime::SharedTarget;
 use driver_api::{DriverError, QuotaSnapshot, QuotaWindow};
 use serde_json::Value;
 use std::{path::PathBuf, time::Duration};
@@ -188,7 +189,113 @@ async fn request(client: &reqwest::Client, url: &str, token: &str) -> Result<Val
         .map_err(|_| DriverError::Protocol("Cursor usage endpoint returned invalid JSON".into()))
 }
 
-pub(super) async fn read() -> Result<QuotaSnapshot, DriverError> {
+/// Prints the account's stored credential, wherever Cursor keeps it on that machine.
+const TARGET_CREDENTIAL_SCRIPT: &str = r#"case "$(uname -s)" in
+Darwin)
+    if [ "$1" != file ]; then /usr/bin/security find-generic-password -s cursor-access-token -a cursor-user -w 2>/dev/null && exit 0; fi
+    cat "$HOME/.cursor/auth.json" ;;
+*) cat "${2:-$HOME/.config}/cursor/auth.json" ;;
+esac"#;
+
+/// The account signed in on the target, never this machine's.
+async fn target_access_token(target: &SharedTarget) -> Result<String, DriverError> {
+    let inherited = |name: &str| target.inherited(name)?.into_string().ok();
+    let store = inherited("AGENT_CLI_CREDENTIAL_STORE");
+    if inherited("CURSOR_API_KEY").is_some_and(|value| !value.trim().is_empty())
+        || store.as_deref() == Some("memory")
+    {
+        return Err(DriverError::CapabilityUnavailable(
+            "Cursor subscription quota requires native OAuth credentials".into(),
+        ));
+    }
+    let config = inherited("XDG_CONFIG_HOME").unwrap_or_default();
+    let output = agent_runtime::target_script_output(
+        target,
+        TARGET_CREDENTIAL_SCRIPT,
+        &[store.as_deref().unwrap_or(""), config.as_str()],
+        BODY_LIMIT,
+    )
+    .await
+    .map_err(|_| login_required())?;
+    if !output.status.success() {
+        return Err(login_required());
+    }
+    let text = String::from_utf8(output.stdout).map_err(|_| login_required())?;
+    let text = text.trim();
+    // The keychain holds the token itself, the file holds JSON around it.
+    let token = match serde_json::from_str::<Value>(text) {
+        Ok(auth) => auth["accessToken"].as_str().map(str::to_owned),
+        Err(_) => Some(text.to_owned()),
+    };
+    token
+        .filter(|token| !token.is_empty())
+        .ok_or_else(login_required)
+}
+
+async fn request_on_target(
+    target: &SharedTarget,
+    url: &str,
+    token: &str,
+) -> Result<Value, DriverError> {
+    let output = agent_runtime::target_curl(
+        target,
+        token,
+        &[
+            "Content-Type: application/json",
+            "Connect-Protocol-Version: 1",
+        ],
+        &[
+            "--request",
+            "POST",
+            "--data",
+            "{}",
+            "--write-out",
+            "\n%{http_code}",
+            url,
+        ],
+    )
+    .await
+    .map_err(|error| match error.kind() {
+        std::io::ErrorKind::InvalidInput => login_required(),
+        _ => DriverError::Disconnected("Cursor usage request failed or timed out".into()),
+    })?;
+    let split = output
+        .stdout
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .ok_or_else(|| {
+            DriverError::Disconnected("Cursor usage request failed or timed out".into())
+        })?;
+    match &output.stdout[split + 1..] {
+        b"401" | b"403" => return Err(login_required()),
+        b"200" => {}
+        b"000" => {
+            return Err(DriverError::Disconnected(
+                "Cursor usage request failed or timed out".into(),
+            ));
+        }
+        status => {
+            return Err(DriverError::Protocol(format!(
+                "Cursor usage endpoint returned HTTP {}",
+                String::from_utf8_lossy(status)
+            )));
+        }
+    }
+    serde_json::from_slice(&output.stdout[..split])
+        .map_err(|_| DriverError::Protocol("Cursor usage endpoint returned invalid JSON".into()))
+}
+
+pub(super) async fn read(target: &SharedTarget) -> Result<QuotaSnapshot, DriverError> {
+    if !target.is_local() {
+        let token = target_access_token(target).await?;
+        let usage_url = format!("{ENDPOINT}GetCurrentPeriodUsage");
+        let plan_url = format!("{ENDPOINT}GetPlanInfo");
+        let (usage, plan) = tokio::join!(
+            request_on_target(target, &usage_url, &token),
+            request_on_target(target, &plan_url, &token),
+        );
+        return parse(&usage?, &plan.unwrap_or(Value::Null));
+    }
     let token = access_token().await?;
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
@@ -369,10 +476,13 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires authenticated Cursor; reads native OAuth and official quota only"]
     async fn real_native_quota() {
-        let snapshot = tokio::time::timeout(Duration::from_secs(20), read())
-            .await
-            .unwrap()
-            .unwrap();
+        let snapshot = tokio::time::timeout(
+            Duration::from_secs(20),
+            read(&agent_runtime::local_target()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert!(!snapshot.windows.is_empty());
         eprintln!(
             "Cursor quota: {:?}; plan: {:?}",

@@ -8,6 +8,7 @@ import { terminalClient, terminalEnded, type TerminalApi, type TerminalConnectio
 export { terminalClient, type TerminalApi } from "./terminalClient";
 import { Terminal } from "@xterm/xterm";
 import { installTerminalKeyboard } from "./terminalKeyboard";
+import { installTerminalLinks, openTerminalLink } from "./terminalLinks";
 import { terminalInput, type TerminalInputState } from "./terminalInput";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -70,6 +71,9 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
     const mouseEvents = ["pointerdown", "mousedown", "pointermove", "mousemove", "wheel", "touchstart"];
     for (const event of mouseEvents) element.addEventListener(event, mouseInteraction, true);
     const keyboardCleanup = installTerminalKeyboard(terminal, element);
+    const links = installTerminalLinks(terminal, url => {
+      void openTerminalLink(url).catch(() => { if (!disposed) setStatus(t("markdown.browserFailed")); });
+    });
     const theme = () => {
       const style = getComputedStyle(element);
       const foreground = style.getPropertyValue("--terminal-fg").trim();
@@ -161,7 +165,7 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
       observer.disconnect(); themeObserver.disconnect(); media.removeEventListener("change", theme);
       for (const event of inputEvents) element.removeEventListener(event, interaction, true);
       for (const event of mouseEvents) element.removeEventListener(event, mouseInteraction, true);
-      keyboardCleanup(); input.dispose(); binary.dispose(); terminal.dispose();
+      keyboardCleanup(); links.dispose(); input.dispose(); binary.dispose(); terminal.dispose();
       connection?.detach();
     };
   }, [projectId, directoryIndex, generation, api]);

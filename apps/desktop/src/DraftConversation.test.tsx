@@ -215,7 +215,7 @@ it("shows an agent loading indicator immediately while submit is pending and cle
   await typePrompt("等待首个回复");
   await send();
   expect(element.querySelector('.timeline .agent-pending [role="img"]')).not.toBeNull();
-  expect(element.querySelector('.agent-pending')?.textContent).toContain("正在响应");
+  expect(element.querySelector('.agent-pending')?.textContent).toBe("正在连接Codex");
   await act(async () => reject(new Error("测试发送失败")));
   expect(element.querySelector('.agent-pending')).toBeNull();
   expect(element.querySelector('textarea')?.value).toBe("等待首个回复");
@@ -316,6 +316,7 @@ it("keeps the sent layout through task creation, empty history, acknowledgement 
   expectSubmittedLayout("立即进入对话布局");
   expect(element.querySelector("textarea")?.value).toBe("");
   expect(visible(".agent-pending")).toHaveLength(1);
+  expect(element.querySelector(".agent-pending-label")?.textContent).toMatch(/^正在连接.+/);
   await act(async () => finishCreation());
   expectSubmittedLayout("立即进入对话布局");
   // The service creates the conversation and sends in one call; the new

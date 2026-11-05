@@ -762,6 +762,43 @@ async fn a_missing_program_is_reported_through_its_exit_status() {
 
 #[tokio::test]
 #[ignore = "needs an OpenSSH server binary"]
+async fn the_login_environment_can_be_read_again_on_an_open_link() {
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let before = link.target().inherited("PATH");
+    assert!(before.is_some());
+    link.refresh_environment().await;
+    assert_eq!(link.target().inherited("PATH"), before);
+    link.ping().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
+async fn quota_requests_run_on_the_server_through_its_own_curl() {
+    let server = Sshd::start("", "");
+    let (link, directory) = connected(&server).await;
+    let reply = directory.path().join("reply.json");
+    std::fs::write(&reply, "{\"on\":\"server\"}").unwrap();
+    let url = format!("file://{}", reply.display());
+    let target = link.target();
+    let output = agent_runtime::target_curl(&target, "token", &[], &[url.as_str()])
+        .await
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"{\"on\":\"server\"}");
+    let read = agent_runtime::target_script_output(
+        &target,
+        r#"cat "$1""#,
+        &[reply.to_str().unwrap()],
+        1024,
+    )
+    .await
+    .unwrap();
+    assert_eq!(read.stdout, b"{\"on\":\"server\"}");
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
 async fn losing_the_link_is_an_error_and_never_an_exit_proof() {
     let server = Sshd::start("", "");
     let (link, _directory) = connected(&server).await;

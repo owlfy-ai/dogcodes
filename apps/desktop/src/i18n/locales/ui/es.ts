@@ -57,6 +57,7 @@ export const uiEs: UiMessages = {
     you: "Tú",
   },
   agentPending: {
+    connecting: "Conectando con {agent}",
     label: "Esperando la respuesta del Agent",
     responding: "Respondiendo",
   },

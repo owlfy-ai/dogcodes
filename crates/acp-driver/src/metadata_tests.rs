@@ -34,6 +34,7 @@ for line in sys.stdin:
   else:reply(r,{'stopReason':'end_turn'})
  else:reply(r,{})
 if mode=='delayed-exit':time.sleep(0.4)
+if mode=='stubborn-exit':time.sleep(60)
 ";
 fn fixture(mode: &str) -> (tempfile::TempDir, Arc<AcpDriver>) {
     let root = tempfile::tempdir().unwrap();
@@ -71,6 +72,25 @@ fn records(root: &Path) -> Vec<serde_json::Value> {
 }
 fn native_pid(record: &serde_json::Value) -> u32 {
     u32::try_from(record["pid"].as_u64().unwrap()).unwrap()
+}
+
+#[tokio::test]
+async fn local_cursor_catalog_reaps_a_helper_that_stays_alive_after_eof_promptly() {
+    let (root, mut driver) = fixture("stubborn-exit");
+    Arc::get_mut(&mut driver).unwrap().executor.provider_id =
+        agent_domain::ProviderId::parse("cursor").unwrap();
+    let workspace = root.path().join("probe").to_string_lossy().into_owned();
+    let catalog = tokio::time::timeout(
+        Duration::from_secs(2),
+        driver.model_catalog_in_workspace(None, Some(&workspace)),
+    )
+    .await
+    .expect("Cursor metadata result waited for the five-second exit grace")
+    .unwrap();
+    assert_eq!(catalog.default_model.as_deref(), Some("base"));
+    let log = records(root.path());
+    assert!(!log.is_empty());
+    assert!(log.iter().all(|record| !present(native_pid(record))));
 }
 
 #[tokio::test]

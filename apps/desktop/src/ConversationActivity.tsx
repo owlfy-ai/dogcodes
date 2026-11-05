@@ -527,7 +527,7 @@ export function ConversationContent({
       {turnGroups.filter(entry => entry[0].kind === "turn_files").map(entry => renderGroup(entry))}
       {actions}
     </Fragment>;
-  })}{awaitingResponse && <AgentPending providerId={pendingAgent.providerId} renderAgent={renderAgent}/>}</>;
+  })}{awaitingResponse && <AgentPending providerId={pendingAgent.providerId} connecting={pendingAgent.connecting} renderAgent={renderAgent}/>}</>;
 
 }
 export function SubagentPanel({

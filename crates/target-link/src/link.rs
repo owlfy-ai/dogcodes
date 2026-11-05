@@ -13,7 +13,7 @@ use std::{
     path::PathBuf,
     process::ExitStatus,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, RwLock,
         atomic::{AtomicU32, AtomicU64, Ordering},
     },
     time::Duration,
@@ -100,6 +100,7 @@ pub struct TargetLink {
     info: TargetInfo,
     core: Arc<Core>,
     target: SharedTarget,
+    environment: Arc<RwLock<BTreeMap<String, String>>>,
 }
 
 impl Drop for TargetLink {
@@ -163,14 +164,35 @@ impl TargetLink {
             Ok(Ok(Response::Environment { values })) => values,
             _ => BTreeMap::new(),
         };
+        let environment = Arc::new(RwLock::new(environment));
         let target: SharedTarget = Arc::new(LinkTarget {
             core: core.clone(),
-            environment,
+            environment: environment.clone(),
             root: info.root,
             shim: info.executable.clone(),
             relay_socket: info.relay_socket.clone(),
         });
-        Ok(Self { info, core, target })
+        Ok(Self {
+            info,
+            core,
+            target,
+            environment,
+        })
+    }
+
+    /// Reads the login environment again, as an install may have changed it. A slow
+    /// or broken profile leaves what was known before.
+    pub async fn refresh_environment(&self) {
+        if let Ok(Ok(Response::Environment { values })) = tokio::time::timeout(
+            HANDSHAKE_LIMIT,
+            self.core.send_request(Request::LoginEnvironment),
+        )
+        .await
+            && !values.is_empty()
+            && let Ok(mut environment) = self.environment.write()
+        {
+            *environment = values;
+        }
     }
 
     #[must_use]
@@ -398,7 +420,7 @@ fn open_relay(core: &Core, relay: u32, token: &str) {
 
 struct LinkTarget {
     core: Arc<Core>,
-    environment: BTreeMap<String, String>,
+    environment: Arc<RwLock<BTreeMap<String, String>>>,
     root: bool,
     shim: String,
     relay_socket: Option<String>,
@@ -409,10 +431,16 @@ impl ExecutionTarget for LinkTarget {
         false
     }
     fn inherited(&self, name: &str) -> Option<OsString> {
-        self.environment.get(name).map(OsString::from)
+        self.environment
+            .read()
+            .unwrap()
+            .get(name)
+            .map(OsString::from)
     }
     fn temp_directory(&self) -> PathBuf {
         self.environment
+            .read()
+            .unwrap()
             .get("TMPDIR")
             .filter(|path| path.starts_with('/'))
             .map_or_else(|| PathBuf::from("/tmp"), PathBuf::from)
@@ -455,6 +483,8 @@ impl ExecutionTarget for LinkTarget {
     }
     fn login_environment(&self) -> BTreeMap<OsString, OsString> {
         self.environment
+            .read()
+            .unwrap()
             .iter()
             .map(|(name, value)| (name.into(), value.into()))
             .collect()

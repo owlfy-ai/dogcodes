@@ -57,6 +57,7 @@ export const uiZhTW: UiMessages = {
     you: "你",
   },
   agentPending: {
+    connecting: "正在連線{agent}",
     label: "正在等待 Agent 響應",
     responding: "正在響應",
   },

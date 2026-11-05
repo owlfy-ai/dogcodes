@@ -49,7 +49,9 @@ export interface TargetStatus {
   closedReason: string | null;
   identityChanged: boolean;
 }
-export interface TargetEntry { target: ExecutionTarget; status: TargetStatus }
+/** What was last found on a host. It stays known while nothing is connected to it. */
+export interface HostAgent { providerId: string; version: string | null; status: TargetAgent["status"] }
+export interface TargetEntry { target: ExecutionTarget; status: TargetStatus; agents: HostAgent[] }
 export interface TargetDirectory { path: string; directories: string[] }
 export interface ResolvedHost { host: string; user: string | null; port: number | null }
 
@@ -61,6 +63,8 @@ export interface TargetApi {
   remove(targetId: string): Promise<void>;
   connect(targetId: string, secret: string | null): Promise<void>;
   disconnect(targetId: string): Promise<void>;
+  /** Looks for agents again on an open connection. */
+  rescan(targetId: string): Promise<void>;
   /** After the last shell on a host closes: ends the connection unless its projects need it. */
   release(targetId: string): Promise<void>;
   answer(targetId: string, promptId: string, answer: string | null, remember: boolean): Promise<void>;
@@ -79,6 +83,7 @@ export const tauriTargetApi: TargetApi = {
   remove: targetId => call<void>({ type: "remove", targetId }),
   connect: (targetId, secret) => call<void>({ type: "connect", targetId, secret }),
   disconnect: targetId => call<void>({ type: "disconnect", targetId }),
+  rescan: targetId => call<void>({ type: "rescan", targetId }),
   release: targetId => invoke<unknown>("core_terminal_release_target", { targetId }).then(() => {}),
   answer: (targetId, promptId, answer, remember) => call<void>({ type: "answer", targetId, promptId, answer, remember }),
   configHosts: () => call<string[]>({ type: "config_hosts" }),

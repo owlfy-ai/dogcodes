@@ -57,6 +57,7 @@ export const uiKo: UiMessages = {
     you: "나",
   },
   agentPending: {
+    connecting: "{agent}에 연결 중",
     label: "Agent의 응답을 기다리는 중",
     responding: "응답 중",
   },

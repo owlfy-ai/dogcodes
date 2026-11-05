@@ -57,6 +57,7 @@ export const uiJa: UiMessages = {
     you: "あなた",
   },
   agentPending: {
+    connecting: "{agent} に接続中",
     label: "Agent の応答を待っています",
     responding: "応答中",
   },

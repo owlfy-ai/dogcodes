@@ -5,8 +5,8 @@ mod agents;
 use agent_core::Core;
 use agent_domain::{ProjectId, TargetId};
 use agent_protocol::{
-    ActorRef, CommandEnvelope, CoreCommand, ExecutionTarget, ExecutionTargets, RegisterProject,
-    SshAuth, SshConnection,
+    ActorRef, CommandEnvelope, CoreCommand, ExecutionTarget, ExecutionTargets, InstallationStatus,
+    RegisterProject, SshAuth, SshConnection,
 };
 use redaction::{DeterministicRedactor, SecretRedactor};
 use serde::{Deserialize, Serialize};
@@ -55,6 +55,10 @@ pub(crate) enum TargetCall {
         secret: Option<String>,
     },
     Disconnect {
+        target_id: TargetId,
+    },
+    /// Looks for agents again on an open connection, after installing one by hand.
+    Rescan {
         target_id: TargetId,
     },
     Answer {
@@ -123,11 +127,21 @@ pub(crate) struct TargetStatus {
     agents: Vec<agents::TargetAgent>,
 }
 
+/// What was last found on a host, kept while nothing is connected to it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HostAgent {
+    provider_id: String,
+    version: Option<String>,
+    status: InstallationStatus,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TargetEntry {
     target: ExecutionTarget,
     status: TargetStatus,
+    agents: Vec<HostAgent>,
 }
 
 /// Separate slots so a saved password is never offered as a key passphrase.
@@ -210,6 +224,7 @@ struct Connection {
     status: Mutex<TargetStatus>,
     waiting: Mutex<HashMap<String, oneshot::Sender<AnswerValue>>>,
     worker: Mutex<Option<JoinHandle<()>>>,
+    rescan: Mutex<Option<JoinHandle<()>>>,
     link: Mutex<Option<Arc<TargetLink>>>,
 }
 
@@ -224,8 +239,18 @@ impl Connection {
         if let Some(worker) = self.worker.lock().unwrap().take() {
             worker.abort();
         }
+        self.stop_rescan();
         self.waiting.lock().unwrap().clear();
         self.link.lock().unwrap().take();
+    }
+}
+
+impl Connection {
+    /// It holds the link, and its drivers would outlive a connection that has ended.
+    fn stop_rescan(&self) {
+        if let Some(rescan) = self.rescan.lock().unwrap().take() {
+            rescan.abort();
+        }
     }
 }
 
@@ -420,6 +445,10 @@ impl TargetHost {
                 self.disconnect(core, &target_id).await;
                 Ok(serde_json::Value::Null)
             }
+            TargetCall::Rescan { target_id } => {
+                self.rescan(core, &target_id)?;
+                Ok(serde_json::Value::Null)
+            }
             TargetCall::Answer {
                 target_id,
                 prompt_id,
@@ -467,15 +496,69 @@ impl TargetHost {
 
     async fn list(&self, core: &Core) -> Result<Vec<TargetEntry>, String> {
         let snapshot = core.execution_targets().await.map_err(|e| e.to_string())?;
+        let installations = core
+            .bootstrap()
+            .await
+            .map_err(|e| e.to_string())?
+            .installations;
         Ok(snapshot
             .targets
             .targets
             .into_iter()
             .map(|target| TargetEntry {
                 status: self.status(&target.target_id),
+                agents: installations
+                    .iter()
+                    .filter(|installation| {
+                        installation.target_id.as_ref() == Some(&target.target_id)
+                    })
+                    .map(|installation| HostAgent {
+                        provider_id: installation.provider_id.clone(),
+                        version: installation.version.clone(),
+                        status: installation.status,
+                    })
+                    .collect(),
                 target,
             })
             .collect())
+    }
+
+    /// Answers at once; the page follows `scanning`. A second request during a scan
+    /// is the same request.
+    fn rescan(&self, core: &Arc<Core>, target: &TargetId) -> Result<(), String> {
+        let link = self.link(target)?;
+        let connection = self
+            .connections
+            .lock()
+            .unwrap()
+            .get(target)
+            .cloned()
+            .ok_or("连接不存在")?;
+        let mut started = false;
+        connection.update(|status| {
+            if status.phase == Phase::Connected && !status.scanning {
+                status.scanning = true;
+                started = true;
+            }
+        });
+        if !started {
+            return Ok(());
+        }
+        let (core, target, running) = (core.clone(), target.clone(), connection.clone());
+        let scan = tokio::spawn(async move {
+            // An installer usually adds its directory to the login shell's `PATH`.
+            link.refresh_environment().await;
+            let os = link.info().os.clone();
+            let found = agents::scan(&core, &target, &link.target(), &os).await;
+            running.update(|status| {
+                status.scanning = false;
+                if let Some(found) = found {
+                    status.agents = found;
+                }
+            });
+        });
+        *connection.rescan.lock().unwrap() = Some(scan);
+        Ok(())
     }
 
     /// Read and write under one lock: the service is the only writer of this stream.
@@ -805,7 +888,7 @@ impl TargetHost {
         let found = agents::scan(core, &target.target_id, &link.target(), &os).await;
         connection.update(|status| {
             status.scanning = false;
-            status.agents = found;
+            status.agents = found.unwrap_or_default();
         });
         let mut closed = link.closed();
         drop(link);
@@ -814,6 +897,7 @@ impl TargetHost {
             .await
             .ok()
             .and_then(|reason| reason.clone());
+        connection.stop_rescan();
         connection.update(|status| {
             status.phase = Phase::Disconnected;
             status.step = None;
@@ -1196,6 +1280,28 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         assert_eq!(recorded, Some(identity));
+
+        // Looking again on the open link finishes and leaves the connection up.
+        for _ in 0..300 {
+            if !host.status(&id).scanning {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let found = host.status(&id).agents.len();
+        host.call(&core, serde_json::json!({"type":"rescan","targetId":id}))
+            .await
+            .unwrap();
+        assert!(host.status(&id).scanning);
+        for _ in 0..300 {
+            if !host.status(&id).scanning {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert_eq!(host.status(&id).phase, Phase::Connected);
+        assert_eq!(host.status(&id).agents.len(), found);
+        assert_eq!(host.list(&core).await.unwrap()[0].agents.len(), found);
 
         // A shell on the host itself, outside any project, in the account's home.
         let terminals = crate::terminal_host::TerminalHost::default();

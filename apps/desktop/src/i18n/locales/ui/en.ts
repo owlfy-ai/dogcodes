@@ -57,6 +57,7 @@ export const uiEn = {
     you: "You",
   },
   agentPending: {
+    connecting: "Connecting to {agent}",
     label: "Waiting for the Agent to respond",
     responding: "Responding",
   },

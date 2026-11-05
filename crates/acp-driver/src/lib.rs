@@ -25,8 +25,11 @@ mod recovery_tests;
 mod request_usage;
 #[cfg(test)]
 mod retained_readiness_tests;
+
 mod session_usage;
 mod sessions;
+#[cfg(all(test, unix))]
+mod target_quota_tests;
 mod turn;
 
 use agent_runtime::{Pipe, SharedTarget, TargetExecutable};
@@ -190,7 +193,12 @@ async fn read_kimi_web_usage_owned(
         })
         .await
         .map_err(|_| DriverError::Disconnected("Kimi usage server startup timed out".into()))??;
-        fetch_kimi_usage(endpoint.0, &endpoint.1).await
+        // The endpoint listens on the agent's machine, which may not be this one.
+        if executable.target.is_local() {
+            fetch_kimi_usage(endpoint.0, &endpoint.1).await
+        } else {
+            fetch_kimi_usage_on_target(&executable.target, endpoint.0, &endpoint.1).await
+        }
     };
     let result = tokio::select! {
         biased;
@@ -204,6 +212,29 @@ async fn read_kimi_web_usage_owned(
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
     result.transpose()
+}
+
+async fn fetch_kimi_usage_on_target(
+    target: &agent_runtime::SharedTarget,
+    port: u16,
+    token: &str,
+) -> Result<serde_json::Value, DriverError> {
+    let url = format!("http://127.0.0.1:{port}/api/v1/oauth/usage");
+    let output = agent_runtime::target_curl(
+        target,
+        token,
+        &[],
+        &["--fail", "--noproxy", "*", url.as_str()],
+    )
+    .await
+    .map_err(|_| DriverError::Disconnected("Kimi usage request failed or timed out".into()))?;
+    if !output.status.success() {
+        return Err(DriverError::Disconnected(
+            "Kimi usage request failed or timed out".into(),
+        ));
+    }
+    serde_json::from_slice(&output.stdout)
+        .map_err(|_| DriverError::Protocol("Kimi usage endpoint returned invalid JSON".into()))
 }
 
 async fn fetch_kimi_usage(port: u16, token: &str) -> Result<serde_json::Value, DriverError> {
@@ -1085,6 +1116,14 @@ impl AcpDriver {
             &launch,
             codebuddy_cwd.as_deref(),
             Some(self.shared.quota.stderr_tail.clone()),
+            if self.executor.provider_id.as_str() == "cursor" && launch.executable.target.is_local()
+            {
+                // Cursor may keep its event loop alive after stdin closes. Do
+                // not add five idle seconds to every helper/session retirement.
+                std::time::Duration::from_millis(250)
+            } else {
+                std::time::Duration::from_secs(5)
+            },
         )?;
         child.control.observe_owner(self.stopping.subscribe());
         let native = child.control.clone();
@@ -1200,12 +1239,13 @@ async fn initialize(connection: &ConnectionTo<Agent>) -> Result<InitializeRespon
 type AgentTransport = ByteStreams<Compat<lifecycle::Input>, Compat<lifecycle::Output>>;
 
 fn spawn_agent(launch: &AcpLaunch) -> Result<(lifecycle::Process, AgentTransport), DriverError> {
-    spawn_agent_in(launch, None, None)
+    spawn_agent_in(launch, None, None, std::time::Duration::from_secs(5))
 }
 fn spawn_agent_in(
     launch: &AcpLaunch,
     cwd: Option<&std::path::Path>,
     stderr_tail: Option<StderrTail>,
+    exit_grace: std::time::Duration,
 ) -> Result<(lifecycle::Process, AgentTransport), DriverError> {
     let mut command = launch.executable.command();
     command.args(&launch.args);
@@ -1260,7 +1300,7 @@ fn spawn_agent_in(
             }
         })
     });
-    let process = lifecycle::Process::start(child, stderr);
+    let process = lifecycle::Process::start_with_grace(child, stderr, exit_grace);
     let input = lifecycle::Input {
         inner: stdin,
         control: process.control.clone(),
@@ -2857,7 +2897,18 @@ impl AgentDriver for AcpDriver {
                     .reconnect_required
                     .store(true, Ordering::Release);
             }
-            turn.stop(timeout)
+            // A local Cursor that ignores cancel need not hold the UI for ten
+            // seconds when this run is the connection's only remaining owner.
+            // Peer sessions keep the normal budget and can never be killed here.
+            let cancel_timeout = if self.executor.provider_id.as_str() == "cursor"
+                && self.shared.launch.executable.target.is_local()
+                && self.shared.may_stop_connection(&turn.session, &turn.epoch)
+            {
+                timeout.min(std::time::Duration::from_secs(1))
+            } else {
+                timeout
+            };
+            turn.stop(cancel_timeout)
         };
         turn::wait(receipt, timeout + std::time::Duration::from_secs(1)).await
     }
@@ -3229,7 +3280,11 @@ impl QuotaProvider for AcpDriver {
         if self.executor.provider_id.as_str() == "kiro" {
             self.refresh_kiro_context(id).await;
         }
-        let directory = target.directory.clone();
+        // Those session files are on the agent's machine; here they could name something else.
+        let directory = target
+            .directory
+            .clone()
+            .filter(|_| self.shared.launch.executable.target.is_local());
         if let Some(directory) = directory
             && !(self.executor.provider_id.as_str() == "grok"
                 && self.shared.turn_active.load(Ordering::Acquire))
@@ -3349,7 +3404,7 @@ impl QuotaProvider for AcpDriver {
                 return kiro_quota::parse(&payload);
             }
             if self.executor.provider_id.as_str() == "cursor" {
-                return cursor_quota::read().await;
+                return cursor_quota::read(&self.shared.launch.executable.target).await;
             }
             let (windows, plan_type, parser_version) =
                 if self.executor.provider_id.as_str() == "kimi" {

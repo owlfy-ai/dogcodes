@@ -961,9 +961,9 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const showConversation = conversationReady && !conversationLoader.lingering;
   const pendingAgent: PendingAgent | undefined = conversationRun
     ? (["queued", "starting", "running"].includes(conversationRun.state)
-      ? { providerId: conversationRun.executor.providerId, turnId: conversationRun.turnId } : undefined)
+      ? { providerId: conversationRun.executor.providerId, turnId: conversationRun.turnId, connecting: conversationRun.state !== "running" } : undefined)
     : selectedSubmission
-      ? { providerId: selectedSubmission.providerId, turnId: submittedMessage?.turnId ?? undefined }
+      ? { providerId: selectedSubmission.providerId, turnId: submittedMessage?.turnId ?? undefined, connecting: true }
       : undefined;
   const renderResponseAgent = (providerId: string) => <span role="img" aria-label={t("app.agentResponse", { agent: providerLabel(providerId) })} data-tooltip={providerLabel(providerId)}><AgentIcon providerId={providerId} size="small" /></span>;
   const selectedTurnQuotaExhausted = useMemo(() => {

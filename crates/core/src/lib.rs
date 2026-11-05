@@ -789,7 +789,7 @@ impl Core {
         }
     }
 
-    /// Menu inventory only; turn admission continues to validate native selections.
+    /// Shared inventory; native session setup still applies and verifies selections.
     pub async fn cached_model_catalog(
         &self,
         executor: &ExecutorRef,
@@ -1231,13 +1231,33 @@ impl Core {
                         .executor_override
                         .as_ref()
                         .unwrap_or(&task.preferred_executor);
-                    let catalog = self
-                        .model_catalog_for_task(
+                    let local_cursor = executor.provider_id.as_str() == "cursor"
+                        && self
+                            .drivers
+                            .read()
+                            .await
+                            .get(executor)
+                            .is_some_and(|driver| driver.runs_on_this_machine());
+                    let catalog = if local_cursor {
+                        // The menu/readiness inventory already came from Cursor.
+                        // Creating a second temporary native session here is
+                        // expensive. The real session still applies and verifies
+                        // the selection before any prompt can be dispatched.
+                        self.cached_model_catalog(
+                            executor,
+                            model.map(String::as_str),
+                            Some(&command.task_id),
+                            false,
+                        )
+                        .await?
+                    } else {
+                        self.model_catalog_for_task(
                             executor,
                             model.map(String::as_str),
                             Some(&command.task_id),
                         )
-                        .await?;
+                        .await?
+                    };
                     let selected = model
                         .or(catalog.default_model.as_ref())
                         .and_then(|id| catalog.models.iter().find(|m| &m.id == id))
@@ -1668,10 +1688,12 @@ impl Core {
         let _admission = self.agent_admission.write().await;
         let mut executors = self.target_executors.write().await;
         let mut drivers = self.drivers.write().await;
+        let mut quota_providers = self.quota_providers.write().await;
         executors.retain(|executor, owner| {
             let keep = owner != target;
             if !keep {
                 drivers.remove(executor);
+                quota_providers.remove(executor);
             }
             keep
         });
@@ -5071,6 +5093,35 @@ mod tests {
             .unwrap();
         assert!(execution_prompt.contains(prompt));
         assert!(execution_prompt.contains("[Current user message]"));
+    }
+
+    #[tokio::test]
+    async fn disconnecting_a_target_stops_reading_its_agents_quota() {
+        struct Provider(ExecutorRef);
+        #[async_trait::async_trait]
+        impl QuotaProvider for Provider {
+            fn executor(&self) -> &ExecutorRef {
+                &self.0
+            }
+            async fn read_quota(
+                &self,
+                _: Option<&str>,
+            ) -> Result<driver_api::QuotaSnapshot, DriverError> {
+                Ok(driver_api::QuotaSnapshot::default())
+            }
+        }
+        let core = Core::new(Arc::new(MemoryRepository::default()));
+        let target = agent_domain::TargetId::new();
+        let driver = Arc::new(driver_api::FakeDriver::new("fake").unwrap());
+        let executor = driver.executor().clone();
+        core.register_target_driver(target.clone(), driver).await;
+        core.register_quota_provider(Arc::new(Provider(executor.clone())))
+            .await;
+        assert!(core.quota_providers.read().await.contains_key(&executor));
+
+        core.unregister_target_drivers(&target).await;
+
+        assert!(!core.quota_providers.read().await.contains_key(&executor));
     }
 
     #[tokio::test]

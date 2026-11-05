@@ -57,6 +57,7 @@ export const uiRu: UiMessages = {
     you: "Вы",
   },
   agentPending: {
+    connecting: "Подключение к {agent}",
     label: "Ожидание ответа Agent",
     responding: "Отвечает",
   },

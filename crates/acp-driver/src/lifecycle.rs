@@ -29,9 +29,6 @@ pub(super) struct Process {
     pub control: Arc<Control>,
 }
 impl Process {
-    pub fn start(child: OwnedChild, stderr: Option<JoinHandle<()>>) -> Self {
-        Self::start_with_grace(child, stderr, Duration::from_secs(5))
-    }
     pub fn start_with_grace(
         mut child: OwnedChild,
         stderr: Option<JoinHandle<()>>,

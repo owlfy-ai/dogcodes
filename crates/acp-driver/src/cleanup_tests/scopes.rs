@@ -1,5 +1,66 @@
 use super::*;
 
+#[tokio::test]
+async fn local_cursor_shutdown_reaps_stubborn_descendants_without_five_second_idle_grace() {
+    let (root, driver) = fixture("stubborn");
+    let session = driver.create_session(request(root.path())).await.unwrap();
+    let (_, finished) = original(&driver).await;
+    let pids = ids(root.path());
+    tokio::time::timeout(Duration::from_secs(2), driver.shutdown(session))
+        .await
+        .expect("Cursor close retained the five-second idle wait")
+        .unwrap();
+    assert!(finished.load(Ordering::Acquire));
+    assert!(pids.iter().all(|pid| !present(*pid)));
+}
+
+#[tokio::test]
+async fn local_cursor_ignored_cancel_falls_back_to_confirmed_scope_exit_promptly() {
+    let (root, driver) = fixture("stop-stuck");
+    let session = driver.create_session(request(root.path())).await.unwrap();
+    let (_, finished) = original(&driver).await;
+    let stream = driver
+        .prompt(&session, prompt(root.path(), "slow"))
+        .await
+        .unwrap();
+    wait_for(|| count(root.path(), "session/prompt") == 1).await;
+    tokio::time::timeout(Duration::from_secs(3), async {
+        assert!(driver.interrupt(&session).await.is_err());
+        driver.shutdown(session).await.unwrap();
+    })
+    .await
+    .expect("unresponsive Cursor cancellation retained the ten-second budget");
+    assert!(finished.load(Ordering::Acquire));
+    assert!(ids(root.path()).iter().all(|pid| !present(*pid)));
+    let _ = stream.collect::<Vec<_>>().await;
+}
+
+#[tokio::test]
+async fn local_cursor_with_a_peer_preserves_the_normal_cancel_budget_and_connection() {
+    let (root, driver) = fixture("slow-cursor-stop");
+    let session = driver.create_session(request(root.path())).await.unwrap();
+    let peer = driver.create_session(request(root.path())).await.unwrap();
+    let (native, finished) = original(&driver).await;
+    let stream = driver
+        .prompt(&session, prompt(root.path(), "slow"))
+        .await
+        .unwrap();
+    wait_for(|| count(root.path(), "session/prompt") == 1).await;
+    // This native ACK deliberately takes longer than the sole-owner fast path.
+    driver.interrupt(&session).await.unwrap();
+    finish(stream, true).await;
+    assert!(!native.stopping());
+    assert!(!finished.load(Ordering::Acquire));
+    driver.shutdown(session).await.unwrap();
+    assert!(
+        driver
+            .current_session_handle(&peer.native_session_id)
+            .await
+            .is_some()
+    );
+    driver.shutdown(peer).await.unwrap();
+}
+
 async fn finish(stream: DriverEventStream, interrupted: bool) {
     let events = tokio::time::timeout(Duration::from_secs(3), stream.collect::<Vec<_>>())
         .await

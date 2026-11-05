@@ -15,6 +15,13 @@ import { installFocusVisibility } from "./focusVisibility";
 const disposeFocusVisibility = installFocusVisibility(document);
 import.meta.hot?.dispose(disposeFocusVisibility);
 
+// Shared by every desktop window. Keep propagation for app-owned context menus.
+if (isTauri()) {
+  const preventNativeContextMenu = (event: MouseEvent) => event.preventDefault();
+  document.addEventListener("contextmenu", preventNativeContextMenu, true);
+  import.meta.hot?.dispose(() => document.removeEventListener("contextmenu", preventNativeContextMenu, true));
+}
+
 const DetachedReview = lazy(() => import("./DetachedReview").then(module => ({ default: module.DetachedReview })));
 const ComputerUseNotice = lazy(() => import("./ComputerUseNotice").then(module => ({ default: module.ComputerUseNotice })));
 

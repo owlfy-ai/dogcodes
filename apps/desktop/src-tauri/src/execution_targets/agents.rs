@@ -11,7 +11,7 @@ use agent_registry::{
     version_verdict,
 };
 use agent_runtime::{Pipe, SharedTarget, TargetCommand, TargetExecutable};
-use driver_api::AgentDriver;
+use driver_api::{AgentDriver, QuotaProvider};
 use serde::Serialize;
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::io::AsyncReadExt;
@@ -98,18 +98,21 @@ async fn capture(
 }
 
 /// One round trip for every candidate of every agent, rather than one per path.
-async fn existing_executables(target: &SharedTarget, candidates: &[String]) -> HashSet<String> {
+/// `None` means the machine didn't answer, which says nothing about what is on it.
+async fn existing_executables(
+    target: &SharedTarget,
+    candidates: &[String],
+) -> Option<HashSet<String>> {
     if candidates.is_empty() {
-        return HashSet::new();
+        return Some(HashSet::new());
     }
     let script = r#"for path in "$@"; do if [ -x "$path" ] && [ ! -d "$path" ]; then printf '%s\n' "$path"; fi; done"#;
     let mut args = vec!["-c".to_owned(), script.to_owned(), "sh".to_owned()];
     args.extend_from_slice(candidates);
-    let Some(found) = capture(target, "/bin/sh", &args, NETWORK_ALLOWANCE, 1024 * 1024).await
-    else {
-        return HashSet::new();
-    };
-    found.stdout.lines().map(str::to_owned).collect()
+    let found = capture(target, "/bin/sh", &args, NETWORK_ALLOWANCE, 1024 * 1024).await?;
+    found
+        .success
+        .then(|| found.stdout.lines().map(str::to_owned).collect())
 }
 
 async fn probe(
@@ -187,15 +190,22 @@ async fn installation_of(
         })
 }
 
+type Connected = (Arc<dyn AgentDriver>, Arc<dyn QuotaProvider>);
+
+fn connected<D: AgentDriver + QuotaProvider + 'static>(driver: D) -> Connected {
+    let driver = Arc::new(driver);
+    (driver.clone(), driver)
+}
+
 async fn connect_driver(
     manifest: &ProviderManifest,
     installation: &InstallationSummary,
     executable: TargetExecutable,
-) -> Result<Arc<dyn AgentDriver>, driver_api::DriverError> {
+) -> Result<Connected, driver_api::DriverError> {
     let id = installation.installation_id.as_str();
     let invalid = || driver_api::DriverError::Protocol("invalid installation".into());
     Ok(match manifest.protocol.kind.as_str() {
-        "app_server_json_rpc" => Arc::new(
+        "app_server_json_rpc" => connected(
             codex_driver::CodexDriver::connect_ready(
                 executable,
                 id.to_owned(),
@@ -203,7 +213,7 @@ async fn connect_driver(
             )
             .await?,
         ),
-        "claude_stream_json" => Arc::new(
+        "claude_stream_json" => connected(
             claude_driver::ClaudeDriver::connect_ready(
                 manifest.id.as_str(),
                 id,
@@ -213,7 +223,7 @@ async fn connect_driver(
             )
             .await?,
         ),
-        "pi_rpc" => Arc::new(
+        "pi_rpc" => connected(
             pi_driver::PiDriver::connect_ready(id, executable, installation.version.clone())
                 .await?,
         ),
@@ -223,7 +233,7 @@ async fn connect_driver(
             if manifest.id.as_str() == "cursor" {
                 args.insert(0, "--disable-auto-update".into());
             }
-            Arc::new(
+            connected(
                 acp_driver::AcpDriver::connect_ready(
                     manifest.id.as_str(),
                     id,
@@ -247,13 +257,49 @@ async fn record(core: &Arc<Core>, probe: RecordInstallationProbe) {
     let _ = core.execute(envelope).await;
 }
 
+/// Installations with a conversation running right now. Replacing a driver under one
+/// would cut it off, so a rescan leaves them exactly as they are.
+async fn busy_installations(core: &Core) -> HashSet<String> {
+    let Ok(snapshot) = core.bootstrap().await else {
+        return HashSet::new();
+    };
+    snapshot
+        .tasks
+        .iter()
+        .filter_map(|task| {
+            task.active_primary_run
+                .as_ref()?
+                .executor
+                .installation_id
+                .clone()
+        })
+        .collect()
+}
+
+fn view_of(manifest: &ProviderManifest, installation: &InstallationSummary) -> TargetAgent {
+    TargetAgent {
+        provider_id: manifest.id.to_string(),
+        display_name: manifest.display_name.clone(),
+        executable: installation.executable.clone(),
+        version: installation.version.clone(),
+        status: installation.status,
+        diagnostic: installation.diagnostic.clone(),
+    }
+}
+
 async fn scan_one(
     core: &Arc<Core>,
     target_id: &TargetId,
     target: &SharedTarget,
     manifest: &ProviderManifest,
     executable: &str,
+    busy: &HashSet<String>,
 ) -> Option<TargetAgent> {
+    if let Some(installation) = installation_of(core, target_id, &manifest.id, executable).await
+        && busy.contains(installation.installation_id.as_str())
+    {
+        return Some(view_of(manifest, &installation));
+    }
     let mut probed = probe(target, manifest, executable).await?;
     probed.target_id = Some(target_id.clone());
     let runnable = !matches!(
@@ -281,9 +327,10 @@ async fn scan_one(
     )
     .await;
     let (status, diagnostic) = match connected {
-        Ok(driver) => {
+        Ok((driver, quota)) => {
             let executor = driver.executor().clone();
             core.register_target_driver(target_id.clone(), driver).await;
+            core.register_quota_provider(quota).await;
             core.warm_agent_catalogs(&executor).await;
             (InstallationStatus::Ready, None)
         }
@@ -307,15 +354,17 @@ async fn scan_one(
 }
 
 /// Each provider gets its first location found, matching how a shell resolves a
-/// command. An installation that has gone from the machine is forgotten here too.
+/// command. An installation that has gone from the machine is forgotten here too, but
+/// only on a complete answer: a dropped link must not look like everything uninstalled.
+/// `None` when the machine couldn't be asked at all.
 pub(super) async fn scan(
     core: &Arc<Core>,
     target_id: &TargetId,
     target: &SharedTarget,
     os: &str,
-) -> Vec<TargetAgent> {
+) -> Option<Vec<TargetAgent>> {
     let Some(platform) = platform_of(os) else {
-        return vec![];
+        return Some(vec![]);
     };
     let path_entries: Vec<String> = target
         .inherited("PATH")
@@ -338,21 +387,29 @@ pub(super) async fn scan(
         .iter()
         .flat_map(|(_, candidates)| candidates.iter().cloned())
         .collect();
-    let existing = existing_executables(target, &every_candidate).await;
+    let existing = existing_executables(target, &every_candidate).await?;
+    let busy = busy_installations(core).await;
     let scans = manifests.iter().filter_map(|(manifest, candidates)| {
         let executable = candidates.iter().find(|path| existing.contains(*path))?;
-        Some(scan_one(core, target_id, target, manifest, executable))
+        Some(scan_one(
+            core, target_id, target, manifest, executable, &busy,
+        ))
     });
-    let agents: Vec<TargetAgent> = futures_util::future::join_all(scans)
-        .await
-        .into_iter()
-        .flatten()
-        .collect();
-    forget_missing(core, target_id, &agents).await;
-    agents
+    let results = futures_util::future::join_all(scans).await;
+    let complete = results.iter().all(Option::is_some);
+    let agents: Vec<TargetAgent> = results.into_iter().flatten().collect();
+    if complete {
+        forget_missing(core, target_id, &agents, &busy).await;
+    }
+    Some(agents)
 }
 
-async fn forget_missing(core: &Arc<Core>, target_id: &TargetId, agents: &[TargetAgent]) {
+async fn forget_missing(
+    core: &Arc<Core>,
+    target_id: &TargetId,
+    agents: &[TargetAgent],
+    busy: &HashSet<String>,
+) {
     let Ok(snapshot) = core.bootstrap().await else {
         return;
     };
@@ -361,7 +418,10 @@ async fn forget_missing(core: &Arc<Core>, target_id: &TargetId, agents: &[Target
             agent.provider_id == installation.provider_id
                 && agent.executable == installation.executable
         });
-        if installation.target_id.as_ref() != Some(target_id) || current {
+        if installation.target_id.as_ref() != Some(target_id)
+            || current
+            || busy.contains(installation.installation_id.as_str())
+        {
             continue;
         }
         let mut envelope = CommandEnvelope::local(CoreCommand::ReconcileMissingInstallation(

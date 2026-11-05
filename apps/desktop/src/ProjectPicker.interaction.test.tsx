@@ -107,7 +107,7 @@ describe("native project picker interactions", () => {
   });
 
   describe("remote hosts menu", () => {
-    const host = { target: { targetId: "tgt_one", displayName: "Build", connection: { destination: "build.example.com", user: "dev", auth: "system" as const } }, status: {} as TargetEntry["status"] };
+    const host = { target: { targetId: "tgt_one", displayName: "Build", connection: { destination: "build.example.com", user: "dev", auth: "system" as const } }, status: {} as TargetEntry["status"], agents: [] };
     const renderHosts = async (entries: TargetEntry[]) => {
       const onChooseHost = vi.fn();
       const onNewHost = vi.fn();

@@ -57,6 +57,7 @@ export const uiPtBR: UiMessages = {
     you: "Você",
   },
   agentPending: {
+    connecting: "Conectando a {agent}",
     label: "Aguardando resposta do Agent",
     responding: "Respondendo",
   },

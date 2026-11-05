@@ -16,6 +16,7 @@ vi.mock("@xterm/xterm", () => ({
     cols = 80; rows = 24; options = {}; modes = { mouseTrackingMode: "none" }; write = vi.fn(); dispose = vi.fn();
     constructor() { terminals.push(this); }
     open() {} loadAddon() {} focus() {}
+    registerLinkProvider() { return { dispose() {} }; }
     onData(callback: (data: string) => void) { (this as typeof terminals[number]).input = callback; return { dispose() {} }; }
     onBinary(callback: (data: string) => void) { (this as typeof terminals[number]).binary = callback; return { dispose() {} }; }
   },

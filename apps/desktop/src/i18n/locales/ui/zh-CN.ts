@@ -57,6 +57,7 @@ export const uiZhCN: UiMessages = {
     you: "你",
   },
   agentPending: {
+    connecting: "正在连接{agent}",
     label: "正在等待 Agent 响应",
     responding: "正在响应",
   },

@@ -184,6 +184,7 @@ dependencies = [
  "proxy-watch",
  "serde",
  "system-configuration",
+ "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "winreg 0.55.0",

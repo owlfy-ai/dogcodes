@@ -1,7 +1,8 @@
 // Isolated visual fixture: never invokes native commands or opens a connection.
 import { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ExecutionTargets, TargetConnectionDialog } from "../ExecutionTargets";
+import { ExecutionTargets, HostProjectDialog, TargetConnectionDialog } from "../ExecutionTargets";
+import { I18nProvider } from "../i18n";
 import { ProjectPicker } from "../ProjectPicker";
 import { Tooltips } from "../Tooltips";
 import type { TargetApi, TargetEntry, TargetStatus } from "../executionTargetClient";
@@ -32,8 +33,8 @@ const scenarios: Record<string, TargetStatus> = {
 
 function entries(status: TargetStatus): TargetEntry[] {
   return [
-    { target: { targetId: "tgt_one", displayName: "Build server", connection: { destination: "build.example.com", user: "dev", port: 2222, auth: "password" } }, status },
-    { target: { targetId: "tgt_two", displayName: "gpu-box", connection: { destination: "gpu-box", auth: "system" } }, status: idle },
+    { target: { targetId: "tgt_one", displayName: "Build server", connection: { destination: "build.example.com", user: "dev", port: 2222, auth: "password" } }, status, agents: [{ providerId: "kimi", version: "2.5.0", status: "ready" }, { providerId: "claude-code", version: "2.1.0", status: "ready" }, { providerId: "codex", version: "1.0.0", status: "not_configured" }] },
+    { target: { targetId: "tgt_two", displayName: "gpu-box", connection: { destination: "gpu-box", auth: "system" } }, status: idle, agents: [] },
   ];
 }
 
@@ -54,8 +55,9 @@ const fixtureTerminals: TerminalApi = {
 };
 
 function Fixture() {
-  const [scenario, setScenario] = useState("connecting");
-  const [dialog, setDialog] = useState<"page" | "picker" | "form" | "progress" | "browse">(new URLSearchParams(location.search).has("page") ? "page" : "progress");
+  const [scenario, setScenario] = useState(new URLSearchParams(location.search).get("scenario") ?? "connecting");
+  const [dialog, setDialog] = useState<"page" | "picker" | "form" | "progress" | "browse" | null>(new URLSearchParams(location.search).has("page") ? "page" : "progress");
+  const [chosenHost, setChosenHost] = useState<TargetEntry | null | undefined>();
   const status = scenarios[scenario]!;
   const api = useMemo<TargetApi>(() => ({
     list: async () => entries(status),
@@ -64,6 +66,7 @@ function Fixture() {
     remove: async () => {},
     connect: async () => {},
     disconnect: async () => {},
+    rescan: async () => {},
     release: async () => {},
     answer: async () => {},
     configHosts: async () => ["build", "gpu-box", "staging"],
@@ -78,11 +81,12 @@ function Fixture() {
       {Object.keys(scenarios).map(name => <button key={name} aria-pressed={scenario === name} onClick={() => setScenario(name)}>{name}</button>)}
     </nav>
     {dialog === "page" && <main className="conversation-column" style={{ height: "100vh" }}><ExecutionTargets api={api} terminals={() => fixtureTerminals} onProjectReady={() => {}} /></main>}
-    {dialog === "picker" && <main style={{ padding: "200px 40px" }}><ProjectPicker projects={[]} selectedProject={null} disabled={false} onSelect={() => {}} onOpenFolder={() => {}} onChooseHost={() => {}} onNewHost={() => {}} targetApi={api} /></main>}
-    {dialog === "form" && <TargetConnectionDialog key="form" api={api} entry={null} onClose={() => {}} onChanged={() => {}} />}
-    {dialog === "progress" && <TargetConnectionDialog key={scenario} api={api} entry={entry} initialProgress onClose={() => {}} onChanged={() => {}} onProjectReady={() => {}} />}
-    {dialog === "browse" && <TargetConnectionDialog key="browse" api={api} entry={entry} initialProgress initialBrowsing onClose={() => {}} onChanged={() => {}} onProjectReady={() => {}} />}
+    {dialog === "picker" && <main style={{ padding: "200px 40px" }}><ProjectPicker projects={[]} selectedProject={null} disabled={false} onSelect={() => {}} onOpenFolder={() => {}} onChooseHost={setChosenHost} onNewHost={() => setChosenHost(null)} targetApi={api} /></main>}
+    {chosenHost !== undefined && <HostProjectDialog api={api} entry={chosenHost} onClose={() => setChosenHost(undefined)} onProjectReady={() => {}} />}
+    {dialog === "form" && <TargetConnectionDialog key="form" api={api} entry={null} onClose={() => setDialog(null)} onChanged={() => {}} />}
+    {dialog === "progress" && <TargetConnectionDialog key={scenario} api={api} entry={entry} initialProgress onClose={() => setDialog(null)} onChanged={() => {}} onProjectReady={() => {}} />}
+    {dialog === "browse" && <TargetConnectionDialog key="browse" api={api} entry={entry} initialProgress initialBrowsing onClose={() => setDialog(null)} onChanged={() => {}} onProjectReady={() => {}} />}
   </>;
 }
 
-createRoot(document.getElementById("root")!).render(<><Tooltips /><Fixture /></>);
+createRoot(document.getElementById("root")!).render(<I18nProvider language={new URLSearchParams(location.search).get("lang") === "en" ? "en" : "zh-CN"}><Tooltips /><Fixture /></I18nProvider>);

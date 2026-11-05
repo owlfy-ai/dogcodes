@@ -14,8 +14,8 @@ pub use process_scope::{
 };
 pub use target::{
     ExecutionTarget, Pipe, ProcessRequest, SharedTarget, TargetCommand, TargetExecutable,
-    TerminalChild, create_target_directory, local_target, remove_target_directory,
-    write_target_file,
+    TerminalChild, create_target_directory, local_target, remove_target_directory, target_curl,
+    target_script_output, write_target_file,
 };
 
 pub use electron::{electron_node_executable, electron_resources_directory};
