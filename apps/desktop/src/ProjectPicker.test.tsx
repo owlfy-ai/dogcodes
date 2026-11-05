@@ -22,6 +22,13 @@ describe("projectOptions", () => {
   });
 });
 
+it("finds a remote project by the host shown for it", () => {
+  const remote = { ...project("remote", "Logs", "/root/logs"), targetId: "tgt_one" };
+  const hosts = new Map([["tgt_one", "192.168.1.100"]]);
+  expect(projectOptions([remote], "192.168", null, hosts)).toEqual([remote]);
+  expect(projectOptions([remote], "192.168")).toEqual([]);
+});
+
 it("searches home-relative paths as well as full primary and additional paths", () => {
   const items = [{ ...project("home", "App", "/home/alice/code/app"), additionalDirectories: ["/home/alice/shared"] }];
   expect(projectOptions(items, "~/code", "/home/alice")).toEqual(items);

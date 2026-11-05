@@ -792,7 +792,7 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
 .project-picker-menu button:hover, .project-picker-menu button:focus-visible { background: #8882; }
 .project-picker-menu button:disabled { opacity: .45; cursor: default; }
 .project-picker-copy { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.project-picker-menu small { display: block; margin-top: 3px; max-width: 100%; font-size: calc(12px * var(--ui-scale)); color: var(--muted); }
+.project-picker-menu small { display: block; margin-top: 3px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: calc(12px * var(--ui-scale)); color: var(--muted); }
 .project-picker-actions { border-top: 1px solid var(--line); padding: 5px; }
 .project-picker-list .project-picker-empty { margin: 9px; font-size: calc(12px * var(--ui-scale)); color: var(--muted); }
 

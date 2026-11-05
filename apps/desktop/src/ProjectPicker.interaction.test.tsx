@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { ProjectId } from "@dogcodes/protocol";
 import { ProjectPicker } from "./ProjectPicker";
+import type { TargetApi } from "./executionTargetClient";
 import { openLocalProject } from "./localProject";
 import { TauriCoreClient } from "./tauriClient";
 import { invoke } from "@tauri-apps/api/core";
@@ -80,6 +81,29 @@ describe("native project picker interactions", () => {
     await openMenu();
     await act(async () => { document.body.dispatchEvent(new Event("pointerdown", { bubbles: true })); });
     expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("shows a local project on one line and a remote project's host, keeping paths for the tooltip", async () => {
+    const remote = { ...project, projectId: "prj_remote" as ProjectId, displayName: "Logs", path: "/root/logs", targetId: "tgt_one" };
+    const list = vi.fn(async () => [{ target: { targetId: "tgt_one", displayName: "Build", connection: { destination: "192.168.1.100", auth: "system" } } }]) as unknown as TargetApi["list"];
+    await act(async () => root.render(<ProjectPicker projects={[project, remote]} selectedProject={project}
+      disabled={false} onSelect={onSelect} onOpenFolder={vi.fn()} targetApi={{ list }} />));
+    await openMenu();
+    const [local, server] = [...container.querySelectorAll<HTMLButtonElement>(".project-picker-list button")];
+    expect(local.querySelector("small")).toBeNull();
+    expect(local.textContent).not.toContain("/projects/one");
+    expect(local.dataset.tooltip).toBe("/projects/one");
+    expect(server.querySelector("small")?.textContent).toBe("SSH 192.168.1.100");
+    expect(server.textContent).not.toContain("/root/logs");
+    expect(server.dataset.tooltip).toBe("/root/logs");
+  });
+
+  it("keeps the SSH badge when the connection list cannot be read", async () => {
+    const remote = { ...project, projectId: "prj_remote" as ProjectId, targetId: "tgt_one" };
+    await act(async () => root.render(<ProjectPicker projects={[remote]} selectedProject={remote}
+      disabled={false} onSelect={onSelect} onOpenFolder={vi.fn()} targetApi={{ list: async () => { throw new Error("offline"); } }} />));
+    await openMenu();
+    expect(container.querySelector(".project-picker-list small")?.textContent?.trim()).toBe("SSH");
   });
 
   it("does not register or create a task when the native dialog is cancelled", async () => {

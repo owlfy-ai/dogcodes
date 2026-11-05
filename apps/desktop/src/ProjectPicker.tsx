@@ -6,33 +6,49 @@ import { homeRelativePath, useHomeDirectory } from "./homeRelativePath";
 import { FolderIcon } from "./ProjectHoverCard";
 import { useI18n } from "./i18n";
 import { SCRATCH_PROJECT_NAME } from "./displayNames";
+import { tauriTargetApi, type TargetApi } from "./executionTargetClient";
 
-export function projectOptions(projects: ProjectSummary[], query: string, home: string | null = null) {
+type TargetHosts = ReadonlyMap<string, string>;
+const NO_HOSTS: TargetHosts = new Map();
+
+export function projectOptions(projects: ProjectSummary[], query: string, home: string | null = null, hosts: TargetHosts = NO_HOSTS) {
   const search = query.trim().toLocaleLowerCase();
   return projects.filter(project => project.displayName !== SCRATCH_PROJECT_NAME
-    && `${project.displayName} ${[project.path, ...project.additionalDirectories].flatMap(path => [path, homeRelativePath(path, home)]).join(" ")}`.toLocaleLowerCase().includes(search));
+    && `${project.displayName} ${project.targetId ? hosts.get(project.targetId) ?? "" : ""} ${[project.path, ...project.additionalDirectories].flatMap(path => [path, homeRelativePath(path, home)]).join(" ")}`.toLocaleLowerCase().includes(search));
 }
 
-export function ProjectPicker({ projects, selectedProject, disabled, onSelect, onOpenFolder, onNewConnection }: {
+export function ProjectPicker({ projects, selectedProject, disabled, onSelect, onOpenFolder, onNewConnection, targetApi = tauriTargetApi }: {
   projects: ProjectSummary[];
   selectedProject: ProjectSummary | null;
   disabled: boolean;
   onSelect: (id: ProjectId) => void;
   onOpenFolder: () => void;
   onNewConnection?: () => void;
+  targetApi?: Pick<TargetApi, "list">;
 }) {
   const { t } = useI18n();
   const home = useHomeDirectory();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const options = projectOptions(projects, query, home);
+  const [hosts, setHosts] = useState<TargetHosts>(NO_HOSTS);
+  const options = projectOptions(projects, query, home, hosts);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const scratch = projects.find(project => project.displayName === SCRATCH_PROJECT_NAME);
   const noProject = !selectedProject || selectedProject.projectId === scratch?.projectId;
+  const hasRemoteProject = projects.some(project => project.targetId);
   useEffect(() => {
     if (disabled) setOpen(false);
   }, [disabled]);
+  useEffect(() => {
+    if (!open || !hasRemoteProject) return;
+    let disposed = false;
+    // Without the list a remote project still shows its SSH badge and its path on hover.
+    void targetApi.list().then(entries => {
+      if (!disposed) setHosts(new Map(entries.map(({ target }) => [target.targetId, target.connection.destination])));
+    }).catch(() => {});
+    return () => { disposed = true; };
+  }, [open, hasRemoteProject, targetApi]);
   useEffect(() => {
     if (!open) return;
     const close = (event: PointerEvent) => {
@@ -70,7 +86,7 @@ export function ProjectPicker({ projects, selectedProject, disabled, onSelect, o
       <div className="project-picker-list">
         {options.map(project => <button type="button" key={project.projectId}
           data-tooltip={[project.path, ...project.additionalDirectories].join("\n")} aria-pressed={project.projectId === selectedProject?.projectId} onClick={() => choose(project.projectId)}>
-          <FolderIcon /><span className="project-picker-copy">{project.displayName}<small>{project.targetId ? <><b className="project-target-badge">SSH</b> {project.path}</> : homeRelativePath(project.path, home)}</small></span>
+          <FolderIcon /><span className="project-picker-copy">{project.displayName}{project.targetId && <small><b className="project-target-badge">SSH</b> {hosts.get(project.targetId)}</small>}</span>
           {project.projectId === selectedProject?.projectId && <span aria-hidden="true">✓</span>}
         </button>)}
         {options.length === 0 && <p className="project-picker-empty">{t(query ? "projectPicker.noMatches" : "projectPicker.noProjects")}</p>}
