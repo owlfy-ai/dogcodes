@@ -25,7 +25,11 @@ fn file_name() -> &'static str {
     if cfg!(windows) { "ssh.exe" } else { "ssh" }
 }
 
-fn candidates(path: Option<OsString>, system_root: Option<OsString>) -> Vec<PathBuf> {
+fn candidates(
+    path: Option<OsString>,
+    system_root: Option<OsString>,
+    bundled: &[PathBuf],
+) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = path
         .iter()
         .flat_map(std::env::split_paths)
@@ -45,16 +49,20 @@ fn candidates(path: Option<OsString>, system_root: Option<OsString>) -> Vec<Path
             found.push(fixed.into());
         }
     }
+    // Last: what the person has installed keeps their config and agent working as they
+    // expect. This is for a machine with no client, or one too old to prompt through us.
+    found.extend(bundled.iter().map(|directory| directory.join(file_name())));
     found
 }
 
 /// The first usable client wins, matching what the user's own shell would run.
 /// An absolute path also matters on Windows, where `ProxyJump` respawns `argv[0]`.
-pub async fn find_ssh() -> Result<SshProgram, ConnectError> {
+pub async fn find_ssh(bundled: &[PathBuf]) -> Result<SshProgram, ConnectError> {
     let mut too_old = None;
     for path in candidates(
         agent_runtime::current_path(),
         std::env::var_os("SystemRoot"),
+        bundled,
     ) {
         if !path.is_file() {
             continue;
@@ -123,8 +131,26 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn relative_path_entries_are_ignored() {
-        let found = candidates(Some("relative:/opt/bin".into()), None);
+        let found = candidates(Some("relative:/opt/bin".into()), None, &[]);
         assert_eq!(found[0], PathBuf::from("/opt/bin/ssh"));
         assert!(found.iter().all(|path| path.is_absolute()));
+    }
+
+    #[test]
+    fn a_bundled_client_is_only_a_last_resort() {
+        let found = candidates(
+            Some(std::env::join_paths(["/opt/bin"]).unwrap()),
+            Some("/windows".into()),
+            &["/bundled".into()],
+        );
+        assert!(found[0].starts_with("/opt/bin"));
+        assert!(found.last().unwrap().starts_with("/bundled"));
+        assert_eq!(
+            found
+                .iter()
+                .filter(|path| path.starts_with("/bundled"))
+                .count(),
+            1
+        );
     }
 }

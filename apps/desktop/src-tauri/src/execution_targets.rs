@@ -433,7 +433,10 @@ impl TargetHost {
             )),
             TargetCall::ConfigHosts => json(serde_json::to_value(self.config_hosts())),
             TargetCall::ResolveHost { alias } => {
-                let program = target_link::find_ssh().await.map_err(|e| e.to_string())?;
+                let program =
+                    target_link::find_ssh(&crate::computer_use::resource_directories("openssh"))
+                        .await
+                        .map_err(|e| e.to_string())?;
                 json(serde_json::to_value(
                     target_link::ssh_config::resolve(&program, &alias).await,
                 ))
@@ -697,7 +700,10 @@ impl TargetHost {
         let worker = tokio::spawn(async move {
             let request = async {
                 Ok::<_, ConnectError>(ConnectRequest {
-                    program: target_link::find_ssh().await?,
+                    program: target_link::find_ssh(&crate::computer_use::resource_directories(
+                        "openssh",
+                    ))
+                    .await?,
                     connection: target.connection.clone(),
                     askpass_program,
                     shims: host.shims.clone(),

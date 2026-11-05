@@ -61,6 +61,7 @@ __pycache__/
 /.local/
 /apps/desktop/src-tauri/resources/computer-use/
 /apps/desktop/src-tauri/resources/shim/
+/apps/desktop/src-tauri/resources/openssh/
 
 # Tool caches, coverage and test reports.
 .pnpm-store/

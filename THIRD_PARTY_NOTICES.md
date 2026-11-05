@@ -17,6 +17,14 @@ its SHA-256 are recorded in `scripts/prepare-computer-use.mjs`.
 This sidecar is separate from the dependency graphs below; no perception model
 extension is bundled.
 
+## Bundled OpenSSH client
+
+Windows installers additionally include the client from Win32-OpenSSH 10.4.0.0p1-Preview
+(`ssh.exe`, `libcrypto.dll`, `ssh-sk-helper.exe`, `ssh-pkcs11-helper.exe`), from
+https://github.com/PowerShell/Win32-OpenSSH (BSD-style licenses, with LibreSSL/OpenSSL
+notices). The exact upstream `LICENSE.txt` and `NOTICE.txt` are installed beside it in the
+application's `openssh` resources folder.
+
 ## Components (708)
 
 | Component | Version | Ecosystem | License | Source |

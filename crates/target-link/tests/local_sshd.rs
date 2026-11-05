@@ -250,7 +250,7 @@ async fn attempt(
 ) -> Result<TargetLink, ConnectError> {
     let request = ConnectRequest {
         connection,
-        program: find_ssh().await.unwrap(),
+        program: find_ssh(&[]).await.unwrap(),
         askpass_program: built("examples/askpass_helper"),
         shims,
         config_file: Some(server.config.clone()),
@@ -546,7 +546,7 @@ async fn a_build_without_this_platform_says_so() {
 #[ignore = "needs an OpenSSH server binary"]
 async fn the_system_config_alias_resolves_through_ssh_g() {
     let server = Sshd::start("", "");
-    let program = find_ssh().await.unwrap();
+    let program = find_ssh(&[]).await.unwrap();
     // `-G` reads the user's real config; a plain name still resolves to itself.
     let resolved = target_link::ssh_config::resolve(&program, "example-host-for-test")
         .await

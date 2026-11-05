@@ -43,7 +43,7 @@ jobs:
           FULL_CHECKS: ${{ inputs.full || github.event_name == 'workflow_dispatch' }}
         run: node scripts/ci-changes.mjs
       - name: CI routing and release script tests
-        run: node --test scripts/ci-changes.test.mjs scripts/package-desktop.test.mjs scripts/desktop-release.test.mjs
+        run: node --test scripts/ci-changes.test.mjs scripts/package-desktop.test.mjs scripts/prepare-shims.test.mjs scripts/prepare-openssh.test.mjs scripts/desktop-release.test.mjs
       - run: node scripts/check-release-inputs.mjs
       - name: ZCode native account and credential bridge tests
         shell: bash

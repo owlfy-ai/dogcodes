@@ -113,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 install_directory: None,
                 proxy: None,
             },
-            program: target_link::find_ssh().await?,
+            program: target_link::find_ssh(&[]).await?,
             askpass_program: std::env::current_exe()?,
             shims: ShimCatalog::new(vec![shims]),
             config_file: None,

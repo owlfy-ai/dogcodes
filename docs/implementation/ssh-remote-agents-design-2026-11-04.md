@@ -161,7 +161,7 @@ ssh -T
 
 **P0 的 Windows 验收**：内置 `ssh.exe` 分别走 config 别名、`ProxyJump`、系统 ssh-agent 连接一次，并验证 askpass 能弹出密码框。
 
-> 2026-11-04 实施进度：内置 `ssh.exe` 的打包尚未完成，留到 Windows 打包环境验证时做；在此之前，Windows 缺失 ssh 时明确报错，低于 8.4 时只能使用不需要提问的认证方式。
+> 2026-11-05 实施进度：Windows 安装包内置固定版本的 Win32-OpenSSH（`scripts/prepare-openssh.mjs`，校验 SHA-256），只带 `ssh.exe`、`libcrypto.dll`、硬件密钥和 PKCS#11 助手及许可证。按 `ssh -V` 的实际版本选择，系统自带的优先。上面的 Windows 验收尚未进行。
 
 ### 6.3 Shim 部署
 
