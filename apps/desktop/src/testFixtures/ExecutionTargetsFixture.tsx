@@ -2,8 +2,10 @@
 import { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ExecutionTargets, TargetConnectionDialog } from "../ExecutionTargets";
+import { ProjectPicker } from "../ProjectPicker";
 import { Tooltips } from "../Tooltips";
 import type { TargetApi, TargetEntry, TargetStatus } from "../executionTargetClient";
+import { terminalClient, type TerminalApi, type TerminalInfo } from "../terminalClient";
 import "../styles.css";
 import "../remoteDevices.css";
 
@@ -35,9 +37,25 @@ function entries(status: TargetStatus): TargetEntry[] {
   ];
 }
 
+const shell = (id: string, epoch = "fixture"): TerminalInfo => ({ id, epoch, projectId: "target:tgt_one", directoryIndex: 0, taskId: null, commandId: null, label: "terminal", cwd: "/home/dev", command: null, status: "running", exitCode: null, error: null, outputEnd: 0, createdAt: 0 });
+const banner = "Welcome to Ubuntu 24.04 LTS\r\n\r\nLast login: Wed Nov  4 21:14:02 2026\r\n\x1b[32mdev@build\x1b[0m:\x1b[34m~\x1b[0m$ ";
+const fixtureTerminals: TerminalApi = {
+  ...terminalClient,
+  list: async () => [],
+  get: async id => shell(id),
+  resize: async () => {},
+  close: async () => {},
+  input: async () => ({ state: "ready", revision: "1" }),
+  open: async (_project, _index, _cols, _rows, receive, id) => {
+    receive({ kind: "state", info: shell(id) });
+    receive({ kind: "data", bytes: [...new TextEncoder().encode(banner)] });
+    return { id, detach: () => {} };
+  },
+};
+
 function Fixture() {
   const [scenario, setScenario] = useState("connecting");
-  const [dialog, setDialog] = useState<"page" | "form" | "progress" | "browse">("progress");
+  const [dialog, setDialog] = useState<"page" | "picker" | "form" | "progress" | "browse">(new URLSearchParams(location.search).has("page") ? "page" : "progress");
   const status = scenarios[scenario]!;
   const api = useMemo<TargetApi>(() => ({
     list: async () => entries(status),
@@ -46,6 +64,7 @@ function Fixture() {
     remove: async () => {},
     connect: async () => {},
     disconnect: async () => {},
+    release: async () => {},
     answer: async () => {},
     configHosts: async () => ["build", "gpu-box", "staging"],
     resolveHost: async alias => ({ host: `${alias}.example.com`, user: "dev", port: 22 }),
@@ -54,11 +73,12 @@ function Fixture() {
   }), [status]);
   const entry = entries(status)[0]!;
   return <>
-    <nav style={{ position: "fixed", zIndex: 1000, top: 8, left: 8, display: "flex", flexWrap: "wrap", gap: 6, maxWidth: "90vw" }} aria-label="Scenario">
-      {(["page", "form", "progress", "browse"] as const).map(name => <button key={name} aria-pressed={dialog === name} onClick={() => setDialog(name)}>{name}</button>)}
+    <nav style={{ position: "fixed", zIndex: 1000, bottom: 8, left: 8, display: "flex", flexWrap: "wrap", gap: 6, maxWidth: "90vw" }} aria-label="Scenario">
+      {(["page", "picker", "form", "progress", "browse"] as const).map(name => <button key={name} aria-pressed={dialog === name} onClick={() => setDialog(name)}>{name}</button>)}
       {Object.keys(scenarios).map(name => <button key={name} aria-pressed={scenario === name} onClick={() => setScenario(name)}>{name}</button>)}
     </nav>
-    {dialog === "page" && <main className="conversation-column" style={{ height: "100vh" }}><ExecutionTargets api={api} /></main>}
+    {dialog === "page" && <main className="conversation-column" style={{ height: "100vh" }}><ExecutionTargets api={api} terminals={() => fixtureTerminals} onProjectReady={() => {}} /></main>}
+    {dialog === "picker" && <main style={{ padding: "200px 40px" }}><ProjectPicker projects={[]} selectedProject={null} disabled={false} onSelect={() => {}} onOpenFolder={() => {}} onChooseHost={() => {}} onNewHost={() => {}} targetApi={api} /></main>}
     {dialog === "form" && <TargetConnectionDialog key="form" api={api} entry={null} onClose={() => {}} onChanged={() => {}} />}
     {dialog === "progress" && <TargetConnectionDialog key={scenario} api={api} entry={entry} initialProgress onClose={() => {}} onChanged={() => {}} onProjectReady={() => {}} />}
     {dialog === "browse" && <TargetConnectionDialog key="browse" api={api} entry={entry} initialProgress initialBrowsing onClose={() => {}} onChanged={() => {}} onProjectReady={() => {}} />}

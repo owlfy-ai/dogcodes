@@ -1,14 +1,39 @@
 .target-page .target-new { margin-left: auto; flex: none; }
-.target-list { margin: 0; padding: 4px 22px; list-style: none; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
-.target-row-error { color: color-mix(in srgb, #c35b4a 80%, CanvasText); font-size: .6875rem; line-height: 1.5; }
-.target-phase { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; flex: none; color: var(--muted); font-size: .6875rem; }
-.target-phase i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.target-phase.connected i { background: #639e57; }
-.target-phase.connecting i { background: #c79a3b; }
-.target-phase.failed i, .target-phase.disconnected i { background: #c35b4a; }
+.conversation-column > .workspace.remote-page.target-page { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+.conversation-column > .workspace.remote-page.target-page[hidden] { display: none; }
+.target-page .target-tabs { flex: none; padding: 6px 14px; border-bottom: 1px solid var(--line); }
+.target-tab-state { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #639e57; }
+.target-tab-state.connecting { background: #c79a3b; }
+.target-tab-state.disconnected { background: #c35b4a; }
+.target-host-list { flex: 1; min-height: 0; overflow: auto; padding: 36px clamp(24px, 5vw, 72px); }
+.target-host-list[hidden] { display: none; }
+.target-page .remote-header p small { display: block; margin-top: 2px; font-size: .6875rem; }
+.target-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.target-card { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); user-select: none; -webkit-user-select: none; transition: border-color .15s; }
+.target-card:hover, .target-card:focus-within { border-color: var(--muted); }
+.target-page .target-card-open { display: flex; flex: 1; justify-content: flex-start; gap: 11px; min-width: 0; padding: 0; border: 0; border-radius: 10px; color: inherit; background: transparent; text-align: left; }
+.target-card-identity { display: grid; gap: 4px; min-width: 0; }
+.target-card-identity > * { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.target-card-identity strong { font-size: .8125rem; font-weight: 600; }
+.target-card-identity > span { color: var(--muted); font-family: ui-monospace, monospace; font-size: .6875rem; }
+.target-card .target-row-actions { gap: 2px; opacity: 0; transition: opacity .12s; }
+.target-card:hover .target-row-actions, .target-card:focus-within .target-row-actions { opacity: 1; }
+@media (hover: none) { .target-card .target-row-actions { opacity: 1; } }
+.target-card .target-card-connect { opacity: 1; }
+
+.target-terminal-tab { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.target-terminal-tab[hidden] { display: none; }
+.target-terminal-ended { display: flex; align-items: center; gap: 10px; flex: none; padding: 8px 14px; font-size: .75rem; }
+.target-terminal-ended span { flex: 1; min-width: 0; color: var(--muted); }
+.target-page .target-terminal-ended button { padding: 5px 10px; border: 1px solid var(--line); border-radius: 7px; color: inherit; background: transparent; font-size: .6875rem; }
+.target-page .target-terminal-ended button:hover { border-color: var(--muted); }
+.target-terminal-connecting { display: grid; flex: 1; place-items: center; min-height: 0; padding: 24px; overflow: auto; }
+.project-dialog.target-tab-progress { box-shadow: none; }
+
 .target-row-actions { display: flex; gap: 6px; flex: none; }
-.target-page .target-row-actions button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--muted); font-size: .6875rem; }
-.target-page .target-row-actions button:hover { border-color: var(--muted); color: inherit; }
+.target-page .target-row-actions button { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); }
+.target-page .target-row-actions svg { width: 16px; height: 16px; }
+.target-page .target-row-actions button:hover { background: #8882; color: inherit; }
 
 .project-dialog.target-dialog { width: min(560px, 92vw); }
 .target-route { display: block; margin-top: 4px; color: #888883; font-family: ui-monospace, monospace; font-size: .6875rem; overflow-wrap: anywhere; }

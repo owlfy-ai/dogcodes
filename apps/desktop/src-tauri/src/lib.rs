@@ -1308,6 +1308,8 @@ pub fn run() {
             project_runs::core_project_run_operation,
             project_runs::core_project_run_open,
             terminal::core_terminal_open,
+            terminal::core_terminal_open_on_target,
+            terminal::core_terminal_release_target,
             terminal::core_terminal_list,
             terminal::core_terminal_get,
             terminal::core_terminal_read,

@@ -794,6 +794,8 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
 .project-picker-copy { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-picker-menu small { display: block; margin-top: 3px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: calc(12px * var(--ui-scale)); color: var(--muted); }
 .project-picker-actions { border-top: 1px solid var(--line); padding: 5px; }
+.project-picker-hosts svg.project-picker-more { width: 12px; height: 12px; margin-left: auto; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; opacity: .6; }
+.project-picker-menu.project-picker-host-menu { width: min(270px, 70vw); }
 .project-picker-list .project-picker-empty { margin: 9px; font-size: calc(12px * var(--ui-scale)); color: var(--muted); }
 
 .history-section-label { margin: 4px 7px 6px; color: var(--muted); font-size: calc(14px * var(--ui-scale)); font-weight: 400; }
@@ -905,14 +907,15 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
 }
 
 .history-browser { overflow: auto; padding: 32px; max-width: 1000px; width: 100%; margin: 0 auto; box-sizing: border-box; }
-.history-browser form, .history-browser nav { display: flex; gap: 10px; margin: 16px 0; }
+.history-browser form { display: flex; gap: 10px; margin: 16px 0; }
+.history-browser .tab-bar { margin: 16px 0; }
 .history-browser input { flex: 1; min-width: 0; padding: 10px; border: 1px solid #8885; border-radius: 8px; color: inherit; background: transparent; }
 .history-browser article { border-top: 1px solid #8884; padding: 16px 0; }
 .history-browser pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .history-browser small, .history-browser > p { opacity: .65; }
 
 .history-browser button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
-.history-browser button:hover, .history-browser button[aria-pressed="true"] { background: var(--panel-raised); }
+.history-browser button:hover { background: var(--panel-raised); }
 .history-browser button:disabled { opacity: .5; cursor: default; }
 .history-browser button:focus-visible, .history-browser input:focus-visible { outline: 2px solid var(--muted); outline-offset: 2px; }
 .history-browser h2 { margin: 22px 0 16px; }

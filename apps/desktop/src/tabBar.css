@@ -1,0 +1,16 @@
+/* Tabs sit on panels of every kind, so colors come from the text color around them. */
+.tab-bar { display: flex; align-items: center; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tab-bar::-webkit-scrollbar { display: none; }
+.tab-bar-tab { display: flex; align-items: center; flex: none; min-width: 0; max-width: calc(220px * var(--ui-scale, 1)); border: 1px solid transparent; border-radius: 7px; color: color-mix(in srgb, currentColor 68%, transparent); transition: background-color .12s, color .12s; }
+.tab-bar-tab:hover { background: #8881; color: inherit; }
+.tab-bar-tab[data-selected="true"] { background: #8882; border-color: #8883; color: inherit; }
+.tab-bar .tab-bar-tab > [role="tab"], .tab-bar .tab-bar-tab > [role="tab"]:hover { display: flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; width: auto; height: auto; padding: 4px 10px; border: 0; border-radius: inherit; color: inherit; background: transparent; font-size: calc(12px * var(--ui-scale, 1)); line-height: 1.5; white-space: nowrap; }
+.tab-bar .tab-bar-tab > [role="tab"]:has(+ .tab-bar-close) { padding-right: 4px; }
+.tab-bar-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tab-bar .tab-bar-tab > .tab-bar-close { display: grid; place-items: center; flex: none; width: calc(22px * var(--ui-scale, 1)); height: calc(22px * var(--ui-scale, 1)); margin: 0 3px 0 0; padding: 0; border: 0; border-radius: 5px; color: inherit; background: transparent; line-height: 1; opacity: .65; }
+.tab-bar .tab-bar-tab > .tab-bar-close:hover:not(:disabled), .tab-bar .tab-bar-tab > .tab-bar-close:focus-visible { opacity: 1; background: #8883; }
+.tab-bar .tab-bar-tab > .tab-bar-close svg { display: block; width: calc(12px * var(--ui-scale, 1)); height: calc(12px * var(--ui-scale, 1)); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+
+.tab-bar--icons { gap: 6px; overflow: visible; }
+.tab-bar--icons .tab-bar-tab > [role="tab"], .tab-bar--icons .tab-bar-tab > [role="tab"]:hover { display: grid; place-items: center; width: var(--titlebar-button-size, 30px); height: var(--titlebar-button-size, 30px); padding: 0; }
+.tab-bar--icons .tab-bar-tab > [role="tab"] svg { width: var(--titlebar-icon-size, 18px); height: var(--titlebar-icon-size, 18px); }

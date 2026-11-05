@@ -14,12 +14,7 @@
 .project-run-panel > p[role] { margin: 8px 14px; }
 .project-run-analyzing { display: flex; align-items: center; gap: 8px; color: var(--review-muted); }
 .project-run-output { --terminal-bg: var(--review-bg); --terminal-fg: var(--text, currentColor); display: flex; flex-direction: column; min-height: 180px; height: 45%; border-top: 1px solid var(--review-border); }
-.project-run-output-tabs { display: flex; gap: 4px; overflow-x: auto; padding: 6px; flex: none; }
-.project-run-output-tab { display: flex; align-items: center; flex: none; min-width: 0; max-width: calc(220px * var(--ui-scale, 1)); border: 1px solid var(--review-border); border-radius: 7px; }
-.project-run-output-tab[data-selected="true"] { background: var(--review-selected); }
-.review-panel .project-run-output-tab > [role="tab"], .review-panel .project-run-output-tab > [role="tab"]:hover { min-width: 0; padding: 5px 4px 5px 8px; border: 0; background: transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.review-panel .project-run-tab-close { display: grid; place-items: center; flex: none; width: calc(22px * var(--ui-scale, 1)); height: calc(22px * var(--ui-scale, 1)); margin: 0 3px 0 0; padding: 0; border: 0; border-radius: 5px; color: var(--review-muted); line-height: 1; }
-.project-run-tab-close svg { display: block; width: calc(12px * var(--ui-scale, 1)); height: calc(12px * var(--ui-scale, 1)); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.project-run-output-tabs { padding: 6px; flex: none; }
 .project-run-console { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .project-run-console[hidden] { display: none; }
 .project-run-console-bar { display: flex; align-items: center; gap: 6px; padding: 4px 8px; }

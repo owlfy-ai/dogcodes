@@ -19,6 +19,28 @@ use tokio::{
 
 const WAIT_INTERVAL: Duration = Duration::from_millis(10);
 
+const COLORS_VARIABLE: &str = "DOGCODES_SHELL_COLORS";
+const COLORS_HOOK: &str = r#"eval "$DOGCODES_SHELL_COLORS""#;
+/// Many servers, Debian's root account for one, leave a shell without colors. Bash runs
+/// this just before its first prompt, after every startup file, so it can fill in only
+/// what they left out. It writes nothing on the server and then removes itself. A
+/// prompt built by a command is left alone, since it may well draw its own colors.
+const BASH_COLORS: &str = r#"
+case "$PS1" in
+  *'\e'*|*'\E'*|*'\033'*|*'\x1b'*|*$'\e'*|*'$('*|*'`'*) ;;
+  *) PS1='${debian_chroot:+($debian_chroot)}\[\e[32m\]\u@\h\[\e[0m\]:\[\e[34m\]\w\[\e[0m\]\$ ' ;;
+esac
+if ! alias ls >/dev/null 2>&1; then
+  if command ls --color=auto / >/dev/null 2>&1; then alias ls='ls --color=auto'
+  else export CLICOLOR=1
+  fi
+fi
+unset DOGCODES_SHELL_COLORS
+if [ "$PROMPT_COMMAND" = 'eval "$DOGCODES_SHELL_COLORS"' ]; then unset PROMPT_COMMAND
+else PROMPT_COMMAND=${PROMPT_COMMAND//'eval "$DOGCODES_SHELL_COLORS"'/:}
+fi
+"#;
+
 fn shell_request(target: &SharedTarget, command: Option<&str>, cwd: &Path) -> ProcessRequest {
     let shell = target
         .inherited("SHELL")
@@ -32,6 +54,15 @@ fn shell_request(target: &SharedTarget, command: Option<&str>, cwd: &Path) -> Pr
     });
     let mut env = target.login_environment();
     env.insert("TERM".into(), "xterm-256color".into());
+    let is_bash = known.is_some_and(|shell| {
+        Path::new(shell)
+            .file_name()
+            .is_some_and(|name| name == "bash")
+    });
+    if command.is_none() && is_bash {
+        env.insert(COLORS_VARIABLE.into(), BASH_COLORS.into());
+        env.insert("PROMPT_COMMAND".into(), COLORS_HOOK.into());
+    }
     let (program, args): (std::ffi::OsString, Vec<std::ffi::OsString>) = match (command, known) {
         (None, _) => (
             shell.clone().unwrap_or_else(|| "/bin/sh".into()),
@@ -260,5 +291,85 @@ impl Write for BlockingWriter {
     }
     fn flush(&mut self) -> io::Result<()> {
         self.runtime.block_on(self.stream.flush())
+    }
+}
+
+#[cfg(all(test, unix))]
+mod color_tests {
+    use super::{BASH_COLORS, COLORS_HOOK, COLORS_VARIABLE};
+    use std::{
+        io::Write,
+        process::{Command, Stdio},
+    };
+
+    /// An interactive bash as a server would start it, reporting what it ended up with.
+    /// `startup` stands in for the server's startup files.
+    fn bash_after_startup(prompt: &str, startup: &str) -> String {
+        let directory = tempfile::tempdir().unwrap();
+        let rcfile = directory.path().join("rc");
+        std::fs::write(&rcfile, startup).unwrap();
+        let mut bash = Command::new("bash")
+            .args(["--noprofile", "--rcfile"])
+            .arg(&rcfile)
+            .arg("-i")
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap())
+            .env("TERM", "xterm-256color")
+            .env("PS1", prompt)
+            .env(COLORS_VARIABLE, BASH_COLORS)
+            .env("PROMPT_COMMAND", COLORS_HOOK)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        // Read a line at a time, as at a prompt, so the hook has run before these do.
+        let report = r#"printf 'ps1=%s\n' "$PS1"
+alias ls 2>/dev/null || echo no-ls-alias
+printf 'clicolor=%s\n' "${CLICOLOR-}"
+printf 'hook=%s\n' "${PROMPT_COMMAND-unset}"
+printf 'script=%s\n' "${DOGCODES_SHELL_COLORS-unset}"
+exit
+"#;
+        bash.stdin
+            .take()
+            .unwrap()
+            .write_all(report.as_bytes())
+            .unwrap();
+        String::from_utf8(bash.wait_with_output().unwrap().stdout).unwrap()
+    }
+
+    #[test]
+    fn a_shell_without_colors_gets_them_and_the_hook_removes_itself() {
+        let report = bash_after_startup(r"\u@\h:\w\$ ", "");
+        assert!(report.contains(r"\[\e[32m\]\u@\h"), "{report}");
+        assert!(
+            report.contains("ls --color=auto") || report.contains("clicolor=1"),
+            "{report}"
+        );
+        assert!(report.contains("hook=unset"), "{report}");
+        assert!(report.contains("script=unset"), "{report}");
+    }
+
+    #[test]
+    fn colors_the_server_chose_are_left_alone() {
+        let prompt = r"\[\033[01;31m\]\u\[\033[00m\]\$ ";
+        let report = bash_after_startup(prompt, "alias ls='ls -F'\n");
+        assert!(report.contains(&format!("ps1={prompt}")), "{report}");
+        assert!(report.contains("ls -F"), "{report}");
+    }
+
+    #[test]
+    fn a_prompt_drawn_by_a_command_is_left_alone() {
+        let prompt = "$(my-prompt) ";
+        let report = bash_after_startup(prompt, "");
+        assert!(report.contains(&format!("ps1={prompt}")), "{report}");
+    }
+
+    #[test]
+    fn a_prompt_command_from_the_server_keeps_working() {
+        let report = bash_after_startup("$ ", "PROMPT_COMMAND=\"history -a;$PROMPT_COMMAND\"\n");
+        assert!(report.contains("hook=history -a;:"), "{report}");
+        assert!(report.contains("script=unset"), "{report}");
     }
 }

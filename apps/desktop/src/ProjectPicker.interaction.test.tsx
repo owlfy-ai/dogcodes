@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { ProjectId } from "@dogcodes/protocol";
 import { ProjectPicker } from "./ProjectPicker";
-import type { TargetApi } from "./executionTargetClient";
+import type { TargetApi, TargetEntry } from "./executionTargetClient";
 import { openLocalProject } from "./localProject";
 import { TauriCoreClient } from "./tauriClient";
 import { invoke } from "@tauri-apps/api/core";
@@ -104,6 +104,52 @@ describe("native project picker interactions", () => {
       disabled={false} onSelect={onSelect} onOpenFolder={vi.fn()} targetApi={{ list: async () => { throw new Error("offline"); } }} />));
     await openMenu();
     expect(container.querySelector(".project-picker-list small")?.textContent?.trim()).toBe("SSH");
+  });
+
+  describe("remote hosts menu", () => {
+    const host = { target: { targetId: "tgt_one", displayName: "Build", connection: { destination: "build.example.com", user: "dev", auth: "system" as const } }, status: {} as TargetEntry["status"] };
+    const renderHosts = async (entries: TargetEntry[]) => {
+      const onChooseHost = vi.fn();
+      const onNewHost = vi.fn();
+      await act(async () => root.render(<ProjectPicker projects={[project]} selectedProject={project} disabled={false} onSelect={onSelect} onOpenFolder={vi.fn()}
+        onChooseHost={onChooseHost} onNewHost={onNewHost} targetApi={{ list: vi.fn(async () => entries) }} />));
+      await openMenu();
+      await act(async () => {});
+      return { onChooseHost, onNewHost };
+    };
+    const opener = () => [...container.querySelectorAll<HTMLButtonElement>(".project-picker-hosts > button")][0]!;
+    const items = () => [...container.querySelectorAll<HTMLButtonElement>('[role="menu"] [role="menuitem"]')];
+
+    it("replaces the new connection entry, opening its menu on hover", async () => {
+      await renderHosts([host]);
+      expect(opener().textContent).toBe("远程主机");
+      expect(items()).toHaveLength(0);
+      await act(async () => { opener().dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); });
+      expect(items().map(item => item.textContent)).toEqual(["Builddev@build.example.com", "新建远程主机"]);
+    });
+
+    it("hands over the chosen host and closes", async () => {
+      const { onChooseHost } = await renderHosts([host]);
+      await click(opener());
+      await click(items()[0]!);
+      expect(onChooseHost).toHaveBeenCalledWith(host);
+      expect(container.querySelector(".project-picker-menu")).toBeNull();
+    });
+
+    it("always ends with a new host, even with none yet", async () => {
+      const { onNewHost } = await renderHosts([]);
+      await click(opener());
+      expect(items().map(item => item.textContent)).toEqual(["新建远程主机"]);
+      await click(items()[0]!);
+      expect(onNewHost).toHaveBeenCalled();
+    });
+
+    it("closes the menu when the pointer moves on to another entry", async () => {
+      await renderHosts([host]);
+      await click(opener());
+      await act(async () => { container.querySelector(".project-picker-list button")!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); });
+      expect(items()).toHaveLength(0);
+    });
   });
 
   it("does not register or create a task when the native dialog is cancelled", async () => {

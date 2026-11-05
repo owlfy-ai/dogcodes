@@ -749,6 +749,8 @@ mod on_a_target {
         );
         assert_eq!(request.env[&OsString::from("HOME")], "/home/far");
         assert_eq!(request.env[&OsString::from("TERM")], "xterm-256color");
+        // Only bash is given default colors.
+        assert!(!request.env.contains_key(&OsString::from("PROMPT_COMMAND")));
 
         host.write(&info.id, b"hello\n".to_vec()).await.unwrap();
         read_until(&host, &info.id, "hello").await;

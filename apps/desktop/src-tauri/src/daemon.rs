@@ -263,6 +263,26 @@ impl CoreClient {
     ) -> Result<crate::terminal_host::TerminalInfo, String> {
         self.call("terminal_start", json!(intent)).await
     }
+    pub async fn terminal_start_on_target(
+        &self,
+        target_id: &str,
+        operation_id: &str,
+        cols: u16,
+        rows: u16,
+    ) -> Result<crate::terminal_host::TerminalInfo, String> {
+        self.call(
+            "terminal_start_on_target",
+            json!({ "targetId": target_id, "operationId": operation_id, "cols": cols, "rows": rows }),
+        )
+        .await
+    }
+    pub async fn terminal_release_target(
+        &self,
+        target_id: &str,
+    ) -> Result<serde_json::Value, String> {
+        self.call("terminal_release_target", json!({ "targetId": target_id }))
+            .await
+    }
     pub async fn terminal_get(
         &self,
         id: &str,

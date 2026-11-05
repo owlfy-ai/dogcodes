@@ -1,3 +1,4 @@
+import { TabBar } from "./TabBar";
 import { RunOperationRejected } from "./projectRunOperations";
 import { useEnabledAgents } from "./agentPreferences";
 import { ProjectRunItem, RunAnalysisConfirmation, RunCloseConfirmation } from "./ProjectRunItem";
@@ -220,10 +221,11 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
       </section>)}
     </div>
     {outputs.length > 0 && <section className="project-run-output" aria-label={t("projectRun.output")}>
-      <div className="project-run-output-tabs" role="tablist" aria-label={t("projectRun.runningCommands")}>{outputs.map(item => <div className="project-run-output-tab" role="presentation" key={item.key} data-selected={selected === item.key}>
-        <button role="tab" type="button" aria-selected={selected === item.key} data-tooltip={`${item.path}\n${item.command.command}`} onClick={() => setSelected(item.key)}>{item.command.label}{item.exited ? ` · ${t("projectRun.exited")}` : item.uncertain ? ` · ${t("projectRun.uncertain")}` : ""}</button>
-        <button type="button" className="project-run-tab-close" aria-label={t("projectRun.closeOutput", { label: item.command.label })} data-tooltip={t("projectRun.closeOutput", { label: item.command.label })} onClick={() => requestClose(item)}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button>
-      </div>)}</div>
+      <TabBar className="project-run-output-tabs" label={t("projectRun.runningCommands")} selected={selected} onSelect={setSelected} items={outputs.map(item => ({
+        id: item.key, label: `${item.command.label}${item.exited ? ` · ${t("projectRun.exited")}` : item.uncertain ? ` · ${t("projectRun.uncertain")}` : ""}`,
+        tooltip: `${item.path}\n${item.command.command}`,
+        close: { label: t("projectRun.closeOutput", { label: item.command.label }), onClose: () => requestClose(item) },
+      }))} />
       {outputs.map(item => <div className="project-run-console" key={item.key} hidden={selected !== item.key}>
         <div className="project-run-console-bar"><code data-tooltip={item.command.command}>{item.command.command}</code>
           {!item.exited && <button type="button" className="project-run-stop" aria-label={t("projectRun.stop")} data-tooltip={t("projectRun.stopRun")} onClick={() => void item.process.stop().catch(cause => setError(userFacingError(cause, t("projectRun.stopFailed"))))}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg></button>}

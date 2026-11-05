@@ -41,6 +41,10 @@ pub(crate) enum TargetCall {
         target_id: Option<TargetId>,
         display_name: String,
         connection: SshConnection,
+        /// The password or key passphrase typed in the form. Saving a host doesn't
+        /// connect, so it is kept now; a wrong one still falls through to asking.
+        #[serde(default)]
+        secret: Option<String>,
     },
     Remove {
         target_id: TargetId,
@@ -393,9 +397,17 @@ impl TargetHost {
                 target_id,
                 display_name,
                 connection,
-            } => json(serde_json::to_value(
-                self.save(core, target_id, display_name, connection).await?,
-            )),
+                secret,
+            } => {
+                let slot = SecretSlot::of_auth(connection.auth);
+                let id = self.save(core, target_id, display_name, connection).await?;
+                if let (Some(slot), Some(secret)) = (slot, secret.filter(|value| !value.is_empty()))
+                {
+                    // A store that refuses only means being asked when connecting.
+                    let _ = self.secrets.set(&id, slot.name(), secret).await;
+                }
+                json(serde_json::to_value(id))
+            }
             TargetCall::Remove { target_id } => {
                 self.remove(core, &target_id).await?;
                 Ok(serde_json::Value::Null)
@@ -531,7 +543,7 @@ impl TargetHost {
         Ok(())
     }
 
-    async fn disconnect(&self, core: &Core, target: &TargetId) {
+    pub(crate) async fn disconnect(&self, core: &Core, target: &TargetId) {
         let connection = self.connections.lock().unwrap().get(target).cloned();
         if let Some(connection) = connection {
             connection.stop();
@@ -562,6 +574,17 @@ impl TargetHost {
         self.link(target)
             .map(|link| link.target())
             .map_err(|_| "这个项目所在的服务器未连接，请先连接后重试".to_owned())
+    }
+
+    /// Where a shell opened on the host itself runs: the machine and its home directory.
+    pub(crate) fn shell_place(
+        &self,
+        target: &TargetId,
+    ) -> Result<(agent_runtime::SharedTarget, std::path::PathBuf), String> {
+        let not_connected = || "这台服务器未连接，请先连接后重试".to_owned();
+        let link = self.link(target).map_err(|_| not_connected())?;
+        let home = self.status(target).info.ok_or_else(not_connected)?.home;
+        Ok((link.target(), home.into()))
     }
 
     async fn browse(
@@ -988,6 +1011,45 @@ mod tests {
         assert!(secrets.0.lock().unwrap().is_empty());
     }
 
+    #[tokio::test]
+    async fn saving_a_host_keeps_the_secret_typed_for_its_authentication() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = agent_store::SqliteStore::open(directory.path().join("t.db")).unwrap();
+        let core = Arc::new(Core::new(Arc::new(store)));
+        let secrets = Arc::new(MemorySecrets::default());
+        let host = Arc::new(TargetHost::new(
+            secrets.clone(),
+            ShimCatalog::default(),
+            None,
+        ));
+        let save = |auth: &str, secret: Option<&str>| {
+            host.call(
+                &core,
+                serde_json::json!({
+                    "type": "save", "targetId": null, "displayName": "Box",
+                    "connection": { "destination": "box", "auth": auth },
+                    "secret": secret,
+                }),
+            )
+        };
+        let id: TargetId =
+            serde_json::from_value(save("password", Some("s3cret")).await.unwrap()).unwrap();
+        assert_eq!(
+            secrets
+                .get(&id, SecretSlot::Password.name())
+                .await
+                .as_deref(),
+            Some("s3cret")
+        );
+        // Nothing to keep: left empty, or the authentication takes no secret.
+        let id: TargetId =
+            serde_json::from_value(save("password", Some("")).await.unwrap()).unwrap();
+        assert_eq!(secrets.get(&id, SecretSlot::Password.name()).await, None);
+        let id: TargetId =
+            serde_json::from_value(save("system", Some("s3cret")).await.unwrap()).unwrap();
+        assert_eq!(secrets.get(&id, SecretSlot::Password.name()).await, None);
+    }
+
     /// The whole service path against a private `sshd`, as the window would drive it:
     /// `cargo build -p target-shim && cargo test -p desktop --lib execution_targets -- --ignored`
     #[cfg(unix)]
@@ -1134,6 +1196,83 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         assert_eq!(recorded, Some(identity));
+
+        // A shell on the host itself, outside any project, in the account's home.
+        let terminals = crate::terminal_host::TerminalHost::default();
+        let shell: crate::terminal_host::TerminalInfo = serde_json::from_value(
+            crate::terminal_host::rpc::dispatch(
+                &core,
+                &terminals,
+                &host,
+                "terminal_start_on_target",
+                serde_json::json!({
+                    "targetId": id,
+                    "operationId": uuid::Uuid::new_v4().to_string(),
+                    "cols": 80,
+                    "rows": 24,
+                }),
+            )
+            .await
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            shell.cwd,
+            std::path::PathBuf::from(&status.info.as_ref().unwrap().home)
+        );
+        let scope = format!("target:{}", id.as_str());
+        assert_eq!(terminals.list(&scope).unwrap().len(), 1);
+        let mut output = Vec::new();
+        let mut after = 0;
+        let mut wrote = false;
+        for _ in 0..100 {
+            let batch = terminals.read(&shell.id, after).await.unwrap();
+            after = batch.next;
+            output.extend(batch.bytes);
+            if batch.info.status == crate::terminal_host::TerminalStatus::Running && !wrote {
+                terminals
+                    .write(
+                        &shell.id,
+                        b"printf 'term=%s \\033[31mhost-shell-%s\\033[0m\\n' \"$TERM\" $((40 + 2))\n"
+                            .to_vec(),
+                    )
+                    .await
+                    .unwrap();
+                wrote = true;
+            }
+            if String::from_utf8_lossy(&output).contains("host-shell-42") {
+                break;
+            }
+        }
+        // Colors reach the terminal as the shell wrote them.
+        assert!(
+            String::from_utf8_lossy(&output)
+                .contains("term=xterm-256color \u{1b}[31mhost-shell-42\u{1b}[0m"),
+            "{:?}",
+            String::from_utf8_lossy(&output)
+        );
+
+        // The connection stays while a shell needs it, and ends with the last one.
+        let release = || {
+            crate::terminal_host::rpc::dispatch(
+                &core,
+                &terminals,
+                &host,
+                "terminal_release_target",
+                serde_json::json!({ "targetId": id }),
+            )
+        };
+        assert_eq!(release().await.unwrap()["released"], false);
+        assert_eq!(host.status(&id).phase, Phase::Connected);
+        terminals.close(&shell.id, &shell.epoch).await.unwrap();
+        assert_eq!(release().await.unwrap()["released"], true);
+        assert_eq!(host.status(&id).phase, Phase::Idle);
+        // Stopped on purpose, not lost, so its tab doesn't come back.
+        assert_eq!(
+            terminals.get(&shell.id).unwrap().status,
+            crate::terminal_host::TerminalStatus::Exited
+        );
+
         host.call(
             &core,
             serde_json::json!({"type":"disconnect","targetId":id}),
@@ -1158,6 +1297,47 @@ mod tests {
         let _ = server.kill();
         let _ = server.wait();
         assert!(!running, "the shim kept running after disconnecting");
+    }
+
+    #[tokio::test]
+    async fn closing_the_last_shell_leaves_the_connection_to_a_hosts_projects() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = agent_store::SqliteStore::open(directory.path().join("t.db")).unwrap();
+        let core = Arc::new(Core::new(Arc::new(store)));
+        let host = Arc::new(TargetHost::default());
+        let terminals = crate::terminal_host::TerminalHost::default();
+        let target = TargetId::new();
+        let release = || {
+            crate::terminal_host::rpc::dispatch(
+                &core,
+                &terminals,
+                &host,
+                "terminal_release_target",
+                serde_json::json!({ "targetId": target }),
+            )
+        };
+        assert_eq!(release().await.unwrap()["released"], true);
+        core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
+            RegisterProject {
+                target_id: Some(target.clone()),
+                additional_directories: vec![],
+                project_id: ProjectId::new(),
+                display_name: "Remote".into(),
+                path: "/srv/app".into(),
+            },
+        )))
+        .await
+        .unwrap();
+        assert_eq!(release().await.unwrap()["released"], false);
+    }
+
+    #[test]
+    fn a_shell_on_a_host_needs_the_host_connected() {
+        let error = TargetHost::default()
+            .shell_place(&TargetId::new())
+            .err()
+            .unwrap();
+        assert!(error.contains("未连接"));
     }
 
     #[tokio::test]

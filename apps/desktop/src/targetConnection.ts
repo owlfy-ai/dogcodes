@@ -9,13 +9,15 @@ export interface TargetConnectionState {
   /** Null until the first answer, so nothing is shown as offline before it is known. */
   offline: boolean | null;
   reconnecting: boolean;
+  /** Started by opening a project rather than a click: a failure stays in the banner. */
+  automatic: boolean;
   /** Which view started the attempt: the one that shows its dialog. */
   asker: string | null;
   entry: TargetEntry | null;
   failure: unknown;
 }
 
-const initial: TargetConnectionState = { status: null, offline: null, reconnecting: false, asker: null, entry: null, failure: null };
+const initial: TargetConnectionState = { status: null, offline: null, reconnecting: false, automatic: false, asker: null, entry: null, failure: null };
 
 /** One per machine, however many views show it, so they can never disagree. */
 class TargetConnection {
@@ -45,7 +47,8 @@ class TargetConnection {
     const connected = status.phase === "connected";
     this.update({
       status, offline: !connected,
-      ...(connected ? { reconnecting: false, asker: null, entry: null, failure: null } : {}),
+      ...(connected ? { reconnecting: false, automatic: false, asker: null, entry: null, failure: null }
+        : this.state.automatic && status.phase === "failed" ? { reconnecting: false, automatic: false, asker: null, entry: null } : {}),
     });
   }
 
@@ -63,19 +66,19 @@ class TargetConnection {
         this.update({ entry: entries.find(item => item.target.targetId === this.targetId) ?? null });
       }
     } catch (failure) {
-      this.update({ offline: true, ...(this.state.reconnecting ? { reconnecting: false, asker: null, failure } : {}) });
+      this.update({ offline: true, ...(this.state.reconnecting ? { reconnecting: false, automatic: false, asker: null, failure } : {}) });
     }
     this.schedule();
   }
 
-  reconnect = async (asker: string) => {
+  reconnect = async (asker: string, automatic = false) => {
     if (this.state.status?.phase === "connecting") return;
     this.update({ failure: null });
     try {
       await this.api.connect(this.targetId, null);
       // Read before watching for a failure, so the last attempt's is not taken for this one's.
       const status = await this.api.status(this.targetId);
-      this.update({ reconnecting: true, asker, entry: null });
+      this.update({ reconnecting: true, automatic, asker, entry: null });
       this.accept(status);
     } catch (failure) {
       this.update({ failure });
@@ -84,7 +87,7 @@ class TargetConnection {
   };
 
   dismiss = () => {
-    this.update({ reconnecting: false, asker: null, entry: null });
+    this.update({ reconnecting: false, automatic: false, asker: null, entry: null });
     this.schedule();
   };
 }

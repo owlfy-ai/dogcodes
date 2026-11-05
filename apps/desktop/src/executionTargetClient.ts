@@ -57,10 +57,12 @@ export interface ResolvedHost { host: string; user: string | null; port: number 
 export interface TargetApi {
   list(): Promise<TargetEntry[]>;
   status(targetId: string): Promise<TargetStatus>;
-  save(targetId: string | null, displayName: string, connection: SshConnection): Promise<string>;
+  save(targetId: string | null, displayName: string, connection: SshConnection, secret: string | null): Promise<string>;
   remove(targetId: string): Promise<void>;
   connect(targetId: string, secret: string | null): Promise<void>;
   disconnect(targetId: string): Promise<void>;
+  /** After the last shell on a host closes: ends the connection unless its projects need it. */
+  release(targetId: string): Promise<void>;
   answer(targetId: string, promptId: string, answer: string | null, remember: boolean): Promise<void>;
   configHosts(): Promise<string[]>;
   resolveHost(alias: string): Promise<ResolvedHost | null>;
@@ -73,10 +75,11 @@ const call = <T,>(request: Record<string, unknown>) => invoke<T>("core_execution
 export const tauriTargetApi: TargetApi = {
   list: () => call<TargetEntry[]>({ type: "list" }),
   status: targetId => call<TargetStatus>({ type: "status", targetId }),
-  save: (targetId, displayName, connection) => call<string>({ type: "save", targetId, displayName, connection }),
+  save: (targetId, displayName, connection, secret) => call<string>({ type: "save", targetId, displayName, connection, secret }),
   remove: targetId => call<void>({ type: "remove", targetId }),
   connect: (targetId, secret) => call<void>({ type: "connect", targetId, secret }),
   disconnect: targetId => call<void>({ type: "disconnect", targetId }),
+  release: targetId => invoke<unknown>("core_terminal_release_target", { targetId }).then(() => {}),
   answer: (targetId, promptId, answer, remember) => call<void>({ type: "answer", targetId, promptId, answer, remember }),
   configHosts: () => call<string[]>({ type: "config_hosts" }),
   resolveHost: alias => call<ResolvedHost | null>({ type: "resolve_host", alias }),
@@ -88,6 +91,12 @@ export function targetRoute(connection: SshConnection): string {
   const user = connection.user ? `${connection.user}@` : "";
   const port = connection.port ? `:${connection.port}` : "";
   return `${user}${connection.destination}${port}`;
+}
+
+/** Whether saving this would change how the machine is reached, so an open link is out of date. */
+export function sameRoute(a: SshConnection, b: SshConnection): boolean {
+  const route = (value: SshConnection) => JSON.stringify([value.destination, value.port ?? null, value.user ?? null, value.auth, value.identityFile ?? null, value.installDirectory ?? null, value.proxy?.mode ?? null, value.proxy?.mode === "custom" ? [value.proxy.kind, value.proxy.host, value.proxy.port] : null]);
+  return route(a) === route(b);
 }
 
 /** The parent of a POSIX path, whichever system this app runs on. */

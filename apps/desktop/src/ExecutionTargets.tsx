@@ -1,16 +1,19 @@
-import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type FormEvent, type MouseEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "./AppDialog";
+import { HostTerminalTab } from "./HostTerminalTab";
 import { LoadingStatus } from "./LoadingStatus";
 import { ReviewEmptyState } from "./ReviewEmptyState";
 import { SidebarNavIcon } from "./SidebarNavIcon";
+import { TabBar } from "./TabBar";
 import { focusDialogTitle } from "./dialogFocus";
 import { useI18n } from "./i18n";
 import { userFacingError } from "./userFacingError";
 import {
   type ProxyChoice, type SshAuth, type SshProxyKind, type TargetApi, type TargetEntry, type TargetErrorKind, type TargetStatus,
-  connectionFromForm, joinDirectory, parentDirectory, stepStates, tauriTargetApi, targetRoute,
+  connectionFromForm, joinDirectory, parentDirectory, sameRoute, stepStates, tauriTargetApi, targetRoute,
 } from "./executionTargetClient";
 import { needsPerson, useTargetConnection } from "./targetConnection";
+import { hostTerminalClient, hostTerminalScope, terminalEnded, type TerminalApi, type TerminalStatus } from "./terminalClient";
 import "./executionTargets.css";
 
 const POLL_MILLISECONDS = 400;
@@ -86,16 +89,32 @@ function RemoteProjectDialog({ api, targetId, onClose, onReady }: {
   </div>;
 }
 
+const AUTO_RETRY_MILLISECONDS = 15000;
+const AUTO_RECONNECT_MILLISECONDS = 3000;
+/** Failures that can pass by themselves. Anything else needs the person, so it isn't retried. */
+const PASSING_ERRORS: readonly TargetErrorKind[] = ["host_unreachable", "timeout", "connection_closed"];
+
 /** Reconnecting from where the person is. The dialog appears only when they are needed,
  * for a password, a host key or a failure, and only in the view they clicked. */
-function useReconnect(api: TargetApi, targetId: string) {
+function useReconnect(api: TargetApi, targetId: string, automatic = false) {
   const text = useTargetText();
   const owner = useId();
   const { state, reconnect, dismiss } = useTargetConnection(api, targetId);
   const connecting = state.status?.phase === "connecting";
+  const phase = state.status?.phase;
+  const errorKind = state.status?.error?.kind;
+  // Whoever works in a project on a machine needs it connected, and kept connected.
+  useEffect(() => {
+    if (!automatic) return;
+    const delay = phase === "idle" ? 0 : phase === "disconnected" ? AUTO_RECONNECT_MILLISECONDS
+      : phase === "failed" && errorKind && PASSING_ERRORS.includes(errorKind) ? AUTO_RETRY_MILLISECONDS : null;
+    if (delay === null) return;
+    const timer = setTimeout(() => void reconnect(owner, true), delay);
+    return () => clearTimeout(timer);
+  }, [automatic, phase, errorKind, targetId]);
   return {
     offline: state.offline,
-    failure: state.failure ? userFacingError(state.failure, text("loadFailed")) : "",
+    failure: state.failure ? userFacingError(state.failure, text("loadFailed")) : phase === "failed" && errorKind ? text(ERROR_KEYS[errorKind]) : "",
     button: { disabled: connecting, label: text(connecting ? "reconnecting" : "reconnect"), onClick: () => void reconnect(owner) },
     dialog: needsPerson(state) && state.entry && state.asker === owner
       ? <TargetConnectionDialog api={api} entry={state.entry} initialProgress onClose={dismiss} onChanged={() => {}} />
@@ -104,11 +123,11 @@ function useReconnect(api: TargetApi, targetId: string) {
 }
 
 /** Sending would fail anyway: say why and reconnect from here. */
-export function TargetOfflineBanner({ api = tauriTargetApi, targetId }: {
-  api?: TargetApi; targetId: string;
+export function TargetOfflineBanner({ api = tauriTargetApi, targetId, autoConnect = false }: {
+  api?: TargetApi; targetId: string; autoConnect?: boolean;
 }) {
   const text = useTargetText();
-  const { offline, failure, button, dialog } = useReconnect(api, targetId);
+  const { offline, failure, button, dialog } = useReconnect(api, targetId, autoConnect);
   if (!offline) return null;
   return <>
     <div className="target-offline" role="status">
@@ -143,8 +162,12 @@ export function TargetOfflinePanel({ api = tauriTargetApi, targetId, visible, st
   </>;
 }
 
-function ConnectionProgress({ api, targetId, onEdit, onClose, onBrowse }: {
+function ConnectionProgress({ api, targetId, onEdit, onClose, onBrowse, onCancel, autoBrowse = false }: {
   api: TargetApi; targetId: string; onEdit: () => void; onClose: () => void; onBrowse?: () => void;
+  /** Goes on to the folders once connected, unless there is something to read here first. */
+  autoBrowse?: boolean;
+  /** Where cancelling leads, when this is shown in a tab instead of the settings dialog. */
+  onCancel?: () => void;
 }) {
   const text = useTargetText();
   const [status, setStatus] = useState<TargetStatus | null>(null);
@@ -168,6 +191,8 @@ function ConnectionProgress({ api, targetId, onEdit, onClose, onBrowse }: {
     void api.answer(targetId, prompt.id, answer, remember && answer !== null && prompt.kind !== "host_key" && prompt.kind !== "other")
       .catch(cause => setFailure(userFacingError(cause, text("loadFailed"))));
   };
+  const ready = autoBrowse && status?.phase === "connected" && !status.scanning && status.agents.length > 0 && !status.identityChanged;
+  useEffect(() => { if (ready) onBrowse?.(); }, [ready]);
   if (!status) return failure ? <div className="error" role="alert">{failure}</div> : <LoadingStatus>{text("loading")}</LoadingStatus>;
   const connected = status.phase === "connected";
   const deploying = status.step?.step === "deploying" ? status.step : null;
@@ -220,19 +245,21 @@ function ConnectionProgress({ api, targetId, onEdit, onClose, onBrowse }: {
       <pre>{[...status.log, ...(status.error?.detail && !status.log.join("\n").includes(status.error.detail) ? [status.error.detail] : [])].join("\n")}</pre>
     </details>}
     <footer>
-      {(status.phase === "failed" || status.phase === "disconnected") && <>
+      {(status.phase === "failed" || status.phase === "disconnected" || onCancel && status.phase === "idle") && <>
         <button className="secondary" type="button" onClick={onEdit}>{text("backToEdit")}</button>
         <button className="send" type="button" onClick={() => void api.connect(targetId, null).catch(cause => setFailure(userFacingError(cause, text("loadFailed"))))}>{text("retry")}</button>
       </>}
-      {status.phase === "connecting" && !prompt && <button className="secondary" type="button" onClick={() => { void api.disconnect(targetId).catch(() => {}); onEdit(); }}>{text("cancelConnecting")}</button>}
+      {status.phase === "connecting" && !prompt && <button className="secondary" type="button" onClick={() => { void api.disconnect(targetId).catch(() => {}); (onCancel ?? onEdit)(); }}>{text("cancelConnecting")}</button>}
       {connected && <button className={onBrowse ? "secondary" : "send"} type="button" onClick={onClose}>{text("done")}</button>}
       {connected && onBrowse && <button className="send" type="button" disabled={status.scanning} onClick={onBrowse}>{text("openProject")}</button>}
     </footer>
   </div>;
 }
 
-export function TargetConnectionDialog({ api, entry, initialProgress = false, initialBrowsing = false, onClose, onChanged, onProjectReady }: {
+export function TargetConnectionDialog({ api, entry, initialProgress = false, initialBrowsing = false, forProject = false, onClose, onChanged, onProjectReady }: {
   api: TargetApi; entry: TargetEntry | null; initialProgress?: boolean; initialBrowsing?: boolean; onClose: () => void; onChanged: () => void;
+  /** Connects and goes on to choosing a folder. Otherwise this only edits the host's settings. */
+  forProject?: boolean;
   onProjectReady?: (projectId: string) => void | Promise<void>;
 }) {
   const { t } = useI18n();
@@ -285,12 +312,14 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
     setMessage("");
     try {
       const connection = connectionFromForm({ destination, port, user, auth, identityFile, installDirectory, proxyMode, proxyKind, proxyHost, proxyPort });
-      const id = await api.save(targetId, name.trim() || destination.trim(), connection);
+      const id = await api.save(targetId, name.trim() || destination.trim(), connection, auth === "system" ? null : secret || null);
       setTargetId(id);
-      onChanged();
-      await api.disconnect(id);
-      await api.connect(id, auth === "system" ? null : secret || null);
       setSecret("");
+      onChanged();
+      // Sessions on an open link keep the old route, so only a changed route ends them.
+      if (saved && !sameRoute(saved, connection)) await api.disconnect(id);
+      if (!forProject) return onClose();
+      await api.connect(id, null);
       setProgress(true);
     } catch (cause) {
       setMessage(userFacingError(cause, text("saveFailed")));
@@ -298,8 +327,21 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
       setBusy(false);
     }
   };
-  const close = () => { if (!busy) { onChanged(); onClose(); } };
-  const title = browsing ? text("browseTitle") : progress ? name.trim() || destination.trim() : entry ? text("editTitle") : text("newTitle");
+  const madeProject = useRef(false);
+  const close = () => {
+    if (busy) return;
+    // A connection opened only to choose a folder isn't needed once that is abandoned.
+    if (forProject && targetId && !madeProject.current) void api.release(targetId).catch(() => {});
+    onChanged();
+    onClose();
+  };
+  const connectingOnOpen = useRef(false);
+  useEffect(() => {
+    if (!forProject || !entry || initialBrowsing || connectingOnOpen.current) return;
+    connectingOnOpen.current = true;
+    void api.connect(entry.target.targetId, null).catch(cause => setMessage(userFacingError(cause, text("loadFailed"))));
+  }, [api]);
+  const title = browsing ? text("browseTitle") : progress ? name.trim() || destination.trim() : entry ? text("editHost") : text("newHost");
   const preview = destination.trim() ? targetRoute(connectionFromForm({ destination, port, user, auth, identityFile, installDirectory, proxyMode, proxyKind, proxyHost, proxyPort })) : "user@host:22";
   return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
     <div ref={dialog} className="project-dialog target-dialog" role="dialog" aria-modal="true" aria-labelledby="target-dialog-title"
@@ -309,10 +351,11 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
         <button type="button" aria-label={t("common.close")} disabled={busy} onClick={close}>×</button>
       </header>
       {browsing && targetId && onProjectReady
-        ? <RemoteProjectDialog api={api} targetId={targetId} onClose={() => setBrowsing(false)} onReady={async projectId => { await onProjectReady(projectId); onClose(); }} />
+        ? <RemoteProjectDialog api={api} targetId={targetId} onClose={() => setBrowsing(false)} onReady={async projectId => { madeProject.current = true; await onProjectReady(projectId); onClose(); }} />
         : progress && targetId
-        ? <ConnectionProgress api={api} targetId={targetId} onEdit={() => setProgress(false)} onClose={close} onBrowse={onProjectReady ? () => setBrowsing(true) : undefined} />
+        ? <ConnectionProgress api={api} targetId={targetId} onEdit={() => setProgress(false)} onClose={close} onBrowse={onProjectReady ? () => setBrowsing(true) : undefined} autoBrowse={forProject} />
         : <form className="target-form" onSubmit={submit}>
+          <label>{text("alias")}<input maxLength={120} disabled={busy} placeholder={destination || text("namePlaceholder")} value={name} onChange={event => setName(event.target.value)} /></label>
           {hosts.length > 0 && <label>{text("importConfig")}
             <select disabled={busy} value="" onChange={event => importHost(event.target.value)}>
               <option value="">{text("importPlaceholder")}</option>
@@ -338,7 +381,6 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
           </label>}
           <details className="target-advanced">
             <summary>{text("advanced")}</summary>
-            <label>{text("name")}<input maxLength={120} disabled={busy} placeholder={destination || text("namePlaceholder")} value={name} onChange={event => setName(event.target.value)} /></label>
             <label>{text("installDirectory")}<input maxLength={1024} disabled={busy} placeholder="~/.dogcodes" value={installDirectory} onChange={event => setInstallDirectory(event.target.value)} /></label>
             <p className="target-hint">{text("installDirectoryHint")}</p>
             <label>{text("proxy")}<select disabled={busy} value={proxyMode} onChange={event => setProxyMode(event.target.value as ProxyChoice)}>
@@ -359,74 +401,194 @@ export function TargetConnectionDialog({ api, entry, initialProgress = false, in
           {message && <div className="error" role="alert">{message}</div>}
           <footer>
             <button className="secondary" type="button" disabled={busy} onClick={close}>{t("common.cancel")}</button>
-            <button className="send" disabled={busy || !destination.trim()}>{text(entry ? "saveAndConnect" : "addAndConnect")}</button>
+            <button className="send" disabled={busy || !destination.trim()}>{text(!forProject ? "saveHost" : entry ? "saveAndConnect" : "addAndConnect")}</button>
           </footer>
         </form>}
     </div>
   </div>;
 }
 
-const PHASE_KEYS = { idle: "statusIdle", connecting: "statusConnecting", connected: "statusConnected", failed: "statusFailed", disconnected: "statusDisconnected" } as const;
+/** From a host to a project on it: connect if needed, then choose a folder. With no
+ * host, its settings come first. */
+export function HostProjectDialog({ api = tauriTargetApi, entry, onChanged = () => {}, onClose, onProjectReady }: {
+  api?: TargetApi; entry: TargetEntry | null; onChanged?: () => void; onClose: () => void; onProjectReady?: (projectId: string) => void | Promise<void>;
+}) {
+  return <TargetConnectionDialog api={api} entry={entry} forProject initialProgress={Boolean(entry)} initialBrowsing={entry?.status.phase === "connected"} onChanged={onChanged} onClose={onClose} onProjectReady={onProjectReady} />;
+}
 
-export function ExecutionTargets({ api = tauriTargetApi, requestNew = 0, onProjectReady }: {
-  api?: TargetApi; requestNew?: number; onProjectReady?: (projectId: string) => void | Promise<void>;
+const HOST_LIST = "hosts";
+
+function ActionButton({ label, path, onClick }: { label: string; path: string; onClick: (event: MouseEvent) => void }) {
+  return <button type="button" aria-label={label} data-tooltip={label} onClick={onClick}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={path} /></svg></button>;
+}
+
+interface HostTab {
+  id: string;
+  targetId: string;
+  /** Tells apart several shells on one host. */
+  ordinal: number;
+  /** One shell. Reconnecting starts another in the same tab. */
+  operationId: string;
+  resourceId?: string;
+  status?: TerminalStatus;
+  epoch?: string;
+}
+
+export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTerminalClient, visible = true, onProjectReady }: {
+  api?: TargetApi; terminals?: (targetId: string) => TerminalApi; visible?: boolean; onProjectReady?: (projectId: string) => void | Promise<void>;
 }) {
   const text = useTargetText();
   const [entries, setEntries] = useState<TargetEntry[] | null>(null);
   const [failure, setFailure] = useState("");
-  const [dialog, setDialog] = useState<{ entry: TargetEntry | null; progress?: boolean; browsing?: boolean } | null>(null);
+  const [dialog, setDialog] = useState<{ entry: TargetEntry | null; forProject?: boolean } | null>(null);
   const [removing, setRemoving] = useState<TargetEntry | null>(null);
   const [revision, setRevision] = useState(0);
-  useEffect(() => { if (requestNew > 0) setDialog({ entry: null }); }, [requestNew]);
+  const [tabs, setTabs] = useState<HostTab[]>([]);
+  const [selected, setSelected] = useState(HOST_LIST);
+  const latestTabs = useRef(tabs);
+  latestTabs.current = tabs;
+  const restored = useRef(false);
+  // A tab waiting for its connection should follow it closely.
+  const waiting = tabs.some(tab => !tab.status);
   useEffect(() => {
+    if (!visible) return;
     let closed = false;
     const read = () => void api.list().then(value => {
       if (!closed) { setEntries(value); setFailure(""); }
     }).catch(cause => { if (!closed) setFailure(userFacingError(cause, text("loadFailed"))); });
     read();
-    const timer = setInterval(read, 2000);
+    const timer = setInterval(read, waiting ? POLL_MILLISECONDS : 2000);
     return () => { closed = true; clearInterval(timer); };
-  }, [api, revision]);
+  }, [api, revision, visible, waiting]);
+  // Shells outlive this page and the window, so put back the tabs of those still there.
+  useEffect(() => {
+    if (!entries || restored.current) return;
+    restored.current = true;
+    for (const { target: { targetId } } of entries) {
+      void terminals(targetId).list(hostTerminalScope(targetId)).then(shells => setTabs(current => {
+        const next = [...current];
+        for (const info of [...shells].reverse()) {
+          if (terminalEnded(info) || next.some(tab => tab.operationId === info.id)) continue;
+          next.push({ id: crypto.randomUUID(), targetId, operationId: info.id, resourceId: info.id, status: info.status, epoch: info.epoch,
+            ordinal: Math.max(0, ...next.filter(tab => tab.targetId === targetId).map(tab => tab.ordinal)) + 1 });
+        }
+        return next;
+      })).catch(() => {});
+    }
+  }, [entries, terminals]);
   const changed = () => setRevision(value => value + 1);
   const act = (work: Promise<unknown>) => void work.then(changed).catch(cause => setFailure(userFacingError(cause, text("actionFailed"))));
-  return <section className="workspace remote-page target-page" aria-label={text("title")}>
-    <div className="remote-page-content">
-      <header className="remote-header">
-        <span className="remote-heading-icon"><SidebarNavIcon kind="server" /></span>
-        <p>{text("subtitle")}</p>
-        <button className="send target-new" type="button" onClick={() => setDialog({ entry: null })}>{text("add")}</button>
-      </header>
-      {failure && <div className="remote-error" role="alert">{failure}</div>}
-      {!entries && !failure && <LoadingStatus>{text("loading")}</LoadingStatus>}
-      {entries?.length === 0 && <p className="remote-empty">{text("empty")}</p>}
-      {!!entries?.length && <ul className="target-list">
-        {entries.map(entry => {
-          const { target, status } = entry;
-          const live = status.phase === "connected" || status.phase === "connecting";
-          return <li key={target.targetId} className="remote-device">
-            <span className="remote-device-icon"><SidebarNavIcon kind="server" /></span>
-            <div className="remote-device-identity">
-              <strong>{target.displayName}</strong>
-              <span>{targetRoute(target.connection)}</span>
-              {status.error && <small className="target-row-error">{text(ERROR_KEYS[status.error.kind])}</small>}
-            </div>
-            <span className={`target-phase ${status.phase}`} role="status"><i aria-hidden="true" />{text(PHASE_KEYS[status.phase])}</span>
-            <div className="target-row-actions">
-              {status.phase === "connected" && onProjectReady && <button type="button" onClick={() => setDialog({ entry, progress: true, browsing: true })}>{text("openProject")}</button>}
-              {live
-                ? <button type="button" onClick={() => act(api.disconnect(target.targetId))}>{text("disconnect")}</button>
-                : <button type="button" onClick={() => { setDialog({ entry, progress: true }); act(api.connect(target.targetId, null)); }}>{text("connect")}</button>}
-              <button type="button" onClick={() => setDialog({ entry })}>{text("edit")}</button>
-              <button type="button" onClick={() => setRemoving(entry)}>{text("remove")}</button>
-            </div>
-          </li>;
-        })}
-      </ul>}
+  const connect = (entry: TargetEntry) => {
+    if (entry.status.phase !== "connected" && entry.status.phase !== "connecting") act(api.connect(entry.target.targetId, null));
+  };
+  const openTerminal = (entry: TargetEntry) => {
+    const { targetId } = entry.target;
+    const id = crypto.randomUUID();
+    setTabs(current => [...current, { id, targetId, operationId: crypto.randomUUID(), ordinal: Math.max(0, ...current.filter(tab => tab.targetId === targetId).map(tab => tab.ordinal)) + 1 }]);
+    setSelected(id);
+    connect(entry);
+  };
+  const updateTab = (id: string, change: Partial<HostTab>) => setTabs(current => current.map(tab => tab.id === id ? { ...tab, ...change } : tab));
+  const forgetTab = (id: string) => {
+    const open = latestTabs.current;
+    const index = open.findIndex(tab => tab.id === id);
+    setTabs(current => current.filter(tab => tab.id !== id));
+    setSelected(current => current === id ? open[index + 1]?.id ?? open[index - 1]?.id ?? HOST_LIST : current);
+  };
+  /** Closing a tab ends only its own session. The service then ends the connection if
+   * that was the last one on the host and no project there needs it for its agents. */
+  const closeTab = async (tab: HostTab) => {
+    try {
+      // Nothing has started yet when there is no epoch, so there is nothing to stop.
+      if (tab.epoch) await terminals(tab.targetId).close(tab.resourceId ?? tab.operationId, tab.epoch);
+      forgetTab(tab.id);
+      if (!latestTabs.current.some(other => other.id !== tab.id && other.targetId === tab.targetId)) await api.release(tab.targetId);
+      changed();
+    } catch (cause) {
+      setFailure(userFacingError(cause, text("actionFailed")));
+    }
+  };
+  const reconnectTab = (tab: HostTab, entry: TargetEntry) => {
+    updateTab(tab.id, { operationId: crypto.randomUUID(), resourceId: undefined, status: undefined, epoch: undefined });
+    connect(entry);
+  };
+  const remove = async ({ target: { targetId } }: TargetEntry) => {
+    const open = latestTabs.current.filter(tab => tab.targetId === targetId);
+    await Promise.allSettled(open.filter(tab => tab.epoch).map(tab => terminals(targetId).close(tab.resourceId ?? tab.operationId, tab.epoch!)));
+    open.forEach(tab => forgetTab(tab.id));
+    await api.remove(targetId);
+  };
+  const entryOf = (targetId: string) => entries?.find(entry => entry.target.targetId === targetId);
+  const tabLabel = (tab: HostTab) => (entryOf(tab.targetId)?.target.displayName ?? "") + (tab.ordinal > 1 ? ` · ${tab.ordinal}` : "");
+  const tabState = (tab: HostTab) => {
+    if (tab.status === "running") return "connected";
+    if (tab.status && tab.status !== "starting") return "disconnected";
+    const phase = entryOf(tab.targetId)?.status.phase;
+    return phase === "failed" || phase === "disconnected" ? "disconnected" : "connecting";
+  };
+  return <section className="workspace remote-page target-page" aria-label={text("title")} hidden={!visible}>
+    <TabBar className="target-tabs" label={text("title")} selected={selected} onSelect={setSelected} revealKey={visible} items={[
+      { id: HOST_LIST, label: text("title") },
+      ...tabs.map(tab => ({
+        id: tab.id, label: tabLabel(tab),
+        tooltip: entryOf(tab.targetId) && targetRoute(entryOf(tab.targetId)!.target.connection),
+        icon: <i className={`target-tab-state ${tabState(tab)}`} aria-hidden="true" />,
+        close: { label: text("closeTab", { name: tabLabel(tab) }), onClose: () => void closeTab(tab) },
+      })),
+    ]} />
+    <div className="target-host-list" role="tabpanel" hidden={selected !== HOST_LIST}>
+      <div className="remote-page-content">
+        <header className="remote-header">
+          <span className="remote-heading-icon"><SidebarNavIcon kind="server" /></span>
+          <p>{text("subtitle")}<small>{text("hostsHint")}</small></p>
+          <button className="send target-new" type="button" onClick={() => setDialog({ entry: null })}>{text("newHost")}</button>
+        </header>
+        {failure && <div className="remote-error" role="alert">{failure}</div>}
+        {!entries && !failure && <LoadingStatus>{text("loading")}</LoadingStatus>}
+        {entries?.length === 0 && <p className="remote-empty">{text("empty")}</p>}
+        {!!entries?.length && <ul className="target-cards">
+          {entries.map(entry => {
+            const { target } = entry;
+            return <li key={target.targetId} className="target-card" onDoubleClick={() => openTerminal(entry)}>
+              {/* A click from the keyboard opens it too; a mouse needs the double click. */}
+              <button type="button" className="target-card-open" aria-label={text("openTerminal", { name: target.displayName })} onClick={event => { if (event.detail === 0) openTerminal(entry); }}>
+                <span className="remote-device-icon"><SidebarNavIcon kind="server" /></span>
+                <span className="target-card-identity">
+                  <strong>{target.displayName}</strong>
+                  <span>{targetRoute(target.connection)}</span>
+                </span>
+              </button>
+              <div className="target-row-actions" onDoubleClick={event => event.stopPropagation()}>
+                  {onProjectReady && <ActionButton label={text("openProject")} path="M3 19V6a2 2 0 0 1 2-2h4l2 3h7a2 2 0 0 1 2 2v1M3 19l3-8a1 1 0 0 1 1-1h14l-3 8a1.5 1.5 0 0 1-1.4 1H3Z" onClick={() => setDialog({ entry, forProject: true })} />}
+                  <ActionButton label={text("edit")} path="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Zm9.5-13.5 4 4" onClick={() => setDialog({ entry })} />
+                  <ActionButton label={text("remove")} path="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" onClick={() => setRemoving(entry)} />
+              </div>
+              {/* The same as double-clicking the card. Always shown: it's how a host is used. */}
+              <div className="target-row-actions target-card-connect" onDoubleClick={event => event.stopPropagation()}>
+                <ActionButton label={text("connect")} path="M5 12h14m-6-6 6 6-6 6" onClick={event => { if (event.detail <= 1) openTerminal(entry); }} />
+              </div>
+            </li>;
+          })}
+        </ul>}
+      </div>
     </div>
+    {tabs.map(tab => {
+      const entry = entryOf(tab.targetId);
+      return entry && <HostTerminalTab key={tab.id} targetId={tab.targetId} api={terminals(tab.targetId)} operationId={tab.operationId} resourceId={tab.resourceId}
+        status={tab.status} connected={entry.status.phase === "connected"} visible={visible && selected === tab.id}
+        onStatus={(status, epoch) => { if (tab.status !== status || tab.epoch !== epoch) updateTab(tab.id, { status, epoch }); }}
+        onReconnect={() => reconnectTab(tab, entry)}
+        connecting={<div className="project-dialog target-dialog target-tab-progress">
+          <header><div><h2>{entry.target.displayName}</h2><small className="target-route">{targetRoute(entry.target.connection)}</small></div></header>
+          <ConnectionProgress api={api} targetId={tab.targetId} onEdit={() => setDialog({ entry })} onClose={() => {}} onCancel={() => forgetTab(tab.id)} />
+        </div>} />;
+    })}
     {removing && <ConfirmDialog title={text("remove")} tone="danger" icon="trash" confirmLabel={text("remove")} onCancel={() => setRemoving(null)}
-      onConfirm={() => { setRemoving(null); act(api.remove(removing.target.targetId)); }}>
+      onConfirm={() => { setRemoving(null); act(remove(removing)); }}>
       <p>{text("removeConfirm", { name: removing.target.displayName })}</p>
     </ConfirmDialog>}
-    {dialog && <TargetConnectionDialog api={api} entry={dialog.entry} initialProgress={dialog.progress} initialBrowsing={dialog.browsing} onChanged={changed} onClose={() => setDialog(null)} onProjectReady={onProjectReady} />}
+    {dialog && (dialog.forProject && dialog.entry
+      ? <HostProjectDialog api={api} entry={dialog.entry} onChanged={changed} onClose={() => setDialog(null)} onProjectReady={onProjectReady} />
+      : <TargetConnectionDialog api={api} entry={dialog.entry} onChanged={changed} onClose={() => setDialog(null)} />)}
   </section>;
 }

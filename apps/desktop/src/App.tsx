@@ -1,5 +1,6 @@
 import { RemoteDevices } from "./RemoteDevices";
-import { ExecutionTargets, TargetOfflineBanner } from "./ExecutionTargets";
+import { ExecutionTargets, HostProjectDialog, TargetOfflineBanner } from "./ExecutionTargets";
+import type { TargetEntry } from "./executionTargetClient";
 import { GitCredentialPrompt } from "./GitCredentialPrompt";
 import { ComputerUseControl } from "./ComputerUseControl";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -343,8 +344,10 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     refreshQuotas.current();
   };
   const [activeView, setActiveView] = useState<"conversation" | "quota" | "remote" | "targets">("conversation");
-  const [newConnectionRequest, setNewConnectionRequest] = useState(0);
-  const openNewConnection = () => { setActiveView("targets"); setNewConnectionRequest(value => value + 1); };
+  const targetsOpened = useRef(false);
+  if (activeView === "targets") targetsOpened.current = true;
+  /** A host chosen in the project picker on the way to a project; `entry` is null for a new one. */
+  const [hostFlow, setHostFlow] = useState<{ entry: TargetEntry | null } | null>(null);
   const [startupError, setStartupError] = useState(false);
   const [snapshot, setSnapshot] = useState<BootstrapSnapshot | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<TaskId | null>(null);
@@ -1295,11 +1298,11 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             </>}
           </div>
         </header>
-      {activeView === "conversation" && selectedProjectTarget && <TargetOfflineBanner targetId={selectedProjectTarget} />}
+      {activeView === "conversation" && selectedProjectTarget && <TargetOfflineBanner targetId={selectedProjectTarget} autoConnect />}
       {selectedTaskId && <GitCredentialPrompt taskId={selectedTaskId} />}
       {activeView === "quota" ? (
         <QuotaCenter views={quotaViews} installations={installationsOnTarget(snapshot.installations, null)} agentUpdates={agentUpdates} refreshProgress={quotaRefreshProgress} onRefresh={() => refreshQuotasNow.current()} onDetect={detectAgents} lang={resolvedLang} />
-      ) : activeView === "remote" ? <RemoteDevices lang={resolvedLang} /> : activeView === "targets" ? <ExecutionTargets requestNew={newConnectionRequest} onProjectReady={async projectId => { await refresh(); createConversation(projectId as ProjectId); }} /> : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}
+      ) : activeView === "remote" ? <RemoteDevices lang={resolvedLang} /> : activeView === "targets" ? null : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}
         onDragEnter={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); dragDepth.current++; setDraggingFiles(true); } }}
         onDragOver={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = sending ? "none" : "copy"; } }}
         onDragLeave={event => { event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFiles(false); } }}
@@ -1331,7 +1334,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             {!selectedTaskId && <div className="welcome-project-bar"><ProjectPicker projects={snapshot.projects} selectedProject={selectedProject}
               disabled={creatingTask || sending || Boolean(selectedTask.activePrimaryRun)}
               onSelect={projectId => { if (projectId !== selectedTask.projectId) void createConversation(projectId); }}
-              onOpenFolder={() => void openProjectFolder()} onNewConnection={isTauri() ? openNewConnection : undefined} /></div>}
+              onOpenFolder={() => void openProjectFolder()}
+              onChooseHost={isTauri() ? entry => setHostFlow({ entry }) : undefined} onNewHost={isTauri() ? () => setHostFlow({ entry: null }) : undefined} /></div>}
             <form className="composer" onSubmit={submit}>
             {error && <p className="error" role="alert">{error}</p>}
             <AttachmentPreviews items={attachments.items} remove={attachments.remove} disabled={sending} />
@@ -1404,6 +1408,9 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         }}/>}
         {selectedTaskId && <CancelRecovery key={selectedTaskId} client={client} taskId={selectedTaskId} busy={cancelling} onAccepted={() => { void refresh(); }}/>}
       </section>}
+      {hostFlow && <HostProjectDialog entry={hostFlow.entry} onClose={() => setHostFlow(null)} onProjectReady={async projectId => { await refresh(); createConversation(projectId as ProjectId); }} />}
+      {/* Stays mounted once opened, so the shells in its tabs keep their screens. */}
+      {targetsOpened.current && <ExecutionTargets visible={activeView === "targets"} onProjectReady={async projectId => { await refresh(); createConversation(projectId as ProjectId); }} />}
       {terminalLoaded && selectedProject && <Suspense fallback={activeView === "conversation" && terminalOpen ? <LoadingStatus>{t("app.loadingTerminal")}</LoadingStatus> : null}><TerminalDock
         key={selectedProject.projectId} projectId={selectedProject.projectId}
         directories={[selectedProject.path, ...selectedProject.additionalDirectories]}

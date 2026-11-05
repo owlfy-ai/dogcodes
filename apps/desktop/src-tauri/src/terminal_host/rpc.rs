@@ -1,15 +1,41 @@
 //! Authenticated local-service boundary. Project membership is validated here,
 //! independent of desktop window labels or client-side path checks.
-use super::{LaunchIntent, TerminalHost, TerminalStopRequest};
+use super::{LaunchIntent, TerminalHost, TerminalStatus, TerminalStopRequest};
 use agent_core::Core;
+use agent_domain::TargetId;
+use serde::Deserialize;
 use serde_json::{Value, json};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
+
+const RELEASE_WAIT_ROUND: Duration = Duration::from_millis(50);
+const RELEASE_WAIT_ROUNDS: usize = 60;
 
 /// Whether a directory is inside a root, by name alone: both are on another machine.
 fn within_remote_root(root: &str, cwd: &std::path::Path) -> bool {
     cwd.components()
         .all(|part| !matches!(part, std::path::Component::ParentDir))
         && cwd.starts_with(root)
+}
+
+/// What a shell opened on a host, rather than in a project, is listed under. Project
+/// identities never have this prefix, so no project can reach these shells.
+fn target_scope(target: &TargetId) -> String {
+    format!("target:{}", target.as_str())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TargetShellRequest {
+    target_id: TargetId,
+    operation_id: String,
+    cols: u16,
+    rows: u16,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TargetReleaseRequest {
+    target_id: TargetId,
 }
 
 pub(crate) async fn dispatch(
@@ -61,6 +87,63 @@ pub(crate) async fn dispatch(
                 return Err("终端目录不在项目范围内".into());
             }
             Ok(json!(terminals.start(intent).await?))
+        }
+        "terminal_start_on_target" => {
+            let request: TargetShellRequest =
+                serde_json::from_value(args).map_err(|e| e.to_string())?;
+            // The directory comes from the connection, never from the caller.
+            let (target, home) = targets.shell_place(&request.target_id)?;
+            let intent = LaunchIntent {
+                project_launch: None,
+                operation_id: request.operation_id,
+                project_id: target_scope(&request.target_id),
+                directory_index: 0,
+                task_id: None,
+                command_id: None,
+                label: "终端".into(),
+                cwd: home,
+                command: None,
+                cols: request.cols,
+                rows: request.rows,
+            };
+            Ok(json!(terminals.start_on(intent, target).await?))
+        }
+        // After the last shell a person opened on a host closes. Agents reach a host
+        // through its projects over this same connection, so a host with projects keeps
+        // it, even while their conversations are idle: their agents stay alive on it.
+        "terminal_release_target" => {
+            let request: TargetReleaseRequest =
+                serde_json::from_value(args).map_err(|e| e.to_string())?;
+            let target = request.target_id;
+            let snapshot = core.bootstrap().await.map_err(|e| e.to_string())?;
+            if snapshot
+                .projects
+                .iter()
+                .any(|project| project.target_id.as_ref() == Some(&target))
+            {
+                return Ok(json!({ "released": false }));
+            }
+            // A shell just closed is still stopping. Let it finish, or losing the
+            // connection would record it as lost and bring its tab back later.
+            let scope = target_scope(&target);
+            for _ in 0..RELEASE_WAIT_ROUNDS {
+                let shells = terminals.list(&scope)?;
+                if shells
+                    .iter()
+                    .any(|info| info.status.active() && info.status != TerminalStatus::Stopping)
+                {
+                    return Ok(json!({ "released": false }));
+                }
+                if !shells
+                    .iter()
+                    .any(|info| info.status == TerminalStatus::Stopping)
+                {
+                    break;
+                }
+                tokio::time::sleep(RELEASE_WAIT_ROUND).await;
+            }
+            targets.disconnect(core, &target).await;
+            Ok(json!({ "released": true }))
         }
         "terminal_launch_intents" => {
             let id = args["operationId"].as_str().ok_or("缺少原启动标识")?;

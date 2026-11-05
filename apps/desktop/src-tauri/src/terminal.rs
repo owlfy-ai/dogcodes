@@ -69,6 +69,38 @@ pub async fn core_terminal_open(
         .await
 }
 
+/// A shell on a connected host, outside any project.
+#[tauri::command]
+pub async fn core_terminal_open_on_target(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, DesktopState>,
+    target_id: String,
+    operation_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<TerminalInfo, String> {
+    if window.label() != "main" {
+        return Err("请从主窗口打开服务器终端".into());
+    }
+    state
+        .core
+        .terminal_start_on_target(&target_id, &operation_id, cols, rows)
+        .await
+}
+
+/// Ends a host's connection once its last shell closed, unless its projects need it.
+#[tauri::command]
+pub async fn core_terminal_release_target(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, DesktopState>,
+    target_id: String,
+) -> Result<serde_json::Value, String> {
+    if window.label() != "main" {
+        return Err("请从主窗口操作服务器连接".into());
+    }
+    state.core.terminal_release_target(&target_id).await
+}
+
 #[tauri::command]
 pub async fn core_terminal_list(
     window: tauri::WebviewWindow,

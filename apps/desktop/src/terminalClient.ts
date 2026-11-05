@@ -61,3 +61,23 @@ export const terminalClient = {
   close: (id: string, expectedEpoch: string) => invoke<void>("core_terminal_close", { id, expectedEpoch }),
 };
 export type TerminalApi = typeof terminalClient;
+
+/** What a shell opened on a host, outside any project, is listed under. Set by the service. */
+export const hostTerminalScope = (targetId: string) => `target:${targetId}`;
+
+const hostClients = new Map<string, TerminalApi>();
+
+/** The same terminal operations for shells on a host. The service picks the directory. */
+export function hostTerminalClient(targetId: string): TerminalApi {
+  let client = hostClients.get(targetId);
+  if (!client) hostClients.set(targetId, client = {
+    ...terminalClient,
+    open: async (_scope, _directoryIndex, cols, rows, receive, operationId) => {
+      let existing: TerminalInfo | undefined;
+      try { existing = await invoke<TerminalInfo>("core_terminal_get", { id: operationId }); } catch { /* same-ID launch below */ }
+      if (existing && existing.projectId !== hostTerminalScope(targetId)) throw new Error(t("terminalClient.idInUse"));
+      return followTerminal(existing ?? await invoke<TerminalInfo>("core_terminal_open_on_target", { targetId, operationId, cols, rows }), receive);
+    },
+  });
+  return client;
+}

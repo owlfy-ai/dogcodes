@@ -1,3 +1,4 @@
+import { TabBar } from "./TabBar";
 import { LoadingStatus } from "./LoadingStatus";
 import { ReviewEmptyState } from "./ReviewEmptyState";
 import { userFacingError } from "./userFacingError";
@@ -39,7 +40,7 @@ export function HistoryBrowser({client, taskId, onBack}: {client: CoreClient; ta
       <input ref={searchInput} aria-label={t("historyBrowser.searchLabel")} placeholder={t("historyBrowser.searchPlaceholder")} value={text} onChange={e => setText(e.target.value)} />
       <button type="submit">{t("historyBrowser.search")}</button>
     </form>
-    <nav aria-label={t("historyBrowser.kinds")}>{(["turns", "decisions", "changes"] as const).map(value => <button key={value} type="button" aria-pressed={kind === value} onClick={() => {setKind(value); setQuery(""); setText("");}}>{t(`historyBrowser.kind.${value}`)}</button>)}</nav>
+    <TabBar label={t("historyBrowser.kinds")} selected={kind} onSelect={value => { setKind(value as HistoryQuery["kind"]); setQuery(""); setText(""); }} items={(["turns", "decisions", "changes"] as const).map(value => ({ id: value, label: t(`historyBrowser.kind.${value}`) }))} />
     <p>{t("historyBrowser.description")}</p>
     {items.map(item => <HistoryRecord key={`${taskId}:${item.sequence}`} item={item} client={client} taskId={taskId} />)}
     {!busy && !items.length && !error && <ReviewEmptyState kind={query ? "search" : "history"} compact

@@ -1,3 +1,4 @@
+import { TabBar } from "./TabBar";
 import { translate as t } from "./i18n";
 export type WorkspaceTab = "files" | "changes" | "run";
 
@@ -8,13 +9,8 @@ const tabs: { id: WorkspaceTab; label: string; path: string }[] = [
 ];
 
 export function WorkspaceTabs({ value, onChange }: { value: WorkspaceTab; onChange: (tab: WorkspaceTab) => void }) {
-  return <div className="workspace-tabs" role="tablist" aria-label={t("workspaceTabs.label")}>
-    {tabs.map(({ id, label, path }, index) => <button key={id} type="button" role="tab" aria-label={t(label)} data-tooltip={t(label)} aria-selected={value === id} tabIndex={value === id ? 0 : -1} onClick={() => onChange(id)} onKeyDown={event => {
-      const next = event.key === "ArrowRight" ? (index + 1) % tabs.length : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
-      if (next < 0) return;
-      event.preventDefault();
-      onChange(tabs[next].id);
-      (event.currentTarget.parentElement?.children[next] as HTMLButtonElement)?.focus();
-    }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={path} /></svg></button>)}
-  </div>;
+  return <TabBar iconOnly label={t("workspaceTabs.label")} selected={value} onSelect={id => onChange(id as WorkspaceTab)} items={tabs.map(({ id, label, path }) => ({
+    id, label: t(label),
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={path} /></svg>,
+  }))} />;
 }

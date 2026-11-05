@@ -95,6 +95,8 @@ pub(crate) fn method_access(method: &str) -> Option<MethodAccess> {
         | "workspace_lease"
         | "scan_agent"
         | "project_run_open"
+        | "terminal_start_on_target"
+        | "terminal_release_target"
         | "verified_local_artifact" => HostOnly,
         _ => return None,
     })
@@ -167,6 +169,8 @@ mod tests {
             "workspace_lease",
             "scan_agent",
             "project_run_open",
+            "terminal_start_on_target",
+            "terminal_release_target",
         ] {
             assert_eq!(method_access(method), Some(MethodAccess::HostOnly));
         }

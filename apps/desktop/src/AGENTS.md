@@ -34,6 +34,14 @@
 - 弹窗渲染在 `document.body` 下，测试里要用 `document` 查询。
 - 查看文件、差异、产物这类大内容的查看器不属于这里。
 
+## Tab
+
+所有成排的 tab 统一使用 `TabBar.tsx` 和 `tabBar.css`，不要自己写 `role="tablist"` 或另加 tab 样式。
+
+- 键盘切换、选中态、关闭按钮和滚动到可见都由组件处理。传 `close` 的 tab 可关闭，不传的固定不可关，例如“远程主机”。
+- 只有图标的 tab 用 `iconOnly`，`label` 仍然必填，会作为可访问名称和 tooltip。
+- 当前视图不属于任何 tab 时，`selected` 不传或传 `null`。
+
 ## Agent 选择
 
 - Agent 的排序和启用状态统一使用 `agentPreferences.ts`，按 providerId 保存；管理页与所有选择菜单使用同一顺序。

@@ -1,4 +1,5 @@
 import { LoadingStatus } from "./LoadingStatus";
+import { TabBar } from "./TabBar";
 import { InlineError } from "./InlineError";
 import { userFacingError } from "./userFacingError";
 import { ReviewEmptyState } from "./ReviewEmptyState";
@@ -248,7 +249,6 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
     if (!visibleTabs.some(tab => tab.id === selected)) setSelected(visibleTabs[0]?.id ?? "");
   }, [tabs, selected]);
   const addControl = useRef<HTMLDivElement>(null);
-  const tabList = useRef<HTMLDivElement>(null);
   const directoryName = (index: number) => directories[index]?.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || t("terminalDock.workspace");
   const addTab = (directoryIndex: number) => {
     const id = crypto.randomUUID();
@@ -285,9 +285,6 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
     }
   };
   const tabLabel = (tab: typeof tabs[number]) => directoryName(tab.directoryIndex) + (tab.ordinal > 1 ? ` · ${tab.ordinal}` : "");
-  useEffect(() => {
-    tabList.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-  }, [selected, open]);
   const [height, setHeight] = useState(260);
   const drag = useRef<{ y: number; height: number } | null>(null);
   useEffect(() => { if (open) setOpened(true); }, [open]);
@@ -299,19 +296,10 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
       onPointerDown={e => { e.preventDefault(); drag.current = { y: e.clientY, height }; e.currentTarget.setPointerCapture(e.pointerId); }}
       onPointerMove={e => { if (drag.current) setHeight(Math.min(650, Math.max(140, drag.current.height + drag.current.y - e.clientY))); }}
       onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} />
-    <header className="terminal-toolbar"><strong>{t("terminal.title")}</strong><div ref={tabList} role="tablist" aria-label={t("terminal.projectTerminal")}>
-      {visibleTabs.map((tab, index) => <div className="terminal-tab" role="presentation" key={tab.id} data-selected={selected === tab.id}><button role="tab" aria-selected={selected === tab.id}
-        onClick={() => setSelected(tab.id)} onKeyDown={e => {
-          if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-            e.preventDefault();
-            const next = (index + (e.key === "ArrowRight" ? 1 : visibleTabs.length - 1)) % visibleTabs.length;
-            setSelected(visibleTabs[next].id);
-            tabList.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
-          }
-        }} tabIndex={selected === tab.id ? 0 : -1}>{tabLabel(tab)}</button>
-        <button className="terminal-tab-close" aria-label={`${t("terminal.closeTerminal")} ${tabLabel(tab)}`} data-tooltip={t("terminal.closeTerminal")} disabled={closing.includes(tab.id) || !tab.resourceId || !tab.epoch} aria-busy={closing.includes(tab.id)} onClick={() => void closeTab(tab.id)}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button>
-      </div>)}
-    </div>
+    <header className="terminal-toolbar"><strong>{t("terminal.title")}</strong><TabBar label={t("terminal.projectTerminal")} selected={selected} onSelect={setSelected} revealKey={open} items={visibleTabs.map(tab => ({
+      id: tab.id, label: tabLabel(tab),
+      close: { label: `${t("terminal.closeTerminal")} ${tabLabel(tab)}`, tooltip: t("terminal.closeTerminal"), disabled: closing.includes(tab.id) || !tab.resourceId || !tab.epoch, busy: closing.includes(tab.id), onClose: () => void closeTab(tab.id) },
+    }))} />
     <div className="terminal-add-control" ref={addControl}>
       <button className="terminal-add" aria-label={t("terminal.newTerminal")} data-tooltip={t("terminal.newTerminal")} disabled={!directories.length || !loaded}
         onClick={requestTerminal}>+</button>
