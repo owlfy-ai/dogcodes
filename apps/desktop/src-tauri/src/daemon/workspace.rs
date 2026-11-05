@@ -74,7 +74,7 @@ impl WorkspaceWatchStream {
 }
 enum Watching {
     Here(crate::workspace_service::watch::Subscription),
-    There(crate::remote_workspace::RemoteWatch),
+    There(Box<crate::remote_workspace::RemoteWatch>),
 }
 impl Watching {
     async fn next(&mut self) -> Result<WatchMessage, String> {
@@ -96,7 +96,7 @@ pub(super) async fn serve_watch(
         result = async {
             let request: DirectoryRequest = serde_json::from_value(args).map_err(|e| e.to_string())?;
             match crate::remote_workspace::watch(core, targets, &request).await? {
-                Some(watch) => Ok(Watching::There(watch)),
+                Some(watch) => Ok(Watching::There(Box::new(watch))),
                 None => watches.open(Arc::new(core.clone()), request).await.map(Watching::Here),
             }
         } => result,

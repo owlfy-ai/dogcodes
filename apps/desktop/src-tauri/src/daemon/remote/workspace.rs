@@ -111,7 +111,7 @@ pub(super) async fn call(
 
 enum Subscription {
     Workspace(crate::workspace_service::watch::Subscription),
-    Server(crate::remote_workspace::RemoteWatch),
+    Server(Box<crate::remote_workspace::RemoteWatch>),
     Changes(crate::review::watch::Subscription),
 }
 impl Subscription {
@@ -136,7 +136,7 @@ pub(super) async fn subscribe(
         "workspace_watch" => {
             let request = serde_json::from_value(args).map_err(failure)?;
             match crate::remote_workspace::watch(core, &control.targets, &request).await? {
-                Some(watch) => Subscription::Server(watch),
+                Some(watch) => Subscription::Server(Box::new(watch)),
                 None => Subscription::Workspace(
                     control
                         .workspace_watchers

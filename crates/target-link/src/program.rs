@@ -136,6 +136,7 @@ mod tests {
         assert!(found.iter().all(|path| path.is_absolute()));
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_bundled_client_is_only_a_last_resort() {
         let found = candidates(

@@ -415,7 +415,9 @@ async fn a_completed_summary_cannot_hide_unconfirmed_cleanup_or_release_its_asse
 }
 
 /// Behaves as another machine would, while actually running here.
+#[cfg(unix)]
 struct Elsewhere(std::path::PathBuf);
+#[cfg(unix)]
 impl agent_runtime::ExecutionTarget for Elsewhere {
     fn is_local(&self) -> bool {
         false
@@ -434,10 +436,12 @@ impl agent_runtime::ExecutionTarget for Elsewhere {
     }
 }
 
+#[cfg(unix)]
 struct RemoteAgent {
     inner: driver_api::FakeDriver,
     target: agent_runtime::SharedTarget,
 }
+#[cfg(unix)]
 #[async_trait::async_trait]
 impl AgentDriver for RemoteAgent {
     fn execution_target(&self) -> agent_runtime::SharedTarget {
@@ -470,6 +474,7 @@ impl AgentDriver for RemoteAgent {
     }
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn an_agent_elsewhere_works_in_a_directory_on_its_own_machine() {
     let machine = tempfile::tempdir().unwrap();

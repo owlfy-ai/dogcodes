@@ -716,6 +716,7 @@ mod tests {
         assert!(serde_json::to_vec(&values).unwrap().len() < target_wire::MAX_PAYLOAD);
     }
 
+    #[cfg(unix)]
     fn request(script: &str) -> SpawnRequest {
         SpawnRequest {
             process: 1,
