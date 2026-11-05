@@ -994,7 +994,14 @@ fn resolve_remote_cwd(root: &Path, relative: &str) -> Result<PathBuf, String> {
     if !inside_project(relative) {
         return Err("运行目录必须位于项目内".into());
     }
-    Ok(root.join(relative))
+    // Joined by hand: `Path` would use this machine's separator in a path on the server.
+    let root = root.to_string_lossy();
+    let relative = relative.trim_start_matches("./").trim_end_matches('/');
+    Ok(if relative.is_empty() || relative == "." {
+        root.into_owned().into()
+    } else {
+        format!("{}/{relative}", root.trim_end_matches('/')).into()
+    })
 }
 fn resolve_cwd(root: &Path, relative: &str) -> Result<PathBuf, String> {
     if !inside_project(relative) {
@@ -1159,6 +1166,28 @@ mod tests {
             assert!(resolve_cwd(root.path(), "outside").is_err());
         }
     }
+    #[test]
+    fn a_directory_on_a_server_is_joined_with_its_own_separator() {
+        let root = Path::new("/srv/app");
+        for (relative, expected) in [
+            (".", "/srv/app"),
+            ("", "/srv/app"),
+            ("./", "/srv/app"),
+            ("web", "/srv/app/web"),
+            ("./web/api/", "/srv/app/web/api"),
+        ] {
+            assert_eq!(
+                resolve_remote_cwd(root, relative)
+                    .unwrap()
+                    .to_string_lossy(),
+                expected
+            );
+        }
+        for outside in ["..", "../x", "web/../..", "a\\b"] {
+            assert!(resolve_remote_cwd(root, outside).is_err(), "{outside}");
+        }
+    }
+
     #[test]
     fn a_server_projects_catalog_survives_a_restart() {
         let root = tempfile::tempdir().unwrap();

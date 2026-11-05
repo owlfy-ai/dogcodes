@@ -53,7 +53,12 @@ fn merge(roots: Vec<(String, Value)>) -> Result<Value, WorkspaceCollectionDiagno
             }
             file["relativePath"] = json!(relative);
             file["workspacePath"] = json!(root);
-            file["path"] = json!(std::path::Path::new(&root).join(path).to_string_lossy());
+            // A root on a server keeps its separator on a Windows desktop too.
+            file["path"] = if root.starts_with('/') {
+                json!(format!("{}/{relative}", root.trim_end_matches('/')))
+            } else {
+                json!(std::path::Path::new(&root).join(path).to_string_lossy())
+            };
             files.push(file);
         }
         if let Some(object) = value.as_object_mut() {
@@ -186,6 +191,17 @@ mod tests {
                 .is_err()
         );
     }
+    #[test]
+    fn a_file_on_a_server_is_joined_with_the_servers_separator() {
+        let merged = merge(vec![(
+            "/srv/app/".into(),
+            json!({"files":[{"path":"web/index.ts"}]}),
+        )])
+        .unwrap();
+        assert_eq!(merged["files"][0]["path"], "/srv/app/web/index.ts");
+        assert_eq!(merged["files"][0]["relativePath"], "web/index.ts");
+    }
+
     #[test]
     fn reject_traversal_and_aggregate_overflow() {
         assert!(

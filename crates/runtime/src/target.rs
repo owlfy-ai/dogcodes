@@ -187,9 +187,10 @@ pub async fn create_target_directory(target: &SharedTarget) -> io::Result<PathBu
         .inherit("PATH")
         .stdio(Pipe::Null, Pipe::Piped, Pipe::Null);
     let output = command.spawn()?.wait_with_output(4096).await?;
-    let path = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
-    if output.status.success() && path.is_absolute() {
-        Ok(path)
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    // A path on the target, which `Path` would judge by this machine's rules.
+    if output.status.success() && path.starts_with('/') {
+        Ok(path.into())
     } else {
         Err(io::Error::other(
             "could not create a directory on the target",

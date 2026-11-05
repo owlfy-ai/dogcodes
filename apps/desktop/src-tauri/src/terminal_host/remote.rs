@@ -22,7 +22,8 @@ const WAIT_INTERVAL: Duration = Duration::from_millis(10);
 fn shell_request(target: &SharedTarget, command: Option<&str>, cwd: &Path) -> ProcessRequest {
     let shell = target
         .inherited("SHELL")
-        .filter(|shell| Path::new(shell).is_absolute());
+        // A path on the server, which `Path` would judge by this machine's rules.
+        .filter(|shell| shell.to_string_lossy().starts_with('/'));
     let known = shell.as_ref().filter(|shell| {
         matches!(
             Path::new(shell).file_name().and_then(|name| name.to_str()),

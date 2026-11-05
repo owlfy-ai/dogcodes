@@ -22,9 +22,12 @@ impl Core {
         let directories: Vec<_> = std::iter::once(project.path)
             .chain(project.additional_directories)
             .collect();
-        if directories.iter().any(|path| {
-            !std::path::Path::new(path).is_absolute() || !std::path::Path::new(path).is_dir()
-        }) {
+        // A directory on another machine says nothing about this file system.
+        if project.target_id.is_none()
+            && directories.iter().any(|path| {
+                !std::path::Path::new(path).is_absolute() || !std::path::Path::new(path).is_dir()
+            })
+        {
             return Err(CoreError::InvalidArgument("审查项目目录不可用".into()));
         }
         Ok(directories)

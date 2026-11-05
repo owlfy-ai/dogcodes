@@ -397,7 +397,10 @@ impl CodexDriver {
         thinking: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
         let working_directory = Path::new(&request.working_directory);
-        if !working_directory.is_absolute() || !working_directory.is_dir() {
+        // On another machine the agent itself reports a missing directory.
+        if self.executable.target.is_local()
+            && (!working_directory.is_absolute() || !working_directory.is_dir())
+        {
             return Err(stable_error("working directory is unavailable"));
         }
         let mut connection = Connection::spawn_for_apps(

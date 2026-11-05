@@ -907,6 +907,8 @@ fn spawn(
     sessions: Sessions,
 ) -> Result<(), String> {
     let command_text = session.intent.command.as_deref();
+    // ConPTY belongs to this machine. A terminal on a server has no such handshake.
+    let con_pty = cfg!(windows) && matches!(place, Place::Here { .. });
     let Started {
         master,
         child,
@@ -928,7 +930,7 @@ fn spawn(
         let mut output = session.output.lock().map_err(|_| "终端状态不可用")?;
         // ConPTY inherits its initial cursor through an output/input handshake.
         // Keep writes gated until the service answers it, even with no view.
-        output.info.status = if cfg!(windows) {
+        output.info.status = if con_pty {
             TerminalStatus::Starting
         } else {
             TerminalStatus::Running
@@ -954,7 +956,7 @@ fn spawn(
             let session = reading;
             let mut buffer = [0; 8192];
             #[cfg(windows)]
-            let mut cursor = startup::StartupCursor::default();
+            let mut cursor = con_pty.then(startup::StartupCursor::default);
             loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break,
@@ -963,6 +965,10 @@ fn spawn(
                         session.append(&buffer[..count]);
                         #[cfg(windows)]
                         {
+                            let Some(cursor) = cursor.as_mut() else {
+                                session.append(&buffer[..count]);
+                                continue;
+                            };
                             let (visible, respond) = cursor.consume(&buffer[..count]);
                             if respond
                                 && let Err(error) = session.initialize_cursor(directory.as_deref())

@@ -258,7 +258,9 @@ impl PiDriver {
                 return connection.handoff(id);
             }
         }
+        // On another machine the agent itself reports a missing session file.
         if let Some(id) = resume
+            && self.executable.target.is_local()
             && (!std::path::Path::new(id).is_absolute() || !std::path::Path::new(id).is_file())
         {
             return Err(DriverError::SessionMissing(
@@ -283,7 +285,10 @@ impl PiDriver {
         };
         let Some(id) = state["sessionFile"]
             .as_str()
-            .filter(|path| std::path::Path::new(path).is_absolute())
+            .filter(|path| {
+                // A path on the server, which `Path` would judge by this machine's rules.
+                std::path::Path::new(path).is_absolute() || path.starts_with('/')
+            })
             .map(str::to_owned)
         else {
             connection.request_close();
