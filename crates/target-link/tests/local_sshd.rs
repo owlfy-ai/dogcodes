@@ -732,6 +732,23 @@ async fn the_target_reports_the_account_login_environment() {
 
 #[tokio::test]
 #[ignore = "needs an OpenSSH server binary"]
+async fn a_private_directory_comes_and_goes_on_the_target() {
+    let server = Sshd::start("", "");
+    let (link, _directory) = connected(&server).await;
+    let target = link.target();
+    let path = agent_runtime::create_target_directory(&target)
+        .await
+        .unwrap();
+    assert!(path.starts_with(target.temp_directory()), "{path:?}");
+    assert!(path.is_dir());
+    agent_runtime::remove_target_directory(&target, &path)
+        .await
+        .unwrap();
+    assert!(!path.exists());
+}
+
+#[tokio::test]
+#[ignore = "needs an OpenSSH server binary"]
 async fn directories_are_listed_and_resolved_on_the_target() {
     let server = Sshd::start("", "");
     let (link, _directory) = connected(&server).await;

@@ -53,7 +53,7 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
   useEffect(() => {
     if (!visible) return;
     let valid = true, loading = false, dirty = false;
-    void api.executors().then(value => { if (valid) setAgents(value.filter(executor => executor.providerId !== "fake")); }).catch(() => {});
+    void api.executors(taskId).then(value => { if (valid) setAgents(value.filter(executor => executor.providerId !== "fake")); }).catch(() => {});
     let timer: ReturnType<typeof setTimeout>;
     const load = async () => {
       if (!valid) return;

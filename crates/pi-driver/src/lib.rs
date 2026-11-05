@@ -330,6 +330,9 @@ impl PiDriver {
 
 #[async_trait]
 impl AgentDriver for PiDriver {
+    fn execution_target(&self) -> agent_runtime::SharedTarget {
+        self.executable.target.clone()
+    }
     fn executor(&self) -> &ExecutorRef {
         &self.executor
     }

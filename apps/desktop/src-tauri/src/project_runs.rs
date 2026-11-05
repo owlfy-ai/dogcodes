@@ -116,7 +116,10 @@ impl ProjectRunHost {
         };
         let mut catalog: StoredCatalog = serde_json::from_slice(&bytes)
             .map_err(|error| format!("运行配置损坏，已保留原文件：{error}"))?;
-        if catalog.project_id != id || catalog.platform != std::env::consts::OS {
+        // Whether a server's catalog suits its project is checked where the project is known.
+        let this_machine_or_server =
+            catalog.platform == std::env::consts::OS || catalog.platform == SERVER_PLATFORM;
+        if catalog.project_id != id || !this_machine_or_server {
             return Err("运行配置归属不匹配，已保留原文件".into());
         }
         let interrupted =
@@ -1156,6 +1159,30 @@ mod tests {
             assert!(resolve_cwd(root.path(), "outside").is_err());
         }
     }
+    #[test]
+    fn a_server_projects_catalog_survives_a_restart() {
+        let root = tempfile::tempdir().unwrap();
+        let saved = |platform: &str| {
+            let catalog: StoredCatalog = RunCatalog {
+                project_id: "project".into(),
+                platform: platform.into(),
+                shell: "POSIX sh".into(),
+                executor: None,
+                generation: "saved".into(),
+                directories: vec![],
+            }
+            .into();
+            let host = ProjectRunHost::new(root.path().into());
+            host.save(&catalog).unwrap();
+            ProjectRunHost::new(root.path().into()).load("project")
+        };
+        assert_eq!(
+            saved(SERVER_PLATFORM).unwrap().unwrap().platform,
+            SERVER_PLATFORM
+        );
+        assert!(saved("another-system").is_err());
+    }
+
     #[test]
     fn caches_results_across_restart_and_ignores_a_superseded_analysis() {
         let root = tempfile::tempdir().unwrap();

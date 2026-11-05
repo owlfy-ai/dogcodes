@@ -83,14 +83,43 @@ struct Assets {
 }
 enum Directory {
     Temporary(tempfile::TempDir),
+    OnTarget(TargetDirectory),
     Workspace(std::path::PathBuf),
 }
 impl Directory {
+    /// An empty place on the machine the agent runs on: a path on this one would
+    /// mean nothing to an agent elsewhere.
+    async fn temporary(driver: &dyn AgentDriver) -> std::io::Result<Self> {
+        let target = driver.execution_target();
+        if target.is_local() {
+            return tempfile::tempdir().map(Self::Temporary);
+        }
+        let path = agent_runtime::create_target_directory(&target).await?;
+        Ok(Self::OnTarget(TargetDirectory { target, path }))
+    }
     fn path(&self) -> &std::path::Path {
         match self {
             Self::Temporary(directory) => directory.path(),
+            Self::OnTarget(directory) => &directory.path,
             Self::Workspace(directory) => directory,
         }
+    }
+}
+struct TargetDirectory {
+    target: agent_runtime::SharedTarget,
+    path: std::path::PathBuf,
+}
+impl Drop for TargetDirectory {
+    /// Best effort: one left behind by a lost connection stays in the system's
+    /// temporary directory, which the system clears.
+    fn drop(&mut self) {
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let (target, path) = (self.target.clone(), std::mem::take(&mut self.path));
+        runtime.spawn(async move {
+            let _ = agent_runtime::remove_target_directory(&target, &path).await;
+        });
     }
 }
 struct StartupObserver {
@@ -200,8 +229,8 @@ impl Session {
         runtime.spawn(async move {
             let directory = match workspace {
                 Some(path) => Directory::Workspace(path),
-                None => match tempfile::tempdir() {
-                    Ok(directory) => Directory::Temporary(directory),
+                None => match Directory::temporary(driver.as_ref()).await {
+                    Ok(directory) => directory,
                     Err(error) => {
                         let _ = created.send(Err(error.to_string()));
                         return;

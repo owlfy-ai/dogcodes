@@ -11,7 +11,8 @@ pub use process_scope::ProcessOutput as ProcessStream;
 pub use process_scope::{OwnedChild, ProcessFuture, ProcessInput, RemoteProcess};
 pub use target::{
     ExecutionTarget, Pipe, ProcessRequest, SharedTarget, TargetCommand, TargetExecutable,
-    TerminalChild, local_target, write_target_file,
+    TerminalChild, create_target_directory, local_target, remove_target_directory,
+    write_target_file,
 };
 
 pub use electron::{electron_node_executable, electron_resources_directory};

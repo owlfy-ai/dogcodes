@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { ExecutionTargets, TargetConnectionDialog, TargetOfflineBanner } from "./ExecutionTargets";
+import { ExecutionTargets, TargetConnectionDialog, TargetOfflineBanner, TargetOfflinePanel } from "./ExecutionTargets";
 import { I18nProvider } from "./i18n";
 import { connectionFromForm, joinDirectory, parentDirectory, stepStates, targetRoute, type TargetApi, type TargetStatus } from "./executionTargetClient";
 
@@ -170,16 +170,82 @@ describe("remote projects", () => {
     expect(ready).toHaveBeenCalledWith("prj_new");
   });
 
-  it("names a machine that is not connected and leads to the connections page", async () => {
-    const opened = vi.fn();
-    await act(async () => { root.render(<I18nProvider language="en"><TargetOfflineBanner api={fakeApi(idle)} targetId="tgt_one" onOpenConnections={opened} /></I18nProvider>); });
+  const banner = async (api: TargetApi) => {
+    await act(async () => { root.render(<I18nProvider language="en"><TargetOfflineBanner api={api} targetId="tgt_one" /></I18nProvider>); });
+  };
+  const flush = async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 450)); }); };
+
+  it("reconnects from the banner without asking anything when nobody is needed", async () => {
+    const api = fakeApi(idle);
+    await banner(api);
     expect(container.textContent).toContain("not connected");
-    await act(async () => { button("Open connections")!.click(); });
-    expect(opened).toHaveBeenCalled();
+    vi.mocked(api.status).mockResolvedValue(connected);
+    await act(async () => { button("Reconnect")!.click(); });
+    expect(api.connect).toHaveBeenCalledWith("tgt_one", null);
+    await flush();
+    expect(container.textContent).toBe("");
+    expect(container.querySelector("[role=dialog]")).toBeNull();
+  });
+
+  it("shows the connection dialog in place when a password is needed", async () => {
+    const api = fakeApi(idle, { list: vi.fn(async () => [entry]) });
+    await banner(api);
+    vi.mocked(api.status).mockResolvedValue({ ...idle, phase: "connecting", prompt: { id: "p", kind: "password", text: "Password for build" } });
+    await act(async () => { button("Reconnect")!.click(); });
+    await flush();
+    expect(container.textContent).toContain("Password for build");
+    expect(button("Reconnecting…")!.disabled).toBe(true);
+  });
+
+  it("does not take the last attempt's failure for this one", async () => {
+    const failed = { ...idle, phase: "failed" as const, error: { kind: "auth_failed" as const, detail: "denied" } };
+    const api = fakeApi(failed, { list: vi.fn(async () => [entry]) });
+    await banner(api);
+    expect(api.list).not.toHaveBeenCalled();
+    vi.mocked(api.status).mockResolvedValue({ ...idle, phase: "connecting" });
+    await act(async () => { button("Reconnect")!.click(); });
+    await flush();
+    expect(api.list).not.toHaveBeenCalled();
+    vi.mocked(api.status).mockResolvedValue(failed);
+    await flush();
+    expect(api.list).toHaveBeenCalled();
+  });
+
+  const both = async (api: TargetApi) => {
+    await act(async () => { root.render(<I18nProvider language="en">
+      <TargetOfflineBanner api={api} targetId="tgt_one" />
+      <TargetOfflinePanel api={api} targetId="tgt_one" visible onClose={() => {}}><p>panel content</p></TargetOfflinePanel>
+    </I18nProvider>); });
+  };
+
+  it("hides the panel's content until the server is connected", async () => {
+    await both(fakeApi(idle));
+    expect(container.textContent).not.toContain("panel content");
+    expect(container.querySelector("aside .review-empty-action")?.textContent).toBe("Reconnect");
+  });
+
+  it.each([".target-offline button", "aside .review-empty-action"])("connecting from %s updates both views at once", async selector => {
+    const api = fakeApi(idle);
+    await both(api);
+    vi.mocked(api.status).mockResolvedValue(connected);
+    await act(async () => { container.querySelector<HTMLButtonElement>(selector)!.click(); });
+    expect(api.connect).toHaveBeenCalledTimes(1);
+    expect(container.querySelector(".target-offline")).toBeNull();
+    expect(container.textContent).toBe("panel content");
+  });
+
+  it("asks for a password once, in the view that was clicked", async () => {
+    const api = fakeApi(idle, { list: vi.fn(async () => [entry]) });
+    await both(api);
+    vi.mocked(api.status).mockResolvedValue({ ...idle, phase: "connecting", prompt: { id: "p", kind: "password", text: "Password for build" } });
+    await act(async () => { container.querySelector<HTMLButtonElement>("aside .review-empty-action")!.click(); });
+    await flush();
+    await flush();
+    expect(container.querySelectorAll("[role=dialog]").length).toBe(1);
   });
 
   it("stays quiet while the machine is connected", async () => {
-    await act(async () => { root.render(<I18nProvider language="en"><TargetOfflineBanner api={fakeApi(connected)} targetId="tgt_one" onOpenConnections={() => {}} /></I18nProvider>); });
+    await banner(fakeApi(connected));
     expect(container.textContent).toBe("");
   });
 

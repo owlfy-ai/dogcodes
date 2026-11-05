@@ -2273,6 +2273,9 @@ fn context_block(delivery: &ContextDelivery) -> ContentBlock {
 
 #[async_trait]
 impl AgentDriver for AcpDriver {
+    fn execution_target(&self) -> SharedTarget {
+        self.shared.launch.executable.target.clone()
+    }
     fn take_startup_catalogs(&self) -> driver_api::models::StartupCatalogs {
         std::mem::take(&mut *self.startup_catalogs.lock().unwrap())
     }

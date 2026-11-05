@@ -566,6 +566,9 @@ impl CodexDriver {
 
 #[async_trait]
 impl AgentDriver for CodexDriver {
+    fn execution_target(&self) -> agent_runtime::SharedTarget {
+        self.executable.target.clone()
+    }
     fn supports_readonly_analysis(&self) -> bool {
         true
     }

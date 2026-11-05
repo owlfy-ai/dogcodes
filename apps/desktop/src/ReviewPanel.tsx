@@ -22,6 +22,7 @@ import { InlineError } from "./InlineError";
 import { userFacingError } from "./userFacingError";
 import { ReviewFileLoading } from "./ReviewFileLoading";
 import { ReviewPanelLoading } from "./ReviewPanelLoading";
+import { TargetOfflinePanel } from "./ExecutionTargets";
 import { ReviewFileTree, directoryName } from "./ReviewFileTree";
 import { ReviewFileMenu, type FileMenuTarget } from "./ReviewFileMenu";
 import { WorkspaceFilePreview } from "./WorkspaceFilePreview";
@@ -41,11 +42,13 @@ export interface ReviewView {
 }
 
 /** Retain visited readers until their conversations are removed. Unopened docks do no work. */
-export function ConversationReviewDocks({ tasks, selectedTaskId, open, fileRequest, ...props }: Omit<React.ComponentProps<typeof ReviewPanel>, "taskId" | "running" | "visible" | "requestedPath" | "fileRequestId"> & {
+export function ConversationReviewDocks({ tasks, selectedTaskId, open, fileRequest, targetOf, ...props }: Omit<React.ComponentProps<typeof ReviewPanel>, "taskId" | "running" | "visible" | "requestedPath" | "fileRequestId"> & {
   tasks: Pick<TaskSummary, "taskId" | "activePrimaryRun">[];
   selectedTaskId: string | null;
   open: boolean;
   fileRequest?: { taskId: string; path: string; id: number } | null;
+  /** The server holding a task's project, when it is not this machine. */
+  targetOf?: (taskId: string) => string | null;
 }) {
   const previousDrawer = useRef({ open: false, taskId: null as string | null });
   const [enteringTaskId, setEnteringTaskId] = useState<string | null>(null);
@@ -57,7 +60,7 @@ export function ConversationReviewDocks({ tasks, selectedTaskId, open, fileReque
     setEnteringTaskId(open && !previous.open ? selectedTaskId : null);
     previousDrawer.current = { open, taskId: selectedTaskId };
   }, [open, selectedTaskId]);
-  return <>{tasks.map(task => <ReviewDock {...props} key={task.taskId} taskId={task.taskId}
+  return <>{tasks.map(task => <ReviewDock {...props} key={task.taskId} taskId={task.taskId} targetId={targetOf?.(task.taskId)}
     animateEntrance={open && task.taskId === selectedTaskId && task.taskId === enteringTaskId}
     open={open && task.taskId === selectedTaskId} running={Boolean(task.activePrimaryRun)}
     requestedPath={fileRequest?.taskId === task.taskId ? fileRequest.path : undefined}
@@ -65,10 +68,12 @@ export function ConversationReviewDocks({ tasks, selectedTaskId, open, fileReque
 }
 
 // Keep this task's reader mounted after its first opening.
-export function ReviewDock({ open, ...props }: React.ComponentProps<typeof ReviewPanel> & { open: boolean }) {
+export function ReviewDock({ open, targetId, ...props }: React.ComponentProps<typeof ReviewPanel> & { open: boolean; targetId?: string | null }) {
   const [opened, setOpened] = useState(open);
   useEffect(() => { if (open) setOpened(true); }, [open]);
-  return open || opened ? <ReviewPanel {...props} visible={open} /> : null;
+  if (!open && !opened) return null;
+  const panel = <ReviewPanel {...props} visible={open} />;
+  return targetId ? <TargetOfflinePanel targetId={targetId} visible={open} onClose={props.onClose}>{panel}</TargetOfflinePanel> : panel;
 }
 
 export interface ReviewPanelProps {

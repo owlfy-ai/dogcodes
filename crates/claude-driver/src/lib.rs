@@ -1452,6 +1452,9 @@ fn user_message(blocks: Vec<Value>) -> Value {
 
 #[async_trait]
 impl AgentDriver for ClaudeDriver {
+    fn execution_target(&self) -> agent_runtime::SharedTarget {
+        self.executable.target.clone()
+    }
     fn take_startup_catalogs(&self) -> driver_api::models::StartupCatalogs {
         std::mem::take(&mut *self.startup_catalogs.lock().unwrap())
     }

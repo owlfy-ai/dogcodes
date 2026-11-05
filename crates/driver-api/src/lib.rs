@@ -452,6 +452,10 @@ pub trait AgentDriver: Send + Sync {
     ) -> Result<Option<std::sync::Arc<dyn AgentDriver>>, DriverError> {
         Ok(None)
     }
+    /// The machine this agent runs on: paths given to it must exist there.
+    fn execution_target(&self) -> agent_runtime::SharedTarget {
+        agent_runtime::local_target()
+    }
     /// Some protocols reapply permissions on every prompt instead of session creation.
     fn analysis_prompt_permission_mode(&self) -> Option<&str> {
         None

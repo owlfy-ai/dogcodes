@@ -1,5 +1,6 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { LoadingStatus } from "./LoadingStatus";
+import { ReviewEmptyState } from "./ReviewEmptyState";
 import { SidebarNavIcon } from "./SidebarNavIcon";
 import { focusDialogTitle } from "./dialogFocus";
 import { useI18n } from "./i18n";
@@ -8,6 +9,7 @@ import {
   type SshAuth, type TargetApi, type TargetEntry, type TargetErrorKind, type TargetStatus,
   connectionFromForm, joinDirectory, parentDirectory, stepStates, tauriTargetApi, targetRoute,
 } from "./executionTargetClient";
+import { needsPerson, useTargetConnection } from "./targetConnection";
 import "./executionTargets.css";
 
 const POLL_MILLISECONDS = 400;
@@ -83,26 +85,61 @@ function RemoteProjectDialog({ api, targetId, onClose, onReady }: {
   </div>;
 }
 
-/** Sending would fail anyway: say why, and where to fix it, before the person types. */
-export function TargetOfflineBanner({ api = tauriTargetApi, targetId, onOpenConnections }: {
-  api?: TargetApi; targetId: string; onOpenConnections: () => void;
+/** Reconnecting from where the person is. The dialog appears only when they are needed,
+ * for a password, a host key or a failure, and only in the view they clicked. */
+function useReconnect(api: TargetApi, targetId: string) {
+  const text = useTargetText();
+  const owner = useId();
+  const { state, reconnect, dismiss } = useTargetConnection(api, targetId);
+  const connecting = state.status?.phase === "connecting";
+  return {
+    offline: state.offline,
+    failure: state.failure ? userFacingError(state.failure, text("loadFailed")) : "",
+    button: { disabled: connecting, label: text(connecting ? "reconnecting" : "reconnect"), onClick: () => void reconnect(owner) },
+    dialog: needsPerson(state) && state.entry && state.asker === owner
+      ? <TargetConnectionDialog api={api} entry={state.entry} initialProgress onClose={dismiss} onChanged={() => {}} />
+      : null,
+  };
+}
+
+/** Sending would fail anyway: say why and reconnect from here. */
+export function TargetOfflineBanner({ api = tauriTargetApi, targetId }: {
+  api?: TargetApi; targetId: string;
 }) {
   const text = useTargetText();
-  const [offline, setOffline] = useState(false);
-  useEffect(() => {
-    let closed = false;
-    const read = () => void api.status(targetId).then(status => {
-      if (!closed) setOffline(status.phase !== "connected");
-    }).catch(() => { if (!closed) setOffline(true); });
-    read();
-    const timer = setInterval(read, 3000);
-    return () => { closed = true; clearInterval(timer); };
-  }, [api, targetId]);
+  const { offline, failure, button, dialog } = useReconnect(api, targetId);
   if (!offline) return null;
-  return <div className="target-offline" role="status">
-    <span>{text("offlineBanner")}</span>
-    <button type="button" onClick={onOpenConnections}>{text("openConnections")}</button>
-  </div>;
+  return <>
+    <div className="target-offline" role="status">
+      <span>{failure || text("offlineBanner")}</span>
+      <button type="button" disabled={button.disabled} onClick={button.onClick}>{button.label}</button>
+    </div>
+    {dialog}
+  </>;
+}
+
+/** A side panel of a project on a server: without the server there is nothing it can
+ * show, so it starts afresh once connected instead of carrying errors from before. */
+export function TargetOfflinePanel({ api = tauriTargetApi, targetId, visible, standalone = false, onClose, children }: {
+  api?: TargetApi; targetId: string; visible: boolean; standalone?: boolean; onClose: () => void; children: ReactNode;
+}) {
+  const text = useTargetText();
+  const { t } = useI18n();
+  const { offline, failure, button, dialog } = useReconnect(api, targetId);
+  if (offline === null) return null;
+  if (!offline) return <>{children}</>;
+  if (!visible) return null;
+  return <>
+    <aside className={`review-panel${standalone ? " review-standalone" : ""}`} aria-label={t("reviewPanel.title")}>
+      <header className="review-titlebar" data-tauri-drag-region="deep">
+        <span />
+        <div className="review-window-controls"><button type="button" onClick={onClose} aria-label={t("reviewPanel.close")} data-tooltip={t(standalone ? "reviewPanel.closeWindow" : "reviewPanel.closeSidebar")}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg></button></div>
+      </header>
+      <ReviewEmptyState kind="folder" title={failure || text("offlineBanner")}
+        action={<button type="button" className="review-empty-action" disabled={button.disabled} onClick={button.onClick}>{button.label}</button>} />
+    </aside>
+    {dialog}
+  </>;
 }
 
 function ConnectionProgress({ api, targetId, onEdit, onClose, onBrowse }: {

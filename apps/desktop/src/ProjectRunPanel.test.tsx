@@ -206,6 +206,7 @@ it("guides users with no available Agent and still confirms before regenerating 
   vi.mocked(api.get).mockResolvedValue({ ...catalog, directories: [{ ...catalog.directories[0], commands: [], userModified: true }] });
   vi.mocked(api.executors).mockResolvedValue([]);
   await act(async () => root.render(<ProjectRunPanel taskId="task" visible api={api} />));
+  expect(api.executors).toHaveBeenCalledWith("task");
   expect(element.querySelector(".review-empty-state")?.textContent).toContain("连接可用的 Agent");
   expect(element.querySelector(".review-empty-action")).toBeNull();
   vi.mocked(api.executors).mockResolvedValue([catalog.executor!]);

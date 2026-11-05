@@ -413,3 +413,97 @@ async fn a_completed_summary_cannot_hide_unconfirmed_cleanup_or_release_its_asse
     assert_eq!(driver.closes.load(Ordering::Acquire), 1);
     assert_eq!(driver.captures.load(Ordering::Acquire), 1);
 }
+
+/// Behaves as another machine would, while actually running here.
+struct Elsewhere(std::path::PathBuf);
+impl agent_runtime::ExecutionTarget for Elsewhere {
+    fn is_local(&self) -> bool {
+        false
+    }
+    fn inherited(&self, name: &str) -> Option<std::ffi::OsString> {
+        agent_runtime::local_target().inherited(name)
+    }
+    fn temp_directory(&self) -> std::path::PathBuf {
+        self.0.clone()
+    }
+    fn spawn(
+        &self,
+        request: agent_runtime::ProcessRequest,
+    ) -> std::io::Result<agent_runtime::OwnedChild> {
+        agent_runtime::local_target().spawn(request)
+    }
+}
+
+struct RemoteAgent {
+    inner: driver_api::FakeDriver,
+    target: agent_runtime::SharedTarget,
+}
+#[async_trait::async_trait]
+impl AgentDriver for RemoteAgent {
+    fn execution_target(&self) -> agent_runtime::SharedTarget {
+        self.target.clone()
+    }
+    fn executor(&self) -> &agent_domain::ExecutorRef {
+        self.inner.executor()
+    }
+    fn driver_version(&self) -> &'static str {
+        "test"
+    }
+    async fn create_session(
+        &self,
+        request: driver_api::SessionRequest,
+    ) -> Result<SessionHandle, driver_api::DriverError> {
+        self.inner.create_session(request).await
+    }
+    async fn prompt(
+        &self,
+        handle: &SessionHandle,
+        request: driver_api::PromptRequest,
+    ) -> Result<driver_api::DriverEventStream, driver_api::DriverError> {
+        self.inner.prompt(handle, request).await
+    }
+    async fn interrupt(&self, handle: &SessionHandle) -> Result<(), driver_api::DriverError> {
+        self.inner.interrupt(handle).await
+    }
+    async fn shutdown(&self, handle: SessionHandle) -> Result<(), driver_api::DriverError> {
+        self.inner.shutdown(handle).await
+    }
+}
+
+#[tokio::test]
+async fn an_agent_elsewhere_works_in_a_directory_on_its_own_machine() {
+    let machine = tempfile::tempdir().unwrap();
+    let driver = Arc::new(RemoteAgent {
+        inner: driver_api::FakeDriver::new("fake").unwrap(),
+        target: Arc::new(Elsewhere(machine.path().to_path_buf())),
+    });
+    let mut session = Session::start(
+        driver,
+        None,
+        Purpose::Analysis,
+        |driver, cwd, _| async move {
+            driver
+                .create_session(driver_api::SessionRequest {
+                    working_directory: cwd,
+                    additional_directories: vec![],
+                    app_mcps: vec![],
+                    permission_mode: None,
+                })
+                .await
+                .map_err(|e| e.to_string())
+        },
+    )
+    .await
+    .unwrap();
+    let directory = session.directory().to_path_buf();
+    assert!(directory.starts_with(machine.path()), "{directory:?}");
+    assert!(directory.is_dir());
+    session.cleanup(false).unwrap().await.unwrap().unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while directory.exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the directory is removed afterwards");
+}

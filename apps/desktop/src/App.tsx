@@ -1294,7 +1294,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             </>}
           </div>
         </header>
-      {activeView === "conversation" && selectedProjectTarget && <TargetOfflineBanner targetId={selectedProjectTarget} onOpenConnections={() => setActiveView("targets")} />}
+      {activeView === "conversation" && selectedProjectTarget && <TargetOfflineBanner targetId={selectedProjectTarget} />}
       {activeView === "quota" ? (
         <QuotaCenter views={quotaViews} installations={installationsOnTarget(snapshot.installations, null)} agentUpdates={agentUpdates} refreshProgress={quotaRefreshProgress} onRefresh={() => refreshQuotasNow.current()} onDetect={detectAgents} lang={resolvedLang} />
       ) : activeView === "remote" ? <RemoteDevices lang={resolvedLang} /> : activeView === "targets" ? <ExecutionTargets requestNew={newConnectionRequest} onProjectReady={async projectId => { await refresh(); createConversation(projectId as ProjectId); }} /> : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}
@@ -1424,7 +1424,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       {reviewWindow.error && <p className="review-window-error" role="alert">{reviewWindow.error}</p>}
       {activeView === "conversation" && selectedTaskId && reviewOpen && !reviewWindow.detached && <ReviewResizeHandle width={reviewWidth.width} max={reviewWidth.max} onResize={reviewWidth.setWidth} />}
       <PendingExecutorContext.Provider value={pendingExecutors}><AgentQuotaContext.Provider value={quotaViews}>
-        <ConversationReviewDocks workspaceNavigation onOpenConversation={taskId => { selectTask(taskId as TaskId); setActiveView("conversation"); setSubagentItemId(null); }} tasks={snapshot.tasks} selectedTaskId={selectedTaskId} onDetach={reviewWindow.available && !reviewWindow.opening ? view => void reviewWindow.detach(view) : undefined} open={activeView === "conversation" && reviewOpen && !reviewWindow.detached && !selectedProjectTarget} fileRequest={reviewFileRequest} onClose={() => setReviewOpen(false)}
+        <ConversationReviewDocks workspaceNavigation onOpenConversation={taskId => { selectTask(taskId as TaskId); setActiveView("conversation"); setSubagentItemId(null); }} tasks={snapshot.tasks} targetOf={taskId => projectTarget(snapshot, snapshot.tasks.find(task => task.taskId === taskId)?.projectId)} selectedTaskId={selectedTaskId} onDetach={reviewWindow.available && !reviewWindow.opening ? view => void reviewWindow.detach(view) : undefined} open={activeView === "conversation" && reviewOpen && !reviewWindow.detached} fileRequest={reviewFileRequest} onClose={() => setReviewOpen(false)}
           onEditProject={selectedProject && client.updateProject ? () => setEditingProject(selectedProject) : undefined} />
       </AgentQuotaContext.Provider></PendingExecutorContext.Provider>
 

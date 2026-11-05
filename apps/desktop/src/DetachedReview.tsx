@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { QuotaSnapshotView, TaskId } from "@dogcodes/protocol";
+import type { BootstrapSnapshot, QuotaSnapshotView, TaskId } from "@dogcodes/protocol";
 import { AgentQuotaContext } from "./AgentQuotaRing";
+import { TargetOfflinePanel } from "./ExecutionTargets";
 import { InlineError } from "./InlineError";
 import { userFacingError } from "./userFacingError";
 import { projectAnalysisClient } from "./ProjectReviewActions";
@@ -43,11 +44,24 @@ export function DetachedReview({ taskId }: { taskId: string }) {
     window.addEventListener("storage", theme); media.addEventListener("change", theme);
     return () => { active = false; clearInterval(timer); window.removeEventListener("storage", theme); media.removeEventListener("change", theme); };
   }, [taskId]);
+  // Undefined until known, so a server's project never starts reading while offline.
+  const [target, setTarget] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    let active = true;
+    void invoke<BootstrapSnapshot>("core_bootstrap").then(snapshot => {
+      const projectId = snapshot.tasks.find(task => task.taskId === taskId)?.projectId;
+      if (active) setTarget(snapshot.projects.find(project => project.projectId === projectId)?.targetId ?? null);
+    }).catch(() => { if (active) setTarget(null); });
+    return () => { active = false; };
+  }, [taskId]);
   const close = () => { void invoke("core_review_window_close", { taskId }).catch(e => setError(userFacingError(e, t("detachedReview.closeFailed")))); };
+  const panel = <ReviewPanel workspaceNavigation taskId={taskId} running={running} initialView={initialView} onClose={close} standalone />;
   return <main className="detached-review-shell">
     {error && <InlineError>{error}</InlineError>}
     <AgentQuotaContext.Provider value={quotas}>
-      <ReviewPanel workspaceNavigation taskId={taskId} running={running} initialView={initialView} onClose={close} standalone />
+      {target === undefined ? null : target
+        ? <TargetOfflinePanel targetId={target} visible standalone onClose={close}>{panel}</TargetOfflinePanel>
+        : panel}
     </AgentQuotaContext.Provider>
   </main>;
 }

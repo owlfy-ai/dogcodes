@@ -174,6 +174,43 @@ pub async fn write_target_file(target: &SharedTarget, path: &str, bytes: &[u8]) 
     }
 }
 
+/// A new private directory on the target, for work that should leave nothing behind.
+pub async fn create_target_directory(target: &SharedTarget) -> io::Result<PathBuf> {
+    let mut command = TargetCommand::new(target.clone(), "/bin/sh");
+    command
+        .args([
+            "-c".as_ref(),
+            r#"mktemp -d "$1/dogcodes.XXXXXX""#.as_ref(),
+            "sh".as_ref(),
+            target.temp_directory().as_os_str(),
+        ])
+        .inherit("PATH")
+        .stdio(Pipe::Null, Pipe::Piped, Pipe::Null);
+    let output = command.spawn()?.wait_with_output(4096).await?;
+    let path = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    if output.status.success() && path.is_absolute() {
+        Ok(path)
+    } else {
+        Err(io::Error::other(
+            "could not create a directory on the target",
+        ))
+    }
+}
+
+pub async fn remove_target_directory(target: &SharedTarget, path: &Path) -> io::Result<()> {
+    let mut command = TargetCommand::new(target.clone(), "/bin/sh");
+    command
+        .args([
+            "-c".as_ref(),
+            r#"rm -rf -- "$1""#.as_ref(),
+            "sh".as_ref(),
+            path.as_os_str(),
+        ])
+        .inherit("PATH")
+        .stdio(Pipe::Null, Pipe::Null, Pipe::Null);
+    command.spawn()?.wait().await.map(|_| ())
+}
+
 #[must_use]
 pub fn local_target() -> SharedTarget {
     LOCAL.clone()
