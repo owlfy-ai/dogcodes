@@ -263,10 +263,15 @@ it("loads a collapsed turn summary and opens frozen history instead of the live 
   HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="查看 example.ts 的历史 Diff"]')!.click());
   expect(onReviewFile).not.toHaveBeenCalled();
-  expect(container.querySelector(".historical-turn-diff .diff-view")).not.toBeNull();
+  expect(container.querySelector(".historical-turn-diff .historical-diff-view")).not.toBeNull();
+  expect(container.querySelector(".historical-turn-diff .review-removed code")?.textContent).toBe("before");
+  expect(container.querySelector(".historical-turn-diff .review-added code")?.textContent).toBe("after");
+  await act(async () => container.querySelector<HTMLButtonElement>(".historical-turn-diff .review-split-toggle")!.click());
+  expect(container.querySelector(".historical-turn-diff .review-split-row")).not.toBeNull();
+  expect(client.readArtifact).toHaveBeenCalledTimes(1);
   await act(async () => root.render(<TurnFiles taskId="tsk_a" metadata={metadata} client={client} operation />));
   expect(container.querySelector(".turn-files")).toBeNull();
-  expect(container.querySelector(".diff-view")).toBeNull();
+  expect(container.querySelector(".historical-diff-view")).toBeNull();
   expect(container.querySelector(".inline-edit-heading")?.textContent).toContain("example.ts");
   expect(container.querySelector(".inline-edit-code")).toBeNull();
   await act(async () => {

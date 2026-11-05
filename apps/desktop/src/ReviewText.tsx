@@ -6,7 +6,7 @@ import "./review.css";
 import { translate as t } from "./i18n";
 
 // The parent keys this component by file + comparison options, not by refresh ID.
-export function ReviewText({ diff, split, showStatistics = true, path, focusLine }: { diff: TextComparison; split: boolean; showStatistics?: boolean; path?: string; focusLine?: {side: "before" | "after"; start: number; end: number} }) {
+export function ReviewText({ diff, split, showStatistics = true, path, focusLine, lineOffsets }: { diff: TextComparison; split: boolean; showStatistics?: boolean; path?: string; focusLine?: {side: "before" | "after"; start: number; end: number}; lineOffsets?: { before: number; after: number } }) {
   // Anchor expansion to the original file's line ranges. New edits may split
   // an equal block or shift its working-side coordinates without losing the
   // context the user has already opened.
@@ -19,7 +19,9 @@ export function ReviewText({ diff, split, showStatistics = true, path, focusLine
     return !!focusLine && index !== undefined && index + 1 >= focusLine.start && index + 1 <= focusLine.end;
   };
   const [expanded, setExpanded] = useState<Array<[number, number]>>([]);
-  const lineNumberDigits = Math.max(2, String(Math.max(diff.before.length, diff.after.length)).length);
+  const oldLine = (index: number) => index + 1 + (lineOffsets?.before ?? 0);
+  const newLine = (index: number) => index + 1 + (lineOffsets?.after ?? 0);
+  const lineNumberDigits = Math.max(2, String(Math.max(oldLine(diff.before.length - 1), newLine(diff.after.length - 1))).length);
   const language = languageForPath(path);
   const highlighted = useMemo(() => ({
     before: highlightedLines(diff.before.join("").replaceAll("\r\n", "\n"), language),
@@ -50,17 +52,17 @@ export function ReviewText({ diff, split, showStatistics = true, path, focusLine
       const newText = offset < newLength ? diff.after[newIndex] : undefined;
       if (split) {
         result.push(<div className="review-split-row" data-review-focused={focused(oldText !== undefined ? oldIndex : undefined, newText !== undefined ? newIndex : undefined)} data-review-old-line={oldText !== undefined ? oldIndex : undefined} data-review-new-line={newText !== undefined ? newIndex : undefined} key={`${index}:${offset}`}>
-          <div className={!equal && oldText !== undefined ? "review-removed" : ""}><span>{oldText !== undefined ? oldIndex + 1 : ""}</span>{line(oldText, highlighted.before[oldIndex])}</div>
-          <div className={!equal && newText !== undefined ? "review-added" : ""}><span>{newText !== undefined ? newIndex + 1 : ""}</span>{line(newText, highlighted.after[newIndex])}</div>
+          <div className={!equal && oldText !== undefined ? "review-removed" : ""}><span>{oldText !== undefined ? oldLine(oldIndex) : ""}</span>{line(oldText, highlighted.before[oldIndex])}</div>
+          <div className={!equal && newText !== undefined ? "review-added" : ""}><span>{newText !== undefined ? newLine(newIndex) : ""}</span>{line(newText, highlighted.after[newIndex])}</div>
         </div>);
       } else if (equal) {
-        result.push(<div className="review-inline-row" data-review-focused={focused(oldIndex, newIndex)} data-review-old-line={oldIndex} data-review-new-line={newIndex} key={`${index}:${offset}`}><span>{oldIndex + 1}</span><span>{newIndex + 1}</span><i> </i>{line(newText, highlighted.after[newIndex])}</div>);
+        result.push(<div className="review-inline-row" data-review-focused={focused(oldIndex, newIndex)} data-review-old-line={oldIndex} data-review-new-line={newIndex} key={`${index}:${offset}`}><span>{oldLine(oldIndex)}</span><span>{newLine(newIndex)}</span><i> </i>{line(newText, highlighted.after[newIndex])}</div>);
       }
     }
     if (!split && !equal) {
       // Keep complete deletion/addition groups together, not alternating rows.
-      for (let oldIndex = block.oldStart; oldIndex < block.oldEnd; oldIndex++) result.push(<div className="review-inline-row review-removed" data-review-focused={focused(oldIndex, undefined)} data-review-old-line={oldIndex} key={`${index}:old:${oldIndex}`}><span>{oldIndex + 1}</span><span /><i>−</i>{line(diff.before[oldIndex], highlighted.before[oldIndex])}</div>);
-      for (let newIndex = block.newStart; newIndex < block.newEnd; newIndex++) result.push(<div className="review-inline-row review-added" data-review-focused={focused(undefined, newIndex)} data-review-new-line={newIndex} key={`${index}:new:${newIndex}`}><span /><span>{newIndex + 1}</span><i>+</i>{line(diff.after[newIndex], highlighted.after[newIndex])}</div>);
+      for (let oldIndex = block.oldStart; oldIndex < block.oldEnd; oldIndex++) result.push(<div className="review-inline-row review-removed" data-review-focused={focused(oldIndex, undefined)} data-review-old-line={oldIndex} key={`${index}:old:${oldIndex}`}><span>{oldLine(oldIndex)}</span><span /><i>−</i>{line(diff.before[oldIndex], highlighted.before[oldIndex])}</div>);
+      for (let newIndex = block.newStart; newIndex < block.newEnd; newIndex++) result.push(<div className="review-inline-row review-added" data-review-focused={focused(undefined, newIndex)} data-review-new-line={newIndex} key={`${index}:new:${newIndex}`}><span /><span>{newLine(newIndex)}</span><i>+</i>{line(diff.after[newIndex], highlighted.after[newIndex])}</div>);
     }
     return result;
   });

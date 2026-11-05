@@ -1,0 +1,12 @@
+.historical-turn-diff.historical-turn-files[open] { display: flex; flex-direction: column; gap: 12px; height: min(800px, 85dvh); overflow: hidden; box-sizing: border-box; }
+.historical-turn-files > p { margin: 0; flex: none; }
+.historical-turn-diff-content { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; overflow: auto; }
+.historical-turn-diff-content > details { flex: none; font-size: calc(12px * var(--ui-scale, 1)); color: var(--muted); }
+.historical-turn-diff > header button { flex: none; }
+.review-panel.historical-diff-view { position: relative; inset: auto; z-index: auto; width: 100%; height: auto; min-height: 280px; flex: 1 0 280px; border: 1px solid var(--review-border); border-radius: 8px; box-shadow: none; overflow: hidden; }
+.historical-diff-view > .review-sidebar-header { flex: none; }
+.historical-diff-metadata { margin: 8px 14px; color: var(--review-muted); font-size: calc(12px * var(--ui-scale, 1)); overflow-wrap: anywhere; }
+.historical-diff-metadata summary { cursor: pointer; }
+.historical-diff-metadata dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; }
+.historical-diff-metadata dd { margin: 0; }
+.historical-diff-hunk { color: var(--review-muted); font: calc(11px * var(--ui-scale, 1))/1.6 ui-monospace, monospace; overflow-wrap: anywhere; }
