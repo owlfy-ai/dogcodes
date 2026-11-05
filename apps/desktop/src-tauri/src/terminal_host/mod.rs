@@ -117,6 +117,10 @@ pub struct TerminalInfo {
     pub cols: u16,
     #[serde(default)]
     pub rows: u16,
+    /// Closed by the person while its process could not be confirmed. Kept, so that
+    /// replaying its launch still finds it instead of running the command again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub dismissed: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -471,7 +475,7 @@ impl TerminalHost {
             .map(|session| session.info())
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
-            .filter(|info| info.project_id == project_id)
+            .filter(|info| info.project_id == project_id && !info.dismissed)
             .collect();
         result.sort_by_key(|info| std::cmp::Reverse(info.created_at));
         Ok(result)
@@ -600,6 +604,7 @@ impl TerminalHost {
             created_at: chrono::Utc::now().timestamp_millis(),
             cols: intent.cols,
             rows: intent.rows,
+            dismissed: false,
         };
         // A persisted intent prevents replaying a launch after a crash between
         // process creation and its reply. An old epoch is never started again.
@@ -723,6 +728,24 @@ impl TerminalHost {
     pub async fn stop(&self, id: &str, expected_epoch: &str) -> Result<TerminalInfo, String> {
         let _admission = self.admission.lock().await;
         self.stop_admitted(id, expected_epoch).await
+    }
+    /// Closing what the person sees. A terminal whose process cannot be confirmed has
+    /// nothing that may be signalled, so it only leaves the list.
+    pub async fn close(&self, id: &str, expected_epoch: &str) -> Result<TerminalInfo, String> {
+        let _admission = self.admission.lock().await;
+        let session = self.session(id)?;
+        let info = session.info()?;
+        if info.epoch != expected_epoch || info.status != TerminalStatus::Unknown {
+            return self.stop_admitted(id, expected_epoch).await;
+        }
+        {
+            let mut output = session.output.lock().map_err(|_| "终端状态不可用")?;
+            output.info.dismissed = true;
+            save(self.directory.as_deref(), &session.intent, &output.info)?;
+        }
+        session.changed.notify_waiters();
+        session.state_changes.changed();
+        session.info()
     }
     async fn stop_admitted(&self, id: &str, expected_epoch: &str) -> Result<TerminalInfo, String> {
         let session = self.session(id)?;

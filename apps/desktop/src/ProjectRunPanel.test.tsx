@@ -51,6 +51,7 @@ it("lists per-directory commands without running any and launches only the chose
   expect(element.querySelectorAll('[data-terminal]')).toHaveLength(1);
   expect(element.querySelector('[data-terminal]')?.hasAttribute("hidden")).toBe(false);
   await click("关闭输出 启动服务");
+  await click("停止并关闭");
   expect(element.querySelector('[aria-label="运行输出"]')).toBeNull();
 });
 it("shows analysis, empty and error states and reanalyzes with the chosen Agent", async () => {
@@ -218,17 +219,43 @@ it("guides users with no available Agent and still confirms before regenerating 
   expect(element.querySelector("dialog[open]")).toBeNull();
 });
 
-it("restores background project processes and hides output without stopping or relaunching", async () => {
+const restoredRun = (status: "running" | "unknown") => ({ id: "restored", epoch: "epoch", projectId: "project", taskId: "task", commandId: "api", directoryIndex: 1, label: "启动服务", cwd: "/project/api", command: "go run ./cmd/server", status, exitCode: null, error: null, outputEnd: 0, createdAt: 1 });
+
+it("asks before closing a running command, and stops it only when confirmed", async () => {
   const { api, stop } = fixture();
-  vi.mocked(api.list).mockResolvedValue([{ id: "restored", epoch: "epoch", projectId: "project", taskId: "task", commandId: "api", directoryIndex: 1, label: "启动服务", cwd: "/project/api", command: "go run ./cmd/server", status: "running", exitCode: null, error: null, outputEnd: 0, createdAt: 1 }]);
+  vi.mocked(api.list).mockResolvedValue([restoredRun("running")]);
   await act(async () => root.render(<ProjectRunPanel taskId="task" visible api={api} />));
   expect(api.restore).toHaveBeenCalledTimes(1); expect(api.launch).not.toHaveBeenCalled();
   expect(element.querySelectorAll('[data-terminal]')).toHaveLength(1);
   await click("关闭输出 启动服务");
-  expect(stop).not.toHaveBeenCalled(); expect(element.querySelectorAll('[data-terminal]')).toHaveLength(0);
-  await click("启动服务运行中");
+  expect(element.querySelector("dialog[open]")?.textContent).toContain("启动服务");
+  expect(element.querySelector("dialog[open]")?.textContent).not.toContain("后台");
+  await click("取消");
+  expect(stop).not.toHaveBeenCalled(); expect(element.querySelectorAll('[data-terminal]')).toHaveLength(1);
+  await click("关闭输出 启动服务");
+  await click("停止并关闭");
+  expect(stop).toHaveBeenCalledTimes(1); expect(element.querySelectorAll('[data-terminal]')).toHaveLength(0);
+  expect(element.querySelector("dialog[open]")).toBeNull();
+  expect(element.textContent).not.toContain("恢复运行输出");
+});
+
+it("keeps the tab when stopping fails, so it can be retried", async () => {
+  const { api, stop } = fixture();
+  vi.mocked(api.list).mockResolvedValue([restoredRun("running")]);
+  stop.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => root.render(<ProjectRunPanel taskId="task" visible api={api} />));
+  await click("关闭输出 启动服务");
+  await click("停止并关闭");
   expect(element.querySelectorAll('[data-terminal]')).toHaveLength(1);
-  expect(api.launch).not.toHaveBeenCalled();
+});
+
+it("closes without asking when the process cannot be confirmed", async () => {
+  const { api, stop } = fixture();
+  vi.mocked(api.list).mockResolvedValue([restoredRun("unknown")]);
+  await act(async () => root.render(<ProjectRunPanel taskId="task" visible api={api} />));
+  await click("关闭输出 启动服务");
+  expect(element.querySelector("dialog[open]")).toBeNull();
+  expect(stop).toHaveBeenCalledTimes(1); expect(element.querySelectorAll('[data-terminal]')).toHaveLength(0);
 });
 
 it("blocks new mutations while a saved operation is unresolved and exposes explicit recovery", async () => {

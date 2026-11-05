@@ -696,6 +696,15 @@ pub enum ReviewCall {
         task_id: String,
         operation_id: String,
     },
+    /// What Git is waiting to be told. These stay on the machine with someone to answer.
+    GitCredential {
+        task_id: String,
+    },
+    GitCredentialAnswer {
+        task_id: String,
+        id: u64,
+        answer: Option<String>,
+    },
     CommitSummary {
         task_id: String,
         root_id: String,
@@ -763,6 +772,7 @@ impl ReviewCall {
             WorkspacePath, Workspaces,
         };
         match self {
+            Self::GitCredential { .. } | Self::GitCredentialAnswer { .. } => None,
             Query(request) => Some(request.task_id.clone()),
             Operations(request) => Some(request.task_id.clone()),
             Lease(request) => Some(request.task_id.clone()),
@@ -897,6 +907,18 @@ pub async fn dispatch(
             task_id,
             operation_id,
         } => response!(git_workflow::close(state, task_id, operation_id).await?),
+        ReviewCall::GitCredential { task_id } => {
+            require_task(core, &task_id).await?;
+            response!(review.prompts.current(&task_id))
+        }
+        ReviewCall::GitCredentialAnswer {
+            task_id,
+            id,
+            answer,
+        } => {
+            require_task(core, &task_id).await?;
+            response!(review.prompts.answer(&task_id, id, answer)?)
+        }
         GitOperation {
             task_id,
             operation_id,

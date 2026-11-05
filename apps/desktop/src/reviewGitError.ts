@@ -2,8 +2,12 @@ import { userFacingError } from "./userFacingError";
 import { translate as t } from "./i18n";
 
 
+/** Carries Git's own output, for the person to read behind a disclosure. */
+export class GitCommandFailed extends Error {}
+
 export function reviewGitError(error: string) {
   if (error.includes("REVIEW_NO_UPSTREAM")) return t("gitError.noUpstream");
+  if (/Please tell me who you are|empty ident name|unable to auto-detect email address/i.test(error)) return t("gitError.noIdentity");
   if (error.includes("REVIEW_DETACHED_HEAD")) return t("gitError.detachedHead");
   if (/CONFLICT \(|unmerged files|unresolved conflict|not concluded your merge/i.test(error)) return t("gitError.conflict");
   if (/would be overwritten|cannot pull with rebase.*changes/i.test(error)) return t("gitError.localChanges");
@@ -26,6 +30,7 @@ export type ReviewGitFailure = { message: string; detail?: string };
 
 /** Git rejects with its own output (a string), kept behind a disclosure; other failures show only a cleaned message. */
 export function reviewGitFailure(cause: unknown, fallback: string, prefix = ""): ReviewGitFailure {
-  if (typeof cause === "string" && cause.trim()) { const detail = prefix + cause; return { message: reviewGitError(detail), detail }; }
+  const output = cause instanceof GitCommandFailed ? cause.message : typeof cause === "string" ? cause : "";
+  if (output.trim()) { const detail = prefix + output; return { message: reviewGitError(detail), detail }; }
   return { message: userFacingError(cause, fallback) };
 }

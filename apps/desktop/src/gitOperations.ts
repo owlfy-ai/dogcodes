@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { translate as t } from "./i18n";
+import { GitCommandFailed } from "./reviewGitError";
 export type GitAction = "commit" | "push" | "pull" | "sync";
 export interface GitWorkflow { nextOperationId: string; parentOperationId?: string | null }
 export interface GitRequest { operationId: string; taskId: string; rootId: string; action: GitAction; message: string; stageAll: boolean; snapshotId: string | null; workflow?: GitWorkflow | null }
@@ -38,9 +39,10 @@ async function receipt(value: PendingGit): Promise<GitReceipt | null> {
   return result;
 }
 export class GitResultUnknown extends Error {
-  constructor() { super(t("gitOps.unverified")); }
+  /** What the service answered, when it did: why the result could not be read. */
+  constructor(readonly detail?: string) { super(t("gitOps.unverified")); }
 }
-export class GitPushFailed extends Error {}
+export class GitPushFailed extends GitCommandFailed {}
 export class GitWorkflowClosed extends Error { constructor() { super(t("gitOps.closed")); } }
 function settle(value: PendingGit, result: GitReceipt): boolean {
   if (result.closed) { remove(value); throw new GitWorkflowClosed(); }
@@ -54,7 +56,7 @@ function settle(value: PendingGit, result: GitReceipt): boolean {
       if (localStorage.getItem(key(value.request.operationId))) store({ ...value, receipt: result });
       throw new GitPushFailed(result.outcome.message);
     }
-    remove(value); throw new Error(result.outcome.message);
+    remove(value); throw new GitCommandFailed(result.outcome.message);
   }
   throw new GitResultUnknown();
 }
@@ -62,11 +64,12 @@ async function sendRequest(value: PendingGit): Promise<boolean> {
   let completed: boolean;
   try {
     completed = await invoke<boolean>("core_review_git_action", value.request as unknown as Record<string, unknown>);
-  } catch {
+  } catch (cause) {
+    const detail = typeof cause === "string" ? cause : undefined;
     let result: GitReceipt | null;
-    try { result = await receipt(value); } catch { throw new GitResultUnknown(); }
+    try { result = await receipt(value); } catch { throw new GitResultUnknown(detail); }
     if (result) return settle(value, result);
-    throw new GitResultUnknown();
+    throw new GitResultUnknown(detail);
   }
   // A successful response is sent only after the service persists the receipt.
   return settle(value, { request: value.request, outcome: { status: "succeeded", completed } });
@@ -99,6 +102,8 @@ async function advanceWorkflow(parent: PendingGit): Promise<GitReceipt> {
   if (!parent.request.workflow) throw new Error(t("gitOps.noWorkflow"));
   store(parent); // A local breadcrumb is useful even if the advance reply is lost.
   let result: GitReceipt;
+  // Counts as running: the push may stop to ask the person something.
+  sending.add(parent.request.operationId); notify();
   try {
     result = await invoke<GitReceipt>("core_review_git_advance", { taskId: parent.request.taskId, operationId: parent.request.operationId });
   } catch {
@@ -110,9 +115,24 @@ async function advanceWorkflow(parent: PendingGit): Promise<GitReceipt> {
     } catch (error) { if (error instanceof GitWorkflowClosed) throw error; throw new GitResultUnknown(); }
     if (!known) throw new GitResultUnknown();
     result = known;
-  }
+  } finally { sending.delete(parent.request.operationId); notify(); }
   adoptChild(parent, result);
   return result;
+}
+/**
+ * An earlier operation left unverified, say by a lost connection, must not block this
+ * repository for good. Its receipt says what became of it: nothing is resent, and this
+ * only stops for one still running, or says once that a result can't be known.
+ */
+async function settleEarlier(item: PendingGit, action: GitAction) {
+  // A failed push keeps its reserved retry ID: only a new commit may move past it.
+  if (sending.has(item.request.operationId) || (item.committed && action === "push")) throw new GitResultUnknown();
+  let result: GitReceipt | null;
+  try { result = await receipt(item); } catch (cause) { throw new GitResultUnknown(typeof cause === "string" ? cause : undefined); }
+  // A receipt is written before Git runs, so without one the operation never started.
+  if (result?.outcome.status === "running") throw new GitResultUnknown();
+  remove(item);
+  if (result?.outcome.status === "unknown") throw new GitResultUnknown();
 }
 export const gitOperations = {
   entries,
@@ -128,7 +148,7 @@ export const gitOperations = {
     const retry = input.action === "push" && previous?.request.action === "push" && previous.committed
       && previous.receipt?.outcome.status === "failed" && options.retryOf === previous.request.operationId
       && !!previous.retryOperationId && options.operationId === previous.retryOperationId;
-    if (existing.length && !continuation && !retry) throw new GitResultUnknown();
+    if (!continuation && !retry) for (const item of existing) await settleEarlier(item, input.action);
     if (continuation && previous!.request.workflow) {
       const result = await advanceWorkflow(previous!); return settle(fromReceipt(result), result);
     }

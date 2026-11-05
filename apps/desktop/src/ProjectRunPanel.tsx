@@ -1,6 +1,6 @@
 import { RunOperationRejected } from "./projectRunOperations";
 import { useEnabledAgents } from "./agentPreferences";
-import { ProjectRunItem, RunAnalysisConfirmation } from "./ProjectRunItem";
+import { ProjectRunItem, RunAnalysisConfirmation, RunCloseConfirmation } from "./ProjectRunItem";
 import { AgentPickerMenu, agentChoiceKey } from "./AgentPickerMenu";
 import { useEffect, useRef, useState } from "react";
 import { providerLabel } from "./agentPresentation";
@@ -15,7 +15,7 @@ import "./projectRun.css";
 import { terminalEnded } from "./terminalClient";
 import { translate as t } from "./i18n";
 
-type Execution = { key: string; directoryIndex: number; path: string; command: ProjectRunCommand; process: RunProcess; projectId: string; exited: boolean; uncertain?: boolean; hidden?: boolean };
+type Execution = { key: string; directoryIndex: number; path: string; command: ProjectRunCommand; process: RunProcess; projectId: string; exited: boolean; uncertain?: boolean; /** Closed by the person: kept so polling cannot bring it back while it ends. */ closed?: boolean };
 const directoryName = (path: string) => path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
 export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEditProject }: { taskId: string; visible: boolean; api?: ProjectRunApi; onEditProject?: () => void }) {
   const [catalog, setCatalog] = useState<ProjectRunCatalog | null>(null);
@@ -35,6 +35,7 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
   }, [agentMenu]);
   useEffect(() => { setAgentMenu(false); }, [taskId, visible]);
   const [confirmGeneration, setConfirmGeneration] = useState<string | null>(null);
+  const [confirmClose, setConfirmClose] = useState<string | null>(null);
   useEffect(() => { if (!visible) setConfirmGeneration(null); }, [visible]);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -139,8 +140,8 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
   };
   const run = (command: ProjectRunCommand, directoryIndex: number) => {
     if (!catalog || !resourcesLoaded) return;
-    const existing = executions.find(item => item.command.id === command.id && !item.exited);
-    if (existing) { setExecutions(items => items.map(item => item.key === existing.key ? { ...item, hidden: false } : item)); setSelected(existing.key); return; }
+    const existing = executions.find(item => item.command.id === command.id && !item.exited && !item.closed);
+    if (existing) { setSelected(existing.key); return; }
     let key = "";
     const process = api.launch(taskId, catalog, directoryIndex, command.id, () => {
       if (mounted.current) setExecutions(items => items.map(item => item.key === key ? { ...item, exited: true } : item));
@@ -149,7 +150,26 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
     setExecutions(items => [...items, { key, directoryIndex, path: catalog.directories[directoryIndex].path, command, process, projectId: catalog.projectId, exited: false }]);
     setSelected(key);
   };
-  const outputs = executions.filter(item => !item.hidden);
+  const outputs = executions.filter(item => !item.closed);
+  const removeOutput = (key: string) => {
+    const index = outputs.findIndex(item => item.key === key);
+    const remaining = outputs.filter(item => item.key !== key);
+    setExecutions(items => items.map(item => item.key === key ? { ...item, closed: true } : item));
+    setSelected(current => current === key ? remaining[Math.min(index, remaining.length - 1)]?.key ?? null : current);
+  };
+  /** Ending the process before the tab goes, so a failure leaves it there to retry. */
+  const stopAndClose = (item: Execution) => {
+    setError("");
+    void item.process.stop().then(() => { if (mounted.current) removeOutput(item.key); })
+      .catch(cause => { if (mounted.current) setError(userFacingError(cause, t("projectRun.stopFailed"))); });
+  };
+  const requestClose = (item: Execution) => {
+    if (item.exited) removeOutput(item.key);
+    // Nothing can be signalled when its process cannot be confirmed: only the tab goes.
+    else if (item.uncertain) stopAndClose(item);
+    else setConfirmClose(item.key);
+  };
+  const closing = outputs.find(item => item.key === confirmClose);
   useEffect(() => { if (!outputs.some(item => item.key === selected)) setSelected(outputs[0]?.key ?? null); }, [executions, selected]);
   const analyzing = busy || pendingOperation || catalog?.directories.some(d => d.status === "analyzing");
   const emptyCatalog = catalog && !error && !loadError && !analyzing
@@ -161,9 +181,9 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
     : catalog?.directories.some(directory => directory.userModified) ? "projectRun.emptyCleared"
     : "projectRun.emptyNoCommands");
   return <div className="project-run-panel">
+    {closing && <RunCloseConfirmation label={closing.command.label} onCancel={() => setConfirmClose(null)} onConfirm={() => { setConfirmClose(null); stopAndClose(closing); }} />}
     {confirmGeneration && <RunAnalysisConfirmation onCancel={() => setConfirmGeneration(null)} onConfirm={() => { const generation = confirmGeneration; setConfirmGeneration(null); void analyze(generation); }} />}
     <div className="project-run-controls">
-      {executions.some(item => item.hidden) && <button type="button" onClick={() => setExecutions(items => items.map(item => ({ ...item, hidden: false })))}>{t("projectRun.restoreOutput")}</button>}
       <span className="project-run-label">{t("projectRun.analyzeLabel")}</span>
       <div className="project-run-agent" ref={agentPicker}>
         <AgentPickerTrigger providerId={selectedAgent?.providerId} label={t("projectRun.analysisAgent")}
@@ -195,17 +215,14 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
         {directory.status === "ready" && !directory.error && directory.commands.length === 0 && <ReviewEmptyState kind="run" compact
           description={t(directory.userModified ? "projectRun.directoryEmpty" : "projectRun.directoryNoCommands")} />}
         {[...directory.commands].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))).map(command => <ProjectRunItem key={command.id} command={command} path={directory.path}
-          disabled={Boolean(analyzing) || !resourcesLoaded} running={executions.some(item => item.command.id === command.id && !item.exited && !item.uncertain)}
+          disabled={Boolean(analyzing) || !resourcesLoaded} running={executions.some(item => item.command.id === command.id && !item.exited && !item.uncertain && !item.closed)}
           onRun={() => run(command, index)} onEdit={change => edit(index, command.id, change)} />)}
       </section>)}
     </div>
     {outputs.length > 0 && <section className="project-run-output" aria-label={t("projectRun.output")}>
-      <div className="project-run-output-tabs" role="tablist" aria-label={t("projectRun.runningCommands")}>{outputs.map((item, index) => <div className="project-run-output-tab" role="presentation" key={item.key} data-selected={selected === item.key}>
+      <div className="project-run-output-tabs" role="tablist" aria-label={t("projectRun.runningCommands")}>{outputs.map(item => <div className="project-run-output-tab" role="presentation" key={item.key} data-selected={selected === item.key}>
         <button role="tab" type="button" aria-selected={selected === item.key} data-tooltip={`${item.path}\n${item.command.command}`} onClick={() => setSelected(item.key)}>{item.command.label}{item.exited ? ` · ${t("projectRun.exited")}` : item.uncertain ? ` · ${t("projectRun.uncertain")}` : ""}</button>
-        <button type="button" className="project-run-tab-close" aria-label={t("projectRun.closeOutput", { label: item.command.label })} data-tooltip={t("terminal.hideOutput")} onClick={() => {
-          const remaining = outputs.filter(value => value.key !== item.key);
-          setExecutions(items => items.map(value => value.key === item.key ? { ...value, hidden: true } : value)); if (selected === item.key) setSelected(remaining[Math.min(index, remaining.length - 1)]?.key ?? null);
-        }}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button>
+        <button type="button" className="project-run-tab-close" aria-label={t("projectRun.closeOutput", { label: item.command.label })} data-tooltip={t("projectRun.closeOutput", { label: item.command.label })} onClick={() => requestClose(item)}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button>
       </div>)}</div>
       {outputs.map(item => <div className="project-run-console" key={item.key} hidden={selected !== item.key}>
         <div className="project-run-console-bar"><code data-tooltip={item.command.command}>{item.command.command}</code>

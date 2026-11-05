@@ -49,3 +49,14 @@ export function RunAnalysisConfirmation({ onCancel, onConfirm }: { onCancel: () 
     <footer><button type="button" autoFocus onClick={onCancel}>{t("common.cancel")}</button><button type="button" onClick={onConfirm}>{t("projectRun.reanalyze")}</button></footer>
   </dialog>;
 }
+
+export function RunCloseConfirmation({ label, onCancel, onConfirm }: { label: string; onCancel: () => void; onConfirm: () => void }) {
+  const { t } = useI18n();
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => { const element = dialog.current; element?.showModal(); return () => element?.close(); }, []);
+  return <dialog ref={dialog} className="project-run-confirm" aria-labelledby="run-close-confirm-title" onCancel={event => { event.preventDefault(); onCancel(); }}>
+    <h3 id="run-close-confirm-title">{t("projectRun.closeRunningTitle")}</h3>
+    <p>{t("projectRun.closeRunningWarning", { label })}</p>
+    <footer><button type="button" onClick={onCancel}>{t("common.cancel")}</button><button type="button" autoFocus onClick={onConfirm}>{t("projectRun.stopAndClose")}</button></footer>
+  </dialog>;
+}

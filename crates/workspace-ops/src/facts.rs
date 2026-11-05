@@ -48,4 +48,13 @@ pub trait ReviewFacts: Send + Sync {
         request: Value,
         input: Option<Value>,
     ) -> Result<Value, String>;
+    /// What Git on another machine needs someone to answer. `None` means declined.
+    /// On the hub, the question goes straight to the review host instead.
+    async fn ask_git_credential(
+        &self,
+        _task: &TaskId,
+        _prompt: &str,
+    ) -> Result<Option<String>, String> {
+        Err("not available here".into())
+    }
 }

@@ -1,5 +1,6 @@
 import { RemoteDevices } from "./RemoteDevices";
 import { ExecutionTargets, TargetOfflineBanner } from "./ExecutionTargets";
+import { GitCredentialPrompt } from "./GitCredentialPrompt";
 import { ComputerUseControl } from "./ComputerUseControl";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { AttachmentUploadRecovery } from "./AttachmentUploadRecovery";
@@ -1295,6 +1296,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
           </div>
         </header>
       {activeView === "conversation" && selectedProjectTarget && <TargetOfflineBanner targetId={selectedProjectTarget} />}
+      {selectedTaskId && <GitCredentialPrompt taskId={selectedTaskId} />}
       {activeView === "quota" ? (
         <QuotaCenter views={quotaViews} installations={installationsOnTarget(snapshot.installations, null)} agentUpdates={agentUpdates} refreshProgress={quotaRefreshProgress} onRefresh={() => refreshQuotasNow.current()} onDetect={detectAgents} lang={resolvedLang} />
       ) : activeView === "remote" ? <RemoteDevices lang={resolvedLang} /> : activeView === "targets" ? <ExecutionTargets requestNew={newConnectionRequest} onProjectReady={async projectId => { await refresh(); createConversation(projectId as ProjectId); }} /> : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}

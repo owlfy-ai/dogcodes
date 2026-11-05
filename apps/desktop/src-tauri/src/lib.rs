@@ -1339,6 +1339,8 @@ pub fn run() {
             review_commands::core_review_file,
             review_commands::core_review_git_action,
             review_commands::core_review_git_operation,
+            review_commands::core_review_git_credential,
+            review_commands::core_review_git_credential_answer,
             review_commands::core_review_git_advance,
             review_commands::core_review_git_close,
             review_commands::core_review_file_operation,

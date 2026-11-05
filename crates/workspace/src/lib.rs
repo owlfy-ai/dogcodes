@@ -1184,6 +1184,11 @@ pub fn git_is_installed() -> bool {
     discover_git().is_some()
 }
 
+#[must_use]
+pub fn git_executable() -> PathBuf {
+    discover_git().unwrap_or_else(|| PathBuf::from("git"))
+}
+
 fn discover_git() -> Option<PathBuf> {
     let path = std::env::var_os("PATH").unwrap_or_default();
     find_git(

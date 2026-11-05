@@ -316,7 +316,6 @@ export const es: TranslationDict = {
     starting: "Iniciando terminal…",
     connecting: "Conectando al terminal…",
     adjustHeight: "Ajustar altura del terminal",
-    hideOutput: "Ocultar salida, el proceso continúa",
     newTerminal: "Nuevo terminal",
     closeTerminal: "Cerrar terminal",
     reconnecting: "Reconectando automáticamente…",

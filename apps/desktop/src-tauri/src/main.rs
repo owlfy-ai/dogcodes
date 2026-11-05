@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    workspace_ops::review::git_credentials::run_if_requested();
     if target_link::askpass::run_if_requested() {
         return;
     }

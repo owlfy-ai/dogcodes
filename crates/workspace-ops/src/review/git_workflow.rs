@@ -142,7 +142,37 @@ pub(super) async fn execute_locked(
     state.review.changes.changed();
     result.map(|value| value.completed)
 }
+/// Runs the action while answering whatever Git asks along the way. If Git stops
+/// waiting, dropping the question takes it off the screen.
 async fn run_action(
+    state: &ReviewContext<'_>,
+    action: GitRequest,
+) -> Result<GitCompletion, String> {
+    use super::git_credentials::ASKER;
+    let task = action.task_id.clone();
+    let (asker, mut questions) = tokio::sync::mpsc::unbounded_channel();
+    let work = ASKER.scope(asker, perform_action(state, action));
+    tokio::pin!(work);
+    loop {
+        tokio::select! {
+            result = &mut work => return result,
+            Some((prompt, reply)) = questions.recv() => tokio::select! {
+                result = &mut work => return result,
+                answer = ask_person(state, &task, &prompt) => {
+                    let _ = reply.send(answer);
+                }
+            },
+        }
+    }
+}
+async fn ask_person(state: &ReviewContext<'_>, task: &str, prompt: &str) -> Option<String> {
+    if state.core.on_hub() {
+        return state.review.prompts.ask(task, prompt).await;
+    }
+    let task = agent_domain::TaskId::parse(task).ok()?;
+    state.core.ask_git_credential(&task, prompt).await.ok()?
+}
+async fn perform_action(
     state: &ReviewContext<'_>,
     action: GitRequest,
 ) -> Result<GitCompletion, String> {

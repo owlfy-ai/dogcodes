@@ -14,6 +14,7 @@ mod serve;
 mod terminal;
 
 fn main() -> ExitCode {
+    workspace_ops::review::git_credentials::run_if_requested();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {

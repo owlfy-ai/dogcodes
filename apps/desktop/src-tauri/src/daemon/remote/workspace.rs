@@ -79,7 +79,11 @@ pub(super) async fn call(
             | R::Undo { .. }
             | R::Workspaces { .. }
             | R::StartProjectReview(_) => {}
-            R::RevealPath { .. } | R::WorkspacePath { .. } => {
+            // A credential is typed at the desktop, not relayed from a paired phone.
+            R::RevealPath { .. }
+            | R::WorkspacePath { .. }
+            | R::GitCredential { .. }
+            | R::GitCredentialAnswer { .. } => {
                 return Err("remote review operation unavailable".into());
             }
         }

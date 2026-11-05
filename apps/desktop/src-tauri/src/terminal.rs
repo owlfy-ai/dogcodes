@@ -138,7 +138,7 @@ pub async fn core_terminal_close(
     authorize_resource(window.label(), &state, &id).await?;
     state
         .core
-        .terminal_stop(&id, &expected_epoch)
+        .terminal_close(&id, &expected_epoch)
         .await
         .map(|_| ())
 }

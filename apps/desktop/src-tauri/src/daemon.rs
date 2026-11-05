@@ -320,9 +320,25 @@ impl CoreClient {
         id: &str,
         expected_epoch: &str,
     ) -> Result<crate::terminal_host::TerminalInfo, String> {
+        self.terminal_end("terminal_stop", id, expected_epoch).await
+    }
+    pub async fn terminal_close(
+        &self,
+        id: &str,
+        expected_epoch: &str,
+    ) -> Result<crate::terminal_host::TerminalInfo, String> {
+        self.terminal_end("terminal_close", id, expected_epoch)
+            .await
+    }
+    async fn terminal_end(
+        &self,
+        method: &str,
+        id: &str,
+        expected_epoch: &str,
+    ) -> Result<crate::terminal_host::TerminalInfo, String> {
         let info: crate::terminal_host::TerminalInfo = self
             .call(
-                "terminal_stop",
+                method,
                 json!({"terminalId": id, "expectedEpoch": expected_epoch}),
             )
             .await?;

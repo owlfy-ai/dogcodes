@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { BootstrapSnapshot, QuotaSnapshotView, TaskId } from "@dogcodes/protocol";
 import { AgentQuotaContext } from "./AgentQuotaRing";
 import { TargetOfflinePanel } from "./ExecutionTargets";
+import { GitCredentialPrompt } from "./GitCredentialPrompt";
 import { InlineError } from "./InlineError";
 import { userFacingError } from "./userFacingError";
 import { projectAnalysisClient } from "./ProjectReviewActions";
@@ -58,6 +59,7 @@ export function DetachedReview({ taskId }: { taskId: string }) {
   const panel = <ReviewPanel workspaceNavigation taskId={taskId} running={running} initialView={initialView} onClose={close} standalone />;
   return <main className="detached-review-shell">
     {error && <InlineError>{error}</InlineError>}
+    <GitCredentialPrompt taskId={taskId} />
     <AgentQuotaContext.Provider value={quotas}>
       {target === undefined ? null : target
         ? <TargetOfflinePanel targetId={target} visible standalone onClose={close}>{panel}</TargetOfflinePanel>

@@ -99,6 +99,15 @@ pub(crate) async fn dispatch(
                 .input_operation(&format!("local-window:{window}"), request)
                 .await
         }
+        "terminal_close" => {
+            let target: TerminalStopRequest =
+                serde_json::from_value(args).map_err(|e| e.to_string())?;
+            Ok(json!(
+                terminals
+                    .close(&target.terminal_id, &target.expected_epoch)
+                    .await?
+            ))
+        }
         "terminal_stop" => {
             let target: TerminalStopRequest =
                 serde_json::from_value(args).map_err(|e| e.to_string())?;

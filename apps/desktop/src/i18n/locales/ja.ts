@@ -316,7 +316,6 @@ export const ja: TranslationDict = {
     starting: "ターミナルを起動中…",
     connecting: "ターミナルに接続中…",
     adjustHeight: "ターミナルの高さを調整",
-    hideOutput: "出力を非表示（プロセスは継続実行）",
     newTerminal: "新規ターミナル",
     closeTerminal: "ターミナルを閉じる",
     reconnecting: "自動的に再接続中…",

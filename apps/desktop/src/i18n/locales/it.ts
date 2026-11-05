@@ -316,7 +316,6 @@ export const it: TranslationDict = {
     starting: "Avvio terminale in corso…",
     connecting: "Connessione al terminale…",
     adjustHeight: "Regola altezza terminale",
-    hideOutput: "Nascondi output, il processo continua",
     newTerminal: "Nuovo terminale",
     closeTerminal: "Chiudi terminale",
     reconnecting: "Riconnessione automatica in corso…",

@@ -25,6 +25,8 @@ pub(crate) struct TargetFacts {
     core: Arc<Core>,
     target: TargetId,
     task: TaskId,
+    /// Whoever can answer what Git on the server asks. Not every operation runs Git.
+    prompts: Option<workspace_ops::review::git_credentials::GitPrompts>,
 }
 
 impl TargetFacts {
@@ -131,6 +133,15 @@ impl ReviewFacts for TargetFacts {
         self.require_executor(&executor).await?;
         ReviewFacts::start_project_review(&self.core, request, input).await
     }
+    async fn ask_git_credential(
+        &self,
+        task: &TaskId,
+        prompt: &str,
+    ) -> Result<Option<String>, String> {
+        self.require_task(task)?;
+        let prompts = self.prompts.as_ref().ok_or("这项操作不能询问凭据")?;
+        Ok(prompts.ask(task.as_str(), prompt).await)
+    }
 }
 
 /// The machine holding this task's project, if it is not this one.
@@ -161,6 +172,7 @@ async fn task_target(
             core: core.clone(),
             target,
             task,
+            prompts: None,
         },
     )))
 }
@@ -172,8 +184,9 @@ pub(crate) async fn review(
     request: ReviewCall,
 ) -> Result<Value, String> {
     if let Some(task) = request.task_id()
-        && let Some((target, facts)) = task_target(core, targets, &task).await?
+        && let Some((target, mut facts)) = task_target(core, targets, &task).await?
     {
+        facts.prompts = Some(host.prompts.clone());
         // These hand back a path for this machine to open.
         if matches!(
             request,
@@ -292,6 +305,7 @@ mod tests {
             core: core.clone(),
             target,
             task: own.clone(),
+            prompts: None,
         };
         let snapshot = facts.bootstrap().await.unwrap();
         let tasks: Vec<_> = snapshot.tasks.iter().map(|t| t.task_id.clone()).collect();

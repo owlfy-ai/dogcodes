@@ -126,7 +126,6 @@ export const zhCN: TranslationDict = {
     starting: "正在启动终端…",
     connecting: "正在连接终端…",
     adjustHeight: "调整终端高度",
-    hideOutput: "隐藏输出，进程继续运行",
     newTerminal: "新建终端",
     closeTerminal: "关闭终端",
     reconnecting: "正在自动重新连接…",

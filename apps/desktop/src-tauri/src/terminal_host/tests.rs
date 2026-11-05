@@ -260,7 +260,7 @@ async fn terminal_host_restart_marks_unresolved_intent_unknown_and_never_kills_a
     read_until(&original, &info.id, "ALIVE").await;
     // Loading the journal models another epoch seeing an unresolved record.
     // The test keeps the original host alive to prove no reused/old PID is touched.
-    let restarted = TerminalHost::persistent(journal);
+    let restarted = TerminalHost::persistent(journal.clone());
     assert_eq!(
         restarted.get(&info.id).unwrap().status,
         TerminalStatus::Unknown
@@ -283,6 +283,17 @@ async fn terminal_host_restart_marks_unresolved_intent_unknown_and_never_kills_a
     );
     assert!(restarted.stop(&info.id, &info.epoch).await.is_err());
     assert!(restarted.write(&info.id, vec![3]).await.is_err());
+    // Closing it signals nothing, and it stays closed after another restart.
+    let project = info.project_id.clone();
+    assert_eq!(restarted.list(&project).unwrap().len(), 1);
+    restarted.close(&info.id, &info.epoch).await.unwrap();
+    assert!(restarted.list(&project).unwrap().is_empty());
+    assert!(
+        TerminalHost::persistent(journal)
+            .list(&project)
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(
         original.get(&info.id).unwrap().status,
         TerminalStatus::Running
@@ -315,6 +326,7 @@ fn buffered_session(root: &Path, status: TerminalStatus, created_at: i64) -> Arc
                 created_at,
                 cols: 80,
                 rows: 24,
+                dismissed: false,
             },
         }),
         process: Mutex::new(None),

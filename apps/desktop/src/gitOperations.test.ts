@@ -26,6 +26,46 @@ it("keeps an uncertain original payload and only explicitly resends the same ide
   const calls = vi.mocked(invoke).mock.calls.filter(([name]) => name === "core_review_git_action");
   expect(calls).toHaveLength(2); expect(calls[1][1]).toEqual(calls[0][1]);
 });
+const leftBehind = async () => {
+  vi.mocked(invoke).mockRejectedValue("offline");
+  await expect(gitOperations.run(input)).rejects.toThrow();
+  const pending = gitOperations.entries("task")[0];
+  vi.mocked(invoke).mockReset();
+  return pending;
+};
+const actions = () => vi.mocked(invoke).mock.calls.filter(([name]) => name === "core_review_git_action");
+
+it("keeps what the service answered when a result can't be read", async () => {
+  vi.mocked(invoke).mockRejectedValue("the server is not connected");
+  await expect(gitOperations.run(input)).rejects.toMatchObject({ detail: "the server is not connected" });
+});
+it.each([
+  ["never reached the service", null],
+  ["failed", { status: "failed", message: "denied" }],
+  ["succeeded", { status: "succeeded", completed: true }],
+])("a commit is not blocked by an earlier one that %s", async (_, outcome) => {
+  const pending = await leftBehind();
+  vi.mocked(invoke).mockImplementation(async method => method === "core_review_git_action" ? true
+    : outcome && { request: pending.request, outcome });
+  await expect(gitOperations.run({ ...input, message: "next" })).resolves.toBe(true);
+  expect(actions()).toHaveLength(1); expect(actions()[0][1]).toMatchObject({ message: "next" });
+  expect(gitOperations.entries("task")).toEqual([]);
+});
+it("waits for an earlier operation still running, without sending", async () => {
+  const pending = await leftBehind();
+  vi.mocked(invoke).mockResolvedValue({ request: pending.request, outcome: { status: "running" } });
+  await expect(gitOperations.run({ ...input, message: "next" })).rejects.toThrow("尚未核实");
+  expect(actions()).toHaveLength(0); expect(gitOperations.entries("task")).toHaveLength(1);
+});
+it("says once that an earlier result can't be known, then lets the next commit through", async () => {
+  const pending = await leftBehind();
+  vi.mocked(invoke).mockImplementation(async method => method === "core_review_git_action" ? true
+    : { request: pending.request, outcome: { status: "unknown" } });
+  await expect(gitOperations.run({ ...input, message: "next" })).rejects.toThrow("尚未核实");
+  expect(actions()).toHaveLength(0);
+  await expect(gitOperations.run({ ...input, message: "next" })).resolves.toBe(true);
+  expect(actions()).toHaveLength(1);
+});
 it.each(["running", "unknown"] as const)("does not replay a %s intent", async status => {
   vi.mocked(invoke).mockRejectedValue("offline"); await expect(gitOperations.run(input)).rejects.toThrow();
   const pending = gitOperations.entries("task")[0];

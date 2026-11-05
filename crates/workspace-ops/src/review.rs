@@ -1,5 +1,6 @@
 //! Host boundary: resolve workspace roots from Task IDs, never client paths.
 pub mod batch_file_actions;
+pub mod git_credentials;
 pub mod git_operations;
 mod git_push_target;
 pub mod git_workflow;
@@ -104,6 +105,7 @@ pub struct ReviewHost {
     pub changes: watch::Changes,
     pub directory: PathBuf,
     pub gate: tokio::sync::Mutex<()>,
+    pub prompts: git_credentials::GitPrompts,
     snapshots: std::sync::Mutex<BTreeMap<String, ReviewSnapshot>>,
     leases: std::sync::Mutex<SnapshotLeases>,
     owner: std::sync::Mutex<Option<agent_workspace::review::storage::SnapshotOwner>>,
@@ -125,6 +127,7 @@ impl ReviewHost {
             changes,
             directory,
             gate: tokio::sync::Mutex::new(()),
+            prompts: git_credentials::GitPrompts::default(),
             snapshots: std::sync::Mutex::new(BTreeMap::new()),
             leases: std::sync::Mutex::new(SnapshotLeases::default()),
             owner: std::sync::Mutex::new(None),
@@ -791,13 +794,22 @@ async fn run_commit_command_tagged(
     args: &[&str],
     reflog_action: Option<&str>,
 ) -> Result<std::process::Output, String> {
-    let mut command = agent_runtime::background_command("git");
+    let mut command = agent_runtime::background_command(agent_workspace::git_executable());
     command
         .current_dir(path)
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
+    // Held until Git ends. Someone answering needs longer than Git usually takes.
+    let askpass = git_credentials::AskpassServer::for_this_operation()
+        .await
+        .filter(|askpass| askpass.apply(&mut command).is_ok());
+    let limit = if askpass.is_some() {
+        std::time::Duration::from_mins(10)
+    } else {
+        std::time::Duration::from_mins(2)
+    };
     if let Some(action) = reflog_action {
         command.env("GIT_REFLOG_ACTION", action);
     }
@@ -807,7 +819,9 @@ async fn run_commit_command_tagged(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     let child = command.spawn().map_err(|e| e.to_string())?;
-    collect_git_output(child, std::time::Duration::from_mins(2)).await
+    let output = collect_git_output(child, limit).await;
+    drop(askpass);
+    output
 }
 const UNKNOWN_GIT_EFFECT: &str = "Git 操作结果未知：";
 async fn collect_git_output(

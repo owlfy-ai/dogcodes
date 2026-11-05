@@ -278,6 +278,38 @@ pub async fn core_review_git_operation(
 }
 
 #[tauri::command]
+pub async fn core_review_git_credential(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, DesktopState>,
+    task_id: String,
+) -> Result<Option<workspace_ops::review::git_credentials::CredentialPrompt>, String> {
+    require_task_window(window.label(), &task_id)?;
+    state
+        .core
+        .review(service::ReviewCall::GitCredential { task_id })
+        .await
+}
+
+#[tauri::command]
+pub async fn core_review_git_credential_answer(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, DesktopState>,
+    task_id: String,
+    id: u64,
+    answer: Option<String>,
+) -> Result<(), String> {
+    require_task_window(window.label(), &task_id)?;
+    state
+        .core
+        .review(service::ReviewCall::GitCredentialAnswer {
+            task_id,
+            id,
+            answer,
+        })
+        .await
+}
+
+#[tauri::command]
 pub async fn core_review_file_operation(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, DesktopState>,

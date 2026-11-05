@@ -1018,6 +1018,235 @@ mod workspace_operations {
 
     #[tokio::test(flavor = "multi_thread")]
     #[ignore = "needs an OpenSSH server binary"]
+    async fn a_commit_runs_on_the_target_and_reports_what_git_said() {
+        let server = Sshd::start("", "");
+        let (link, _directory) = connected(&server).await;
+        let target = link.target();
+        let repository = server.root.path().join("repo");
+        let (core, task) = project(&repository).await;
+        git(&repository, &["config", "user.name", "Committer"]);
+        git(&repository, &["config", "user.email", "c@example.com"]);
+        git(&repository, &["config", "commit.gpgsign", "false"]);
+        std::fs::write(repository.join("kept.txt"), "after\n").unwrap();
+        let review = |call: ReviewCall| {
+            let target = target.clone();
+            let core = core.clone();
+            async move { operation::call(&target, &core, &Operation::Review(call)).await }
+        };
+        let snapshot = review(ReviewCall::Query(
+            serde_json::from_value::<ReviewQuery>(json!({
+                "taskId": task.as_str(), "rootId": null, "mode": "uncommitted",
+                "reference": null, "parent": null,
+            }))
+            .unwrap(),
+        ))
+        .await
+        .unwrap();
+        let root_id = snapshot["roots"][0]["root"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let snapshot_id = snapshot["id"].as_str().unwrap().to_owned();
+        let commit = |id: &str, message: &str, snapshot: &str| {
+            ReviewCall::GitAction(
+                serde_json::from_value(json!({
+                    "operationId": id, "taskId": task.as_str(), "rootId": root_id,
+                    "action": "commit", "message": message, "stageAll": true,
+                    "snapshotId": snapshot, "workflow": null,
+                }))
+                .unwrap(),
+            )
+        };
+        let id = uuid::Uuid::new_v4().to_string();
+        let committed = review(commit(&id, "From the app", &snapshot_id)).await;
+        assert_eq!(committed, Ok(json!(true)), "{committed:?}");
+        let log = Command::new("git")
+            .args(["-C"])
+            .arg(&repository)
+            .args(["log", "-1", "--format=%s"])
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&log.stdout).trim(), "From the app");
+
+        // A failure from Git itself is recorded with its own words.
+        let hooks = repository.join(".git/hooks");
+        std::fs::create_dir_all(&hooks).unwrap();
+        let hook = hooks.join("pre-commit");
+        std::fs::write(&hook, "#!/bin/sh\necho 'refused by the hook' >&2\nexit 1\n").unwrap();
+        std::fs::set_permissions(&hook, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        std::fs::write(repository.join("kept.txt"), "again\n").unwrap();
+        let snapshot = review(ReviewCall::Query(
+            serde_json::from_value::<ReviewQuery>(json!({
+                "taskId": task.as_str(), "rootId": null, "mode": "uncommitted",
+                "reference": null, "parent": null,
+            }))
+            .unwrap(),
+        ))
+        .await
+        .unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let refused = review(commit(&id, "Refused", snapshot["id"].as_str().unwrap())).await;
+        assert!(refused.is_err(), "{refused:?}");
+        let receipt = review(ReviewCall::GitOperation {
+            task_id: task.to_string(),
+            operation_id: id,
+        })
+        .await
+        .unwrap();
+        assert_eq!(receipt["outcome"]["status"], "failed", "{receipt}");
+        assert!(
+            receipt["outcome"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("refused by the hook"),
+            "{receipt}"
+        );
+    }
+
+    /// The desktop's side: answers what Git asked, and everything else from the core.
+    struct Answering {
+        core: std::sync::Arc<Core>,
+        answer: Option<String>,
+        asked: std::sync::Mutex<Vec<String>>,
+    }
+
+    #[async_trait::async_trait]
+    impl workspace_ops::ReviewFacts for Answering {
+        fn on_hub(&self) -> bool {
+            false
+        }
+        async fn bootstrap(&self) -> Result<agent_protocol::BootstrapSnapshot, String> {
+            workspace_ops::ReviewFacts::bootstrap(&self.core).await
+        }
+        async fn try_workspace_mutation(&self) -> Result<workspace_ops::MutationGuard, String> {
+            workspace_ops::ReviewFacts::try_workspace_mutation(&self.core).await
+        }
+        async fn task_artifacts(
+            &self,
+            task: &TaskId,
+            before: Option<&agent_protocol::ArtifactCursor>,
+            limit: usize,
+        ) -> Result<agent_protocol::ArtifactPage, String> {
+            workspace_ops::ReviewFacts::task_artifacts(&self.core, task, before, limit).await
+        }
+        async fn verified_artifact(
+            &self,
+            task: &TaskId,
+            artifact: &agent_domain::ArtifactId,
+            sha256: &str,
+        ) -> Result<workspace_ops::VerifiedArtifact, String> {
+            workspace_ops::ReviewFacts::verified_artifact(&self.core, task, artifact, sha256).await
+        }
+        async fn summarize_commit(
+            &self,
+            _: agent_domain::ExecutorRef,
+            _: String,
+            _: Option<String>,
+        ) -> Result<String, String> {
+            Err("unused".into())
+        }
+        async fn review_run_exists(
+            &self,
+            _: &TaskId,
+            _: &agent_domain::RunId,
+        ) -> Result<bool, String> {
+            Err("unused".into())
+        }
+        async fn start_project_review(
+            &self,
+            _: serde_json::Value,
+            _: Option<serde_json::Value>,
+        ) -> Result<serde_json::Value, String> {
+            Err("unused".into())
+        }
+        async fn ask_git_credential(
+            &self,
+            _: &TaskId,
+            prompt: &str,
+        ) -> Result<Option<String>, String> {
+            self.asked.lock().unwrap().push(prompt.to_owned());
+            Ok(self.answer.clone())
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "needs an OpenSSH server binary"]
+    async fn what_git_asks_on_the_target_reaches_the_desktop_and_its_answer_returns() {
+        let server = Sshd::start("", "");
+        let (link, _directory) = connected(&server).await;
+        let target = link.target();
+        let repository = server.root.path().join("repo");
+        let (core, task) = project(&repository).await;
+        git(&repository, &["config", "user.name", "Committer"]);
+        git(&repository, &["config", "user.email", "c@example.com"]);
+        git(&repository, &["config", "commit.gpgsign", "false"]);
+        // A remote is not needed to run the program Git would ask through.
+        let hooks = repository.join(".git/hooks");
+        std::fs::create_dir_all(&hooks).unwrap();
+        let hook = hooks.join("pre-commit");
+        std::fs::write(
+            &hook,
+            "#!/bin/sh\nanswer=$(\"$GIT_ASKPASS\" \"Username for 'https://example.test': \") || exit 1\nprintf %s \"$answer\" > .git/answered\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&hook, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        let commit = |answer: Option<&str>, content: &str, message: &str| {
+            std::fs::write(repository.join("kept.txt"), content).unwrap();
+            let facts = Answering {
+                core: core.clone(),
+                answer: answer.map(str::to_owned),
+                asked: std::sync::Mutex::default(),
+            };
+            let (target, task, message) = (target.clone(), task.clone(), message.to_owned());
+            async move {
+                let snapshot = operation::call(
+                    &target,
+                    &facts,
+                    &Operation::Review(ReviewCall::Query(
+                        serde_json::from_value::<ReviewQuery>(json!({
+                            "taskId": task.as_str(), "rootId": null, "mode": "uncommitted",
+                            "reference": null, "parent": null,
+                        }))
+                        .unwrap(),
+                    )),
+                )
+                .await
+                .unwrap();
+                let id = uuid::Uuid::new_v4().to_string();
+                let result = operation::call(
+                    &target,
+                    &facts,
+                    &Operation::Review(ReviewCall::GitAction(
+                        serde_json::from_value(json!({
+                            "operationId": id, "taskId": task.as_str(),
+                            "rootId": snapshot["roots"][0]["root"]["id"],
+                            "action": "commit", "message": message, "stageAll": true,
+                            "snapshotId": snapshot["id"], "workflow": null,
+                        }))
+                        .unwrap(),
+                    )),
+                )
+                .await;
+                (result, facts.asked.into_inner().unwrap())
+            }
+        };
+        let (result, asked) = commit(Some("me"), "answered\n", "Answered").await;
+        assert_eq!(result, Ok(json!(true)));
+        assert_eq!(asked, ["Username for 'https://example.test': "]);
+        assert_eq!(
+            std::fs::read_to_string(repository.join(".git/answered")).unwrap(),
+            "me"
+        );
+
+        let (result, asked) = commit(None, "declined\n", "Declined").await;
+        assert!(result.is_err(), "{result:?}");
+        assert_eq!(asked.len(), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "needs an OpenSSH server binary"]
     async fn git_review_runs_on_the_target_and_snapshots_last_between_calls() {
         let server = Sshd::start("", "");
         let (link, _directory) = connected(&server).await;

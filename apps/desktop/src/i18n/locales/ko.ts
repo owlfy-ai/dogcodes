@@ -316,7 +316,6 @@ export const ko: TranslationDict = {
     starting: "터미널 시작 중…",
     connecting: "터미널 연결 중…",
     adjustHeight: "터미널 높이 조절",
-    hideOutput: "출력 숨기기 (프로세스는 백그라운드에서 유지)",
     newTerminal: "새 터미널",
     closeTerminal: "터미널 닫기",
     reconnecting: "자동으로 다시 연결 중…",

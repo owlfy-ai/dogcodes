@@ -132,7 +132,6 @@ export interface TranslationDict extends UiMessages {
     starting: string;
     connecting: string;
     adjustHeight: string;
-    hideOutput: string;
     newTerminal: string;
     closeTerminal: string;
     reconnecting: string;

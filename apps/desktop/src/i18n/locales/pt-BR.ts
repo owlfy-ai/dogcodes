@@ -316,7 +316,6 @@ export const ptBR: TranslationDict = {
     starting: "Iniciando terminal…",
     connecting: "Conectando ao terminal…",
     adjustHeight: "Ajustar altura do terminal",
-    hideOutput: "Ocultar saída, processo continua ativo",
     newTerminal: "Novo terminal",
     closeTerminal: "Fechar terminal",
     reconnecting: "Reconectando automaticamente…",

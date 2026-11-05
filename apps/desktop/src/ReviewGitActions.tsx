@@ -86,7 +86,10 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
         setStageAll(null);
         if (cause instanceof GitResultUnknown && committed) {
           // Preserve the original operation identity while its result is uncertain.
-          setPushPending(false); setError({ message: t("gitCommit.pushUnverified"), detail: cause.message });
+          setPushPending(false); setError({ message: t("gitCommit.pushUnverified"), detail: cause.detail ?? cause.message });
+        } else if (cause instanceof GitResultUnknown) {
+          // Not a failure from Git: a commit may have happened, so say so rather than "failed".
+          setError({ message: cause.message, ...(cause.detail ? { detail: cause.detail } : {}) });
         } else {
           if (cause instanceof GitPushFailed) setPushPending(false);
           setError(committed ? reviewGitFailure(cause, t("gitCommit.pushFailed"), t("gitCommit.pushFailedPrefix")) : reviewGitFailure(cause, t("gitCommit.commitFailed")));

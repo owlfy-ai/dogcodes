@@ -90,6 +90,10 @@ enum Ask {
         request: Value,
         input: Option<Value>,
     },
+    GitCredential {
+        task: TaskId,
+        prompt: String,
+    },
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -300,6 +304,17 @@ impl ReviewFacts for AskingFacts {
         })
         .await
     }
+    async fn ask_git_credential(
+        &self,
+        task: &TaskId,
+        prompt: &str,
+    ) -> Result<Option<String>, String> {
+        self.ask(Ask::GitCredential {
+            task: task.clone(),
+            prompt: prompt.to_owned(),
+        })
+        .await
+    }
     async fn review_run_exists(&self, task: &TaskId, run: &RunId) -> Result<bool, String> {
         self.ask(Ask::ReviewRunExists {
             task: task.clone(),
@@ -435,6 +450,9 @@ async fn answer(
         Ask::ReviewRunExists { task, run } => value(facts.review_run_exists(&task, &run).await?),
         Ask::StartProjectReview { request, input } => {
             facts.start_project_review(request, input).await
+        }
+        Ask::GitCredential { task, prompt } => {
+            value(facts.ask_git_credential(&task, &prompt).await?)
         }
     }
 }

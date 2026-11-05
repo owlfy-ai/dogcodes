@@ -316,7 +316,6 @@ export const zhTW: TranslationDict = {
     starting: "正在啟動終端機…",
     connecting: "正在連線終端機…",
     adjustHeight: "調整終端機高度",
-    hideOutput: "隱藏輸出，程序繼續執行",
     newTerminal: "新增終端機",
     closeTerminal: "關閉終端機",
     reconnecting: "正在自動重新連線…",

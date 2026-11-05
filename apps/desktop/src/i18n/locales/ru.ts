@@ -316,7 +316,6 @@ export const ru: TranslationDict = {
     starting: "Запуск терминала…",
     connecting: "Подключение к терминалу…",
     adjustHeight: "Изменить высоту терминала",
-    hideOutput: "Скрыть вывод, процесс продолжается",
     newTerminal: "Новый терминал",
     closeTerminal: "Закрыть терминал",
     reconnecting: "Автоматическое переподключение…",
