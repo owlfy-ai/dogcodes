@@ -1,5 +1,5 @@
 import type { CoreClient, QuotaSnapshotView, TaskId } from "@dogcodes/protocol";
-import { visibleAgentInstallations } from "./agentOptions";
+import { installationsOnTarget, visibleAgentInstallations } from "./agentOptions";
 import { withLastReading } from "./quotaFallback";
 
 export type QuotaRefreshProgress = { running: boolean; completed: number; total: number; unavailable: number; failed: boolean };
@@ -56,7 +56,9 @@ export function createQuotaRefresh(
         try {
           const snapshot = await bounded(client.bootstrap());
           if (!active) return;
-          const installations = [...new Map(visibleAgentInstallations(snapshot.installations).map(i => [i.installationId, i])).values()];
+          // The agent page is this machine's. A server's has its own, and scanning below
+          // would only look for its agents here.
+          const installations = [...new Map(visibleAgentInstallations(installationsOnTarget(snapshot.installations, null)).map(i => [i.installationId, i])).values()];
           const scans = new Map<string, ReturnType<CoreClient["scanAgent"]>>();
           state.total = installations.length;
           progress({ ...state });

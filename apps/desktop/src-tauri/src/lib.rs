@@ -1535,20 +1535,7 @@ async fn scan_builtin_agents(core: Arc<Core>, app: Option<tauri::AppHandle>) {
     while scans.join_next().await.is_some() {}
 }
 
-pub(crate) const BUILTIN_AGENT_MANIFESTS: &[&str] = &[
-    include_str!("../../../../drivers/manifests/codex.toml"),
-    include_str!("../../../../drivers/manifests/claude-code.toml"),
-    include_str!("../../../../drivers/manifests/kimi.toml"),
-    include_str!("../../../../drivers/manifests/grok.toml"),
-    include_str!("../../../../drivers/manifests/zcode.toml"),
-    include_str!("../../../../drivers/manifests/cursor.toml"),
-    include_str!("../../../../drivers/manifests/codebuddy.toml"),
-    include_str!("../../../../drivers/manifests/antigravity.toml"),
-    include_str!("../../../../drivers/manifests/pi.toml"),
-    include_str!("../../../../drivers/manifests/opencode.toml"),
-    include_str!("../../../../drivers/manifests/deepseek-harness.toml"),
-    include_str!("../../../../drivers/manifests/kiro.toml"),
-];
+pub(crate) use agent_registry::BUILTIN_MANIFESTS as BUILTIN_AGENT_MANIFESTS;
 
 async fn scan_builtin_agent(
     core: Arc<Core>,
@@ -1747,22 +1734,29 @@ async fn scan_discovered_agents(
 }
 
 /// Provider accounts can be read even when model/session readiness fails.
+fn provider_account_monitor(
+    installation: &agent_protocol::InstallationSummary,
+    executable: &agent_runtime::TargetExecutable,
+    session: Option<Arc<dyn driver_api::QuotaProvider>>,
+) -> Option<Arc<provider_quota::AccountMonitor>> {
+    let executor = ExecutorRef {
+        provider_id: agent_domain::ProviderId::parse(&installation.provider_id).ok()?,
+        installation_id: Some(installation.installation_id.to_string()),
+    };
+    provider_quota::AccountMonitor::new(executor, executable, installation.version.clone(), session)
+        .map(Arc::new)
+}
+
 async fn register_provider_account_monitor(
     core: &Core,
     installation: &agent_protocol::InstallationSummary,
     session: Option<Arc<dyn driver_api::QuotaProvider>>,
 ) -> bool {
-    let Ok(provider_id) = agent_domain::ProviderId::parse(&installation.provider_id) else {
+    let executable = agent_runtime::TargetExecutable::local(&installation.executable);
+    let Some(monitor) = provider_account_monitor(installation, &executable, session) else {
         return false;
     };
-    let executor = ExecutorRef {
-        provider_id,
-        installation_id: Some(installation.installation_id.to_string()),
-    };
-    let Some(monitor) = provider_quota::AccountMonitor::new(executor, session) else {
-        return false;
-    };
-    core.register_quota_provider(Arc::new(monitor)).await;
+    core.register_quota_provider(monitor).await;
     true
 }
 

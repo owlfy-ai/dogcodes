@@ -479,15 +479,7 @@ fn opencode_desktop_candidates(
     candidates
 }
 
-pub(crate) fn user_data_dir(home: &Path, name: &str, fallback: &str) -> PathBuf {
-    // Fixture/custom homes must not pick up the running user's folders.
-    (agent_registry::home_directory().as_deref() == Some(home))
-        .then(|| std::env::var_os(name))
-        .flatten()
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
-        .unwrap_or_else(|| home.join(fallback))
-}
+pub(crate) use agent_management::user_data_dir;
 
 /// The official 1.x installs the desktop runtime may supersede; never a custom wrapper.
 fn standard_opencode(platform: agent_registry::Platform, home: &Path, path: &Path) -> bool {
@@ -605,7 +597,7 @@ mod tests {
                 Some(original.clone())
             );
             let standalone =
-                crate::agent_updates::managed_cli::tests::verified_fixture(&context, provider)
+                crate::agent_updates::managed_cli::fixtures::verified_fixture(&context, provider)
                     .canonicalize()
                     .unwrap();
             assert_eq!(

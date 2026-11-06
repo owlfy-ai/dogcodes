@@ -1,6 +1,7 @@
 import { type FormEvent, type MouseEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ConfirmDialog } from "./AppDialog";
+import { HostAgentManagement } from "./HostAgentManagement";
 import { HostTerminalTab } from "./HostTerminalTab";
 import { orderAgents, useAgentPreferences } from "./agentPreferences";
 import { AgentIcon, providerLabel } from "./agentPresentation";
@@ -13,7 +14,7 @@ import { useI18n } from "./i18n";
 import { userFacingError } from "./userFacingError";
 import {
   type ProxyChoice, type SshAuth, type SshProxyKind, type TargetApi, type TargetEntry, type TargetErrorKind, type TargetStatus,
-  connectionFromForm, joinDirectory, parentDirectory, sameRoute, stepStates, tauriTargetApi, targetRoute,
+  connectionFromForm, joinDirectory, parentDirectory, sameRoute, stepStates, tauriTargetApi, targetRoute, type TargetPrompt
 } from "./executionTargetClient";
 import { needsPerson, useTargetConnection } from "./targetConnection";
 import { hostTerminalClient, hostTerminalScope, terminalEnded, type TerminalApi, type TerminalStatus } from "./terminalClient";
@@ -30,6 +31,15 @@ const ERROR_KEYS: Record<TargetErrorKind, string> = {
   upload_failed: "errorUploadFailed", not_executable: "errorNotExecutable", bad_binary: "errorBadBinary",
   protocol_mismatch: "errorProtocolMismatch", proxy_unavailable: "errorProxyUnavailable", failed: "errorFailed",
 };
+
+/** `ssh` asks in English whatever the interface's language. Only what a server itself asks,
+ * such as a one-time code, has no wording of ours. */
+function promptLabel(prompt: TargetPrompt, text: ReturnType<typeof useTargetText>): string {
+  if (prompt.kind === "password") return text("promptPassword");
+  if (prompt.kind !== "passphrase") return prompt.text;
+  const key = /key '(.+?)'/.exec(prompt.text)?.[1];
+  return key ? text("promptPassphraseFor", { key }) : text("promptPassphrase");
+}
 
 function useTargetText() {
   const { t } = useI18n();
@@ -203,6 +213,11 @@ function ConnectionProgress({ api, targetId, onEdit, onClose, onBrowse, onCancel
   if (!status) return failure ? <div className="error" role="alert">{failure}</div> : <LoadingStatus>{text("loading")}</LoadingStatus>;
   const connected = status.phase === "connected";
   const deploying = status.step?.step === "deploying" ? status.step : null;
+  // Why it ended is in `ssh`'s or the system's words, so it goes with their other output.
+  const log = [
+    ...status.log,
+    ...[status.error?.detail, status.closedReason].filter((line): line is string => !!line && !status.log.join("\n").includes(line)),
+  ];
   return <div className="target-progress">
     <ol className="target-steps">
       {stepStates(status).map(({ name, state }) => <li key={name} className={state} aria-current={state === "active" ? "step" : undefined}>
@@ -222,7 +237,7 @@ function ConnectionProgress({ api, targetId, onEdit, onClose, onBrowse, onCancel
         </div>
       </section>
       : <form className="target-prompt" onSubmit={(event: FormEvent) => { event.preventDefault(); respond(secret); }}>
-        <label>{prompt.text}<input autoFocus type="password" autoComplete="off" value={secret} onChange={event => setSecret(event.target.value)} /></label>
+        <label>{promptLabel(prompt, text)}<input autoFocus type="password" autoComplete="off" value={secret} onChange={event => setSecret(event.target.value)} /></label>
         {(prompt.kind === "password" || prompt.kind === "passphrase") && <label className="target-check"><input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} />{text("remember")}</label>}
         <div className="target-actions">
           <button className="secondary" type="button" onClick={() => respond(null)}>{text("reject")}</button>
@@ -245,11 +260,11 @@ function ConnectionProgress({ api, targetId, onEdit, onClose, onBrowse, onCancel
       </ul>
       : <p className="target-hint">{text("noAgents")}</p>)}
     {status.error && <div className="error" role="alert">{text(ERROR_KEYS[status.error.kind])}</div>}
-    {status.phase === "disconnected" && <div className="error" role="alert">{text("connectionLost")}{status.closedReason ? ` ${status.closedReason}` : ""}</div>}
+    {status.phase === "disconnected" && <div className="error" role="alert">{text("connectionLost")}</div>}
     {failure && <div className="error" role="alert">{failure}</div>}
-    {status.log.length + (status.error?.detail ? 1 : 0) > 0 && <details className="target-log">
+    {log.length > 0 && <details className="target-log">
       <summary>{text("log")}</summary>
-      <pre>{[...status.log, ...(status.error?.detail && !status.log.join("\n").includes(status.error.detail) ? [status.error.detail] : [])].join("\n")}</pre>
+      <pre>{log.join("\n")}</pre>
     </details>}
     <footer>
       {(status.phase === "failed" || status.phase === "disconnected" || onCancel && status.phase === "idle") && <>
@@ -435,8 +450,8 @@ function ActionButton({ label, path, onClick }: { label: string; path: string; o
 
 /** The agents found on a host, shown whether or not it is connected. Refreshing a host
  * nothing else is using connects only for that long. */
-function HostAgents({ api, entry, inUse, onAct, onChanged }: {
-  api: TargetApi; entry: TargetEntry; inUse: boolean; onAct: (work: Promise<unknown>) => void; onChanged: () => void;
+function HostAgents({ api, entry, inUse, onAct, onChanged, onManage }: {
+  api: TargetApi; entry: TargetEntry; inUse: boolean; onAct: (work: Promise<unknown>) => void; onChanged: () => void; onManage: () => void;
 }) {
   const text = useTargetText();
   const { resolvedLanguage: lang } = useI18n();
@@ -470,6 +485,7 @@ function HostAgents({ api, entry, inUse, onAct, onChanged }: {
       ? <LoadingStatus>{text("scanningAgents")}</LoadingStatus>
       : <div className="target-row-actions target-card-connect" onDoubleClick={event => event.stopPropagation()}>
         <ActionButton label={text("refreshAgents")} path="M20 11a8 8 0 0 0-14-4.5L4 9m0-5v5h5m-5 4a8 8 0 0 0 14 4.5l2-2.5m0 5v-5h-5" onClick={refresh} />
+        <ActionButton label={text("manageAgents")} path="M4 7h10m4 0h2M4 17h2m4 0h10M14 5v4h4V5h-4ZM6 15v4h4v-4H6Z" onClick={onManage} />
       </div>}
     {dialog}
   </div>;
@@ -482,6 +498,8 @@ interface HostTab {
   ordinal: number;
   /** One shell. Reconnecting starts another in the same tab. */
   operationId: string;
+  /** Run once in the new shell, for an install or a sign-in asked for elsewhere. */
+  initialCommand?: string;
   resourceId?: string;
   status?: TerminalStatus;
   epoch?: string;
@@ -498,6 +516,7 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
   const [revision, setRevision] = useState(0);
   const [tabs, setTabs] = useState<HostTab[]>([]);
   const [selected, setSelected] = useState(HOST_LIST);
+  const [agentPages, setAgentPages] = useState<string[]>([]);
   const latestTabs = useRef(tabs);
   latestTabs.current = tabs;
   const restored = useRef(false);
@@ -546,12 +565,23 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
   const connect = (entry: TargetEntry) => {
     if (entry.status.phase !== "connected" && entry.status.phase !== "connecting") act(api.connect(entry.target.targetId, null));
   };
-  const openTerminal = (entry: TargetEntry) => {
+  const openTerminal = (entry: TargetEntry, initialCommand?: string) => {
     const { targetId } = entry.target;
     const id = crypto.randomUUID();
-    setTabs(current => [...current, { id, targetId, operationId: crypto.randomUUID(), ordinal: Math.max(0, ...current.filter(tab => tab.targetId === targetId).map(tab => tab.ordinal)) + 1 }]);
+    setTabs(current => [...current, { id, targetId, operationId: crypto.randomUUID(), initialCommand, ordinal: Math.max(0, ...current.filter(tab => tab.targetId === targetId).map(tab => tab.ordinal)) + 1 }]);
     setSelected(id);
     connect(entry);
+  };
+  const agentPageId = (targetId: string) => `agents:${targetId}`;
+  const openAgentPage = (targetId: string) => {
+    setAgentPages(current => current.includes(targetId) ? current : [...current, targetId]);
+    setSelected(agentPageId(targetId));
+  };
+  /** The page asked for a connection, so it lets go of it unless a shell needs it. */
+  const closeAgentPage = (targetId: string) => {
+    setAgentPages(current => current.filter(id => id !== targetId));
+    setSelected(current => current === agentPageId(targetId) ? HOST_LIST : current);
+    if (!latestTabs.current.some(tab => tab.targetId === targetId)) act(api.release(targetId));
   };
   const updateTab = (id: string, change: Partial<HostTab>) => setTabs(current => current.map(tab => tab.id === id ? { ...tab, ...change } : tab));
   const forgetTab = (id: string) => {
@@ -576,7 +606,7 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
   const reconnectTab = (tab: HostTab, entry: TargetEntry) => {
     // Otherwise it would come back as a tab of its own after the next start.
     if (tab.status === "unknown" && tab.epoch) void terminals(tab.targetId).close(tab.resourceId ?? tab.operationId, tab.epoch).catch(() => {});
-    updateTab(tab.id, { operationId: crypto.randomUUID(), resourceId: undefined, status: undefined, epoch: undefined });
+    updateTab(tab.id, { operationId: crypto.randomUUID(), initialCommand: undefined, resourceId: undefined, status: undefined, epoch: undefined });
     connect(entry);
   };
   const remove = async ({ target: { targetId } }: TargetEntry) => {
@@ -596,6 +626,12 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
   return <section className="workspace remote-page target-page" aria-label={text("title")} hidden={!visible}>
     <TabBar className="target-tabs" label={text("title")} selected={selected} onSelect={setSelected} revealKey={visible} items={[
       { id: HOST_LIST, label: text("title") },
+      ...agentPages.flatMap(targetId => {
+        const name = entryOf(targetId)?.target.displayName;
+        if (!name) return [];
+        const label = text("agentsOf", { name });
+        return [{ id: agentPageId(targetId), label, close: { label: text("closeTab", { name: label }), onClose: () => closeAgentPage(targetId) } }];
+      }),
       ...tabs.map(tab => ({
         id: tab.id, label: tabLabel(tab),
         tooltip: entryOf(tab.targetId) && targetRoute(entryOf(tab.targetId)!.target.connection),
@@ -634,15 +670,19 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
               <div className="target-row-actions target-card-connect" onDoubleClick={event => event.stopPropagation()}>
                 <ActionButton label={text("connect")} path="M5 12h14m-6-6 6 6-6 6" onClick={event => { if (event.detail <= 1) openTerminal(entry); }} />
               </div>
-              <HostAgents api={api} entry={entry} inUse={tabs.some(tab => tab.targetId === target.targetId)} onAct={act} onChanged={changed} />
+              <HostAgents api={api} entry={entry} inUse={tabs.some(tab => tab.targetId === target.targetId)} onAct={act} onChanged={changed} onManage={() => openAgentPage(target.targetId)} />
             </li>;
           })}
         </ul>}
       </div>
     </div>
+    {agentPages.map(targetId => {
+      const entry = entryOf(targetId);
+      return entry && <HostAgentManagement key={targetId} api={api} entry={entry} visible={visible && selected === agentPageId(targetId)} offlineBanner={<TargetOfflineBanner api={api} targetId={targetId} autoConnect />} onRunInShell={command => openTerminal(entry, command)} />;
+    })}
     {tabs.map(tab => {
       const entry = entryOf(tab.targetId);
-      return entry && <HostTerminalTab key={tab.id} targetId={tab.targetId} api={terminals(tab.targetId)} operationId={tab.operationId} resourceId={tab.resourceId}
+      return entry && <HostTerminalTab key={tab.id} targetId={tab.targetId} api={terminals(tab.targetId)} operationId={tab.operationId} resourceId={tab.resourceId} initialCommand={tab.initialCommand}
         status={tab.status} connected={entry.status.phase === "connected"} visible={visible && selected === tab.id}
         onStatus={(status, epoch) => { if (tab.status !== status || tab.epoch !== epoch) updateTab(tab.id, { status, epoch }); }}
         onReconnect={() => reconnectTab(tab, entry)}

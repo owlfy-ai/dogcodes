@@ -1,7 +1,6 @@
 //! Upgrade consent is bound to an installation and a snapshot of running tasks/processes.
 use super::{AgentUpdates, Plan, key};
 use agent_protocol::{CancelTurn, CommandEnvelope, CoreCommand, InstallationSummary, TaskSummary};
-use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
@@ -9,13 +8,7 @@ use std::{
 };
 use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, RefreshKind, Signal, System, UpdateKind};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Confirmation {
-    pub token: String,
-    pub task_count: usize,
-    pub process_count: usize,
-}
+pub(crate) use agent_management::updates::Confirmation;
 pub(super) struct Ticket {
     key: String,
     at: Instant,
@@ -410,7 +403,7 @@ mod tests {
     #[test]
     fn kiro_scope_includes_cli_app_helpers_but_not_the_separate_ide() {
         let dir = tempfile::tempdir().unwrap();
-        let executable = super::super::kiro::tests::fixture_app(dir.path());
+        let executable = super::super::kiro::fixtures::fixture_app(dir.path());
         std::fs::write(executable.with_file_name("kiro_cli_desktop"), "helper").unwrap();
         let i = super::super::tests::installation_for("kiro", &executable, "2.24.1");
         let scope = Scope::new(&i, &Plan::Native("Kiro")).unwrap();

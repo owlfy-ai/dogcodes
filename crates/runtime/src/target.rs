@@ -84,6 +84,10 @@ pub trait ExecutionTarget: Send + Sync {
     ) -> io::Result<(String, Vec<String>)> {
         Ok((command.to_owned(), args.to_vec()))
     }
+    /// The helper running on another machine, for work that belongs over there.
+    fn shim_program(&self) -> Option<String> {
+        None
+    }
     /// Only meaningful remotely: a local process checks its own account directly.
     fn runs_as_root(&self) -> bool {
         false
@@ -210,89 +214,6 @@ pub async fn remove_target_directory(target: &SharedTarget, path: &Path) -> io::
         .inherit("PATH")
         .stdio(Pipe::Null, Pipe::Null, Pipe::Null);
     command.spawn()?.wait().await.map(|_| ())
-}
-
-/// Runs a short script on the target and hands back what it printed. Reading a file
-/// this way needs nothing but the running connection.
-pub async fn target_script_output(
-    target: &SharedTarget,
-    script: &str,
-    args: &[&str],
-    limit: usize,
-) -> io::Result<std::process::Output> {
-    let mut command = TargetCommand::new(target.clone(), "/bin/sh");
-    command
-        .args(["-c", script, "sh"])
-        .args(args)
-        .inherit("PATH")
-        .inherit("HOME")
-        .stdio(Pipe::Null, Pipe::Piped, Pipe::Null);
-    command.spawn()?.wait_with_output(limit).await
-}
-
-const CURL_RESPONSE_LIMIT: usize = 1024 * 1024;
-const PROXY_VARIABLES: [&str; 8] = [
-    "HTTP_PROXY",
-    "http_proxy",
-    "HTTPS_PROXY",
-    "https_proxy",
-    "ALL_PROXY",
-    "all_proxy",
-    "NO_PROXY",
-    "no_proxy",
-];
-
-/// Makes a request from the target with an account's token, for accounts that are
-/// signed in over there. The token travels on stdin so it never shows in that
-/// machine's process list. `curl` gives up by itself, so an abandoned request ends.
-pub async fn target_curl(
-    target: &SharedTarget,
-    token: &str,
-    headers: &[&str],
-    args: &[&str],
-) -> io::Result<std::process::Output> {
-    use tokio::io::AsyncWriteExt;
-    // It goes inside a quoted line of curl's config.
-    if token.is_empty()
-        || !token
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"-._~+/=".contains(&b))
-    {
-        return Err(io::ErrorKind::InvalidInput.into());
-    }
-    let mut command = TargetCommand::new(target.clone(), "curl");
-    command
-        .args([
-            "--disable",
-            "--silent",
-            "--max-time",
-            "12",
-            "--max-filesize",
-            "1048576",
-            "--config",
-            "-",
-        ])
-        .args(args)
-        .inherit("PATH")
-        .stdio(Pipe::Piped, Pipe::Piped, Pipe::Null);
-    for variable in PROXY_VARIABLES {
-        command.inherit(variable);
-    }
-    let mut child = command.spawn()?;
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| io::Error::other("stdin unavailable"))?;
-    let mut config = format!("header = \"Authorization: Bearer {token}\"\n");
-    for header in headers {
-        config.push_str("header = \"");
-        config.push_str(header);
-        config.push_str("\"\n");
-    }
-    stdin.write_all(config.as_bytes()).await?;
-    stdin.shutdown().await?;
-    drop(stdin);
-    child.wait_with_output(CURL_RESPONSE_LIMIT + 4096).await
 }
 
 #[must_use]
@@ -483,63 +404,6 @@ mod tests {
         assert!(!env.contains_key(OsStr::new("PATH")));
         assert_eq!(env.len(), 2);
         assert_eq!(recorded[0].args, ["--mode", "rpc"]);
-    }
-
-    /// Runs here, but counts as another machine with only the values it was given.
-    #[cfg(unix)]
-    struct Elsewhere(BTreeMap<String, String>);
-
-    #[cfg(unix)]
-    impl ExecutionTarget for Elsewhere {
-        fn is_local(&self) -> bool {
-            false
-        }
-        fn inherited(&self, name: &str) -> Option<OsString> {
-            self.0.get(name).map(OsString::from)
-        }
-        fn temp_directory(&self) -> PathBuf {
-            std::env::temp_dir()
-        }
-        fn spawn(&self, request: ProcessRequest) -> io::Result<OwnedChild> {
-            local_target().spawn(request)
-        }
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn a_token_reaches_curl_on_the_target_through_stdin_only() {
-        use std::os::unix::fs::PermissionsExt;
-        let directory = tempfile::tempdir().unwrap();
-        let curl = directory.path().join("curl");
-        std::fs::write(
-            &curl,
-            "#!/bin/sh\necho \"$@\" > \"$0.args\"\ncat > \"$0.stdin\"\nprintf reply\n",
-        )
-        .unwrap();
-        std::fs::set_permissions(&curl, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let path = format!("{}:/usr/bin:/bin", directory.path().display());
-        let target: SharedTarget = Arc::new(Elsewhere(BTreeMap::from([("PATH".into(), path)])));
-
-        let output = target_curl(
-            &target,
-            "secret-token",
-            &["X-Named: 1"],
-            &["https://a.test"],
-        )
-        .await
-        .unwrap();
-        assert_eq!(output.stdout, b"reply");
-        let args = std::fs::read_to_string(curl.with_extension("args")).unwrap();
-        assert!(args.contains("https://a.test") && !args.contains("secret-token"));
-        let config = std::fs::read_to_string(curl.with_extension("stdin")).unwrap();
-        assert!(config.contains("Authorization: Bearer secret-token"));
-        assert!(config.contains("header = \"X-Named: 1\""));
-
-        let unsafe_token = target_curl(&target, "a\"\nurl = \"https://evil", &[], &[]).await;
-        assert_eq!(
-            unsafe_token.unwrap_err().kind(),
-            io::ErrorKind::InvalidInput
-        );
     }
 
     #[cfg(unix)]

@@ -12,7 +12,9 @@ version_args = ["--version"]
 # `agy --help` never names the product; `models` quickly lists Gemini models,
 # a product signature no same-named executable would produce.
 identity_args = ["models"]
-version_output_markers = ["gemini"]
+# Listing them needs a login, and a CLI that says so is still this one: signing in
+# is offered once it's found. Its own words are the signature then.
+version_output_markers = ["gemini", "sign in to view available models"]
 env_allowlist = ["PATH"]
 # `models` performs a native catalog lookup; a normal Windows cold start can
 # take five seconds before it prints the product signature.

@@ -38,7 +38,7 @@ fn plist_string(info: &plist::Value, key: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-pub(super) fn desktop_app(executable: &Path) -> Option<&Path> {
+pub fn desktop_app(executable: &Path) -> Option<&Path> {
     // New desktop layouts nest CodexCLI.app inside the owning desktop bundle.
     // Identify the desktop by its bundle ID, not the nearest .app or its name.
     executable.ancestors().find(|app| {
@@ -97,7 +97,7 @@ fn latest_release(xml: &str, arch: &str, os: &str) -> Result<String, String> {
         .ok_or("Codex 更新源未提供适用于当前 Mac 的正式版本".into())
 }
 
-pub(super) async fn inspect(app: &Path, mut out: AgentUpdate) -> Result<AgentUpdate, String> {
+pub async fn inspect(app: &Path, mut out: AgentUpdate) -> Result<AgentUpdate, String> {
     let info = plist::Value::from_file(app.join("Contents/Info.plist"))
         .map_err(|_| "无法读取 Codex 桌面应用版本")?;
     if plist_string(&info, "CFBundleIdentifier").as_deref() != Some(BUNDLE_ID) {
@@ -200,7 +200,9 @@ mod tests {
                 .unwrap();
                 let version = super::super::version(&actual).unwrap().to_string();
                 let i = super::super::tests::installation_for("codex", &executable, &version);
-                let result = super::super::AgentUpdates::default().check(&i, true).await;
+                let result = super::super::inspect(&i, &super::super::plan(&i))
+                    .await
+                    .unwrap();
                 println!("{relative}: {}", serde_json::to_string(&result).unwrap());
                 assert_eq!(result.status, "managed");
                 assert!(!result.can_upgrade);

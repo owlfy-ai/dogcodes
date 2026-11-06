@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub(crate) fn desktop_cli(provider: &str, executable: &Path) -> bool {
+pub fn desktop_cli(provider: &str, executable: &Path) -> bool {
     match provider {
         "codex" => executable
             .ancestors()
@@ -32,21 +32,20 @@ pub(crate) fn desktop_cli(provider: &str, executable: &Path) -> bool {
     }
 }
 
-pub(crate) fn prefix(context: &DiscoveryContext, provider: &str) -> Option<PathBuf> {
+pub fn prefix(context: &DiscoveryContext, provider: &str) -> Option<PathBuf> {
     if !matches!(provider, "codex" | "claude-code" | "deepseek-harness") {
         return None;
     }
     let home = context.home_dir.as_deref()?;
     let root = if context.platform == Platform::Windows {
-        crate::terminal_installation::user_data_dir(home, "LOCALAPPDATA", "AppData/Local")
-            .join("dogcodes/cli")
+        crate::user_data_dir(home, "LOCALAPPDATA", "AppData/Local").join("dogcodes/cli")
     } else {
         home.join(".local/share/dogcodes/cli")
     };
     Some(root.join(provider))
 }
 
-pub(super) fn launcher(prefix: &Path, provider: &str) -> PathBuf {
+pub fn launcher(prefix: &Path, provider: &str) -> PathBuf {
     let name = match provider {
         "codex" => "codex",
         "claude-code" => "claude",
@@ -79,7 +78,7 @@ fn package_info(prefix: &Path, provider: &str) -> Option<Value> {
     .then_some(info)
 }
 
-pub(crate) fn candidate(context: &DiscoveryContext, provider: &str) -> Option<PathBuf> {
+pub fn candidate(context: &DiscoveryContext, provider: &str) -> Option<PathBuf> {
     let prefix = prefix(context, provider)?;
     registered_launcher(&prefix, provider)
 }
@@ -102,11 +101,11 @@ fn registered_launcher(prefix: &Path, provider: &str) -> Option<PathBuf> {
     launcher.is_file().then_some(launcher)
 }
 
-pub(super) fn version_executable(i: &InstallationSummary, prefix: &Path) -> PathBuf {
+pub fn version_executable(i: &InstallationSummary, prefix: &Path) -> PathBuf {
     registered_launcher(prefix, &i.provider_id).unwrap_or_else(|| i.executable.clone().into())
 }
 
-pub(super) fn existing_prefix(i: &InstallationSummary) -> Option<PathBuf> {
+pub fn existing_prefix(i: &InstallationSummary) -> Option<PathBuf> {
     let context = DiscoveryContext::from_current_process();
     let selected = candidate(&context, &i.provider_id)?.canonicalize().ok()?;
     (Path::new(&i.executable).canonicalize().ok()? == selected)
@@ -130,10 +129,11 @@ fn register(prefix: &Path, provider: &str, target: &str, actual: &str) -> Result
     Ok(())
 }
 
-pub(super) async fn activate(
+pub async fn activate(
     i: &InstallationSummary,
     plan: &Plan,
     target: &str,
+    npm_runtime: impl AsyncFn() -> Option<(PathBuf, PathBuf)>,
 ) -> Result<(), String> {
     let Plan::StandaloneCli { prefix, .. } = plan else {
         return Ok(());
@@ -142,12 +142,45 @@ pub(super) async fn activate(
     fresh.executable = launcher(prefix, &i.provider_id)
         .to_string_lossy()
         .into_owned();
-    let actual = command(super::new_agents::version_spec(&fresh, plan).await?).await?;
+    let actual = command(super::new_agents::version_spec(&fresh, plan, npm_runtime).await?).await?;
     register(prefix, &i.provider_id, target, &actual)
 }
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod fixtures {
+    use super::*;
+
+    pub fn fixture(context: &DiscoveryContext, provider: &str, v: &str) -> PathBuf {
+        let root = prefix(context, provider).unwrap();
+        let modules = if cfg!(windows) {
+            "node_modules"
+        } else {
+            "lib/node_modules"
+        };
+        let package = root.join(modules).join(package(provider).unwrap());
+        std::fs::create_dir_all(&package).unwrap();
+        std::fs::write(
+            package.join("package.json"),
+            json!({"name":super::package(provider),"version":v}).to_string(),
+        )
+        .unwrap();
+        let launcher = launcher(&root, provider);
+        std::fs::create_dir_all(launcher.parent().unwrap()).unwrap();
+        std::fs::write(&launcher, "standalone CLI").unwrap();
+        root
+    }
+
+    #[cfg(windows)]
+    pub fn verified_fixture(context: &DiscoveryContext, provider: &str) -> PathBuf {
+        let root = fixture(context, provider, "1.1.0");
+        register(&root, provider, "1.1.0", "1.1.0").unwrap();
+        launcher(&root, provider)
+    }
+}
+
 #[cfg(test)]
-pub(crate) mod tests {
+pub mod tests {
+    use super::fixtures::*;
     use super::*;
     #[test]
     fn desktop_dsh_launchers_use_an_independent_cli_on_both_platforms() {
@@ -195,33 +228,6 @@ pub(crate) mod tests {
             )),
             Plan::StandaloneCli { .. }
         ));
-    }
-
-    pub(crate) fn fixture(context: &DiscoveryContext, provider: &str, v: &str) -> PathBuf {
-        let root = prefix(context, provider).unwrap();
-        let modules = if cfg!(windows) {
-            "node_modules"
-        } else {
-            "lib/node_modules"
-        };
-        let package = root.join(modules).join(package(provider).unwrap());
-        std::fs::create_dir_all(&package).unwrap();
-        std::fs::write(
-            package.join("package.json"),
-            json!({"name":super::package(provider),"version":v}).to_string(),
-        )
-        .unwrap();
-        let launcher = launcher(&root, provider);
-        std::fs::create_dir_all(launcher.parent().unwrap()).unwrap();
-        std::fs::write(&launcher, "standalone CLI").unwrap();
-        root
-    }
-
-    #[cfg(windows)]
-    pub(crate) fn verified_fixture(context: &DiscoveryContext, provider: &str) -> PathBuf {
-        let root = fixture(context, provider, "1.1.0");
-        register(&root, provider, "1.1.0", "1.1.0").unwrap();
-        launcher(&root, provider)
     }
 
     #[test]

@@ -10,7 +10,7 @@ use driver_api::AgentDriver;
 use serde_json::{Value, json};
 use std::{os::unix::fs::PermissionsExt, sync::Arc, time::Duration};
 
-const FIXTURE: &str = r"#!/usr/bin/env python3
+const FIXTURE: &str = r"#!/usr/bin/python3
 import sys,json,os,socket,pathlib
 if '--print=/hooks' in sys.argv:
  roots=[sys.argv[i+1] for i,a in enumerate(sys.argv[:-1]) if a=='--add-dir']

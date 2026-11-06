@@ -20,6 +20,7 @@ fn main() -> ExitCode {
     match args.as_slice() {
         ["--self-check"] => self_check(),
         ["serve", "--nonce", nonce] if valid_nonce(nonce) => serve_main(nonce),
+        ["manage"] => manage_main(),
         #[cfg(unix)]
         ["mcp-relay", socket, token] => relay_main(socket, token),
         _ => {
@@ -27,6 +28,18 @@ fn main() -> ExitCode {
             ExitCode::from(64)
         }
     }
+}
+
+/// Runs one agent management request, in the environment the desktop gave it.
+fn manage_main() -> ExitCode {
+    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    else {
+        return ExitCode::FAILURE;
+    };
+    runtime.block_on(agent_management::operation::serve());
+    ExitCode::SUCCESS
 }
 
 fn valid_nonce(nonce: &str) -> bool {

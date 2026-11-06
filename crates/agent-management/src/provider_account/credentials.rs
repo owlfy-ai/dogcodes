@@ -1,20 +1,27 @@
 //! Native stores are read, never modified; shell-backed key helpers are not executed.
-use super::{DriverError, Kind, Request, unavailable};
-use rusqlite::OptionalExtension;
+use super::{Agent, Credential, Environment, Kind};
+use crate::operation::Failure;
+use agent_runtime::{Pipe, TargetCommand, local_target};
 use serde_json::Value;
 use std::{
-    collections::HashMap,
     io::Read,
     path::{Path, PathBuf},
+    time::Duration,
 };
+use url::Url;
 
 const GO: &str = "https://opencode.ai/inference/go/v1/usage";
 const GO_USAGE: &str = "https://opencode.ai/zen/go/v1/usage";
 const DEEPSEEK: &str = "https://api.deepseek.com/user/balance";
 const DEEPSEEK_PLATFORM: &str = "https://platform.deepseek.com";
-type Environment = HashMap<String, String>;
+const EXPORT_LIMIT: usize = 4 * 1024 * 1024;
+const EXPORT_TIMEOUT: Duration = Duration::from_secs(10);
 
-fn home(env: &Environment) -> Result<PathBuf, DriverError> {
+pub(super) fn unavailable(message: &str) -> Failure {
+    Failure::new("capability", message)
+}
+
+fn home(env: &Environment) -> Result<PathBuf, Failure> {
     env.get("HOME")
         .or_else(|| env.get("USERPROFILE"))
         .map(PathBuf::from)
@@ -26,7 +33,7 @@ fn path(env: &Environment, key: &str, fallback: PathBuf) -> PathBuf {
         .filter(|s| !s.is_empty())
         .map_or(fallback, PathBuf::from)
 }
-fn text(file: &Path) -> Result<Option<String>, DriverError> {
+fn text(file: &Path) -> Result<Option<String>, Failure> {
     let mut file = match std::fs::File::open(file) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -42,7 +49,7 @@ fn text(file: &Path) -> Result<Option<String>, DriverError> {
     }
     Ok(Some(content))
 }
-fn json(file: &Path) -> Result<Value, DriverError> {
+fn json(file: &Path) -> Result<Value, Failure> {
     text(file)?.map_or(Ok(Value::Null), |s| {
         serde_json::from_str(&s).map_err(|_| unavailable("provider credential JSON invalid"))
     })
@@ -63,8 +70,8 @@ fn stored_key(value: &Value) -> Option<String> {
         .then(|| key(value["key"].as_str()))
         .flatten()
 }
-fn request(label: &str, endpoint: &str, key: String, kind: Kind) -> Request {
-    Request {
+fn credential(label: &str, endpoint: &str, key: String, kind: Kind) -> Credential {
+    Credential {
         label: label.into(),
         endpoint: endpoint.into(),
         key,
@@ -73,20 +80,20 @@ fn request(label: &str, endpoint: &str, key: String, kind: Kind) -> Request {
     }
 }
 
-pub(super) fn discover(provider: &str, env: &Environment) -> Result<Vec<Request>, DriverError> {
-    let requests = match provider {
-        "opencode" => vec![opencode(env)?],
+pub(super) async fn discover(agent: &Agent, env: &Environment) -> Result<Vec<Credential>, Failure> {
+    let found = match agent.provider.as_str() {
+        "opencode" => vec![opencode(agent, env).await?],
         "pi" => pi(env)?,
         "deepseek-harness" => dsh(env)?,
         _ => Vec::new(),
     };
-    let mut unique: Vec<Request> = Vec::new();
-    for r in requests {
+    let mut unique: Vec<Credential> = Vec::new();
+    for c in found {
         if !unique
             .iter()
-            .any(|old| old.endpoint == r.endpoint && old.key == r.key)
+            .any(|old| old.endpoint == c.endpoint && old.key == c.key)
         {
-            unique.push(r);
+            unique.push(c);
         }
         if unique.len() == 8 {
             break;
@@ -98,24 +105,70 @@ pub(super) fn discover(provider: &str, env: &Environment) -> Result<Vec<Request>
     Ok(unique)
 }
 
-fn opencode(env: &Environment) -> Result<Request, DriverError> {
+async fn opencode(agent: &Agent, env: &Environment) -> Result<Credential, Failure> {
     if let Some(k) = key(env.get("OPENCODE_GO_API_KEY").map(String::as_str)) {
-        return Ok(request("OpenCode Go", GO, k, Kind::Go));
+        return Ok(credential("OpenCode Go", GO, k, Kind::Go));
     }
+    let Some(exported) = opencode_export(agent, env).await? else {
+        return opencode_legacy(env);
+    };
+    // A dedicated Go API key still wins. A Go subscription lives on the signed-in
+    // OpenCode account, which is OAuth. Stale files from before v2 are not consulted.
+    if let Some(k) = selected(&exported, "opencode-go").and_then(stored_key) {
+        return Ok(credential("OpenCode Go", GO, k, Kind::Go));
+    }
+    selected(&exported, "opencode")
+        .and_then(go_account)
+        .ok_or_else(|| unavailable("opencode_go_not_configured"))
+}
+
+/// The credentials `OpenCode` itself reports, through the command it offers for this. Its
+/// private server is used so that reading quota never starts its background service.
+/// `None` when this version predates the command.
+async fn opencode_export(agent: &Agent, env: &Environment) -> Result<Option<Vec<Value>>, Failure> {
+    let failed = || unavailable("OpenCode credentials could not be read");
+    let mut command = TargetCommand::new(local_target(), &agent.executable);
+    command
+        .args(["auth", "export", "--standalone"])
+        .stdio(Pipe::Null, Pipe::Piped, Pipe::Null);
+    for (name, value) in env {
+        command.env(name, value);
+    }
+    command.prefer_installed_node(Path::new(&agent.executable));
+    let child = command.spawn().map_err(|_| failed())?;
+    let output = tokio::time::timeout(EXPORT_TIMEOUT, child.wait_with_output(EXPORT_LIMIT))
+        .await
+        .map_err(|_| failed())?
+        .map_err(|_| failed())?;
+    if output.status.success()
+        && let Ok(exported) = serde_json::from_slice(&output.stdout)
+    {
+        return Ok(Some(exported));
+    }
+    // From v2 on credentials live in its database, so a failure here must not bring an
+    // old file's account back. Before that the command doesn't exist.
+    let modern = agent
+        .version
+        .as_deref()
+        .and_then(|version| version.split('.').next()?.parse::<u32>().ok())
+        .is_some_and(|major| major >= 2);
+    if modern { Err(failed()) } else { Ok(None) }
+}
+
+/// The active one, as with several accounts it needn't come first.
+fn selected<'a>(exported: &'a [Value], integration: &str) -> Option<&'a Value> {
+    exported
+        .iter()
+        .filter(|entry| entry["integrationID"] == integration)
+        .max_by_key(|entry| (entry["active"] == true, entry["id"].as_str().unwrap_or("")))
+        .map(|entry| &entry["value"])
+}
+
+fn opencode_legacy(env: &Environment) -> Result<Credential, Failure> {
     let root = path(env, "XDG_DATA_HOME", home(env)?.join(".local/share")).join("opencode");
-    let database = root.join(env.get("OPENCODE_DB").map_or("opencode.db", String::as_str));
-    // v2 migrates auth.json to the credential table. A dedicated Go API key still wins.
-    // A Go subscription lives on the signed-in OpenCode account, which is OAuth.
-    let (modern, native, account) = opencode_database(&database)?;
-    if let Some(k) = native {
-        return Ok(request("OpenCode Go", GO, k, Kind::Go));
-    }
-    if modern {
-        return account.ok_or_else(|| unavailable("opencode_go_not_configured"));
-    }
     let auth = json(&root.join("auth.json"))?;
     if let Some(k) = stored_key(&auth["opencode-go"]).or_else(|| stored_key(&auth["opencode_go"])) {
-        return Ok(request("OpenCode Go", GO, k, Kind::Go));
+        return Ok(credential("OpenCode Go", GO, k, Kind::Go));
     }
     if let Some(account) =
         go_account(&auth["opencode"]).or_else(|| go_account(&auth["opencode_go"]))
@@ -124,64 +177,12 @@ fn opencode(env: &Environment) -> Result<Request, DriverError> {
     }
     let k = key(env.get("OPENCODE_API_KEY").map(String::as_str))
         .ok_or_else(|| unavailable("opencode_go_not_configured"))?;
-    Ok(request("OpenCode Go", GO, k, Kind::Go))
-}
-
-fn opencode_database(file: &Path) -> Result<(bool, Option<String>, Option<Request>), DriverError> {
-    if !file.exists() {
-        return Ok((false, None, None));
-    }
-    let db = rusqlite::Connection::open_with_flags(
-        file,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(|_| unavailable("OpenCode credential database unreadable"))?;
-    db.busy_timeout(std::time::Duration::from_millis(250))
-        .map_err(|_| unavailable("OpenCode credential database unavailable"))?;
-    let modern: bool = db
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='credential')",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(|_| unavailable("OpenCode credential schema unavailable"))?;
-    if !modern {
-        return Ok((false, None, None));
-    }
-    let go_key = credential_value(
-        &db,
-        "SELECT value FROM credential WHERE integration_id='opencode-go' ORDER BY active DESC, time_created DESC, id DESC LIMIT 1",
-    )?;
-    let account = credential_value(
-        &db,
-        "SELECT value FROM credential WHERE integration_id='opencode' ORDER BY active DESC, time_created DESC, id DESC LIMIT 1",
-    )?;
-    Ok((
-        true,
-        go_key.as_ref().and_then(stored_key),
-        account.as_ref().and_then(go_account),
-    ))
-}
-
-fn credential_value(db: &rusqlite::Connection, sql: &str) -> Result<Option<Value>, DriverError> {
-    let value: Option<String> = db
-        .query_row(sql, [], |row| row.get(0))
-        .optional()
-        .map_err(|_| unavailable("OpenCode credential selection unavailable"))?;
-    value
-        .map(|raw| {
-            if raw.len() > 1024 * 1024 {
-                return Err(unavailable("OpenCode credential too large"));
-            }
-            serde_json::from_str::<Value>(&raw)
-                .map_err(|_| unavailable("OpenCode credential invalid"))
-        })
-        .transpose()
+    Ok(credential("OpenCode Go", GO, k, Kind::Go))
 }
 
 /// Go subscriptions are billed to the signed-in `OpenCode` organization.
 /// Only the official host is contacted, and the refresh token is never sent.
-fn go_account(value: &Value) -> Option<Request> {
+fn go_account(value: &Value) -> Option<Credential> {
     if value["type"] == "external" {
         return None;
     }
@@ -203,7 +204,7 @@ fn go_account(value: &Value) -> Option<Request> {
     } else {
         server.to_string()
     };
-    let url = reqwest::Url::parse(&server).ok()?;
+    let url = Url::parse(&server).ok()?;
     if url.scheme() != "https"
         || url.host_str() != Some("opencode.ai")
         || !url.username().is_empty()
@@ -211,7 +212,7 @@ fn go_account(value: &Value) -> Option<Request> {
     {
         return None;
     }
-    Some(Request {
+    Some(Credential {
         label: "OpenCode Go".into(),
         endpoint: GO_USAGE.into(),
         key: token,
@@ -220,11 +221,11 @@ fn go_account(value: &Value) -> Option<Request> {
     })
 }
 
-fn provider_request(label: &str, base: &str, k: String) -> Option<Request> {
+fn provider_credential(label: &str, base: &str, k: String) -> Option<Credential> {
     if label.is_empty() || label.len() > 128 {
         return None;
     }
-    let mut url = reqwest::Url::parse(base).ok()?;
+    let mut url = Url::parse(base).ok()?;
     if !matches!(url.scheme(), "http" | "https")
         || url.host_str().is_none()
         || !url.username().is_empty()
@@ -234,20 +235,20 @@ fn provider_request(label: &str, base: &str, k: String) -> Option<Request> {
     }
     if url.scheme() == "https" && url.host_str() == Some("api.deepseek.com") && url.port().is_none()
     {
-        return Some(request("DeepSeek API", DEEPSEEK, k, Kind::DeepSeek));
+        return Some(credential("DeepSeek API", DEEPSEEK, k, Kind::DeepSeek));
     }
     // Custom keys go only to the exact configured provider origin, with redirects disabled.
     url.set_path("/v1/usage");
     url.set_query(None);
     url.set_fragment(None);
-    Some(request(label, url.as_str(), k, Kind::Sub2Api))
+    Some(credential(label, url.as_str(), k, Kind::Sub2Api))
 }
 
-fn pi(env: &Environment) -> Result<Vec<Request>, DriverError> {
+fn pi(env: &Environment) -> Result<Vec<Credential>, Failure> {
     let root = path(env, "PI_CODING_AGENT_DIR", home(env)?.join(".pi/agent"));
     let auth = json(&root.join("auth.json"))?;
     let models = json(&root.join("models.json"))?;
-    let mut requests = Vec::new();
+    let mut found = Vec::new();
     let providers = models["providers"].as_object();
     let deepseek_provider = providers.and_then(|p| p.get("deepseek"));
     let deepseek = stored_key(&auth["deepseek"])
@@ -258,8 +259,8 @@ fn pi(env: &Environment) -> Result<Vec<Request>, DriverError> {
             .and_then(|p| p.get("deepseek"))
             .and_then(|p| p["baseUrl"].as_str())
             .unwrap_or("https://api.deepseek.com");
-        if let Some(r) = provider_request("DeepSeek API", base, k) {
-            requests.push(r);
+        if let Some(c) = provider_credential("DeepSeek API", base, k) {
+            found.push(c);
         }
     }
     if let Some(providers) = providers {
@@ -275,15 +276,15 @@ fn pi(env: &Environment) -> Result<Vec<Request>, DriverError> {
             let Some(k) = stored_key(&auth[id]).or_else(|| key(provider["apiKey"].as_str())) else {
                 continue;
             };
-            if let Some(r) = provider_request(id, base, k) {
-                requests.push(r);
+            if let Some(c) = provider_credential(id, base, k) {
+                found.push(c);
             }
         }
     }
-    Ok(requests)
+    Ok(found)
 }
 
-fn dsh(env: &Environment) -> Result<Vec<Request>, DriverError> {
+fn dsh(env: &Environment) -> Result<Vec<Credential>, Failure> {
     let root = path(env, "DSH_HOME", home(env)?.join(".dsh"));
     let stored = text(&root.join(".credentials.yaml"))?.map_or(Ok(Value::Null), |s| {
         serde_yaml_ng::from_str::<Value>(&s)
@@ -305,7 +306,7 @@ fn dsh(env: &Environment) -> Result<Vec<Request>, DriverError> {
             platform_grant(&stored["records"]["deepseek-account-platform/default"])
                 .map(|k| {
                     let endpoint = format!("{DEEPSEEK_PLATFORM}/api/v0/users/get_user_summary");
-                    request("DeepSeek", &endpoint, k, Kind::DeepSeekPlatform)
+                    credential("DeepSeek", &endpoint, k, Kind::DeepSeekPlatform)
                 })
                 .into_iter()
                 .collect(),
@@ -314,7 +315,7 @@ fn dsh(env: &Environment) -> Result<Vec<Request>, DriverError> {
     let base = env
         .get("DEEPSEEK_BASE_URL")
         .map_or("https://api.deepseek.com", String::as_str);
-    Ok(provider_request("DeepSeek API", base, k)
+    Ok(provider_credential("DeepSeek API", base, k)
         .into_iter()
         .collect())
 }

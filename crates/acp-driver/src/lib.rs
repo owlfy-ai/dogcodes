@@ -193,12 +193,7 @@ async fn read_kimi_web_usage_owned(
         })
         .await
         .map_err(|_| DriverError::Disconnected("Kimi usage server startup timed out".into()))??;
-        // The endpoint listens on the agent's machine, which may not be this one.
-        if executable.target.is_local() {
-            fetch_kimi_usage(endpoint.0, &endpoint.1).await
-        } else {
-            fetch_kimi_usage_on_target(&executable.target, endpoint.0, &endpoint.1).await
-        }
+        fetch_kimi_usage(endpoint.0, &endpoint.1).await
     };
     let result = tokio::select! {
         biased;
@@ -212,29 +207,6 @@ async fn read_kimi_web_usage_owned(
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
     result.transpose()
-}
-
-async fn fetch_kimi_usage_on_target(
-    target: &agent_runtime::SharedTarget,
-    port: u16,
-    token: &str,
-) -> Result<serde_json::Value, DriverError> {
-    let url = format!("http://127.0.0.1:{port}/api/v1/oauth/usage");
-    let output = agent_runtime::target_curl(
-        target,
-        token,
-        &[],
-        &["--fail", "--noproxy", "*", url.as_str()],
-    )
-    .await
-    .map_err(|_| DriverError::Disconnected("Kimi usage request failed or timed out".into()))?;
-    if !output.status.success() {
-        return Err(DriverError::Disconnected(
-            "Kimi usage request failed or timed out".into(),
-        ));
-    }
-    serde_json::from_slice(&output.stdout)
-        .map_err(|_| DriverError::Protocol("Kimi usage endpoint returned invalid JSON".into()))
 }
 
 async fn fetch_kimi_usage(port: u16, token: &str) -> Result<serde_json::Value, DriverError> {
@@ -3237,7 +3209,19 @@ impl AcpDriver {
         .map_err(|_| {
             DriverError::CapabilityUnavailable("上一项账户额度查询仍在结束，请稍后重试".into())
         })?;
-        let payload = read_kimi_web_usage(&self.shared.launch.executable, permit).await?;
+        let executable = &self.shared.launch.executable;
+        let payload = if executable.target.is_local() {
+            read_kimi_web_usage(executable, permit).await?
+        } else {
+            drop(permit);
+            cursor_quota::on_target(
+                &executable.target,
+                &agent_management::operation::Request::KimiUsage {
+                    executable: executable.path.to_string_lossy().into_owned(),
+                },
+            )
+            .await?
+        };
         parse_kimi_web_quota(&payload)
     }
 

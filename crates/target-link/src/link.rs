@@ -489,6 +489,9 @@ impl ExecutionTarget for LinkTarget {
             .map(|(name, value)| (name.into(), value.into()))
             .collect()
     }
+    fn shim_program(&self) -> Option<String> {
+        Some(self.shim.clone())
+    }
     fn runs_as_root(&self) -> bool {
         self.root
     }

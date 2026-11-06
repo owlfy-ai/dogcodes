@@ -10,7 +10,7 @@ fn manifest(path: &Path) -> Option<Value> {
     serde_json::from_slice(&std::fs::read(path).ok()?).ok()
 }
 
-pub(super) fn pi_launcher(root: &Path) -> PathBuf {
+pub fn pi_launcher(root: &Path) -> PathBuf {
     let bin = root.parent().unwrap_or(root).join("bin");
     if cfg!(windows) && bin.join("pi.cmd").is_file() {
         bin.join("pi.cmd")
@@ -19,7 +19,7 @@ pub(super) fn pi_launcher(root: &Path) -> PathBuf {
     }
 }
 
-pub(super) fn pi_managed_root(executable: &Path) -> Option<PathBuf> {
+pub fn pi_managed_root(executable: &Path) -> Option<PathBuf> {
     for parent in executable.ancestors().skip(1).take(10) {
         let root = if parent.file_name().is_some_and(|n| n == "install") {
             parent.to_path_buf()
@@ -51,7 +51,7 @@ pub(super) fn pi_managed_root(executable: &Path) -> Option<PathBuf> {
     None
 }
 
-pub(super) fn is_dsh_cache(prefix: &Path, package: &Path) -> bool {
+pub fn is_dsh_cache(prefix: &Path, package: &Path) -> bool {
     prefix
         .parent()
         .is_some_and(|p| p.file_name().is_some_and(|n| n == "_npx"))
@@ -63,7 +63,7 @@ pub(super) fn is_dsh_cache(prefix: &Path, package: &Path) -> bool {
             .is_some_and(|v| v["dependencies"]["@deepseek-ai/dsh"].is_string())
 }
 
-pub(super) fn is_opencode_native(executable: &Path) -> bool {
+pub fn is_opencode_native(executable: &Path) -> bool {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .and_then(|home| home.join(".opencode/bin/opencode").canonicalize().ok())
@@ -116,9 +116,10 @@ fn local_npm_spec(
     with_node_path(command, node, npm)
 }
 
-pub(super) async fn version_spec(
+pub async fn version_spec(
     i: &InstallationSummary,
     plan: &Plan,
+    npm_runtime: impl AsyncFn() -> Option<(PathBuf, PathBuf)>,
 ) -> Result<ProcessSpec, String> {
     let executable = if let Plan::StandaloneCli { prefix, .. } = plan {
         super::managed_cli::version_executable(i, prefix)
@@ -132,7 +133,7 @@ pub(super) async fn version_spec(
     if matches!(plan, Plan::NpmLocal { .. } | Plan::StandaloneCli { .. })
         || (i.provider_id == "pi" && matches!(plan, Plan::Native(_)))
     {
-        let (node, npm) = crate::terminal_installation::npm_runtime()
+        let (node, npm) = npm_runtime()
             .await
             .ok_or("无法定位终端使用的 Node/npm，请安装 npm 后重试")?;
         return with_node_path(command, &node, &npm);
@@ -140,13 +141,14 @@ pub(super) async fn version_spec(
     Ok(command)
 }
 
-pub(super) async fn install_spec(
+pub async fn install_spec(
     i: &InstallationSummary,
     plan: &Plan,
     latest: &str,
+    npm_runtime: impl AsyncFn() -> Option<(PathBuf, PathBuf)>,
 ) -> Result<ProcessSpec, String> {
     if let Plan::StandaloneCli { prefix, package } = plan {
-        let (node, npm) = crate::terminal_installation::npm_runtime()
+        let (node, npm) = npm_runtime()
             .await
             .ok_or("CLI 升级需要 Node/npm，请安装后重试")?;
         let npm_plan = Plan::Npm {
@@ -158,7 +160,7 @@ pub(super) async fn install_spec(
         return with_node_path(super::install_spec(i, &npm_plan, latest)?, &node, &npm);
     }
     if let Plan::NpmLocal { prefix, package } = plan {
-        let (node, npm) = crate::terminal_installation::npm_runtime()
+        let (node, npm) = npm_runtime()
             .await
             .ok_or("无法定位终端使用的 Node/npm，请安装 npm 后重试")?;
         return local_npm_spec(prefix, package, latest, &node, &npm);
@@ -174,7 +176,7 @@ pub(super) async fn install_spec(
             .and_then(|p| pi_managed_root(&p))
             .ok_or("Pi 托管安装已变化，请重新检测")?;
         command.executable = pi_launcher(&root);
-        let (node, npm) = crate::terminal_installation::npm_runtime()
+        let (node, npm) = npm_runtime()
             .await
             .ok_or("Pi 更新需要 Node/npm，请确认终端可用")?;
         command = with_node_path(command, &node, &npm)?;
@@ -185,7 +187,7 @@ pub(super) async fn install_spec(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_updates::{inspect, plan, tests::installation_for};
+    use crate::updates::{inspect, plan, tests::installation_for};
     fn write(path: &Path, content: &str) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, content).unwrap();
@@ -374,9 +376,14 @@ mod tests {
             let p = plan(&i);
             assert!(!matches!(p, Plan::Unsupported | Plan::Host(_)));
             let status = inspect(&i, &p).await.unwrap();
-            let command = install_spec(&i, &p, status.latest_version.as_deref().unwrap())
-                .await
-                .unwrap();
+            let command = install_spec(
+                &i,
+                &p,
+                status.latest_version.as_deref().unwrap(),
+                crate::npm_runtime_on_path,
+            )
+            .await
+            .unwrap();
             assert!(!command.args.is_empty());
             println!(
                 "{provider}: current={:?}, latest={:?}, status={}, source={}",

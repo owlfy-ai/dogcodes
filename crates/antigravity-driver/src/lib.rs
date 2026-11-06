@@ -12,16 +12,16 @@
 //! decisions; it is not native stdin approval support. Resume capability is
 //! recorded separately from permission support.
 
-use agent_runtime::ProcessInput;
+use agent_runtime::{Pipe, ProcessInput, TargetExecutable};
 use std::{
     collections::HashMap,
-    path::PathBuf,
-    process::Stdio,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
 };
+#[cfg(test)]
+use std::{path::PathBuf, process::Stdio};
 
 use agent_domain::{ExecutorRef, InstallationId, ProviderId};
 use agent_runtime::OwnedChild as Child;
@@ -41,6 +41,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 pub mod approval_bridge;
 mod catalog;
 mod quota;
+mod scratch;
 mod session_open;
 mod session_usage;
 mod sessions;
@@ -57,13 +58,35 @@ const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 /// keyring holds — an account switch with no prompt. All agy process spawns
 /// are therefore serialized process-wide, and probes back off after auth
 /// failures instead of hammering the chain again.
-static AGY_SPAWN_GUARD: std::sync::OnceLock<std::sync::Arc<tokio::sync::Mutex<()>>> =
-    std::sync::OnceLock::new();
+///
+/// That shared state belongs to a machine, so each machine has its own of both.
+struct Account {
+    spawn: SpawnLock,
+    backoff: Backoff,
+}
 
-fn spawn_guard() -> std::sync::Arc<tokio::sync::Mutex<()>> {
-    AGY_SPAWN_GUARD
-        .get_or_init(|| std::sync::Arc::new(tokio::sync::Mutex::new(())))
-        .clone()
+fn account_of(target: &agent_runtime::SharedTarget) -> Arc<Account> {
+    type Known = Vec<(
+        std::sync::Weak<dyn agent_runtime::ExecutionTarget>,
+        Arc<Account>,
+    )>;
+    static ACCOUNTS: std::sync::Mutex<Known> = std::sync::Mutex::new(Vec::new());
+    let mut known = ACCOUNTS.lock().expect("agy accounts");
+    // A closed connection's machine is met again as a new target.
+    known.retain(|(machine, _)| machine.strong_count() > 0);
+    if let Some((_, account)) = known.iter().find(|(machine, _)| {
+        machine
+            .upgrade()
+            .is_some_and(|machine| Arc::ptr_eq(&machine, target))
+    }) {
+        return account.clone();
+    }
+    let account = Arc::new(Account {
+        spawn: SpawnLock::default(),
+        backoff: Backoff::default(),
+    });
+    known.push((Arc::downgrade(target), account.clone()));
+    account
 }
 
 /// Cooperative backoff after auth/eligibility failures, so a broken account
@@ -84,14 +107,7 @@ impl AuthBackoffState {
     }
 }
 
-static AGY_AUTH_BACKOFF: std::sync::OnceLock<std::sync::Arc<tokio::sync::Mutex<AuthBackoffState>>> =
-    std::sync::OnceLock::new();
-
-fn auth_backoff_state() -> std::sync::Arc<tokio::sync::Mutex<AuthBackoffState>> {
-    AGY_AUTH_BACKOFF
-        .get_or_init(|| std::sync::Arc::new(tokio::sync::Mutex::new(AuthBackoffState::default())))
-        .clone()
-}
+type Backoff = std::sync::Arc<tokio::sync::Mutex<AuthBackoffState>>;
 
 const AGY_BACKOFF_MAX: u32 = 4;
 
@@ -125,35 +141,73 @@ async fn enter_spawn_slot(lock: &SpawnLock) -> Result<SpawnSlot, DriverError> {
 }
 
 /// Preserve the account diagnostic while suppressing repeated native probes.
-async fn auth_backoff_kind() -> Option<&'static str> {
-    let state = auth_backoff_state();
-    let state = state.lock().await;
-    state.active_kind()
+async fn auth_backoff_kind(backoff: &Backoff) -> Option<&'static str> {
+    backoff.lock().await.active_kind()
 }
 
 fn backoff_duration(failures: u32) -> std::time::Duration {
     std::time::Duration::from_secs(60_u64.saturating_pow(failures.min(AGY_BACKOFF_MAX)))
 }
 
-async fn record_auth_failure(kind: &'static str) {
-    let state = auth_backoff_state();
-    let mut state = state.lock().await;
+async fn record_auth_failure(backoff: &Backoff, kind: &'static str) {
+    let mut state = backoff.lock().await;
     state.failures = (state.failures + 1).min(AGY_BACKOFF_MAX + 1);
     state.last_failure = Some(std::time::Instant::now());
     state.kind = Some(kind);
 }
 
-async fn clear_auth_failures() {
-    let state = auth_backoff_state();
-    *state.lock().await = AuthBackoffState::default();
+async fn clear_auth_failures(backoff: &Backoff) {
+    *backoff.lock().await = AuthBackoffState::default();
 }
 
 /// Environment variables handed to the CLI; everything else is stripped with
 /// `env_clear` so credentials never leak into the agent process.
 const ENV_ALLOWLIST: &[&str] = &["PATH", "HOME", "LANG", "TZ", "TMPDIR", "TERM"];
 
+/// Proxies set on another machine describe its network. This machine's own are applied
+/// when a process starts here, and never cross over.
+const REMOTE_ENV_ALLOWLIST: &[&str] = &[
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "https_proxy",
+    "http_proxy",
+    "all_proxy",
+    "no_proxy",
+];
+
+/// What every `agy` process is given, from the machine it runs on.
+fn prepare_command(command: &mut agent_runtime::TargetCommand, remote: bool) {
+    // This alone doesn't stop print mode from opening a browser: see `prepare_print_command`.
+    command.env("AGY_CLI_NONINTERACTIVE_HEADLESS", "1");
+    for variable in ENV_ALLOWLIST {
+        command.inherit(variable);
+    }
+    if remote {
+        for variable in REMOTE_ENV_ALLOWLIST {
+            command.inherit(variable);
+        }
+    }
+}
+
+/// Print mode answers a failed silent login with the interactive one, whatever it's told,
+/// and a token refresh failing on a network that's still waking up is enough for that. So a
+/// Google sign-in page would open on its own while nobody is there. It finds the program
+/// that opens one through `PATH`, and nothing a print command does needs anything else there.
+const NOTHING_TO_RUN: &str = "/var/empty";
+
+/// For a command nobody asked to see, like reading quota. Conversations keep their `PATH`,
+/// as their tools need it. A failed login then ends as an error, for signing in by hand.
+fn prepare_print_command(command: &mut agent_runtime::TargetCommand, remote: bool) {
+    prepare_command(command, remote);
+    if cfg!(unix) {
+        command.env("PATH", NOTHING_TO_RUN);
+    }
+}
+
 pub struct AntigravityLaunch {
-    pub executable: PathBuf,
+    pub executable: TargetExecutable,
 }
 
 /// Protocol arguments the driver owns so manifests cannot widen permissions.
@@ -204,6 +258,18 @@ fn is_transport_error(error: &str) -> bool {
     .iter()
     .any(|message| error.contains(message))
         || error.ends_with(": eof")
+}
+
+/// What a process says about an account with no login at all. It can also come from a
+/// slow login with a valid one, so on this machine it's left for a real turn to settle.
+fn signed_out(line: &str) -> bool {
+    serde_json::from_str::<Value>(line).is_ok_and(|event| {
+        event["event"] == "result"
+            && event["result"]["status"] == "ERROR"
+            && event["result"]["error"]
+                .as_str()
+                .is_some_and(|error| error.contains("authentication failed"))
+    })
 }
 
 fn classify(line: &str) -> Option<Classified> {
@@ -322,7 +388,9 @@ struct SessionProcess {
     model: Option<String>,
     admission: tokio::sync::Mutex<()>,
     usage: std::sync::Mutex<Option<driver_api::usage::SessionUsageSnapshot>>,
-    usage_log: Option<tempfile::TempDir>,
+    usage_log: Option<scratch::Scratch>,
+    target: agent_runtime::SharedTarget,
+    backoff: Backoff,
     pending_questions: std::sync::Mutex<HashMap<String, PendingQuestion>>,
     workspace_instruction: String,
     permission_mode: Option<String>,
@@ -436,13 +504,14 @@ pub struct AntigravityDriver {
     models: tokio::sync::Mutex<Vec<(String, String)>>,
     quota_cache: tokio::sync::Mutex<Option<driver_api::QuotaSnapshot>>,
     executor: ExecutorRef,
-    executable: PathBuf,
+    executable: TargetExecutable,
     native_version: Option<String>,
     resume_capability: SessionResumeCapability,
     processes: tokio::sync::Mutex<HashMap<String, Arc<SessionProcess>>>,
-    /// The process-wide spawn lock; tests give each driver its own so they
+    /// The machine-wide spawn lock; tests give each driver its own so they
     /// can run in parallel without sharing one machine-wide credential chain.
     spawn: SpawnLock,
+    backoff: Backoff,
 }
 
 impl Drop for AntigravityDriver {
@@ -476,10 +545,12 @@ impl AntigravityDriver {
     pub fn new(
         provider_id: &str,
         installation_id: &str,
-        executable: PathBuf,
+        executable: impl Into<TargetExecutable>,
         native_version: Option<String>,
         resume_capability: SessionResumeCapability,
     ) -> Result<Self, agent_domain::DomainError> {
+        let executable = executable.into();
+        let account = account_of(&executable.target);
         Ok(Self {
             admission: tokio::sync::Mutex::new(()),
             stopping: tokio::sync::watch::channel(false).0,
@@ -500,7 +571,8 @@ impl AntigravityDriver {
             native_version,
             resume_capability,
             processes: tokio::sync::Mutex::new(HashMap::new()),
-            spawn: spawn_guard(),
+            spawn: account.spawn.clone(),
+            backoff: account.backoff.clone(),
         })
     }
 
@@ -513,33 +585,60 @@ impl AntigravityDriver {
     ///
     /// Returns [`DriverError::NotConfigured`] when the executable cannot start
     /// and [`DriverError::Protocol`] when the handshake times out.
-    pub async fn probe_ready(executable: &std::path::Path) -> Result<(), DriverError> {
-        Self::probe_ready_with(executable, &spawn_guard()).await
+    pub async fn probe_ready(executable: impl Into<TargetExecutable>) -> Result<(), DriverError> {
+        let executable = executable.into();
+        let lock = account_of(&executable.target).spawn.clone();
+        Self::probe_ready_with(executable, &lock).await
+    }
+
+    /// A driver for an installation on `executable`'s machine, once it answers.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::probe_ready`], or when the identifiers are invalid.
+    pub async fn connect_ready(
+        provider_id: &str,
+        installation_id: &str,
+        executable: TargetExecutable,
+        native_version: Option<String>,
+    ) -> Result<Self, DriverError> {
+        Self::probe_ready(&executable).await?;
+        Self::new(
+            provider_id,
+            installation_id,
+            executable,
+            native_version,
+            // Cross-process resume via `--conversation` was verified at runtime.
+            SessionResumeCapability::Supported,
+        )
+        .map_err(|error| DriverError::Protocol(error.to_string()))
     }
 
     async fn probe_ready_with(
-        executable: &std::path::Path,
+        executable: impl Into<TargetExecutable>,
         lock: &SpawnLock,
     ) -> Result<(), DriverError> {
+        let executable = executable.into();
+        let backoff = account_of(&executable.target).backoff.clone();
         // Backed-off auth failures return immediately; every probe touches
         // the shared credential chain and must not retry in a loop.
-        if let Some(kind) = auth_backoff_kind().await {
+        if let Some(kind) = auth_backoff_kind(&backoff).await {
             return Err(DriverError::NotConfigured(kind.into()));
         }
         // The slot is held for the whole process lifetime: the auth refresh
         // at startup is exactly the raced write this guard prevents.
         let slot = enter_spawn_slot(lock).await?;
-        let executable = executable.to_path_buf();
         // Native cleanup/auth exclusion outlives a cancelled readiness caller.
         let (_observer, cancelled) = oneshot::channel::<()>();
-        tokio::spawn(async move { Self::probe_owned(&executable, slot, cancelled).await })
+        tokio::spawn(async move { Self::probe_owned(executable, backoff, slot, cancelled).await })
             .await
             .map_err(|_| {
                 DriverError::Disconnected("Antigravity readiness actor ended unexpectedly".into())
             })?
     }
     async fn probe_owned(
-        executable: &std::path::Path,
+        executable: TargetExecutable,
+        backoff: Backoff,
         slot: SpawnSlot,
         mut cancelled: oneshot::Receiver<()>,
     ) -> Result<(), DriverError> {
@@ -548,13 +647,8 @@ impl AntigravityDriver {
             return Err(abandoned());
         }
         let spawn_started = std::time::Instant::now();
-        let mut child = spawn(
-            &AntigravityLaunch {
-                executable: executable.to_path_buf(),
-            },
-            None,
-            None,
-        )?;
+        let local = executable.target.is_local();
+        let mut child = spawn(&AntigravityLaunch { executable }, None, None)?;
         eprintln!(
             "antigravity timing stage=process_spawn elapsed_ms={}",
             spawn_started.elapsed().as_millis()
@@ -606,14 +700,17 @@ impl AntigravityDriver {
                     Err(DriverError::Protocol(
                         "agy did not emit a JSON event line".into(),
                     ))
+                } else if !local && signed_out(&line) {
+                    // A server has no window to sign in from, so it must be offered.
+                    Err(DriverError::NotConfigured("authentication_failed".into()))
                 } else if let Some(Classified::AuthFailure(kind, _)) = classify(line.trim_end()) {
                     // The very first event already reports an account problem.
-                    record_auth_failure(kind).await;
+                    record_auth_failure(&backoff, kind).await;
                     Err(DriverError::NotConfigured(kind.into()))
                 } else {
                     // A healthy event surface proves the credential chain
                     // works again; clear any stale backoff.
-                    clear_auth_failures().await;
+                    clear_auth_failures(&backoff).await;
                     Ok(())
                 }
             }
@@ -688,10 +785,11 @@ fn spawn_workspace(
     bridge: Option<&approval_bridge::Bridge>,
     usage_log: Option<&std::path::Path>,
 ) -> Result<Child, DriverError> {
-    let mut command = agent_runtime::agent_command(&launch.executable);
+    let target = &launch.executable.target;
+    let mut command = launch.executable.command();
     command
         .args(session_args())
-        .current_dir(std::env::temp_dir());
+        .current_dir(target.temp_directory());
     if let Some(log) = usage_log {
         command
             .arg("--log-file")
@@ -746,24 +844,12 @@ fn spawn_workspace(
     }
     // Sessions and readiness probes use pipes. Interactive OAuth belongs to
     // the explicit native login action, outside the driver.
-    command
-        .env_clear()
-        .env("AGY_CLI_NONINTERACTIVE_HEADLESS", "1")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    agent_runtime::apply_platform_environment(&mut command);
-    for variable in ENV_ALLOWLIST {
-        if let Some(value) = agent_runtime::inherited_variable(variable) {
-            command.env(variable, value);
-        }
-    }
-    agent_runtime::apply_proxy_environment(&mut command);
+    command.stdio(Pipe::Piped, Pipe::Piped, Pipe::Piped);
+    prepare_command(&mut command, !target.is_local());
     if let Some(bridge) = bridge {
         bridge.configure(&mut command);
     }
-    Child::spawn(command).map_err(|error| {
+    command.spawn().map_err(|error| {
         if matches!(error.kind(), std::io::ErrorKind::NotFound) {
             DriverError::NotConfigured("agy executable is missing".into())
         } else {
@@ -978,7 +1064,7 @@ async fn stream_session(stdout: agent_runtime::ProcessStream, process: Arc<Sessi
             Classified::AuthFailure(kind, error) => {
                 // Count toward the backoff; report the stable kind together
                 // with agy's own error text.
-                record_auth_failure(kind).await;
+                record_auth_failure(&process.backoff, kind).await;
                 let _gate = process.lifecycle.lock().expect("session lifecycle");
                 if let Some(updates) = process.updates.lock().expect("updates sink").take() {
                     let _ = updates.send(DriverEvent::TurnFailed {
@@ -1089,6 +1175,21 @@ fn user_event(context: &[ContextDelivery], prompt: &str) -> Value {
 
 #[async_trait]
 impl AgentDriver for AntigravityDriver {
+    fn runs_on_this_machine(&self) -> bool {
+        self.executable.target.is_local()
+    }
+    fn prepare_app_mcp(&self, mcp: driver_api::AppMcp) -> Result<driver_api::AppMcp, DriverError> {
+        mcp.for_target(&self.executable.target)
+    }
+    async fn prepare_attachments(
+        &self,
+        items: &mut [agent_domain::PromptAttachment],
+    ) -> Result<(), DriverError> {
+        if self.executable.target.is_local() {
+            return Ok(());
+        }
+        driver_api::attachments::deliver_to_target(&self.executable.target, items).await
+    }
     fn independent_session_driver(&self) -> Result<Option<Arc<dyn AgentDriver>>, DriverError> {
         let driver = Self::new(
             self.executor.provider_id.as_str(),
@@ -1206,25 +1307,22 @@ impl AgentDriver for AntigravityDriver {
         if id.len() != 36 || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
             return Err(DriverError::Protocol("invalid child id".into()));
         }
-        let home = std::env::var_os("HOME")
+        let target = &self.executable.target;
+        let home = target
+            .inherited("HOME")
             .ok_or_else(|| DriverError::CapabilityUnavailable("home unavailable".into()))?;
         let path = std::path::PathBuf::from(home)
             .join(".gemini/antigravity-cli/brain")
             .join(id)
             .join(".system_generated/logs/transcript.jsonl");
-        let text = tokio::task::spawn_blocking(move || {
-            use std::io::Read;
-            let file = std::fs::File::open(path)?;
-            let mut text = String::new();
-            file.take(1_048_577).read_to_string(&mut text)?;
-            if text.len() > 1_048_576 {
-                return Err(std::io::Error::other("log too large"));
-            }
-            Ok::<_, std::io::Error>(text)
-        })
-        .await
-        .map_err(|_| DriverError::Protocol("log read failed".into()))?
-        .map_err(|_| DriverError::Protocol("log unavailable".into()))?;
+        let bytes = scratch::read_file(target, &path, 1_048_577)
+            .await
+            .ok_or_else(|| DriverError::Protocol("log unavailable".into()))?;
+        if bytes.len() > 1_048_576 {
+            return Err(DriverError::Protocol("log unavailable".into()));
+        }
+        let text = String::from_utf8(bytes)
+            .map_err(|_| DriverError::Protocol("log unavailable".into()))?;
         let mut output = Vec::new();
         for line in text.lines() {
             let Ok(row) = serde_json::from_str::<Value>(line) else {
@@ -1483,6 +1581,34 @@ mod scope_tests;
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn verifying_the_approval_hook_cannot_open_a_browser() {
+        let directory = tempfile::tempdir().unwrap();
+        let executable = write_fake_agy(directory.path());
+        let driver = test_driver(executable.clone());
+        let session = driver
+            .create_session(SessionRequest {
+                app_mcps: vec![],
+                permission_mode: Some("desktop-approvals".into()),
+                additional_directories: vec![],
+                working_directory: "/tmp".into(),
+            })
+            .await
+            .unwrap();
+        driver.shutdown(session).await.unwrap();
+        assert!(!executable.with_extension("browser").exists());
+    }
+
+    #[test]
+    fn only_a_failed_login_counts_as_signed_out() {
+        let event = |error: &str| {
+            json!({"event":"result","result":{"status":"ERROR","error":error}}).to_string()
+        };
+        assert!(signed_out(&event("authentication failed or timed out")));
+        assert!(!signed_out(&event("no such host")));
+        assert!(!signed_out(r#"{"event":"init","conversation_id":"c"}"#));
+    }
+
     #[test]
     fn auth_backoff_preserves_the_account_failure_kind_until_expiry() {
         for kind in ["authentication_failed", "access_denied"] {
@@ -1628,6 +1754,11 @@ mod tests {
         std::fs::write(
             &script,
             r#"#!/bin/sh
+case "$*" in *--print=/hooks*)
+command -v open >/dev/null 2>&1 || command -v xdg-open >/dev/null 2>&1 && touch "${0}.browser"
+;; esac
+printf '%s\n' "$PATH" > "${0}.path"
+PATH="$PATH:/usr/bin:/bin"
 case "$*" in *--print=/hooks*)
 python3 - "$@" <<'PYHOOK'
 import sys,json,pathlib
@@ -1876,6 +2007,8 @@ done
             .await
             .unwrap();
         let events: Vec<DriverEvent> = stream.map(|event| event.unwrap()).collect().await;
+        let conversation = std::fs::read_to_string(directory.path().join("agy.path")).unwrap();
+        assert_ne!(conversation.trim(), NOTHING_TO_RUN, "its tools need PATH");
         let input = std::fs::read_to_string(directory.path().join("agy.input")).unwrap();
         let sent: Value = serde_json::from_str(input.lines().next().unwrap()).unwrap();
         let blocks = sent["message"]["content"].as_array().unwrap();

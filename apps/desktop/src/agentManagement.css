@@ -76,6 +76,8 @@
 .agent-uninstalled li > .agent-icon { width: calc(20px * var(--ui-scale, 1)); height: calc(20px * var(--ui-scale, 1)); flex: none; opacity: .6; filter: grayscale(1); }
 .agent-uninstalled-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .agent-install-link { display: inline-flex; align-items: center; gap: 3px; flex: none; padding: 2px 8px; border-radius: 6px; color: var(--green); font-size: calc(12px * var(--ui-scale, 1)); font-weight: 550; text-decoration: none; }
+button.agent-install-link { border: 0; background: transparent; cursor: pointer; }
+button.agent-install-link:disabled { cursor: default; opacity: .75; }
 .agent-install-link:hover { background: color-mix(in srgb, var(--green) 12%, transparent); }
 .agent-install-link:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .agent-install-error { width: 100%; color: #d9622b; font-size: calc(11px * var(--ui-scale, 1)); }

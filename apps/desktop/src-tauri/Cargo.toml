@@ -35,6 +35,7 @@ base64 = "0.22"
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "json"] }
 semver.workspace = true
 plist = "1.10"
+agent-management = { path = "../../../crates/agent-management", features = ["native-http"] }
 quick-xml = { version = "0.41", features = ["serialize"] }
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 agent-runtime = { path = "../../../crates/runtime" }
@@ -74,6 +75,7 @@ tauri-plugin-single-instance = "2"
 workspace = true
 
 [dev-dependencies]
+agent-management = { path = "../../../crates/agent-management", features = ["native-http", "test-support"] }
 image = { version = "0.25.9", default-features = false }
 openh264 = "0.9.9"
 async-trait.workspace = true

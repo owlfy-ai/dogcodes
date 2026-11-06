@@ -33,7 +33,11 @@ const scenarios: Record<string, TargetStatus> = {
 
 function entries(status: TargetStatus): TargetEntry[] {
   return [
-    { target: { targetId: "tgt_one", displayName: "Build server", connection: { destination: "build.example.com", user: "dev", port: 2222, auth: "password" } }, status, agents: [{ providerId: "kimi", version: "2.5.0", status: "ready" }, { providerId: "claude-code", version: "2.1.0", status: "ready" }, { providerId: "codex", version: "1.0.0", status: "not_configured" }] },
+    { target: { targetId: "tgt_one", displayName: "Build server", connection: { destination: "build.example.com", user: "dev", port: 2222, auth: "password" } }, status, agents: [
+      { installationId: "ins_kimi", providerId: "kimi", executable: "/root/.kimi-code/bin/kimi", version: "2.5.0", status: "ready", diagnostic: null },
+      { installationId: "ins_claude", providerId: "claude-code", executable: "/usr/local/bin/claude", version: "2.1.0", status: "ready", diagnostic: null },
+      { installationId: "ins_codex", providerId: "codex", executable: "/usr/local/bin/codex", version: "1.0.0", status: "not_configured", diagnostic: "not_configured" },
+    ] },
     { target: { targetId: "tgt_two", displayName: "gpu-box", connection: { destination: "gpu-box", auth: "system" } }, status: idle, agents: [] },
   ];
 }
@@ -67,6 +71,14 @@ function Fixture() {
     connect: async () => {},
     disconnect: async () => {},
     rescan: async () => {},
+    agentUpdate: async (_, installationId) => ({ installationId, status: installationId === "ins_claude" ? "available" : "up_to_date", currentVersion: "2.1.0", latestVersion: "2.2.0", source: "npm", message: null, canUpgrade: installationId === "ins_claude", checkedAt: Date.now() }),
+    installAgent: async () => [],
+    agentInstalls: async () => [
+      { providerId: "grok", status: "installing", message: null },
+      { providerId: "kiro", status: "failed", message: "需要先在这台主机上安装 unzip" },
+    ],
+    upgradeAgent: async (_, installationId) => ({ installationId, status: "upgrading", currentVersion: "2.1.0", latestVersion: "2.2.0", source: "npm", message: "agentUi.checkingUpgrade", canUpgrade: false, checkedAt: Date.now() }),
+    quota: async installationId => installationId === "ins_kimi" ? [{ providerId: "kimi", installationId, diagnostic: null, quota: { windows: [{ id: "5h", scope: null, windowMinutes: 300, usedPercent: 30, resetsAtUnix: Math.floor(Date.now() / 1000) + 7200 }], context: null, collectedAtUnixMs: Date.now(), staleAfterUnixMs: Date.now() + 3600000, planType: null, source: "fixture", confidence: "provider_reported", parserVersion: "fixture" } }] : [],
     release: async () => {},
     answer: async () => {},
     configHosts: async () => ["build", "gpu-box", "staging"],

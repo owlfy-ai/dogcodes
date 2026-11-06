@@ -30,7 +30,9 @@ macos = [
   "Applications/ChatGPT.app/Contents/Resources/codex",
   "Applications/Codex.app/Contents/Resources/codex-cli/bin/codex",
   "Applications/Codex.app/Contents/Resources/codex",
+  ".local/bin/codex",
 ]
+linux = [".local/bin/codex"]
 
 [supported_versions]
 denylist = []

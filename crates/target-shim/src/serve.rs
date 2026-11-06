@@ -294,7 +294,7 @@ fn start_relay(
     } = relay;
     let credit = Arc::new(Semaphore::new(STREAM_WINDOW as usize));
     let (sender, receiver) = mpsc::unbounded_channel();
-    tokio::spawn(pump_stdin(
+    let answering = tokio::spawn(pump_stdin(
         writer,
         receiver,
         outbound.clone(),
@@ -314,6 +314,8 @@ fn start_relay(
         // The desktop must know the relay before its first bytes arrive.
         announced.await;
         pump.await;
+        // A helper can finish its request and still be waiting for the answer.
+        let _ = answering.await;
         let _ = exited.send(id);
     });
     Supervised {

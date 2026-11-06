@@ -1,53 +1,42 @@
 //! Read-only account monitoring, independent of an agent's model/session readiness.
-//! Credentials stay in this crate; only validated quota readings leave it.
-mod credentials;
+//! The accounts are read where the agent is installed, by `agent_management`; here their
+//! answers become validated quota readings.
 mod http;
 mod projection;
 #[cfg(test)]
 mod tests;
 
 use agent_domain::ExecutorRef;
+use agent_management::{
+    operation::{self, Failure},
+    provider_account::{self, Agent, Credential, Kind, Reading, Usage},
+};
+use agent_runtime::{SharedTarget, TargetExecutable};
 use async_trait::async_trait;
 use driver_api::{DriverError, QuotaProvider, QuotaSnapshot};
-use sha2::{Digest, Sha256};
 use std::{
-    collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
 
-#[derive(Clone, Copy)]
-enum Kind {
-    Go,
-    DeepSeek,
-    DeepSeekPlatform,
-    Sub2Api,
-}
-
-// Deliberately no Debug/Serialize: a request contains native credentials.
-#[derive(Clone)]
-struct Request {
-    kind: Kind,
-    label: String,
-    endpoint: String,
-    key: String,
-    /// `OpenCode` Go subscriptions are scoped to the signed-in organization.
-    org_id: Option<String>,
-}
+const CACHE_FOR: Duration = Duration::from_mins(1);
+const FAILURE_CACHE_FOR: Duration = Duration::from_secs(15);
 
 struct Cached {
-    fingerprint: [u8; 32],
+    fingerprint: String,
     until: Instant,
     result: Result<QuotaSnapshot, DriverError>,
 }
 
 pub struct AccountMonitor {
     executor: ExecutorRef,
+    agent: Agent,
+    target: SharedTarget,
     session: Option<Arc<dyn QuotaProvider>>,
     cache: Mutex<Option<Cached>>,
     #[cfg(test)]
-    environment: Option<HashMap<String, String>>,
+    environment: Option<provider_account::Environment>,
     #[cfg(test)]
     endpoints: Option<(String, String)>,
 }
@@ -55,7 +44,12 @@ pub struct AccountMonitor {
 impl AccountMonitor {
     /// Wrap the native session provider when ready; monitor accounts on their own otherwise.
     #[must_use]
-    pub fn new(executor: ExecutorRef, session: Option<Arc<dyn QuotaProvider>>) -> Option<Self> {
+    pub fn new(
+        executor: ExecutorRef,
+        executable: &TargetExecutable,
+        version: Option<String>,
+        session: Option<Arc<dyn QuotaProvider>>,
+    ) -> Option<Self> {
         if !matches!(
             executor.provider_id.as_str(),
             "opencode" | "pi" | "deepseek-harness"
@@ -63,6 +57,12 @@ impl AccountMonitor {
             return None;
         }
         Some(Self {
+            agent: Agent {
+                provider: executor.provider_id.to_string(),
+                executable: executable.path.to_string_lossy().into_owned(),
+                version,
+            },
+            target: executable.target.clone(),
             executor,
             session,
             cache: Mutex::new(None),
@@ -73,99 +73,120 @@ impl AccountMonitor {
         })
     }
 
-    async fn requests(&self) -> Result<Vec<Request>, DriverError> {
-        let environment: HashMap<String, String> = std::env::vars_os()
+    /// Checking which account is signed in takes a process when `OpenCode` or another
+    /// machine must answer, and a running conversation reads quota every few seconds. Those
+    /// keep a reading until it expires or is refreshed by hand; the rest just read a file.
+    fn keeps_readings(&self) -> bool {
+        !self.target.is_local() || self.agent.provider == "opencode"
+    }
+
+    async fn read(&self, known: Option<String>) -> Result<Usage, Failure> {
+        if !self.target.is_local() {
+            let request = operation::Request::ProviderAccount {
+                agent: self.agent.clone(),
+                known,
+            };
+            return operation::call(&self.target, &request).await;
+        }
+        let environment: provider_account::Environment = std::env::vars_os()
             .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
             .collect();
         #[cfg(test)]
         let environment = self.environment.clone().unwrap_or(environment);
-        let provider = self.executor.provider_id.to_string();
-        let requests =
-            tokio::task::spawn_blocking(move || credentials::discover(&provider, &environment))
-                .await
-                .map_err(|_| unavailable("provider credentials unavailable"))??;
-        #[cfg(test)]
-        let mut requests = requests;
-        #[cfg(test)]
+        provider_account::read(
+            &self.agent,
+            &environment,
+            known.as_deref(),
+            |credential: Credential| {
+                #[cfg(test)]
+                let credential = self.redirected(credential);
+                async move { http::get(&credential).await }
+            },
+        )
+        .await
+    }
+
+    #[cfg(test)]
+    fn redirected(&self, mut credential: Credential) -> Credential {
         if let Some((go, deepseek)) = &self.endpoints {
-            for request in &mut requests {
-                request.endpoint = match request.kind {
-                    Kind::Go => go.clone(),
-                    Kind::DeepSeek | Kind::DeepSeekPlatform => deepseek.clone(),
-                    Kind::Sub2Api => request.endpoint.clone(),
-                };
-            }
+            credential.endpoint = match credential.kind {
+                Kind::Go => go.clone(),
+                Kind::DeepSeek | Kind::DeepSeekPlatform => deepseek.clone(),
+                Kind::Sub2Api => credential.endpoint,
+            };
         }
-        Ok(requests)
+        credential
     }
 
     async fn accounts(&self, force: bool) -> Result<QuotaSnapshot, DriverError> {
+        // Reading under the gate: a queued reader must not restore an older account.
         let mut cache = self.cache.lock().await;
-        // Discover after taking the gate: a queued reader must not restore an older account.
-        let requests = self.requests().await?;
-        let fingerprint = identity(&requests);
-        if !force
-            && let Some(cached) = cache.as_ref()
-            && cached.fingerprint == fingerprint
-            && Instant::now() < cached.until
+        let current = cache
+            .as_ref()
+            .filter(|cached| !force && Instant::now() < cached.until);
+        if let Some(cached) = current
+            && self.keeps_readings()
         {
             return cached.result.clone();
         }
-        // Never reuse another account's successful snapshot after a failed refresh.
-        *cache = None;
-        let result = fetch(requests).await;
-        if identity(&self.requests().await?) != fingerprint {
-            return Err(unavailable("provider credentials changed during refresh"));
+        let known = current.map(|cached| cached.fingerprint.clone());
+        match self.read(known).await {
+            Ok(Usage::Unchanged) => cache.as_ref().map_or_else(
+                || Err(unavailable("quota_unavailable")),
+                |c| c.result.clone(),
+            ),
+            Ok(Usage::Read {
+                fingerprint,
+                readings,
+            }) => {
+                // Never reuse another account's successful snapshot after a failed refresh.
+                let result = snapshot(readings);
+                let ttl = if result.is_ok() {
+                    CACHE_FOR
+                } else {
+                    FAILURE_CACHE_FOR
+                };
+                *cache = Some(Cached {
+                    fingerprint,
+                    until: Instant::now() + ttl,
+                    result: result.clone(),
+                });
+                result
+            }
+            Err(failure) => {
+                let error = driver_error(failure);
+                *cache = self.keeps_readings().then(|| Cached {
+                    fingerprint: String::new(),
+                    until: Instant::now() + FAILURE_CACHE_FOR,
+                    result: Err(error.clone()),
+                });
+                Err(error)
+            }
         }
-        let ttl = if result.is_ok() { 60 } else { 15 };
-        *cache = Some(Cached {
-            fingerprint,
-            until: Instant::now() + Duration::from_secs(ttl),
-            result: result.clone(),
-        });
-        result
     }
 }
 
-fn identity(requests: &[Request]) -> [u8; 32] {
-    let mut digest = Sha256::new();
-    for request in requests {
-        for part in [
-            request.label.as_str(),
-            request.endpoint.as_str(),
-            request.key.as_str(),
-            request.org_id.as_deref().unwrap_or(""),
-        ] {
-            digest.update(part.len().to_le_bytes());
-            digest.update(part.as_bytes());
-        }
-    }
-    digest.finalize().into()
-}
-
-async fn fetch(requests: Vec<Request>) -> Result<QuotaSnapshot, DriverError> {
-    let client = http::client()?;
+fn snapshot(readings: Vec<Reading>) -> Result<QuotaSnapshot, DriverError> {
     let mut windows = Vec::new();
     let mut balances = Vec::new();
     let mut last_error = None;
     let mut go = false;
-    let results = futures::future::join_all(requests.into_iter().map(|r| {
-        let client = &client;
-        async move {
-            let payload = http::get(client, &r).await?;
-            match r.kind {
-                Kind::Go => Ok((projection::go(&payload)?, Vec::new())),
-                Kind::DeepSeek => Ok((Vec::new(), projection::deepseek(&payload)?)),
-                Kind::DeepSeekPlatform => {
-                    Ok((Vec::new(), projection::deepseek_platform(&payload)?))
-                }
-                Kind::Sub2Api => Ok((Vec::new(), projection::sub2api(&payload, &r.label)?)),
-            }
-        }
-    }))
-    .await;
-    for result in results {
-        match result {
+    for reading in readings {
+        let projected =
+            reading
+                .outcome
+                .map_err(driver_error)
+                .and_then(|payload| match reading.kind {
+                    Kind::Go => Ok((projection::go(&payload)?, Vec::new())),
+                    Kind::DeepSeek => Ok((Vec::new(), projection::deepseek(&payload)?)),
+                    Kind::DeepSeekPlatform => {
+                        Ok((Vec::new(), projection::deepseek_platform(&payload)?))
+                    }
+                    Kind::Sub2Api => {
+                        Ok((Vec::new(), projection::sub2api(&payload, &reading.label)?))
+                    }
+                });
+        match projected {
             Ok((w, b)) => {
                 go |= !w.is_empty();
                 windows.extend(w);
@@ -193,6 +214,15 @@ async fn fetch(requests: Vec<Request>) -> Result<QuotaSnapshot, DriverError> {
         .into(),
         ..Default::default()
     })
+}
+
+fn driver_error(failure: Failure) -> DriverError {
+    match failure.kind.as_str() {
+        "login" => DriverError::NotConfigured(failure.message),
+        "capability" => DriverError::CapabilityUnavailable(failure.message),
+        "protocol" => DriverError::Protocol(failure.message),
+        _ => DriverError::Disconnected(failure.message),
+    }
 }
 
 fn unavailable(message: &str) -> DriverError {

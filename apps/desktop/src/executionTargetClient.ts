@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { AgentUpdate, InstallationSummary, QuotaSnapshotView } from "@dogcodes/protocol";
 
 export type SshAuth = "system" | "password" | "private_key";
 export interface SshConnection {
@@ -50,12 +51,19 @@ export interface TargetStatus {
   identityChanged: boolean;
 }
 /** What was last found on a host. It stays known while nothing is connected to it. */
-export interface HostAgent { providerId: string; version: string | null; status: TargetAgent["status"] }
+export interface HostAgent { installationId: InstallationSummary["installationId"]; providerId: string; executable: string; version: string | null; status: TargetAgent["status"]; diagnostic: string | null }
 export interface TargetEntry { target: ExecutionTarget; status: TargetStatus; agents: HostAgent[] }
 export interface TargetDirectory { path: string; directories: string[] }
 export interface ResolvedHost { host: string; user: string | null; port: number | null }
 
 /** The page takes this as a value so its visual fixture needs no native process. */
+/** An install under way on a machine, or the reason the last one didn't work out. */
+export interface HostAgentInstall {
+  providerId: string;
+  status: "installing" | "failed";
+  message: string | null;
+}
+
 export interface TargetApi {
   list(): Promise<TargetEntry[]>;
   status(targetId: string): Promise<TargetStatus>;
@@ -65,6 +73,14 @@ export interface TargetApi {
   disconnect(targetId: string): Promise<void>;
   /** Looks for agents again on an open connection. */
   rescan(targetId: string): Promise<void>;
+  /** Checked on the machine itself, as is everything else about its agents. */
+  agentUpdate(targetId: string, installationId: string, force: boolean): Promise<AgentUpdate>;
+  /** Answers once started; `agentUpdate` follows it. */
+  upgradeAgent(targetId: string, installationId: string): Promise<AgentUpdate>;
+  /** Answers once started; `agentInstalls` follows it until it is found on the machine. */
+  installAgent(targetId: string, providerId: string): Promise<HostAgentInstall[]>;
+  agentInstalls(targetId: string): Promise<HostAgentInstall[]>;
+  quota(installationId: string, force: boolean): Promise<QuotaSnapshotView[]>;
   /** After the last shell on a host closes: ends the connection unless its projects need it. */
   release(targetId: string): Promise<void>;
   answer(targetId: string, promptId: string, answer: string | null, remember: boolean): Promise<void>;
@@ -84,6 +100,11 @@ export const tauriTargetApi: TargetApi = {
   connect: (targetId, secret) => call<void>({ type: "connect", targetId, secret }),
   disconnect: targetId => call<void>({ type: "disconnect", targetId }),
   rescan: targetId => call<void>({ type: "rescan", targetId }),
+  agentUpdate: (targetId, installationId, force) => call<AgentUpdate>({ type: "agent_update", targetId, installationId, force }),
+  upgradeAgent: (targetId, installationId) => call<AgentUpdate>({ type: "upgrade_agent", targetId, installationId }),
+  installAgent: (targetId, providerId) => call<HostAgentInstall[]>({ type: "install_agent", targetId, providerId }),
+  agentInstalls: targetId => call<HostAgentInstall[]>({ type: "agent_installs", targetId }),
+  quota: (installationId, force) => invoke<QuotaSnapshotView[]>("core_quota_snapshots", { taskId: null, installationId, force }),
   release: targetId => invoke<unknown>("core_terminal_release_target", { targetId }).then(() => {}),
   answer: (targetId, promptId, answer, remember) => call<void>({ type: "answer", targetId, promptId, answer, remember }),
   configHosts: () => call<string[]>({ type: "config_hosts" }),

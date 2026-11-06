@@ -1,8 +1,8 @@
 //! Read context metadata from this session's own local language server.
 use super::SessionProcess;
+use agent_runtime::{Pipe, TargetCommand};
 use driver_api::usage::{SessionUsageSnapshot, token};
 use serde_json::{Value, json};
-use std::io::Read;
 
 /// CLI result.usage is cumulative, while step usage describes a request.
 /// Neither input counter is an authoritative context-window measurement.
@@ -81,31 +81,44 @@ fn context(value: &Value) -> Option<SessionUsageSnapshot> {
 pub(super) async fn read(process: &SessionProcess) -> Option<SessionUsageSnapshot> {
     let id = process.native_id.lock().ok()?.clone()?;
     let path = process.usage_log.as_ref()?.path().join("session.log");
-    let log = tokio::task::spawn_blocking(move || {
-        let mut log = String::new();
-        std::fs::File::open(path)
-            .ok()?
-            .take(512 * 1024)
-            .read_to_string(&mut log)
-            .ok()?;
-        Some(log)
-    })
-    .await
-    .ok()??;
-    let port = port(&log)?;
+    let log = crate::scratch::read_file(&process.target, &path, 512 * 1024).await?;
+    let port = port(&String::from_utf8_lossy(&log))?;
     // Self-signed TLS is accepted only for the owned loopback service. No proxy,
     // redirects, credentials, or model prompt; bounded time and response size.
-    let mut command = tokio::process::Command::new("curl");
-    command
-        .args(["--disable", "--silent", "--fail", "--insecure", "--noproxy", "*", "--max-time", "2", "--max-filesize", "2097152", "--proto", "=https", "-H", "Content-Type: application/json", "--data-binary"])
-        .arg(json!({"cascadeId":id,"generatorMetadataOffset":0,"includeMessages":false}).to_string())
-        .arg(format!("https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/GetCascadeTrajectoryGeneratorMetadata"))
-        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
-    let output = agent_runtime::OwnedChild::spawn(command)
-        .ok()?
-        .wait_with_output(2 * 1024 * 1024)
-        .await
-        .ok()?;
+    let arguments = [
+        "--disable", "--silent", "--fail", "--insecure", "--noproxy", "*", "--max-time", "2",
+        "--max-filesize", "2097152", "--proto", "=https", "-H", "Content-Type: application/json",
+        "--data-binary",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .chain([
+        json!({"cascadeId":id,"generatorMetadataOffset":0,"includeMessages":false}).to_string(),
+        format!("https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/GetCascadeTrajectoryGeneratorMetadata"),
+    ]);
+    let child = if process.target.is_local() {
+        let mut command = tokio::process::Command::new("curl");
+        command
+            .args(arguments)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+        agent_runtime::OwnedChild::spawn(command)
+    } else {
+        // The service listens on the machine `agy` runs on, which has its own curl.
+        let mut command = TargetCommand::new(process.target.clone(), "/bin/sh");
+        command
+            .args([
+                "-c".to_owned(),
+                r#"exec curl "$@""#.to_owned(),
+                "sh".to_owned(),
+            ])
+            .args(arguments)
+            .inherit("PATH")
+            .stdio(Pipe::Null, Pipe::Piped, Pipe::Null);
+        command.spawn()
+    };
+    let output = child.ok()?.wait_with_output(2 * 1024 * 1024).await.ok()?;
     if !output.status.success() || output.stdout.len() > 2 * 1024 * 1024 {
         return None;
     }

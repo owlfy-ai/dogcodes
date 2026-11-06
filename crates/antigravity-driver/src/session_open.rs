@@ -5,6 +5,7 @@ use super::{
     approval_bridge, enter_spawn_slot, run_session, spawn_workspace, stale_scope, uuid_like_id,
     workspace_instruction,
 };
+use crate::scratch::Scratch;
 
 impl AntigravityDriver {
     pub(super) async fn open(
@@ -119,9 +120,8 @@ impl AntigravityDriver {
         let slot = enter_spawn_slot(&self.spawn).await?;
         let (bridge, slot) =
             approval_bridge::Bridge::prepare(&self.executable, &workspace, slot).await?;
-        let usage_log = tempfile::Builder::new()
-            .prefix("dogcodes-agy-usage-")
-            .tempdir()
+        let usage_log = Scratch::create(&self.executable.target, "dogcodes-agy-usage-")
+            .await
             .ok();
         let mut child = spawn_workspace(
             &AntigravityLaunch {
@@ -154,6 +154,8 @@ impl AntigravityDriver {
             admission: tokio::sync::Mutex::new(()),
             usage: std::sync::Mutex::new(None),
             usage_log,
+            target: self.executable.target.clone(),
+            backoff: self.backoff.clone(),
             workspace_instruction: workspace_instruction(&workspace),
             permission_mode: workspace.permission_mode,
             pending_approvals: std::sync::Mutex::new(HashMap::new()),

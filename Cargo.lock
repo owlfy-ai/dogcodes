@@ -8,6 +8,7 @@ version = "0.1.1"
 dependencies = [
  "agent-client-protocol",
  "agent-domain",
+ "agent-management",
  "agent-runtime",
  "async-trait",
  "chrono",
@@ -150,6 +151,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "agent-management"
+version = "0.1.1"
+dependencies = [
+ "agent-domain",
+ "agent-protocol",
+ "agent-registry",
+ "agent-runtime",
+ "chrono",
+ "futures",
+ "hex",
+ "plist",
+ "quick-xml",
+ "reqwest",
+ "semver",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "agent-protocol"
 version = "0.1.1"
 dependencies = [
@@ -184,7 +209,6 @@ dependencies = [
  "proxy-watch",
  "serde",
  "system-configuration",
- "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "winreg 0.55.0",
@@ -1125,6 +1149,7 @@ name = "claude-driver"
 version = "0.1.1"
 dependencies = [
  "agent-domain",
+ "agent-management",
  "agent-runtime",
  "async-trait",
  "chrono",
@@ -1675,6 +1700,7 @@ dependencies = [
  "acp-driver",
  "agent-core",
  "agent-domain",
+ "agent-management",
  "agent-protocol",
  "agent-registry",
  "agent-runtime",
@@ -5258,15 +5284,13 @@ name = "provider-quota"
 version = "0.1.1"
 dependencies = [
  "agent-domain",
+ "agent-management",
+ "agent-runtime",
  "async-trait",
  "chrono",
  "driver-api",
- "futures",
  "reqwest",
- "rusqlite",
  "serde_json",
- "serde_yaml_ng",
- "sha2",
  "tempfile",
  "tokio",
 ]
@@ -7031,6 +7055,7 @@ dependencies = [
  "agent-protocol",
  "agent-runtime",
  "agent-store",
+ "antigravity-driver",
  "async-trait",
  "chrono",
  "driver-api",
@@ -7050,6 +7075,7 @@ dependencies = [
 name = "target-shim"
 version = "0.1.1"
 dependencies = [
+ "agent-management",
  "hex",
  "nix 0.28.0",
  "portable-pty",

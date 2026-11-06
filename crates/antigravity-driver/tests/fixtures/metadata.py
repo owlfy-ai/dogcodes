@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """Private metadata helper; no installed Agent or credential is accessed."""
 import json
 import os

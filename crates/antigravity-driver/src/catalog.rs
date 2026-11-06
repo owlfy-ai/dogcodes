@@ -1,9 +1,10 @@
 //! Metadata queries also retain their original OS scope and shared auth exclusion.
-use super::{Child, DriverError, ENV_ALLOWLIST, PROBE_TIMEOUT, PathBuf, SpawnSlot, Stdio};
+use super::{DriverError, PROBE_TIMEOUT, SpawnSlot, prepare_command};
+use agent_runtime::{Pipe, TargetExecutable};
 use tokio::io::AsyncReadExt;
 
 pub(super) async fn read(
-    executable: PathBuf,
+    executable: TargetExecutable,
     slot: SpawnSlot,
 ) -> Result<Vec<(String, String)>, DriverError> {
     let (_observer, mut cancelled) = tokio::sync::oneshot::channel::<()>();
@@ -12,24 +13,14 @@ pub(super) async fn read(
         if cancelled.try_recv() == Err(tokio::sync::oneshot::error::TryRecvError::Closed) {
             return Err(abandoned());
         }
-        let mut command = agent_runtime::agent_command(executable);
+        let mut command = executable.command();
         command
             .arg("models")
-            .current_dir(std::env::temp_dir())
-            .env_clear()
-            .env("AGY_CLI_NONINTERACTIVE_HEADLESS", "1")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-        agent_runtime::apply_platform_environment(&mut command);
-        for key in ENV_ALLOWLIST {
-            if let Some(value) = agent_runtime::inherited_variable(key) {
-                command.env(key, value);
-            }
-        }
-        agent_runtime::apply_proxy_environment(&mut command);
+            .current_dir(executable.target.temp_directory())
+            .stdio(Pipe::Null, Pipe::Piped, Pipe::Null);
+        prepare_command(&mut command, !executable.target.is_local());
         let fail = || DriverError::Protocol("native model catalog unavailable".into());
-        let mut child = Child::spawn(command).map_err(|_| fail())?;
+        let mut child = command.spawn().map_err(|_| fail())?;
         let result = tokio::select! {
             biased;
             _ = &mut cancelled => Err(abandoned()),

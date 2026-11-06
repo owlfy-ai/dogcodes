@@ -1,8 +1,9 @@
 //! Private, fail-closed `PreToolUse` bridge for native headless Antigravity.
 use super::{
     Arc, DriverError, DriverEvent, ENV_ALLOWLIST, Ordering, PendingQuestion, SessionProcess,
-    SessionRequest, Stdio, Value, json,
+    SessionRequest, Value, json, prepare_print_command, scratch::Scratch,
 };
+use agent_runtime::{Pipe, TargetExecutable};
 use driver_api::{ApprovalOption, ApprovalSemanticRole};
 use std::io::{Read, Write};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
@@ -21,9 +22,11 @@ pub fn run_hook_if_requested() -> bool {
         return false;
     }
     let result=(|| -> Option<Value> {
-        let address: std::net::SocketAddr=std::env::var("DOGCODES_APPROVAL_ADDR").ok()?.parse().ok()?;
+        // Started over a server's relay, which passes arguments and not an environment.
+        let given=|index:usize,name:&str|std::env::args().nth(index).or_else(||std::env::var(name).ok());
+        let address: std::net::SocketAddr=given(2,"DOGCODES_APPROVAL_ADDR")?.parse().ok()?;
         if !address.ip().is_loopback() {return None;}
-        let token=std::env::var("DOGCODES_APPROVAL_TOKEN").ok()?;
+        let token=given(3,"DOGCODES_APPROVAL_TOKEN")?;
         let mut input=Vec::new(); std::io::stdin().take(LIMIT+1).read_to_end(&mut input).ok()?;
         if input.len() as u64>LIMIT {return None;}
         let payload:Value=serde_json::from_slice(&input).ok()?;
@@ -43,7 +46,7 @@ pub fn run_hook_if_requested() -> bool {
 // Cache only a verified private Hook directory. Every session still receives a
 // fresh loopback listener/token; decisions are never cached.
 struct VerifiedHook {
-    directory: Arc<tempfile::TempDir>,
+    directory: Arc<Scratch>,
     key: u64,
     at: std::time::Instant,
     sources: Vec<(std::path::PathBuf, Vec<u8>)>,
@@ -159,7 +162,8 @@ fn verification_key(
 }
 
 pub(super) struct Bridge {
-    directory: Arc<tempfile::TempDir>,
+    local: bool,
+    directory: Arc<Scratch>,
     address: String,
     token: String,
     command: String,
@@ -167,11 +171,11 @@ pub(super) struct Bridge {
 }
 impl Bridge {
     pub async fn prepare(
-        executable: &std::path::Path,
+        executable: &TargetExecutable,
         workspace: &SessionRequest,
         slot: super::SpawnSlot,
     ) -> Result<(Self, super::SpawnSlot), DriverError> {
-        let executable = executable.to_path_buf();
+        let executable = executable.clone();
         let workspace = workspace.clone();
         // Caller cancellation must not release auth exclusion while the native
         // verification helper is still writing the shared credential store.
@@ -185,7 +189,7 @@ impl Bridge {
     }
 
     async fn prepare_owned(
-        executable: &std::path::Path,
+        executable: &TargetExecutable,
         workspace: &SessionRequest,
         mut cancelled: oneshot::Receiver<()>,
     ) -> Result<Self, DriverError> {
@@ -197,17 +201,21 @@ impl Bridge {
         let fail =
             || DriverError::CapabilityUnavailable("桌面审批 Hook 验证失败，未启动工具".into());
         let started = std::time::Instant::now();
+        // What invalidates a verification is on the machine `agy` runs on. Another
+        // machine's files can't be watched from here, so it's verified every time.
+        let local = executable.target.is_local();
         let cached = VERIFIED
             .lock()
             .expect("hook cache")
             .as_ref()
+            .filter(|_| local)
             .and_then(|entry| {
                 (entry.at.elapsed() < VERIFY_TTL
                     && entry.sources.iter().all(|(path, bytes)| {
                         std::fs::metadata(path).is_ok_and(|m| m.len() == bytes.len() as u64)
                             && std::fs::read(path).is_ok_and(|current| current == *bytes)
                     })
-                    && verification_key(executable, workspace, entry.directory.path())
+                    && verification_key(&executable.path, workspace, entry.directory.path())
                         == Some(entry.key))
                 .then(|| entry.directory.clone())
             });
@@ -216,9 +224,8 @@ impl Bridge {
             directory
         } else {
             Arc::new(
-                tempfile::Builder::new()
-                    .prefix("dogcodes-agy-approval-")
-                    .tempdir()
+                Scratch::create(&executable.target, "dogcodes-agy-approval-")
+                    .await
                     .map_err(|_| fail())?,
             )
         };
@@ -229,25 +236,44 @@ impl Bridge {
         let token = uuid::Uuid::new_v4().to_string();
         let exe = std::env::current_exe().map_err(|_| fail())?;
         let quote = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
-        let command = if cfg!(windows) {
+        let command = if !local {
+            // Runs there, and ends up here through the connection: this listener is
+            // on this machine, and nothing on the server listens for anything.
+            let (program, arguments) = executable
+                .target
+                .app_tool_command(
+                    &exe.to_string_lossy(),
+                    &[FLAG.to_owned(), address.clone(), token.clone()],
+                )
+                .map_err(|_| fail())?;
+            std::iter::once(program)
+                .chain(arguments)
+                .map(|part| quote(&part))
+                .collect::<Vec<_>>()
+                .join(" ")
+        } else if cfg!(windows) {
             format!("\"%DOGCODES_APPROVAL_EXE%\" {FLAG}")
         } else {
             format!("{} {FLAG}", quote(&exe.to_string_lossy()))
         };
         if !cache_hit {
-            std::fs::create_dir(directory.path().join(".agents")).map_err(|_| fail())?;
-            std::fs::write(directory.path().join(".agents/hooks.json"),json!({"dogcodes-approvals":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":command,"timeout":615}]}]}}).to_string()).map_err(|_|fail())?;
+            let hooks = json!({"dogcodes-approvals":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":command,"timeout":615}]}]}});
+            directory
+                .write(".agents/hooks.json", hooks.to_string().as_bytes())
+                .await
+                .map_err(|_| fail())?;
         }
         if !cache_hit && !workspace.app_mcps.is_empty() {
             // AGY discovers configuration from the final private workspace root.
             // Keep history and approval hooks together; never rewrite a live cached root.
-            std::fs::write(
-                directory.path().join(".agents/mcp_config.json"),
-                json!({"mcpServers":workspace.app_mcps.iter().map(|mcp| (mcp.name.clone(),mcp.server_config())).collect::<serde_json::Map<String,Value>>()} ).to_string(),
-            )
-            .map_err(|_| fail())?;
+            let servers = json!({"mcpServers":workspace.app_mcps.iter().map(|mcp| (mcp.name.clone(),mcp.server_config())).collect::<serde_json::Map<_,_>>()});
+            directory
+                .write(".agents/mcp_config.json", servers.to_string().as_bytes())
+                .await
+                .map_err(|_| fail())?;
         }
         let bridge = Self {
+            local,
             directory,
             address,
             token,
@@ -264,9 +290,13 @@ impl Bridge {
             );
             return Ok(bridge);
         }
-        *VERIFIED.lock().expect("hook cache") = None;
-        let before_key = verification_key(executable, workspace, bridge.directory.path());
-        let mut cmd = agent_runtime::agent_command(executable);
+        let before_key = if local {
+            *VERIFIED.lock().expect("hook cache") = None;
+            verification_key(&executable.path, workspace, bridge.directory.path())
+        } else {
+            None
+        };
+        let mut cmd = executable.command();
         cmd.current_dir(agent_runtime::external_path(&workspace.working_directory))
             .args(["--add-dir", &workspace.working_directory]);
         for dir in &workspace.additional_directories {
@@ -275,25 +305,14 @@ impl Bridge {
         cmd.arg("--add-dir")
             .arg(bridge.directory.path())
             .args(["--print=/hooks", "--output-format", "stream-json"])
-            .env_clear()
-            .env("AGY_CLI_NONINTERACTIVE_HEADLESS", "1")
-            .kill_on_drop(true)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-        agent_runtime::apply_platform_environment(&mut cmd);
-        for key in ENV_ALLOWLIST {
-            if let Some(value) = agent_runtime::inherited_variable(key) {
-                cmd.env(key, value);
-            }
-        }
+            .stdio(Pipe::Null, Pipe::Piped, Pipe::Null);
         // Match the native session launch, including GUI-only system proxies.
-        agent_runtime::apply_proxy_environment(&mut cmd);
+        prepare_print_command(&mut cmd, !local);
         bridge.environment(&mut cmd);
         if cancelled.try_recv() == Err(oneshot::error::TryRecvError::Closed) {
             return Err(abandoned());
         }
-        let mut child = agent_runtime::OwnedChild::spawn(cmd).map_err(|_| fail())?;
+        let mut child = cmd.spawn().map_err(|_| fail())?;
         let result = tokio::select! {
             biased;
             _ = &mut cancelled => Err(abandoned()),
@@ -356,7 +375,7 @@ impl Bridge {
             Some(sources)
         })();
         if let (Some(key), Some(sources)) = (before_key, sources)
-            && verification_key(executable, workspace, bridge.directory.path()) == Some(key)
+            && verification_key(&executable.path, workspace, bridge.directory.path()) == Some(key)
         {
             *VERIFIED.lock().expect("hook cache") = Some(VerifiedHook {
                 directory: bridge.directory.clone(),
@@ -399,7 +418,11 @@ impl Bridge {
                         })
             })
     }
-    pub fn environment(&self, command: &mut tokio::process::Command) {
+    /// On a server the hook's command says all of this: the token stays off that machine.
+    pub fn environment(&self, command: &mut agent_runtime::TargetCommand) {
+        if !self.local {
+            return;
+        }
         command
             .env("DOGCODES_APPROVAL_ADDR", &self.address)
             .env("DOGCODES_APPROVAL_TOKEN", &self.token);
@@ -410,7 +433,7 @@ impl Bridge {
             );
         }
     }
-    pub fn configure(&self, command: &mut tokio::process::Command) {
+    pub fn configure(&self, command: &mut agent_runtime::TargetCommand) {
         self.environment(command);
         command
             .arg("--add-dir")
@@ -681,6 +704,8 @@ mod tests {
         let (tx, rx) = mpsc::unbounded_channel();
         (
             Arc::new(SessionProcess {
+                target: agent_runtime::local_target(),
+                backoff: crate::Backoff::default(),
                 scope: std::sync::Mutex::new(SessionHandle::scoped("local-handle".into())),
                 turn: std::sync::Mutex::new(Some(uuid::Uuid::new_v4())),
                 started: std::sync::Mutex::new(None),
@@ -741,7 +766,7 @@ mod tests {
             AntigravityDriver::new(
                 "antigravity",
                 &InstallationId::new().to_string(),
-                "unused".into(),
+                "unused",
                 None,
                 SessionResumeCapability::Unknown,
             )
@@ -1052,11 +1077,14 @@ mod tests {
     #[tokio::test]
     async fn hook_directory_lives_until_native_process_finishes() {
         let (p, _events) = process();
-        let directory = tempfile::tempdir().unwrap();
+        let directory = Scratch::create(&agent_runtime::local_target(), "dogcodes-test-")
+            .await
+            .unwrap();
         let path = directory.path().to_owned();
         std::fs::write(path.join("hook"), "fixture").unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let bridge = Bridge {
+            local: true,
             directory: Arc::new(directory),
             address: listener.local_addr().unwrap().to_string(),
             token: "fixture".into(),
@@ -1102,7 +1130,7 @@ mod tests {
             let driver = AntigravityDriver::new(
                 "antigravity",
                 &InstallationId::new().to_string(),
-                "unused".into(),
+                "unused",
                 None,
                 SessionResumeCapability::Unknown,
             )
@@ -1185,7 +1213,12 @@ mod tests {
     #[tokio::test]
     async fn verifies_exact_enabled_all_tool_hook() {
         let b = Bridge {
-            directory: Arc::new(tempfile::tempdir().unwrap()),
+            local: true,
+            directory: Arc::new(
+                Scratch::create(&agent_runtime::local_target(), "dogcodes-test-")
+                    .await
+                    .unwrap(),
+            ),
             address: "unused".into(),
             token: "secret".into(),
             command: "exact-command".into(),

@@ -11,7 +11,7 @@ fn metadata(app: &Path) -> Option<Value> {
     serde_json::from_slice(&std::fs::read(path).ok()?).ok()
 }
 
-pub(super) fn bundle(executable: &Path) -> Option<PathBuf> {
+pub fn bundle(executable: &Path) -> Option<PathBuf> {
     let executable = executable.canonicalize().ok()?;
     let app = executable.ancestors().nth(3)?;
     if app.extension()? != "app" || executable != app.join("Contents/MacOS/kiro-cli") {
@@ -34,7 +34,7 @@ pub(super) fn bundle(executable: &Path) -> Option<PathBuf> {
 
 // The standalone installer owns only its per-user launcher; copies managed by a
 // system package manager must keep using that channel.
-pub(super) fn standalone(executable: &Path) -> bool {
+pub fn standalone(executable: &Path) -> bool {
     if cfg!(windows) {
         executable.file_name().is_some_and(|n| n == "kiro-cli.exe")
     } else {
@@ -81,7 +81,7 @@ fn latest_from_index(index: &Value) -> Result<String, String> {
 
 // The newer standalone CLI (including Windows) exposes a read-only check,
 // rather than the legacy macOS bundle's debug release index.
-pub(super) fn latest_from_check(output: &str) -> Result<String, String> {
+pub fn latest_from_check(output: &str) -> Result<String, String> {
     for line in output.lines().map(str::trim) {
         let latest = if let Some(release) = line.strip_prefix("Update available: ") {
             let (current, latest) = release.split_once('→').ok_or("Kiro 更新检查结果无效")?;
@@ -101,7 +101,7 @@ pub(super) fn latest_from_check(output: &str) -> Result<String, String> {
     Err("Kiro 暂未确认更新状态".into())
 }
 
-pub(super) async fn latest(i: &InstallationSummary) -> Result<String, String> {
+pub async fn latest(i: &InstallationSummary) -> Result<String, String> {
     let executable = Path::new(&i.executable);
     let app = bundle(executable).ok_or("Kiro CLI 安装已变化，请重新检测")?;
     let manifest = metadata(&app).ok_or("无法读取 Kiro CLI 发布信息")?;
@@ -140,12 +140,44 @@ pub(super) async fn latest(i: &InstallationSummary) -> Result<String, String> {
     latest_from_index(&json(&index)?)
 }
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod fixtures {
+    use std::path::{Path, PathBuf};
+
+    pub fn fixture_app(root: &Path) -> PathBuf {
+        let app = root.join("Kiro CLI.app");
+        std::fs::create_dir_all(app.join("Contents/MacOS")).unwrap();
+        std::fs::create_dir_all(app.join("Contents/Resources")).unwrap();
+        let mut info = plist::Dictionary::new();
+        info.insert(
+            "CFBundleIdentifier".into(),
+            plist::Value::String("com.amazon.codewhisperer".into()),
+        );
+        info.insert(
+            "CFBundleExecutable".into(),
+            plist::Value::String("kiro_cli_desktop".into()),
+        );
+        plist::Value::Dictionary(info)
+            .to_file_xml(app.join("Contents/Info.plist"))
+            .unwrap();
+        std::fs::write(
+            app.join("Contents/Resources/manifest.json"),
+            r#"{"managed_by":"dmg","kind":"dmg","variant":"full","default_channel":"stable"}"#,
+        )
+        .unwrap();
+        let executable = app.join("Contents/MacOS/kiro-cli");
+        std::fs::write(&executable, "").unwrap();
+        executable
+    }
+}
+
 #[cfg(test)]
-pub(super) mod tests {
+pub mod tests {
+    use super::fixtures::fixture_app;
     use super::*;
     #[cfg(unix)]
-    use crate::agent_updates::wait_for_updated_version as wait_for_version;
-    use crate::agent_updates::{Plan, inspect, install_spec, plan, tests::installation_for};
+    use crate::updates::wait_for_updated_version as wait_for_version;
+    use crate::updates::{Plan, inspect, install_spec, plan, tests::installation_for};
     use serde_json::json;
 
     #[test]
@@ -171,32 +203,6 @@ pub(super) mod tests {
             let error = latest_from_check(output).unwrap_err();
             assert!(!error.contains(output));
         }
-    }
-
-    pub(crate) fn fixture_app(root: &Path) -> PathBuf {
-        let app = root.join("Kiro CLI.app");
-        std::fs::create_dir_all(app.join("Contents/MacOS")).unwrap();
-        std::fs::create_dir_all(app.join("Contents/Resources")).unwrap();
-        let mut info = plist::Dictionary::new();
-        info.insert(
-            "CFBundleIdentifier".into(),
-            plist::Value::String("com.amazon.codewhisperer".into()),
-        );
-        info.insert(
-            "CFBundleExecutable".into(),
-            plist::Value::String("kiro_cli_desktop".into()),
-        );
-        plist::Value::Dictionary(info)
-            .to_file_xml(app.join("Contents/Info.plist"))
-            .unwrap();
-        std::fs::write(
-            app.join("Contents/Resources/manifest.json"),
-            r#"{"managed_by":"dmg","kind":"dmg","variant":"full","default_channel":"stable"}"#,
-        )
-        .unwrap();
-        let executable = app.join("Contents/MacOS/kiro-cli");
-        std::fs::write(&executable, "").unwrap();
-        executable
     }
 
     fn package() -> Value {

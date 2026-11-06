@@ -25,9 +25,7 @@ import { approvalOperations } from "./approvalOperations";
 import { ContextUsageRing } from "./ContextUsageRing";
 import { CancelRecovery, usePendingCancellations } from "./CancelRecovery";
 import { cancelOperations } from "./cancelOperations";
-import { enabledAgents, orderAgents, useAgentPreferences, moveAgent, type AgentPreferences } from "./agentPreferences";
-import { AgentManagementControls, AGENT_DRAG_TYPE } from "./AgentManagementControls";
-import { AgentLogin, agentAccountIssue, needsAgentLogin } from "./AgentLogin";
+import { enabledAgents, useAgentPreferences, type AgentPreferences } from "./agentPreferences";
 import "./agentManagement.css";
 import { LoadingStatus } from "./LoadingStatus";
 import { revealLocalProject } from "./localProject";
@@ -36,6 +34,7 @@ import { focusComposerInput } from "./composerFocus";
 import { StartupShell } from "./StartupShell";
 import { StartupRecovery } from "./StartupGate";
 import { userFacingError } from "./userFacingError";
+import { QuotaPanel, quotaDiagnostic } from "./QuotaPanel";
 import { AgentQuotaContext, AgentQuotaRing } from "./AgentQuotaRing";
 import { AgentIcon, providerLabel } from "./agentPresentation";
 import { SidebarWindowControls } from "./SidebarWindowControls";
@@ -45,15 +44,14 @@ import { ActivityIcon } from "./ActivityIcon";
 import { useConversationNavigation } from "./useConversationNavigation";
 import { useConversationReview } from "./useConversationReview";
 import type { PendingAgent } from "./AgentPending";
-import { AgentUpdateControl, useAgentUpdates, type AgentUpdateActions } from "./agentUpdates";
+import { useAgentUpdates, type AgentUpdateActions } from "./agentUpdates";
 import { useComposerLabels } from "./useComposerLabels";
 import { traceStartup } from "./startupTiming";
 import { FloatingPopover } from "./FloatingPopover";
-import { AgentWelcome, InstallationLink, supportedAgents } from "./AgentWelcome";
+import { AgentWelcome } from "./AgentWelcome";
 import { SidebarResizeHandle, useSidebarWidth } from "./SidebarResizeHandle";
 import { ReviewResizeHandle, useReviewWidth } from "./ReviewResizeHandle";
 import { AttachmentPreviews, SentAttachments, useAttachments } from "./attachments";
-import { visibleQuotaViews } from "./quotaInstallations";
 import { useModelReadyExecutors } from "./useModelReadyExecutors";
 import { ModelCatalogCache } from "./modelCatalogCache";
 import { useModelCatalog } from "./useModelCatalog";
@@ -100,7 +98,7 @@ const MemoConversationHistory = memo(ConversationHistory);
 import { REVIEW_REPAIR_PROMPT, displayBackendText } from "./backendText";
 import { timelineItemRole } from "./timelinePresentation";
 import { RequestEpoch, changeSelection } from "./requestEpoch";
-import { formatResetTime, formatProviderBalance, formatQuotaPercent, quotaScopeLabel, quotaPlanLabel, quotaNativeResetLabel, nativeResetDisplay, antigravityQuotaForModel, ringQuotaWindow, quotaColor, quotaIsExhausted, quotaIsStale, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
+import { formatResetTime, formatProviderBalance, quotaScopeLabel, quotaPlanLabel, quotaNativeResetLabel, nativeResetDisplay, antigravityQuotaForModel, ringQuotaWindow, quotaColor, quotaIsExhausted, quotaIsStale, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
 import { createQuotaRefresh, type QuotaRefreshProgress } from "./quotaRefresh";
 import { useLoadingVisibility } from "./useLoadingVisibility";
 import { quotaShowsLastReading } from "./quotaFallback";
@@ -410,7 +408,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [quotaViews, setQuotaViews] = useState<QuotaSnapshotView[]>([]);
   const [quotaTaskId, setQuotaTaskId] = useState<TaskId | null>(null);
-  const agentUpdates = useAgentUpdates(client, snapshot?.installations ?? [], setSnapshot);
+  const agentUpdates = useAgentUpdates(client, installationsOnTarget(snapshot?.installations ?? [], null), setSnapshot);
   const [approving, setApproving] = useState<string | null>(null);
   const [approvalError, setApprovalError] = useState<{ taskId: TaskId; approval: PendingApproval; message: string } | null>(null);
   const approvalBusy = useRef(false);
@@ -1480,29 +1478,6 @@ export function ComposerInput({ draft, setDraft }: { draft: string; setDraft: (v
 }
 
 
-export function quotaDiagnostic(code?: string | null, lang?: ResolvedLanguage): string {
-  switch (code) {
-    case "quota_network_error": return t("agentUi.quotaNetworkHint", undefined, lang);
-    case "quota_timeout": return t("agentUi.quotaTimeoutHint", undefined, lang);
-    case "quota_login_required": return t("agentUi.quotaLoginHint", undefined, lang);
-    case "quota_subscription_required": return t("agentUi.quotaSubscriptionHint", undefined, lang);
-    case "quota_access_denied": return t("quota.accessDeniedHint", undefined, lang);
-    case "quota_not_configured": return t("agentUi.quotaConfigurationHint", undefined, lang);
-    case "quota_exhausted": return t("agentUi.quotaExhaustedHint", undefined, lang);
-    case "quota_rate_limited": return t("agentUi.quotaRateHint", undefined, lang);
-    case "opencode_go_not_configured": return t("agentUi.goConfigurationHint", undefined, lang);
-    case "claude_quota_custom_provider": return t("agentUi.claudeCustomHint", undefined, lang);
-    case "claude_quota_login_required": return t("agentUi.claudeLoginHint", undefined, lang);
-    case "claude_quota_transport_unavailable": return t("agentUi.curlMissing", undefined, lang);
-    case "claude_quota_rate_limited": return t("agentUi.claudeRateHint", undefined, lang);
-    case "claude_quota_token_expired": return t("quota.claudeTokenExpiredHint", undefined, lang);
-    case "claude_quota_network_error":
-    case "claude_quota_timeout": return t("agentUi.claudeNetworkHint", undefined, lang);
-    case "claude_quota_invalid_response":
-    case "claude_quota_no_windows": return t("agentUi.claudeInvalidHint", undefined, lang);
-    default: return t("agentUi.quotaEmptyHint", undefined, lang);
-  }
-}
 
 /// Small radial indicator for the selected agent's most restrictive quota
 /// window; hover reveals every window plus context usage and cache hit rate.
@@ -1623,110 +1598,7 @@ export function QuotaRing({ quota, providerId, diagnostic, turnQuotaExhausted = 
   );
 }
 
-/// Overall quota panel: every connected agent with a quota source.
-export function QuotaPanel({
-  views,
-  installations = [],
-  agentUpdates,
-  management = false,
-  onDetect,
-}: {
-  management?: boolean;
-  /** Scans for the given agents again, so ones installed after first launch can be enabled. */
-  onDetect?: (providerIds: string[]) => Promise<void>;
-  views: QuotaSnapshotView[];
-  installations?: Array<Pick<InstallationSummary, "installationId" | "version"> & Partial<Pick<InstallationSummary, "providerId" | "status">>>;
-  agentUpdates?: AgentUpdateActions;
-}) {
-  const { resolvedLanguage: lang } = useI18n();
-  const preferences = useAgentPreferences();
-  const [dragged, setDragged] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const [detecting, setDetecting] = useState(false);
-  const installedViews = management ? installations.filter(item => item.providerId && item.providerId !== "fake").map(item =>
-    views.find(view => view.installationId === item.installationId) ?? { providerId: item.providerId!, installationId: item.installationId, quota: null, diagnostic: null }) : visibleQuotaViews(views, installations);
-  // Only installed agents take part in ordering; known but missing ones are listed compactly below.
-  const uninstalled = management ? supportedAgents.filter(agent => !installedViews.some(view => view.providerId === agent.id)) : [];
-  const visible = orderAgents(installedViews, item => item.providerId, preferences);
-  const providerOrder = visible.map(view => view.providerId);
-  const endDrag = () => { setDragged(null); setDropTarget(null); };
-  const versionFor = (installationId: string) => {
-    const engine = installations.find((installation) => installation.installationId === installationId)?.version;
-    const desktop = agentUpdates?.updates[installationId]?.desktopVersion;
-    const provider = visible.find(view => view.installationId === installationId)?.providerId;
-    if (desktop) return t("agentUi.clientEngine", { client: desktop, engine: engine ?? t("agentUi.unknownVersion", undefined, lang) }, lang);
-    return provider === "codex" || provider === "zcode" ? t("agentUi.engine", { version: engine ?? t("agentUi.unknownVersion", undefined, lang) }, lang) : engine ?? t("agentUi.unknownVersion", undefined, lang);
-  };
-  const cards = <div className="quota-panel agent-management-grid">
-    {visible.map(view => {
-      const quota = view.quota;
-      const installed = installations.some(item => item.installationId === view.installationId);
-      const installation = installations.find(item => item.installationId === view.installationId);
-      const loginAgent = supportedAgents.find(agent => agent.id === view.providerId);
-      const accountIssue = agentAccountIssue(installation, view, lang);
-      const loginRequired = management && loginAgent && needsAgentLogin(installation, view);
-      const enabled = !preferences.disabled.includes(view.providerId);
-      return <section className="agent-management-card" key={view.installationId} aria-label={providerLabel(view.providerId, lang)}
-        data-disabled={management && !enabled || undefined} data-dragging={dragged === view.providerId || undefined} data-drop-target={dropTarget === view.providerId || undefined}
-        onDragOver={management ? event => { if (!dragged || dragged === view.providerId || !event.dataTransfer.types.includes(AGENT_DRAG_TYPE)) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTarget(view.providerId); } : undefined}
-        onDrop={management ? event => { if (!dragged || event.dataTransfer.getData(AGENT_DRAG_TYPE) !== dragged) return; event.preventDefault(); moveAgent(dragged, view.providerId, providerOrder); endDrag(); } : undefined}>
-        {management && <AgentManagementControls providerId={view.providerId} enabled={enabled} order={providerOrder}
-          onDragStart={event => { event.dataTransfer.setData(AGENT_DRAG_TYPE, view.providerId); event.dataTransfer.effectAllowed = "move"; setDragged(view.providerId); }} onDragEnd={endDrag} />}
-        <header className="agent-card-heading">
-          <AgentIcon providerId={view.providerId} />
-          <div className="agent-card-identity"><h3>{providerLabel(view.providerId, lang)}</h3>
-            {loginRequired ? <span className="agent-card-login-status">{accountIssue!.label}<AgentLogin installationId={view.installationId} name={loginAgent.name} /></span>
-              : <span>{accountIssue?.label ?? (quota ? quotaPlanLabel(quota, lang) || (quota.balances?.length ? t("agentUi.providerBalance", undefined, lang) : t("agentUi.subscriptionQuota", undefined, lang)) : t("agentUi.quotaUnavailable", undefined, lang))}</span>}
-          </div>
-          {quota && <time className="agent-card-updated" dateTime={new Date(quota.collectedAtUnixMs).toISOString()} data-tooltip={new Date(quota.collectedAtUnixMs).toLocaleString(lang)}>{t("agentUi.updatedAt", { time: new Date(quota.collectedAtUnixMs).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" }) }, lang)}</time>}
-        </header>
-        <div className="agent-card-content">
-          {quota ? <>
-            {!!quota.balances?.length && <div className="agent-provider-balances" aria-label={t("agentUi.providerBalance", undefined, lang)}>
-              {quota.balances.map(balance => <div className="agent-quota-label" key={`${balance.label}:${balance.currency}`}><span>{balance.label}</span><strong>{formatProviderBalance(balance.amount, balance.currency, lang)}</strong></div>)}
-            </div>}
-            {quota.windows.length > 0 && <div className="agent-quota-caption">{t("agentUi.remainingQuota", undefined, lang)}</div>}
-            <div className="agent-quota-windows">
-              {quota.windows.map(window => {
-                const reset = quotaWindowHasReset(window);
-                const remaining = reset ? null : remainingPercent(window.usedPercent);
-                const label = `${quotaScopeLabel(window.scope) ? `${quotaScopeLabel(window.scope)} · ` : ""}${quotaWindowLabel(window.windowMinutes, window.id, lang)}`;
-                const resetLabel = window.resetsAtUnix ? t("agentUi.resetAt", { time: formatResetTime(window.resetsAtUnix, Date.now(), lang) }, lang) : quotaNativeResetLabel(quota, window, lang);
-                return <div className="agent-quota-window" key={window.id}>
-                  <div className="agent-quota-label"><span>{label}</span><strong style={remaining === 0 ? { color: quotaColor(0) } : undefined}>{reset ? t("agentUi.refreshPending", undefined, lang) : remaining == null ? t("agentUi.unknown", undefined, lang) : formatQuotaPercent(remaining, lang)}</strong></div>
-                  <div className="agent-quota-meter" role={remaining == null ? undefined : "progressbar"} aria-label={`${label}${lang.startsWith("zh") ? "" : " "}${t("agentUi.remainingQuota", undefined, lang)}`} aria-valuemin={remaining == null ? undefined : 0} aria-valuemax={remaining == null ? undefined : 100} aria-valuenow={remaining ?? undefined} data-unknown={remaining == null || undefined}>
-                    {remaining != null && <i style={{ width: `${remaining}%`, background: quotaColor(remaining) }} />}
-                  </div>
-                  <small className="agent-quota-reset">{reset ? t("agentUi.resetPending", undefined, lang) : remaining == null ? t("agentUi.usageUnknown", undefined, lang) : remaining === 0 ? t("agentUi.usedUp", undefined, lang) : ""}{!reset && resetLabel && <span>{resetLabel}</span>}</small>
-                </div>;
-              })}
-            </div>
-            {((!quota.windows.length && !quota.balances?.length) || quotaShowsLastReading(view.diagnostic)) && <p className="agent-quota-notice" data-outdated={quota.windows.length > 0 || undefined}>{quotaDiagnostic(view.diagnostic, lang)}{quota.windows.length > 0 && t("agentUi.previousReading", undefined, lang)}</p>}
-            {quota.context && <div className="agent-context"><span>{t("agentUi.sessionContext", undefined, lang)}</span><b>{quota.context.usedTokens.toLocaleString(lang)} / {quota.context.windowTokens.toLocaleString(lang)}</b>{quota.context.cacheHitRatePercent != null && <small>{t("agentUi.cacheHit", { percent: new Intl.NumberFormat(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(quota.context.cacheHitRatePercent) }, lang)}</small>}</div>}
-          </> : <p className="agent-quota-notice">{quotaDiagnostic(view.diagnostic, lang)}</p>}
-        </div>
-        {installed && <footer className="agent-card-footer">
-          <div className="agent-card-version" data-tooltip={versionFor(view.installationId)} data-tooltip-overflow="">{versionFor(view.installationId)}</div>
-          <AgentUpdateControl id={view.installationId} actions={agentUpdates} />
-        </footer>}
-      </section>;
-    })}
-  </div>;
-  if (!uninstalled.length) return cards;
-  return <>{cards}
-    <section className="agent-uninstalled" aria-labelledby="agent-uninstalled-title">
-      <header><h3 id="agent-uninstalled-title">{t("agentUi.notInstalled", undefined, lang)}</h3><span>{t("agentUi.installRescanHint", undefined, lang)}</span>
-        {onDetect && <button className="agent-detect-button" type="button" disabled={detecting} aria-busy={detecting}
-          onClick={() => { setDetecting(true); void onDetect(uninstalled.map(agent => agent.id)).finally(() => setDetecting(false)); }}>
-          {detecting && <span className="task-running-spinner" aria-hidden="true" />}{detecting ? t("agentUi.rescanning", undefined, lang) : t("agentUi.rescan", undefined, lang)}
-        </button>}
-      </header>
-      <ul>{uninstalled.map(agent => <li key={agent.id} aria-label={agent.name}>
-        <AgentIcon providerId={agent.id} /><span className="agent-uninstalled-name">{agent.name}</span>
-        <InstallationLink url={agent.installUrl} name={agent.name} className="agent-install-link" errorClassName="agent-install-error" />
-      </li>)}</ul>
-    </section></>;
-}
+export { QuotaPanel, quotaDiagnostic };
 
 export function QuotaCenter({
   views,

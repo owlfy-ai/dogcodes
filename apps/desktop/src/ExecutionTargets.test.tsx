@@ -10,8 +10,8 @@ import { connectionFromForm, joinDirectory, parentDirectory, stepStates, targetR
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: vi.fn(() => false) }));
 
 vi.mock("./TerminalDock", () => ({
-  TerminalPane: ({ operationId, onStatus, visible }: { operationId: string; onStatus?: (status: string, epoch: string) => void; visible: boolean }) =>
-    <div data-testid="shell" data-operation={operationId} data-visible={visible}><button onClick={() => onStatus?.("running", "e1")}>shell started</button><button onClick={() => onStatus?.("unknown", "e1")}>shell lost</button></div>,
+  TerminalPane: ({ operationId, onStatus, visible, initialCommand }: { operationId: string; onStatus?: (status: string, epoch: string) => void; visible: boolean; initialCommand?: string }) =>
+    <div data-testid="shell" data-operation={operationId} data-visible={visible} data-command={initialCommand}><button onClick={() => onStatus?.("running", "e1")}>shell started</button><button onClick={() => onStatus?.("unknown", "e1")}>shell lost</button></div>,
 }));
 
 const idle: TargetStatus = { scanning: false, agents: [], phase: "idle", step: null, log: [], prompt: null, info: null, error: null, closedReason: null, identityChanged: false };
@@ -26,6 +26,11 @@ function fakeApi(status: TargetStatus, overrides: Partial<TargetApi> = {}): Targ
     connect: vi.fn(async () => {}),
     disconnect: vi.fn(async () => {}),
     rescan: vi.fn(async () => {}),
+    agentUpdate: vi.fn(async (_, installationId) => ({ installationId, status: "up_to_date" as const, currentVersion: "1", latestVersion: "1", source: "", message: null, canUpgrade: false, checkedAt: 1 })),
+    upgradeAgent: vi.fn(async (_, installationId) => ({ installationId, status: "upgrading" as const, currentVersion: "1", latestVersion: "2", source: "", message: null, canUpgrade: false, checkedAt: 1 })),
+    installAgent: vi.fn(async () => []),
+    agentInstalls: vi.fn(async () => []),
+    quota: vi.fn(async () => []),
     release: vi.fn(async () => {}),
     answer: vi.fn(async () => {}),
     configHosts: vi.fn(async () => []),
@@ -182,6 +187,22 @@ describe("connection progress", () => {
     expect(api.answer).toHaveBeenCalledWith("tgt_one", "p1", "yes", false);
   });
 
+  it("asks for a password or passphrase in the interface's language, and a server's own question as it is", async () => {
+    const label = async (prompt: { id: string; kind: "password" | "passphrase" | "other"; text: string }) => {
+      await renderDialog(fakeApi({ ...idle, phase: "connecting", prompt }), true);
+      return document.querySelector(".target-prompt label")!.textContent;
+    };
+    expect(await label({ id: "a", kind: "password", text: "dev@box's password:" })).toBe("Enter the password");
+    expect(await label({ id: "b", kind: "passphrase", text: "Enter passphrase for key '/home/me/.ssh/id':" })).toBe("Enter the passphrase for /home/me/.ssh/id");
+    expect(await label({ id: "c", kind: "other", text: "Verification code:" })).toBe("Verification code:");
+  });
+
+  it("keeps a closed connection's reason out of the message and in the log", async () => {
+    await renderDialog(fakeApi({ ...idle, phase: "disconnected", closedReason: "connection closed", log: ["started"] }), true);
+    expect(document.querySelector('[role="alert"]')!.textContent).toBe("The connection was lost.");
+    expect(document.querySelector(".target-log pre")!.textContent).toBe("started\nconnection closed");
+  });
+
   it("cancels a question with no answer rather than an empty one", async () => {
     const api = fakeApi({ ...idle, phase: "connecting", prompt: { id: "p2", kind: "password", text: "password:" } });
     await renderDialog(api, true);
@@ -259,7 +280,7 @@ describe("remote projects", () => {
     vi.mocked(api.status).mockResolvedValue({ ...idle, phase: "connecting", prompt: { id: "p", kind: "password", text: "Password for build" } });
     await flush();
     await flush();
-    expect(document.body.textContent).toContain("Password for build");
+    expect(document.body.textContent).toContain("Enter the password");
   });
 
   it("states a failure in the banner, with no dialog, and doesn't retry what it can't fix", async () => {
@@ -383,7 +404,7 @@ describe("remote projects", () => {
     vi.mocked(api.status).mockResolvedValue({ ...idle, phase: "connecting", prompt: { id: "p", kind: "password", text: "Password for build" } });
     await act(async () => { button("Reconnect")!.click(); });
     await flush();
-    expect(document.body.textContent).toContain("Password for build");
+    expect(document.body.textContent).toContain("Enter the password");
     expect(button("Reconnecting…")!.disabled).toBe(true);
   });
 
@@ -523,7 +544,7 @@ describe("connections page", () => {
   it("offers its actions as named icons, ending with connect", async () => {
     await page(withHost(connected), undefined, { onProjectReady: () => {} });
     const actions = [...card().querySelectorAll(".target-row-actions button")];
-    expect(actions.map(item => item.getAttribute("aria-label"))).toEqual(["Open a project", "Edit", "Remove", "Connect", "Check for agents again"]);
+    expect(actions.map(item => item.getAttribute("aria-label"))).toEqual(["Open a project", "Edit", "Remove", "Connect", "Check for agents again", "Manage agents"]);
     expect(actions.every(item => item.querySelector("svg") && !item.textContent)).toBe(true);
     expect(button("Disconnect")).toBeUndefined();
   });
@@ -534,8 +555,8 @@ describe("connections page", () => {
 
     it("shows what was found even with nothing connected, the ones not ready dimmed", async () => {
       const api = fakeApi(idle, { list: vi.fn(async () => [{ ...entry, agents: [
-        { providerId: "kimi", version: "2", status: "ready" as const },
-        { providerId: "codex", version: "1", status: "not_configured" as const },
+        { installationId: "ins_kimi" as const, providerId: "kimi", executable: "/k", version: "2", status: "ready" as const, diagnostic: null },
+        { installationId: "ins_codex" as const, providerId: "codex", executable: "/usr/bin/codex", version: "1", status: "not_configured" as const, diagnostic: null },
       ] }]) });
       await page(api);
       const icons = [...card().querySelectorAll(".target-card-agents li")];
@@ -574,10 +595,116 @@ describe("connections page", () => {
     });
 
     it("hides the refresh while a scan runs, keeping the icons", async () => {
-      const api = fakeApi(idle, { list: vi.fn(async () => [{ ...entry, status: { ...connected, scanning: true }, agents: [{ providerId: "kimi", version: "2", status: "ready" as const }] }]) });
+      const api = fakeApi(idle, { list: vi.fn(async () => [{ ...entry, status: { ...connected, scanning: true }, agents: [{ installationId: "ins_kimi" as const, providerId: "kimi", executable: "/k", version: "2", status: "ready" as const, diagnostic: null }] }]) });
       await page(api);
       expect(refresh()).toBeNull();
       expect(card().querySelectorAll(".target-card-agents li").length).toBe(1);
+    });
+
+    describe("details page", () => {
+      const manage = () => card().querySelector<HTMLButtonElement>('[aria-label="Manage agents"]')!;
+      const withAgents = (status: TargetStatus, overrides: Partial<TargetApi> = {}) => fakeApi(status, { list: vi.fn(async () => [{ ...entry, status, agents: [
+        { installationId: "ins_kimi" as const, providerId: "kimi", executable: "/k/kimi", version: "2", status: "ready" as const, diagnostic: null },
+        { installationId: "ins_codex" as const, providerId: "codex", executable: "/opt/my tools/codex", version: "1", status: "not_configured" as const, diagnostic: null },
+      ] }]), ...overrides });
+      const section = (name: string) => container.querySelector<HTMLElement>(`[aria-label="${name}"]`)!;
+
+      it("opens in its own tab, asking the server for balances and versions", async () => {
+        const api = withAgents(connected);
+        await page(api);
+        await act(async () => { manage().click(); });
+        await flush();
+        expect(tabs()).toEqual(["Remote hosts", "Build · Agents"]);
+        expect(api.quota).toHaveBeenCalledWith("ins_kimi", false);
+        expect(api.agentUpdate).toHaveBeenCalledWith("tgt_one", "ins_kimi", false);
+        expect(section("Kimi")).not.toBeNull();
+      });
+
+      const installButton = (name: string) => container.querySelector<HTMLButtonElement>(`.agent-uninstalled li[aria-label="${name}"] button`)!;
+
+      it("offers every agent a server can run, and installs it there without a shell or a website", async () => {
+        const installing = { providerId: "grok", status: "installing" as const, message: null };
+        let underWay: typeof installing[] = [];
+        const api = withAgents(connected, { agentInstalls: vi.fn(async () => underWay), installAgent: vi.fn(async () => (underWay = [installing])) });
+        await page(api);
+        await act(async () => { manage().click(); });
+        await flush();
+        const missing = [...container.querySelectorAll(".agent-uninstalled li")].map(item => item.getAttribute("aria-label"));
+        expect(missing).toEqual(expect.arrayContaining(["Antigravity", "Claude Code", "Grok Build", "Kiro"]));
+        expect(missing).not.toContain("ZCode");
+        expect(container.querySelector(".agent-uninstalled a")).toBeNull();
+        await act(async () => { installButton("Grok Build").click(); });
+        await flush();
+        expect(api.installAgent).toHaveBeenCalledWith("tgt_one", "grok");
+        expect(tabs()).toEqual(["Remote hosts", "Build · Agents"]);
+        expect(installButton("Grok Build").disabled).toBe(true);
+        expect(installButton("Grok Build").textContent).toContain("Installing");
+        expect(installButton("Kiro").disabled).toBe(false);
+      });
+
+      it("shows why an install failed in the interface's language", async () => {
+        const api = withAgents(connected, { agentInstalls: vi.fn(async () => [
+          { providerId: "kiro", status: "failed" as const, message: "需要先在这台主机上安装 unzip" },
+          { providerId: "grok", status: "failed" as const, message: "某个没有翻译的后端错误" },
+        ]) });
+        await page(api);
+        await act(async () => { manage().click(); });
+        await flush();
+        const reason = (name: string) => container.querySelector(`.agent-uninstalled li[aria-label="${name}"] [role="alert"]`)!.textContent;
+        expect(reason("Kiro")).toBe("Install unzip on this server first.");
+        expect(reason("Grok Build")).not.toMatch(/\p{Script=Han}/u);
+      });
+
+      it("picks up an install already running and says why one failed, offering another try", async () => {
+        const api = withAgents(connected, { agentInstalls: vi.fn(async () => [
+          { providerId: "grok", status: "installing" as const, message: null },
+          { providerId: "kiro", status: "failed" as const, message: "unzip is missing" },
+        ]) });
+        await page(api);
+        await act(async () => { manage().click(); });
+        await flush();
+        expect(installButton("Grok Build").disabled).toBe(true);
+        const failed = container.querySelector('.agent-uninstalled li[aria-label="Kiro"]')!;
+        expect(failed.querySelector('[role="alert"]')!.textContent).toBe("unzip is missing");
+        expect(installButton("Kiro").textContent).toContain("Try again");
+        await act(async () => { installButton("Kiro").click(); });
+        expect(api.installAgent).toHaveBeenCalledWith("tgt_one", "kiro");
+      });
+
+      it("types the sign-in into a new shell on the server, quoting its path", async () => {
+        await page(withAgents(connected));
+        await act(async () => { manage().click(); });
+        await flush();
+        await act(async () => { section("Codex").querySelector<HTMLButtonElement>(".agent-login-button")!.click(); });
+        expect(container.querySelector('[data-testid="shell"]')!.getAttribute("data-command")).toBe("'/opt/my tools/codex' login");
+      });
+
+      it("hides the settings shared with this machine's agents", async () => {
+        await page(withAgents(connected));
+        await act(async () => { manage().click(); });
+        await flush();
+        expect(section("Kimi").querySelector(".agent-management-controls")).toBeNull();
+      });
+
+      it("upgrades on the server and follows it there", async () => {
+        const api = withAgents(connected, { agentUpdate: vi.fn(async (_, installationId) => ({ installationId, status: installationId === "ins_kimi" ? "available" as const : "up_to_date" as const, currentVersion: "2", latestVersion: "3", source: "npm", message: null, canUpgrade: installationId === "ins_kimi", checkedAt: 1 })) });
+        await page(api);
+        await act(async () => { manage().click(); });
+        await flush();
+        await act(async () => { section("Kimi").querySelector<HTMLButtonElement>(".agent-update-action")!.click(); });
+        expect(api.upgradeAgent).toHaveBeenCalledWith("tgt_one", "ins_kimi");
+      });
+
+      it("lets go of the connection once closed, unless a shell uses it", async () => {
+        const api = withAgents(connected);
+        await page(api);
+        await act(async () => { manage().click(); });
+        await flush();
+        await act(async () => { container.querySelector<HTMLButtonElement>(".tab-bar-close")!.click(); });
+        await flush();
+        expect(tabs()).toEqual(["Remote hosts"]);
+        expect(api.release).toHaveBeenCalledWith("tgt_one");
+      });
     });
 
     it("doesn't open a shell from a double click on refresh", async () => {

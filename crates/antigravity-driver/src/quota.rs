@@ -1,8 +1,9 @@
 //! Read-only native /usage command; never submitted as a model prompt.
 use super::{
-    AntigravityDriver, Classified, DriverError, ENV_ALLOWLIST, ExecutorRef, FRAME_LIMIT, Stdio,
-    Value, async_trait, auth_backoff_kind, classify, is_transport_error, record_auth_failure,
+    AntigravityDriver, Classified, DriverError, ExecutorRef, FRAME_LIMIT, Value, async_trait,
+    auth_backoff_kind, classify, is_transport_error, prepare_print_command, record_auth_failure,
 };
+use agent_runtime::{Pipe, TargetCommand};
 use driver_api::{QuotaProvider, QuotaSnapshot, QuotaWindow};
 use tokio::io::AsyncReadExt;
 
@@ -108,7 +109,7 @@ impl QuotaProvider for AntigravityDriver {
     ) -> Result<QuotaSnapshot, DriverError> {
         let mut cache = self.quota_cache.lock().await;
         // A failure from a live turn overrides even a still-fresh account reading.
-        if let Some(kind) = auth_backoff_kind().await {
+        if let Some(kind) = auth_backoff_kind(&self.backoff).await {
             return resolve_quota(
                 &mut cache,
                 Err(DriverError::NotConfigured(kind.into())),
@@ -123,31 +124,18 @@ impl QuotaProvider for AntigravityDriver {
             return Ok(snapshot.clone());
         }
         let result = tokio::time::timeout(QUOTA_TIMEOUT, async {
-            if let Some(kind) = auth_backoff_kind().await {
+            if let Some(kind) = auth_backoff_kind(&self.backoff).await {
                 return Err(DriverError::NotConfigured(kind.into()));
             }
             // Never race native credential refresh with an active session.
             let slot = self.spawn.clone().try_lock_owned().map_err(|_| {
                 DriverError::Disconnected("agy session is active; quota refresh deferred".into())
             })?;
-            let mut command = agent_runtime::agent_command(&self.executable);
+            let mut command = self.executable.command();
             command
                 .args(["--print=/usage", "--output-format", "stream-json"])
-                .env_clear()
-                // Silent auth can time out with valid credentials. Report
-                // failure instead of letting print mode launch OAuth.
-                .env("AGY_CLI_NONINTERACTIVE_HEADLESS", "1")
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .kill_on_drop(true);
-            agent_runtime::apply_platform_environment(&mut command);
-            for variable in ENV_ALLOWLIST {
-                if let Some(value) = agent_runtime::inherited_variable(variable) {
-                    command.env(variable, value);
-                }
-            }
-            agent_runtime::apply_proxy_environment(&mut command);
+                .stdio(Pipe::Null, Pipe::Piped, Pipe::Null);
+            prepare_print_command(&mut command, !self.executable.target.is_local());
             let (bytes, status) = query(command, super::SpawnSlot { _guard: slot }).await?;
             let mut windows = None;
             let mut success = false;
@@ -168,7 +156,7 @@ impl QuotaProvider for AntigravityDriver {
                 if let Some(Classified::AuthFailure(kind, _)) =
                     classify(&String::from_utf8_lossy(line))
                 {
-                    record_auth_failure(kind).await;
+                    record_auth_failure(&self.backoff, kind).await;
                     return Err(DriverError::NotConfigured(kind.into()));
                 }
                 if let Some(parsed) = parse_usage(&value) {
@@ -210,7 +198,7 @@ impl QuotaProvider for AntigravityDriver {
 // The UI observer may time out or disappear. The owned worker keeps the
 // original helper and its shared auth slot through positive OS retirement.
 async fn query(
-    command: tokio::process::Command,
+    command: TargetCommand,
     slot: super::SpawnSlot,
 ) -> Result<(Vec<u8>, std::process::ExitStatus), DriverError> {
     let (_observer, mut cancelled) = tokio::sync::oneshot::channel::<()>();
@@ -219,7 +207,8 @@ async fn query(
         if cancelled.try_recv() == Err(tokio::sync::oneshot::error::TryRecvError::Closed) {
             return Err(abandoned());
         }
-        let mut child = agent_runtime::OwnedChild::spawn(command)
+        let mut child = command
+            .spawn()
             .map_err(|_| DriverError::Disconnected("agy quota spawn failed".into()))?;
         let result = tokio::select! {
             biased;
@@ -275,9 +264,13 @@ mod tests {
         std::fs::write(
             &executable,
             r#"#!/bin/sh
+# As the real one looks it up, before anything here needs to run something.
+command -v open >/dev/null 2>&1 || command -v xdg-open >/dev/null 2>&1
+can_open=$?
+PATH="$PATH:/usr/bin:/bin"
 root=$(dirname "$0")
 if [ ! -f "$root/recovered" ]; then
-    if [ "$AGY_CLI_NONINTERACTIVE_HEADLESS" != 1 ]; then
+    if [ "$can_open" = 0 ]; then
         touch "$root/browser-opened"
     fi
     printf '%s\n' '{"event":"result","result":{"status":"ERROR","error":"authentication required: TLS handshake timeout"}}'
@@ -326,12 +319,10 @@ printf '%s\n' '{"event":"result","result":{"status":"SUCCESS"}}'
         let slot = crate::SpawnSlot {
             _guard: lock.clone().lock_owned().await,
         };
-        let mut command = agent_runtime::agent_command(executable);
+        let mut command = TargetCommand::new(agent_runtime::local_target(), executable);
         command
             .arg("--print=/usage")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stdio(Pipe::Null, Pipe::Piped, Pipe::Null);
         let work = tokio::spawn(async move { query(command, slot).await });
         crate::metadata_tests::cancelled(root.path(), work, lock).await;
     }
@@ -392,7 +383,7 @@ printf '%s\n' '{"event":"result","result":{"status":"SUCCESS"}}'
         let mut driver = AntigravityDriver::new(
             "antigravity",
             "ins_01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            "/nonexistent/agy".into(),
+            "/nonexistent/agy",
             None,
             SessionResumeCapability::Supported,
         )
@@ -432,7 +423,7 @@ printf '%s\n' '{"event":"result","result":{"status":"SUCCESS"}}'
         let driver = AntigravityDriver::new(
             "antigravity",
             "ins_01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            executable.into(),
+            std::path::PathBuf::from(executable),
             None,
             SessionResumeCapability::Supported,
         )

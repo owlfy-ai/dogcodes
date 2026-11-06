@@ -30,7 +30,7 @@ fn driver(name: &str, id: &str) -> Result<Arc<dyn AgentDriver>, Box<dyn std::err
         "antigravity" => Arc::new(antigravity_driver::AntigravityDriver::new(
             name,
             id,
-            format!("{home}/.local/bin/agy").into(),
+            format!("{home}/.local/bin/agy"),
             None,
             supported,
         )?),

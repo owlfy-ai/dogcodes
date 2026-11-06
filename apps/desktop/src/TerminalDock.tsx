@@ -15,8 +15,10 @@ import "@xterm/xterm/css/xterm.css";
 import "./terminal.css";
 import { useI18n } from "./i18n";
 
-export function TerminalPane({ projectId, directoryIndex, visible, api, resourceId, operationId, onResource, onStatus }: {
+export function TerminalPane({ projectId, directoryIndex, visible, api, resourceId, operationId, onResource, onStatus, initialCommand }: {
   projectId: string; directoryIndex: number; visible: boolean; api: TerminalApi; resourceId?: string; operationId?: string; onResource?: (id: string) => void; onStatus?: (status: TerminalStatus, epoch: string) => void;
+  /** Typed into the shell once it's there, for something the person just asked to run in it. */
+  initialCommand?: string;
 }) {
   const { t } = useI18n();
   const host = useRef<HTMLDivElement>(null);
@@ -32,6 +34,7 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
   const launch = useRef({ id: operationId ?? crypto.randomUUID(), cols: 0, rows: 0 });
   const knownResource = useRef(resourceId);
   const [retry, setRetry] = useState(false);
+  const commandTyped = useRef(false);
   const [failure, setFailure] = useState(0);
   const reconnect = useRef({ retry: false, delay: 1000 });
   reconnect.current.retry = retry;
@@ -154,7 +157,11 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
       connection = attached;
       if (disposed) { attached.detach(); return; }
       id = attached.id; knownResource.current = id; resourceListener.current?.(id); setStarting(false);
-      if (!exited) { reconnect.current.delay = 1000; inputQueue.ready(id); }
+      if (!exited) {
+        reconnect.current.delay = 1000; inputQueue.ready(id);
+        // Once per shell, however many times this view reattaches to it.
+        if (initialCommand && !commandTyped.current) { commandTyped.current = true; inputQueue.push(new TextEncoder().encode(`${initialCommand}\n`)); }
+      }
       fit();
       if (isVisible.current && element.clientWidth) terminal.focus();
     }).catch(error => { if (!disposed) { inputQueue.suspend(); setStarting(false); setRetry(true); setFailure(n => n + 1); setStatus(userFacingError(error, t("terminalDock.connectFailed"))); } });

@@ -48,13 +48,13 @@ fn package(app: &Path) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
-pub(super) fn version(app: &Path) -> Option<String> {
+pub fn version(app: &Path) -> Option<String> {
     semver::Version::parse(package(app)?["version"].as_str()?)
         .ok()
         .map(|v| v.to_string())
 }
 
-pub(super) fn opencode_app(executable: &Path) -> Option<PathBuf> {
+pub fn opencode_app(executable: &Path) -> Option<PathBuf> {
     if executable
         .file_name()
         .is_some_and(|n| n == "opencode-cli.exe")
@@ -91,7 +91,7 @@ pub(super) fn opencode_app(executable: &Path) -> Option<PathBuf> {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
     {
         vec![
-            crate::terminal_installation::user_data_dir(home, "LOCALAPPDATA", "AppData/Local")
+            crate::user_data_dir(home, "LOCALAPPDATA", "AppData/Local")
                 .join("Programs/ai.opencode.desktop"),
         ]
     } else {
@@ -108,7 +108,7 @@ pub(super) fn opencode_app(executable: &Path) -> Option<PathBuf> {
     )
 }
 
-pub(super) fn official_opencode_feed(app: &Path) -> bool {
+pub fn official_opencode_feed(app: &Path) -> bool {
     if !package(app).is_some_and(|p| p["name"] == "@opencode/desktop") {
         return false;
     }
@@ -127,7 +127,7 @@ pub(super) fn official_opencode_feed(app: &Path) -> bool {
     })
 }
 
-pub(super) fn check_opencode(mut out: AgentUpdate, body: &str) -> Result<AgentUpdate, String> {
+pub fn check_opencode(mut out: AgentUpdate, body: &str) -> Result<AgentUpdate, String> {
     let latest = body
         .lines()
         .find_map(|line| line.strip_prefix("version:"))
@@ -156,9 +156,7 @@ pub(super) fn check_opencode(mut out: AgentUpdate, body: &str) -> Result<AgentUp
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_updates::{
-        Plan, base, desktop_update_available, plan, tests::installation_for,
-    };
+    use crate::updates::{Plan, base, desktop_update_available, plan, tests::installation_for};
 
     fn fixture(app: &Path, v: &str) {
         let resources = resources(app);

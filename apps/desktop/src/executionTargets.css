@@ -102,3 +102,5 @@
 .target-offline button { padding: 4px 9px; border: 1px solid #c79a3b88; border-radius: 6px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
 .project-target-badge { margin-right: 4px; padding: 0 4px; border: 1px solid currentColor; border-radius: 4px; font-size: .625rem; font-weight: 550; }
 .target-proxy { display: grid; grid-template-columns: 110px minmax(0, 1fr) 90px; gap: 8px; }
+.target-agents-page { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; }
+.target-agents-page[hidden] { display: none; }

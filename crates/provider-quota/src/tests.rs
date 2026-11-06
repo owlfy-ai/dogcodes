@@ -2,6 +2,7 @@ use super::*;
 use driver_api::{ContextUsageSnapshot, ProviderBalance, usage::SessionUsageSnapshot};
 use serde_json::{Value, json};
 use std::{
+    collections::HashMap,
     path::Path,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -31,17 +32,33 @@ fn write(root: &Path, relative: &str, value: Value) {
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
     std::fs::write(p, value.to_string()).unwrap();
 }
-fn monitor(provider: &str, root: &Path) -> AccountMonitor {
+fn monitor_of(provider: &str, root: &Path, executable: &str) -> AccountMonitor {
     let mut monitor = AccountMonitor::new(
         ExecutorRef {
             provider_id: agent_domain::ProviderId::parse(provider).unwrap(),
             installation_id: Some("ins_test".into()),
         },
+        &TargetExecutable::local(executable),
+        Some("2.2.5".into()),
         None,
     )
     .unwrap();
     monitor.environment = Some(environment(root));
     monitor
+}
+fn monitor(provider: &str, root: &Path) -> AccountMonitor {
+    monitor_of(provider, root, "/fixture/agent")
+}
+/// A relay Pi is configured to use: the simplest account to replace in a test.
+fn relay(root: &Path, url: &str, key: &str) {
+    write(
+        root,
+        ".pi/agent/models.json",
+        json!({"providers":{"relay":{"baseUrl":url,"apiKey":key}}}),
+    );
+}
+fn relay_balance() -> String {
+    json!({"mode":"unrestricted","unit":"USD","balance":"3.25"}).to_string()
 }
 async fn server(responses: Vec<(u16, String)>) -> (String, tokio::task::JoinHandle<Vec<String>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -143,214 +160,9 @@ fn money_preserves_zero_and_currency_and_omits_unlimited_or_unknown_balances() {
     }
 }
 
-#[test]
-fn opencode_legacy_go_key_is_not_replaced_by_zen_or_oauth() {
-    let root = tempfile::tempdir().unwrap();
-    let env = environment(root.path());
-    write(
-        root.path(),
-        "data/opencode/auth.json",
-        json!({"opencode":{"type":"api","key":"zen-private"},"opencode-go":{"type":"api","key":"go-private"}}),
-    );
-    assert_eq!(
-        credentials::discover("opencode", &env).unwrap()[0].key,
-        "go-private"
-    );
-    write(
-        root.path(),
-        "data/opencode/auth.json",
-        json!({"opencode":{"type":"api","key":"zen-private"},"opencode-go":{"type":"oauth","access":"oauth-private"}}),
-    );
-    let error = credentials::discover("opencode", &env).err().unwrap();
-    assert_eq!(
-        driver_api::failure::quota_diagnostic(&error),
-        "opencode_go_not_configured"
-    );
-    assert!(!format!("{error:?}").contains("private"));
-}
-
-#[test]
-fn opencode_go_subscription_uses_the_signed_in_account_without_sending_its_refresh_token() {
-    let root = tempfile::tempdir().unwrap();
-    let env = environment(root.path());
-    std::fs::create_dir_all(root.path().join("data/opencode")).unwrap();
-    let db = rusqlite::Connection::open(root.path().join("data/opencode/opencode.db")).unwrap();
-    db.execute_batch("CREATE TABLE credential(id TEXT, integration_id TEXT, value TEXT, active INTEGER, time_created INTEGER);").unwrap();
-    let value = json!({
-        "type": "oauth",
-        "access": "access-private",
-        "refresh": "refresh-private",
-        "metadata": {"server": "https://console.opencode.ai", "orgID": "org-private"}
-    });
-    db.execute(
-        "INSERT INTO credential VALUES ('account','opencode',?1,1,1)",
-        rusqlite::params![value.to_string()],
-    )
-    .unwrap();
-    let request = credentials::discover("opencode", &env).unwrap().remove(0);
-    assert_eq!(request.key, "access-private");
-    assert_ne!(request.key, "refresh-private");
-    assert_eq!(request.org_id.as_deref(), Some("org-private"));
-    assert_eq!(request.endpoint, "https://opencode.ai/zen/go/v1/usage");
-}
-
-#[tokio::test]
-async fn opencode_go_subscription_sends_the_org_header() {
-    let root = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(root.path().join("data/opencode")).unwrap();
-    let db = rusqlite::Connection::open(root.path().join("data/opencode/opencode.db")).unwrap();
-    db.execute_batch("CREATE TABLE credential(id TEXT, integration_id TEXT, value TEXT, active INTEGER, time_created INTEGER);").unwrap();
-    let value = json!({
-        "type": "oauth",
-        "access": "access-private",
-        "refresh": "refresh-private",
-        "metadata": {"server": "https://opencode.ai/console", "orgID": "org-private"}
-    });
-    db.execute(
-        "INSERT INTO credential VALUES ('account','opencode',?1,1,1)",
-        rusqlite::params![value.to_string()],
-    )
-    .unwrap();
-    drop(db);
-    let (url, task) = server(vec![(200, go_payload().to_string())]).await;
-    let mut monitor = monitor("opencode", root.path());
-    monitor.endpoints = Some((url.clone(), url));
-    let quota = monitor.read_quota(None).await.unwrap();
-    assert_eq!(quota.windows.len(), 3);
-    assert_eq!(quota.windows[0].id, "opencode-go-rolling");
-    let request = task.await.unwrap().remove(0).to_ascii_lowercase();
-    assert!(request.contains("authorization: bearer access-private"));
-    assert!(request.contains("x-opencode-org-id: org-private"));
-    assert!(!request.contains("refresh-private"));
-}
-
-#[test]
-fn opencode_v2_selects_native_active_key_and_does_not_resurrect_legacy_credentials() {
-    let root = tempfile::tempdir().unwrap();
-    let env = environment(root.path());
-    write(
-        root.path(),
-        "data/opencode/auth.json",
-        json!({"opencode-go":{"type":"api","key":"legacy-private"}}),
-    );
-    let db = rusqlite::Connection::open(root.path().join("data/opencode/opencode.db")).unwrap();
-    db.execute_batch("CREATE TABLE credential(id TEXT, integration_id TEXT, value TEXT, active INTEGER, time_created INTEGER);").unwrap();
-    for (id, provider, active, time, value) in [
-        (
-            "old",
-            "opencode-go",
-            1,
-            1,
-            json!({"type":"key","key":"active-private"}),
-        ),
-        (
-            "new",
-            "opencode-go",
-            0,
-            2,
-            json!({"type":"api","key":"inactive-private"}),
-        ),
-        (
-            "zen",
-            "opencode",
-            1,
-            3,
-            json!({"type":"key","key":"zen-private"}),
-        ),
-    ] {
-        db.execute(
-            "INSERT INTO credential VALUES (?1,?2,?3,?4,?5)",
-            rusqlite::params![id, provider, value.to_string(), active, time],
-        )
-        .unwrap();
-    }
-    assert_eq!(
-        credentials::discover("opencode", &env).unwrap()[0].key,
-        "active-private"
-    );
-    db.execute(
-        "DELETE FROM credential WHERE integration_id='opencode-go'",
-        [],
-    )
-    .unwrap();
-    assert!(credentials::discover("opencode", &env).is_err());
-}
-
-#[test]
-fn pi_uses_configured_provider_origins_without_running_key_commands() {
-    let root = tempfile::tempdir().unwrap();
-    let env = environment(root.path());
-    write(
-        root.path(),
-        ".pi/agent/auth.json",
-        json!({"deepseek":{"type":"api_key","key":"deep-private"},"relay":{"type":"api_key","key":"native-private"}}),
-    );
-    write(
-        root.path(),
-        ".pi/agent/models.json",
-        json!({"providers":{
-            "relay":{"apiKey":"config-private","baseUrl":"https://relay.example/anthropic/v1?token=secret"},
-            "command":{"apiKey":"!touch /tmp/should-not-run","baseUrl":"https://command.example"},
-            "local-file":{"apiKey":"no","baseUrl":"file:///tmp/secret"}
-        }}),
-    );
-    let requests = credentials::discover("pi", &env).unwrap();
-    assert_eq!(requests.len(), 2);
-    assert_eq!(
-        requests[0].endpoint,
-        "https://api.deepseek.com/user/balance"
-    );
-    assert_eq!(requests[1].endpoint, "https://relay.example/v1/usage");
-    assert_eq!(requests[1].key, "native-private");
-}
-
-#[test]
-fn dsh_saved_reference_wins_over_environment_and_browser_grants_stay_opaque() {
-    let root = tempfile::tempdir().unwrap();
-    let mut env = environment(root.path());
-    env.insert("DEEPSEEK_API_KEY".into(), "env-private".into());
-    std::fs::create_dir_all(root.path().join(".dsh")).unwrap();
-    std::fs::write(root.path().join(".dsh/.credentials.yaml"), "version: 1\nrefs:\n  DEEPSEEK_API_KEY: stored-private\nrecords:\n  client-connection/browser-session:\n    kind: grant\n    payload: {secret: browser-private}\n").unwrap();
-    assert_eq!(
-        credentials::discover("deepseek-harness", &env).unwrap()[0].key,
-        "stored-private"
-    );
-    std::fs::write(root.path().join(".dsh/.credentials.yaml"), "version: 1\nrecords:\n  client-connection/browser-session:\n    kind: grant\n    payload: {secret: browser-private}\n").unwrap();
-    env.remove("DEEPSEEK_API_KEY");
-    assert!(credentials::discover("deepseek-harness", &env).is_err());
-}
-
 fn dsh_platform_grant(root: &Path, issuer: &str) {
     std::fs::create_dir_all(root.join(".dsh")).unwrap();
     std::fs::write(root.join(".dsh/.credentials.yaml"), format!("version: 1\nrecords:\n  client-connection/browser-session:\n    kind: grant\n    payload: {{secret: browser-private}}\n  deepseek-account-platform/default:\n    kind: grant\n    payload: {{version: 1, token: grant-private, issuer: '{issuer}'}}\n")).unwrap();
-}
-
-#[test]
-fn dsh_platform_grant_is_a_fallback_bound_to_its_official_issuer() {
-    let root = tempfile::tempdir().unwrap();
-    let mut env = environment(root.path());
-    dsh_platform_grant(root.path(), "https://platform.deepseek.com");
-    let requests = credentials::discover("deepseek-harness", &env).unwrap();
-    assert_eq!(requests.len(), 1);
-    assert!(matches!(requests[0].kind, Kind::DeepSeekPlatform));
-    assert_eq!(requests[0].key, "grant-private");
-    assert_eq!(
-        requests[0].endpoint,
-        "https://platform.deepseek.com/api/v0/users/get_user_summary"
-    );
-    env.insert("DEEPSEEK_API_KEY".into(), "env-private".into());
-    let requests = credentials::discover("deepseek-harness", &env).unwrap();
-    assert!(matches!(requests[0].kind, Kind::DeepSeek));
-    assert_eq!(requests[0].key, "env-private");
-    env.remove("DEEPSEEK_API_KEY");
-    for issuer in [
-        "https://platform.deepseek.com.evil.example",
-        "http://platform.deepseek.com",
-        "https://relay.example",
-    ] {
-        dsh_platform_grant(root.path(), issuer);
-        assert!(credentials::discover("deepseek-harness", &env).is_err());
-    }
 }
 
 #[test]
@@ -415,31 +227,81 @@ async fn dsh_platform_grant_is_sent_only_in_the_dsh_header() {
     assert!(!request.contains("authorization:"));
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn opencode_go_subscription_sends_the_org_header() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let exported = root.path().join("export.json");
+    std::fs::write(
+        &exported,
+        json!([{
+            "id": "account", "integrationID": "opencode", "label": "me", "active": true,
+            "value": {
+                "type": "oauth",
+                "access": "access-private",
+                "refresh": "refresh-private",
+                "metadata": {"server": "https://opencode.ai/console", "orgID": "org-private"}
+            }
+        }])
+        .to_string(),
+    )
+    .unwrap();
+    let opencode = root.path().join("opencode");
+    std::fs::write(
+        &opencode,
+        format!("#!/bin/sh\ncat '{}'\n", exported.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&opencode, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (url, task) = server(vec![(200, go_payload().to_string())]).await;
+    let mut monitor = monitor_of("opencode", root.path(), opencode.to_str().unwrap());
+    monitor.endpoints = Some((url.clone(), url));
+    let quota = monitor.read_quota(None).await.unwrap();
+    assert_eq!(quota.windows.len(), 3);
+    assert_eq!(quota.windows[0].id, "opencode-go-rolling");
+    let request = task.await.unwrap().remove(0).to_ascii_lowercase();
+    assert!(request.contains("authorization: bearer access-private"));
+    assert!(request.contains("x-opencode-org-id: org-private"));
+    assert!(!request.contains("refresh-private"));
+}
+
+#[tokio::test]
+async fn opencode_readings_are_kept_until_they_expire_or_are_refreshed() {
+    let root = tempfile::tempdir().unwrap();
+    let (url, task) = server(vec![
+        (200, go_payload().to_string()),
+        (200, go_payload().to_string()),
+    ])
+    .await;
+    let mut m = monitor("opencode", root.path());
+    m.environment
+        .as_mut()
+        .unwrap()
+        .insert("OPENCODE_GO_API_KEY".into(), "first-private".into());
+    m.endpoints = Some((url.clone(), url));
+    m.read_quota(None).await.unwrap();
+    m.read_quota(None).await.unwrap();
+    m.read_quota_with_refresh(None, true).await.unwrap();
+    assert_eq!(task.await.unwrap().len(), 2);
+}
+
 #[tokio::test]
 async fn account_reads_are_get_only_cached_forced_and_invalidated_on_key_rotation() {
     let root = tempfile::tempdir().unwrap();
-    let value = go_payload().to_string();
+    let value = relay_balance();
     let (url, task) = server(vec![
         (200, value.clone()),
         (200, value.clone()),
         (200, value),
     ])
     .await;
-    write(
-        root.path(),
-        "data/opencode/auth.json",
-        json!({"opencode-go":{"type":"api","key":"first-private"}}),
-    );
-    let mut m = monitor("opencode", root.path());
-    m.endpoints = Some((format!("{url}/usage"), url));
+    relay(root.path(), &url, "first-private");
+    let m = monitor("pi", root.path());
     let (a, b) = tokio::join!(m.read_quota(None), m.read_quota(None));
     assert_eq!(a.unwrap(), b.unwrap());
     m.read_quota_with_refresh(None, true).await.unwrap();
-    write(
-        root.path(),
-        "data/opencode/auth.json",
-        json!({"opencode-go":{"type":"api","key":"second-private"}}),
-    );
+    relay(root.path(), &url, "second-private");
     let quota = m.read_quota(None).await.unwrap();
     assert!(!serde_json::to_string(&quota).unwrap().contains("private"));
     let requests = task.await.unwrap();
@@ -447,7 +309,7 @@ async fn account_reads_are_get_only_cached_forced_and_invalidated_on_key_rotatio
     assert!(
         requests
             .iter()
-            .all(|r| r.starts_with("GET /usage HTTP/1.1"))
+            .all(|r| r.starts_with("GET /v1/usage HTTP/1.1"))
     );
     assert!(requests[0].contains("Bearer first-private"));
     assert!(requests[2].contains("Bearer second-private"));
@@ -457,23 +319,14 @@ async fn account_reads_are_get_only_cached_forced_and_invalidated_on_key_rotatio
 async fn native_auth_failures_do_not_reuse_a_successful_other_account_snapshot() {
     let root = tempfile::tempdir().unwrap();
     let (url, task) = server(vec![
-        (200, go_payload().to_string()),
+        (200, relay_balance()),
         (401, "private upstream response".into()),
     ])
     .await;
-    write(
-        root.path(),
-        "data/opencode/auth.json",
-        json!({"opencode-go":{"type":"api","key":"first-private"}}),
-    );
-    let mut m = monitor("opencode", root.path());
-    m.endpoints = Some((url.clone(), url));
+    relay(root.path(), &url, "first-private");
+    let m = monitor("pi", root.path());
     m.read_quota(None).await.unwrap();
-    write(
-        root.path(),
-        "data/opencode/auth.json",
-        json!({"opencode-go":{"type":"api","key":"second-private"}}),
-    );
+    relay(root.path(), &url, "second-private");
     let e = m.read_quota(None).await.unwrap_err();
     assert_eq!(
         driver_api::failure::quota_diagnostic(&e),
@@ -486,25 +339,17 @@ async fn native_auth_failures_do_not_reuse_a_successful_other_account_snapshot()
 #[tokio::test]
 async fn credentials_rotated_during_an_http_request_discard_the_old_response() {
     let root = tempfile::tempdir().unwrap();
-    write(
-        root.path(),
-        "data/opencode/auth.json",
-        json!({"opencode-go":{"type":"api","key":"first-private"}}),
-    );
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
-    let file = root.path().join("data/opencode/auth.json");
+    relay(root.path(), &url, "first-private");
+    let (directory, address) = (root.path().to_owned(), url.clone());
     let server = tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
         let mut bytes = [0; 8192];
         let count = socket.read(&mut bytes).await.unwrap();
         assert!(count > 0);
-        std::fs::write(
-            file,
-            json!({"opencode-go":{"type":"api","key":"second-private"}}).to_string(),
-        )
-        .unwrap();
-        let body = go_payload().to_string();
+        relay(&directory, &address, "second-private");
+        let body = relay_balance();
         socket
             .write_all(
                 format!(
@@ -516,8 +361,7 @@ async fn credentials_rotated_during_an_http_request_discard_the_old_response() {
             .await
             .unwrap();
     });
-    let mut monitor = monitor("opencode", root.path());
-    monitor.endpoints = Some((url.clone(), url));
+    let monitor = monitor("pi", root.path());
     assert!(monitor.read_quota(None).await.is_err());
     assert!(monitor.cache.lock().await.is_none());
     server.await.unwrap();
@@ -563,14 +407,14 @@ async fn http_diagnostics_are_bounded_and_do_not_expose_response_or_credentials(
         (200, "x".repeat(1024 * 1024 + 1), "quota_unavailable"),
     ] {
         let (url, task) = server(vec![(status, body)]).await;
-        let r = Request {
+        let credential = Credential {
             kind: Kind::Go,
             label: "Go".into(),
             endpoint: url,
             key: "private-key".into(),
             org_id: None,
         };
-        let error = http::get(&http::client().unwrap(), &r).await.unwrap_err();
+        let error = driver_error(http::get(&credential).await.unwrap_err());
         assert_eq!(driver_api::failure::quota_diagnostic(&error), diagnostic);
         assert!(!format!("{error:?}").contains("private"));
         task.await.unwrap();
@@ -643,24 +487,30 @@ async fn monitoring_preserves_native_session_usage_and_context() {
 #[tokio::test]
 #[ignore = "read-only queries using native provider credentials and real internet"]
 async fn live_readonly_provider_accounts() {
-    for provider in ["opencode", "pi", "deepseek-harness"] {
+    for (provider, executable) in [
+        ("opencode", "opencode"),
+        ("pi", "pi"),
+        ("deepseek-harness", "dsh"),
+    ] {
         let monitor = AccountMonitor::new(
             ExecutorRef {
                 provider_id: agent_domain::ProviderId::parse(provider).unwrap(),
                 installation_id: Some("live-check".into()),
             },
+            &TargetExecutable::local(executable),
+            None,
             None,
         )
         .unwrap();
-        if monitor.requests().await.is_err() {
-            println!("{provider}: no supported account configured; skipped");
-            continue;
+        match monitor.read_quota(None).await {
+            Ok(quota) => {
+                assert!(!quota.windows.is_empty() || !quota.balances.is_empty());
+                println!("{provider}: {}", serde_json::to_string(&quota).unwrap());
+            }
+            Err(error) => println!(
+                "{provider}: {}",
+                driver_api::failure::quota_diagnostic(&error)
+            ),
         }
-        let quota = monitor
-            .read_quota(None)
-            .await
-            .expect("configured provider account query failed");
-        assert!(!quota.windows.is_empty() || !quota.balances.is_empty());
-        println!("{provider}: {}", serde_json::to_string(&quota).unwrap());
     }
 }

@@ -3,7 +3,7 @@ use super::{Plan, package};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
-pub(super) fn npm_package(provider: &str, executable: &Path) -> Option<PathBuf> {
+pub fn npm_package(provider: &str, executable: &Path) -> Option<PathBuf> {
     if !executable.extension()?.eq_ignore_ascii_case("cmd") {
         return None;
     }
@@ -37,7 +37,7 @@ pub(super) fn npm_package(provider: &str, executable: &Path) -> Option<PathBuf> 
     root.canonicalize().ok()
 }
 
-pub(super) fn npm_plan(provider: &str, executable: &Path) -> Option<Plan> {
+pub fn npm_plan(provider: &str, executable: &Path) -> Option<Plan> {
     let root = npm_package(provider, executable)?;
     let modules = root
         .ancestors()
@@ -63,7 +63,7 @@ pub(super) fn npm_plan(provider: &str, executable: &Path) -> Option<Plan> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_updates::{install_spec, tests::installation_for};
+    use crate::updates::{install_spec, tests::installation_for};
 
     #[test]
     fn npm_launcher_updates_its_own_prefix_and_rejects_other_packages() {

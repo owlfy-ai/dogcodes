@@ -1,14 +1,14 @@
 //! Read the Windows desktop's version, never compare its feed to the bundled CLI.
 use std::path::Path;
 
-pub(super) fn version(app: &Path) -> Option<String> {
+pub fn version(app: &Path) -> Option<String> {
     super::electron_host::version(app)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_updates::{Plan, base, plan, tests::installation_for};
+    use crate::updates::{Plan, base, plan, tests::installation_for};
 
     #[test]
     fn windows_host_uses_packaged_desktop_version_and_rejects_truncated_archives() {

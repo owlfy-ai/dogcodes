@@ -273,6 +273,22 @@ pub struct ProtocolSpec {
     pub framing: String,
 }
 
+/// Every agent this build knows, on any machine it manages.
+pub const BUILTIN_MANIFESTS: &[&str] = &[
+    include_str!("../../../drivers/manifests/codex.toml"),
+    include_str!("../../../drivers/manifests/claude-code.toml"),
+    include_str!("../../../drivers/manifests/kimi.toml"),
+    include_str!("../../../drivers/manifests/grok.toml"),
+    include_str!("../../../drivers/manifests/zcode.toml"),
+    include_str!("../../../drivers/manifests/cursor.toml"),
+    include_str!("../../../drivers/manifests/codebuddy.toml"),
+    include_str!("../../../drivers/manifests/antigravity.toml"),
+    include_str!("../../../drivers/manifests/pi.toml"),
+    include_str!("../../../drivers/manifests/opencode.toml"),
+    include_str!("../../../drivers/manifests/deepseek-harness.toml"),
+    include_str!("../../../drivers/manifests/kiro.toml"),
+];
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Platform {
@@ -837,6 +853,27 @@ mod tests {
     use super::*;
 
     const CODEX_MANIFEST: &str = include_str!("../../../drivers/manifests/codex.toml");
+
+    #[test]
+    fn antigravity_without_a_login_is_installed_and_not_broken() {
+        let manifest = ProviderManifest::parse_toml(include_str!(
+            "../../../drivers/manifests/antigravity.toml"
+        ))
+        .unwrap();
+        let (status, version, _, diagnostic) = version_verdict(
+            &manifest,
+            "Fetching available models...\nError: Please sign in to view available models.",
+            true,
+            Some(0),
+            "1.5.2\n",
+            "",
+        );
+        assert_eq!(status, InstallationStatus::Installed);
+        assert_eq!(version.unwrap().to_string(), "1.5.2");
+        assert_eq!(diagnostic, None);
+        let (status, ..) = version_verdict(&manifest, "something else", true, Some(0), "1.5.2", "");
+        assert_eq!(status, InstallationStatus::Broken);
+    }
 
     #[test]
     #[cfg(windows)]

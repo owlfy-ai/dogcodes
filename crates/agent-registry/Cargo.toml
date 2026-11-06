@@ -7,7 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 agent-domain = { path = "../domain" }
-agent-runtime = { path = "../runtime" }
+agent-runtime = { path = "../runtime", default-features = false }
 semver.workspace = true
 serde.workspace = true
 thiserror.workspace = true

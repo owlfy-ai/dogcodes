@@ -23,11 +23,17 @@ agent-store = { path = "../store" }
 chrono.workspace = true
 workspace-ops = { path = "../workspace-ops", features = ["core"] }
 acp-driver = { path = "../acp-driver" }
+antigravity-driver = { path = "../antigravity-driver" }
 agent-domain = { path = "../domain" }
 driver-api = { path = "../driver-api" }
 futures.workspace = true
 tempfile = "3"
 tokio = { workspace = true, features = ["io-util", "io-std", "net", "process", "time", "sync", "macros", "rt-multi-thread"] }
+
+# It must be able to answer as the approval hook, which a test harness can't.
+[[test]]
+name = "agy_remote_approval"
+harness = false
 
 [lints]
 workspace = true

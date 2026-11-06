@@ -1,5 +1,7 @@
 //! Saved SSH machines and their live connections. The service owns these so that
 //! later phases can run agents over a connection after the window has gone away.
+mod agent_installs;
+mod agent_updates;
 mod agents;
 
 use agent_core::Core;
@@ -59,6 +61,23 @@ pub(crate) enum TargetCall {
     },
     /// Looks for agents again on an open connection, after installing one by hand.
     Rescan {
+        target_id: TargetId,
+    },
+    AgentUpdate {
+        target_id: TargetId,
+        installation_id: String,
+        #[serde(default)]
+        force: bool,
+    },
+    UpgradeAgent {
+        target_id: TargetId,
+        installation_id: String,
+    },
+    InstallAgent {
+        target_id: TargetId,
+        provider_id: String,
+    },
+    AgentInstalls {
         target_id: TargetId,
     },
     Answer {
@@ -131,9 +150,12 @@ pub(crate) struct TargetStatus {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct HostAgent {
+    installation_id: String,
     provider_id: String,
+    executable: String,
     version: Option<String>,
     status: InstallationStatus,
+    diagnostic: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -372,6 +394,8 @@ pub(crate) struct TargetHost {
     secrets: Arc<dyn SecretStore>,
     shims: ShimCatalog,
     config_file: Option<PathBuf>,
+    agent_updates: Mutex<HashMap<String, agent_updates::Remembered>>,
+    agent_installs: Mutex<HashMap<TargetId, agent_installs::Installs>>,
 }
 
 impl Default for TargetHost {
@@ -396,6 +420,8 @@ impl TargetHost {
             secrets,
             shims,
             config_file,
+            agent_updates: Mutex::default(),
+            agent_installs: Mutex::default(),
         }
     }
 
@@ -448,6 +474,32 @@ impl TargetHost {
             TargetCall::Rescan { target_id } => {
                 self.rescan(core, &target_id)?;
                 Ok(serde_json::Value::Null)
+            }
+            TargetCall::AgentUpdate {
+                target_id,
+                installation_id,
+                force,
+            } => json(serde_json::to_value(
+                self.agent_update(core, &target_id, &installation_id, force)
+                    .await?,
+            )),
+            TargetCall::UpgradeAgent {
+                target_id,
+                installation_id,
+            } => json(serde_json::to_value(
+                self.upgrade_agent(core, &target_id, &installation_id)
+                    .await?,
+            )),
+            TargetCall::InstallAgent {
+                target_id,
+                provider_id,
+            } => json(serde_json::to_value(self.install_agent(
+                core,
+                &target_id,
+                &provider_id,
+            )?)),
+            TargetCall::AgentInstalls { target_id } => {
+                json(serde_json::to_value(self.agent_installs(&target_id)))
             }
             TargetCall::Answer {
                 target_id,
@@ -513,9 +565,12 @@ impl TargetHost {
                         installation.target_id.as_ref() == Some(&target.target_id)
                     })
                     .map(|installation| HostAgent {
+                        installation_id: installation.installation_id.to_string(),
                         provider_id: installation.provider_id.clone(),
+                        executable: installation.executable.clone(),
                         version: installation.version.clone(),
                         status: installation.status,
+                        diagnostic: installation.diagnostic.clone(),
                     })
                     .collect(),
                 target,
@@ -548,8 +603,7 @@ impl TargetHost {
         let scan = tokio::spawn(async move {
             // An installer usually adds its directory to the login shell's `PATH`.
             link.refresh_environment().await;
-            let os = link.info().os.clone();
-            let found = agents::scan(&core, &target, &link.target(), &os).await;
+            let found = agents::scan(&core, &target, &link.target()).await;
             running.update(|status| {
                 status.scanning = false;
                 if let Some(found) = found {
@@ -853,7 +907,6 @@ impl TargetHost {
     ) {
         let link = Arc::new(link);
         let info = link.info().clone();
-        let os = info.os.clone();
         let identity = info.machine_identity.clone();
         let identity_changed = target
             .machine_identity
@@ -885,7 +938,7 @@ impl TargetHost {
                 })
                 .await;
         }
-        let found = agents::scan(core, &target.target_id, &link.target(), &os).await;
+        let found = agents::scan(core, &target.target_id, &link.target()).await;
         connection.update(|status| {
             status.scanning = false;
             status.agents = found.unwrap_or_default();
@@ -1288,7 +1341,15 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
+        // Asked of the shim over the real connection, not just tolerated when it fails.
+        let detected: agent_management::detect::Detected = agent_management::operation::call(
+            &host.target(&id).unwrap(),
+            &agent_management::operation::Request::Detect,
+        )
+        .await
+        .unwrap_or_else(|failure| panic!("{}", failure.message));
         let found = host.status(&id).agents.len();
+        assert_eq!(detected.probes.len(), found);
         host.call(&core, serde_json::json!({"type":"rescan","targetId":id}))
             .await
             .unwrap();
@@ -1302,6 +1363,22 @@ mod tests {
         assert_eq!(host.status(&id).phase, Phase::Connected);
         assert_eq!(host.status(&id).agents.len(), found);
         assert_eq!(host.list(&core).await.unwrap()[0].agents.len(), found);
+
+        // Refused by the shim over the real connection, so this account's home stays as it is.
+        host.call(
+            &core,
+            serde_json::json!({"type":"install_agent","targetId":id,"providerId":"zcode"}),
+        )
+        .await
+        .unwrap();
+        for _ in 0..300 {
+            if host.agent_installs(&id)[0].status != "installing" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert_eq!(host.agent_installs(&id)[0].status, "failed");
+        assert_eq!(host.status(&id).phase, Phase::Connected);
 
         // A shell on the host itself, outside any project, in the account's home.
         let terminals = crate::terminal_host::TerminalHost::default();

@@ -10,6 +10,7 @@ name = "dogcodes-shim"
 path = "src/main.rs"
 
 [dependencies]
+agent-management = { path = "../agent-management" }
 hex.workspace = true
 process-scope = { path = "../process-scope" }
 sha2.workspace = true

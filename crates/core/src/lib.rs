@@ -1683,6 +1683,19 @@ impl Core {
         self.register_driver(driver).await;
     }
 
+    /// Accounts can be read before their agent can run, so this needs no driver.
+    pub async fn register_target_quota_provider(
+        &self,
+        target: TargetId,
+        provider: Arc<dyn QuotaProvider>,
+    ) {
+        self.target_executors
+            .write()
+            .await
+            .insert(provider.executor().clone(), target);
+        self.register_quota_provider(provider).await;
+    }
+
     /// New work stops at once. Sessions already running learn from their own streams.
     pub async fn unregister_target_drivers(&self, target: &TargetId) {
         let _admission = self.agent_admission.write().await;
@@ -5121,6 +5134,13 @@ mod tests {
 
         core.unregister_target_drivers(&target).await;
 
+        assert!(!core.quota_providers.read().await.contains_key(&executor));
+
+        // An account monitor can be there without an agent that is able to run.
+        core.register_target_quota_provider(target.clone(), Arc::new(Provider(executor.clone())))
+            .await;
+        assert!(core.quota_providers.read().await.contains_key(&executor));
+        core.unregister_target_drivers(&target).await;
         assert!(!core.quota_providers.read().await.contains_key(&executor));
     }
 
