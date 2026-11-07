@@ -16,7 +16,9 @@
   color: var(--agent-menu-muted); font-size: calc(12px * var(--ui-scale, 1)); font-weight: 500; letter-spacing: .01em;
 }
 /* Specificity keeps file-list and run-panel button rules out of shared rows. */
-.agent-picker-menu[data-agent-picker] { width: max-content; max-width: calc(100vw - 32px); }
+.agent-picker-menu[data-agent-picker] { --picker-remaining-column: calc(42px * var(--ui-scale, 1)); --picker-reset-column: calc(76px * var(--ui-scale, 1)); width: max-content; max-width: calc(100vw - 32px); }
+.agent-picker-menu[data-agent-picker] > header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.agent-picker-columns { display: grid; grid-template-columns: var(--picker-remaining-column) var(--picker-reset-column); column-gap: 8px; font-size: calc(11px * var(--ui-scale, 1)); font-weight: 400; text-align: right; }
 .agent-picker-menu[data-agent-picker] > button.agent-picker-option {
   position: relative; width: 100%; display: grid; grid-template-columns: calc(22px * var(--ui-scale, 1)) minmax(max-content, 1fr) max-content;
   align-items: center; justify-items: start; justify-content: normal; column-gap: 12px; height: auto; min-height: calc(44px * var(--ui-scale, 1));
@@ -39,10 +41,15 @@
 .agent-picker-menu[data-agent-picker] > button.agent-picker-option b { overflow: visible; text-overflow: clip; white-space: nowrap; font-size: calc(13.5px * var(--ui-scale, 1)); line-height: 1.4; font-weight: 500; }
 .agent-picker-menu[data-agent-picker] > button.agent-picker-option.active b { font-weight: 600; }
 .agent-picker-menu[data-agent-picker] .agent-icon.small { width: calc(22px * var(--ui-scale, 1)); height: calc(22px * var(--ui-scale, 1)); margin: 0; align-self: center; }
-.agent-picker-menu[data-agent-picker] .agent-option-quota { display: grid; grid-template-columns: max-content 56px 3.4em; align-items: center; justify-content: end; column-gap: 8px; row-gap: 4px; height: auto; margin: 0; white-space: nowrap; }
+.agent-picker-menu[data-agent-picker] .agent-option-quota { display: grid; grid-template-columns: max-content 56px var(--picker-remaining-column) var(--picker-reset-column); align-items: center; justify-content: end; column-gap: 8px; row-gap: 4px; height: auto; margin: 0; white-space: nowrap; }
 .agent-picker-menu[data-agent-picker] .picker-quota-label { color: var(--agent-menu-muted); font-size: calc(11.5px * var(--ui-scale, 1)); }
 .agent-picker-menu[data-agent-picker] .picker-quota-bar { width: 56px; background: var(--agent-menu-track); }
-.agent-picker-menu[data-agent-picker] .picker-quota-value { width: 3.4em; font-size: calc(11.5px * var(--ui-scale, 1)); font-weight: 500; }
+.agent-picker-menu[data-agent-picker] .picker-quota-value { width: 100%; font-size: calc(11.5px * var(--ui-scale, 1)); font-weight: 500; }
+/* Fixed columns, so bars and percentages line up across agents. Right-aligned times of
+   different lengths still leave a clean edge. */
+.agent-picker-menu[data-agent-picker] .picker-quota-reset { color: var(--agent-menu-muted); font-size: calc(11.5px * var(--ui-scale, 1)); font-variant-numeric: tabular-nums; line-height: 1.2; text-align: right; }
+/* With little left, when it comes back is what matters. */
+.agent-picker-menu[data-agent-picker] .picker-quota-reset[data-low] { color: var(--agent-menu-fg); font-weight: 500; }
 .agent-picker-menu[data-agent-picker] .picker-quota-amount { font-size: calc(11.5px * var(--ui-scale, 1)); font-weight: 500; }
 .composer-controls .agent-picker > summary > .composer-control-label { overflow: visible; text-overflow: clip; flex: 0 0 auto; min-width: max-content; }
 .composer-controls .agent-picker > summary .agent-option-quota { display: grid; grid-template-columns: max-content 64px max-content; align-items: center; justify-content: start; column-gap: 8px; row-gap: 3px; width: max-content; height: auto; margin: 0; white-space: nowrap; }

@@ -34,11 +34,13 @@ export function AgentPickerMenu({ options, selectedKey, onSelect, title, label, 
   const cachedQuotas = useContext(AgentQuotaContext);
   const readings = quotas ?? cachedQuotas;
   const visibleOptions = enabledAgents(options, option => option.executor.providerId, useAgentPreferences());
+  const quotaOf = (option: AgentPickerOption) => option.quota !== undefined ? option.quota : readings.find(view => view.providerId === option.executor.providerId && view.installationId === option.executor.installationId)?.quota ?? null;
+  const showsWindows = !loading && visibleOptions.some(option => quotaOf(option)?.windows.length);
   return <FloatingPopover className="agent-picker-menu" data-agent-picker role={role} aria-label={label} placement={placement}>
-    <header>{title}</header>
+    <header><span>{title}</span>{showsWindows && <span className="agent-picker-columns" aria-hidden="true"><span>{t("quota.columnRemaining")}</span><span>{t("quota.columnReset")}</span></span>}</header>
     {loading ? <LoadingStatus>{t("agentPicker.loading")}</LoadingStatus> : visibleOptions.map(option => {
       const chosen = option.key === selectedKey;
-      const quota = option.quota !== undefined ? option.quota : readings.find(view => view.providerId === option.executor.providerId && view.installationId === option.executor.installationId)?.quota ?? null;
+            const quota = quotaOf(option);
       return <button type="button" key={option.key} aria-label={providerLabel(option.executor.providerId)} className={`agent-picker-option${chosen ? " active" : ""}`} aria-pressed={chosen} onClick={() => onSelect(option)}>
         <AgentIcon providerId={option.executor.providerId} size="small"/>
         <span className="agent-option-label"><b>{providerLabel(option.executor.providerId)}</b></span>

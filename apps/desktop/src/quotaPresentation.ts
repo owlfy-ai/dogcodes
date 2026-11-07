@@ -1,4 +1,4 @@
-import { t, type ResolvedLanguage } from "./i18n";
+import { getGlobalResolvedLanguage, t, type ResolvedLanguage } from "./i18n";
 import type { QuotaSnapshot, QuotaWindow } from "@dogcodes/protocol";
 
 /** Only map explicit native model IDs; never infer an agent's default model. */
@@ -82,8 +82,10 @@ export function remainingPercent(usedPercent: number | null | undefined): number
   return remaining > 0 && remaining < 0.1 ? 0.1 : Math.round(remaining * 10) / 10;
 }
 
+export const quotaIsLow = (remaining: number) => remaining <= 20;
+
 export function quotaColor(remaining: number): string {
-  return remaining > 50 ? "#34a853" : remaining > 20 ? "#e2b96f" : "#d93025";
+  return remaining > 50 ? "#34a853" : quotaIsLow(remaining) ? "#d93025" : "#e2b96f";
 }
 
 /** Prefer the account five-hour bucket, then the shortest reported window. */
@@ -182,6 +184,22 @@ export function quotaScopeLabel(scope: string | null | undefined): string {
   if (scope === "Claude and GPT models") return "Claude/GPT";
   if (scope === "套餐内（终端读数）" || scope === "套餐内（Kiro）") return "";
   return scope ?? "";
+}
+
+/** Time left until a reset, rounded up so it never reads as nothing left while the reset
+ *  is still ahead. The two largest units are enough to scan a list: "3天12小时", "4小时8分".
+ *  `exact` keeps every unit, for where there's room to read it: "3天12小时24分钟". */
+export function formatResetCountdown(unixSeconds: number, nowUnixMs = Date.now(), lang?: ResolvedLanguage, exact = false): string {
+  const total = Math.max(1, Math.ceil((unixSeconds * 1_000 - nowUnixMs) / 60_000));
+  const days = Math.floor(total / 1_440), hours = Math.floor(total / 60) % 24, minutes = total % 60;
+  const parts = [
+    [days, "quota.durationDays"],
+    [hours, "quota.durationHours"],
+    [exact || !days ? minutes : 0, exact ? "quota.durationMinutes" : "quota.durationMinutesShort"],
+  ] as const;
+  const language = lang ?? getGlobalResolvedLanguage();
+  return parts.filter(([count]) => count > 0).map(([count, key]) => t(key, { count }, language))
+    .join(language.startsWith("zh") || language === "ja" ? "" : " ");
 }
 
 export function formatResetTime(unixSeconds: number, nowUnixMs = Date.now(), lang?: ResolvedLanguage): string {
