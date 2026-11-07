@@ -2427,7 +2427,7 @@ done
         let script = r#"#!/bin/sh
 case "$1" in
   --version) echo 1.2.13 ;;
-  models) echo gemini-fixture ;;
+  models) echo 'Usage: agy models [flags]' ;;
   *)
     echo probe >> "${0}.probes"
     echo '{"event":"init"}'
