@@ -11,7 +11,7 @@ export function useComposerLabels() {
       const available = footer.clientWidth;
       if (!available) return;
       // Measure natural control widths; the spacer only consumes leftover space.
-      for (let stage = 0; stage <= 4; stage++) {
+      for (let stage = 0; stage <= 5; stage++) {
         footer.dataset.labelStage = String(stage);
         const controls = Array.from(footer.children).filter(child =>
           !child.classList.contains("spacer") && getComputedStyle(child).display !== "none",
@@ -26,7 +26,8 @@ export function useComposerLabels() {
     const resize = new ResizeObserver(fit);
     resize.observe(footer);
     const mutations = new MutationObserver(fit);
-    mutations.observe(footer, { childList: true, characterData: true, subtree: true });
+    // A permission that acts unasked keeps its label, which changes what fits.
+    mutations.observe(footer, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ["class"] });
     // UI scale is set on the root, independently of the available column width.
     mutations.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
     document.fonts?.addEventListener("loadingdone", fit);

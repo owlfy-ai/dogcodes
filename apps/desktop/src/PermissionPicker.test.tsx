@@ -145,3 +145,30 @@ it("does not carry an invalidated cached default policy into the next turn",asyn
  await act(async()=>finish(catalog));expect(change).toHaveBeenLastCalledWith("default");
  expect(read).toHaveBeenCalledTimes(2);
 });
+it.each([
+ ["codex","full-access","dangerous"],["codebuddy","fullAccess","dangerous"],["claude","bypassPermissions","caution"],
+ ["cursor","full-access","caution"],["kimi","auto","caution"],["kimi","yolo",""],["claude","default",""],["codex","default",""],
+])("marks %s %s with %j",async(providerId,id,marker)=>{
+ const modes=[{id,label:id,description:"",dangerous:false}];
+ const client={permissionCatalog:vi.fn(async()=>({defaultModeId:id,modes}))} as unknown as CoreClient;
+ await act(async()=>root.render(<PermissionPicker client={client} executor={{providerId,installationId:"ins_a"}} taskId="tsk_a" disabled={false} onChange={()=>{}}/>));
+ const trigger=host.querySelector<HTMLButtonElement>("button")!;
+ const marks=(element:Element)=>["dangerous","caution"].filter(name=>element.classList.contains(name)).join();
+ expect(marks(trigger)).toBe(marker);
+ await act(async()=>trigger.click());
+ expect(marks(host.querySelector('[role="menuitemradio"]')!)).toBe(marker);
+});
+it("heeds an agent's own warning about a mode that otherwise looks ordinary",async()=>{
+ const client={permissionCatalog:vi.fn(async()=>({defaultModeId:"default",modes:[{id:"default",label:"Default",description:"",dangerous:true}]}))} as unknown as CoreClient;
+ await act(async()=>root.render(<PermissionPicker client={client} executor={{providerId:"new-agent",installationId:"ins_a"}} taskId="tsk_a" disabled={false} onChange={()=>{}}/>));
+ expect(host.querySelector("button")!.classList.contains("caution")).toBe(true);
+});
+it("says which policy is in force to assistive technology and in its tooltip",async()=>{
+ const client={permissionCatalog:vi.fn(async()=>catalog)} as unknown as CoreClient;
+ localStorage.setItem("dogcodes.permissions:tsk_a:claude:ins_a","bypass");
+ await act(async()=>root.render(<PermissionPicker client={client} executor={{providerId:"claude",installationId:"ins_a"}} taskId="tsk_a" disabled={false} onChange={()=>{}}/>));
+ const trigger=host.querySelector<HTMLButtonElement>("button")!;
+ expect(trigger.getAttribute("aria-label")).toContain("权限策略");
+ expect(trigger.getAttribute("aria-label")).toContain(trigger.querySelector(".composer-control-label")!.textContent!);
+ expect(trigger.dataset.tooltip!.split("\n")).toHaveLength(2);
+});

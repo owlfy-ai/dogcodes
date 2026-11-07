@@ -80,12 +80,12 @@ it("applies full access to the active Cursor run while an approval is displayed"
   });
   await act(async()=>root.render(<App key="cursor" client={client}/>));
   expect(element.querySelectorAll(".approval-card")).toHaveLength(1);
-  await click(element.querySelector('[aria-label="权限策略"]')!);
+  await click(element.querySelector('[aria-label^="权限策略"]')!);
   await click(element.querySelectorAll('[role="menuitemradio"]')[1]);
   expect(update).toHaveBeenCalledExactlyOnceWith(task.taskId,"run_cursor",executor,"full-access");
   await sync();
   expect(element.querySelector(".approval-card")).toBeNull();
-  expect(element.querySelector('[aria-label="权限策略"]')?.textContent).toContain("跳过审批");
+  expect(element.querySelector('[aria-label^="权限策略"]')?.textContent).toContain("跳过审批");
 });
 
 it("keeps answers transient and resets a form when a native ID is reused", async () => {

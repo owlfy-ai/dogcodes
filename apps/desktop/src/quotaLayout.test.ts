@@ -2,6 +2,27 @@ import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 
+describe("composer permission label", () => {
+  const visible = (stage: number, marker = "") => {
+    const dom = new JSDOM(`<style>${readFileSync(new URL("styles.css", import.meta.url), "utf8")}</style>
+      <form class="composer"><footer class="composer-controls" data-label-stage="${stage}">
+        <button class="permission-trigger ${marker}"><span class="composer-control-label">Skip</span></button>
+      </footer></form>`);
+    const label = dom.window.document.querySelector(".composer-control-label")!;
+    const shown = dom.window.getComputedStyle(label).display !== "none";
+    dom.window.close();
+    return shown;
+  };
+
+  it("is the first to go for an ordinary mode", () => {
+    expect([0, 1, 2, 3, 4, 5].map(stage => visible(stage))).toEqual([true, true, false, false, false, false]);
+  });
+
+  it.each(["dangerous", "caution"])("is the last to go for a %s mode", marker => {
+    expect([0, 1, 2, 3, 4, 5].map(stage => visible(stage, marker))).toEqual([true, true, true, true, true, false]);
+  });
+});
+
 describe("agent quota layout", () => {
   it("keeps the composer agent name beside a quota block that shrinks when there is no bar", () => {
     const dom = new JSDOM(`<style>${["styles.css", "agentPicker.css"].map(file => readFileSync(new URL(file, import.meta.url), "utf8")).join("\n")}</style>

@@ -141,7 +141,7 @@ it.each([null, "ins_old_cursor"])("loads the restored Agent's models when its in
   await act(async () => root.render(<App key="reload" client={client} />));
   expect(element.querySelector('[aria-label="选择模型"]')?.textContent).toContain("Cursor Auto");
   expect(permissionCatalog).toHaveBeenCalledWith(executor, undefined);
-  expect(element.querySelector('[aria-label="权限策略"]')?.textContent).not.toContain("不可用");
+  expect(element.querySelector('[aria-label^="权限策略"]')?.textContent).not.toContain("不可用");
   await click(element.querySelector('[aria-label="选择模型"]')!);
   expect(element.querySelector('.model-menu')?.textContent).not.toContain("正在获取");
   expect(availableModels).toHaveBeenCalledTimes(1);

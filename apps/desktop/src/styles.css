@@ -988,7 +988,8 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
 .composer-control-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-picker .model-trigger > .composer-control-label { max-width: 190px; }
 .composer-compact-icon { display: none; width: calc(18px * var(--ui-scale, 1)); height: calc(18px * var(--ui-scale, 1)); flex: 0 0 calc(18px * var(--ui-scale, 1)); }
-/* Natural widths are measured before hiding each successive group. */
+/* Natural widths are measured before hiding each successive group. A permission that lets an agent
+   act unasked keeps its label until the very last stage, when nothing else is left to give up. */
 /* Center artwork independently of font baselines; use one text line box. */
 .composer-controls :is(.permission-trigger, .model-trigger, .thinking-trigger, .agent-picker > summary, .mode-chip) {
   min-height: calc(34px * var(--ui-scale));
@@ -1009,12 +1010,14 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
 .composer-controls > .composer-submit > svg { stroke-width: 2.4; }
 .composer footer.composer-controls > :not(.spacer) { flex: 0 0 auto; }
 .composer footer.composer-controls > .spacer { flex: 1 1 0; min-width: 0; }
-.composer footer:is([data-label-stage="2"], [data-label-stage="3"], [data-label-stage="4"]) .permission-trigger > :is(.composer-control-label, .dropdown-chevron),
-.composer footer:is([data-label-stage="3"], [data-label-stage="4"]) .quota-ring > .quota-ring-value,
-.composer footer[data-label-stage="4"] :is(.model-trigger, .thinking-trigger) > :is(.composer-control-label, .dropdown-chevron) { display: none; }
-.composer footer[data-label-stage="4"] .composer-compact-icon { display: block; }
-.composer footer:is([data-label-stage="2"], [data-label-stage="3"], [data-label-stage="4"]) .permission-trigger,
-.composer footer[data-label-stage="4"] :is(.model-trigger, .thinking-trigger) {
+.composer footer:is([data-label-stage="2"], [data-label-stage="3"], [data-label-stage="4"]) .permission-trigger:not(.dangerous, .caution) > :is(.composer-control-label, .dropdown-chevron),
+.composer footer[data-label-stage="5"] .permission-trigger > :is(.composer-control-label, .dropdown-chevron),
+.composer footer:is([data-label-stage="3"], [data-label-stage="4"], [data-label-stage="5"]) .quota-ring > .quota-ring-value,
+.composer footer:is([data-label-stage="4"], [data-label-stage="5"]) :is(.model-trigger, .thinking-trigger) > :is(.composer-control-label, .dropdown-chevron) { display: none; }
+.composer footer:is([data-label-stage="4"], [data-label-stage="5"]) .composer-compact-icon { display: block; }
+.composer footer:is([data-label-stage="2"], [data-label-stage="3"], [data-label-stage="4"]) .permission-trigger:not(.dangerous, .caution),
+.composer footer[data-label-stage="5"] .permission-trigger,
+.composer footer:is([data-label-stage="4"], [data-label-stage="5"]) :is(.model-trigger, .thinking-trigger) {
   justify-content: center; gap: 0; padding: 6px; min-width: 30px; min-height: 30px; box-sizing: border-box;
 }
 @container composer-controls (max-width: 22em) {

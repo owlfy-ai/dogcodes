@@ -30,7 +30,7 @@ it("replaces both agent controls without leaving duplicate permission menus", as
         permissionPicker={<PermissionPicker key={key} client={client} executor={executor} taskId="tsk_test" disabled={false} onChange={() => {}} />}
         modelPicker={<ModelPicker key={key} catalog={{ models: [], defaultModel: null }} model={null} thinking={null} loading={false} error={null} disabled={false} onChange={() => {}} onRetry={() => {}} />}
       />));
-      expect(container.querySelectorAll('[aria-label="权限策略"]')).toHaveLength(1);
+      expect(container.querySelectorAll('[aria-label^="权限策略"]')).toHaveLength(1);
       expect(container.querySelectorAll('[aria-label="选择模型"]')).toHaveLength(1);
       const picker = container.querySelector<HTMLDetailsElement>(".agent-picker")!;
       picker.open = true;

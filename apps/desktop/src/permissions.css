@@ -14,3 +14,11 @@
 .permission-menu-header{display:flex;align-items:center;justify-content:space-between;padding:4px 9px;color:var(--muted,#888);font-size:.8125rem}
 .permission-menu-header button{border:0;border-radius:6px;background:transparent;color:inherit;font-size:1.15rem;cursor:pointer;padding:2px 6px}
 .permission-menu-header button:hover{background:#8881}.permission-menu-header button:disabled{opacity:.5;cursor:default}
+/* Color alone is easy to miss on a small control; the fill makes it read at a glance. */
+:root .permission-picker .permission-trigger.dangerous{background:#d9483b1f}
+:root .permission-picker .permission-trigger.dangerous:hover:not(:disabled){background:#d9483b33}
+:root .permission-picker .caution{color:#9a6200}
+:root[data-theme="dark"] .permission-picker .caution{color:#f0b44c}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .permission-picker .caution{color:#f0b44c}}
+:root .permission-picker .permission-trigger.caution{background:#d9960f24}
+:root .permission-picker .permission-trigger.caution:hover:not(:disabled){background:#d9960f3d}
