@@ -114,6 +114,11 @@ export interface TranslationDict extends UiMessages {
     currentAgent: string;
     quotaExhausted: string;
     tooltipShortcuts: string;
+    quotaOut: string;
+    quotaNoOtherAgent: string;
+    quotaOutUntil: string;
+    quotaSwitch: string;
+    quotaSwitchTooltip: string;
     enableInManagement: string;
     stopPending: string;
   };

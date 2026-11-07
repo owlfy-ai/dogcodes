@@ -94,6 +94,7 @@ import { TauriCoreClient } from "./tauriClient";
 import { OrderedEventCursor } from "./orderedEvents";
 import { PendingExecutorContext } from "./automaticContext";
 import { RemoteConversationContext } from "./workspaceFileMenu";
+import { QuotaSwitchNotice, quotaLooksExhausted } from "./QuotaSwitchNotice";
 import { useConversationAttention } from "./conversationAttention";
 import { ConversationSearch, revealTimelineItem } from "./ConversationSearch";
 import { ConversationHistory } from "./ConversationHistory";
@@ -1364,6 +1365,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
               onOpenFolder={() => void openProjectFolder()}
               onChooseHost={isTauri() ? entry => setHostFlow({ entry }) : undefined} onNewHost={isTauri() ? () => setHostFlow({ entry: null }) : undefined} /></div>}
             <form className="composer" onSubmit={submit}>
+              <QuotaSwitchNotice current={selectedTask.preferredExecutor} quota={selectedQuota} turnExhausted={selectedTurnQuotaExhausted} options={executorOptions} running={Boolean(selectedTask.activePrimaryRun)} lang={resolvedLang} onSwitch={switchAgent} />
             {error && <p className="error" role="alert">{error}</p>}
             <AttachmentPreviews items={attachments.items} remove={attachments.remove} disabled={sending} />
             {attachments.error && <p className="error" role="alert">{attachments.error}</p>}
@@ -1397,6 +1399,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             {timelineError && <p role="alert">{timelineError} <button type="button" onClick={() => void loadConversation(selectedTask.taskId)}>{t("welcome.retry", undefined, resolvedLang)}</button></p>}
             {selectedTask.activePrimaryRun?.state === "disconnected" && <LoadingStatus>{t("app.runDisconnected")}</LoadingStatus>}
             {approvalPanel ?? <form className="composer" onSubmit={submit}>
+   <QuotaSwitchNotice current={selectedTask.preferredExecutor} quota={selectedQuota} turnExhausted={selectedTurnQuotaExhausted} options={executorOptions} running={Boolean(selectedTask.activePrimaryRun)} lang={resolvedLang} onSwitch={switchAgent} />
 
               {error && <p className="error" role="alert">{error}</p>}
               <AttachmentPreviews items={attachments.items} remove={attachments.remove} disabled={sending} />
@@ -1524,15 +1527,7 @@ export function QuotaRing({ quota, providerId, diagnostic, turnQuotaExhausted = 
       {rows.length === 1 ? rows[0][1] : t("quota.balanceCount", { count: rows.length })}
     </span>;
   }
-  const stale = quota ? quotaIsStale(quota.staleAfterUnixMs) : false;
-  const hasFreshReportedWindows = Boolean(
-    quota
-      && quota.confidence === "provider_reported"
-      && !stale
-      && quota.windows.some((window) => !window.scope && !quotaWindowHasReset(window) && remainingPercent(window.usedPercent) !== null),
-  );
-  const exhausted = providerId === "antigravity" ? remaining === 0
-    : quotaIsExhausted(quota) || (turnQuotaExhausted && !hasFreshReportedWindows);
+  const exhausted = providerId === "antigravity" ? remaining === 0 : quotaLooksExhausted(quota, turnQuotaExhausted);
   const color = exhausted ? "#d93025" : remaining === null ? "currentColor" : quotaColor(remaining);
   const radius = 8;
   const circumference = 2 * Math.PI * radius;

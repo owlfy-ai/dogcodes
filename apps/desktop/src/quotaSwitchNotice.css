@@ -1,0 +1,4 @@
+.quota-switch-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin: 0 0 8px; padding: 7px 8px 7px 12px; border-radius: 10px; background: #d9960f24; font-size: calc(13px * var(--ui-scale, 1)); line-height: 1.4; }
+.quota-switch-notice > span { min-width: 0; }
+.quota-switch-notice button { flex: none; padding: 4px 10px; border: 0; border-radius: 7px; color: #fff; background: #9a6200; font: inherit; font-weight: 600; cursor: pointer; }
+.quota-switch-notice button:hover { background: #7f5100; }
