@@ -75,6 +75,7 @@ export const de: TranslationDict = {
     "incomplete": "Installation nicht bestätigt. Erneut suchen.",
     "partialFailure": "Einige Prüfungen sind fehlgeschlagen. Nach laufenden Gesprächen erneut versuchen; andere Karten sind nicht betroffen.",
     "scanning": "Suche läuft…",
+    "waitingDetection": "Warten auf Erkennung",
     "rescanning": "Suche läuft…",
     "scanningHint": "Installation, Anmeldung und Verbindung werden geprüft…",
     "waiting": "Warten auf Ergebnisse",

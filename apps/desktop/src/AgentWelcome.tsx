@@ -27,8 +27,7 @@ export const supportedAgents = [
 const withoutQuota = new Set(["codebuddy"]);
 const independentAccounts = new Set(["pi", "opencode", "deepseek-harness"]);
 const canReadQuota = (installation: InstallationSummary) => !withoutQuota.has(installation.providerId)
-  && (installation.status === "ready" || (independentAccounts.has(installation.providerId)
-    && installation.status !== "unsupported_version"));
+  && installation.status !== "unsupported_version";
 
 type Reading = { installation: InstallationSummary; view?: QuotaSnapshotView; pending?: boolean; failed?: boolean; observedAt?: number };
 export function welcomeStatus(reading?: Reading, lang: ResolvedLanguage = "zh-CN"): { label: string; tone: string; detail: string } {
@@ -143,7 +142,7 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
   const generation = useRef(0);
   const activeRun = useRef<AbortController | null>(null);
   const detectedRef = useRef(onDetected); detectedRef.current = onDetected;
-  const run = async () => {
+  const run = async (fresh = true) => {
     if (busy.current) return;
     busy.current = true;
     const runId = ++generation.current;
@@ -191,7 +190,7 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
     try {
       await Promise.all([accounts, ...supportedAgents.map(async agent => {
         try {
-          const snapshot = await awaitDetection(client.scanAgent(agent.id), controller.signal, 100_000);
+          const snapshot = await awaitDetection(client.scanAgent(agent.id, fresh), controller.signal, 100_000);
           if (!current()) return;
           const installations = snapshot.installations.filter(i => i.providerId === agent.id);
           scanned.add(agent.id);
@@ -216,7 +215,9 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
   };
   useEffect(() => {
     mounted.current = true;
-    void run();
+    // Join the service's already-running startup probes. Only an explicit rescan
+    // needs another probe after those finish.
+    void run(false);
     return () => {
       mounted.current = false;
       generation.current++;
@@ -237,7 +238,7 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
     const scanning = pendingAgents.includes(agent.id) && !reading;
     const failed = failedAgents.includes(agent.id);
     const uninstalled = !reading && !scanning && !failed;
-    const state = scanning ? { label: t("agentUi.scanning", undefined, lang), tone: "muted", detail: t("agentUi.scanningHint", undefined, lang) }
+    const state = scanning ? { label: t("agentUi.waitingDetection", undefined, lang), tone: "muted", detail: t("agentUi.scanningHint", undefined, lang) }
       : failed ? { label: t("agentUi.detectionFailed", undefined, lang), tone: "warning", detail: t("agentUi.incompleteHint", undefined, lang) } : welcomeStatus(reading, lang);
     return { agent, reading, scanning, failed, uninstalled, state };
   });

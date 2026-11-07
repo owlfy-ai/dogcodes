@@ -7,20 +7,20 @@ runtime_kind = "external_process"
 [discovery]
 candidate_executables = ["agy"]
 # `agy --version` prints a bare semver, so product identity comes from the
-# headless stream-json help surface instead.
+# local models help surface instead.
 version_args = ["--version"]
-# `agy --help` never names the product; `models` quickly lists Gemini models,
-# a product signature no same-named executable would produce.
-identity_args = ["models"]
-# Listing them needs a login, and a CLI that says so is still this one: signing in
-# is offered once it's found. Its own words are the signature then.
-version_output_markers = ["gemini", "sign in to view available models"]
+# Query the command's local help, never the authenticated model list. A failed
+# `models` lookup can open native login UI even with the headless flag set.
+# The usage signature includes this CLI's name, subcommand and flag syntax.
+identity_args = ["models", "--help"]
+version_output_markers = ["Usage: agy models [flags]", "Usage: agy.exe models [flags]"]
 env_allowlist = ["PATH"]
-# Discovery runs before the driver's command preparation. Keep both `models`
+# Discovery runs before the driver's command preparation. Keep both help
 # and `--version` noninteractive here too, including on a consoleless Windows host.
-env_overrides = { AGY_CLI_NONINTERACTIVE_HEADLESS = "1" }
-# `models` performs a native catalog lookup; a normal Windows cold start can
-# take five seconds before it prints the product signature.
+# The native updater can create a visible child console. Its opt-out requires
+# the literal "true"; "1" does not disable updates.
+env_overrides = { AGY_CLI_NONINTERACTIVE_HEADLESS = "1", AGY_CLI_DISABLE_AUTO_UPDATE = "true" }
+# Retain the cold-start budget for native Windows launchers.
 timeout_millis = 10000
 output_limit_bytes = 65536
 

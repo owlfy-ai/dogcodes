@@ -114,7 +114,7 @@ export class TauriCoreClient implements CoreClient {
   openAgentUpdater(installationId: string): Promise<void> { return invoke("core_open_agent_updater", { installationId }); }
   upgradeAgent(installationId: string, confirmationToken?: string): Promise<AgentUpdate> { return invoke("core_upgrade_agent", { installationId, confirmationToken }); }
   onAgentUpdate(callback: (update: AgentUpdate) => void): Promise<() => void> { return listen<AgentUpdate>("agent-update-changed", event => callback(event.payload)); }
-  scanAgent(providerId: string): Promise<BootstrapSnapshot> { return invoke("core_scan_agent", { providerId }); }
+  scanAgent(providerId: string, fresh = true): Promise<BootstrapSnapshot> { return invoke("core_scan_agent", { providerId, fresh }); }
   prepareSessionRebuild(taskId: TaskId, expectedVersion: number): Promise<void> { return invoke("core_prepare_session_rebuild", {taskId, expectedVersion}); }
   queryHistory(query: HistoryQuery): Promise<HistoryPage> { return invoke("core_query_history", { query }); }
   taskArtifacts(taskId: TaskId, before: ArtifactCursor | null = null, limit = 20): Promise<ArtifactPage> {

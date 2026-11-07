@@ -383,11 +383,18 @@ impl CoreClient {
             .await
     }
     pub async fn scan_agent(&self, provider_id: &str) -> Result<BootstrapSnapshot, String> {
+        self.scan_agent_with_freshness(provider_id, true).await
+    }
+    pub async fn scan_agent_with_freshness(
+        &self,
+        provider_id: &str,
+        fresh: bool,
+    ) -> Result<BootstrapSnapshot, String> {
         #[cfg(any(test, feature = "review-acceptance"))]
         if let Self::Local(core, _) = self {
-            return rescan_agent(core, provider_id).await;
+            return rescan_agent(core, provider_id, fresh).await;
         }
-        self.call("scan_agent", json!(provider_id)).await
+        self.call("scan_agent", json!((provider_id, fresh))).await
     }
     pub async fn bootstrap(&self) -> Result<BootstrapSnapshot, String> {
         #[cfg(any(test, feature = "review-acceptance"))]
@@ -952,7 +959,11 @@ pub enum WorkspaceLease {
     #[cfg(any(test, feature = "review-acceptance"))]
     Local(tokio::sync::OwnedRwLockWriteGuard<()>),
 }
-async fn rescan_agent(core: &Arc<Core>, provider_id: &str) -> Result<BootstrapSnapshot, String> {
+async fn rescan_agent(
+    core: &Arc<Core>,
+    provider_id: &str,
+    fresh: bool,
+) -> Result<BootstrapSnapshot, String> {
     let source = BUILTIN_AGENT_MANIFESTS
         .iter()
         .find(|source| {
@@ -967,15 +978,24 @@ async fn rescan_agent(core: &Arc<Core>, provider_id: &str) -> Result<BootstrapSn
     {
         return Err("请等待当前对话完成后重新检测 Agent".into());
     }
-    scan_builtin_agent(Arc::clone(core), source, true).await?;
+    scan_builtin_agent(Arc::clone(core), source, fresh).await?;
     core.bootstrap().await.map_err(|e| e.to_string())
 }
 
 async fn dispatch(core: &Arc<Core>, method: &str, args: Value) -> Result<Value, String> {
     match method {
         "scan_agent" => {
-            let provider_id: String = serde_json::from_value(args).map_err(|e| e.to_string())?;
-            serde_json::to_value(rescan_agent(core, &provider_id).await?).map_err(|e| e.to_string())
+            // Existing clients send just an id and always request a fresh scan.
+            let (provider_id, fresh): (String, bool) = if args.is_string() {
+                (
+                    serde_json::from_value(args).map_err(|e| e.to_string())?,
+                    true,
+                )
+            } else {
+                serde_json::from_value(args).map_err(|e| e.to_string())?
+            };
+            serde_json::to_value(rescan_agent(core, &provider_id, fresh).await?)
+                .map_err(|e| e.to_string())
         }
         "subagent_history" => {
             let (task_id, item_id): (TaskId, String) =

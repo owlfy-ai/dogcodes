@@ -75,6 +75,7 @@ export const es: TranslationDict = {
     "incomplete": "Instalación sin verificar. Vuelve a detectar.",
     "partialFailure": "Fallaron algunas comprobaciones. Reintenta al terminar las conversaciones activas; las otras tarjetas no se ven afectadas.",
     "scanning": "Detectando…",
+    "waitingDetection": "Esperando detección",
     "rescanning": "Detectando…",
     "scanningHint": "Comprobando instalación, sesión y conexión…",
     "waiting": "Esperando resultados",

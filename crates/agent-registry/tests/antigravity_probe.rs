@@ -5,7 +5,7 @@ use agent_registry::{InstallationStatus, ProviderManifest, probe_installation};
 const MANIFEST: &str = include_str!("../../../drivers/manifests/antigravity.toml");
 
 #[tokio::test]
-async fn antigravity_identity_and_version_probes_disable_interactive_auth() {
+async fn antigravity_discovery_uses_local_help_without_requesting_models() {
     let directory = tempfile::tempdir().unwrap();
     #[cfg(windows)]
     let (name, source) = (
@@ -15,10 +15,15 @@ async fn antigravity_identity_and_version_probes_disable_interactive_auth() {
            >\"%~dp0interactive-auth.txt\" echo %1\r\n\
            exit /b 73\r\n\
          )\r\n\
+         if not \"%AGY_CLI_DISABLE_AUTO_UPDATE%\"==\"true\" exit /b 75\r\n\
          if \"%~1\"==\"models\" (\r\n\
-           >>\"%~dp0probes.txt\" echo models\r\n\
-           echo Error: Please sign in to view available models. 1>&2\r\n\
-           exit /b 1\r\n\
+           if not \"%~2\"==\"--help\" (\r\n\
+             >\"%~dp0interactive-auth.txt\" echo network-dependent models request\r\n\
+             exit /b 74\r\n\
+           )\r\n\
+           >>\"%~dp0probes.txt\" echo help\r\n\
+           echo Usage: agy.exe models [flags]\r\n\
+           exit /b 0\r\n\
          )\r\n\
          if \"%~1\"==\"--version\" (\r\n\
            >>\"%~dp0probes.txt\" echo version\r\n\
@@ -36,11 +41,17 @@ if [ "$AGY_CLI_NONINTERACTIVE_HEADLESS" != 1 ]; then
     printf '%s\n' "$1" > "$root/interactive-auth.txt"
     exit 73
 fi
+if [ "$AGY_CLI_DISABLE_AUTO_UPDATE" != true ]; then
+    exit 75
+fi
 case "$1" in
   models)
-    printf '%s\n' models >> "$root/probes.txt"
-    printf '%s\n' 'Error: Please sign in to view available models.' >&2
-    exit 1
+    if [ "$2" != --help ]; then
+        printf '%s\n' 'network-dependent models request' > "$root/interactive-auth.txt"
+        exit 74
+    fi
+    printf '%s\n' help >> "$root/probes.txt"
+    printf '%s\n' 'Usage: agy models [flags]'
     ;;
   --version)
     printf '%s\n' version >> "$root/probes.txt"
@@ -67,8 +78,8 @@ esac
         !directory.path().join("interactive-auth.txt").exists(),
         "installation discovery must not enter interactive authentication: {report:?}"
     );
-    // A signed-out CLI is still installed. Authentication belongs to readiness,
-    // and neither the identity nor the version command should start login UI.
+    // A signed-out CLI is still installed. Discovery must use local metadata,
+    // even if a CLI ignores the headless flag on a failed account lookup.
     assert_eq!(report.status, InstallationStatus::Installed, "{report:?}");
     assert_eq!(report.version.unwrap().to_string(), "1.2.3");
     assert_eq!(
@@ -76,7 +87,7 @@ esac
             .unwrap()
             .lines()
             .collect::<Vec<_>>(),
-        ["models", "version"]
+        ["help", "version"]
     );
 }
 
@@ -108,11 +119,38 @@ async fn installed_windows_antigravity_probe_is_noninteractive() {
     }
     let executable =
         std::path::PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap()).join("agy/bin/agy.exe");
-    let manifest = ProviderManifest::parse_toml(MANIFEST).unwrap();
+    let mut manifest = ProviderManifest::parse_toml(MANIFEST).unwrap();
+    // Discovery must remain local even with an unavailable network. Keep the
+    // real account intact and make any accidental HTTP request fail closed.
+    for key in [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ] {
+        manifest
+            .discovery
+            .env_overrides
+            .insert(key.into(), "http://127.0.0.1:9".into());
+    }
+    manifest
+        .discovery
+        .env_overrides
+        .insert("NO_PROXY".into(), String::new());
+    manifest
+        .discovery
+        .env_overrides
+        .insert("no_proxy".into(), String::new());
+    let started = std::time::Instant::now();
     let report = probe_installation(&manifest, executable).await.unwrap();
     eprintln!(
-        "Antigravity discovery: {:?}, version {:?}, diagnostic {:?}",
-        report.status, report.version, report.diagnostic
+        "Antigravity offline discovery: {:?}, version {:?}, diagnostic {:?}, elapsed_ms={}",
+        report.status,
+        report.version,
+        report.diagnostic,
+        started.elapsed().as_millis()
     );
     assert_eq!(report.status, InstallationStatus::Installed, "{report:?}");
     assert!(report.version.is_some(), "{report:?}");

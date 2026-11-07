@@ -61,6 +61,7 @@ export const zhTW: TranslationDict = {
     "scanUnavailable": "暫時無法確認安裝，請重新偵測。",
     "partialFailure": "部分 Agent 偵測失敗，可重試。若有正在執行的對話，請等待其完成；其餘卡片不受影響。",
     "scanning": "偵測中",
+    "waitingDetection": "等待偵測",
     "scanningHint": "正在偵測安裝、登入與連線狀態…",
     "incompleteHint": "本輪偵測未完成，請檢查原生用戶端或網路後重試。",
     "waiting": "正在等待偵測結果",

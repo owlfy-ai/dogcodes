@@ -57,6 +57,15 @@ const MAX_FRAME_BYTES: usize = 64 * 1024;
 const MAX_RPC_FRAME_BYTES: usize = 8 * 1024 * 1024;
 const MAX_INTERLEAVED_FRAMES: usize = 256;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+// A Windows CLI cold start and account initialization can exceed the normal RPC
+// budget while other agents start. Keep ordinary requests bounded separately.
+const STARTUP_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+fn request_timeout(method: &str) -> Duration {
+    match method {
+        "initialize" | "account/read" => STARTUP_REQUEST_TIMEOUT,
+        _ => REQUEST_TIMEOUT,
+    }
+}
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const DRIVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 const QUOTA_PARSER_VERSION: &str = "codex-app-server-v1";
@@ -2228,9 +2237,9 @@ impl Connection {
     }
 
     async fn request(&mut self, method: &str, params: Value) -> Result<Exchange, DriverError> {
-        timeout(REQUEST_TIMEOUT, self.transport.request(method, params))
+        self.transport
+            .request_with_timeout(method, params, request_timeout(method))
             .await
-            .map_err(|_| DriverError::Disconnected("codex request timed out".into()))?
     }
 
     async fn shutdown(&mut self) -> Result<(), DriverError> {
@@ -2307,6 +2316,17 @@ where
             native: self.native.clone(),
             complete: false,
         }
+    }
+
+    async fn request_with_timeout(
+        &mut self,
+        method: &str,
+        params: Value,
+        budget: Duration,
+    ) -> Result<Exchange, DriverError> {
+        timeout(budget, self.request(method, params))
+            .await
+            .map_err(|_| DriverError::Disconnected("codex request timed out".into()))?
     }
 
     async fn request(&mut self, method: &str, params: Value) -> Result<Exchange, DriverError> {
@@ -2818,6 +2838,37 @@ mod tests {
         assert_eq!(exchange.result["ok"], true);
         assert_eq!(exchange.interleaved.len(), 1);
         server.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn slow_startup_responses_do_not_use_the_normal_rpc_deadline() {
+        for method in ["initialize", "account/read", "model/list"] {
+            let (client, server) = tokio::io::duplex(4096);
+            let (client_read, client_write) = tokio::io::split(client);
+            let (server_read, mut server_write) = tokio::io::split(server);
+            let server = async move {
+                let mut request = String::new();
+                BufReader::new(server_read)
+                    .read_line(&mut request)
+                    .await
+                    .unwrap();
+                tokio::time::sleep(Duration::from_secs(12)).await;
+                server_write
+                    .write_all(b"{\"id\":1,\"result\":{\"ok\":true}}\n")
+                    .await
+                    .unwrap();
+            };
+            let mut transport = JsonlTransport::new(client_read, client_write);
+            let (result, ()) = tokio::join!(
+                transport.request_with_timeout(method, json!({}), request_timeout(method)),
+                server,
+            );
+            if method == "model/list" {
+                assert!(matches!(result, Err(DriverError::Disconnected(_))));
+            } else {
+                assert!(result.is_ok(), "{method}: {:?}", result.err());
+            }
+        }
     }
 
     /// Real-turn acceptance: consumes real model quota and requires the

@@ -8,15 +8,40 @@
 
 ## 2026-11-07 Windows 欢迎页探测闪出终端
 
-窗口显示事件捕获到 `agy.exe` 终端出现在 `agy models` 身份探测期间，随后该探测在
-10 秒预算耗尽时退出。初始身份/版本探测由 agent-registry 按 manifest 启动，尚未进入
-driver 的 `prepare_command`，因此没有继承 driver 设置的非交互认证开关。
+最初仅按窗口标题和时间，将闪窗归因于 `agy models` 身份探测，并补上
+`AGY_CLI_NONINTERACTIVE_HEADLESS=1`。用户重打安装包后仍复现；仅凭时间关联不足以定位
+CLI 内部派生的进程，非交互认证开关也不控制自动更新。
 
-manifest 现在显式设置 `AGY_CLI_NONINTERACTIVE_HEADLESS=1`，同时覆盖 `models` 和
-`--version` 探测。进程级回归用例同时支持 Windows 和 Unix，检查两条命令收到此开关，并
-确认未登录时仍能识别安装和版本，不触发交互认证。Windows 另有显式运行的本机 CLI 验证，
-使用 `DETACHED_PROCESS` 宿主复现安装版没有父控制台的启动条件。本机 Windows 已运行
-回归和真实 CLI 验证；真实探测约 5 秒内通过，窗口事件监听未捕获到新控制台窗口。
+后续通过窗口显示事件和同一时刻的进程命令行取得直接证据（12:53:12 UTC）：
+`desktop.exe`（PID 39108）→ `agy.exe --input-format stream-json --output-format stream-json`
+（PID 41180）→ `agy.exe --bg-updater --app_data_dir=antigravity-cli --gemini_dir=.gemini`
+（PID 14800）。可见终端标题为 `agy.exe`。剩余闪窗来自 readiness 时原生 CLI 的后台更新链；
+dog.codes 的 `CREATE_NO_WINDOW` 无法约束原生 CLI 自行创建的控制台。
+
+manifest 的发现探测和 driver 的公共命令准备均设置
+`AGY_CLI_DISABLE_AUTO_UPDATE=true`，覆盖版本、readiness、会话、模型、额度与 Hook 检查。
+这是子进程环境配置，不修改用户的全局环境或 CLI 配置。值必须是字面量 `true`，不能用 `1`。
+依据：[官方排错文档](https://antigravity.google/docs/cli-troubleshooting)、
+[上游问题 #1046](https://github.com/google-antigravity/antigravity-cli/issues/1046)。原生更新器有
+15 分钟检查间隔，因此连续复测不闪窗不能单独作为修复证据。
+
+安装身份探测改为 `agy models --help`，通过本地帮助中的 `Usage: agy[.exe] models [flags]`
+签名识别 CLI，再用 `--version` 读取版本。这个阶段不再请求需要登录的模型列表；实际模型
+目录仍由 driver 在就绪后读取。非交互开关继续保留；此改动避免身份探测依赖认证和网络，
+但单独使用不能解决后台更新器的闪窗。
+
+进程级回归同时支持 Windows 和 Unix：即使已经设置 headless，任何不带 `--help` 的模型
+请求都视为失败，只有本地帮助和版本探测允许成功。Windows 本机验证使用 `DETACHED_PROCESS`
+宿主和不可用的 HTTP(S) 代理，检查无父控制台、网络不可用时也能识别安装和版本。
+
+原生 CLI 单独复验：相同的 stream-json 启动方式、关闭 stdin、不发送 prompt，显式传入
+上述自动更新开关。CLI 自身日志确认 `Auto-update disabled via environment variable
+AGY_CLI_DISABLE_AUTO_UPDATE`，且没有 `Spawned background update process`；不能只依靠
+检查间隔内未闪窗的结果。driver 回归同时拦截本机和远端的实际启动请求，要求字面量 `true`。
+
+本地 NSIS 包复验：完整后台扫描和 12 个 Agent 的额度查询流程结束；110 秒窗口事件监听
+捕获到的可见终端事件为 0。安装包提取出的 `desktop.exe` 与扫描时程序的 SHA256 一致
+（`BB74026EE1C2CD8C8620E6204B035046C4DE2525923205612B4E36AEA9D05868`）。
 
 ## 2026-11-04 后台查询误弹 OAuth 登录页
 
