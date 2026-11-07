@@ -631,7 +631,7 @@ export interface CoreClient {
   upgradeAgent?(installationId: string, confirmationToken?: string): Promise<AgentUpdate>;
   onAgentUpdate?(callback: (update: AgentUpdate) => void): Promise<() => void>;
   /** Re-run native installation and zero-turn readiness probes. */
-  scanAgent(providerId: string): Promise<BootstrapSnapshot>;
+  scanAgent(providerId: string, fresh?: boolean): Promise<BootstrapSnapshot>;
   prepareSessionRebuild?(taskId: TaskId, expectedVersion: number): Promise<void>;
   queryHistory?(query: HistoryQuery): Promise<HistoryPage>;
   recoverySnapshot(): Promise<RecoverySnapshot>;

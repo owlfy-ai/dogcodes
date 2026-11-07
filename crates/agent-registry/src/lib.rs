@@ -855,24 +855,30 @@ mod tests {
     const CODEX_MANIFEST: &str = include_str!("../../../drivers/manifests/codex.toml");
 
     #[test]
-    fn antigravity_without_a_login_is_installed_and_not_broken() {
+    fn antigravity_local_help_identifies_installations_without_a_login() {
         let manifest = ProviderManifest::parse_toml(include_str!(
             "../../../drivers/manifests/antigravity.toml"
         ))
         .unwrap();
-        let (status, version, _, diagnostic) = version_verdict(
-            &manifest,
-            "Fetching available models...\nError: Please sign in to view available models.",
-            true,
-            Some(0),
-            "1.5.2\n",
-            "",
-        );
-        assert_eq!(status, InstallationStatus::Installed);
-        assert_eq!(version.unwrap().to_string(), "1.5.2");
-        assert_eq!(diagnostic, None);
-        let (status, ..) = version_verdict(&manifest, "something else", true, Some(0), "1.5.2", "");
-        assert_eq!(status, InstallationStatus::Broken);
+        assert_eq!(manifest.discovery.identity_args, ["models", "--help"]);
+        for help in [
+            "Usage: agy models [flags]\n\nList available models",
+            "Usage: agy.exe models [flags]\n\nList available models",
+        ] {
+            let (status, version, _, diagnostic) =
+                version_verdict(&manifest, help, true, Some(0), "1.5.2\n", "");
+            assert_eq!(status, InstallationStatus::Installed);
+            assert_eq!(version.unwrap().to_string(), "1.5.2");
+            assert_eq!(diagnostic, None);
+        }
+        for unrelated in [
+            "List available models",
+            "Usage: another-agent models [flags]",
+            "1.5.2",
+        ] {
+            let (status, ..) = version_verdict(&manifest, unrelated, true, Some(0), "1.5.2", "");
+            assert_eq!(status, InstallationStatus::Broken, "{unrelated}");
+        }
     }
 
     #[test]

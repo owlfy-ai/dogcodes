@@ -75,6 +75,7 @@ export const ja: TranslationDict = {
     "incomplete": "インストールを確認できません。再検出してください。",
     "partialFailure": "一部の検出が失敗しました。実行中の会話が終わってから再試行してください。他のカードには影響しません。",
     "scanning": "検出中…",
+    "waitingDetection": "検出待ち",
     "rescanning": "検出中…",
     "scanningHint": "インストール、ログイン、接続を確認中…",
     "waiting": "検出結果を待っています",

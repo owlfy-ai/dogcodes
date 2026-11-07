@@ -75,6 +75,7 @@ export const ko: TranslationDict = {
     "incomplete": "설치를 확인할 수 없습니다. 다시 검색하세요.",
     "partialFailure": "일부 검색이 실패했습니다. 진행 중인 대화가 끝나면 다시 시도하세요. 다른 카드에는 영향이 없습니다.",
     "scanning": "검색 중…",
+    "waitingDetection": "검색 대기 중",
     "rescanning": "검색 중…",
     "scanningHint": "설치, 로그인 및 연결 확인 중…",
     "waiting": "검색 결과 대기 중",

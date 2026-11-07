@@ -181,6 +181,10 @@ const REMOTE_ENV_ALLOWLIST: &[&str] = &[
 fn prepare_command(command: &mut agent_runtime::TargetCommand, remote: bool) {
     // This alone doesn't stop print mode from opening a browser: see `prepare_print_command`.
     command.env("AGY_CLI_NONINTERACTIVE_HEADLESS", "1");
+    // The native updater starts another agy.exe without our Windows creation
+    // flags. Embedded calls must not launch it or replace the executable in use.
+    // agy requires the literal "true" here, not "1".
+    command.env("AGY_CLI_DISABLE_AUTO_UPDATE", "true");
     for variable in ENV_ALLOWLIST {
         command.inherit(variable);
     }
@@ -669,7 +673,10 @@ impl AntigravityDriver {
         let outcome = tokio::select! {
             biased;
             _ = &mut cancelled => None,
-            result = tokio::time::timeout(PROBE_TIMEOUT, reader.read_line(&mut line)) => Some(result),
+            // Silent authentication plus eligibility checks can exceed the 20s
+            // catalog budget on Windows. Let the native startup report its actual
+            // account error instead of interrupting it and calling it broken.
+            result = tokio::time::timeout(std::time::Duration::from_secs(45), reader.read_line(&mut line)) => Some(result),
         };
         drop(reader);
         let closed = tokio::time::timeout(std::time::Duration::from_secs(2), child.wait()).await;

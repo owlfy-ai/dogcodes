@@ -75,6 +75,7 @@ export const ptBR: TranslationDict = {
     "incomplete": "Instalação não verificada. Detecte novamente.",
     "partialFailure": "Algumas verificações falharam. Tente após as conversas ativas; os outros cartões não são afetados.",
     "scanning": "Detectando…",
+    "waitingDetection": "Aguardando detecção",
     "rescanning": "Detectando…",
     "scanningHint": "Verificando instalação, login e conexão…",
     "waiting": "Aguardando resultados",

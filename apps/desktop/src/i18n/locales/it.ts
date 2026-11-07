@@ -75,6 +75,7 @@ export const it: TranslationDict = {
     "incomplete": "Installazione non verificata. Ripeti la ricerca.",
     "partialFailure": "Alcune verifiche non sono riuscite. Riprova dopo le conversazioni attive; le altre schede non sono interessate.",
     "scanning": "Ricerca…",
+    "waitingDetection": "In attesa del rilevamento",
     "rescanning": "Ricerca…",
     "scanningHint": "Verifica di installazione, accesso e connessione…",
     "waiting": "In attesa dei risultati",

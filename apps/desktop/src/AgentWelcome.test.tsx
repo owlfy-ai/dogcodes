@@ -70,6 +70,23 @@ async function mount(client: CoreClient) {
   await act(async () => root!.render(<AgentWelcome client={client} onContinue={() => {}} renderIcon={() => null} />));
 }
 describe("welcome scan workflow", () => {
+  it("reads installed account quotas even when a new connection probe fails", async () => {
+    const providers = ["codex", "kiro", "zcode"];
+    const quotaSnapshots = vi.fn(async (_: unknown, id: string) => [{
+      providerId: id.slice(4), installationId: id, quota: quota(), diagnostic: null,
+    }]);
+    await mount({
+      scanAgent: async (id: string) => ({ installations: providers.includes(id)
+        ? [{ ...installation, providerId: id, installationId: `ins_${id}`, status: id === "zcode" ? "not_configured" : "broken" }] : [] }),
+      quotaSnapshots,
+    } as unknown as CoreClient);
+    for (const provider of providers) {
+      expect(quotaSnapshots).toHaveBeenCalledWith(null, `ins_${provider}`);
+      const card = container.querySelector(`[aria-label="${supportedAgents.find(agent => agent.id === provider)!.name}"]`)!;
+      expect(card.textContent).toContain("75%");
+      expect(card.querySelector(".welcome-status")?.textContent).toBe(provider === "zcode" ? "未配置" : "连接失败");
+    }
+  });
   it("reads DeepSeek balances before a slow connection scan and retains them when it finishes", async () => {
     const native = { ...installation, providerId: "deepseek-harness", installationId: "ins_dsh" };
     const q = { ...quota(), windows: [], balances: [{ label: "DeepSeek API", amount: 12.34, currency: "CNY" }] };
@@ -217,7 +234,7 @@ describe("welcome scan workflow", () => {
       : { installations: [] }, quotaSnapshots: vi.fn() } as unknown as CoreClient);
     const card = () => container.querySelector('[aria-label="Kiro"]')!;
     expect(card().hasAttribute("aria-disabled")).toBe(false);
-    expect(card().textContent).toContain("检测中");
+    expect(card().querySelector(".welcome-status")?.textContent).toBe("等待检测");
     await act(async () => release({ installations: [] }));
     expect(card().hasAttribute("aria-disabled")).toBe(false);
     installed = true;
@@ -305,9 +322,10 @@ describe("independent native agent detection", () => {
     const quotaSnapshots = vi.fn(async () => [view()]);
     await mount({ scanAgent, quotaSnapshots } as unknown as CoreClient);
     expect(scanAgent).toHaveBeenCalledTimes(12);
+    expect(scanAgent.mock.calls).toEqual(supportedAgents.map(agent => [agent.id, false]));
     expect(container.querySelector('[aria-label="Codex"]')?.textContent).toContain("已登录");
     expect(container.querySelector('[aria-label="Codex"]')?.textContent).toContain("75%");
-    expect(container.querySelector('[aria-label="Kimi Code"]')?.textContent).toContain("检测中");
+    expect(container.querySelector('[aria-label="Kimi Code"] .welcome-status')?.textContent).toBe("等待检测");
     expect(container.querySelector('[aria-label="Cursor"]')?.textContent).toContain("未安装");
     await act(async () => release({ installations: [] } as unknown as BootstrapSnapshot));
     expect(container.querySelector('[aria-label="Kimi Code"]')?.textContent).toContain("未安装");
@@ -322,8 +340,12 @@ describe("independent native agent detection", () => {
     blocked = true;
     await act(async () => [...container.querySelectorAll("button")].find(b => b.textContent?.includes("重新检测"))!.click());
     expect(scanAgent).toHaveBeenCalledTimes(24);
+    expect(scanAgent.mock.calls.slice(12)).toEqual(supportedAgents.map(agent => [agent.id, true]));
     expect(container.textContent).not.toContain("75%");
     expect(container.querySelectorAll(".welcome-status").length).toBe(12);
+    expect([...container.querySelectorAll(".welcome-status")].map(status => status.textContent))
+      .toEqual(Array(12).fill("等待检测"));
+    expect(container.querySelectorAll(".welcome-status.warning")).toHaveLength(0);
     await act(async () => release({ installations: [] } as unknown as BootstrapSnapshot));
   });
   it("isolates a provider failure from successful cards", async () => {

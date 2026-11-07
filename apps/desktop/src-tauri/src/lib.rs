@@ -682,8 +682,12 @@ async fn core_permission_catalog(
 async fn core_scan_agent(
     state: tauri::State<'_, DesktopState>,
     provider_id: String,
+    fresh: Option<bool>,
 ) -> Result<agent_protocol::BootstrapSnapshot, String> {
-    state.core.scan_agent(&provider_id).await
+    state
+        .core
+        .scan_agent_with_freshness(&provider_id, fresh.unwrap_or(true))
+        .await
 }
 
 #[tauri::command]
@@ -1809,6 +1813,7 @@ async fn register_probed_acp_driver(
     )
     .await;
     let elapsed_millis = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+    record_readiness_error(installation, readiness.as_ref().err());
     match readiness {
         Ok(driver) => {
             let driver = Arc::new(driver);
@@ -1875,6 +1880,7 @@ async fn register_ready_pi_drivers(
             installation.version.clone(),
         )
         .await;
+        record_readiness_error(installation, result.as_ref().err());
         let (status, diagnostic) = match result {
             Ok(driver) => {
                 let driver = Arc::new(driver);
@@ -1930,6 +1936,7 @@ async fn register_ready_claude_drivers(
         )
         .await;
         let elapsed_millis = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        record_readiness_error(installation, readiness.as_ref().err());
         match readiness {
             Ok(driver) => {
                 let driver = Arc::new(driver);
@@ -1991,6 +1998,7 @@ async fn register_ready_codex_drivers(core: Arc<Core>, discovered_paths: &BTreeS
             version,
         )
         .await;
+        record_readiness_error(installation, readiness.as_ref().err());
         let elapsed_millis = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         match readiness {
             Ok(driver) => {
@@ -2052,6 +2060,7 @@ async fn register_ready_antigravity_drivers(
         let started = std::time::Instant::now();
         let executable = std::path::PathBuf::from(&installation.executable);
         let readiness = antigravity_driver::AntigravityDriver::probe_ready(&executable).await;
+        record_readiness_error(installation, readiness.as_ref().err());
         let elapsed_millis = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         match readiness {
             Ok(()) => {
@@ -2154,6 +2163,7 @@ async fn register_ready_zcode_drivers(
             zcode_driver::verified_resume_capability(installation.version.as_deref()),
         )
         .await;
+        record_readiness_error(installation, readiness.as_ref().err());
         let elapsed_millis = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         match readiness {
             Ok(driver) => {
@@ -2194,6 +2204,24 @@ async fn register_ready_zcode_drivers(
                 .await;
             }
         }
+    }
+}
+
+fn record_readiness_error(
+    installation: &agent_protocol::InstallationSummary,
+    error: Option<&driver_api::DriverError>,
+) {
+    if let Some(error) = error {
+        // Metadata-handshake errors only; never capture raw native stdio. The
+        // service recorder applies the same redaction and size cap as other events.
+        service_diagnostics::record(
+            "agent_readiness_error",
+            &format!(
+                "provider={} kind={} error={error}",
+                installation.provider_id,
+                driver_api::failure::kind(error),
+            ),
+        );
     }
 }
 

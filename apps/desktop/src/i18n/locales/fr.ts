@@ -75,6 +75,7 @@ export const fr: TranslationDict = {
     "incomplete": "Installation non vérifiée. Relancez la détection.",
     "partialFailure": "Certaines détections ont échoué. Réessayez après les conversations actives ; les autres cartes ne sont pas affectées.",
     "scanning": "Détection…",
+    "waitingDetection": "En attente de détection",
     "rescanning": "Détection…",
     "scanningHint": "Vérification de l’installation, du compte et de la connexion…",
     "waiting": "En attente des résultats",

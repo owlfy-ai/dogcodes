@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import type { CoreClient, InstallationSummary, QuotaSnapshotView } from "@dogcodes/protocol";
+import type { BootstrapSnapshot, CoreClient, InstallationSummary, QuotaSnapshotView } from "@dogcodes/protocol";
 import { AgentWelcome } from "../AgentWelcome";
 import { QuotaCenter } from "../App";
 import { AgentLogin } from "../AgentLogin";
@@ -37,9 +37,19 @@ const languages = Object.keys(LOCALES) as ResolvedLanguage[];
 
 it("switches every welcome card and its accessible text across all languages without rescanning", async () => {
   setup();
-  const scanAgent = vi.fn(async () => ({ installations }));
+  let release!: (snapshot: BootstrapSnapshot) => void;
+  const pending = new Promise<BootstrapSnapshot>(resolve => { release = resolve; });
+  const scanAgent = vi.fn(() => pending);
   const quotaSnapshots = vi.fn(async () => views());
   const client = { scanAgent, quotaSnapshots } as unknown as CoreClient;
+  for (const lang of languages) {
+    await act(async () => root!.render(<I18nProvider language={lang}><AgentWelcome client={client} renderIcon={() => null} onContinue={() => {}} /></I18nProvider>));
+    expect([...host.querySelectorAll(".welcome-status")].map(status => status.textContent))
+      .toEqual(Array(12).fill(LOCALES[lang].agentUi.waitingDetection));
+    expect(host.querySelectorAll(".welcome-status.warning")).toHaveLength(0);
+    expect(host.querySelectorAll('.welcome-status[aria-busy="true"]')).toHaveLength(12);
+  }
+  await act(async () => release({ installations } as BootstrapSnapshot));
   for (const lang of languages) {
     await act(async () => root!.render(<I18nProvider language={lang}><AgentWelcome client={client} renderIcon={() => null} onContinue={() => {}} /></I18nProvider>));
     const dictionary = LOCALES[lang].agentUi;
