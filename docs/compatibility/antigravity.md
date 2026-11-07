@@ -6,6 +6,18 @@
 
 更新日期：2026-09-07
 
+## 2026-11-07 Windows 欢迎页探测闪出终端
+
+窗口显示事件捕获到 `agy.exe` 终端出现在 `agy models` 身份探测期间，随后该探测在
+10 秒预算耗尽时退出。初始身份/版本探测由 agent-registry 按 manifest 启动，尚未进入
+driver 的 `prepare_command`，因此没有继承 driver 设置的非交互认证开关。
+
+manifest 现在显式设置 `AGY_CLI_NONINTERACTIVE_HEADLESS=1`，同时覆盖 `models` 和
+`--version` 探测。进程级回归用例同时支持 Windows 和 Unix，检查两条命令收到此开关，并
+确认未登录时仍能识别安装和版本，不触发交互认证。Windows 另有显式运行的本机 CLI 验证，
+使用 `DETACHED_PROCESS` 宿主复现安装版没有父控制台的启动条件。本机 Windows 已运行
+回归和真实 CLI 验证；真实探测约 5 秒内通过，窗口事件监听未捕获到新控制台窗口。
+
 ## 2026-11-04 后台查询误弹 OAuth 登录页
 
 `agy --print=/usage` 仍可能启动交互式登录：即使钥匙串 token 尚未过期，静默认证的网络请求

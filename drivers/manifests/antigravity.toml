@@ -16,6 +16,9 @@ identity_args = ["models"]
 # is offered once it's found. Its own words are the signature then.
 version_output_markers = ["gemini", "sign in to view available models"]
 env_allowlist = ["PATH"]
+# Discovery runs before the driver's command preparation. Keep both `models`
+# and `--version` noninteractive here too, including on a consoleless Windows host.
+env_overrides = { AGY_CLI_NONINTERACTIVE_HEADLESS = "1" }
 # `models` performs a native catalog lookup; a normal Windows cold start can
 # take five seconds before it prints the product signature.
 timeout_millis = 10000
