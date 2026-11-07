@@ -73,11 +73,13 @@ export function ReviewDock({ open, targetId, ...props }: React.ComponentProps<ty
   const [opened, setOpened] = useState(open);
   useEffect(() => { if (open) setOpened(true); }, [open]);
   if (!open && !opened) return null;
-  const panel = <ReviewPanel {...props} visible={open} />;
+  const panel = <ReviewPanel {...props} remote={!!targetId} visible={open} />;
   return targetId ? <TargetOfflinePanel targetId={targetId} visible={open} onClose={props.onClose}>{panel}</TargetOfflinePanel> : panel;
 }
 
 export interface ReviewPanelProps {
+  /** The project is on a server, so its files can't be opened on this computer. */
+  remote?: boolean;
   /** Opens the project editor, so empty states can offer adding a directory. */
   onEditProject?: () => void;
   taskId: string; running: boolean; onClose: () => void; api?: typeof reviewClient; analysisClient?: CoreClient; visible?: boolean; animateEntrance?: boolean; onDetach?: (view: ReviewView) => void; standalone?: boolean; initialView?: ReviewView; requestedPath?: string; fileRequestId?: number;
@@ -93,7 +95,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
       requestedPath={target.current ? props.requestedPath : undefined} fileRequestId={target.current ? props.fileRequestId : undefined}/>}
   </ReviewWorkspaceBrowser>;
 }
-function ReviewReader({ taskId, running, onClose, onEditProject, api = reviewClient, analysisClient, visible = true, animateEntrance = false, onDetach, standalone = false, initialView, requestedPath, fileRequestId, workspaceHeader, onOperationBusyChange, onWorkspaceChanged }: ReviewPanelProps & {
+function ReviewReader({ taskId, remote = false, running, onClose, onEditProject, api = reviewClient, analysisClient, visible = true, animateEntrance = false, onDetach, standalone = false, initialView, requestedPath, fileRequestId, workspaceHeader, onOperationBusyChange, onWorkspaceChanged }: ReviewPanelProps & {
   workspaceHeader?: ReactNode; onOperationBusyChange?: (busy: boolean) => void; onWorkspaceChanged?: () => void;
 }) {
   const diffBody = useRef<HTMLDivElement>(null);
@@ -369,7 +371,7 @@ function ReviewReader({ taskId, running, onClose, onEditProject, api = reviewCli
     {workspaceHeader}
     <ReviewMutationRecovery taskId={taskId} visible={visible} onChanged={() => { setRevision(value => value + 1); onWorkspaceChanged?.(); }} />
     {runOpened && <div className="review-content" role="tabpanel" aria-label={t("reviewPanel.tab.run")} hidden={tab !== "run"}><Suspense fallback={<ReviewPanelLoading />}><ProjectRunPanel key={taskId} taskId={taskId} visible={visible && tab === "run"} onEditProject={onEditProject} /></Suspense></div>}
-    {filesOpened && <div className="review-content" role="tabpanel" aria-label={t("reviewPanel.tab.files")} hidden={tab !== "files"}><WorkspaceFiles key={taskId} taskId={taskId} visible={visible && tab === "files"} reveal={treeRequest} onEditProject={onEditProject} /></div>}
+    {filesOpened && <div className="review-content" role="tabpanel" aria-label={t("reviewPanel.tab.files")} hidden={tab !== "files"}><WorkspaceFiles key={taskId} taskId={taskId} remote={remote} visible={visible && tab === "files"} reveal={treeRequest} onEditProject={onEditProject} /></div>}
     <div className="review-content" role="tabpanel" aria-label={t("reviewPanel.tab.changes")} hidden={tab !== "changes"}>
     <div className="review-controls">
       {roots.length > 1 && <select className="review-directory-select" aria-label={t("reviewPanel.compareDirectory")} data-tooltip={scopeRoot?.path ?? t("reviewPanel.allDirectories")} value={directoryId} disabled={operationBusy} onChange={e => selectDirectory(e.target.value)}>
@@ -410,7 +412,7 @@ function ReviewReader({ taskId, running, onClose, onEditProject, api = reviewCli
     </div>
     </div>
     </div>
-    {contextMenu && fileSelection.selected.size <= 1 && visible && tab === "changes" && <ReviewFileMenu key={`${contextMenu.snapshotId}:${contextMenu.root.root.id}:${contextMenu.file.path}:${contextMenu.x}:${contextMenu.y}`} target={contextMenu} taskId={taskId} disabled={running || busy || operationBusy} api={api} onClose={() => setContextMenu(null)} onBusy={setOperationBusy} onChanged={() => setRevision(value => value + 1)}
+    {contextMenu && fileSelection.selected.size <= 1 && visible && tab === "changes" && <ReviewFileMenu remote={remote} key={`${contextMenu.snapshotId}:${contextMenu.root.root.id}:${contextMenu.file.path}:${contextMenu.x}:${contextMenu.y}`} target={contextMenu} taskId={taskId} disabled={running || busy || operationBusy} api={api} onClose={() => setContextMenu(null)} onBusy={setOperationBusy} onChanged={() => setRevision(value => value + 1)}
       onOpenChanges={() => openChange(contextMenu.root, contextMenu.file.path)} onOpenFile={version => { setTargetError(""); setPreviewTarget({ root: contextMenu.root, path: contextMenu.file.path, snapshotId: contextMenu.snapshotId, version }); }}
       onRevealTree={() => { setTreeRequest(previous => ({ path: `${contextMenu.root.root.path}/${contextMenu.file.path}`, id: (previous?.id ?? 0) + 1 })); setFilesOpened(true); setTab("files"); }} />}
   </aside>;

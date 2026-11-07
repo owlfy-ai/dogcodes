@@ -1305,7 +1305,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         onDragOver={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = sending ? "none" : "copy"; } }}
         onDragLeave={event => { event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFiles(false); } }}
         onDrop={event => { event.preventDefault(); dragDepth.current = 0; setDraggingFiles(false); if (!sending) void attachments.add(Array.from(event.dataTransfer.files)); }}
-        onPaste={event => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); if (!sending) { void attachments.add(files); const text = event.clipboardData.getData("text/plain"); if (text) setDraft(previous => previous + text); } } }}>
+        data-accepts-pasted-files="" onPaste={event => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); if (!sending) { void attachments.add(files); const text = event.clipboardData.getData("text/plain"); if (text) setDraft(previous => previous + text); } } }}>
         {draggingFiles && <div className="attachment-drop-overlay">{t("welcome.dropFiles", undefined, resolvedLang)}</div>}
         <input ref={attachmentInput} type="file" multiple hidden onChange={event => { if (!sending) void attachments.add(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
 

@@ -618,6 +618,14 @@ it("moves file operations into the context menu and stages its target instead of
   expect(api.index).toHaveBeenCalledWith('task', 'snapshot', 'repo', 'b', 'stage');
   expect(api.query).toHaveBeenCalledTimes(2);
 });
+it("doesn't offer to show a server's file in this computer's file manager", async () => {
+  await act(async () => root.render(<ReviewPanel taskId="task" remote running={false} onClose={() => {}} api={api} />));
+  await act(async () => {});
+  await openMenu();
+  expect(menuItem('打开文件')).toBeTruthy();
+  expect(menuItem('在文件管理器中显示')).toBeUndefined();
+});
+
 it("opens working and HEAD previews without replacing the diff panel", async () => {
   await render(); const panel = container.querySelector('.review-panel');
   await openMenu(); await click(menuItem('打开文件'));

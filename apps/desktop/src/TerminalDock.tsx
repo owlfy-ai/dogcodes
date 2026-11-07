@@ -8,7 +8,10 @@ import { terminalClient, terminalEnded, type TerminalApi, type TerminalConnectio
 export { terminalClient, type TerminalApi } from "./terminalClient";
 import { Terminal } from "@xterm/xterm";
 import { installTerminalKeyboard } from "./terminalKeyboard";
-import { installTerminalLinks, openTerminalLink } from "./terminalLinks";
+import { installTerminalLinks, openTerminalLink, terminalUrlAtPoint } from "./terminalLinks";
+import { claimContextMenu, showContextMenu } from "./ContextMenu";
+import { copyText, readClipboard } from "./clipboard";
+import { ConfirmDialog } from "./AppDialog";
 import { terminalInput, type TerminalInputState } from "./terminalInput";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -77,6 +80,30 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
     const links = installTerminalLinks(terminal, url => {
       void openTerminalLink(url).catch(() => { if (!disposed) setStatus(t("markdown.browserFailed")); });
     });
+    const contextMenu = (event: MouseEvent) => {
+      // A program that follows the mouse (vim, tmux) gets the click. Shift still opens this.
+      const tracked = terminal.modes?.mouseTrackingMode;
+      if (tracked && tracked !== "none" && !event.shiftKey) { claimContextMenu(event); return; }
+      const link = terminalUrlAtPoint(terminal, event.clientX, event.clientY);
+      const selected = terminal.getSelection();
+      const finish = () => terminal.focus();
+      showContextMenu(event, [
+        !!link && { label: t("contextMenu.openLink"), onSelect: () => openTerminalLink(link) },
+        !!link && { label: t("contextMenu.copyLink"), onSelect: () => copyText(link) },
+        !!link && "separator",
+        { label: t("contextMenu.copy"), disabled: !selected, onSelect: () => copyText(selected).finally(finish) },
+        { label: t("contextMenu.paste"), disabled: !!terminal.options.disableStdin, onSelect: async () => {
+          const { text } = await readClipboard();
+          // Through xterm, which guards a multi-line paste when the shell asks it to.
+          if (text) { interacted = true; terminal.paste(text); }
+          finish();
+        } },
+        { label: t("contextMenu.selectAll"), onSelect: () => { terminal.selectAll(); finish(); } },
+        "separator",
+        { label: t("contextMenu.clear"), onSelect: () => { terminal.clear(); finish(); } },
+      ]);
+    };
+    element.addEventListener("contextmenu", contextMenu);
     const theme = () => {
       const style = getComputedStyle(element);
       const foreground = style.getPropertyValue("--terminal-fg").trim();
@@ -172,6 +199,7 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
       observer.disconnect(); themeObserver.disconnect(); media.removeEventListener("change", theme);
       for (const event of inputEvents) element.removeEventListener(event, interaction, true);
       for (const event of mouseEvents) element.removeEventListener(event, mouseInteraction, true);
+      element.removeEventListener("contextmenu", contextMenu);
       keyboardCleanup(); links.dispose(); input.dispose(); binary.dispose(); terminal.dispose();
       connection?.detach();
     };
@@ -295,6 +323,24 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
       if (mounted.current) setClosing(current => current.filter(item => item !== id));
     }
   };
+  const closable = (tab: Tab) => !!tab.resourceId && !!tab.epoch && !closing.includes(tab.id);
+  const [closingRunning, setClosingRunning] = useState<Tab[] | null>(null);
+  const closeMany = async (list: Tab[]) => { for (const tab of list) await closeTab(tab.id); };
+  // Closing several at once is easy to do without looking at each, so ask if it stops anything.
+  const requestClose = (list: Tab[]) => {
+    if (list.some(tab => tab.status === "running")) setClosingRunning(list);
+    else void closeMany(list);
+  };
+  const tabMenu = (tab: Tab) => {
+    const index = visibleTabs.indexOf(tab);
+    const others = visibleTabs.filter(other => other !== tab && closable(other));
+    const right = visibleTabs.slice(index + 1).filter(closable);
+    return [
+      { label: t("contextMenu.close"), disabled: !closable(tab), onSelect: () => void closeTab(tab.id) },
+      { label: t("contextMenu.closeOthers"), disabled: !others.length, onSelect: () => requestClose(others) },
+      { label: t("contextMenu.closeRight"), disabled: !right.length, onSelect: () => requestClose(right) },
+    ];
+  };
   const tabLabel = (tab: typeof tabs[number]) => directoryName(tab.directoryIndex) + (tab.ordinal > 1 ? ` · ${tab.ordinal}` : "");
   const [height, setHeight] = useState(260);
   const drag = useRef<{ y: number; height: number } | null>(null);
@@ -308,7 +354,7 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
       onPointerMove={e => { if (drag.current) setHeight(Math.min(650, Math.max(140, drag.current.height + drag.current.y - e.clientY))); }}
       onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }} />
     <header className="terminal-toolbar"><strong>{t("terminal.title")}</strong><TabBar label={t("terminal.projectTerminal")} selected={selected} onSelect={setSelected} revealKey={open} items={visibleTabs.map(tab => ({
-      id: tab.id, label: tabLabel(tab),
+      id: tab.id, label: tabLabel(tab), menu: () => tabMenu(tab),
       close: { label: `${t("terminal.closeTerminal")} ${tabLabel(tab)}`, tooltip: t("terminal.closeTerminal"), disabled: closing.includes(tab.id) || !tab.resourceId || !tab.epoch, busy: closing.includes(tab.id), onClose: () => void closeTab(tab.id) },
     }))} />
     <div className="terminal-add-control" ref={addControl}>
@@ -321,5 +367,9 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
     {loaded && visibleTabs.length === 0 && <div className="terminal-empty"><ReviewEmptyState kind="terminal" compact title={t(directories.length ? "terminalDock.emptyTitle" : "projectRun.noDirectoriesTitle")}
       description={t(directories.length ? "terminalDock.emptyDescription" : "terminalDock.noDirectories")}
       action={directories.length ? <button type="button" className="review-empty-action" onClick={requestTerminal}>{t("terminal.newTerminal")}</button> : onEditProject && <button type="button" className="review-empty-action" onClick={onEditProject}>{t("projectRun.addDirectory")}</button>} /></div>}{visibleTabs.map(tab => <TerminalPane key={tab.id} operationId={tab.id} resourceId={tab.resourceId} onResource={id => rememberResource(tab.id, id)} onStatus={(status, epoch) => rememberStatus(tab.id, status, epoch)} projectId={projectId} directoryIndex={tab.directoryIndex} visible={open && selected === tab.id} api={api} />)}</div>
+    {closingRunning && <ConfirmDialog title={t("contextMenu.closeRunningTitle")} tone="danger" icon="trash" confirmLabel={t("contextMenu.close")}
+      onCancel={() => setClosingRunning(null)} onConfirm={() => { const list = closingRunning; setClosingRunning(null); void closeMany(list); }}>
+      <p>{t("contextMenu.closeRunningBody", { count: closingRunning.filter(tab => tab.status === "running").length })}</p>
+    </ConfirmDialog>}
   </section>;
 }

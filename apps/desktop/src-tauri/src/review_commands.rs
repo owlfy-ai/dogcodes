@@ -151,6 +151,25 @@ pub async fn core_reveal_workspace_file(
 }
 
 #[tauri::command]
+pub async fn core_reveal_workspace_directory(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, DesktopState>,
+    task_id: String,
+    path: String,
+) -> Result<(), String> {
+    require_task_window(window.label(), &task_id)?;
+    let path = state
+        .core
+        .review(service::ReviewCall::WorkspacePath {
+            task_id,
+            path,
+            directory: true,
+        })
+        .await?;
+    crate::review_file_actions::reveal_file(path).await
+}
+
+#[tauri::command]
 pub async fn core_workspace_file_applications(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, DesktopState>,
@@ -595,6 +614,7 @@ async fn workspace_file(
         .review(service::ReviewCall::WorkspacePath {
             task_id: task_id.into(),
             path: path.into(),
+            directory: false,
         })
         .await
 }

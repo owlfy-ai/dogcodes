@@ -1,4 +1,4 @@
-import { type FormEvent, type MouseEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type FormEvent, type MouseEvent, type ReactNode, type RefObject, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ConfirmDialog } from "./AppDialog";
 import { HostAgentManagement } from "./HostAgentManagement";
@@ -11,6 +11,7 @@ import { SidebarNavIcon } from "./SidebarNavIcon";
 import { TabBar } from "./TabBar";
 import { focusDialogTitle } from "./dialogFocus";
 import { useI18n } from "./i18n";
+import { showContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { userFacingError } from "./userFacingError";
 import {
   type ProxyChoice, type SshAuth, type SshProxyKind, type TargetApi, type TargetEntry, type TargetErrorKind, type TargetStatus,
@@ -450,8 +451,10 @@ function ActionButton({ label, path, onClick }: { label: string; path: string; o
 
 /** The agents found on a host, shown whether or not it is connected. Refreshing a host
  * nothing else is using connects only for that long. */
-function HostAgents({ api, entry, inUse, onAct, onChanged, onManage }: {
+function HostAgents({ api, entry, inUse, onAct, onChanged, onManage, refreshers }: {
   api: TargetApi; entry: TargetEntry; inUse: boolean; onAct: (work: Promise<unknown>) => void; onChanged: () => void; onManage: () => void;
+  /** Lets the host's right-click menu do what this section's refresh button does. */
+  refreshers: RefObject<Map<string, { refresh: () => void; busy: boolean }>>;
 }) {
   const text = useTargetText();
   const { resolvedLanguage: lang } = useI18n();
@@ -474,6 +477,7 @@ function HostAgents({ api, entry, inUse, onAct, onChanged, onManage }: {
   };
   const busy = connectedToLook || entry.status.scanning || entry.status.phase === "connecting";
   const agents = orderAgents(entry.agents, agent => agent.providerId, preferences);
+  refreshers.current.set(targetId, { refresh, busy });
   return <div className="target-card-agents">
     {agents.length > 0
       ? <ul aria-label={text("agentsTitle")}>{agents.map(agent => {
@@ -490,6 +494,8 @@ function HostAgents({ api, entry, inUse, onAct, onChanged, onManage }: {
     {dialog}
   </div>;
 }
+
+interface ClosableTab { id: string; running: boolean; close: () => Promise<void> }
 
 interface HostTab {
   id: string;
@@ -509,6 +515,7 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
   api?: TargetApi; terminals?: (targetId: string) => TerminalApi; visible?: boolean; onProjectReady?: (projectId: string) => void | Promise<void>;
 }) {
   const text = useTargetText();
+  const { t } = useI18n();
   const [entries, setEntries] = useState<TargetEntry[] | null>(null);
   const [failure, setFailure] = useState("");
   const [dialog, setDialog] = useState<{ entry: TargetEntry | null; forProject?: boolean } | null>(null);
@@ -519,6 +526,8 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
   const [agentPages, setAgentPages] = useState<string[]>([]);
   const latestTabs = useRef(tabs);
   latestTabs.current = tabs;
+  const refreshers = useRef(new Map<string, { refresh: () => void; busy: boolean }>());
+  const [closingRunning, setClosingRunning] = useState<ClosableTab[] | null>(null);
   const restored = useRef(false);
   // A tab waiting for its connection should follow it closely.
   const waiting = tabs.some(tab => !tab.status) || !!entries?.some(({ status }) => status.scanning || status.phase === "connecting");
@@ -587,6 +596,8 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
   const forgetTab = (id: string) => {
     const open = latestTabs.current;
     const index = open.findIndex(tab => tab.id === id);
+    // Now rather than at the next render: closing several checks what's left after each.
+    latestTabs.current = open.filter(tab => tab.id !== id);
     setTabs(current => current.filter(tab => tab.id !== id));
     setSelected(current => current === id ? open[index + 1]?.id ?? open[index - 1]?.id ?? HOST_LIST : current);
   };
@@ -623,6 +634,39 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
     const phase = entryOf(tab.targetId)?.status.phase;
     return phase === "failed" || phase === "disconnected" ? "disconnected" : "connecting";
   };
+  const closableTabs: ClosableTab[] = [
+    ...agentPages.filter(targetId => entryOf(targetId)).map(targetId => ({ id: agentPageId(targetId), running: false, close: async () => closeAgentPage(targetId) })),
+    ...tabs.map(tab => ({ id: tab.id, running: tab.status === "running", close: () => closeTab(tab) })),
+  ];
+  const closeMany = async (list: ClosableTab[]) => { for (const tab of list) await tab.close(); };
+  // Closing several at once is easy to do without looking at each, so ask if it stops anything.
+  const requestClose = (list: ClosableTab[]) => {
+    if (list.some(tab => tab.running)) setClosingRunning(list);
+    else void closeMany(list);
+  };
+  const tabMenu = (id: string): ContextMenuEntry[] => {
+    const index = closableTabs.findIndex(tab => tab.id === id);
+    const others = closableTabs.filter(tab => tab.id !== id), right = closableTabs.slice(index + 1);
+    return [
+      { label: t("contextMenu.close"), onSelect: () => void closableTabs[index]?.close() },
+      { label: t("contextMenu.closeOthers"), disabled: !others.length, onSelect: () => requestClose(others) },
+      { label: t("contextMenu.closeRight"), disabled: !right.length, onSelect: () => requestClose(right) },
+    ];
+  };
+  const hostMenu = (entry: TargetEntry): ContextMenuEntry[] => {
+    const { targetId } = entry.target;
+    const agents = refreshers.current.get(targetId);
+    return [
+      { label: text("connect"), onSelect: () => openTerminal(entry) },
+      onProjectReady && { label: text("openProject"), onSelect: () => setDialog({ entry, forProject: true }) },
+      "separator",
+      { label: text("manageAgents"), onSelect: () => openAgentPage(targetId) },
+      { label: text("refreshAgents"), disabled: !agents || agents.busy, onSelect: () => agents?.refresh() },
+      "separator",
+      { label: text("edit"), onSelect: () => setDialog({ entry }) },
+      { label: `${text("remove")}…`, onSelect: () => setRemoving(entry) },
+    ];
+  };
   return <section className="workspace remote-page target-page" aria-label={text("title")} hidden={!visible}>
     <TabBar className="target-tabs" label={text("title")} selected={selected} onSelect={setSelected} revealKey={visible} items={[
       { id: HOST_LIST, label: text("title") },
@@ -630,10 +674,10 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
         const name = entryOf(targetId)?.target.displayName;
         if (!name) return [];
         const label = text("agentsOf", { name });
-        return [{ id: agentPageId(targetId), label, close: { label: text("closeTab", { name: label }), onClose: () => closeAgentPage(targetId) } }];
+        return [{ id: agentPageId(targetId), label, menu: () => tabMenu(agentPageId(targetId)), close: { label: text("closeTab", { name: label }), onClose: () => closeAgentPage(targetId) } }];
       }),
       ...tabs.map(tab => ({
-        id: tab.id, label: tabLabel(tab),
+        id: tab.id, label: tabLabel(tab), menu: () => tabMenu(tab.id),
         tooltip: entryOf(tab.targetId) && targetRoute(entryOf(tab.targetId)!.target.connection),
         icon: <i className={`target-tab-state ${tabState(tab)}`} aria-hidden="true" />,
         close: { label: text("closeTab", { name: tabLabel(tab) }), onClose: () => void closeTab(tab) },
@@ -652,7 +696,7 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
         {!!entries?.length && <ul className="target-cards">
           {entries.map(entry => {
             const { target } = entry;
-            return <li key={target.targetId} className="target-card" onDoubleClick={() => openTerminal(entry)}>
+            return <li key={target.targetId} className="target-card" onDoubleClick={() => openTerminal(entry)} onContextMenu={event => showContextMenu(event, hostMenu(entry))}>
               {/* A click from the keyboard opens it too; a mouse needs the double click. */}
               <button type="button" className="target-card-open" aria-label={text("openTerminal", { name: target.displayName })} onClick={event => { if (event.detail === 0) openTerminal(entry); }}>
                 <span className="remote-device-icon"><SidebarNavIcon kind="server" /></span>
@@ -670,7 +714,7 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
               <div className="target-row-actions target-card-connect" onDoubleClick={event => event.stopPropagation()}>
                 <ActionButton label={text("connect")} path="M5 12h14m-6-6 6 6-6 6" onClick={event => { if (event.detail <= 1) openTerminal(entry); }} />
               </div>
-              <HostAgents api={api} entry={entry} inUse={tabs.some(tab => tab.targetId === target.targetId)} onAct={act} onChanged={changed} onManage={() => openAgentPage(target.targetId)} />
+              <HostAgents api={api} entry={entry} inUse={tabs.some(tab => tab.targetId === target.targetId)} onAct={act} onChanged={changed} onManage={() => openAgentPage(target.targetId)} refreshers={refreshers} />
             </li>;
           })}
         </ul>}
@@ -691,6 +735,10 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
           <ConnectionProgress api={api} targetId={tab.targetId} onEdit={() => setDialog({ entry })} onClose={() => {}} onCancel={() => forgetTab(tab.id)} />
         </div>} />;
     })}
+    {closingRunning && <ConfirmDialog title={t("contextMenu.closeRunningTitle")} tone="danger" icon="trash" confirmLabel={t("contextMenu.close")}
+      onCancel={() => setClosingRunning(null)} onConfirm={() => { const list = closingRunning; setClosingRunning(null); void closeMany(list); }}>
+      <p>{t("contextMenu.closeRunningBody", { count: closingRunning.filter(tab => tab.running).length })}</p>
+    </ConfirmDialog>}
     {removing && <ConfirmDialog title={text("remove")} tone="danger" icon="trash" confirmLabel={text("remove")} onCancel={() => setRemoving(null)}
       onConfirm={() => { setRemoving(null); act(remove(removing)); }}>
       <p>{text("removeConfirm", { name: removing.target.displayName })}</p>

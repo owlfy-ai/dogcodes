@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { ProjectSummary } from "@dogcodes/protocol";
 import { FloatingPopover } from "./FloatingPopover";
+import type { ContextMenuEntry } from "./ContextMenu";
 import { userFacingError } from "./userFacingError";
 import { translate as t } from "./i18n";
 
@@ -14,6 +15,19 @@ export interface ProjectActionsProps {
   onCreateConversation?: (project: ProjectSummary) => void;
   createDisabled?: boolean;
   preferencesDisabled?: boolean;
+}
+
+/** The same choices as the ⋯ menu, for a right click on the project. */
+export function projectMenu({ project, pinned, onPin, onEdit, onReveal, onRemove, onCreateConversation, createDisabled, preferencesDisabled }: ProjectActionsProps): ContextMenuEntry[] {
+  return [
+    onCreateConversation && { label: t("projectActions.newConversation"), disabled: createDisabled, onSelect: () => onCreateConversation(project) },
+    onPin && { label: t(pinned ? "projectActions.unpin" : "projectActions.pin"), disabled: preferencesDisabled, onSelect: onPin },
+    onEdit && { label: t("nav.editProject"), onSelect: () => onEdit(project) },
+    "separator",
+    onReveal && !project.targetId && { label: t("projectActions.reveal"), onSelect: () => onReveal(project) },
+    "separator",
+    onRemove && { label: t("projectActions.remove"), tooltip: t("projectActions.removeNote"), disabled: preferencesDisabled, onSelect: onRemove },
+  ];
 }
 
 export function ProjectActions({ project, pinned, onPin, onEdit, onReveal, onRemove, onCreateConversation, createDisabled, preferencesDisabled }: ProjectActionsProps) {
@@ -48,7 +62,7 @@ export function ProjectActions({ project, pinned, onPin, onEdit, onReveal, onRem
     }}>
       {onPin && <button type="button" role="menuitem" disabled={preferencesDisabled} onClick={() => action(onPin)}><ActionIcon kind="pin" />{t(pinned ? "projectActions.unpin" : "projectActions.pin")}</button>}
       {onEdit && <button type="button" role="menuitem" onClick={() => action(() => onEdit(project))}><ActionIcon kind="edit" />{t("nav.editProject")}</button>}
-      {onReveal && <><hr /><button type="button" role="menuitem" disabled={busy} onClick={async () => {
+      {onReveal && !project.targetId && <><hr /><button type="button" role="menuitem" disabled={busy} onClick={async () => {
         setBusy(true); setError("");
         try { await onReveal(project); close(); }
         catch (cause) { setError(userFacingError(cause, t("projectActions.revealFailed"))); }

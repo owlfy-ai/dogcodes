@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { findTerminalUrls, type TerminalRow } from "./terminalLinks";
+import { findTerminalUrls, terminalUrlAtCell, type TerminalRow } from "./terminalLinks";
 
 const cols = 20;
 const rows = (lines: Array<string | { text: string; wrapped: boolean }>) => {
@@ -63,4 +63,13 @@ test("each URL on a row is its own link, in the cell it really occupies", () => 
 
 test("a row outside the buffer has no links", () => {
   expect(findTerminalUrls(rows([]), 3, cols)).toEqual([]);
+});
+
+test("finds the URL at a cell, across the rows it spans and nowhere else", () => {
+  const urls = [{ url: "https://a", start: { x: 70, y: 1 }, end: { x: 5, y: 2 } }];
+  expect(terminalUrlAtCell(urls, 70, 1)).toBe("https://a");
+  expect(terminalUrlAtCell(urls, 80, 1)).toBe("https://a");
+  expect(terminalUrlAtCell(urls, 5, 2)).toBe("https://a");
+  expect(terminalUrlAtCell(urls, 69, 1)).toBeNull();
+  expect(terminalUrlAtCell(urls, 6, 2)).toBeNull();
 });

@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ProjectId, TaskId, TaskSummary } from "@dogcodes/protocol";
 import { ConversationHistory } from "./ConversationHistory";
+import { ContextMenuHost } from "./ContextMenu";
 
 const project = {additionalDirectories: [],  projectId: "prj_test" as ProjectId, displayName: "dogcodes", path: "/workspace/project", taskCount: 8 };
 const tasks: TaskSummary[] = Array.from({ length: 8 }, (_, index) => ({
@@ -453,4 +454,40 @@ it("does not advertise project drops across the pinned boundary", async () => {
   expect(container.querySelector("[data-drop-edge]")).toBeNull();
   await act(async () => { dragEvent(target, "drop"); });
   expect(container.querySelector(".project-group")?.getAttribute("aria-label")).toBe("dogcodes");
+});
+
+const menuLabels = () => [...document.querySelectorAll('.context-menu [role="menuitem"]')].map(item => item.textContent);
+const rightClick = (target: Element) => act(async () => { target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 })); });
+const chooseItem = (label: string) => act(async () => [...document.querySelectorAll<HTMLButtonElement>('.context-menu [role="menuitem"]')].find(item => item.textContent === label)!.click());
+
+it("offers a conversation's actions on right click, and deleting only once it is archived", async () => {
+  Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value(this: HTMLDialogElement) { this.setAttribute("open", ""); } });
+  Object.defineProperty(HTMLDialogElement.prototype, "close", { configurable: true, value(this: HTMLDialogElement) { this.removeAttribute("open"); } });
+  const onDelete = vi.fn(async () => {}), onRename = vi.fn(async () => {});
+  await act(async () => root.render(<><ContextMenuHost /><ConversationHistory projects={[project]} tasks={tasks.slice(0, 1)} selectedTaskId={null} onSelect={select} onRename={onRename} onDelete={onDelete} /></>));
+  await rightClick(container.querySelector(".history-row")!);
+  expect(menuLabels()).toEqual(["重命名会话", "置顶会话", "归档会话"]);
+  await chooseItem("归档会话");
+  await rightClick(container.querySelector(".history-archived-row")!);
+  expect(menuLabels()).toEqual(["恢复到会话列表", "重命名会话", "删除会话…"]);
+  await chooseItem("删除会话…");
+  expect(onDelete).not.toHaveBeenCalled();
+  await act(async () => [...document.querySelectorAll<HTMLButtonElement>("dialog button")].at(-1)!.click());
+  expect(onDelete).toHaveBeenCalledWith(tasks[0]);
+});
+
+it("offers a project's actions on right click, without opening a server's folder here", async () => {
+  const onReveal = vi.fn(async () => {});
+  const show = (target: string | null) => act(async () => root.render(<><ContextMenuHost /><ConversationHistory projects={[{ ...project, targetId: target }]} tasks={tasks.slice(0, 1)} selectedTaskId={null} onSelect={select} onRevealProject={onReveal} /></>));
+  await show(null);
+  await rightClick(container.querySelector(".project-heading-trigger")!);
+  expect(menuLabels()).toContain("在文件管理器中查看");
+  await chooseItem("在文件管理器中查看");
+  expect(onReveal).toHaveBeenCalled();
+  await show("target");
+  await rightClick(container.querySelector(".project-heading-trigger")!);
+  expect(menuLabels()).not.toContain("在文件管理器中查看");
+  expect(menuLabels()).toContain("移除项目");
+  await act(async () => (container.querySelector(".project-action") as HTMLButtonElement).click());
+  expect(container.querySelector(".project-action-menu")?.textContent).not.toContain("在文件管理器中查看");
 });

@@ -3,6 +3,7 @@ import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { TerminalDock, type TerminalApi } from "./TerminalDock";
+import { ContextMenuHost } from "./ContextMenu";
 
 import type { TerminalInfo, TerminalConnection } from "./terminalClient";
 import { inputFixture, inputTick, testCrypto } from "./terminalInput.fixture";
@@ -10,12 +11,13 @@ let inputFixtures = new WeakMap<TerminalApi, ReturnType<typeof inputFixture>>();
 const detach = vi.fn();
 const info = (id = "existing", index = 0): TerminalInfo => ({ id, epoch: "epoch", projectId: "project", directoryIndex: index, taskId: null, commandId: null, label: "终端", cwd: "/project/web", command: null, status: "running", exitCode: null, error: null, outputEnd: 0, createdAt: 1 });
 const connection = (id: string): TerminalConnection => ({ id, detach: () => detach(id) });
-const terminals = vi.hoisted(() => [] as { input?: (data: string) => void; binary?: (data: string) => void; modes: { mouseTrackingMode: string }; write: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; options: Record<string, unknown> }[]);
+const terminals = vi.hoisted(() => [] as { input?: (data: string) => void; binary?: (data: string) => void; modes: { mouseTrackingMode: string }; paste: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn>; write: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; options: Record<string, unknown> }[]);
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
     cols = 80; rows = 24; options = {}; modes = { mouseTrackingMode: "none" }; write = vi.fn(); dispose = vi.fn();
     constructor() { terminals.push(this); }
     open() {} loadAddon() {} focus() {}
+    getSelection = vi.fn(() => "selected"); paste = vi.fn(); selectAll = vi.fn(); clear = vi.fn();
     registerLinkProvider() { return { dispose() {} }; }
     onData(callback: (data: string) => void) { (this as typeof terminals[number]).input = callback; return { dispose() {} }; }
     onBinary(callback: (data: string) => void) { (this as typeof terminals[number]).binary = callback; return { dispose() {} }; }
@@ -464,4 +466,47 @@ it("stops different tabs independently while allowing the panel to collapse", as
   await act(async () => finishes.get("session-0")!());
   expect(element.querySelectorAll('[role="tab"]')).toHaveLength(0);
   expect(hide).toHaveBeenCalledTimes(1);
+});
+
+const menuItems = () => [...document.querySelectorAll<HTMLButtonElement>('.context-menu [role="menuitem"]')];
+const rightClick = (target: Element) => target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+const choose = async (label: string) => { await act(async () => menuItems().find(item => item.textContent === label)!.click()); };
+
+it("offers copy, paste and clear on the terminal, and leaves the click to a program following the mouse", async () => {
+  const readText = vi.fn(async () => "pasted");
+  vi.stubGlobal("navigator", { ...navigator, clipboard: { readText, writeText: vi.fn(async () => {}) } });
+  await act(async () => root.render(<><ContextMenuHost /><TerminalDock projectId="project" directories={["/project"]} open onClose={() => {}} api={client()} /></>));
+  await act(async () => {});
+  const pane = element.querySelector(".terminal-emulator")!;
+  await act(async () => rightClick(pane));
+  expect(menuItems().map(item => item.textContent)).toEqual(["复制", "粘贴", "全选", "清屏"]);
+  await choose("粘贴");
+  expect(terminals[0].paste).toHaveBeenCalledWith("pasted");
+  await act(async () => rightClick(pane));
+  await choose("清屏");
+  expect(terminals[0].clear).toHaveBeenCalled();
+  terminals[0].modes.mouseTrackingMode = "any";
+  await act(async () => rightClick(pane));
+  expect(menuItems()).toHaveLength(0);
+  await act(async () => pane.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, shiftKey: true })));
+  expect(menuItems()).toHaveLength(4);
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+});
+
+it("asks before closing other terminals that are still running", async () => {
+  Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value(this: HTMLDialogElement) { this.setAttribute("open", ""); } });
+  Object.defineProperty(HTMLDialogElement.prototype, "close", { configurable: true, value(this: HTMLDialogElement) { this.removeAttribute("open"); } });
+  const api = client();
+  await act(async () => root.render(<><ContextMenuHost /><TerminalDock projectId="project" directories={["/project/web", "/project/server"]} open onClose={() => {}} api={api} /></>));
+  await act(async () => {});
+  const tabs = element.querySelectorAll('[role="tab"]');
+  await act(async () => rightClick(tabs[0]!));
+  expect(menuItems().map(item => item.textContent)).toEqual(["关闭", "关闭其他", "关闭右侧"]);
+  await choose("关闭其他");
+  expect(api.close).not.toHaveBeenCalled();
+  const dialog = document.querySelector("dialog")!;
+  expect(dialog.textContent).toContain("1 个终端还在运行");
+  await act(async () => [...dialog.querySelectorAll("button")].find(button => button.textContent?.includes("关闭"))!.click());
+  expect(api.close).toHaveBeenCalledTimes(1);
+  expect(element.querySelectorAll('[role="tab"]')).toHaveLength(1);
 });

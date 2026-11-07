@@ -1,0 +1,8 @@
+.context-menu { position: fixed; z-index: 1000; width: max-content; margin: 0; padding: 5px; border: 1px solid var(--line); border-radius: 10px; color: var(--text, inherit); background: var(--panel-raised); box-shadow: 0 8px 28px #0000003d; font-size: calc(13px * var(--ui-scale, 1)); line-height: 1.4; }
+.context-menu button { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: 100%; min-width: calc(168px * var(--ui-scale, 1)); max-width: calc(360px * var(--ui-scale, 1)); padding: 6px 10px; border: 0; border-radius: 6px; background: transparent; color: inherit; text-align: left; font: inherit; }
+.context-menu button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.context-menu button > small { flex: none; color: var(--muted); font-size: .85em; }
+.context-menu button:not(:disabled):hover, .context-menu button:focus-visible { outline: none; background: color-mix(in srgb, var(--muted) 16%, transparent); }
+.context-menu button:disabled { color: var(--muted); opacity: .6; }
+.context-menu hr { margin: 5px 7px; border: 0; border-top: 1px solid var(--line); }
+.context-menu .inline-error { max-width: calc(320px * var(--ui-scale, 1)); margin: 5px; }

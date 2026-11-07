@@ -2,7 +2,8 @@ import { useEffect, useId, useRef, useState, type HTMLAttributes } from "react";
 import { homeRelativePath, useHomeDirectory } from "./homeRelativePath";
 import { FloatingPopover } from "./FloatingPopover";
 import "./projectHoverCard.css";
-import { ProjectActions, type ProjectActionsProps } from "./ProjectActions";
+import { ProjectActions, projectMenu, type ProjectActionsProps } from "./ProjectActions";
+import { showContextMenu } from "./ContextMenu";
 import { translate as t } from "./i18n";
 import { SCRATCH_PROJECT_NAME, projectDisplayName } from "./displayNames";
 
@@ -27,17 +28,24 @@ export function ProjectHoverCard({ project, onEdit, dragProps, conversationList,
   const show = () => { cancelTimer(); setOpen(true); };
   const close = () => { cancelTimer(); setOpen(false); };
   useEffect(() => () => clearTimeout(timer.current), []);
+  const editable = project.displayName === SCRATCH_PROJECT_NAME ? undefined : onEdit;
   return <header className="project-hover-anchor" data-info-open={open || undefined}
     onMouseEnter={() => { cancelTimer(); timer.current = setTimeout(() => setOpen(true), 280); }}
     onMouseLeave={() => { cancelTimer(); timer.current = setTimeout(() => setOpen(false), 180); }}
     onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) close(); }}
-    onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); trigger.current?.focus(); close(); } }}>
+    onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); trigger.current?.focus(); close(); } }}
+    onContextMenu={event => {
+      // The ⋯ menu and the card with its paths are drawn inside this header.
+      if (event.target instanceof Element && event.target.closest(".project-action-menu, .project-hover-card")) return;
+      close();
+      showContextMenu(event, projectMenu({ project, onEdit: editable, ...actions }));
+    }}>
     <button {...dragProps} onDragStart={event => { close(); dragProps?.onDragStart?.(event); }} ref={trigger} className="project-heading-trigger" type="button" aria-expanded={conversationList?.expanded ?? open} aria-controls={conversationList?.id ?? (open ? id : undefined)} onFocus={show}
       onClick={() => { if (conversationList) { close(); conversationList.onToggle(); } else show(); }}>
       <FolderIcon open={conversationList?.expanded ?? true} /><span className="workspace-copy"><b>{label}</b></span>{actions.pinned && <svg className="project-pin-mark" viewBox="0 0 20 20" fill="none" role="img" aria-label={t("projectCard.pinned")}><path d="M7 3h6M8 3v4l-4 4v2h12v-2l-4-4V3M10 13v5" /></svg>}
       {conversationList && <svg className="project-list-chevron" viewBox="0 0 16 16" aria-hidden="true" style={{ transform: conversationList.expanded ? undefined : "rotate(-90deg)" }}><path d="m4 6 4 4 4-4" /></svg>}
     </button>
-    <div className="project-actions-anchor" onMouseEnter={close} onFocus={close}><ProjectActions project={project} onEdit={project.displayName === SCRATCH_PROJECT_NAME ? undefined : onEdit} {...actions} /></div>
+    <div className="project-actions-anchor" onMouseEnter={close} onFocus={close}><ProjectActions project={project} onEdit={editable} {...actions} /></div>
     {open && <FloatingPopover placement="right" id={id} className="project-hover-card" role="region" aria-label={t("projectCard.info", { name: label })} onMouseEnter={cancelTimer}>
       <div className="project-hover-title"><FolderIcon /><strong>{label}</strong></div>
       <div className="project-hover-count"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M17 9.5a7 7 0 0 1-7 7H3l1-3A7 7 0 1 1 17 9.5Z" /></svg>{t("projectCard.taskCount", { count: project.taskCount })}</div>

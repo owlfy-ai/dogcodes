@@ -1,4 +1,5 @@
 import { type KeyboardEvent, type ReactNode, useEffect, useRef } from "react";
+import { showContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import "./tabBar.css";
 
 export interface TabBarItem {
@@ -9,6 +10,8 @@ export interface TabBarItem {
   tooltip?: string;
   /** Left out for a tab that can't be closed. */
   close?: { label: string; tooltip?: string; disabled?: boolean; busy?: boolean; onClose: () => void };
+  /** What a right click on this tab offers. */
+  menu?: () => ContextMenuEntry[];
 }
 
 /** Every row of tabs in the app, so they look and respond alike. Pass no `selected`
@@ -36,7 +39,7 @@ export function TabBar({ label, items, selected, onSelect, iconOnly = false, cla
     list.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
   };
   return <div ref={list} className={["tab-bar", iconOnly && "tab-bar--icons", className].filter(Boolean).join(" ")} role="tablist" aria-label={label}>
-    {items.map((item, index) => <div className="tab-bar-tab" role="presentation" key={item.id} data-selected={item.id === selected}>
+    {items.map((item, index) => <div className="tab-bar-tab" role="presentation" key={item.id} data-selected={item.id === selected} onContextMenu={item.menu && (event => showContextMenu(event, item.menu!()))}>
       <button type="button" role="tab" aria-selected={item.id === selected} tabIndex={item.id === focusable ? 0 : -1}
         aria-label={iconOnly ? item.label : undefined} data-tooltip={item.tooltip ?? (iconOnly ? item.label : undefined)}
         onClick={() => onSelect(item.id)} onKeyDown={event => move(event, index)}>

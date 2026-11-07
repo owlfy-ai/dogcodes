@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { FloatingPopover } from "./FloatingPopover";
 import { DropdownChevron } from "./DropdownChevron";
 import { userFacingError } from "./userFacingError";
+import { revealLabelKey } from "./workspaceFileMenu";
 import "./openFile.css";
 import { translate as t } from "./i18n";
 
@@ -41,10 +42,6 @@ export function OpenFileButton({ taskId, path, disabled = false }: { taskId: str
   const trigger = useRef<HTMLButtonElement>(null);
   const generation = useRef(0);
   const id = useId();
-  // macOS localizes Finder's name by the system language, not the app's.
-  const fileManager = /Mac/.test(navigator.platform)
-    ? /^zh(?:-CN|-SG|-Hans|$)/i.test(navigator.language) ? "finderLocalized" : "finder"
-    : /Win/.test(navigator.platform) ? "explorer" : "fileManager";
   const close = () => { setOpen(false); trigger.current?.focus(); };
   const toggle = () => {
     if (!open && current?.error) setRetry(value => value + 1);
@@ -133,7 +130,7 @@ export function OpenFileButton({ taskId, path, disabled = false }: { taskId: str
       {current.error && <><p role="alert">{current.error}</p><button type="button" role="menuitem" onClick={() => setRetry(value => value + 1)}>{t("openFile.requery")}</button></>}
       </div>
       <div className="open-file-footer">
-        <button type="button" role="menuitem" onClick={() => void fileAction("reveal")}><span className="open-file-app-label"><svg className="open-file-app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /></svg><span>{t(`openFile.reveal.${fileManager}`)}</span></span></button>
+        <button type="button" role="menuitem" onClick={() => void fileAction("reveal")}><span className="open-file-app-label"><svg className="open-file-app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /></svg><span>{t(revealLabelKey())}</span></span></button>
         <button type="button" role="menuitem" disabled={!current.absolutePath} data-tooltip={!current.absolutePath ? current.error : undefined} onClick={() => void fileAction("copy")}><span className="open-file-app-label"><svg className="open-file-app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2" /><path d="M15 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h1" /></svg><span>{t("openFile.copyPath")}</span></span></button>
       </div>
     </FloatingPopover>}

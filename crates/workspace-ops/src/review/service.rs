@@ -757,6 +757,9 @@ pub enum ReviewCall {
     WorkspacePath {
         task_id: String,
         path: String,
+        /// Asks for a directory rather than a file.
+        #[serde(default)]
+        directory: bool,
     },
     StartProjectReview(Value),
 }
@@ -1019,7 +1022,11 @@ pub async fn dispatch(
             .await
         }
         Workspaces { task_id } => response!(workspaces::list(core, &task_id).await?),
-        WorkspacePath { task_id, path } => response!(workspace_path(core, &task_id, &path).await?),
+        WorkspacePath {
+            task_id,
+            path,
+            directory,
+        } => response!(workspace_path(core, &task_id, &path, directory).await?),
         StartProjectReview(raw) => {
             let request: project_analysis::ProjectReviewRequest =
                 serde_json::from_value(raw.clone()).map_err(|e| e.to_string())?;
@@ -1041,7 +1048,23 @@ pub async fn dispatch(
     }
 }
 
-async fn workspace_path(core: &dyn ReviewFacts, task: &str, path: &str) -> Result<PathBuf, String> {
+/// A scope is a part of a root the task may use. The directories leading down to one are
+/// shown in the file tree, so they count too; a file has to be inside it.
+fn within_scopes(relative: &str, scopes: &[String], directory: bool) -> bool {
+    scopes.iter().any(|scope| {
+        scope.is_empty()
+            || relative == scope
+            || relative.starts_with(&format!("{scope}/"))
+            || directory && (relative.is_empty() || scope.starts_with(&format!("{relative}/")))
+    })
+}
+
+async fn workspace_path(
+    core: &dyn ReviewFacts,
+    task: &str,
+    path: &str,
+    directory: bool,
+) -> Result<PathBuf, String> {
     let all = roots(core, task).await?;
     let path = PathBuf::from(path);
     tokio::task::spawn_blocking(move || {
@@ -1061,13 +1084,12 @@ async fn workspace_path(core: &dyn ReviewFacts, task: &str, path: &str) -> Resul
                 continue;
             };
             let relative = relative.to_string_lossy().replace('\\', "/");
-            if candidate.is_file()
-                && root.scopes.iter().any(|scope| {
-                    scope.is_empty()
-                        || relative == *scope
-                        || relative.starts_with(&format!("{scope}/"))
-                })
-            {
+            let found = if directory {
+                candidate.is_dir()
+            } else {
+                candidate.is_file()
+            };
+            if found && within_scopes(&relative, &root.scopes, directory) {
                 return Ok(candidate);
             }
         }
@@ -1118,4 +1140,28 @@ async fn mutate<T: Serialize>(
         .await;
     state.review.changes.changed();
     result
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::within_scopes;
+
+    #[test]
+    fn a_directory_leading_to_a_scope_can_be_shown_but_a_file_there_cannot() {
+        let scopes = vec!["packages/app".to_owned()];
+        assert!(within_scopes("packages/app/src", &scopes, true));
+        assert!(within_scopes("packages", &scopes, true));
+        assert!(within_scopes("", &scopes, true));
+        assert!(!within_scopes("other", &scopes, true));
+        assert!(!within_scopes("packages/app2", &scopes, true));
+        assert!(within_scopes("packages/app/a.ts", &scopes, false));
+        assert!(!within_scopes("packages/readme.md", &scopes, false));
+    }
+
+    #[test]
+    fn an_empty_scope_means_the_whole_root() {
+        let scopes = vec![String::new()];
+        assert!(within_scopes("anything", &scopes, false));
+        assert!(within_scopes("", &scopes, true));
+    }
 }

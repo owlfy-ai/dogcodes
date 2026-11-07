@@ -56,7 +56,7 @@ export function DetachedReview({ taskId }: { taskId: string }) {
     return () => { active = false; };
   }, [taskId]);
   const close = () => { void invoke("core_review_window_close", { taskId }).catch(e => setError(userFacingError(e, t("detachedReview.closeFailed")))); };
-  const panel = <ReviewPanel workspaceNavigation taskId={taskId} running={running} initialView={initialView} onClose={close} standalone />;
+  const panel = <ReviewPanel workspaceNavigation remote={!!target} taskId={taskId} running={running} initialView={initialView} onClose={close} standalone />;
   return <main className="detached-review-shell">
     {error && <InlineError>{error}</InlineError>}
     <GitCredentialPrompt taskId={taskId} />

@@ -42,6 +42,17 @@
 - 只有图标的 tab 用 `iconOnly`，`label` 仍然必填，会作为可访问名称和 tooltip。
 - 当前视图不属于任何 tab 时，`selected` 不传或传 `null`。
 
+## 右键菜单
+
+系统菜单全局禁用（`main.tsx`），应用内的右键菜单统一使用 `ContextMenu.tsx`，每个窗口挂一个 `<ContextMenuHost />`。
+
+- 对象菜单：在目标元素上写 `onContextMenu={event => showContextMenu(event, items)}`。`false`、`null` 的项和多余的分隔线会被自动去掉，异步操作失败时错误显示在菜单里。tab 用 `TabBar` 的 `menu`。
+- 输入框、选中文字和链接的菜单由 `ContextMenuHost` 统一提供，不要各自实现。自己处理了右键事件但不弹菜单时，调用 `claimContextMenu`。
+- 只放现有操作的入口。没有可做操作的地方（按钮、工具栏、空白区域）不弹菜单。
+- 需要确认的操作，文字以“…”结尾并打开 `ConfirmDialog`，不在菜单里直接执行。
+- 只对本机有意义的操作（打开文件、在访达中显示）不在远程项目里出现。
+- 粘贴用 `clipboard.ts` 的 `readClipboard`，不要用 `navigator.clipboard.readText`：它在 WebKit 里会多弹一个系统确认。
+
 ## Agent 选择
 
 - Agent 的排序和启用状态统一使用 `agentPreferences.ts`，按 providerId 保存；管理页与所有选择菜单使用同一顺序。

@@ -91,6 +91,12 @@ export function findTerminalUrls(row: (y: number) => TerminalRow | undefined, y:
   return urls;
 }
 
+/** The URL at a cell, in the 1-based coordinates of `TerminalUrl`. */
+export function terminalUrlAtCell(urls: TerminalUrl[], x: number, y: number): string | null {
+  const after = (a: IBufferCellPosition, b: { x: number; y: number }) => a.y < b.y || a.y === b.y && a.x <= b.x;
+  return urls.find(({ start, end }) => after(start, { x, y }) && after({ x, y }, end))?.url ?? null;
+}
+
 function bufferRow(terminal: Terminal, y: number): TerminalRow | undefined {
   const line = terminal.buffer.active.getLine(y);
   if (!line) return undefined;
@@ -105,6 +111,16 @@ function bufferRow(terminal: Terminal, y: number): TerminalRow | undefined {
   }
   text = text.trimEnd();
   return { text, columns: columns.slice(0, text.length), wrapped: line.isWrapped };
+}
+
+/** The URL under a point on screen, for a menu about it. */
+export function terminalUrlAtPoint(terminal: Terminal, clientX: number, clientY: number): string | null {
+  const rect = terminal.element?.querySelector(".xterm-screen")?.getBoundingClientRect();
+  if (!rect?.width || !rect.height) return null;
+  const x = Math.floor((clientX - rect.left) / (rect.width / terminal.cols));
+  const y = terminal.buffer.active.viewportY + Math.floor((clientY - rect.top) / (rect.height / terminal.rows));
+  const urls = findTerminalUrls(at => at < 0 ? undefined : bufferRow(terminal, at), y, terminal.cols);
+  return terminalUrlAtCell(urls, x + 1, y + 1);
 }
 
 /** Links from escape codes get xterm's own provider, which only knows one row at a time and

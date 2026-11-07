@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { WorkspaceFiles } from "./WorkspaceFiles";
+import { ContextMenuHost } from "./ContextMenu";
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke, Channel: class { onmessage = () => {}; } }));
 it("loads multiple roots lazily and previews highlighted source", async () => {
@@ -134,4 +135,51 @@ it("shows directory guidance after loading without starting an empty-root search
     expect(container.querySelector<HTMLInputElement>('input[type="search"]')?.disabled).toBe(true);
     expect(invoke).not.toHaveBeenCalledWith("core_workspace_find_files", expect.anything());
   } finally { await act(async () => root.unmount()); vi.unstubAllGlobals(); }
+});
+
+it("offers file and folder actions on right click, and only the paths for a server's project", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const writeText = vi.fn(async () => {});
+  vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+  invoke.mockReset();
+  invoke.mockImplementation((command: string) => {
+    if (command === "core_workspace_roots") return Promise.resolve(["/one"]);
+    if (command === "core_workspace_directory") return Promise.resolve([{ name: "a.ts", path: "src/a.ts", directory: false }, { name: "src", path: "src", directory: true }]);
+    if (command === "core_workspace_file_applications") return Promise.resolve({ absolutePath: "/one/src/a.ts", applications: [{ id: "editor", name: "Editor", isDefault: true }], error: null });
+    return Promise.resolve();
+  });
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  const labels = () => [...document.querySelectorAll('.context-menu [role="menuitem"]')].map(item => item.textContent);
+  const rightClick = (selector: string) => act(async () => { container.querySelector(selector)!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 })); });
+  const choose = (label: string) => act(async () => [...document.querySelectorAll<HTMLButtonElement>('.context-menu [role="menuitem"]')].find(item => item.textContent?.startsWith(label))!.click());
+  try {
+    await act(async () => root.render(<><ContextMenuHost /><WorkspaceFiles taskId="task" /></>));
+    await act(async () => (container.querySelector('[data-tooltip="one"]') as HTMLElement).click());
+    await rightClick('[data-tooltip="src/a.ts"]');
+    expect(labels()).toEqual(["打开", "用其他应用打开…", expect.any(String), "复制路径", "复制相对路径"]);
+    await choose("复制相对路径");
+    expect(writeText).toHaveBeenCalledWith("src/a.ts");
+    await rightClick('[data-tooltip="src/a.ts"]');
+    await choose("用其他应用打开");
+    expect(labels()).toEqual(["Editor默认"].map(() => expect.stringContaining("Editor")));
+    await choose("Editor");
+    expect(invoke).toHaveBeenCalledWith("core_open_workspace_file", { taskId: "task", path: "/one/src/a.ts", applicationId: "editor" });
+    await rightClick('[data-tooltip="src"]');
+    expect(labels()).toHaveLength(3);
+    await act(async () => document.querySelectorAll<HTMLButtonElement>('.context-menu [role="menuitem"]')[0]!.click());
+    expect(invoke).toHaveBeenCalledWith("core_reveal_workspace_directory", { taskId: "task", path: "/one/src" });
+    await rightClick('[data-tooltip="one"]');
+    await choose("复制路径");
+    expect(writeText).toHaveBeenCalledWith("/one");
+
+    await act(async () => root.render(<><ContextMenuHost /><WorkspaceFiles taskId="task" remote /></>));
+    await rightClick('[data-tooltip="src/a.ts"]');
+    expect(labels()).toEqual(["复制路径", "复制相对路径"]);
+    await rightClick('[data-tooltip="src"]');
+    expect(labels()).toEqual(["复制路径", "复制相对路径"]);
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  } finally {
+    await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals();
+  }
 });

@@ -7,7 +7,8 @@ import { loadSectionPreferences, saveSectionPreferences, withSharedHistory, COLL
 import { groupTasksByWorkspace } from "./workspaceGroups";
 
 import { ProjectHoverCard } from "./ProjectHoverCard";
-import { DeleteConversation } from "./DeleteConversation";
+import { DeleteConversation, DeleteConversationDialog } from "./DeleteConversation";
+import { showContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { AgentIcon, providerLabel } from "./agentPresentation";
 
 import { loadProjectHistoryPreferences, saveProjectHistoryPreference, PROJECT_HISTORY_KEY } from "./projectHistoryPreferences";
@@ -201,7 +202,21 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
     }
   };
   const { t } = useI18n();
-  const row = (task: TaskSummary, isPinned = false, scope = "pinned", ids = pinned.map(item => item.taskId)) => renaming === task.taskId ? renameForm(task) : <div className={selectionVisible && task.taskId === selectedTaskId ? "history-row active" : "history-row"} key={task.taskId} data-drop-edge={dropEdge(scope, task.taskId)} {...dragProps(scope, task.taskId, ids, isPinned ? "pinned" : "projects")}>
+  const [deleting, setDeleting] = useState<TaskSummary | null>(null);
+  const taskMenu = (task: TaskSummary, isPinned: boolean): ContextMenuEntry[] => [
+    onRename && { label: t("nav.rename"), disabled: saving, onSelect: () => beginRename(task) },
+    { label: isPinned ? t("nav.unpin") : t("nav.pin"), disabled: preferencesBusy, onSelect: () => update(task, isPinned ? null : "pinned") },
+    "separator",
+    { label: t("nav.archive"), disabled: preferencesBusy, onSelect: () => update(task, "archived") },
+  ];
+  // Only an archived conversation can be deleted, as with its button.
+  const archivedMenu = (task: TaskSummary): ContextMenuEntry[] => [
+    { label: t("history.restoreTooltip"), disabled: preferencesBusy, onSelect: () => update(task, null) },
+    onRename && { label: t("nav.rename"), disabled: saving, onSelect: () => beginRename(task) },
+    onDelete && "separator",
+    onDelete && { label: `${t("nav.deleteTask")}…`, disabled: deletionBlocked(task), tooltip: deletionBlocked(task) ? t("deleteTask.blockedTooltip") : undefined, onSelect: () => setDeleting(task) },
+  ];
+  const row = (task: TaskSummary, isPinned = false, scope = "pinned", ids = pinned.map(item => item.taskId)) => renaming === task.taskId ? renameForm(task) : <div className={selectionVisible && task.taskId === selectedTaskId ? "history-row active" : "history-row"} key={task.taskId} data-drop-edge={dropEdge(scope, task.taskId)} {...dragProps(scope, task.taskId, ids, isPinned ? "pinned" : "projects")} onContextMenu={event => showContextMenu(event, taskMenu(task, isPinned))}>
     <button type="button" className="task" data-tooltip={taskDisplayTitle(task.title)} data-tooltip-overflow=".task-title"
       aria-current={selectionVisible && task.taskId === selectedTaskId ? "page" : undefined} onClick={() => onSelect(task.taskId)}>
       <HistoryAgent task={task} />
@@ -276,7 +291,7 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
       {removedProjects.map(project => <button key={project.projectId} type="button" disabled={preferencesBusy} onClick={() => updateProjectPreference(project.projectId, null)}>{t("history.restoreProject", { name: project.displayName })}</button>)}
     </details>}
     {archived.length > 0 && <HistorySection className="history-archived" label={t("nav.archivedSection")} {...sectionProps("archived")}>
-      {archived.map(task => renaming === task.taskId ? renameForm(task) : <div className="history-archived-row" key={task.taskId} data-drop-edge={dropEdge("archived", task.taskId)} {...dragProps("archived", task.taskId, archived.map(item => item.taskId), "archived")}>
+      {archived.map(task => renaming === task.taskId ? renameForm(task) : <div className="history-archived-row" key={task.taskId} data-drop-edge={dropEdge("archived", task.taskId)} {...dragProps("archived", task.taskId, archived.map(item => item.taskId), "archived")} onContextMenu={event => showContextMenu(event, archivedMenu(task))}>
         <HistoryAgent task={task} />
         <span className="task-title" data-tooltip={taskDisplayTitle(task.title)} data-tooltip-overflow="">{taskDisplayTitle(task.title)}</span>
         <div className="history-row-actions">
@@ -290,5 +305,6 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
         </div>
       </div>)}
     </HistorySection>}
+    {deleting && onDelete && <DeleteConversationDialog task={deleting} blocked={deletionBlocked(deleting)} onDelete={onDelete} onClose={() => setDeleting(null)} />}
   </div>;
 }

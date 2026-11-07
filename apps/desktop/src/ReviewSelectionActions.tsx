@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { moveMenuFocus } from "./ContextMenu";
 import { FloatingPopover } from "./FloatingPopover";
 import { ConfirmDialog } from "./AppDialog";
 import { directoryName } from "./ReviewFileTree";
@@ -68,14 +69,7 @@ export function ReviewSelectionActions({ taskId, snapshot, selected, disabled, o
   };
   return <>
     {error && <InlineError className="review-selection-error">{error}</InlineError>}
-    {activeMenu && !confirmation && <div ref={menuHost} tabIndex={-1}><FloatingPopover className="review-file-menu" role="menu" aria-label={t("selection.menu")} point={activeMenu} onKeyDown={event => {
-      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-      event.preventDefault();
-      const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
-      const index = items.indexOf(document.activeElement as HTMLButtonElement);
-      const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
-      items[next]?.focus();
-    }}>
+    {activeMenu && !confirmation && <div ref={menuHost} tabIndex={-1}><FloatingPopover className="review-file-menu" role="menu" aria-label={t("selection.menu")} point={activeMenu} onKeyDown={event => moveMenuFocus(event, "button:not(:disabled)")}>
       <button role="menuitem" type="button" disabled={blocked || !action} onClick={() => action && void run(action)}>{t("selection.withCount", { label, count })}</button>
       <button role="menuitem" type="button" disabled={blocked || !ignoreAllowed} data-tooltip={!ignoreAllowed ? t("selection.ignoreTooltip") : undefined} onClick={() => void run("ignore")}>{t("selection.withCount", { label: t("fileMenu.ignore"), count })}</button>
       <hr role="separator" />

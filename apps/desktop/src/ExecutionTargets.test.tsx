@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ExecutionTargets, HostProjectDialog, TargetConnectionDialog, TargetOfflineBanner, TargetOfflinePanel } from "./ExecutionTargets";
 import { I18nProvider } from "./i18n";
+import { ContextMenuHost } from "./ContextMenu";
 import type { TerminalApi, TerminalInfo } from "./terminalClient";
 import { connectionFromForm, joinDirectory, parentDirectory, stepStates, targetRoute, type TargetApi, type TargetStatus } from "./executionTargetClient";
 
@@ -483,6 +484,35 @@ describe("connections page", () => {
   const card = () => document.querySelector<HTMLElement>(".target-card")!;
   const doubleClick = async (element: Element) => { await act(async () => { element.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); }); await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); }); };
   const tabs = () => [...document.querySelectorAll('[role="tab"]')].map(item => item.textContent);
+
+  it("offers a host's actions on right click, and asks before closing shells still running", async () => {
+    const shells = [{ id: "one", epoch: "a", status: "running" }, { id: "two", epoch: "b", status: "running" }] as Partial<TerminalInfo>[];
+    const { close, terminals } = fakeTerminals(shells);
+    const api = withHost(connected);
+    await act(async () => { root.render(<I18nProvider language="en"><ContextMenuHost /><ExecutionTargets api={api} terminals={terminals} onProjectReady={() => {}} /></I18nProvider>); });
+    await act(async () => { await Promise.resolve(); });
+    const rightClick = (target: Element) => act(async () => { target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 })); });
+    const items = () => [...document.querySelectorAll<HTMLButtonElement>('.context-menu [role="menuitem"]')];
+    const choose = (label: string) => act(async () => items().find(item => item.textContent === label)!.click());
+    await rightClick(card());
+    expect(items().map(item => item.textContent)).toEqual(["Connect", "Open a project", "Manage agents", "Check for agents again", "Edit", "Remove…"]);
+    await choose("Remove…");
+    expect(api.remove).not.toHaveBeenCalled();
+    expect(document.querySelector("dialog")!.textContent).toContain("Build");
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>("dialog button")].find(button => button.textContent?.includes("Cancel"))!.click());
+    const tabButtons = () => [...document.querySelectorAll('[role="tab"]')];
+    await rightClick(tabButtons()[0]!);
+    expect(items()).toHaveLength(0);
+    await rightClick(tabButtons()[1]!);
+    expect(items().map(item => item.textContent)).toEqual(["Close", "Close others", "Close to the right"]);
+    await choose("Close others");
+    expect(close).not.toHaveBeenCalled();
+    expect(document.querySelector("dialog")!.textContent).toContain("1 of these terminals");
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>("dialog button")].find(button => button.textContent === "Close" || button.textContent?.endsWith("Close"))!.click());
+    await act(async () => { await Promise.resolve(); });
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(tabs()).toHaveLength(2);
+  });
 
   it("describes an empty list", async () => {
     await page(fakeApi(idle));

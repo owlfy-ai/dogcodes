@@ -4,6 +4,7 @@ mod agent_updates;
 mod artifact_export;
 mod attachment_service;
 mod attachments;
+mod clipboard;
 mod computer_notice;
 mod computer_notice_layout;
 mod computer_use;
@@ -1330,6 +1331,8 @@ pub fn run() {
             review_commands::core_open_workspace_file,
             review_commands::core_workspace_file_applications,
             review_commands::core_reveal_workspace_file,
+            review_commands::core_reveal_workspace_directory,
+            clipboard::read_clipboard,
             workspace_browser::bridges::core_workspace_watch,
             workspace_browser::bridges::core_workspace_unwatch,
             workspace_browser::core_workspace_find_files,

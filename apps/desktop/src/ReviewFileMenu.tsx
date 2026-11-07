@@ -1,13 +1,14 @@
 import { ConfirmDialog } from "./AppDialog";
 import { useEffect, useRef, useState } from "react";
+import { moveMenuFocus } from "./ContextMenu";
 import { FloatingPopover } from "./FloatingPopover";
 import { InlineError } from "./InlineError";
 import { userFacingError } from "./userFacingError";
 import { reviewClient, type RootChanges, type ReviewChange } from "./reviewClient";
 import { translate as t } from "./i18n";
 export type FileMenuTarget = { root: RootChanges; file: ReviewChange; snapshotId: string; x: number; y: number; trigger: HTMLButtonElement };
-export function ReviewFileMenu({ target, taskId, disabled, onClose, onOpenChanges, onOpenFile, onRevealTree, onChanged, onBusy, api = reviewClient }: {
-  target: FileMenuTarget; taskId: string; disabled: boolean; onClose: () => void; onOpenChanges: () => void;
+export function ReviewFileMenu({ target, taskId, disabled, onClose, onOpenChanges, onOpenFile, onRevealTree, onChanged, onBusy, remote = false, api = reviewClient }: {
+  target: FileMenuTarget; taskId: string; disabled: boolean; remote?: boolean; onClose: () => void; onOpenChanges: () => void;
   onOpenFile: (version: "working" | "head") => void; onRevealTree: () => void; onChanged: () => void; onBusy: (busy: boolean) => void; api?: typeof reviewClient;
 }) {
   const [confirm, setConfirm] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
@@ -38,14 +39,7 @@ export function ReviewFileMenu({ target, taskId, disabled, onClose, onOpenChange
   const noGit = !root.root.git;
   const missing = file.kind === "deleted";
   return <div ref={host}>
-    {!confirm && <FloatingPopover className="review-file-menu" role="menu" aria-label={t("fileMenu.label")} point={target} onKeyDown={event => {
-      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-      event.preventDefault();
-      const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')];
-      const index = items.indexOf(document.activeElement as HTMLButtonElement);
-      const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
-      items[next]?.focus();
-    }}>
+    {!confirm && <FloatingPopover className="review-file-menu" role="menu" aria-label={t("fileMenu.label")} point={target} onKeyDown={moveMenuFocus}>
       <button role="menuitem" type="button" onClick={() => choose(onOpenChanges)}>{t("fileMenu.openChanges")}</button>
       <button role="menuitem" type="button" disabled={missing || gitlink} data-tooltip={missing ? t("fileMenu.deleted") : undefined} onClick={() => choose(() => onOpenFile("working"))}>{t("inlineEdit.openFile")}</button>
       <button role="menuitem" type="button" disabled={noGit || gitlink || root.untracked.includes(file.path)} data-tooltip={noGit ? t("gitCommit.notGit") : root.untracked.includes(file.path) ? t("fileMenu.untrackedHead") : undefined} onClick={() => choose(() => onOpenFile("head"))}>{t("fileMenu.openHead")}</button>
@@ -54,7 +48,7 @@ export function ReviewFileMenu({ target, taskId, disabled, onClose, onOpenChange
       <button role="menuitem" type="button" disabled={blocked || !indexAction} onClick={() => void run(() => api.index(taskId, snapshotId, root.root.id, file.path, indexAction!), t(indexAction === "unstage" ? "fileMenu.unstageFailed" : "fileMenu.stageFailed"), true)}>{t(indexAction === "unstage" ? "fileMenu.unstage" : "review.stage")}</button>
       <button role="menuitem" type="button" disabled={blocked || noGit || !root.untracked.includes(file.path)} data-tooltip={noGit ? t("gitCommit.notGit") : !root.untracked.includes(file.path) ? t("fileMenu.trackedIgnore") : undefined} onClick={() => void run(() => api.ignore(taskId, snapshotId, root.root.id, file.path), t("fileMenu.ignoreFailed"), true)}>{t("fileMenu.ignore")}</button>
       <hr role="separator" />
-      <button role="menuitem" type="button" disabled={busy || missing} onClick={() => void run(() => api.reveal(taskId, snapshotId, root.root.id, file.path), t("fileMenu.revealFailed"))}>{t(/Mac/.test(navigator.platform) ? "openFile.reveal.finder" : "openFile.reveal.fileManager")}</button>
+      {!remote && <button role="menuitem" type="button" disabled={busy || missing} onClick={() => void run(() => api.reveal(taskId, snapshotId, root.root.id, file.path), t("fileMenu.revealFailed"))}>{t(/Mac/.test(navigator.platform) ? "openFile.reveal.finder" : "openFile.reveal.fileManager")}</button>}
       <button role="menuitem" type="button" disabled={missing} onClick={() => choose(onRevealTree)}>{t("fileMenu.revealTree")}</button>
       {error && <InlineError>{error}</InlineError>}
     </FloatingPopover>}

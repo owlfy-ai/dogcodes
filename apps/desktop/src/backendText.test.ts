@@ -10,7 +10,7 @@ import { userFacingError } from "./userFacingError";
 
 // Everything the management of agents and remote hosts can say to a person.
 const REMOTE_SOURCES = [
-  "apps/desktop/src-tauri/src/execution_targets.rs", "apps/desktop/src-tauri/src/execution_targets/agent_installs.rs",
+  "apps/desktop/src-tauri/src/clipboard.rs", "apps/desktop/src-tauri/src/execution_targets.rs", "apps/desktop/src-tauri/src/execution_targets/agent_installs.rs",
   "apps/desktop/src-tauri/src/execution_targets/agent_updates.rs", "apps/desktop/src-tauri/src/execution_targets/agents.rs",
   "apps/desktop/src-tauri/src/terminal_host/remote.rs", "crates/antigravity-driver/src/approval_bridge.rs",
   "crates/agent-management/src/install.rs", "crates/agent-management/src/operation.rs", "crates/agent-management/src/http.rs",

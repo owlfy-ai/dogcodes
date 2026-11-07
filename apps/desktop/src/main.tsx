@@ -10,6 +10,7 @@ import { StartupGate } from "./StartupGate";
 import { SharedAgentPreferencesGate } from "./SharedAgentPreferencesGate";
 import "./styles.css";
 import { Tooltips } from "./Tooltips";
+import { ContextMenuHost } from "./ContextMenu";
 import { installFocusVisibility } from "./focusVisibility";
 
 const disposeFocusVisibility = installFocusVisibility(document);
@@ -71,6 +72,7 @@ function RevealWindow() {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Tooltips />
+    <ContextMenuHost />
     <RevealWindow />
     <RecoveryMaintenance />
     <AppErrorBoundary>
