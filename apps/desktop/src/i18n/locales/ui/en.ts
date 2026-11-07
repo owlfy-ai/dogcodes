@@ -249,6 +249,17 @@ export const uiEn = {
     uploadUnconfirmed: "The attachment upload isn't confirmed. Choose the original file again.",
     zoom: "View image {name} larger",
   },
+  attention: {
+    approval: "Waiting for your approval",
+    completed: "Finished, not viewed yet",
+    failed: "Failed, not viewed yet",
+    notifications: "System notifications",
+    notifyApproval: "Needs your approval to continue",
+    notifyCompleted: "This turn finished",
+    notifyFailed: "This turn failed",
+    notifyQuestion: "Needs your answer to continue",
+    question: "Waiting for your answer",
+  },
   autoContext: {
     executorChanged: "The Agent changed. Please retry",
     unavailable: "The conversation is no longer available",
@@ -337,6 +348,7 @@ export const uiEn = {
     closeRunningBody: "{count} of these terminals are still running. Closing them stops what's running in them.",
     closeRunningTitle: "Close running terminals?",
     copy: "Copy",
+    copyCommand: "Copy command",
     copyLink: "Copy link",
     copyRelativePath: "Copy relative path",
     cut: "Cut",
@@ -346,7 +358,10 @@ export const uiEn = {
     openLink: "Open link",
     openWith: "Open with…",
     paste: "Paste",
+    pinCommand: "Pin",
+    run: "Run",
     selectAll: "Select all",
+    showOutput: "Show output",
   },
   contextUsage: {
     cacheRead: "Cache read",
@@ -387,6 +402,14 @@ export const uiEn = {
   conversationScroll: {
     label: "Conversation",
     toBottom: "Back to bottom",
+  },
+  conversationSearch: {
+    clear: "Clear search",
+    failed: "Couldn't search message contents. Showing title matches only.",
+    noResults: "No matching conversations",
+    placeholder: "Search conversations",
+    results: "Search results",
+    searching: "Searching",
   },
   deleteTask: {
     blocked: "The conversation is running a main task or review. Stop it before deleting.",

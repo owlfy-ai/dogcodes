@@ -2,6 +2,8 @@
 
 use std::{path::Path, sync::Mutex};
 
+use agent_core::history::{ConversationMatch, search_snippet};
+
 use agent_core::{
     AppendOutcome, AppendRequest, CoreRepository, PendingContextTransfer,
     PendingReconciliationOptOut, RepositoryError, StoredArtifact,
@@ -673,6 +675,43 @@ impl CoreRepository for SqliteStore {
                     })
                 },
             )
+            .map_err(storage_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(storage_error)
+    }
+
+    async fn search_conversations(
+        &self,
+        text: &str,
+        limit: usize,
+    ) -> Result<Vec<ConversationMatch>, RepositoryError> {
+        let connection = self.connection.lock().map_err(poison_error)?;
+        // Many agents' replies are `activity` rows holding JSON, whose keys and tool output
+        // would otherwise match. The bare columns come from the MAX(sequence) row.
+        let mut statement = connection
+            .prepare(
+                "WITH messages AS (
+                   SELECT item_id, task_id, turn_id, kind, sequence, occurred_at,
+                     CASE WHEN kind = 'activity' THEN json_extract(text, '$.text') ELSE text END AS body
+                   FROM timeline_items
+                   WHERE kind IN ('user_message', 'assistant_message')
+                     OR (kind = 'activity' AND json_valid(text) AND json_extract(text, '$.type') = 'message')
+                 )
+                 SELECT task_id, item_id, turn_id, kind, body, occurred_at, MAX(sequence)
+                 FROM messages WHERE instr(lower(body), lower(?1)) > 0
+                 GROUP BY task_id ORDER BY occurred_at DESC LIMIT ?2",
+            )
+            .map_err(storage_error)?;
+        statement
+            .query_map(params![text, to_i64(limit as u64)?], |row| {
+                Ok(ConversationMatch {
+                    task_id: parse_id(row.get::<_, String>(0)?)?,
+                    item_id: row.get(1)?,
+                    turn_id: row.get(2)?,
+                    from_user: row.get::<_, String>(3)? == "user_message",
+                    snippet: search_snippet(&row.get::<_, String>(4)?, text),
+                })
+            })
             .map_err(storage_error)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(storage_error)
@@ -6341,6 +6380,101 @@ mod tests {
         );
         store.rebuild_projections().unwrap();
         assert_eq!(core.timeline(&task_id).await.unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn searches_what_people_read_in_every_conversation() {
+        let store = Arc::new(SqliteStore::open_in_memory().unwrap());
+        let core = Arc::new(Core::new(store.clone()));
+        let (first, second) = (scripted_task(&core).await, scripted_task(&core).await);
+        let insert = |id: &str, task: &TaskId, kind: &str, text: String, sequence: i64| {
+            store
+                .connection
+                .lock()
+                .unwrap()
+                .execute(
+                    "INSERT INTO timeline_items(item_id, task_id, turn_id, kind, text, sequence, occurred_at)
+                     VALUES (?1, ?2, 'turn', ?3, ?4, ?5, ?5)",
+                    params![id, task.as_str(), kind, text, sequence],
+                )
+                .unwrap();
+        };
+        let activity = |kind: &str, text: &str| json!({ "type": kind, "text": text }).to_string();
+        insert(
+            "old",
+            &first,
+            "user_message",
+            "Fix the LOGIN bug".into(),
+            1000,
+        );
+        insert(
+            "new",
+            &first,
+            "activity",
+            activity("message", "The login form is fixed"),
+            1001,
+        );
+        insert(
+            "tool",
+            &first,
+            "activity",
+            activity("tool", "login in a tool's output"),
+            1002,
+        );
+        insert(
+            "thought",
+            &second,
+            "activity",
+            activity("thought", "login, I wonder"),
+            1003,
+        );
+        insert(
+            "other",
+            &second,
+            "assistant_message",
+            "Nothing relevant".into(),
+            1004,
+        );
+        // A key of the JSON itself is not something anyone reads.
+        assert!(
+            store
+                .search_conversations("type", 10)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        let results = store.search_conversations("login", 10).await.unwrap();
+        assert_eq!(
+            results.len(),
+            1,
+            "one row per conversation, tools and thoughts excluded"
+        );
+        assert_eq!(results[0].task_id, first);
+        assert_eq!(results[0].item_id, "new");
+        assert!(!results[0].from_user);
+        assert_eq!(results[0].snippet, "The login form is fixed");
+
+        let results = store
+            .search_conversations("fix the login", 10)
+            .await
+            .unwrap();
+        assert_eq!(results[0].item_id, "old");
+        assert!(results[0].from_user);
+
+        insert(
+            "relevant",
+            &second,
+            "assistant_message",
+            "login again".into(),
+            1005,
+        );
+        let results = store.search_conversations("login", 10).await.unwrap();
+        assert_eq!(results[0].task_id, second, "newest conversation first");
+        assert_eq!(
+            store.search_conversations("login", 1).await.unwrap().len(),
+            1
+        );
     }
 
     async fn scripted_task(core: &Arc<Core>) -> TaskId {

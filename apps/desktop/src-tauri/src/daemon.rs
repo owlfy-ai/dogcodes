@@ -592,6 +592,19 @@ impl CoreClient {
         }
         self.call("query_history", json!((query,))).await
     }
+    pub async fn search_conversations(
+        &self,
+        text: &str,
+    ) -> Result<Vec<agent_core::history::ConversationMatch>, String> {
+        #[cfg(any(test, feature = "review-acceptance"))]
+        if let Self::Local(core, _) = self {
+            return core
+                .search_conversations(text)
+                .await
+                .map_err(|e| e.to_string());
+        }
+        self.call("search_conversations", json!((text,))).await
+    }
     pub async fn recovery_snapshot(&self, actor: &ActorRef) -> Result<RecoverySnapshot, String> {
         #[cfg(any(test, feature = "review-acceptance"))]
         if let Self::Local(core, _) = self {
@@ -1152,6 +1165,14 @@ async fn dispatch(core: &Arc<Core>, method: &str, args: Value) -> Result<Value, 
                 serde_json::from_value(args).map_err(|e| e.to_string())?;
             let result = core
                 .build_edited_context_preview(edit)
+                .await
+                .map_err(|e| e.to_string())?;
+            serde_json::to_value(result).map_err(|e| e.to_string())
+        }
+        "search_conversations" => {
+            let (text,): (String,) = serde_json::from_value(args).map_err(|e| e.to_string())?;
+            let result = core
+                .search_conversations(&text)
                 .await
                 .map_err(|e| e.to_string())?;
             serde_json::to_value(result).map_err(|e| e.to_string())

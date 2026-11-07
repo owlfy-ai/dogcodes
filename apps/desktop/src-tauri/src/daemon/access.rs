@@ -39,6 +39,7 @@ pub(crate) fn method_access(method: &str) -> Option<MethodAccess> {
         | "prepare_approval_response"
         | "project_runs"
         | "query_history"
+        | "search_conversations"
         | "quota_snapshots_for"
         | "read_artifact"
         | "recovery_snapshot"

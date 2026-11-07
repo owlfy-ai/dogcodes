@@ -150,6 +150,18 @@ pub async fn core_reveal_workspace_file(
     crate::review_file_actions::reveal_file(path).await
 }
 
+/// Where a file really is, on whichever machine its task runs.
+#[tauri::command]
+pub async fn core_workspace_file_path(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, DesktopState>,
+    task_id: String,
+    path: String,
+) -> Result<PathBuf, String> {
+    require_task_window(window.label(), &task_id)?;
+    workspace_file(&state, &task_id, &path).await
+}
+
 #[tauri::command]
 pub async fn core_reveal_workspace_directory(
     window: tauri::WebviewWindow,

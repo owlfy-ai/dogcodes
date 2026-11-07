@@ -195,6 +195,60 @@ it.each(["scroll first", "resize first"])("keeps following through a streaming l
   }
 });
 
+it("keeps following when a re-render clamps the position and restores the same height", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  let height = 1400, top = 0;
+  const heights = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(() => height);
+  const sizes = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(500);
+  const tops = vi.spyOn(HTMLElement.prototype, "scrollTop", "get").mockImplementation(() => top);
+  const writes = vi.spyOn(HTMLElement.prototype, "scrollTop", "set").mockImplementation(value => { top = Math.max(0, Math.min(value, height - 500)); });
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ConversationScroll taskId="one"><p key="turn">Turn</p></ConversationScroll>));
+    const node = host.querySelector<HTMLElement>(".timeline")!;
+    expect(top).toBe(900);
+    await act(async () => {
+      // The turn's actions mount: its old DOM leaves first and a layout read in
+      // that window clamps scrollTop. No resize is observable afterwards.
+      height = 800; node.scrollTop = top; height = 1400;
+      root.render(<ConversationScroll taskId="one"><p key="settled">Turn</p></ConversationScroll>);
+    });
+    await act(async () => { node.dispatchEvent(new Event("scroll")); });
+    expect(top).toBe(900);
+    expect(host.querySelector(".conversation-latest")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    heights.mockRestore(); sizes.mockRestore(); tops.mockRestore(); writes.mockRestore(); vi.unstubAllGlobals();
+  }
+});
+
+it("does not resume following when content changes after scrolling up", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  let height = 1400, top = 0;
+  const heights = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(() => height);
+  const sizes = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(500);
+  const tops = vi.spyOn(HTMLElement.prototype, "scrollTop", "get").mockImplementation(() => top);
+  const writes = vi.spyOn(HTMLElement.prototype, "scrollTop", "set").mockImplementation(value => { top = Math.max(0, Math.min(value, height - 500)); });
+  const host = document.createElement("div"), root = createRoot(host);
+  try {
+    await act(async () => root.render(<ConversationScroll taskId="one"><p key="turn">Turn</p></ConversationScroll>));
+    const node = host.querySelector<HTMLElement>(".timeline")!;
+    await act(async () => {
+      node.dispatchEvent(new WheelEvent("wheel", { deltaY: -40, bubbles: true }));
+      node.scrollTop = 600;
+      node.dispatchEvent(new Event("scroll"));
+    });
+    await act(async () => root.render(<ConversationScroll taskId="one"><p key="settled">Turn</p></ConversationScroll>));
+    expect(top).toBe(600);
+    expect(host.querySelector(".conversation-latest")).not.toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    heights.mockRestore(); sizes.mockRestore(); tops.mockRestore(); writes.mockRestore(); vi.unstubAllGlobals();
+  }
+});
+
 it("keeps following when viewport resizing clamps the position during streaming", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   let resize!: () => void;

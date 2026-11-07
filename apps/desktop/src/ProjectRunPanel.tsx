@@ -1,4 +1,5 @@
 import { TabBar } from "./TabBar";
+import { copyText } from "./clipboard";
 import { RunOperationRejected } from "./projectRunOperations";
 import { useEnabledAgents } from "./agentPreferences";
 import { ProjectRunItem, RunAnalysisConfirmation, RunCloseConfirmation } from "./ProjectRunItem";
@@ -225,6 +226,12 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
         id: item.key, label: `${item.command.label}${item.exited ? ` · ${t("projectRun.exited")}` : item.uncertain ? ` · ${t("projectRun.uncertain")}` : ""}`,
         tooltip: `${item.path}\n${item.command.command}`,
         close: { label: t("projectRun.closeOutput", { label: item.command.label }), onClose: () => requestClose(item) },
+        menu: () => [
+          { label: t("contextMenu.copyCommand"), onSelect: () => copyText(item.command.command) },
+          !item.exited && { label: t("projectRun.stopRun"), onSelect: () => item.process.stop() },
+          "separator",
+          { label: t("contextMenu.close"), onSelect: () => requestClose(item) },
+        ],
       }))} />
       {outputs.map(item => <div className="project-run-console" key={item.key} hidden={selected !== item.key}>
         <div className="project-run-console-bar"><code data-tooltip={item.command.command}>{item.command.command}</code>

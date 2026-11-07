@@ -249,6 +249,17 @@ export const uiFr: UiMessages = {
     uploadUnconfirmed: "Le téléversement de la pièce jointe n’est pas confirmé. Choisissez à nouveau le fichier d’origine.",
     zoom: "Agrandir l’image {name}",
   },
+  attention: {
+    approval: "En attente de votre approbation",
+    completed: "Terminé, pas encore consulté",
+    failed: "Échec, pas encore consulté",
+    notifications: "Notifications système",
+    notifyApproval: "Votre approbation est nécessaire pour continuer",
+    notifyCompleted: "Ce tour est terminé",
+    notifyFailed: "Ce tour a échoué",
+    notifyQuestion: "Votre réponse est nécessaire pour continuer",
+    question: "En attente de votre réponse",
+  },
   autoContext: {
     executorChanged: "L’Agent a changé. Réessayez",
     unavailable: "La conversation n’est plus disponible",
@@ -337,6 +348,7 @@ export const uiFr: UiMessages = {
     closeRunningBody: "{count} de ces terminaux sont encore en cours d'exécution. Les fermer arrête ce qui s'y exécute.",
     closeRunningTitle: "Fermer les terminaux en cours d'exécution ?",
     copy: "Copier",
+    copyCommand: "Copier la commande",
     copyLink: "Copier le lien",
     copyRelativePath: "Copier le chemin relatif",
     cut: "Couper",
@@ -346,7 +358,10 @@ export const uiFr: UiMessages = {
     openLink: "Ouvrir le lien",
     openWith: "Ouvrir avec…",
     paste: "Coller",
+    pinCommand: "Épingler",
+    run: "Exécuter",
     selectAll: "Tout sélectionner",
+    showOutput: "Afficher la sortie",
   },
   contextUsage: {
     cacheRead: "Lecture du cache",
@@ -387,6 +402,14 @@ export const uiFr: UiMessages = {
   conversationScroll: {
     label: "Conversation",
     toBottom: "Retour en bas",
+  },
+  conversationSearch: {
+    clear: "Effacer la recherche",
+    failed: "Impossible de rechercher dans les messages. Seuls les titres correspondants sont affichés.",
+    noResults: "Aucune conversation correspondante",
+    placeholder: "Rechercher des conversations",
+    results: "Résultats de recherche",
+    searching: "Recherche en cours",
   },
   deleteTask: {
     blocked: "La conversation exécute une tâche principale ou une revue. Arrêtez-la avant de supprimer.",

@@ -249,6 +249,17 @@ export const uiRu: UiMessages = {
     uploadUnconfirmed: "Загрузка вложения не подтверждена. Снова выберите исходный файл.",
     zoom: "Увеличить изображение {name}",
   },
+  attention: {
+    approval: "Ждёт вашего подтверждения",
+    completed: "Завершено, ещё не просмотрено",
+    failed: "Сбой, ещё не просмотрено",
+    notifications: "Системные уведомления",
+    notifyApproval: "Нужно ваше подтверждение, чтобы продолжить",
+    notifyCompleted: "Этот ход завершён",
+    notifyFailed: "Этот ход завершился сбоем",
+    notifyQuestion: "Нужен ваш ответ, чтобы продолжить",
+    question: "Ждёт вашего ответа",
+  },
   autoContext: {
     executorChanged: "Agent изменился. Повторите попытку",
     unavailable: "Разговор больше недоступен",
@@ -337,6 +348,7 @@ export const uiRu: UiMessages = {
     closeRunningBody: "Терминалов, которые ещё работают: {count}. При закрытии запущенные в них программы будут остановлены.",
     closeRunningTitle: "Закрыть работающие терминалы?",
     copy: "Копировать",
+    copyCommand: "Скопировать команду",
     copyLink: "Копировать ссылку",
     copyRelativePath: "Копировать относительный путь",
     cut: "Вырезать",
@@ -346,7 +358,10 @@ export const uiRu: UiMessages = {
     openLink: "Открыть ссылку",
     openWith: "Открыть с помощью…",
     paste: "Вставить",
+    pinCommand: "Закрепить",
+    run: "Запустить",
     selectAll: "Выделить всё",
+    showOutput: "Показать вывод",
   },
   contextUsage: {
     cacheRead: "Чтение кеша",
@@ -387,6 +402,14 @@ export const uiRu: UiMessages = {
   conversationScroll: {
     label: "Разговор",
     toBottom: "Вернуться вниз",
+  },
+  conversationSearch: {
+    clear: "Очистить поиск",
+    failed: "Не удалось найти в сообщениях. Показаны только совпадения в названиях.",
+    noResults: "Подходящих бесед нет",
+    placeholder: "Поиск бесед",
+    results: "Результаты поиска",
+    searching: "Идёт поиск",
   },
   deleteTask: {
     blocked: "В разговоре выполняется основная задача или проверка. Остановите её перед удалением.",

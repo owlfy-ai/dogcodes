@@ -249,6 +249,17 @@ export const uiZhTW: UiMessages = {
     uploadUnconfirmed: "附件尚未確認上傳完成，請重新選擇原檔案。",
     zoom: "放大查看圖片 {name}",
   },
+  attention: {
+    approval: "等待你確認",
+    completed: "已完成，尚未檢視",
+    failed: "執行失敗，尚未檢視",
+    notifications: "系統通知",
+    notifyApproval: "需要你確認後才能繼續",
+    notifyCompleted: "這一輪已完成",
+    notifyFailed: "這一輪執行失敗",
+    notifyQuestion: "需要你回答後才能繼續",
+    question: "等待你回答",
+  },
   autoContext: {
     executorChanged: "執行者已變化，請重試",
     unavailable: "對話已不可用",
@@ -337,6 +348,7 @@ export const uiZhTW: UiMessages = {
     closeRunningBody: "其中 {count} 個終端機仍在執行，關閉後其中的程式會被終止。",
     closeRunningTitle: "要關閉執行中的終端機嗎？",
     copy: "複製",
+    copyCommand: "複製命令",
     copyLink: "複製連結",
     copyRelativePath: "複製相對路徑",
     cut: "剪下",
@@ -346,7 +358,10 @@ export const uiZhTW: UiMessages = {
     openLink: "開啟連結",
     openWith: "用其他應用程式開啟…",
     paste: "貼上",
+    pinCommand: "固定",
+    run: "執行",
     selectAll: "全選",
+    showOutput: "檢視輸出",
   },
   contextUsage: {
     cacheRead: "快取讀取",
@@ -387,6 +402,14 @@ export const uiZhTW: UiMessages = {
   conversationScroll: {
     label: "對話正文",
     toBottom: "回到底部",
+  },
+  conversationSearch: {
+    clear: "清除搜尋",
+    failed: "無法搜尋訊息內容，這裡只顯示標題相符的對話。",
+    noResults: "找不到相關對話",
+    placeholder: "搜尋對話",
+    results: "搜尋結果",
+    searching: "正在搜尋",
   },
   deleteTask: {
     blocked: "對話正在執行主任務或審查，請先停止後再刪除。",

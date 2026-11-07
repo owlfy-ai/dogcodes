@@ -249,6 +249,17 @@ export const uiPtBR: UiMessages = {
     uploadUnconfirmed: "O envio do anexo não foi confirmado. Escolha o arquivo original novamente.",
     zoom: "Ver a imagem {name} em tamanho maior",
   },
+  attention: {
+    approval: "Aguardando sua aprovação",
+    completed: "Concluído, ainda não visto",
+    failed: "Falhou, ainda não visto",
+    notifications: "Notificações do sistema",
+    notifyApproval: "Precisa da sua aprovação para continuar",
+    notifyCompleted: "Este turno terminou",
+    notifyFailed: "Este turno falhou",
+    notifyQuestion: "Precisa da sua resposta para continuar",
+    question: "Aguardando sua resposta",
+  },
   autoContext: {
     executorChanged: "O Agent mudou. Tente novamente",
     unavailable: "A conversa não está mais disponível",
@@ -337,6 +348,7 @@ export const uiPtBR: UiMessages = {
     closeRunningBody: "{count} destes terminais ainda estão em execução. Fechá-los interrompe o que está rodando neles.",
     closeRunningTitle: "Fechar terminais em execução?",
     copy: "Copiar",
+    copyCommand: "Copiar comando",
     copyLink: "Copiar link",
     copyRelativePath: "Copiar caminho relativo",
     cut: "Recortar",
@@ -346,7 +358,10 @@ export const uiPtBR: UiMessages = {
     openLink: "Abrir link",
     openWith: "Abrir com…",
     paste: "Colar",
+    pinCommand: "Fixar",
+    run: "Executar",
     selectAll: "Selecionar tudo",
+    showOutput: "Ver saída",
   },
   contextUsage: {
     cacheRead: "Leitura de cache",
@@ -387,6 +402,14 @@ export const uiPtBR: UiMessages = {
   conversationScroll: {
     label: "Conversa",
     toBottom: "Voltar ao final",
+  },
+  conversationSearch: {
+    clear: "Limpar busca",
+    failed: "Não foi possível buscar nas mensagens. Mostrando apenas títulos correspondentes.",
+    noResults: "Nenhuma conversa correspondente",
+    placeholder: "Buscar conversas",
+    results: "Resultados da busca",
+    searching: "Buscando",
   },
   deleteTask: {
     blocked: "A conversa está executando uma tarefa principal ou revisão. Pare-a antes de excluir.",

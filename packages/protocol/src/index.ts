@@ -634,6 +634,7 @@ export interface CoreClient {
   scanAgent(providerId: string, fresh?: boolean): Promise<BootstrapSnapshot>;
   prepareSessionRebuild?(taskId: TaskId, expectedVersion: number): Promise<void>;
   queryHistory?(query: HistoryQuery): Promise<HistoryPage>;
+  searchConversations?(text: string): Promise<ConversationMatch[]>;
   recoverySnapshot(): Promise<RecoverySnapshot>;
   exportDiagnostics(): Promise<"saved" | "cancelled">;
   quotaSnapshots(taskId?: TaskId | null, installationId?: string, force?: boolean): Promise<QuotaSnapshotView[]>;
@@ -734,6 +735,7 @@ export interface PermissionMode { id: string; label: string; description: string
 export interface PermissionCatalog { modes: PermissionMode[]; defaultModeId: string | null; }
 
 export interface HistoryQuery { taskId: TaskId; afterSequence: number; throughSequence?: number | null; limit: number; kind: "turns" | "search" | "decisions" | "changes"; text: string }
+export interface ConversationMatch { taskId: TaskId; itemId: string; turnId: string | null; fromUser: boolean; snippet: string }
 export interface HistoryPage { items: {sequence: number; turnId: string | null; kind: string; text: string; occurredAt: string; attachments?: PromptAttachment[]}[]; nextCursor: number | null; throughSequence: number; coverage: string }
 
 export type ReviewKind = "code" | "security" | "performance";

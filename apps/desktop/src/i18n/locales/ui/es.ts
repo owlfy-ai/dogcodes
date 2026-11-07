@@ -249,6 +249,17 @@ export const uiEs: UiMessages = {
     uploadUnconfirmed: "La subida del adjunto no está confirmada. Elige de nuevo el archivo original.",
     zoom: "Ver la imagen {name} más grande",
   },
+  attention: {
+    approval: "Esperando tu aprobación",
+    completed: "Terminado, aún sin ver",
+    failed: "Falló, aún sin ver",
+    notifications: "Notificaciones del sistema",
+    notifyApproval: "Necesita tu aprobación para continuar",
+    notifyCompleted: "Este turno ha terminado",
+    notifyFailed: "Este turno ha fallado",
+    notifyQuestion: "Necesita tu respuesta para continuar",
+    question: "Esperando tu respuesta",
+  },
   autoContext: {
     executorChanged: "El Agent cambió. Inténtalo de nuevo",
     unavailable: "La conversación ya no está disponible",
@@ -337,6 +348,7 @@ export const uiEs: UiMessages = {
     closeRunningBody: "{count} de estos terminales siguen en ejecución. Al cerrarlos se detiene lo que se ejecuta en ellos.",
     closeRunningTitle: "¿Cerrar los terminales en ejecución?",
     copy: "Copiar",
+    copyCommand: "Copiar comando",
     copyLink: "Copiar enlace",
     copyRelativePath: "Copiar ruta relativa",
     cut: "Cortar",
@@ -346,7 +358,10 @@ export const uiEs: UiMessages = {
     openLink: "Abrir enlace",
     openWith: "Abrir con…",
     paste: "Pegar",
+    pinCommand: "Fijar",
+    run: "Ejecutar",
     selectAll: "Seleccionar todo",
+    showOutput: "Ver salida",
   },
   contextUsage: {
     cacheRead: "Lectura de caché",
@@ -387,6 +402,14 @@ export const uiEs: UiMessages = {
   conversationScroll: {
     label: "Conversación",
     toBottom: "Volver al final",
+  },
+  conversationSearch: {
+    clear: "Borrar búsqueda",
+    failed: "No se pudo buscar en los mensajes. Solo se muestran coincidencias en el título.",
+    noResults: "No hay conversaciones coincidentes",
+    placeholder: "Buscar conversaciones",
+    results: "Resultados de búsqueda",
+    searching: "Buscando",
   },
   deleteTask: {
     blocked: "La conversación está ejecutando una tarea principal o una revisión. Detenla antes de eliminar.",

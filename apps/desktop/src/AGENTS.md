@@ -52,6 +52,7 @@
 - 需要确认的操作，文字以“…”结尾并打开 `ConfirmDialog`，不在菜单里直接执行。
 - 只对本机有意义的操作（打开文件、在访达中显示）不在远程项目里出现。
 - 粘贴用 `clipboard.ts` 的 `readClipboard`，不要用 `navigator.clipboard.readText`：它在 WebKit 里会多弹一个系统确认。
+- 复制前要先向后端取内容时用 `copyPendingText`：WebKit 只允许在点击当下写剪贴板，等结果回来再写会失败。
 
 ## Agent 选择
 

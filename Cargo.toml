@@ -29,6 +29,7 @@ members = [
   "crates/workspace",
   "crates/native-acl",
   "crates/open-with",
+  "crates/notification-center",
   "experiments/codex-app-server",
   "experiments/acp",
   "apps/desktop/src-tauri",

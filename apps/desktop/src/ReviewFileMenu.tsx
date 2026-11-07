@@ -1,6 +1,8 @@
 import { ConfirmDialog } from "./AppDialog";
 import { useEffect, useRef, useState } from "react";
+import { copyText } from "./clipboard";
 import { moveMenuFocus } from "./ContextMenu";
+import { joinWorkspacePath } from "./workspaceFileMenu";
 import { FloatingPopover } from "./FloatingPopover";
 import { InlineError } from "./InlineError";
 import { userFacingError } from "./userFacingError";
@@ -50,6 +52,8 @@ export function ReviewFileMenu({ target, taskId, disabled, onClose, onOpenChange
       <hr role="separator" />
       {!remote && <button role="menuitem" type="button" disabled={busy || missing} onClick={() => void run(() => api.reveal(taskId, snapshotId, root.root.id, file.path), t("fileMenu.revealFailed"))}>{t(/Mac/.test(navigator.platform) ? "openFile.reveal.finder" : "openFile.reveal.fileManager")}</button>}
       <button role="menuitem" type="button" disabled={missing} onClick={() => choose(onRevealTree)}>{t("fileMenu.revealTree")}</button>
+      <button role="menuitem" type="button" disabled={busy} onClick={() => void run(() => copyText(joinWorkspacePath(root.root.path, file.path)), t("openFile.copyFailed"))}>{t("openFile.copyPath")}</button>
+      <button role="menuitem" type="button" disabled={busy} onClick={() => void run(() => copyText(file.path), t("openFile.copyFailed"))}>{t("contextMenu.copyRelativePath")}</button>
       {error && <InlineError>{error}</InlineError>}
     </FloatingPopover>}
     {confirm && <ConfirmDialog title={t("fileMenu.discardTitle")} tone="danger" icon="trash" busy={busy} disabled={blocked} wide

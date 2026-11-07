@@ -249,6 +249,17 @@ export const uiKo: UiMessages = {
     uploadUnconfirmed: "첨부파일 업로드가 확인되지 않았습니다. 원본 파일을 다시 선택하세요.",
     zoom: "이미지 {name} 크게 보기",
   },
+  attention: {
+    approval: "승인 대기 중",
+    completed: "완료, 아직 확인 안 함",
+    failed: "실패, 아직 확인 안 함",
+    notifications: "시스템 알림",
+    notifyApproval: "계속하려면 승인이 필요합니다",
+    notifyCompleted: "이번 턴이 완료되었습니다",
+    notifyFailed: "이번 턴이 실패했습니다",
+    notifyQuestion: "계속하려면 답변이 필요합니다",
+    question: "답변 대기 중",
+  },
   autoContext: {
     executorChanged: "Agent가 변경되었습니다. 다시 시도하세요",
     unavailable: "대화를 더 이상 사용할 수 없습니다",
@@ -337,6 +348,7 @@ export const uiKo: UiMessages = {
     closeRunningBody: "이 중 터미널 {count}개가 실행 중입니다. 닫으면 실행 중인 프로그램이 종료됩니다.",
     closeRunningTitle: "실행 중인 터미널을 닫을까요?",
     copy: "복사",
+    copyCommand: "명령 복사",
     copyLink: "링크 복사",
     copyRelativePath: "상대 경로 복사",
     cut: "잘라내기",
@@ -346,7 +358,10 @@ export const uiKo: UiMessages = {
     openLink: "링크 열기",
     openWith: "다른 앱으로 열기…",
     paste: "붙여넣기",
+    pinCommand: "고정",
+    run: "실행",
     selectAll: "모두 선택",
+    showOutput: "출력 보기",
   },
   contextUsage: {
     cacheRead: "캐시 읽기",
@@ -387,6 +402,14 @@ export const uiKo: UiMessages = {
   conversationScroll: {
     label: "대화",
     toBottom: "맨 아래로",
+  },
+  conversationSearch: {
+    clear: "검색 지우기",
+    failed: "메시지 내용을 검색하지 못했습니다. 제목이 일치하는 대화만 표시합니다.",
+    noResults: "일치하는 대화가 없습니다",
+    placeholder: "대화 검색",
+    results: "검색 결과",
+    searching: "검색 중",
   },
   deleteTask: {
     blocked: "대화에서 메인 작업 또는 리뷰가 실행 중입니다. 삭제하기 전에 중지하세요.",

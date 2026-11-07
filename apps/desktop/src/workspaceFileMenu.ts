@@ -1,7 +1,11 @@
+import { createContext } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { copyText } from "./clipboard";
+import { copyPendingText, copyText } from "./clipboard";
 import { replaceContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { translate as t } from "./i18n";
+
+/** Whether the conversation on screen runs on another machine. */
+export const RemoteConversationContext = createContext(false);
 
 interface Applications { applications: { id: string; name: string; isDefault: boolean }[]; error: string | null }
 
@@ -41,5 +45,21 @@ export function workspaceEntryMenu({ taskId, root, path, directory, remote }: { 
     "separator",
     { label: t("openFile.copyPath"), onSelect: () => copyText(absolute) },
     !!path && { label: t("contextMenu.copyRelativePath"), onSelect: () => copyText(path) },
+  ];
+}
+
+/** A file a message mentions. Its path is as the agent reported it, so it may be relative
+ * and only the task's machine can say where it is; a deleted file can no longer be found. */
+export function messageFileMenu({ taskId, path, remote, deleted = false }: { taskId: string; path: string; remote: boolean; deleted?: boolean }): ContextMenuEntry[] {
+  const local = !remote && !deleted;
+  const absolute = /^(?:[\\/]|[A-Za-z]:[\\/])/.test(path);
+  return [
+    local && { label: t("contextMenu.open"), onSelect: () => invoke("core_open_workspace_file", { taskId, path }) },
+    local && { label: t("contextMenu.openWith"), onSelect: () => chooseApplication(taskId, path) },
+    local && { label: t(revealLabelKey()), onSelect: () => invoke("core_reveal_workspace_file", { taskId, path }) },
+    "separator",
+    absolute && { label: t("openFile.copyPath"), onSelect: () => copyText(path) },
+    !absolute && !deleted && { label: t("openFile.copyPath"), onSelect: () => copyPendingText(invoke<string>("core_workspace_file_path", { taskId, path })) },
+    !absolute && { label: t("contextMenu.copyRelativePath"), onSelect: () => copyText(path) },
   ];
 }

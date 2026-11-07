@@ -93,6 +93,9 @@ import { ApprovalCard } from "./ApprovalCard";
 import { TauriCoreClient } from "./tauriClient";
 import { OrderedEventCursor } from "./orderedEvents";
 import { PendingExecutorContext } from "./automaticContext";
+import { RemoteConversationContext } from "./workspaceFileMenu";
+import { useConversationAttention } from "./conversationAttention";
+import { ConversationSearch, revealTimelineItem } from "./ConversationSearch";
 import { ConversationHistory } from "./ConversationHistory";
 const MemoConversationHistory = memo(ConversationHistory);
 import { REVIEW_REPAIR_PROMPT, displayBackendText } from "./backendText";
@@ -199,12 +202,15 @@ function isMacPlatform(): boolean {
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 }
 
-function PreferencesIcon({ kind }: { kind: Exclude<PreferencesSection, null> }) {
+function PreferencesIcon({ kind }: { kind: Exclude<PreferencesSection, null> | "notifications" }) {
   return <svg className="preferences-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {kind === "language" ? <>
       {/* 文 / A: translation glyph pair. */}
       <path d="M2.5 4.5h8M6.5 2.75V4.5M4.25 4.5c.7 2.9 2.6 5 5.25 6M8.75 4.5c-.6 3.2-2.7 5.6-6 6.9" />
       <path d="m10.5 17.25 3.25-7.5 3.25 7.5M11.6 14.75h4.3" />
+    </> : kind === "notifications" ? <>
+      <path d="M5 8.25a5 5 0 0 1 10 0c0 4.25 1.75 5.5 1.75 5.5H3.25S5 12.5 5 8.25Z" />
+      <path d="M8.5 16.5a1.6 1.6 0 0 0 3 0" />
     </> : kind === "theme" ? <>
       {/* Crescent moon with a small spark. */}
       <path d="M16.25 12.1A6.75 6.75 0 0 1 7.9 3.75a6.75 6.75 0 1 0 8.35 8.35Z" />
@@ -223,6 +229,8 @@ function PreferencesMenu({
   language,
   theme,
   scale,
+  notifications,
+  onNotifications,
   onToggle,
   onLanguage,
   onTheme,
@@ -233,6 +241,8 @@ function PreferencesMenu({
   client: CoreClient;
   anchorRef: RefObject<HTMLElement | null>;
   popoverRef: RefObject<HTMLDivElement | null>;
+  notifications: boolean;
+  onNotifications: (enabled: boolean) => void;
   open: boolean;
   section: PreferencesSection;
   language: UiLanguage;
@@ -313,6 +323,9 @@ function PreferencesMenu({
       <button type="button" role="menuitem" className={section === "scale" ? "selected" : ""} onClick={() => onToggle("scale")}>
         <PreferencesIcon kind="scale" /><span>{labels.scale}</span><span aria-hidden="true">›</span>
       </button>
+      {isTauri() && <button type="button" role="menuitemcheckbox" aria-checked={notifications} className="preferences-check" onClick={() => onNotifications(!notifications)}>
+        <PreferencesIcon kind="notifications" /><span>{t("attention.notifications")}</span>{notifications && <span aria-hidden="true">✓</span>}
+      </button>}
       <ComputerUseControl client={client} />
       {optionMenu}
     </div>,
@@ -666,6 +679,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     };
   }, [selectedTaskId, loadConversation]);
 
+  const { attention, onEvent: onAttentionEvent, notifications, setNotifications } = useConversationAttention({ client, tasks: snapshot?.tasks, viewingTaskId: activeView === "conversation" ? selectedTaskId : null, onOpen: taskId => selectHistoryTask(taskId) });
   const conversationRun = useMemo(() => snapshot?.tasks.find(task => task.taskId === selectedTaskId)?.activePrimaryRun, [snapshot?.tasks, selectedTaskId]);
   const conversationStatus = `${conversationRun?.turnId ?? ""}:${conversationRun?.state ?? ""}:${pendingSubmission?.taskId === selectedTaskId ? pendingSubmission.providerId : ""}`;
 
@@ -724,6 +738,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     };
     const applyEvent = (event: import("@dogcodes/protocol").EventEnvelope) => {
       if (event.eventType === "task.deleted") window.dispatchEvent(new Event("dogcodes:task-deleted"));
+      onAttentionEvent(event);
       const taskId = event.stream.streamType === "task" ? event.stream.streamId as TaskId : null;
       if (taskId && event.eventType === "turn.queued" && event.causationId) {
         setPendingSubmission(current => current?.operationId === event.causationId
@@ -1021,6 +1036,16 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     setProjectDialogOpen(true);
   }, [creatingTask]);
   const selectHistoryTask = useCallback((taskId: TaskId) => { selectTask(taskId); setActiveView("conversation"); }, [selectTask]);
+  const [searchReveal, setSearchReveal] = useState<{ taskId: TaskId; itemId: string; turnId: string | null } | null>(null);
+  const openSearchResult = useCallback((taskId: TaskId, message?: { itemId: string; turnId: string | null }) => {
+    selectHistoryTask(taskId);
+    setSubagentItemId(null);
+    setSearchReveal(message ? { taskId, ...message } : null);
+  }, [selectHistoryTask]);
+  useEffect(() => {
+    if (!searchReveal || searchReveal.taskId !== selectedTaskId || loadedTaskId !== selectedTaskId) return;
+    return revealTimelineItem(searchReveal.itemId, searchReveal.turnId, () => setSearchReveal(null));
+  }, [searchReveal, selectedTaskId, loadedTaskId]);
   const activeReviewTasks = useMemo(() => snapshot?.companion.workspaces.filter(row => row.secondaryAgentCount > 0).map(row => row.taskId) ?? [], [snapshot?.companion.workspaces]);
   const deleteHistoryTask = useCallback(async (task: TaskSummary) => {
     const latest = (await client.bootstrap()).tasks.find(candidate => candidate.taskId === task.taskId);
@@ -1235,10 +1260,12 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
           {isTauri() && <button className={activeView === "targets" ? "active" : ""} type="button" aria-current={activeView === "targets" ? "page" : undefined} onClick={() => setActiveView("targets")}><SidebarNavIcon kind="server" /><b>{t("executionTargets.title", undefined, resolvedLang)}</b></button>}
         </nav>
         <div className="sidebar-divider" />
+        <ConversationSearch client={client} tasks={snapshot.tasks} projects={snapshot.projects} shortcutKey={shortcutKey} onOpen={openSearchResult} onReveal={() => { if (sidebarCollapsed) toggleSidebar(); }}>
         <MemoConversationHistory onRevealProject={revealLocalProject} onCreateProjectConversation={createProjectConversation} createConversationDisabled={sending || creatingTask}
           onCreateProject={openProjectFolder} onEditProject={client.updateProject ? setEditingProject : undefined} projects={snapshot.projects} tasks={snapshot.tasks} selectedTaskId={selectedTaskId}
           activeReviewTasks={activeReviewTasks} selectionVisible={activeView === "conversation"} onDelete={client.deleteTask ? deleteHistoryTask : undefined}
-          onRename={client.renameTask ? renameHistoryTask : undefined} onSelect={selectHistoryTask} />
+          onRename={client.renameTask ? renameHistoryTask : undefined} onSelect={selectHistoryTask} attention={attention} />
+        </ConversationSearch>
         <div className="sidebar-preferences" ref={preferencesRef}>
           <button
             className="preferences-trigger"
@@ -1265,6 +1292,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             language={uiLanguage}
             theme={uiTheme}
             scale={uiScale}
+            notifications={notifications}
+            onNotifications={setNotifications}
             onToggle={(next) => setPreferencesSection((current) => current === next ? null : next)}
             onLanguage={(next) => { setUiLanguage(next); setPreferencesOpen(false); setPreferencesSection(null); }}
             onTheme={(next) => { setUiTheme(next); setPreferencesOpen(false); setPreferencesSection(null); }}
@@ -1309,7 +1338,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         {draggingFiles && <div className="attachment-drop-overlay">{t("welcome.dropFiles", undefined, resolvedLang)}</div>}
         <input ref={attachmentInput} type="file" multiple hidden onChange={event => { if (!sending) void attachments.add(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
 
-        <PendingExecutorContext.Provider value={pendingExecutors}><AgentQuotaContext.Provider value={quotaViews}><ConversationPages transient={!selectedTaskId} taskId={showConversation ? selectedTask.taskId : null} revision={displayedTimeline} status={conversationStatus} latestUserMessageId={latestUserMessageId}>
+        <RemoteConversationContext.Provider value={!!selectedProjectTarget}><PendingExecutorContext.Provider value={pendingExecutors}><AgentQuotaContext.Provider value={quotaViews}><ConversationPages transient={!selectedTaskId} taskId={showConversation ? selectedTask.taskId : null} revision={displayedTimeline} status={conversationStatus} latestUserMessageId={latestUserMessageId}>
           {<ConversationContent onForked={async taskId => {
             const next = await client.bootstrap();
             if (!next.tasks.some(task => task.taskId === taskId)) throw new Error(t("app.forkOpenFailed"));
@@ -1321,7 +1350,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             setSubagentItemId(null); setReviewOpen(true);
             if (reviewWindow.detached) void reviewWindow.dock();
           }} renderAgent={renderResponseAgent} pendingAgent={pendingAgent} items={displayedTimeline.filter(item => item.kind !== "handoff" && item.kind !== "reconciliation")} client={client} activeTurnId={selectedTask.activePrimaryRun?.state === "disconnected" ? undefined : selectedTask.activePrimaryRun?.turnId} onSubagent={openSubagent} renderEntry={item => <TimelineEntry item={item} active={!!selectedTask.activePrimaryRun && selectedTask.activePrimaryRun.state !== "disconnected" && item.turnId === selectedTask.activePrimaryRun.turnId} key={item.itemId} />} />}
-          </ConversationPages></AgentQuotaContext.Provider></PendingExecutorContext.Provider>
+          </ConversationPages></AgentQuotaContext.Provider></PendingExecutorContext.Provider></RemoteConversationContext.Provider>
         {!showConversation && selectedTaskId && conversationLoader.pending ? <ConversationLoading visible={conversationLoader.visible} />
         : !showConversation && timelineError ? <div className="conversation-loading"><p role="alert">{timelineError} <button type="button" onClick={() => { setTimelineLoading(true); void loadConversation(selectedTask.taskId); }}>{t("welcome.retry", undefined, resolvedLang)}</button></p></div>
         : !showConversation ? <div className="welcome-stage">

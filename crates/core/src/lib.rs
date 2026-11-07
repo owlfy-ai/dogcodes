@@ -362,6 +362,15 @@ pub trait CoreRepository: Send + Sync {
         limit: usize,
     ) -> Result<Vec<EventEnvelope>, RepositoryError>;
     async fn task_timeline(&self, task_id: &TaskId) -> Result<Vec<TimelineItem>, RepositoryError>;
+    /// The newest matching message of each conversation, newest conversation first.
+    async fn search_conversations(
+        &self,
+        _text: &str,
+        _limit: usize,
+    ) -> Result<Vec<history::ConversationMatch>, RepositoryError> {
+        Ok(Vec::new())
+    }
+
     async fn history_items(
         &self,
         task_id: &TaskId,

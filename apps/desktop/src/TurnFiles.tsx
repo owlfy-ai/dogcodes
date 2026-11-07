@@ -3,8 +3,10 @@ import { TurnUndoAction } from "./TurnUndoAction";
 import { TurnCommitAction } from "./TurnCommitAction";
 import { InlineFileEdit } from "./InlineFileEdit";
 import { cachedTurnArtifact, loadTurnArtifact, turnArtifactKey, type TurnArtifact } from "./turnArtifactCache";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { OpenFileButton } from "./OpenFileButton";
+import { showContextMenu } from "./ContextMenu";
+import { RemoteConversationContext, messageFileMenu } from "./workspaceFileMenu";
 import type {
   ArtifactMetadata,
   CoreClient,
@@ -27,6 +29,7 @@ export function TurnFiles({
   providerId?: string;
   onReviewFile?: (path: string) => void;
 }) {
+  const remote = useContext(RemoteConversationContext);
   const key = turnArtifactKey(taskId, metadata);
   const [loaded, setLoaded] = useState<{ key: string; artifact: TurnArtifact } | null>(null);
   const artifact = cachedTurnArtifact(client, taskId, metadata) ?? (loaded?.key === key ? loaded.artifact : null);
@@ -61,7 +64,8 @@ export function TurnFiles({
     {(data.attribution === "workspace_recovery_interval" || data.recoveredAfterInterruption) && <p className="subagent-notice">{t("turnFiles.recovered")}</p>}
     {data.files.map(f => <InlineFileEdit key={f.path} path={f.path}
       file={diff?.files.find(d => (d.newPath || d.oldPath) === f.path)} truncated={diff?.truncated}
-      openControl={f.status === "D" ? undefined : <OpenFileButton taskId={taskId} path={f.path} />} />)}
+      menu={() => messageFileMenu({ taskId, path: f.path, remote, deleted: f.status === "D" })}
+      openControl={f.status === "D" || remote ? undefined : <OpenFileButton taskId={taskId} path={f.path} />} />)}
     {error && <p role="alert">{error}</p>}
   </>;
   return (
@@ -83,14 +87,18 @@ export function TurnFiles({
           const name = f.path.slice(separator + 1), directory = f.path.slice(0, separator + 1);
           const extension = name.split(".").pop()?.toLowerCase() ?? "";
           const language = ["ts", "tsx"].includes(extension) ? "TS" : ["js", "jsx", "cjs", "mjs"].includes(extension) ? "JS" : extension.slice(0, 3).toUpperCase() || "◇";
-          return <div className="turn-summary-file" key={f.path}>
+          return <div className="turn-summary-file" key={f.path} onContextMenu={event => showContextMenu(event, [
+            { label: t("turnFiles.historical"), onSelect: () => setHistoricalOpen(f.path) },
+            "separator",
+            ...messageFileMenu({ taskId, path: f.path, remote, deleted: f.status === "D" }),
+          ])}>
             <span className={`turn-summary-icon file-${language.toLowerCase()}`} aria-hidden="true">{language}</span>
             <span className="turn-summary-name" data-tooltip={f.path}>{name}</span>
             <span className="turn-summary-directory" data-tooltip={directory}>{directory}</span>
             {change && !change.binary && <span className="turn-summary-counts"><span className="additions">+{change.additions}</span><span className="deletions">−{change.deletions}</span></span>}
             <span className="turn-summary-actions">
               <button type="button" data-tooltip={t("turnFiles.historicalTooltip")} aria-label={t("turnFiles.historicalLabel", { name })} onClick={() => setHistoricalOpen(f.path)}>{t("turnFiles.historical")}</button>
-              <OpenFileButton taskId={taskId} path={f.path} disabled={f.status === "D"} />
+              {!remote && <OpenFileButton taskId={taskId} path={f.path} disabled={f.status === "D"} />}
             </span>
           </div>;
         })}

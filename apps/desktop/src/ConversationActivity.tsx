@@ -7,7 +7,7 @@ import { ThinkingTicker } from "./ThinkingTicker";
 import { ActivityIcon } from "./ActivityIcon";
 import { ComputerUseActivity } from "./ComputerUseActivity";
 import { useI18n } from "./i18n";
-import { Fragment, memo, useEffect, useState } from "react";
+import { Fragment, memo, useContext, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ArtifactMetadata,
@@ -18,6 +18,7 @@ import type {
 import { editPatch, reportedPatch } from "./conversationDiff";
 import { MarkdownMessage, StreamingMarkdownMessage } from "./MarkdownMessage";
 import { TurnFiles } from "./TurnFiles";
+import { RemoteConversationContext, messageFileMenu } from "./workspaceFileMenu";
 import { parseGitDiff } from "./diffView";
 import { InlineFileEdit } from "./InlineFileEdit";
 import { terminalCommand, terminalOutput, truncateTerminalOutput } from "./terminalPresentation";
@@ -185,7 +186,8 @@ function Thought({ a, active }: { a: Activity; active: boolean }) {
     </div>
   );
 }
-function FileEdits({ a, running, status }: { a: Activity; running: boolean; status: string }) {
+function FileEdits({ taskId, a, running, status }: { taskId: string; a: Activity; running: boolean; status: string }) {
+  const remote = useContext(RemoteConversationContext);
   const input = a.input as Record<string, unknown> | undefined;
   const files = a.changes?.length
     ? a.changes
@@ -215,6 +217,7 @@ function FileEdits({ a, running, status }: { a: Activity; running: boolean; stat
             file={parsed?.kind === "structured" ? parsed.diff.files.find(file => (file.newPath || file.oldPath) === f.path) ?? parsed.diff.files[0] : undefined}
             rawPatch={parsed?.kind === "structured" ? undefined : f.diff}
             truncated={parsed?.kind === "structured" && parsed.diff.truncated}
+            menu={() => messageFileMenu({ taskId, path: f.path, remote })}
             running={running} status={status} />
         );
       })}
@@ -291,7 +294,7 @@ export function ActivityRow({
       </>
     );
   if (categoryOf(a) === "edit" && (a.changes?.length || inputPath(a)))
-    return <FileEdits a={a} running={running} status={statusLabel} />;
+    return <FileEdits taskId={item.taskId} a={a} running={running} status={statusLabel} />;
   const terminal = categoryOf(a) === "terminal";
   const command = terminal ? terminalCommand(a.input) : "";
   const preview = terminal ? truncateTerminalOutput(terminalOutput(a.output ?? a.content)) : null;
@@ -480,7 +483,7 @@ export function ConversationContent({
       </DeferredDetails>
     );
     return (
-      <div className={showAgent ? "response-agent-anchor" : "conversation-entry"} key={first.itemId}>
+      <div className={showAgent ? "response-agent-anchor" : "conversation-entry"} key={first.itemId} data-timeline-item={first.itemId}>
         {showAgent && <span className="response-agent-badge">{renderAgent(provider)}</span>}
         {content}
       </div>
@@ -520,7 +523,7 @@ export function ConversationContent({
     const provider = turnProviders.get(turnId);
     return <Fragment key={turnId}>
       {turnGroups.filter(entry => entry[0].kind === "user_message").map(entry => renderGroup(entry))}
-      <TurnProcess key={`${turnId}-process`} startedAt={completion.startedAt} completedAt={completion.completedAt} agent={provider && renderAgent ? renderAgent(provider) : undefined}>
+      <TurnProcess key={`${turnId}-process`} turnId={turnId} startedAt={completion.startedAt} completedAt={completion.completedAt} agent={provider && renderAgent ? renderAgent(provider) : undefined}>
         {() => process.map(entry => renderGroup(entry, true))}
       </TurnProcess>
       {turnGroups.slice(finalIndex).filter(entry => entry[0].kind !== "turn_files" && entry[0].kind !== "user_message").map(entry => renderGroup(entry, true))}

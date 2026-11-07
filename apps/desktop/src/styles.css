@@ -132,6 +132,10 @@ header[data-tauri-drag-region="deep"] * {
 .task:focus-visible, .history-show-more:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
 .task-title { flex: 1; min-width: 0; overflow: hidden; font-size: calc(14px * var(--ui-scale)); line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
 .task-running-spinner { flex: none; width: calc(12px * var(--ui-scale, 1)); height: calc(12px * var(--ui-scale, 1)); box-sizing: border-box; border: 1.5px solid currentColor; border-right-color: transparent; border-bottom-color: transparent; border-radius: 50%; opacity: .7; animation: task-running-spin .8s linear infinite; }
+.task-attention { flex: none; display: grid; place-items: center; width: calc(14px * var(--ui-scale, 1)); height: calc(14px * var(--ui-scale, 1)); border-radius: 50%; color: #fff; font-size: calc(10px * var(--ui-scale, 1)); font-weight: 700; line-height: 1; }
+.task-attention[data-kind="approval"], .task-attention[data-kind="question"] { background: #c98a12; }
+.task-attention[data-kind="failed"] { background: #cf4a43; }
+.task-attention[data-kind="completed"] { width: calc(8px * var(--ui-scale, 1)); height: calc(8px * var(--ui-scale, 1)); background: #3f87d6; }
 @keyframes task-running-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .task-running-spinner { animation: none; } }
 .history-show-more, .history-empty { margin: 0; padding: 5px 10px 5px 30px; color: var(--muted); font-size: calc(14px * var(--ui-scale)); line-height: 20px; }
@@ -809,6 +813,7 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
 .history-row.active { background: #8882; }
 .history-row > .task:hover { background: transparent; }
 .history-row-actions { display: flex; flex: none; gap: 2px; padding-right: 6px; }
+.history-row:not(:hover, :focus-within) .history-row-actions { width: 0; padding: 0; overflow: hidden; }
 .history-row-actions button { display: grid; place-items: center; width: calc(22px * var(--ui-scale, 1)); height: calc(24px * var(--ui-scale, 1)); padding: calc(3px * var(--ui-scale, 1)); border: 0; border-radius: 5px; color: var(--muted); background: transparent; cursor: pointer; opacity: 0; }
 .history-row:hover .history-row-actions button, .history-row:focus-within .history-row-actions button { opacity: 1; }
 .history-row-actions button:disabled { cursor: default; color: var(--muted); }

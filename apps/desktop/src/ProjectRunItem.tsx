@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { ProjectRunCommand, ProjectRunEdit } from "./projectRunClient";
 import { useI18n } from "./i18n";
 import { ConfirmDialog } from "./AppDialog";
+import { copyText } from "./clipboard";
+import { showContextMenu } from "./ContextMenu";
 
 function Icon({ path }: { path: string }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d={path} /></svg>;
@@ -19,7 +21,15 @@ export function ProjectRunItem({ command, path, running, disabled, onRun, onEdit
     if (!name.trim() || disabled) return;
     if (name.trim() === command.label || await onEdit({ action: "rename", label: name.trim() })) setRenaming(false);
   };
-  return <div className="project-run-row" data-pinned={command.pinned || undefined}>
+  const startRenaming = () => { setName(command.label); setRenaming(true); };
+  return <div className="project-run-row" data-pinned={command.pinned || undefined} onContextMenu={renaming ? undefined : event => showContextMenu(event, [
+    { label: t(running ? "contextMenu.showOutput" : "contextMenu.run"), disabled, onSelect: onRun },
+    { label: t("contextMenu.copyCommand"), onSelect: () => copyText(command.command) },
+    "separator",
+    { label: t("projectRun.rename"), disabled, onSelect: startRenaming },
+    { label: t(command.pinned ? "projectRun.unpin" : "contextMenu.pinCommand"), disabled, onSelect: () => onEdit({ action: "pin", pinned: !command.pinned }) },
+    { label: t("projectRun.delete"), disabled, onSelect: () => onEdit({ action: "delete" }) },
+  ])}>
     {renaming ? <form className="project-run-rename" onSubmit={event => { event.preventDefault(); void save(); }}>
       <input ref={input} aria-label={t("projectRun.nameLabel")} value={name} maxLength={60} disabled={disabled} onChange={event => setName(event.target.value)}
         onKeyDown={event => { if (event.nativeEvent.isComposing) { if (event.key === "Enter") event.preventDefault(); return; } if (event.key === "Escape") { event.preventDefault(); setRenaming(false); } }} />
@@ -31,7 +41,7 @@ export function ProjectRunItem({ command, path, running, disabled, onRun, onEdit
         <Icon path="m8 5 11 7-11 7Z" /><span>{command.label}</span>{running && <small>{t("projectRun.running")}</small>}
       </button>
       <div className="project-run-item-actions">
-        <button type="button" aria-label={t("projectRun.renameItem", { label: command.label })} data-tooltip={t("projectRun.rename")} disabled={disabled} onClick={() => { setName(command.label); setRenaming(true); }}><Icon path="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15v5Z" /></button>
+        <button type="button" aria-label={t("projectRun.renameItem", { label: command.label })} data-tooltip={t("projectRun.rename")} disabled={disabled} onClick={startRenaming}><Icon path="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15v5Z" /></button>
         <button type="button" className={command.pinned ? "is-pinned" : undefined} aria-pressed={Boolean(command.pinned)} aria-label={t(command.pinned ? "projectRun.unpinItem" : "projectRun.pinItem", { label: command.label })} data-tooltip={t(command.pinned ? "projectRun.unpin" : "projectRun.pinTooltip")} disabled={disabled} onClick={() => void onEdit({ action: "pin", pinned: !command.pinned })}><Icon path="M16 9V4l1-1H7l1 1v5l-3 3v2h14v-2l-3-3ZM12 14v8" /></button>
         <button type="button" aria-label={t("projectRun.deleteItem", { label: command.label })} data-tooltip={t("projectRun.delete")} disabled={disabled} onClick={() => void onEdit({ action: "delete" })}><Icon path="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7M14 10v7" /></button>
       </div>

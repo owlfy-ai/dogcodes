@@ -1,4 +1,5 @@
 import { useMemo, type ReactNode } from "react";
+import { showContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { DeferredDetails } from "./DeferredDetails";
 import { ActivityIcon } from "./ActivityIcon";
 import { highlightedLines, languageForPath } from "./syntaxHighlight";
@@ -24,8 +25,8 @@ function Hunk({ hunk, language }: { hunk: DiffHunk; language?: string }) {
   </div>)}</>;
 }
 
-export function InlineFileEdit({ path, file, status, rawPatch, truncated, onOpen, openControl, running = false }: {
-  path: string; file?: DiffFile; status?: string; rawPatch?: string; truncated?: boolean; onOpen?: () => void; openControl?: ReactNode; running?: boolean;
+export function InlineFileEdit({ path, file, status, rawPatch, truncated, onOpen, openControl, menu, running = false }: {
+  menu?: () => ContextMenuEntry[]; path: string; file?: DiffFile; status?: string; rawPatch?: string; truncated?: boolean; onOpen?: () => void; openControl?: ReactNode; running?: boolean;
 }) {
   const { t } = useI18n();
   const display = artifactVisibleText(path).replaceAll("\n", "\\n").replaceAll("\t", "\\t");
@@ -34,7 +35,7 @@ export function InlineFileEdit({ path, file, status, rawPatch, truncated, onOpen
   const extension = name.split(".").pop()?.toLowerCase() ?? "";
   const label = t(file?.change === "added" ? "inlineEdit.added" : file?.change === "deleted" ? "inlineEdit.deleted" : file?.change === "renamed" ? "inlineEdit.renamed" : "inlineEdit.edited");
   return <DeferredDetails className="inline-file-edit" summary={
-    <summary className={`inline-edit-heading${running ? " activity-running" : ""}`}>
+    <summary className={`inline-edit-heading${running ? " activity-running" : ""}`} onContextMenu={menu && (event => showContextMenu(event, menu()))}>
       <ActivityIcon kind="edit" />
       <span className="inline-edit-label activity-text">{label}</span>
       <span className={`inline-edit-language lang-${extension}`} aria-hidden="true">{extension === "rs" ? "R" : extension === "java" ? "J" : extension.slice(0, 3).toUpperCase() || "◇"}</span>

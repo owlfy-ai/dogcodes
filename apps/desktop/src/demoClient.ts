@@ -210,6 +210,17 @@ export class DemoCoreClient implements CoreClient {
     };
   }
 
+  async searchConversations(text: string): Promise<import("@dogcodes/protocol").ConversationMatch[]> {
+    const needle = text.trim().toLowerCase();
+    if (!needle) return [];
+    const results = await Promise.all(this.tasks.map(async task => {
+      const items = await this.timeline(task.taskId);
+      const item = items.filter(entry => ["user_message", "assistant_message"].includes(entry.kind) && entry.text.toLowerCase().includes(needle)).at(-1);
+      return item ? [{ taskId: task.taskId, itemId: item.itemId, turnId: item.turnId, fromUser: item.kind === "user_message", snippet: item.text }] : [];
+    }));
+    return results.flat();
+  }
+
   async queryHistory(query: HistoryQuery): Promise<HistoryPage> {
     if (!this.tasks.some(t => t.taskId === query.taskId)) throw new Error("对话不存在");
     const through = query.throughSequence ?? this.sequence;

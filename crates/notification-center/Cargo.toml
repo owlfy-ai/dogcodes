@@ -1,0 +1,19 @@
+[package]
+name = "notification-center"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", features = ["NSArray", "NSBundle", "NSError", "NSString"] }
+objc2-user-notifications = { version = "0.3.2", default-features = false, features = ["std", "block2", "UNNotification", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotificationTrigger", "UNUserNotificationCenter"] }
+
+# Isolated native API boundary; business crates retain forbid(unsafe_code).
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"

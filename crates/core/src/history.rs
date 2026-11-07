@@ -24,6 +24,41 @@ pub struct HistoryPage {
     pub through_sequence: u64,
     pub coverage: String,
 }
+/// A conversation's most recent message containing the searched text.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationMatch {
+    pub task_id: TaskId,
+    pub item_id: String,
+    pub turn_id: Option<String>,
+    /// Whether the person wrote it, rather than an agent.
+    pub from_user: bool,
+    pub snippet: String,
+}
+
+const MAX_SEARCH_LENGTH: usize = 1024;
+const MAX_SEARCH_RESULTS: usize = 50;
+const SNIPPET_LEAD: usize = 30;
+const SNIPPET_LENGTH: usize = 140;
+
+/// The part of a message around the match, on one line, for a row in a results list.
+#[must_use]
+pub fn search_snippet(body: &str, text: &str) -> String {
+    let lowered = body.to_lowercase();
+    let at = lowered
+        .find(&text.to_lowercase())
+        .map_or(0, |byte| lowered[..byte].chars().count());
+    let start = at.saturating_sub(SNIPPET_LEAD);
+    let excerpt: String = body.chars().skip(start).take(SNIPPET_LENGTH).collect();
+    let line = excerpt.split_whitespace().collect::<Vec<_>>().join(" ");
+    let more = body.chars().count() > start + SNIPPET_LENGTH;
+    format!(
+        "{}{line}{}",
+        if start > 0 { "…" } else { "" },
+        if more { "…" } else { "" }
+    )
+}
+
 pub(crate) fn matches_event(event: &EventEnvelope, kind: &str) -> bool {
     match kind {
         "decisions" => event.event_type == "decision.recorded",
@@ -47,6 +82,24 @@ pub(crate) fn timeline_value(item: TimelineItem) -> Value {
     json!({"sequence":item.sequence,"turnId":item.turn_id,"kind":item.kind,"text":item.text,"occurredAt":item.occurred_at,"attachments":item.attachments})
 }
 impl Core {
+    /// Literal text across every conversation's messages, one result per conversation.
+    pub async fn search_conversations(
+        &self,
+        text: &str,
+    ) -> Result<Vec<ConversationMatch>, CoreError> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(Vec::new());
+        }
+        if text.len() > MAX_SEARCH_LENGTH {
+            return Err(CoreError::InvalidArgument("invalid search".into()));
+        }
+        Ok(self
+            .repository
+            .search_conversations(text, MAX_SEARCH_RESULTS)
+            .await?)
+    }
+
     pub async fn query_history(&self, query: &HistoryQuery) -> Result<HistoryPage, CoreError> {
         validate(query)?;
         self.require_task(&query.task_id).await?;
@@ -131,5 +184,31 @@ pub fn message_fact(event: &EventEnvelope) -> Option<(&'static str, String)> {
         | "turn.failed"
         | "turn.interrupted" => Some(("payload", event.payload.to_string())),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::search_snippet;
+
+    #[test]
+    fn keeps_a_short_message_whole_on_one_line() {
+        assert_eq!(search_snippet("fix\n  the  bug", "the"), "fix the bug");
+    }
+
+    #[test]
+    fn cuts_a_long_message_around_the_match_on_character_boundaries() {
+        let body = format!("{}目标{}", "前".repeat(100), "后".repeat(200));
+        let snippet = search_snippet(&body, "目标");
+        assert!(snippet.starts_with('…') && snippet.ends_with('…'));
+        assert!(snippet.contains("目标"));
+        assert_eq!(snippet.chars().count(), 142);
+    }
+
+    #[test]
+    fn starts_at_the_beginning_when_the_match_is_there_or_unfound() {
+        let body = "a".repeat(200);
+        assert!(search_snippet(&body, "AAA").starts_with("aaa"));
+        assert!(!search_snippet(&body, "missing").starts_with('…'));
     }
 }

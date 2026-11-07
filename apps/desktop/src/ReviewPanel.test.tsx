@@ -612,7 +612,7 @@ it("moves file operations into the context menu and stages its target instead of
   await render(); await click(container.querySelector('button[aria-label="a"]')!);
   expect(container.textContent).not.toContain('恢复记录'); expect(container.querySelector('.review-actions')).toBeNull();
   await openMenu('b');
-  expect(container.querySelectorAll('[role="menuitem"]')).toHaveLength(8);
+  expect(container.querySelectorAll('[role="menuitem"]')).toHaveLength(10);
   expect(container.textContent).not.toContain('查看 Git 历史');
   await click(menuItem('暂存更改'));
   expect(api.index).toHaveBeenCalledWith('task', 'snapshot', 'repo', 'b', 'stage');
@@ -624,6 +624,17 @@ it("doesn't offer to show a server's file in this computer's file manager", asyn
   await openMenu();
   expect(menuItem('打开文件')).toBeTruthy();
   expect(menuItem('在文件管理器中显示')).toBeUndefined();
+});
+
+it("copies a changed file's full and relative paths", async () => {
+  const writeText = vi.fn(async () => {});
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  await act(async () => root.render(<ReviewPanel taskId="task" remote running={false} onClose={() => {}} api={api} />));
+  await act(async () => {});
+  await openMenu(); await click(menuItem('复制路径'));
+  expect(writeText).toHaveBeenLastCalledWith('/repo/a');
+  await openMenu(); await click(menuItem('复制相对路径'));
+  expect(writeText).toHaveBeenLastCalledWith('a');
 });
 
 it("opens working and HEAD previews without replacing the diff panel", async () => {
@@ -671,7 +682,7 @@ it("supports keyboard context menus and skips disabled actions with arrow naviga
   await act(async () => { file.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true })); });
   expect(document.activeElement).toBe(menuItem('打开更改'));
   await act(async () => { document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })); });
-  expect(document.activeElement).toBe(menuItem('在文件树中显示'));
+  expect(document.activeElement).toBe(menuItem('复制相对路径'));
   await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
   expect(container.querySelector('[role="menu"]')).toBeNull(); expect(document.activeElement).toBe(file);
 });

@@ -1,0 +1,20 @@
+.conversation-search { flex: none; display: flex; align-items: center; gap: 7px; height: calc(30px * var(--ui-scale, 1)); margin: 0 0 10px; padding: 0 8px; border: 1px solid #8883; border-radius: 8px; color: var(--muted); }
+.conversation-search:focus-within { border-color: #8887; }
+.conversation-search > svg { flex: none; width: calc(14px * var(--ui-scale, 1)); height: calc(14px * var(--ui-scale, 1)); }
+.conversation-search input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; color: var(--text, inherit); background: transparent; font: inherit; font-size: calc(13px * var(--ui-scale, 1)); }
+.conversation-search input::placeholder { color: var(--muted); }
+.conversation-search small { flex: none; font-size: calc(11px * var(--ui-scale, 1)); opacity: .75; }
+.conversation-search button { flex: none; display: grid; place-items: center; width: calc(18px * var(--ui-scale, 1)); height: calc(18px * var(--ui-scale, 1)); padding: 2px; border: 0; border-radius: 4px; color: inherit; background: transparent; cursor: pointer; }
+.conversation-search button:hover { background: #8882; }
+.conversation-search button svg { width: 100%; height: 100%; }
+.conversation-search-result { width: 100%; display: flex; align-items: flex-start; gap: 9px; padding: 7px 9px; border: 0; border-radius: 8px; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.conversation-search-result[aria-selected="true"] { background: #8881; }
+.conversation-search-text { min-width: 0; flex: 1; display: grid; gap: 2px; }
+.conversation-search-title { overflow: hidden; font-size: calc(13px * var(--ui-scale, 1)); line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-search-snippet { display: -webkit-box; overflow: hidden; color: var(--muted); font-size: calc(12px * var(--ui-scale, 1)); line-height: 17px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.conversation-search-text small { overflow: hidden; color: var(--muted); font-size: calc(11px * var(--ui-scale, 1)); opacity: .8; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-search-result mark { border-radius: 2px; color: inherit; background: #e0a82e55; }
+/* A user's bubble is narrower than its full-width message. */
+.timeline-item-revealed .assistant-message, .timeline-item-revealed .user-message p { border-radius: 10px; animation: timeline-item-reveal 2.2s ease-out; }
+/* No end state: each message returns to its own background, which a user's bubble has. */
+@keyframes timeline-item-reveal { 0%, 40% { background-color: #e0a82e44; } }

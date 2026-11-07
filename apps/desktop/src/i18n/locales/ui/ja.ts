@@ -249,6 +249,17 @@ export const uiJa: UiMessages = {
     uploadUnconfirmed: "添付ファイルのアップロードが確認できません。元のファイルをもう一度選択してください。",
     zoom: "画像 {name} を拡大表示",
   },
+  attention: {
+    approval: "承認待ち",
+    completed: "完了（未確認）",
+    failed: "失敗（未確認）",
+    notifications: "システム通知",
+    notifyApproval: "続行するには承認が必要です",
+    notifyCompleted: "このターンが完了しました",
+    notifyFailed: "このターンは失敗しました",
+    notifyQuestion: "続行するには回答が必要です",
+    question: "回答待ち",
+  },
   autoContext: {
     executorChanged: "Agent が変更されました。再試行してください",
     unavailable: "この会話は利用できなくなりました",
@@ -337,6 +348,7 @@ export const uiJa: UiMessages = {
     closeRunningBody: "このうち {count} 個のターミナルが実行中です。閉じると実行中のプログラムは終了します。",
     closeRunningTitle: "実行中のターミナルを閉じますか？",
     copy: "コピー",
+    copyCommand: "コマンドをコピー",
     copyLink: "リンクをコピー",
     copyRelativePath: "相対パスをコピー",
     cut: "切り取り",
@@ -346,7 +358,10 @@ export const uiJa: UiMessages = {
     openLink: "リンクを開く",
     openWith: "別のアプリで開く…",
     paste: "貼り付け",
+    pinCommand: "固定",
+    run: "実行",
     selectAll: "すべて選択",
+    showOutput: "出力を表示",
   },
   contextUsage: {
     cacheRead: "キャッシュ読み取り",
@@ -387,6 +402,14 @@ export const uiJa: UiMessages = {
   conversationScroll: {
     label: "会話",
     toBottom: "最下部へ戻る",
+  },
+  conversationSearch: {
+    clear: "検索をクリア",
+    failed: "メッセージ内容を検索できませんでした。タイトルの一致のみ表示しています。",
+    noResults: "一致する会話はありません",
+    placeholder: "会話を検索",
+    results: "検索結果",
+    searching: "検索中",
   },
   deleteTask: {
     blocked: "この会話ではメインタスクまたはレビューが実行中です。削除する前に停止してください。",

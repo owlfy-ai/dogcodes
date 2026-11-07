@@ -491,3 +491,18 @@ it("offers a project's actions on right click, without opening a server's folder
   await act(async () => (container.querySelector(".project-action") as HTMLButtonElement).click());
   expect(container.querySelector(".project-action-menu")?.textContent).not.toContain("在文件管理器中查看");
 });
+
+it("shows what each conversation needs, and keeps it in sight when its list is cut short or collapsed", async () => {
+  const many = Array.from({ length: 8 }, (_, index) => ({ ...tasks[0], taskId: `tsk_${index}` as TaskId, title: `Task ${index}`, activePrimaryRun: null }));
+  const hidden = many[7];
+  const running = { ...many[1], activePrimaryRun: { runId: "run", turnId: "turn", state: "running", executor: many[1].preferredExecutor } } as unknown as TaskSummary;
+  const list = [many[0], running, ...many.slice(2)];
+  await act(async () => root.render(<ConversationHistory projects={[project]} tasks={list} selectedTaskId={null} onSelect={() => {}} attention={{ [hidden.taskId]: "failed", [running.taskId]: "approval" }} />));
+  const row = (title: string) => [...container.querySelectorAll(".task")].find(item => item.textContent?.includes(title))!;
+  expect(row("Task 7").querySelector('[data-kind="failed"]')?.getAttribute("aria-label")).toBe("运行失败，尚未查看");
+  expect(row("Task 1").querySelector('[data-kind="approval"]')).not.toBeNull();
+  // Waiting isn't "running": the spinner would say the agent is busy.
+  expect(row("Task 1").querySelector(".task-running-spinner")).toBeNull();
+  await act(async () => container.querySelector<HTMLElement>(".project-heading-trigger")!.click());
+  expect(container.querySelector('.project-heading-trigger [data-kind="approval"]')).not.toBeNull();
+});

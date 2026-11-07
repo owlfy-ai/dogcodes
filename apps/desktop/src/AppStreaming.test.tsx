@@ -145,7 +145,8 @@ it("refreshes lifecycle changes and keeps deltas received during a slow canonica
   await act(async () => vi.advanceTimersByTimeAsync(32));
   expect(host.querySelector(".assistant-message")?.textContent).toContain("AB");
   expect(vi.mocked(client.bootstrap).mock.calls.length).toBeGreaterThan(initialBootstraps);
-  expect(client.pendingApprovals).toHaveBeenCalledTimes(2);
+  // The conversation view and the sidebar each ask once per lifecycle change, never per delta.
+  expect(client.pendingApprovals).toHaveBeenCalledTimes(4);
 });
 it.each(["message.delta", "activity.updated"])("reveals a %s text burst over successive frames without extra reads", async type => {
   const textEvent = (offset: number, text: string) => {

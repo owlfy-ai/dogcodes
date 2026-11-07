@@ -249,6 +249,17 @@ export const uiIt: UiMessages = {
     uploadUnconfirmed: "Il caricamento dell’allegato non è confermato. Scegli di nuovo il file originale.",
     zoom: "Ingrandisci l’immagine {name}",
   },
+  attention: {
+    approval: "In attesa della tua approvazione",
+    completed: "Terminato, non ancora visto",
+    failed: "Non riuscito, non ancora visto",
+    notifications: "Notifiche di sistema",
+    notifyApproval: "Serve la tua approvazione per continuare",
+    notifyCompleted: "Questo turno è terminato",
+    notifyFailed: "Questo turno non è riuscito",
+    notifyQuestion: "Serve la tua risposta per continuare",
+    question: "In attesa della tua risposta",
+  },
   autoContext: {
     executorChanged: "L’Agent è cambiato. Riprova",
     unavailable: "La conversazione non è più disponibile",
@@ -337,6 +348,7 @@ export const uiIt: UiMessages = {
     closeRunningBody: "{count} di questi terminali sono ancora in esecuzione. Chiudendoli si interrompe ciò che vi è in esecuzione.",
     closeRunningTitle: "Chiudere i terminali in esecuzione?",
     copy: "Copia",
+    copyCommand: "Copia comando",
     copyLink: "Copia link",
     copyRelativePath: "Copia percorso relativo",
     cut: "Taglia",
@@ -346,7 +358,10 @@ export const uiIt: UiMessages = {
     openLink: "Apri link",
     openWith: "Apri con…",
     paste: "Incolla",
+    pinCommand: "Fissa",
+    run: "Esegui",
     selectAll: "Seleziona tutto",
+    showOutput: "Mostra output",
   },
   contextUsage: {
     cacheRead: "Lettura cache",
@@ -387,6 +402,14 @@ export const uiIt: UiMessages = {
   conversationScroll: {
     label: "Conversazione",
     toBottom: "Torna in fondo",
+  },
+  conversationSearch: {
+    clear: "Cancella ricerca",
+    failed: "Impossibile cercare nei messaggi. Vengono mostrate solo le corrispondenze nel titolo.",
+    noResults: "Nessuna conversazione corrispondente",
+    placeholder: "Cerca conversazioni",
+    results: "Risultati della ricerca",
+    searching: "Ricerca in corso",
   },
   deleteTask: {
     blocked: "La conversazione sta eseguendo un’attività principale o una revisione. Arrestala prima di eliminare.",

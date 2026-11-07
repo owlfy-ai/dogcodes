@@ -1,3 +1,5 @@
+import { AttentionMark } from "./AttentionMark";
+import type { AttentionKind } from "./conversationAttention";
 import { useEffect, useId, useRef, useState, type HTMLAttributes } from "react";
 import { homeRelativePath, useHomeDirectory } from "./homeRelativePath";
 import { FloatingPopover } from "./FloatingPopover";
@@ -13,7 +15,8 @@ export function FolderIcon({ open = true }: { open?: boolean }) {
     : "M2.5 5.5A1.5 1.5 0 0 1 4 4h4l2 2h6a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 16 16H4a1.5 1.5 0 0 1-1.5-1.5V5.5Z"} /></svg>;
 }
 
-export function ProjectHoverCard({ project, onEdit, dragProps, conversationList, ...actions }: ProjectActionsProps & {
+export function ProjectHoverCard({ project, onEdit, dragProps, conversationList, attention, ...actions }: ProjectActionsProps & {
+  attention?: AttentionKind;
   dragProps?: HTMLAttributes<HTMLElement>;
   conversationList?: { id: string; expanded: boolean; onToggle: () => void };
 }) {
@@ -42,7 +45,7 @@ export function ProjectHoverCard({ project, onEdit, dragProps, conversationList,
     }}>
     <button {...dragProps} onDragStart={event => { close(); dragProps?.onDragStart?.(event); }} ref={trigger} className="project-heading-trigger" type="button" aria-expanded={conversationList?.expanded ?? open} aria-controls={conversationList?.id ?? (open ? id : undefined)} onFocus={show}
       onClick={() => { if (conversationList) { close(); conversationList.onToggle(); } else show(); }}>
-      <FolderIcon open={conversationList?.expanded ?? true} /><span className="workspace-copy"><b>{label}</b></span>{actions.pinned && <svg className="project-pin-mark" viewBox="0 0 20 20" fill="none" role="img" aria-label={t("projectCard.pinned")}><path d="M7 3h6M8 3v4l-4 4v2h12v-2l-4-4V3M10 13v5" /></svg>}
+      <FolderIcon open={conversationList?.expanded ?? true} /><span className="workspace-copy"><b>{label}</b></span>{attention && <AttentionMark kind={attention} />}{actions.pinned && <svg className="project-pin-mark" viewBox="0 0 20 20" fill="none" role="img" aria-label={t("projectCard.pinned")}><path d="M7 3h6M8 3v4l-4 4v2h12v-2l-4-4V3M10 13v5" /></svg>}
       {conversationList && <svg className="project-list-chevron" viewBox="0 0 16 16" aria-hidden="true" style={{ transform: conversationList.expanded ? undefined : "rotate(-90deg)" }}><path d="m4 6 4 4 4-4" /></svg>}
     </button>
     <div className="project-actions-anchor" onMouseEnter={close} onFocus={close}><ProjectActions project={project} onEdit={editable} {...actions} /></div>

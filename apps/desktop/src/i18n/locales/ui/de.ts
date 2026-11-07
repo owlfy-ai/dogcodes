@@ -249,6 +249,17 @@ export const uiDe: UiMessages = {
     uploadUnconfirmed: "Der Upload des Anhangs ist nicht bestätigt. Die ursprüngliche Datei erneut auswählen.",
     zoom: "Bild {name} vergrößert anzeigen",
   },
+  attention: {
+    approval: "Wartet auf deine Bestätigung",
+    completed: "Fertig, noch nicht angesehen",
+    failed: "Fehlgeschlagen, noch nicht angesehen",
+    notifications: "Systembenachrichtigungen",
+    notifyApproval: "Braucht deine Bestätigung, um fortzufahren",
+    notifyCompleted: "Dieser Durchlauf ist fertig",
+    notifyFailed: "Dieser Durchlauf ist fehlgeschlagen",
+    notifyQuestion: "Braucht deine Antwort, um fortzufahren",
+    question: "Wartet auf deine Antwort",
+  },
   autoContext: {
     executorChanged: "Der Agent hat sich geändert. Bitte erneut versuchen",
     unavailable: "Das Gespräch ist nicht mehr verfügbar",
@@ -337,6 +348,7 @@ export const uiDe: UiMessages = {
     closeRunningBody: "{count} dieser Terminals laufen noch. Beim Schließen wird beendet, was darin läuft.",
     closeRunningTitle: "Laufende Terminals schließen?",
     copy: "Kopieren",
+    copyCommand: "Befehl kopieren",
     copyLink: "Link kopieren",
     copyRelativePath: "Relativen Pfad kopieren",
     cut: "Ausschneiden",
@@ -346,7 +358,10 @@ export const uiDe: UiMessages = {
     openLink: "Link öffnen",
     openWith: "Öffnen mit…",
     paste: "Einfügen",
+    pinCommand: "Anheften",
+    run: "Ausführen",
     selectAll: "Alles auswählen",
+    showOutput: "Ausgabe anzeigen",
   },
   contextUsage: {
     cacheRead: "Cache-Lesezugriffe",
@@ -387,6 +402,14 @@ export const uiDe: UiMessages = {
   conversationScroll: {
     label: "Gespräch",
     toBottom: "Zurück nach unten",
+  },
+  conversationSearch: {
+    clear: "Suche löschen",
+    failed: "Nachrichteninhalte konnten nicht durchsucht werden. Es werden nur Treffer im Titel angezeigt.",
+    noResults: "Keine passenden Unterhaltungen",
+    placeholder: "Unterhaltungen suchen",
+    results: "Suchergebnisse",
+    searching: "Suche läuft",
   },
   deleteTask: {
     blocked: "Im Gespräch läuft eine Hauptaufgabe oder ein Review. Vor dem Löschen stoppen.",

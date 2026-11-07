@@ -4,6 +4,7 @@ mod agent_updates;
 mod artifact_export;
 mod attachment_service;
 mod attachments;
+mod attention;
 mod clipboard;
 mod computer_notice;
 mod computer_notice_layout;
@@ -747,6 +748,14 @@ async fn core_query_history(
 }
 
 #[tauri::command]
+async fn core_search_conversations(
+    state: tauri::State<'_, DesktopState>,
+    text: String,
+) -> Result<Vec<agent_core::history::ConversationMatch>, String> {
+    state.core.search_conversations(&text).await
+}
+
+#[tauri::command]
 async fn core_timeline(
     state: tauri::State<'_, DesktopState>,
     task_id: String,
@@ -1140,6 +1149,7 @@ pub fn run() {
         })
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            attention::install(app.handle());
             if let Some(window) = app.get_webview_window("main") {
                 // Windows draws its own title bar in the web UI.
                 #[cfg(target_os = "windows")]
@@ -1335,7 +1345,12 @@ pub fn run() {
             review_commands::core_open_workspace_file,
             review_commands::core_workspace_file_applications,
             review_commands::core_reveal_workspace_file,
+            attention::notify_attention,
+            attention::set_attention_badge,
+            attention::take_attention_click,
+            attention::withdraw_attention,
             review_commands::core_reveal_workspace_directory,
+            review_commands::core_workspace_file_path,
             clipboard::read_clipboard,
             workspace_browser::bridges::core_workspace_watch,
             workspace_browser::bridges::core_workspace_unwatch,
@@ -1409,6 +1424,7 @@ pub fn run() {
             core_timeline,
             core_timeline_snapshot,
             core_query_history,
+            core_search_conversations,
             core_pending_approvals,
             core_workspace_snapshots,
             core_task_artifacts,

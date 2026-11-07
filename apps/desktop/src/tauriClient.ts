@@ -117,6 +117,7 @@ export class TauriCoreClient implements CoreClient {
   scanAgent(providerId: string, fresh = true): Promise<BootstrapSnapshot> { return invoke("core_scan_agent", { providerId, fresh }); }
   prepareSessionRebuild(taskId: TaskId, expectedVersion: number): Promise<void> { return invoke("core_prepare_session_rebuild", {taskId, expectedVersion}); }
   queryHistory(query: HistoryQuery): Promise<HistoryPage> { return invoke("core_query_history", { query }); }
+  searchConversations(text: string): Promise<import("@dogcodes/protocol").ConversationMatch[]> { return invoke("core_search_conversations", { text }); }
   taskArtifacts(taskId: TaskId, before: ArtifactCursor | null = null, limit = 20): Promise<ArtifactPage> {
     return invoke("core_task_artifacts", { taskId, before, limit });
   }

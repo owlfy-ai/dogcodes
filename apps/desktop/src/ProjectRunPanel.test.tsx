@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProjectRunPanel } from "./ProjectRunPanel";
+import { ContextMenuHost } from "./ContextMenu";
 import { WorkspaceTabs } from "./WorkspaceTabs";
 import type { ProjectRunApi, ProjectRunCatalog } from "./projectRunClient";
 vi.mock("./TerminalDock", () => ({ TerminalPane: ({ visible }: { visible: boolean }) => <div data-terminal hidden={!visible} />, terminalClient: {} }));
@@ -328,4 +329,40 @@ it("coalesces invalidations arriving during a read and does not publish the stal
   await act(async () => vi.advanceTimersByTime(0));
   expect(api.get).toHaveBeenCalledTimes(2);
   expect(element.textContent).toContain("运行本地调试");
+});
+it("offers a command's actions on right click, and leaves its rename field to the text menu", async () => {
+  const writeText = vi.fn(async () => {});
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  const { api, stop } = fixture();
+  await act(async () => root.render(<><ContextMenuHost /><ProjectRunPanel taskId="task" visible api={api} /></>));
+  const labels = () => [...document.querySelectorAll('.context-menu [role="menuitem"]')].map(item => item.textContent);
+  const rightClick = (target: Element) => act(async () => { target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 })); });
+  const choose = (label: string) => act(async () => [...document.querySelectorAll<HTMLButtonElement>('.context-menu [role="menuitem"]')].find(item => item.textContent === label)!.click());
+  const row = () => [...element.querySelectorAll(".project-run-row")].find(item => item.textContent?.includes("启动服务"))!;
+
+  await rightClick(row());
+  expect(labels()).toEqual(["运行", "复制命令", "重命名", "固定", "删除运行项"]);
+  await choose("复制命令");
+  expect(writeText).toHaveBeenCalledWith("go run ./cmd/server");
+  await rightClick(row());
+  await choose("固定");
+  expect(api.edit).toHaveBeenCalledWith("task", "v1", 1, "api", { action: "pin", pinned: true });
+  await rightClick(row());
+  await choose("运行");
+  expect(api.launch).toHaveBeenCalledWith("task", catalog, 1, "api", expect.any(Function));
+  await rightClick(row());
+  expect(labels()[0]).toBe("查看输出");
+
+  const tab = element.querySelector(".project-run-output-tabs .tab-bar-tab")!;
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  await rightClick(tab);
+  expect(labels()).toEqual(["复制命令", "停止运行", "关闭"]);
+  await choose("停止运行");
+  expect(stop).toHaveBeenCalledTimes(1);
+
+  await rightClick(row());
+  await choose("重命名");
+  const field = element.querySelector<HTMLInputElement>(".project-run-rename input")!;
+  await rightClick(field);
+  expect(labels()).toEqual(["剪切", "复制", "粘贴", "全选"]);
 });

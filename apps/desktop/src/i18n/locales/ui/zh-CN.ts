@@ -249,6 +249,17 @@ export const uiZhCN: UiMessages = {
     uploadUnconfirmed: "附件尚未确认上传完成，请重新选择原文件。",
     zoom: "放大查看图片 {name}",
   },
+  attention: {
+    approval: "等待你确认",
+    completed: "已完成，尚未查看",
+    failed: "运行失败，尚未查看",
+    notifications: "系统通知",
+    notifyApproval: "需要你确认后才能继续",
+    notifyCompleted: "这一轮已完成",
+    notifyFailed: "这一轮运行失败",
+    notifyQuestion: "需要你回答后才能继续",
+    question: "等待你回答",
+  },
   autoContext: {
     executorChanged: "执行者已变化，请重试",
     unavailable: "对话已不可用",
@@ -337,6 +348,7 @@ export const uiZhCN: UiMessages = {
     closeRunningBody: "其中 {count} 个终端还在运行，关闭后其中的程序会被终止。",
     closeRunningTitle: "关闭运行中的终端？",
     copy: "复制",
+    copyCommand: "复制命令",
     copyLink: "复制链接",
     copyRelativePath: "复制相对路径",
     cut: "剪切",
@@ -346,7 +358,10 @@ export const uiZhCN: UiMessages = {
     openLink: "打开链接",
     openWith: "用其他应用打开…",
     paste: "粘贴",
+    pinCommand: "固定",
+    run: "运行",
     selectAll: "全选",
+    showOutput: "查看输出",
   },
   contextUsage: {
     cacheRead: "缓存读取",
@@ -387,6 +402,14 @@ export const uiZhCN: UiMessages = {
   conversationScroll: {
     label: "对话正文",
     toBottom: "回到底部",
+  },
+  conversationSearch: {
+    clear: "清除搜索",
+    failed: "无法搜索消息内容，这里只显示标题匹配的对话。",
+    noResults: "没有找到相关对话",
+    placeholder: "搜索对话",
+    results: "搜索结果",
+    searching: "正在搜索",
   },
   deleteTask: {
     blocked: "会话正在执行主任务或审查，请先停止后再删除。",

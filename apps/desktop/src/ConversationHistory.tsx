@@ -14,8 +14,11 @@ import { AgentIcon, providerLabel } from "./agentPresentation";
 import { loadProjectHistoryPreferences, saveProjectHistoryPreference, PROJECT_HISTORY_KEY } from "./projectHistoryPreferences";
 import { translate, useI18n } from "./i18n";
 import { projectDisplayName, taskDisplayTitle } from "./displayNames";
+import { AttentionMark } from "./AttentionMark";
+import { strongestAttention, type ConversationAttention } from "./conversationAttention";
 
 const PREVIEW_COUNT = 5;
+const NO_ATTENTION: ConversationAttention = {};
 
 function HistoryAgent({ task }: { task: TaskSummary }) {
   const executor = task.activePrimaryRun?.executor ?? task.lastTurnExecutor ?? task.preferredExecutor;
@@ -25,7 +28,7 @@ function HistoryAgent({ task }: { task: TaskSummary }) {
   </span>;
 }
 
-export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect, onRename, onDelete, onEditProject, onCreateProject, onRevealProject, onCreateProjectConversation, createConversationDisabled, activeReviewTasks = [], selectionVisible = true }: {
+export function ConversationHistory({ attention = NO_ATTENTION, projects, tasks, selectedTaskId, onSelect, onRename, onDelete, onEditProject, onCreateProject, onRevealProject, onCreateProjectConversation, createConversationDisabled, activeReviewTasks = [], selectionVisible = true }: {
   projects: ProjectSummary[];
   tasks: TaskSummary[];
   selectedTaskId: TaskId | null;
@@ -39,6 +42,7 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
   createConversationDisabled?: boolean;
   activeReviewTasks?: TaskId[];
   selectionVisible?: boolean;
+  attention?: ConversationAttention;
 }) {
   const [localPreferences, setPreferences] = useState<HistoryPreferences>(() => {
     try { return loadHistoryPreferences(); } catch { return {}; }
@@ -221,7 +225,8 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
       aria-current={selectionVisible && task.taskId === selectedTaskId ? "page" : undefined} onClick={() => onSelect(task.taskId)}>
       <HistoryAgent task={task} />
       <span className="task-title">{taskDisplayTitle(task.title)}</span>
-      {task.activePrimaryRun && <span className="task-running-spinner" role="status" aria-label={t(task.activePrimaryRun.state === "disconnected" ? "history.disconnected" : "history.running")} data-tooltip={t(task.activePrimaryRun.state === "disconnected" ? "history.disconnected" : "history.running")} />}
+      {attention[task.taskId] && <AttentionMark kind={attention[task.taskId]} />}
+      {task.activePrimaryRun && !["approval", "question"].includes(attention[task.taskId]) && <span className="task-running-spinner" role="status" aria-label={t(task.activePrimaryRun.state === "disconnected" ? "history.disconnected" : "history.running")} data-tooltip={t(task.activePrimaryRun.state === "disconnected" ? "history.disconnected" : "history.running")} />}
     </button>
     <div className="history-row-actions">
       {onRename && <button ref={renameButtonRef(task.taskId)} type="button" data-tooltip={t("nav.rename")} aria-label={t("nav.rename")} disabled={saving} onClick={() => beginRename(task)}>
@@ -257,14 +262,15 @@ export function ConversationHistory({ projects, tasks, selectedTaskId, onSelect,
       const isExpanded = expanded.has(group.key);
       const collapsed = collapsedProjects.has(group.key);
       const listId = `${projectListsId}-${group.key}`;
-      // Keep the selected conversation and ongoing work visible even when the
-      // rest of a long project's history is collapsed.
+      // Keep the selected conversation, ongoing work and whatever needs the person
+      // visible even when the rest of a long project's history is collapsed.
       const visible = isExpanded ? group.tasks : group.tasks.filter((task, index) =>
-        index < PREVIEW_COUNT || task.taskId === selectedTaskId || task.activePrimaryRun);
+        index < PREVIEW_COUNT || task.taskId === selectedTaskId || task.activePrimaryRun || attention[task.taskId]);
       const hiddenCount = group.tasks.length - visible.length;
       const label = projectDisplayName(group.displayName);
       return <section className="project-group" key={group.key} aria-label={label} data-drop-edge={dropEdge("projects", group.key)} {...dragProps("projects", group.key, groups.map(item => item.key), "projects")} draggable={false}>
         <ProjectHoverCard project={projects.find(project => project.projectId === group.key)!} onEdit={onEditProject}
+          attention={collapsed ? strongestAttention(group.tasks.map(task => attention[task.taskId])) : undefined}
           conversationList={{ id: listId, expanded: !collapsed, onToggle: () => setCollapsedProjects(current => {
             const next = new Set(current);
             if (next.has(group.key)) next.delete(group.key); else next.add(group.key);

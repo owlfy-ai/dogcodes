@@ -78,6 +78,15 @@ export function ConversationScroll({
     });
     observer.observe(node);
     const scrollport = viewport.current;
+    // Re-rendering a turn (its actions mounting, for one) removes the old DOM before
+    // inserting the new. A layout read in between clamps scrollTop, and the content
+    // can return to the same height, leaving no resize to explain the move. Correct
+    // it before paint, while the queued scroll event would still read as scrolling up.
+    const mutations = new MutationObserver(() => {
+      if (scrollport && visible.current && follow.current && !summaryToggle.current
+        && !window.getSelection()?.toString() && scrollport.scrollTop < lastTop.current) bottom();
+    });
+    mutations.observe(node, { childList: true, subtree: true });
     const onToggle = (event: Event) => {
       const request = summaryToggle.current;
       if (!request || !scrollport || event.target !== request.details || request.details.open !== request.open) return;
@@ -100,7 +109,7 @@ export function ConversationScroll({
       observer.observe(scrollport);
       scrollport.addEventListener("toggle", onToggle, true);
     }
-    return () => { observer.disconnect(); scrollport?.removeEventListener("toggle", onToggle, true); };
+    return () => { observer.disconnect(); mutations.disconnect(); scrollport?.removeEventListener("toggle", onToggle, true); };
   }, []);
   return (
     <div

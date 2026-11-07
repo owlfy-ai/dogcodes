@@ -84,8 +84,13 @@ rusqlite.workspace = true
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.28", features = ["process", "signal", "fs"] }
 
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+notify-rust = "4"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri = { version = "2.11.5", features = ["macos-private-api"] }
+mac-notification-sys = "0.6"
+notification-center = { path = "../../../crates/notification-center" }
 objc2 = "0.6.4"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSScreen"] }
 
