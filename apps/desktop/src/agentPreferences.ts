@@ -72,6 +72,23 @@ export function moveAgent(providerId: string, targetId: string, visibleOrder: st
   const preferences = readAgentPreferences();
   save({ ...preferences, order: [...order, ...preferences.order.filter(id => !order.includes(id))] });
 }
+/** Where a dragged agent lands when dropped on `edge` of `targetId`, as an insertion slot (0..length) in `visibleOrder`.
+ *  Null when the drop would leave the order unchanged, so no indicator is shown and the drop does nothing. */
+export function agentDropSlot(providerId: string, targetId: string, edge: "before" | "after", visibleOrder: string[]): number | null {
+  const order = [...new Set(visibleOrder)];
+  const from = order.indexOf(providerId), target = order.indexOf(targetId);
+  if (from < 0 || target < 0) return null;
+  const slot = target + (edge === "after" ? 1 : 0);
+  return slot === from || slot === from + 1 ? null : slot;
+}
+/** Moves an agent into an insertion slot from `agentDropSlot`; the result matches the indicator shown at that slot. */
+export function moveAgentToSlot(providerId: string, slot: number, visibleOrder: string[]) {
+  const order = [...new Set(visibleOrder)];
+  const from = order.indexOf(providerId);
+  if (from < 0 || slot < 0 || slot > order.length) return;
+  const to = slot > from ? slot - 1 : slot;
+  if (to !== from) moveAgent(providerId, order[to], order);
+}
 export function useEnabledAgents<T extends { providerId: string }>(items: readonly T[]) {
   return enabledAgents(items, item => item.providerId, useAgentPreferences());
 }

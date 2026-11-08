@@ -61,8 +61,17 @@
 .agent-enabled-switch:disabled { opacity: .4; cursor: default; }
 .agent-management-controls button:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
 .agent-management-card[data-disabled] .agent-card-heading, .agent-management-card[data-disabled] .agent-card-content, .agent-management-card[data-disabled] .agent-card-footer { opacity: .55; }
-.agent-management-card[data-dragging] { opacity: .45; }
-.agent-management-card[data-drop-target] { outline: 2px solid var(--green); outline-offset: 2px; }
+/* Drag sorting: the dragged card stays in place as a dashed ghost, and a bar in the gap shows exactly where it will land.
+   Two columns place the bar left/right of a card (reading order); one column places it above/below. */
+.quota-panel .agent-management-card { position: relative; }
+.quota-panel .agent-management-card[data-dragging] { opacity: .5; border-style: dashed; border-color: color-mix(in srgb, var(--green) 70%, transparent); box-shadow: none; }
+.agent-management-grid[data-dragging] { cursor: grabbing; }
+.agent-management-card[data-drop-edge]::before { content: ""; position: absolute; z-index: 2; pointer-events: none; border-radius: 999px; background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent); }
+.agent-management-grid[data-dragging="y"] .agent-management-card[data-drop-edge]::before { left: 8px; right: 8px; height: 4px; top: -11px; }
+.agent-management-grid[data-dragging="y"] .agent-management-card[data-drop-edge="after"]::before { top: auto; bottom: -11px; }
+.agent-management-grid[data-dragging="x"] .agent-management-card[data-drop-edge]::before { top: 8px; bottom: 8px; width: 4px; left: -11px; }
+.agent-management-grid[data-dragging="x"] .agent-management-card[data-drop-edge="after"]::before { left: auto; right: -11px; }
+.agent-order-status { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 @media (prefers-reduced-motion: reduce) { .agent-enabled-switch, .agent-enabled-switch > span { transition: none; } }
 .agent-uninstalled { margin-top: 28px; }
 .agent-uninstalled > header { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 8px; font-size: calc(12px * var(--ui-scale, 1)); }

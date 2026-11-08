@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useRef, useState, type DragEvent } from "react";
 import type { InstallationSummary, QuotaSnapshotView } from "@dogcodes/protocol";
 import { t, useI18n, type ResolvedLanguage } from "./i18n";
 import { AgentLogin, agentAccountIssue, needsAgentLogin } from "./AgentLogin";
 import { AGENT_DRAG_TYPE, AgentManagementControls } from "./AgentManagementControls";
 import { InstallationLink, supportedAgents } from "./AgentWelcome";
-import { moveAgent, orderAgents, useAgentPreferences } from "./agentPreferences";
+import { agentDropSlot, moveAgentToSlot, orderAgents, useAgentPreferences } from "./agentPreferences";
 import { AgentIcon, providerLabel } from "./agentPresentation";
 import { AgentUpdateControl, type AgentUpdateActions } from "./agentUpdates";
 import "./agentManagement.css";
@@ -66,7 +66,12 @@ export function QuotaPanel({
   const { resolvedLanguage: lang } = useI18n();
   const preferences = useAgentPreferences();
   const [dragged, setDragged] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  // The drag source is read synchronously from a ref; the state only styles the card a frame later,
+  // so the drag image captured at dragstart is the card at full opacity.
+  const draggedRef = useRef<string | null>(null);
+  const [drop, setDrop] = useState<{ providerId: string; edge: "before" | "after"; slot: number } | null>(null);
+  const [axis, setAxis] = useState<"x" | "y">("y");
+  const [announcement, setAnnouncement] = useState("");
   const [detecting, setDetecting] = useState(false);
   const installedViews = management ? installations.filter(item => item.providerId && item.providerId !== "fake").map(item =>
     views.find(view => view.installationId === item.installationId) ?? { providerId: item.providerId!, installationId: item.installationId, quota: null, diagnostic: null }) : visibleQuotaViews(views, installations);
@@ -74,7 +79,51 @@ export function QuotaPanel({
   const uninstalled = management ? supportedAgents.filter(agent => (!host || host.supports(agent.id)) && !installedViews.some(view => view.providerId === agent.id)) : [];
   const visible = orderAgents(installedViews, item => item.providerId, preferences);
   const providerOrder = visible.map(view => view.providerId);
-  const endDrag = () => { setDragged(null); setDropTarget(null); };
+  const endDrag = () => { draggedRef.current = null; setDragged(null); setDrop(null); };
+  const announce = (providerId: string, position: number) => setAnnouncement(t("agentUi.movedTo", { name: providerLabel(providerId, lang), position: position + 1, total: providerOrder.length }, lang));
+  const startDrag = (event: DragEvent<HTMLButtonElement>, providerId: string) => {
+    event.dataTransfer.setData(AGENT_DRAG_TYPE, providerId);
+    event.dataTransfer.effectAllowed = "move";
+    const card = event.currentTarget.closest<HTMLElement>(".agent-management-card");
+    const grid = card?.parentElement;
+    if (card && event.dataTransfer.setDragImage) {
+      const rect = card.getBoundingClientRect();
+      event.dataTransfer.setDragImage(card, event.clientX - rect.left, event.clientY - rect.top);
+    }
+    // Two columns: cards sit side by side in reading order, so the halves are left/right; one column: top/bottom.
+    setAxis(grid && getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/).filter(Boolean).length > 1 ? "x" : "y");
+    draggedRef.current = providerId;
+    setAnnouncement("");
+    requestAnimationFrame(() => { if (draggedRef.current === providerId) setDragged(providerId); });
+  };
+  const dragOver = (event: DragEvent<HTMLDivElement>) => {
+    const source = draggedRef.current;
+    if (!management || !source || !event.dataTransfer.types.includes(AGENT_DRAG_TYPE)) return;
+    event.preventDefault();
+    const card = (event.target as Element).closest<HTMLElement>(".agent-management-card[data-provider-id]");
+    // Gaps between cards keep the last indicator, so it does not flicker while crossing them.
+    if (!card) { event.dataTransfer.dropEffect = drop ? "move" : "none"; return; }
+    const rect = card.getBoundingClientRect();
+    const edge = axis === "x" ? (event.clientX < rect.left + rect.width / 2 ? "before" : "after") : (event.clientY < rect.top + rect.height / 2 ? "before" : "after");
+    const providerId = card.dataset.providerId!;
+    const slot = agentDropSlot(source, providerId, edge, providerOrder);
+    event.dataTransfer.dropEffect = slot == null ? "none" : "move";
+    const next = slot == null ? null : { providerId, edge, slot } as const;
+    if (next?.providerId !== drop?.providerId || next?.edge !== drop?.edge) setDrop(next);
+  };
+  const dragLeave = (event: DragEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const inside = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    if (!inside) setDrop(null);
+  };
+  const dropCard = (event: DragEvent<HTMLDivElement>) => {
+    const source = draggedRef.current;
+    if (!source || event.dataTransfer.getData(AGENT_DRAG_TYPE) !== source) return;
+    event.preventDefault();
+    // Only the slot the indicator showed is applied; no indicator means the order stays as it is.
+    if (drop) { moveAgentToSlot(source, drop.slot, providerOrder); announce(source, drop.slot > providerOrder.indexOf(source) ? drop.slot - 1 : drop.slot); }
+    endDrag();
+  };
   const versionFor = (installationId: string) => {
     const engine = installations.find((installation) => installation.installationId === installationId)?.version;
     const desktop = agentUpdates?.updates[installationId]?.desktopVersion;
@@ -82,7 +131,8 @@ export function QuotaPanel({
     if (desktop) return t("agentUi.clientEngine", { client: desktop, engine: engine ?? t("agentUi.unknownVersion", undefined, lang) }, lang);
     return provider === "codex" || provider === "zcode" ? t("agentUi.engine", { version: engine ?? t("agentUi.unknownVersion", undefined, lang) }, lang) : engine ?? t("agentUi.unknownVersion", undefined, lang);
   };
-  const cards = <div className="quota-panel agent-management-grid">
+  const cards = <div className="quota-panel agent-management-grid" data-dragging={management && (dragged || drop) ? axis : undefined}
+    onDragOver={management ? dragOver : undefined} onDragLeave={management ? dragLeave : undefined} onDrop={management ? dropCard : undefined}>
     {visible.map(view => {
       const quota = view.quota;
       const installed = installations.some(item => item.installationId === view.installationId);
@@ -93,11 +143,10 @@ export function QuotaPanel({
       const loginRequired = management && loginAgent && (needsAgentLogin(installation, view) || (!!host && installation?.status === "not_configured"));
       const enabled = !preferences.disabled.includes(view.providerId);
       return <section className="agent-management-card" key={view.installationId} aria-label={providerLabel(view.providerId, lang)}
-        data-disabled={management && !enabled || undefined} data-dragging={dragged === view.providerId || undefined} data-drop-target={dropTarget === view.providerId || undefined}
-        onDragOver={management ? event => { if (!dragged || dragged === view.providerId || !event.dataTransfer.types.includes(AGENT_DRAG_TYPE)) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTarget(view.providerId); } : undefined}
-        onDrop={management ? event => { if (!dragged || event.dataTransfer.getData(AGENT_DRAG_TYPE) !== dragged) return; event.preventDefault(); moveAgent(dragged, view.providerId, providerOrder); endDrag(); } : undefined}>
+        data-disabled={management && !enabled || undefined} data-provider-id={management ? view.providerId : undefined}
+        data-dragging={management && dragged === view.providerId || undefined} data-drop-edge={drop?.providerId === view.providerId ? drop.edge : undefined}>
         {management && !host && <AgentManagementControls providerId={view.providerId} enabled={enabled} order={providerOrder}
-          onDragStart={event => { event.dataTransfer.setData(AGENT_DRAG_TYPE, view.providerId); event.dataTransfer.effectAllowed = "move"; setDragged(view.providerId); }} onDragEnd={endDrag} />}
+          onDragStart={event => startDrag(event, view.providerId)} onDragEnd={endDrag} onMoved={announce} />}
         <header className="agent-card-heading">
           <AgentIcon providerId={view.providerId} />
           <div className="agent-card-identity"><h3>{providerLabel(view.providerId, lang)}</h3>
@@ -140,8 +189,9 @@ export function QuotaPanel({
       </section>;
     })}
   </div>;
-  if (!uninstalled.length) return cards;
-  return <>{cards}
+  const status = management && !host && <span className="agent-order-status" role="status" aria-live="polite">{announcement}</span>;
+  if (!uninstalled.length) return <>{cards}{status}</>;
+  return <>{cards}{status}
     <section className="agent-uninstalled" aria-labelledby="agent-uninstalled-title">
       <header><h3 id="agent-uninstalled-title">{t("agentUi.notInstalled", undefined, lang)}</h3><span>{t(host ? "agentUi.installOnHostHint" : "agentUi.installRescanHint", undefined, lang)}</span>
         {onDetect && <button className="agent-detect-button" type="button" disabled={detecting} aria-busy={detecting}
