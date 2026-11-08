@@ -999,7 +999,14 @@ mod tests {
                     if !matches!(p, Plan::Host(_) | Plan::Unsupported)
                         && let Some(latest) = &value.latest_version
                     {
-                        match new_agents::install_spec(&i, &p, latest).await {
+                        match new_agents::install_spec(
+                            &i,
+                            &p,
+                            latest,
+                            crate::terminal_installation::npm_runtime,
+                        )
+                        .await
+                        {
                             Ok(mut update)
                                 if update.executable.is_file() && update.validate().is_ok() =>
                             {

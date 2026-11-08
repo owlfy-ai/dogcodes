@@ -13,6 +13,8 @@
 //! recorded separately from permission support.
 
 use agent_runtime::{Pipe, ProcessInput, TargetExecutable};
+#[cfg(test)]
+use std::path::PathBuf;
 use std::{
     collections::HashMap,
     sync::{
@@ -20,8 +22,9 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-#[cfg(test)]
-use std::{path::PathBuf, process::Stdio};
+// Only the Unix fixtures start processes with piped stdio.
+#[cfg(all(test, unix))]
+use std::process::Stdio;
 
 use agent_domain::{ExecutorRef, InstallationId, ProviderId};
 use agent_runtime::OwnedChild as Child;
@@ -1588,6 +1591,8 @@ mod scope_tests;
 mod tests {
     use super::*;
 
+    // The fake agy is a shell script.
+    #[cfg(unix)]
     #[tokio::test]
     async fn verifying_the_approval_hook_cannot_open_a_browser() {
         let directory = tempfile::tempdir().unwrap();
