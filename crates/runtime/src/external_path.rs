@@ -190,14 +190,20 @@ mod tests {
                     .map(str::to_owned)
                     .to_vec(),
             );
-            spec.timeout = std::time::Duration::from_mins(1);
+            // `Add-Type` compiles C# on every run, which a busy CI machine has
+            // taken over a minute to do. A window that opens doesn't slow this.
+            spec.timeout = std::time::Duration::from_mins(3);
             for result in [
                 crate::run_bounded(&spec).await,
                 crate::run_scoped_bounded(&spec).await,
             ] {
-                let result = result.unwrap();
-                assert!(result.success, "{}", result.stderr);
-                assert_eq!(result.stdout.trim(), "False");
+                let result = result.expect("PowerShell probe did not finish");
+                assert!(
+                    result.success,
+                    "PowerShell probe failed\nstdout: {}\nstderr: {}",
+                    result.stdout, result.stderr
+                );
+                assert_eq!(result.stdout.trim(), "False", "a console window is visible");
             }
             return;
         }
@@ -213,10 +219,13 @@ mod tests {
             .creation_flags(0x0000_0008) // DETACHED_PROCESS
             .output()
             .unwrap();
+        // The detached host's own assertion goes to its stderr.
         assert!(
             host.status.success(),
-            "{}",
-            String::from_utf8_lossy(&host.stdout)
+            "detached host failed ({})\nstdout: {}\nstderr: {}",
+            host.status,
+            String::from_utf8_lossy(&host.stdout),
+            String::from_utf8_lossy(&host.stderr)
         );
     }
 

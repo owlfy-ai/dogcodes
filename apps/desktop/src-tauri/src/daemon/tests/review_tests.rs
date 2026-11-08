@@ -162,7 +162,11 @@ async fn review_rpc_owns_writes_after_reply_disconnect_and_rejects_stale_preview
         .unwrap();
     drop(stream);
     drop(gate);
-    tokio::time::timeout(Duration::from_secs(15), async {
+    // The write runs Git and SQLite beside other heavy tests; a loaded Windows CI
+    // machine has needed more than 15 seconds. A stuck write still fails, and
+    // the last receipt says how far it got.
+    let last = std::sync::Mutex::new(Value::Null);
+    let finished = tokio::time::timeout(Duration::from_mins(1), async {
         loop {
             let receipt = rpc(
                 &other,
@@ -178,11 +182,16 @@ async fn review_rpc_owns_writes_after_reply_disconnect_and_rejects_stale_preview
                 receipt.is_null() || receipt["outcome"]["status"] == "running",
                 "{receipt}"
             );
+            *last.lock().unwrap() = receipt;
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     })
-    .await
-    .unwrap();
+    .await;
+    assert!(
+        finished.is_ok(),
+        "accepted index operation never finished; last receipt: {}",
+        last.lock().unwrap()
+    );
     // Replaying the accepted request returns its receipt despite the consumed preview.
     assert!(rpc(&other, "index", accepted).await.unwrap().is_null());
     let fresh = query(&other, &task).await;
