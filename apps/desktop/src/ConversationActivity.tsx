@@ -6,6 +6,7 @@ import { AgentPending, type PendingAgent } from "./AgentPending";
 import { ThinkingTicker } from "./ThinkingTicker";
 import { ActivityIcon } from "./ActivityIcon";
 import { ComputerUseActivity } from "./ComputerUseActivity";
+import { ForkOrigin } from "./ForkOrigin";
 import { useI18n } from "./i18n";
 import { Fragment, memo, useContext, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -377,6 +378,8 @@ export function ConversationContent({
   renderAgent,
   onReviewFile,
   onForked,
+  taskTitle,
+  onOpenTask,
 }: {
   items: TimelineItem[];
   pendingAgent?: PendingAgent;
@@ -387,6 +390,9 @@ export function ConversationContent({
   renderAgent?: (providerId: string) => React.ReactNode;
   onReviewFile?: (path: string) => void;
   onForked?: (taskId: TaskId) => Promise<void> | void;
+  /** Titles of other conversations, to name the one a fork came from. */
+  taskTitle?: (taskId: TaskId) => string | undefined;
+  onOpenTask?: (taskId: TaskId) => void;
 }) {
   const parents = items.filter((i) => {
     const a = activityOf(i);
@@ -438,11 +444,7 @@ export function ConversationContent({
   const { t } = useI18n();
   const render = (item: TimelineItem) => {
     if (item.kind === "computer_use") return <ComputerUseActivity key={item.itemId} item={item} />;
-    if (item.kind === "fork_context") {
-      try { const data = JSON.parse(item.text); const messages = JSON.parse(data.text) as {kind:string;text:string}[];
-        return <details className="turn-fork-history" key={item.itemId}><summary>{t("activity.forkSummary")}</summary><p>{t(data.environment === "worktree" ? (data.restoredTurnSnapshot ? "activity.forkRestored" : "activity.forkLegacy") : "activity.forkSameDirectory")}</p>{messages.filter(m => ["turn.queued","message.delta"].includes(m.kind)).map((m,index) => <article key={index}><small>{m.kind === "turn.queued" ? t("activity.you") : t("activity.agent")}</small><MarkdownMessage text={m.text}/></article>)}</details>;
-      } catch { return <p key={item.itemId}>{t("activity.forkUnavailable")}</p>; }
-    }
+    if (item.kind === "fork_context") return <ForkOrigin key={item.itemId} item={item} alone={items.length === 1} sourceTitle={taskTitle} onOpenTask={onOpenTask} />;
 
     if (item.kind === "turn_files") {
       try {

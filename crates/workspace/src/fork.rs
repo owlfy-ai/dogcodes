@@ -117,7 +117,7 @@ impl GitWorkspaceContextProvider {
             let root = self
                 .fork_git(&source, &["rev-parse", "--show-toplevel"])
                 .await
-                .map_err(|_| "新 worktree 需要项目及附加目录均属于 Git 仓库")?;
+                .map_err(|_| agent_protocol::FORK_SNAPSHOT_REQUIRES_GIT)?;
             let root = Path::new(root.trim_end_matches('\n'))
                 .canonicalize()
                 .map_err(|_| "Git 根目录不可用")?;

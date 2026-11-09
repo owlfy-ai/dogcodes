@@ -1,10 +1,11 @@
 import { useSharedHistoryPreferences, retrySharedHistoryPreferences } from "./sharedHistoryPreferences";
-import { useEffect, useId, useMemo, useRef, useState, type DragEvent, type HTMLAttributes } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type DragEvent, type HTMLAttributes, type ReactElement } from "react";
 import type { ProjectSummary, TaskId, TaskSummary } from "@dogcodes/protocol";
 import { loadHistoryPreferences, saveHistoryPreference, type HistoryPreferences } from "./historyPreferences";
 import { HistorySection } from "./HistorySection";
 import { loadSectionPreferences, saveSectionPreferences, withSharedHistory, COLLAPSED_STORAGE_KEY, SECTION_STORAGE_KEY, orderHistory, historyTime, moveHistoryItem, type HistorySectionId, type HistorySort, type SectionPreferences } from "./historySections";
 import { groupTasksByWorkspace } from "./workspaceGroups";
+import { forkTree, forkWorkspaceProjects } from "./forkTree";
 
 import { ProjectHoverCard } from "./ProjectHoverCard";
 import { DeleteConversation, DeleteConversationDialog } from "./DeleteConversation";
@@ -150,9 +151,20 @@ export function ConversationHistory({ attention = NO_ATTENTION, projects, tasks,
     try { setProjectPreferences(saveProjectHistoryPreference(id, state)); setError(null); }
     catch { setError(translate("history.projectSettingsFailed")); }
   };
-  const groups = groupTasksByWorkspace(visibleProjects, newestFirst.filter(task => !preferences[task.taskId]))
-    .map(group => ({ ...group, tasks: sortTasks(group.tasks, "projects", `project:${group.key}`) }));
-  const pinned = sortTasks(newestFirst.filter(task => preferences[task.taskId] === "pinned"), "pinned");
+  // Forks are listed under their source conversation, not as rows of their own.
+  const listedProjects = new Set(visibleProjects.map(project => project.projectId));
+  const forkSections = new Map<TaskId, string>();
+  for (const task of tasks) {
+    if (preferences[task.taskId] === "pinned") forkSections.set(task.taskId, "pinned");
+    else if (!preferences[task.taskId] && listedProjects.has(task.projectId)) forkSections.set(task.taskId, "projects");
+  }
+  const forks = forkTree(tasks, forkSections);
+  const forkWorkspaces = forkWorkspaceProjects(tasks);
+  const groups = groupTasksByWorkspace(visibleProjects, newestFirst.filter(task => !preferences[task.taskId] && !forks.nested.has(task.taskId)))
+    .map(group => ({ ...group, tasks: sortTasks(group.tasks, "projects", `project:${group.key}`) }))
+    // A worktree fork's own project holds nothing to list once the fork sits under its source.
+    .filter(group => group.tasks.length > 0 || !forkWorkspaces.has(group.key));
+  const pinned = sortTasks(newestFirst.filter(task => preferences[task.taskId] === "pinned" && !forks.nested.has(task.taskId)), "pinned");
   const archived = sortTasks(newestFirst.filter(task => preferences[task.taskId] === "archived"), "archived");
   const commitSections = (next: SectionPreferences) => {
     try { setSectionPreferences(saveSectionPreferences(next, sectionPreferences)); setError(null); return true; }
@@ -220,11 +232,12 @@ export function ConversationHistory({ attention = NO_ATTENTION, projects, tasks,
     onDelete && "separator",
     onDelete && { label: `${t("nav.deleteTask")}…`, disabled: deletionBlocked(task), tooltip: deletionBlocked(task) ? t("deleteTask.blockedTooltip") : undefined, onSelect: () => setDeleting(task) },
   ];
-  const row = (task: TaskSummary, isPinned = false, scope = "pinned", ids = pinned.map(item => item.taskId)) => renaming === task.taskId ? renameForm(task) : <div className={selectionVisible && task.taskId === selectedTaskId ? "history-row active" : "history-row"} key={task.taskId} data-drop-edge={dropEdge(scope, task.taskId)} {...dragProps(scope, task.taskId, ids, isPinned ? "pinned" : "projects")} onContextMenu={event => showContextMenu(event, taskMenu(task, isPinned))}>
+  const row = (task: TaskSummary, isPinned = false, scope = "pinned", ids = pinned.map(item => item.taskId), fork = false) => renaming === task.taskId ? renameForm(task) : <div className={`history-row${fork ? " history-fork-row" : ""}${selectionVisible && task.taskId === selectedTaskId ? " active" : ""}`} key={task.taskId} data-drop-edge={fork ? undefined : dropEdge(scope, task.taskId)} {...(fork ? {} : dragProps(scope, task.taskId, ids, isPinned ? "pinned" : "projects"))} onContextMenu={event => showContextMenu(event, taskMenu(task, isPinned))}>
     <button type="button" className="task" data-tooltip={taskDisplayTitle(task.title)} data-tooltip-overflow=".task-title"
       aria-current={selectionVisible && task.taskId === selectedTaskId ? "page" : undefined} onClick={() => onSelect(task.taskId)}>
       <HistoryAgent task={task} />
-      <span className="task-title">{taskDisplayTitle(task.title)}</span>
+      <span className="task-title">{taskDisplayTitle(fork ? task.title.replace(/ · Fork$/, "") : task.title)}</span>
+      {fork && <span className="history-fork-badge">{t("history.forkBadge")}</span>}
       {attention[task.taskId] && <AttentionMark kind={attention[task.taskId]} />}
       {task.activePrimaryRun && !["approval", "question"].includes(attention[task.taskId]) && <span className="task-running-spinner" role="status" aria-label={t(task.activePrimaryRun.state === "disconnected" ? "history.disconnected" : "history.running")} data-tooltip={t(task.activePrimaryRun.state === "disconnected" ? "history.disconnected" : "history.running")} />}
     </button>
@@ -245,6 +258,14 @@ export function ConversationHistory({ attention = NO_ATTENTION, projects, tasks,
       </button>
     </div>
   </div>;
+  // A conversation's forks follow it as an indented branch, nested forks deeper still.
+  const withForks = (task: TaskSummary, render: (task: TaskSummary) => ReactElement): ReactElement[] => {
+    const children = forks.children.get(task.taskId);
+    return [render(task), ...(children ? [<div className="history-forks" role="group" key={`${task.taskId}:forks`} aria-label={t("history.forksOf", { title: taskDisplayTitle(task.title) })}>
+      {children.flatMap(child => withForks(child, item => row(item, preferences[item.taskId] === "pinned", "fork", [], true)))}
+    </div>] : [])];
+  };
+  const branchNeedsView = (task: TaskSummary) => [task, ...forks.descendants(task.taskId)].some(item => item.taskId === selectedTaskId || item.activePrimaryRun || attention[item.taskId]);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => new Set());
   const projectListsId = useId();
@@ -255,7 +276,7 @@ export function ConversationHistory({ attention = NO_ATTENTION, projects, tasks,
     {error && <p className="history-error" role="alert">{error}</p>}
     {sharedHistory?.error && <div className="history-error" role="alert"><p>{sharedHistory.error}</p><button type="button" disabled={sharedHistory.busy} onClick={() => void retrySharedHistoryPreferences()}>{t("history.retrySettings")}</button></div>}
     {pinned.length > 0 && <HistorySection className="history-pinned" label={t("nav.pinnedSection")} {...sectionProps("pinned")}>
-      {pinned.map(task => row(task, true))}
+      {pinned.flatMap(task => withForks(task, item => row(item, true)))}
     </HistorySection>}
     <HistorySection className="history-projects" label={t("nav.projectsSection")} {...sectionProps("projects")} onCreate={onCreateProject}>
     {groups.map(group => {
@@ -264,13 +285,12 @@ export function ConversationHistory({ attention = NO_ATTENTION, projects, tasks,
       const listId = `${projectListsId}-${group.key}`;
       // Keep the selected conversation, ongoing work and whatever needs the person
       // visible even when the rest of a long project's history is collapsed.
-      const visible = isExpanded ? group.tasks : group.tasks.filter((task, index) =>
-        index < PREVIEW_COUNT || task.taskId === selectedTaskId || task.activePrimaryRun || attention[task.taskId]);
+      const visible = isExpanded ? group.tasks : group.tasks.filter((task, index) => index < PREVIEW_COUNT || branchNeedsView(task));
       const hiddenCount = group.tasks.length - visible.length;
       const label = projectDisplayName(group.displayName);
       return <section className="project-group" key={group.key} aria-label={label} data-drop-edge={dropEdge("projects", group.key)} {...dragProps("projects", group.key, groups.map(item => item.key), "projects")} draggable={false}>
         <ProjectHoverCard project={projects.find(project => project.projectId === group.key)!} onEdit={onEditProject}
-          attention={collapsed ? strongestAttention(group.tasks.map(task => attention[task.taskId])) : undefined}
+          attention={collapsed ? strongestAttention(group.tasks.flatMap(task => [task, ...forks.descendants(task.taskId)]).map(task => attention[task.taskId])) : undefined}
           conversationList={{ id: listId, expanded: !collapsed, onToggle: () => setCollapsedProjects(current => {
             const next = new Set(current);
             if (next.has(group.key)) next.delete(group.key); else next.add(group.key);
@@ -280,7 +300,7 @@ export function ConversationHistory({ attention = NO_ATTENTION, projects, tasks,
           onRemove={() => updateProjectPreference(group.key, "removed")} onReveal={onRevealProject}
           onCreateConversation={onCreateProjectConversation} createDisabled={createConversationDisabled} dragProps={dragProps("projects", group.key, groups.map(item => item.key), "projects")} />
         <div id={listId} className="project-conversations" hidden={collapsed}>
-        {visible.map(task => row(task, false, `project:${group.key}`, group.tasks.map(item => item.taskId)))}
+        {visible.flatMap(task => withForks(task, item => row(item, false, `project:${group.key}`, group.tasks.map(entry => entry.taskId))))}
         {group.tasks.length === 0 && <p className="history-empty">{t("history.empty")}</p>}
         {(hiddenCount > 0 || isExpanded && group.tasks.length > PREVIEW_COUNT) && <button type="button"
           className="history-show-more" aria-expanded={isExpanded}

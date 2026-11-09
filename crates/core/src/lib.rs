@@ -5041,6 +5041,7 @@ mod tests {
             title: "repair fixture".into(),
             preferred_executor: primary.clone(),
             last_turn_executor: None,
+            forked_from: None,
             updated_at: None,
             stream_version: 1,
             active_primary_run: None,
@@ -5363,6 +5364,7 @@ mod tests {
         let ex = executor("fixture");
         *repository.task_override.lock().await = Some(TaskSummary {
             last_turn_executor: None,
+            forked_from: None,
             updated_at: None,
             task_id: task_id.clone(),
             project_id: ProjectId::new(),
@@ -5401,6 +5403,7 @@ mod tests {
         let ex = executor("fixture");
         *repository.task_override.lock().await = Some(TaskSummary {
             last_turn_executor: None,
+            forked_from: None,
             updated_at: None,
             task_id: task_id.clone(),
             project_id: ProjectId::new(),
@@ -5456,6 +5459,7 @@ mod tests {
         let executor = driver.executor().clone();
         let mut task = TaskSummary {
             last_turn_executor: None,
+            forked_from: None,
             updated_at: None,
             task_id: task_id.clone(),
             project_id: ProjectId::new(),
@@ -5708,6 +5712,7 @@ mod tests {
                             serde_json::from_value(event.payload.clone()).unwrap();
                         tasks.push(TaskSummary {
                             last_turn_executor: None,
+                            forked_from: None,
                             updated_at: None,
                             task_id: command.task_id,
                             project_id: command.project_id,

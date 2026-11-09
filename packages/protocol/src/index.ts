@@ -103,6 +103,8 @@ export interface TaskSummary {
   lastTurnExecutor?: ExecutorRef | null;
   activePrimaryRun: ActiveRunSummary | null;
   streamVersion: number;
+  /** The conversation this one was forked from; lists nest it there. */
+  forkedFrom?: TaskId | null;
 }
 
 export type ResumeCapability = "supported" | "unsupported" | "unknown";

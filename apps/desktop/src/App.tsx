@@ -1348,6 +1348,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             previousTasks.current = next.tasks;
             setSnapshot(next);
             selectTask(taskId); setActiveView("conversation"); setSubagentItemId(null);
+          }} taskTitle={id => snapshot.tasks.find(task => task.taskId === id)?.title} onOpenTask={id => {
+            selectTask(id); setActiveView("conversation"); setSubagentItemId(null);
           }} onReviewFile={path => {
             setReviewFileRequest(previous => ({ taskId: selectedTask.taskId, path, id: (previous?.id ?? 0) + 1 }));
             setSubagentItemId(null); setReviewOpen(true);

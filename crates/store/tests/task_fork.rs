@@ -304,23 +304,150 @@ async fn fork_worktree_restores_selected_turn_and_preserves_source_files_and_bra
 }
 
 #[tokio::test]
-async fn fork_rejects_unknown_turns_and_non_git_worktrees_without_creating_tasks() {
+async fn fork_rejects_unknown_turns_without_creating_tasks() {
     let directory = tempfile::tempdir().unwrap();
-    let (core, store, _, task) = setup(directory.path()).await;
+    let (core, _, _, task) = setup(directory.path()).await;
     assert!(
         core.fork_task(request(&task, &TurnId::new(), ForkEnvironment::Workspace))
-            .await
-            .is_err()
-    );
-    let first = turn(&core, &store, &task, "source").await;
-    assert!(
-        core.fork_task(request(&task, &first, ForkEnvironment::Worktree))
             .await
             .is_err()
     );
     let snapshot = core.bootstrap().await.unwrap();
     assert_eq!(snapshot.tasks.len(), 1);
     assert_eq!(snapshot.projects.len(), 1);
+}
+
+async fn fork_context(core: &Core, task: &TaskId) -> Value {
+    let item = core
+        .timeline(task)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|i| i.kind == "fork_context")
+        .unwrap();
+    serde_json::from_str(&item.text).unwrap()
+}
+
+#[tokio::test]
+async fn non_git_worktree_fork_carries_context_in_the_source_project() {
+    let directory = tempfile::tempdir().unwrap();
+    let (core, store, driver, task) = setup(directory.path()).await;
+    let first = turn(&core, &store, &task, "non-git-history").await;
+    let request = request(&task, &first, ForkEnvironment::Worktree);
+    let fork = core.fork_task(request.clone()).await.unwrap();
+    assert_eq!(core.fork_task(request.clone()).await.unwrap(), fork);
+    let receipt = core.fork_receipt(&task, &fork).await.unwrap().unwrap();
+    assert_eq!(receipt.request, request);
+    assert!(receipt.completed && receipt.task_available);
+    let snapshot = core.bootstrap().await.unwrap();
+    assert_eq!(snapshot.projects.len(), 1, "no worktree project is created");
+    let source_project = &snapshot
+        .tasks
+        .iter()
+        .find(|t| t.task_id == task)
+        .unwrap()
+        .project_id;
+    assert_eq!(
+        &snapshot
+            .tasks
+            .iter()
+            .find(|t| t.task_id == fork)
+            .unwrap()
+            .project_id,
+        source_project
+    );
+    let summaries = &snapshot.tasks;
+    assert_eq!(
+        summaries
+            .iter()
+            .find(|t| t.task_id == fork)
+            .unwrap()
+            .forked_from,
+        Some(task.clone())
+    );
+    assert_eq!(
+        summaries
+            .iter()
+            .find(|t| t.task_id == task)
+            .unwrap()
+            .forked_from,
+        None
+    );
+    let context = fork_context(&core, &fork).await;
+    assert_eq!(context["contextOnly"], true);
+    assert_eq!(context["restoredTurnSnapshot"], false);
+    assert!(
+        serde_json::to_string(&inherited(&core, &fork).await)
+            .unwrap()
+            .contains("non-git-history")
+    );
+    turn(&core, &store, &fork, "continue-fork").await;
+    let requests = driver.received_requests().await;
+    let received = requests.last().unwrap();
+    assert!(String::from_utf8_lossy(&received.context[0].content).contains("non-git-history"));
+    assert_eq!(
+        received.working_directory,
+        directory.path().to_str().unwrap()
+    );
+}
+
+#[tokio::test]
+async fn retrying_a_non_git_worktree_fork_recorded_before_the_fallback_completes_it() {
+    use agent_core::AppendRequest;
+    use agent_domain::CommandId;
+    use agent_protocol::{NewEvent, StreamRef, StreamType};
+    use serde_json::json;
+    let directory = tempfile::tempdir().unwrap();
+    let (core, store, _, task) = setup(directory.path()).await;
+    let first = turn(&core, &store, &task, "stuck-history").await;
+    let original = request(&task, &first, ForkEnvironment::Worktree);
+    let snapshot = core.bootstrap().await.unwrap();
+    // An older build recorded the snapshot failure in the frozen plan and stopped.
+    let plan = json!({
+        "source": snapshot.tasks.iter().find(|t| t.task_id == task).unwrap(),
+        "project": snapshot.projects[0],
+        "through": snapshot.last_sequence,
+        "messages": [{"kind":"turn.queued","text":"stuck-history","sequence":1,"turnId":first}],
+        "snapshot": null,
+        "snapshotError": format!(
+            "invalid argument: 本轮文件快照不可用：{}。仍可在当前工作区 Fork。",
+            agent_protocol::FORK_SNAPSHOT_REQUIRES_GIT
+        ),
+    });
+    store
+        .append(AppendRequest {
+            request_fingerprint: None,
+            command_id: CommandId::new(),
+            idempotency_key: format!("fork:{}:intent", original.new_task_id),
+            expected_stream_version: None,
+            artifacts: vec![],
+            events: vec![NewEvent::hub(
+                StreamRef {
+                    stream_type: StreamType::Task,
+                    stream_id: task.to_string(),
+                },
+                "task.fork_requested",
+                json!({"taskId":task,"request":original,"plan":plan}),
+            )],
+        })
+        .await
+        .unwrap();
+    let pending = core
+        .fork_receipt(&task, &original.new_task_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!pending.completed);
+    let fork = core.fork_task(original.clone()).await.unwrap();
+    assert!(
+        core.fork_receipt(&task, &fork)
+            .await
+            .unwrap()
+            .unwrap()
+            .completed
+    );
+    assert_eq!(core.bootstrap().await.unwrap().projects.len(), 1);
+    assert_eq!(fork_context(&core, &fork).await["contextOnly"], true);
 }
 
 #[tokio::test]
@@ -402,9 +529,33 @@ async fn fork_receipt_survives_database_reopen_without_recreating_the_session() 
 
 #[tokio::test]
 async fn incomplete_fork_retains_original_request_and_rejects_changed_retry_after_restart() {
+    use agent_core::AppendRequest;
+    use agent_domain::CommandId;
+    use agent_protocol::{NewEvent, StreamRef, StreamType};
+    use serde_json::json;
     let directory = tempfile::tempdir().unwrap();
+    git(directory.path(), &["init", "-b", "main"]);
     let (core, store, _, task) = setup(directory.path()).await;
-    let first = turn(&core, &store, &task, "source").await;
+    // A Git turn without a snapshot cannot restore files, so the worktree fork stops.
+    let first = TurnId::new();
+    store
+        .append(AppendRequest {
+            request_fingerprint: None,
+            command_id: CommandId::new(),
+            idempotency_key: "legacy-turn".into(),
+            expected_stream_version: None,
+            artifacts: vec![],
+            events: vec![NewEvent::hub(
+                StreamRef {
+                    stream_type: StreamType::Task,
+                    stream_id: task.to_string(),
+                },
+                "turn.interrupted",
+                json!({"taskId":task,"turnId":first}),
+            )],
+        })
+        .await
+        .unwrap();
     let original = request(&task, &first, ForkEnvironment::Worktree);
     assert!(core.fork_task(original.clone()).await.is_err());
     let receipt = core

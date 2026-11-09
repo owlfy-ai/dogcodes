@@ -506,3 +506,25 @@ it("shows what each conversation needs, and keeps it in sight when its list is c
   await act(async () => container.querySelector<HTMLElement>(".project-heading-trigger")!.click());
   expect(container.querySelector('.project-heading-trigger [data-kind="approval"]')).not.toBeNull();
 });
+
+it("lists forks under their source and hides a worktree fork's own project", async () => {
+  const source = tasks[0];
+  const fork: TaskSummary = { ...tasks[1], taskId: "tsk_FORK" as TaskId, title: "对话 0 · Fork", forkedFrom: source.taskId };
+  const nested: TaskSummary = { ...tasks[1], taskId: "tsk_NESTED" as TaskId, title: "嵌套", forkedFrom: fork.taskId };
+  // A worktree fork lives in the project the core registered for it.
+  const worktree = { ...project, projectId: "prj_FORK" as ProjectId, displayName: "dogcodes · Fork" };
+  const moved = { ...fork, projectId: worktree.projectId };
+  await act(async () => root.render(<ConversationHistory projects={[project, worktree]} tasks={[source, moved, nested]} selectedTaskId={nested.taskId} onSelect={select} />));
+  expect(container.querySelectorAll(".project-group")).toHaveLength(1);
+  const branch = container.querySelector('[role="group"][aria-label="对话 0 的分叉"]')!;
+  expect(branch.previousElementSibling?.textContent).toContain("对话 0");
+  expect(branch.querySelector(".history-fork-row .task-title")?.textContent).toBe("对话 0");
+  expect(branch.querySelector('[role="group"] [aria-current="page"]')?.textContent).toContain("嵌套");
+  expect(branch.querySelector(".history-fork-row")?.getAttribute("draggable")).toBeNull();
+});
+it("keeps a fork top-level when its source is not listed beside it", async () => {
+  const fork: TaskSummary = { ...tasks[1], taskId: "tsk_ORPHAN" as TaskId, title: "孤立分叉", forkedFrom: "tsk_gone" as TaskId };
+  await render([tasks[0], fork]);
+  expect(container.querySelector(".history-forks")).toBeNull();
+  expect(container.textContent).toContain("孤立分叉");
+});

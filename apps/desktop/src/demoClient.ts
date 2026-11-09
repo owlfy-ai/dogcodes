@@ -464,7 +464,7 @@ export class DemoCoreClient implements CoreClient {
       if (item.kind === "user_message" || item.kind === "assistant_message") return [{ kind: item.kind === "user_message" ? "turn.queued" : "message.delta", text: item.text }];
       return [];
     });
-    this.tasks.push({ ...structuredClone(source), taskId: request.newTaskId, title: `${source.title} · Fork`, activePrimaryRun: null, streamVersion: 2, updatedAt: now() });
+    this.tasks.push({ ...structuredClone(source), taskId: request.newTaskId, title: `${source.title} · Fork`, activePrimaryRun: null, streamVersion: 2, updatedAt: now(), forkedFrom: request.taskId });
     this.items.set(request.newTaskId, [{ itemId: id("fork"), taskId: request.newTaskId, turnId: null, kind: "fork_context", text: JSON.stringify({ sourceTaskId: request.taskId, sourceTurnId: request.turnId, environment: request.environment, text: JSON.stringify(messages) }), providerId: null, attachments: [], sequence: ++this.sequence, occurredAt: now() }]);
     this.emit();
     return request.newTaskId;

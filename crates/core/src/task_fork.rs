@@ -44,6 +44,26 @@ struct ForkPlan {
     messages: Vec<Value>,
     snapshot: Option<Value>,
     snapshot_error: Option<String>,
+    /// A worktree fork of a non-Git project carries only the conversation and
+    /// stays in the source project; there are no files to restore.
+    #[serde(default)]
+    context_only: bool,
+}
+
+impl ForkPlan {
+    /// Plans recorded before the non-Git fallback kept the snapshot failure as
+    /// an error. Nothing was created for them, so retrying may fall back too.
+    fn upgrade_legacy_non_git(&mut self) {
+        if self.snapshot.is_none()
+            && self
+                .snapshot_error
+                .as_deref()
+                .is_some_and(|error| error.contains(agent_protocol::FORK_SNAPSHOT_REQUIRES_GIT))
+        {
+            self.context_only = true;
+            self.snapshot_error = None;
+        }
+    }
 }
 
 struct ActiveFork(
@@ -239,7 +259,12 @@ impl Core {
         }
     }
 
-    async fn fork_snapshot(&self, request: &ForkRequest, through: u64) -> Result<Value, CoreError> {
+    /// `Ok(None)` means the turn ran outside Git, so a fork can only carry context.
+    async fn fork_snapshot(
+        &self,
+        request: &ForkRequest,
+        through: u64,
+    ) -> Result<Option<Value>, CoreError> {
         let mut cursor = 0;
         let mut selected = None;
         let mut failure = None;
@@ -272,6 +297,11 @@ impl Core {
                 }
             }
         }
+        if selected.is_none()
+            && failure.as_deref() == Some(agent_protocol::FORK_SNAPSHOT_REQUIRES_GIT)
+        {
+            return Ok(None);
+        }
         let metadata: ArtifactMetadata = serde_json::from_value(selected.ok_or_else(|| {
             CoreError::InvalidArgument(failure.map_or_else(
                 || "本轮没有可恢复的文件快照，无法从本轮成果创建 worktree。旧版轮次无法补录当时的文件；仍可在当前工作区 Fork。".into(),
@@ -293,6 +323,7 @@ impl Core {
             return Err(CoreError::Internal("轮末文件快照校验失败".into()));
         }
         serde_json::from_slice(&artifact.content)
+            .map(Some)
             .map_err(|_| CoreError::Internal("轮末文件快照格式无效".into()))
     }
 
@@ -359,8 +390,9 @@ impl Core {
                         "旧 Fork 缺少完整恢复计划，请保留已有 Worktree 并核实；未重新创建".into(),
                     )
                 })?;
-            let plan: ForkPlan = serde_json::from_value(value.clone())
+            let mut plan: ForkPlan = serde_json::from_value(value.clone())
                 .map_err(|_| CoreError::Internal("Fork 恢复计划损坏，未继续".into()))?;
+            plan.upgrade_legacy_non_git();
             self.require_task(&request.task_id).await?;
             if plan.source.task_id != request.task_id {
                 return Err(CoreError::Conflict("Fork 恢复计划归属不匹配".into()));
@@ -540,14 +572,16 @@ impl Core {
             .iter()
             .find(|p| p.project_id == source.project_id)
             .ok_or_else(|| CoreError::NotFound("源项目不存在".into()))?;
-        let (snapshot, snapshot_error) = if request.environment == ForkEnvironment::Worktree {
-            match self.fork_snapshot(request, through).await {
-                Ok(value) => (Some(value), None),
-                Err(error) => (None, Some(error.to_string())),
-            }
-        } else {
-            (None, None)
-        };
+        let (snapshot, snapshot_error, context_only) =
+            if request.environment == ForkEnvironment::Worktree {
+                match self.fork_snapshot(request, through).await {
+                    Ok(Some(value)) => (Some(value), None, false),
+                    Ok(None) => (None, None, true),
+                    Err(error) => (None, Some(error.to_string()), false),
+                }
+            } else {
+                (None, None, false)
+            };
         Ok(ForkPlan {
             source,
             project: project.clone(),
@@ -555,6 +589,7 @@ impl Core {
             messages,
             snapshot,
             snapshot_error,
+            context_only,
         })
     }
 
@@ -564,7 +599,8 @@ impl Core {
         plan: &ForkPlan,
     ) -> Result<TaskId, CoreError> {
         let key = format!("fork:{}", request.new_task_id);
-        let project_id = if request.environment == ForkEnvironment::Worktree {
+        let restores_files = request.environment == ForkEnvironment::Worktree && !plan.context_only;
+        let project_id = if restores_files {
             let id = ProjectId::parse(request.new_task_id.as_str().replacen("tsk_", "prj_", 1))
                 .map_err(|e| CoreError::InvalidArgument(e.to_string()))?;
             let project_key = format!("{key}:project");
@@ -664,7 +700,7 @@ impl Core {
             json!({
                 "taskId":request.new_task_id,"sourceTaskId":request.task_id,"sourceTurnId":request.turn_id,
                 "sourceSequence":plan.through,"environment":request.environment,
-                "restoredTurnSnapshot":request.environment == ForkEnvironment::Worktree,
+                "restoredTurnSnapshot":restores_files,"contextOnly":plan.context_only,
                 "text":serde_json::to_string(&plan.messages).map_err(|e| CoreError::Internal(e.to_string()))?
             }),
         );

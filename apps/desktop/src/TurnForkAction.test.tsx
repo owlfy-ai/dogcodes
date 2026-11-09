@@ -27,7 +27,7 @@ it.each<ForkEnvironment>(["workspace", "worktree"])("forks the selected historic
   await click(trigger());
   expect(host.querySelector('[role="menu"]')?.textContent).toContain("从此处 Fork 对话");
   expect(options().map(option => option.textContent)).toEqual([
-    "在当前工作区 Fork从本轮对话继续，沿用当前工作区", "在新 Worktree 中 Fork恢复本轮结束时的文件，在新 worktree 中继续",
+    "在当前工作区 Fork从本轮对话继续，沿用当前工作区", "在新 Worktree 中 Fork恢复本轮结束时的文件，在新 worktree 中继续（仅限 Git 项目；其他项目只在当前工作区 Fork 对话）",
   ]);
   await click(options()[environment === "workspace" ? 0 : 1]);
   expect(fork).toHaveBeenCalledExactlyOnceWith({ taskId: "tsk_source", turnId: "trn_old", environment, newTaskId: expect.stringMatching(/^tsk_[A-Z0-9]{26}$/) });
@@ -82,6 +82,28 @@ it.each([true, false])("distinguishes restored turn files from legacy worktrees 
   await act(async () => root.render(<ConversationContent items={[item]} client={{} as CoreClient} onSubagent={() => {}} renderEntry={entry => <p>{entry.text}</p>}/>));
   expect(host.textContent).toContain(restoredTurnSnapshot ? "已恢复所选轮次结束时的文件" : "未恢复历史轮次的文件");
   if (restoredTurnSnapshot) expect(host.textContent).toContain("右侧“变更”");
+});
+it("explains that a non-Git worktree fork carried only the conversation", async () => {
+  const item: TimelineItem = { itemId: "fork", taskId: "tsk_fork", turnId: null, providerId: null, kind: "fork_context", text: JSON.stringify({ environment: "worktree", restoredTurnSnapshot: false, contextOnly: true, text: JSON.stringify([{ kind: "turn.queued", text: "继承的问题" }]) }), attachments: [], sequence: 1, occurredAt: "2026-10-16T12:00:00Z" };
+  await act(async () => root.render(<ConversationContent items={[item]} client={{} as CoreClient} onSubagent={() => {}} renderEntry={entry => <p>{entry.text}</p>}/>));
+  expect(host.textContent).toContain("此项目不是 Git 仓库，Fork 只继承对话上下文");
+  expect(host.textContent).not.toContain("未恢复历史轮次的文件");
+  expect(host.textContent).toContain("在下方发送消息即可从这里继续");
+  const toggle = [...host.querySelectorAll("button")].find(node => node.getAttribute("aria-expanded") !== null)!;
+  expect(toggle.textContent).toContain("1 轮");
+  expect(host.textContent).not.toContain("继承的问题");
+  await click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(host.textContent).toContain("继承的问题");
+});
+it("names the source conversation and opens it from the fork banner", async () => {
+  const item: TimelineItem = { itemId: "fork", taskId: "tsk_fork", turnId: null, providerId: null, kind: "fork_context", text: JSON.stringify({ sourceTaskId: "tsk_source", environment: "workspace", text: "[]" }), attachments: [], sequence: 1, occurredAt: "2026-10-16T12:00:00Z" };
+  const open = vi.fn();
+  await act(async () => root.render(<ConversationContent items={[item]} client={{} as CoreClient} onSubagent={() => {}} renderEntry={entry => <p>{entry.text}</p>}
+    taskTitle={id => id === "tsk_source" ? "今晚吃什么" : undefined} onOpenTask={open}/>));
+  expect(host.textContent).toContain("分叉自 今晚吃什么");
+  await click(label("今晚吃什么"));
+  expect(open).toHaveBeenCalledWith("tsk_source");
 });
 
 it("keeps the original Fork across unmount and does not automatically resend", async () => {

@@ -812,6 +812,14 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
 .history-row:hover, .history-row:focus-within { background: #8881; }
 .history-row.active { background: #8882; }
 .history-row > .task:hover { background: transparent; }
+/* Forks hang under their source as a branch: an elbow per row, a rail between siblings. */
+.history-forks { position: relative; margin-left: 16px; }
+.history-fork-row { position: relative; }
+.history-fork-row::before, .history-fork-row:not(:last-child)::after, .history-forks > .history-forks:not(:last-child)::after { content: ""; position: absolute; pointer-events: none; border-color: #8886; border-style: solid; border-width: 0; }
+.history-fork-row::before { left: 22px; top: 0; width: 6px; height: 50%; border-left-width: 1px; border-bottom-width: 1px; border-bottom-left-radius: 6px; }
+.history-fork-row:not(:last-child)::after { left: 22px; top: 50%; bottom: 0; border-left-width: 1px; }
+.history-forks > .history-forks:not(:last-child)::after { left: 6px; top: 0; bottom: 0; border-left-width: 1px; }
+.history-fork-badge { flex: none; padding: 0 5px; border-radius: 4px; font-size: calc(11px * var(--ui-scale, 1)); line-height: 16px; color: var(--muted); background: #8881; }
 .history-row-actions { display: flex; flex: none; gap: 2px; padding-right: 6px; }
 .history-row:not(:hover, :focus-within) .history-row-actions { width: 0; padding: 0; overflow: hidden; }
 .history-row-actions button { display: grid; place-items: center; width: calc(22px * var(--ui-scale, 1)); height: calc(24px * var(--ui-scale, 1)); padding: calc(3px * var(--ui-scale, 1)); border: 0; border-radius: 5px; color: var(--muted); background: transparent; cursor: pointer; opacity: 0; }

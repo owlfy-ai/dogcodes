@@ -1,0 +1,23 @@
+.fork-origin { margin: 6px 0 22px; padding: 14px 16px; border: 1px solid #8883; border-radius: 14px; background: #8880a; }
+.fork-origin > header { display: flex; align-items: flex-start; gap: 12px; }
+.fork-origin-icon { display: grid; flex: none; place-items: center; width: calc(30px * var(--ui-scale, 1)); height: calc(30px * var(--ui-scale, 1)); border-radius: 9px; color: var(--green); background: var(--green-soft); }
+.fork-origin-icon svg { width: calc(17px * var(--ui-scale, 1)); height: calc(17px * var(--ui-scale, 1)); }
+.fork-origin-heading { flex: 1; min-width: 0; }
+.fork-origin-heading strong { display: block; font-size: calc(14px * var(--ui-scale, 1)); font-weight: 600; line-height: 20px; overflow-wrap: anywhere; }
+.fork-origin-heading p { margin: 2px 0 0; color: var(--muted); font-size: calc(13px * var(--ui-scale, 1)); line-height: 19px; }
+.fork-origin-source { padding: 0; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; }
+button.fork-origin-source { cursor: pointer; text-decoration: underline; text-decoration-color: #8888; text-underline-offset: 3px; }
+button.fork-origin-source:hover { text-decoration-color: currentColor; }
+.fork-origin-toggle { display: inline-flex; align-items: center; gap: 4px; margin: 10px 0 0 calc(42px * var(--ui-scale, 1)); padding: 3px 8px 3px 4px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font: inherit; font-size: calc(13px * var(--ui-scale, 1)); cursor: pointer; }
+.fork-origin-toggle:hover { color: inherit; background: #8881; }
+.fork-origin-toggle svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s ease; }
+.fork-origin-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+.fork-origin-history { margin: 8px 0 0 calc(42px * var(--ui-scale, 1)); padding: 0 0 0 14px; border-left: 2px solid #8883; list-style: none; }
+.fork-origin-history[hidden] { display: none; }
+.fork-origin-history li { padding: 8px 0; }
+.fork-origin-history li + li { border-top: 1px solid #8881; }
+.fork-origin-history small { display: block; margin-bottom: 2px; color: var(--muted); font-size: calc(12px * var(--ui-scale, 1)); font-weight: 600; }
+.fork-origin-history li.from-user small { color: var(--green); }
+.fork-origin > footer { margin: 12px 0 0 calc(42px * var(--ui-scale, 1)); color: var(--muted); font-size: calc(13px * var(--ui-scale, 1)); }
+.fork-origin-unavailable { color: var(--muted); }
+@media (max-width: 520px) { .fork-origin-toggle, .fork-origin-history, .fork-origin > footer { margin-left: 0; } }

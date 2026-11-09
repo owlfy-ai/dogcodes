@@ -2695,7 +2695,10 @@ fn load_tasks(
                     (SELECT occurred_at FROM events WHERE stream_type='task' AND stream_id=tasks.task_id ORDER BY stream_version DESC LIMIT 1),
                     (SELECT json_extract(payload_json, '$.executor') FROM events
                      WHERE stream_type='task' AND stream_id=tasks.task_id AND event_type IN ('turn.queued','turn.autonomous.started')
-                     ORDER BY stream_version DESC LIMIT 1)
+                     ORDER BY stream_version DESC LIMIT 1),
+                    (SELECT json_extract(payload_json, '$.sourceTaskId') FROM events
+                     WHERE stream_type='task' AND stream_id=tasks.task_id AND event_type='task.forked'
+                     ORDER BY sequence LIMIT 1)
              FROM tasks WHERE (?1 IS NULL OR task_id = ?1) ORDER BY rowid",
         )
         .map_err(storage_error)?;
@@ -2734,6 +2737,10 @@ fn load_tasks(
                     .transpose()?,
                 active_primary_run,
                 stream_version: row.get(9)?,
+                forked_from: row
+                    .get::<_, Option<String>>(13)?
+                    .map(parse_id)
+                    .transpose()?,
             })
         })
         .map_err(storage_error)?

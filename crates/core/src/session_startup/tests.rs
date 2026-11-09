@@ -145,6 +145,7 @@ async fn fixture(mode: Mode, close_error: bool) -> Fixture {
         title: "private startup".into(),
         preferred_executor: driver.executor().clone(),
         last_turn_executor: None,
+        forked_from: None,
         updated_at: None,
         stream_version: 0,
         active_primary_run: Some(agent_protocol::ActiveRunSummary {

@@ -27,9 +27,6 @@
 .historical-turn-diff > p { font-size: 12px; opacity: .7; }
 .historical-turn-diff > .turn-review-notice { opacity: 1; }
 .historical-turn-diff pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
-.turn-fork-history { margin: 14px 0; border: 1px solid #8883; border-radius: 10px; padding: 12px; }
-.turn-fork-history > summary { cursor: pointer; }
-.turn-fork-history article { padding: 12px 0; border-top: 1px solid #8882; }
 :root[data-theme="light"] .historical-turn-diff { background: #fff; color: #292d2b; }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .historical-turn-diff { background: #fff; color: #292d2b; } }
 @media (max-width: 520px) { .turn-actions { flex-wrap: wrap; gap: 6px; } .turn-actions-right { margin-left: auto; } }

@@ -13,6 +13,10 @@ use serde_json::Value;
 
 pub const SCHEMA_VERSION: u16 = 1;
 
+/// Why a turn-end fork snapshot was not captured when a project directory is
+/// outside Git. Core matches it to fork such turns with context only.
+pub const FORK_SNAPSHOT_REQUIRES_GIT: &str = "新 worktree 需要项目及附加目录均属于 Git 仓库";
+
 /// Identity and original metadata for a managed attachment upload. No file bytes
 /// are needed to query its receipt after a disconnected client reopens.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -634,6 +638,9 @@ pub struct TaskSummary {
     pub last_turn_executor: Option<ExecutorRef>,
     pub active_primary_run: Option<ActiveRunSummary>,
     pub stream_version: u64,
+    /// The conversation this one was forked from, so lists can nest it there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forked_from: Option<TaskId>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
