@@ -1,10 +1,10 @@
 .conversation-column > .workspace.remote-page {
   display: block;
   overflow: auto;
-  padding: 36px clamp(24px, 5vw, 72px);
+  padding: var(--page-padding);
 }
 .remote-page-content {
-  width: min(900px, 100%);
+  width: min(var(--page-content-width), 100%);
   margin: 0 auto;
   color: inherit;
   font-size: .8125rem;
@@ -17,7 +17,10 @@
 .remote-heading-icon svg { width: 25px; height: 25px; }
 .remote-header p { margin: 0; color: var(--muted); line-height: 1.5; }
 .remote-pairing-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, .9fr); gap: 32px; padding: 28px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
-.remote-setup { min-width: 0; padding: 4px 0; }
+.remote-setup { display: flex; flex-direction: column; min-width: 0; padding: 4px 0; }
+.remote-setup-footer { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--line); }
+.remote-setup-footer > .remote-connection { margin-top: 0; }
+.remote-qr-panel small { font-variant-numeric: tabular-nums; }
 .remote-page h2 { margin: 0; font-size: 1rem; font-weight: 600; letter-spacing: -.02em; }
 .remote-description { margin: 10px 0 16px; color: var(--muted); line-height: 1.7; }
 .remote-steps { display: grid; gap: 10px; margin: 0 0 22px; padding: 0; list-style: none; counter-reset: remote-step; }

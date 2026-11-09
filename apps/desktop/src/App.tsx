@@ -35,7 +35,7 @@ import { focusComposerInput } from "./composerFocus";
 import { StartupShell } from "./StartupShell";
 import { StartupRecovery } from "./StartupGate";
 import { userFacingError } from "./userFacingError";
-import { QuotaPanel, quotaDiagnostic } from "./QuotaPanel";
+import { QuotaCollectedTime, QuotaPanel, quotaDiagnostic } from "./QuotaPanel";
 import { AgentQuotaContext, AgentQuotaRing } from "./AgentQuotaRing";
 import { AgentIcon, providerLabel } from "./agentPresentation";
 import { SidebarWindowControls } from "./SidebarWindowControls";
@@ -234,6 +234,7 @@ function PreferencesMenu({
   notifications,
   onNotifications,
   onToggle,
+  onSection,
   onLanguage,
   onTheme,
   onScale,
@@ -251,6 +252,7 @@ function PreferencesMenu({
   theme: UiTheme;
   scale: number;
   onToggle: (section: Exclude<PreferencesSection, null>) => void;
+  onSection: (section: PreferencesSection) => void;
   onLanguage: (value: UiLanguage) => void;
   onTheme: (value: UiTheme) => void;
   onScale: (value: ScaleAction) => void;
@@ -278,10 +280,50 @@ function PreferencesMenu({
     window.addEventListener("resize", place);
     return () => window.removeEventListener("resize", place);
   }, [open, anchorRef, scale]);
+  const submenuRef = useRef<HTMLDivElement | null>(null);
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
+  const pendingSection = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(pendingSection.current), []);
+  useEffect(() => { if (!open) window.clearTimeout(pendingSection.current); }, [open]);
   if (!open || !position) return null;
 
+  // Hovering a row opens its submenu. While the pointer travels diagonally toward
+  // an open submenu it crosses sibling rows; switching then would yank the submenu
+  // away, so wait until the pointer pauses or turns away before switching.
+  const headingToSubmenu = (x: number, y: number) => {
+    const from = lastPointer.current, rect = submenuRef.current?.getBoundingClientRect();
+    if (!from || !rect || rect.left < from.x) return false;
+    const slack = 6;
+    const a = from, b = { x: rect.left, y: rect.top - slack }, c = { x: rect.left, y: rect.bottom + slack };
+    const side = (p: { x: number; y: number }, q: { x: number; y: number }) => (q.x - p.x) * (y - p.y) - (q.y - p.y) * (x - p.x);
+    const d1 = side(a, b), d2 = side(b, c), d3 = side(c, a);
+    return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+  };
+  const trackPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch") return;
+    const x = event.clientX, y = event.clientY;
+    const popover = event.currentTarget;
+    let row = event.target as Element | null;
+    while (row && row.parentElement !== popover) row = row.parentElement;
+    if (row && row === submenuRef.current) window.clearTimeout(pendingSection.current);
+    else if (row) {
+      const next = ((row as HTMLElement).dataset.section ?? null) as PreferencesSection;
+      window.clearTimeout(pendingSection.current);
+      if (next !== section) {
+        if (section && headingToSubmenu(x, y)) pendingSection.current = window.setTimeout(() => onSection(next), 300);
+        else onSection(next);
+      }
+    }
+    lastPointer.current = { x, y };
+  };
+  // A pointer click lands after hover already opened the row, so it must not toggle it shut.
+  const openSection = (next: Exclude<PreferencesSection, null>) => (event: React.MouseEvent) => {
+    window.clearTimeout(pendingSection.current);
+    if (event.detail === 0) onToggle(next); else onSection(next);
+  };
+
   const optionMenu = section === "language" ? (
-    <div className="preferences-submenu" role="menu" aria-label={labels.language}>
+    <div ref={submenuRef} className="preferences-submenu" role="menu" aria-label={labels.language}>
       {SUPPORTED_LANGUAGES.map((item) => (
         <button key={item.id} type="button" role="menuitemradio" aria-checked={language === item.id} onClick={() => onLanguage(item.id)}>
           <span>{item.nativeLabel}</span>{language === item.id && <span aria-hidden="true">✓</span>}
@@ -289,7 +331,7 @@ function PreferencesMenu({
       ))}
     </div>
   ) : section === "theme" ? (
-    <div className="preferences-submenu" role="menu" aria-label={labels.theme}>
+    <div ref={submenuRef} className="preferences-submenu" role="menu" aria-label={labels.theme}>
       {([
         ["system", labels.system],
         ["light", labels.light],
@@ -301,7 +343,7 @@ function PreferencesMenu({
       ))}
     </div>
   ) : section === "scale" ? (
-    <div className="preferences-submenu" role="menu" aria-label={labels.scale}>
+    <div ref={submenuRef} className="preferences-submenu" role="menu" aria-label={labels.scale}>
       {([
         ["in", labels.zoomIn, "+", scale >= MAX_UI_SCALE],
         ["out", labels.zoomOut, "−", scale <= MIN_UI_SCALE],
@@ -315,14 +357,14 @@ function PreferencesMenu({
   ) : null;
 
   return createPortal(
-    <div ref={popoverRef} className="preferences-popover" role="menu" style={{ left: position.left, bottom: position.bottom, width: position.width, "--preferences-menu-max-height": `${position.maxHeight}px` } as React.CSSProperties}>
-      <button type="button" role="menuitem" className={section === "language" ? "selected" : ""} onClick={() => onToggle("language")}>
+    <div ref={popoverRef} className="preferences-popover" role="menu" onPointerMove={trackPointer} style={{ left: position.left, bottom: position.bottom, width: position.width, "--preferences-menu-max-height": `${position.maxHeight}px` } as React.CSSProperties}>
+      <button type="button" role="menuitem" data-section="language" aria-haspopup="menu" aria-expanded={section === "language"} className={section === "language" ? "selected" : ""} onClick={openSection("language")}>
         <PreferencesIcon kind="language" /><span>{labels.language}</span><span aria-hidden="true">›</span>
       </button>
-      <button type="button" role="menuitem" className={section === "theme" ? "selected" : ""} onClick={() => onToggle("theme")}>
+      <button type="button" role="menuitem" data-section="theme" aria-haspopup="menu" aria-expanded={section === "theme"} className={section === "theme" ? "selected" : ""} onClick={openSection("theme")}>
         <PreferencesIcon kind="theme" /><span>{labels.theme}</span><span aria-hidden="true">›</span>
       </button>
-      <button type="button" role="menuitem" className={section === "scale" ? "selected" : ""} onClick={() => onToggle("scale")}>
+      <button type="button" role="menuitem" data-section="scale" aria-haspopup="menu" aria-expanded={section === "scale"} className={section === "scale" ? "selected" : ""} onClick={openSection("scale")}>
         <PreferencesIcon kind="scale" /><span>{labels.scale}</span><span aria-hidden="true">›</span>
       </button>
       {isTauri() && <button type="button" role="menuitemcheckbox" aria-checked={notifications} className="preferences-check" onClick={() => onNotifications(!notifications)}>
@@ -464,7 +506,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const preferencesPopoverRef = useRef<HTMLDivElement | null>(null);
   const newConversationButton = useRef<HTMLButtonElement | null>(null);
   const quotaButton = useRef<HTMLButtonElement | null>(null);
-  const shortcutModifier = isMacPlatform() ? "⌘" : "Ctrl";
+  // Written the way each platform's menus write it: ⌘N on macOS, Ctrl+N elsewhere.
+  const shortcutLabel = (key: string) => isMacPlatform() ? `⌘${key}` : `Ctrl+${key}`;
   const shortcutKey = isMacPlatform() ? "Meta" : "Control";
 
   useEffect(() => {
@@ -1255,9 +1298,9 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         </header>
         <nav className="primary-nav" aria-label={t("nav.mainNav", undefined, resolvedLang)}>
           <button ref={newConversationButton} aria-keyshortcuts={`${shortcutKey}+N`} className="primary-action" type="button" disabled={sending || creatingTask || snapshot.projects.length === 0} onClick={() => void createConversation()}>
-            <SidebarNavIcon kind="conversation" /><b>{creatingTask ? t("nav.creating", undefined, resolvedLang) : t("nav.newConversation", undefined, resolvedLang)}</b><kbd>{shortcutModifier} N</kbd>
+            <SidebarNavIcon kind="conversation" /><b>{creatingTask ? t("nav.creating", undefined, resolvedLang) : t("nav.newConversation", undefined, resolvedLang)}</b><kbd>{shortcutLabel("N")}</kbd>
           </button>
-          <button ref={quotaButton} aria-keyshortcuts={`${shortcutKey}+U`} className={activeView === "quota" ? "active" : ""} type="button" onClick={() => setActiveView("quota")}><SidebarNavIcon kind="quota" /><b>{t("nav.agentManagement", undefined, resolvedLang)}</b><kbd>{shortcutModifier} U</kbd></button>
+          <button ref={quotaButton} aria-keyshortcuts={`${shortcutKey}+U`} className={activeView === "quota" ? "active" : ""} type="button" onClick={() => setActiveView("quota")}><SidebarNavIcon kind="quota" /><b>{t("nav.agentManagement", undefined, resolvedLang)}</b><kbd>{shortcutLabel("U")}</kbd></button>
           <button className={activeView === "remote" ? "active" : ""} type="button" aria-current={activeView === "remote" ? "page" : undefined} onClick={() => setActiveView("remote")}><SidebarNavIcon kind="phone" /><b>{t("remoteDevices.title", undefined, resolvedLang)}</b></button>
           {isTauri() && <button className={activeView === "targets" ? "active" : ""} type="button" aria-current={activeView === "targets" ? "page" : undefined} onClick={() => setActiveView("targets")}><SidebarNavIcon kind="server" /><b>{t("executionTargets.title", undefined, resolvedLang)}</b></button>}
         </nav>
@@ -1297,6 +1340,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             notifications={notifications}
             onNotifications={setNotifications}
             onToggle={(next) => setPreferencesSection((current) => current === next ? null : next)}
+            onSection={setPreferencesSection}
             onLanguage={(next) => { setUiLanguage(next); setPreferencesOpen(false); setPreferencesSection(null); }}
             onTheme={(next) => { setUiTheme(next); setPreferencesOpen(false); setPreferencesSection(null); }}
             onScale={action => setUiScale(current => adjustUiScale(current, action))}
@@ -1667,7 +1711,7 @@ export function QuotaCenter({
             : refreshProgress.unavailable ? t("agentUi.refreshPartial", { count: refreshProgress.unavailable }, lang)
             : t("agentManagement.refreshSuccess", { count: refreshProgress.total }, lang)}
         </p>}
-        <div className="agent-management-summary"><span>{t("agentManagement.installedCount", { count: installations.filter(item => item.providerId !== "fake").length }, lang)}</span><span>{t("agentManagement.quotaCalculation", undefined, lang)}</span></div>
+        <div className="agent-management-summary"><span>{t("agentManagement.installedCount", { count: installations.filter(item => item.providerId !== "fake").length }, lang)}</span><span>{t("agentManagement.quotaCalculation", undefined, lang)}<QuotaCollectedTime views={views} /></span></div>
         <QuotaPanel views={views} installations={installations} agentUpdates={agentUpdates} onDetect={onDetect} management />
       </div>
     </section></I18nProvider>

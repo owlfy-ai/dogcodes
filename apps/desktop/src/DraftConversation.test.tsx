@@ -46,8 +46,8 @@ it.each(["MacIntel", "Win32"])("opens quota and a new draft with the %s shortcut
   await act(async () => root.render(<App client={client} />));
   const mac = platform === "MacIntel";
   const modifiers = mac ? { metaKey: true } : { ctrlKey: true };
-  expect(button("新建对话").querySelector("kbd")?.textContent).toBe(mac ? "⌘ N" : "Ctrl N");
-  expect(button("Agent 管理").querySelector("kbd")?.textContent).toBe(mac ? "⌘ U" : "Ctrl U");
+  expect(button("新建对话").querySelector("kbd")?.textContent).toBe(mac ? "⌘N" : "Ctrl+N");
+  expect(button("Agent 管理").querySelector("kbd")?.textContent).toBe(mac ? "⌘U" : "Ctrl+U");
   expect(button("Agent 管理").querySelector("small")).toBeNull();
   expect((await pressShortcut("u", modifiers)).defaultPrevented).toBe(true);
   expect(element.textContent).toContain("拖拽调整顺序");

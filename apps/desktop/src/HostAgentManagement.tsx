@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentUpdate, QuotaSnapshotView } from "@dogcodes/protocol";
-import { QuotaPanel, type HostAgentActions } from "./QuotaPanel";
+import { QuotaCollectedTime, QuotaPanel, type HostAgentActions } from "./QuotaPanel";
 import type { AgentUpdateActions } from "./agentUpdates";
 import type { HostAgentInstall, TargetApi, TargetEntry } from "./executionTargetClient";
 import { loginCommand, runsOnServers } from "./hostAgentCommands";
@@ -137,7 +137,7 @@ export function HostAgentManagement({ api, entry, visible, offlineBanner, onRunI
           </button>
         </div>
         {failure && <div className="remote-error" role="alert">{failure}</div>}
-        <div className="agent-management-summary"><span>{t("agentManagement.installedCount", { count: entry.agents.length })}</span><span>{t("agentManagement.quotaCalculation")}</span></div>
+        <div className="agent-management-summary"><span>{t("agentManagement.installedCount", { count: entry.agents.length })}</span><span>{t("agentManagement.quotaCalculation")}<QuotaCollectedTime views={views} /></span></div>
         <QuotaPanel views={views} installations={entry.agents} agentUpdates={updates} onDetect={detect} management host={host} />
       </div>
     </div>

@@ -21,6 +21,9 @@
   --titlebar-icon-size: calc(19px * var(--ui-scale));
   --ui-scale: 1;
   --conversation-content-width: 860px;
+  /* Full-page views (Agent management, phone, remote hosts) share one column. */
+  --page-content-width: 960px;
+  --page-padding: 36px clamp(24px, 4vw, 64px) 48px;
   --conversation-inline-padding: clamp(20px, 4cqw, 48px);
   font-size: calc(16px * var(--ui-scale));
 }
@@ -115,7 +118,7 @@ header[data-tauri-drag-region="deep"] * {
 .primary-nav button:hover { background: #353432; }
 .primary-nav button.active { color: #f0f0ec; background: #3b3a37; }
 .primary-nav button:disabled { cursor: default; opacity: .6; }
-.primary-nav b { font-size: calc(13px * var(--ui-scale)); font-weight: 550; }
+.primary-nav b { font-size: calc(13px * var(--ui-scale)); font-weight: 500; }
 .sidebar-nav-icon { display: block; width: calc(18px * var(--ui-scale)); height: calc(18px * var(--ui-scale)); color: #aaa9a4; }
 .primary-nav kbd, .primary-nav small { color: #74736f; font-size: calc(13px * var(--ui-scale, 1)); }
 .sidebar-divider { height: 1px; margin: 12px 4px; background: #3a3937; }
@@ -141,17 +144,14 @@ header[data-tauri-drag-region="deep"] * {
 .history-show-more, .history-empty { margin: 0; padding: 5px 10px 5px 30px; color: var(--muted); font-size: calc(14px * var(--ui-scale)); line-height: 20px; }
 .history-show-more { border: 0; border-radius: 6px; background: transparent; cursor: pointer; text-align: left; }
 .history-show-more:hover { color: inherit; background: #8881; }
-.agent-icon { flex: none; display: inline-grid; place-items: center; overflow: hidden; border: 1px solid #4a4945; border-radius: 6px; color: #d0d0cb; background: #30302e; font-weight: 800; line-height: 1; }
-img.agent-icon { display: block; object-fit: contain; object-position: center; }
+.agent-icon { flex: none; display: inline-grid; place-items: center; overflow: hidden; border: 1px solid #4a4945; border-radius: 24%; color: #d0d0cb; background: #30302e; font-weight: 800; line-height: 1; }
+/* One tile for every logo: same radius at every size, neutral frame, same inset.
+   Logos that are already a filled square (Kimi, CodeBuddy) fill the tile. */
+img.agent-icon { display: block; padding: calc(3px * var(--ui-scale, 1)); object-fit: contain; object-position: center; }
+:root img.agent-icon:is(.agent-kimi, .agent-codebuddy) { padding: 0; border-color: transparent; }
 .agent-icon.small { width: calc(20px * var(--ui-scale)); height: calc(20px * var(--ui-scale)); font-size: calc(13px * var(--ui-scale)); }
 .agent-icon.medium { width: calc(26px * var(--ui-scale)); height: calc(26px * var(--ui-scale)); font-size: calc(13px * var(--ui-scale)); }
-.agent-icon.agent-claude-code { padding: 2px; border-color: #794932; background: #35241d; }
-.agent-icon.agent-codex { border-color: #536056; background: #26302a; }
-.agent-icon.agent-kimi { padding: 0; border-color: #3d527e; background: #202a41; }
-.agent-icon.agent-grok { border-color: #555550; background: #171717; }
-.agent-icon.agent-zcode { border-color: #62438d; background: #2c203e; }
-.agent-icon.agent-cursor { border-color: #555550; background: #171717; }
-.agent-icon.agent-antigravity { border-color: #3c70b4; background: #10151e; }
+img.agent-icon.small { padding: calc(2px * var(--ui-scale, 1)); }
 .agent-icon.agent-fake, .agent-icon.agent-fake-peer { color: var(--green); border-color: #4b6332; background: #26331b; }
 .sidebar-empty { margin: 10px 8px; color: #777671; font-size: calc(14px * var(--ui-scale)); line-height: 1.5; }
 .agent-state { width: calc(7px * var(--ui-scale)); height: calc(7px * var(--ui-scale)); display: inline-block; border-radius: 50%; background: #8b6f48; box-shadow: 0 0 0 3px #8b6f4820; }
@@ -503,7 +503,7 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
   :where(:root:not([data-theme="dark"])) .task.active { color: #242422; background: #dededb; }
   :where(:root:not([data-theme="dark"])) .task small, :where(:root:not([data-theme="dark"])) .task.active small { color: #8b8b86; }
   :where(:root:not([data-theme="dark"])) .agent-icon { color: #4b4b47; border-color: #cfcfcb; background: #f7f7f5; }
-  :where(:root:not([data-theme="dark"])) :root:not([data-theme="dark"]) .agent-icon-monochrome { content: var(--agent-logo-light); }
+  :root:not([data-theme="dark"]) .agent-icon-monochrome { content: var(--agent-logo-light); }
   :where(:root:not([data-theme="dark"])) .sidebar-empty { color: #898984; }
 
   :where(:root:not([data-theme="dark"])) .workspace { background: radial-gradient(circle at 50% 38%, #ffffff 0, #fafafa 58%, #f7f7f6 100%); }
@@ -790,7 +790,16 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
 .project-picker-trigger:hover { background: #8882; }
 .project-picker-trigger:disabled { opacity: .5; cursor: wait; }
 .project-picker-menu { position: absolute; bottom: calc(100% + 4px); left: 10px; z-index: 40; width: min(310px, 75vw); border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: inherit; box-shadow: 0 8px 30px #0003; overflow: hidden; text-align: left; }
-.project-picker-menu > input { width: 100%; box-sizing: border-box; padding: 13px 15px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: inherit; font: inherit; font-size: calc(12px * var(--ui-scale)); }
+.project-picker-search { display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--line); color: var(--muted); }
+.project-picker-search svg { width: 15px; height: 15px; flex: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.project-picker-search input { flex: 1; min-width: 0; padding: 12px 0; border: 0; border-radius: 0; outline: none; background: transparent; color: var(--text, inherit); font: inherit; font-size: calc(13px * var(--ui-scale)); }
+.project-picker-search input::placeholder { color: var(--muted); }
+.project-picker-group + .project-picker-group { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+.project-picker-group-title { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0; padding: 6px 9px 3px; color: var(--muted); font-size: calc(11px * var(--ui-scale)); font-weight: 500; }
+.project-picker-group-title .sidebar-nav-icon { width: 13px; height: 13px; color: inherit; }
+.project-picker-group-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-picker-group-title small { display: inline; margin: 0 0 0 auto; padding-left: 8px; font-family: ui-monospace, monospace; font-size: calc(10.5px * var(--ui-scale)); flex: none; }
+.project-picker-check { flex: none; margin-left: auto; color: var(--muted); }
 .project-picker-list { max-height: min(220px, 25vh); overflow-y: auto; padding: 5px; }
 .project-picker-menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px; border: 0; border-radius: 6px; background: transparent; color: inherit; text-align: left; font-size: calc(13px * var(--ui-scale)); cursor: pointer; }
 .project-picker-menu button:hover, .project-picker-menu button:focus-visible { background: #8882; }

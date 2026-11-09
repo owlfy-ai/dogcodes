@@ -34,10 +34,21 @@ export function ProjectPicker({ projects, selectedProject, disabled, onSelect, o
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [entries, setEntries] = useState<TargetEntry[]>([]);
+  const [hostsLoaded, setHostsLoaded] = useState(false);
   const [hostsOpen, setHostsOpen] = useState(false);
   const hostsMenu = useRef<HTMLDivElement>(null);
   const hosts: TargetHosts = useMemo(() => new Map(entries.map(({ target }) => [target.targetId, target.connection.destination])), [entries]);
   const options = projectOptions(projects, query, home, hosts);
+  // Projects grouped by where they live: this computer first, then each remote host.
+  const groups = useMemo(() => {
+    const byHost = new Map<string, ProjectSummary[]>();
+    for (const project of options) {
+      const key = project.targetId ?? "";
+      byHost.set(key, [...byHost.get(key) ?? [], project]);
+    }
+    return [...byHost.entries()].sort(([a], [b]) => (a ? 1 : 0) - (b ? 1 : 0));
+  }, [options]);
+  const grouped = groups.some(([targetId]) => targetId);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const scratch = projects.find(project => project.displayName === SCRATCH_PROJECT_NAME);
@@ -51,9 +62,9 @@ export function ProjectPicker({ projects, selectedProject, disabled, onSelect, o
     if (!open) setHostsOpen(false);
     if (!open || !(hasRemoteProject || offersHosts)) return;
     let disposed = false;
-    // Without the list a remote project still shows its SSH badge and its path on hover.
+    // Without the list a remote project is still grouped under "Remote hosts", its path on hover.
     void targetApi.list().then(entries => {
-      if (!disposed) setEntries(entries);
+      if (!disposed) { setEntries(entries); setHostsLoaded(true); }
     }).catch(() => {});
     return () => { disposed = true; };
   }, [open, hasRemoteProject, offersHosts, targetApi]);
@@ -87,17 +98,28 @@ export function ProjectPicker({ projects, selectedProject, disabled, onSelect, o
     </button>
     {open && <FloatingPopover align="start" className="project-picker-menu" role="dialog" aria-label={t("projectPicker.selectWorkspace")}
       onMouseOver={event => { if (hostsOpen && !hostsMenu.current?.contains(event.target as Node)) setHostsOpen(false); }}>
-      <input autoFocus aria-label={t("projectPicker.search")} placeholder={t("projectPicker.search")} value={query}
-        onChange={event => setQuery(event.target.value)} onKeyDown={event => {
-          if (event.key === "Enter") event.preventDefault();
-          if (event.key === "ArrowDown") { event.preventDefault(); root.current?.querySelector<HTMLButtonElement>(".project-picker-list button")?.focus(); }
-        }} />
+      <label className="project-picker-search">
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="5.5" /><path d="m13 13 3.5 3.5" /></svg>
+        <input autoFocus aria-label={t("projectPicker.search")} placeholder={t("projectPicker.search")} value={query}
+          onChange={event => setQuery(event.target.value)} onKeyDown={event => {
+            if (event.key === "Enter") event.preventDefault();
+            if (event.key === "ArrowDown") { event.preventDefault(); root.current?.querySelector<HTMLButtonElement>(".project-picker-list button")?.focus(); }
+          }} />
+      </label>
       <div className="project-picker-list">
-        {options.map(project => <button type="button" key={project.projectId}
-          data-tooltip={[project.path, ...project.additionalDirectories].join("\n")} aria-pressed={project.projectId === selectedProject?.projectId} onClick={() => choose(project.projectId)}>
-          <FolderIcon /><span className="project-picker-copy">{project.displayName}{project.targetId && <small><b className="project-target-badge">SSH</b> {hosts.get(project.targetId)}</small>}</span>
-          {project.projectId === selectedProject?.projectId && <span aria-hidden="true">✓</span>}
-        </button>)}
+        {groups.map(([targetId, members]) => {
+          const host = targetId ? entries.find(entry => entry.target.targetId === targetId) : undefined;
+          return <div className="project-picker-group" role="group" key={targetId || "local"} aria-label={grouped ? (targetId ? host?.target.displayName ?? t(hostsLoaded ? "projectPicker.unknownHost" : "executionTargets.title") : t("projectPicker.thisComputer")) : undefined}>
+            {grouped && <p className="project-picker-group-title" aria-hidden="true">
+              {targetId ? <><SidebarNavIcon kind="server" /><span>{host?.target.displayName ?? t(hostsLoaded ? "projectPicker.unknownHost" : "executionTargets.title")}</span>{host && host.target.displayName !== host.target.connection.destination && <small>{host.target.connection.destination}</small>}</> : <span>{t("projectPicker.thisComputer")}</span>}
+            </p>}
+            {members.map(project => <button type="button" key={project.projectId}
+              data-tooltip={[project.path, ...project.additionalDirectories].join("\n")} aria-pressed={project.projectId === selectedProject?.projectId} onClick={() => choose(project.projectId)}>
+              <FolderIcon /><span className="project-picker-copy">{project.displayName}</span>
+              {project.projectId === selectedProject?.projectId && <span className="project-picker-check" aria-hidden="true">✓</span>}
+            </button>)}
+          </div>;
+        })}
         {options.length === 0 && <p className="project-picker-empty">{t(query ? "projectPicker.noMatches" : "projectPicker.noProjects")}</p>}
       </div>
       <div className="project-picker-actions">
@@ -119,7 +141,7 @@ export function ProjectPicker({ projects, selectedProject, disabled, onSelect, o
             </div>
           </FloatingPopover>}
         </div>}
-        <button type="button" disabled={!scratch} aria-pressed={noProject} onClick={() => scratch && choose(scratch.projectId)}><svg className="workspace-folder" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M17 9.5a7 7 0 0 1-7 7H3l1-3A7 7 0 1 1 17 9.5Z" /></svg>{t("projectPicker.withoutProject")}{noProject && <span aria-hidden="true">✓</span>}</button>
+        <button type="button" disabled={!scratch} aria-pressed={noProject} onClick={() => scratch && choose(scratch.projectId)}><svg className="workspace-folder" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M17 9.5a7 7 0 0 1-7 7H3l1-3A7 7 0 1 1 17 9.5Z" /></svg><span className="project-picker-copy">{t("projectPicker.withoutProject")}</span>{noProject && <span className="project-picker-check" aria-hidden="true">✓</span>}</button>
       </div>
     </FloatingPopover>}
   </div>;

@@ -1021,6 +1021,8 @@ export const uiKo: UiMessages = {
   },
   executionTargets: executionTargetMessages.ko,
   projectPicker: {
+    thisComputer: "이 컴퓨터",
+    unknownHost: "사용할 수 없는 호스트",
     createProject: "프로젝트 생성…",
     directoryCount: "폴더 {count}개",
     noMatches: "일치하는 작업 공간 없음",

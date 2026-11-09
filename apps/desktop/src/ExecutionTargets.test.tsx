@@ -519,10 +519,10 @@ describe("connections page", () => {
     expect(document.body.textContent).toContain("No remote hosts yet.");
   });
 
-  it("keeps the host list as a first tab that can't be closed", async () => {
+  it("shows no tab bar while the host list is the only page", async () => {
     await page(withHost(connected));
-    expect(tabs()).toEqual(["Remote hosts"]);
-    expect(document.querySelector(".tab-bar-close")).toBeNull();
+    expect(tabs()).toEqual([]);
+    expect(document.querySelector(".target-tabs")).toBeNull();
   });
 
   it("shows each host as a card under its alias", async () => {
@@ -548,7 +548,7 @@ describe("connections page", () => {
     vi.mocked(api.list).mockResolvedValue([entry]);
     await page(api);
     await act(async () => { card().querySelector<HTMLButtonElement>(".target-card-open")!.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })); });
-    expect(tabs()).toEqual(["Remote hosts"]);
+    expect(tabs()).toEqual([]);
     await doubleClick(card());
     expect(api.connect).toHaveBeenCalledWith("tgt_one", null);
     expect(tabs()).toEqual(["Remote hosts", "Build"]);
@@ -564,18 +564,21 @@ describe("connections page", () => {
   });
 
   const action = (label: string) => card().querySelector<HTMLButtonElement>(`.target-row-actions [aria-label="${label}"]`)!;
+  const terminal = () => card().querySelector<HTMLButtonElement>(".target-card-terminal")!;
 
   it("does not take a double click on an action for opening the host", async () => {
     await page(withHost(connected));
     await doubleClick(action("Edit"));
-    expect(tabs()).toEqual(["Remote hosts"]);
+    expect(tabs()).toEqual([]);
   });
 
-  it("offers its actions as named icons, ending with connect", async () => {
+  it("offers its actions as named icons, and opening a terminal as a labelled button", async () => {
     await page(withHost(connected), undefined, { onProjectReady: () => {} });
     const actions = [...card().querySelectorAll(".target-row-actions button")];
-    expect(actions.map(item => item.getAttribute("aria-label"))).toEqual(["Open a project", "Edit", "Remove", "Connect", "Check for agents again", "Manage agents"]);
+    expect(actions.map(item => item.getAttribute("aria-label"))).toEqual(["Open a project", "Edit", "Remove", "Check for agents again", "Manage agents"]);
     expect(actions.every(item => item.querySelector("svg") && !item.textContent)).toBe(true);
+    expect(terminal().textContent).toBe("Terminal");
+    expect(terminal().getAttribute("aria-label")).toBe("Open a terminal on Build");
     expect(button("Disconnect")).toBeUndefined();
   });
 
@@ -732,7 +735,7 @@ describe("connections page", () => {
         await flush();
         await act(async () => { container.querySelector<HTMLButtonElement>(".tab-bar-close")!.click(); });
         await flush();
-        expect(tabs()).toEqual(["Remote hosts"]);
+        expect(tabs()).toEqual([]);
         expect(api.release).toHaveBeenCalledWith("tgt_one");
       });
     });
@@ -741,23 +744,23 @@ describe("connections page", () => {
       const api = withHost(idle);
       await page(api);
       await doubleClick(refresh());
-      expect(tabs()).toEqual(["Remote hosts"]);
+      expect(tabs()).toEqual([]);
     });
   });
 
-  it("opens a shell tab from the connect arrow, the same as a double click", async () => {
+  it("opens a shell tab from the terminal button, the same as a double click", async () => {
     const api = withHost(idle);
     await page(api);
-    await act(async () => { action("Connect").click(); });
+    await act(async () => { terminal().click(); });
     expect(api.connect).toHaveBeenCalledWith("tgt_one", null);
     expect(tabs()).toEqual(["Remote hosts", "Build"]);
     expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Build");
   });
 
-  it("opens one tab when the connect arrow itself is double-clicked", async () => {
+  it("opens one tab when the terminal button itself is double-clicked", async () => {
     await page(withHost(connected));
-    for (const detail of [1, 2]) await act(async () => { action("Connect").dispatchEvent(new MouseEvent("click", { bubbles: true, detail })); });
-    await doubleClick(action("Connect"));
+    for (const detail of [1, 2]) await act(async () => { terminal().dispatchEvent(new MouseEvent("click", { bubbles: true, detail })); });
+    await doubleClick(terminal());
     expect(tabs()).toEqual(["Remote hosts", "Build"]);
   });
 
@@ -820,9 +823,9 @@ describe("connections page", () => {
     await act(async () => { button("shell started")!.click(); });
     await act(async () => { document.querySelector<HTMLButtonElement>(".tab-bar-close")!.click(); });
     expect(close).toHaveBeenCalledWith(expect.any(String), "e1");
-    expect(tabs()).toEqual(["Remote hosts"]);
+    expect(tabs()).toEqual([]);
     expect(api.release).toHaveBeenCalledWith("tgt_one");
-    expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Remote hosts");
+    expect(document.querySelector(".target-host-list")!.hasAttribute("hidden")).toBe(false);
   });
 
   it("keeps the connection until the last tab of that host closes", async () => {

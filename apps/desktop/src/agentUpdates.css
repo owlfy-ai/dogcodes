@@ -1,18 +1,20 @@
 .quota-provider-heading .quota-version-line { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; min-height: 1.5rem; line-height: 1.5; text-transform: none; }
 .agent-update { display: inline-flex; align-items: center; flex-shrink: 0; gap: .15rem; color: var(--muted); font-size: inherit; line-height: inherit; vertical-align: middle; }
-.agent-update-version { white-space: nowrap; margin-left: .15rem; padding: .05rem .4rem; border-radius: .3rem; font-weight: 600; color: #b7ed7c; background: color-mix(in srgb, var(--green) 12%, transparent); }
-:root[data-theme="light"] .agent-update-version { color: #4c6f0f; }
-@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .agent-update-version { color: #4c6f0f; } }
+/* "Update available" is information, not the brand accent or a quota status colour. */
+.agent-update { --update-info: #8db8f2; }
+:root[data-theme="light"] .agent-update { --update-info: #2f66b8; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .agent-update { --update-info: #2f66b8; } }
+.agent-update-version { white-space: nowrap; margin-left: .15rem; padding: .05rem .4rem; border-radius: .3rem; font-weight: 600; color: var(--update-info); background: color-mix(in srgb, var(--update-info) 11%, transparent); }
 .agent-update .agent-update-action, .agent-update-status { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; flex-shrink: 0; }
 .agent-update .agent-update-action { margin: 0; padding: .22rem; border: 0; border-radius: .3rem; background: transparent; color: inherit; font: inherit; cursor: pointer; }
-.agent-update .agent-update-action:hover { background: var(--panel-raised); color: var(--green); }
+.agent-update .agent-update-action:hover { background: var(--panel-raised); color: var(--update-info); }
 .agent-update .agent-update-action:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .agent-update .agent-update-action:disabled { cursor: wait; opacity: .4; background: transparent; color: inherit; }
 .agent-update-progress { display: inline-flex; align-items: center; gap: .35rem; }
 .agent-update--upgrading { flex-shrink: 1; min-width: 0; }
 .agent-update-progress .agent-update-spinner { flex-shrink: 0; }
 .agent-update svg { display: block; width: 1rem; height: 1rem; }
-.agent-update--available .agent-update-action { color: var(--green); }
+.agent-update--available .agent-update-action { color: var(--update-info); }
 .agent-update--error { color: #ce7969; }
 .agent-update-spinner { display: inline-block; width: .8rem; height: .8rem; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: agent-update-spin .8s linear infinite; }
 @keyframes agent-update-spin { to { transform: rotate(360deg); } }

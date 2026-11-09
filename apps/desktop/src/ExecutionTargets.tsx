@@ -668,7 +668,8 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
     ];
   };
   return <section className="workspace remote-page target-page" aria-label={text("title")} hidden={!visible}>
-    <TabBar className="target-tabs" label={text("title")} selected={selected} onSelect={setSelected} revealKey={visible} items={[
+    {/* A lone "hosts" tab is just a stray button: show the bar once there is a second tab. */}
+    {(agentPages.length > 0 || tabs.length > 0) && <TabBar className="target-tabs" label={text("title")} selected={selected} onSelect={setSelected} revealKey={visible} items={[
       { id: HOST_LIST, label: text("title") },
       ...agentPages.flatMap(targetId => {
         const name = entryOf(targetId)?.target.displayName;
@@ -682,7 +683,7 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
         icon: <i className={`target-tab-state ${tabState(tab)}`} aria-hidden="true" />,
         close: { label: text("closeTab", { name: tabLabel(tab) }), onClose: () => void closeTab(tab) },
       })),
-    ]} />
+    ]} />}
     <div className="target-host-list" role="tabpanel" hidden={selected !== HOST_LIST}>
       <div className="remote-page-content">
         <header className="remote-header">
@@ -705,14 +706,19 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
                   <span>{targetRoute(target.connection)}</span>
                 </span>
               </button>
-              <div className="target-row-actions" onDoubleClick={event => event.stopPropagation()}>
-                  {onProjectReady && <ActionButton label={text("openProject")} path="M3 19V6a2 2 0 0 1 2-2h4l2 3h7a2 2 0 0 1 2 2v1M3 19l3-8a1 1 0 0 1 1-1h14l-3 8a1.5 1.5 0 0 1-1.4 1H3Z" onClick={() => setDialog({ entry, forProject: true })} />}
-                  <ActionButton label={text("edit")} path="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Zm9.5-13.5 4 4" onClick={() => setDialog({ entry })} />
-                  <ActionButton label={text("remove")} path="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" onClick={() => setRemoving(entry)} />
-              </div>
-              {/* The same as double-clicking the card. Always shown: it's how a host is used. */}
-              <div className="target-row-actions target-card-connect" onDoubleClick={event => event.stopPropagation()}>
-                <ActionButton label={text("connect")} path="M5 12h14m-6-6 6 6-6 6" onClick={event => { if (event.detail <= 1) openTerminal(entry); }} />
+              {/* Hover actions float beside the terminal button instead of reserving room the name needs. */}
+              <div className="target-card-end">
+                <div className="target-row-actions" onDoubleClick={event => event.stopPropagation()}>
+                    {onProjectReady && <ActionButton label={text("openProject")} path="M3 19V6a2 2 0 0 1 2-2h4l2 3h7a2 2 0 0 1 2 2v1M3 19l3-8a1 1 0 0 1 1-1h14l-3 8a1.5 1.5 0 0 1-1.4 1H3Z" onClick={() => setDialog({ entry, forProject: true })} />}
+                    <ActionButton label={text("edit")} path="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Zm9.5-13.5 4 4" onClick={() => setDialog({ entry })} />
+                    <ActionButton label={text("remove")} path="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" onClick={() => setRemoving(entry)} />
+                </div>
+                {/* The same as double-clicking the card. Always shown: it's how a host is used. */}
+                <button type="button" className="target-card-terminal" aria-label={text("openTerminal", { name: target.displayName })} onDoubleClick={event => event.stopPropagation()}
+                  onClick={event => { if (event.detail <= 1) openTerminal(entry); }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="m7 9 3 3-3 3m5 0h5" /></svg>
+                  {text("terminalButton")}
+                </button>
               </div>
               <HostAgents api={api} entry={entry} inUse={tabs.some(tab => tab.targetId === target.targetId)} onAct={act} onChanged={changed} onManage={() => openAgentPage(target.targetId)} refreshers={refreshers} />
             </li>;

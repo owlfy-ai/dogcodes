@@ -29,7 +29,10 @@ export function FloatingPopover({ open = true, point, placement, align = "end", 
         node.style.top = `${snap(Math.max(gutter, Math.min(rect.top, window.innerHeight - height - gutter)))}px`;
         return;
       }
-      const above = Math.max(0, rect.top - gutter * 2);
+      // A menu opening upward from below the title bar stops under it, never over the window's title.
+      const titlebar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--window-titlebar-height")) || 0;
+      const ceiling = rect.top > titlebar + gutter * 4 ? titlebar : 0;
+      const above = Math.max(0, rect.top - ceiling - gutter * 2);
       const below = Math.max(0, window.innerHeight - rect.bottom - gutter * 2);
       const upward = placement === "bottom"
         ? height > below && above > below
@@ -40,7 +43,7 @@ export function FloatingPopover({ open = true, point, placement, align = "end", 
       const visibleHeight = Math.min(height, available);
       const top = upward ? rect.top - visibleHeight - gutter : rect.bottom + gutter;
       node.style.left = `${snap(Math.max(gutter, Math.min(point?.x ?? (align === "start" ? rect.left : rect.right - width), window.innerWidth - width - gutter)))}px`;
-      node.style.top = `${snap(Math.max(gutter, point ? Math.min(point.y, window.innerHeight - height - gutter) : top))}px`;
+      node.style.top = `${snap(Math.max(gutter + (upward && !point ? ceiling : 0), point ? Math.min(point.y, window.innerHeight - height - gutter) : top))}px`;
     };
     const update = () => {
       // Measuring the unconstrained menu can temporarily remove its scrollbar.

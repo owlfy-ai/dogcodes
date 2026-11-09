@@ -171,7 +171,15 @@ export function quotaPlanLabel(quota: QuotaSnapshot, lang: ResolvedLanguage = "z
     "订阅额度": "subscriptionQuota", "按量付费已开启": "onDemandOn",
     "按量付费关闭": "onDemandOff", "另有赠送额度": "bonusQuota", "另有加购额度": "purchasedQuota",
   };
-  return plan == null ? plan : plan.split(" · ").map(part => labels[part] ? t(`agentUi.${labels[part]}`, undefined, lang) : part).join(" · ");
+  // Some providers report plans in lower case ("pro", "plus"); show them like names.
+  const named = (part: string) => /^[a-z][a-z0-9]*$/.test(part) ? part[0].toUpperCase() + part.slice(1) : part;
+  return plan == null ? plan : plan.split(" · ").map(part => labels[part] ? t(`agentUi.${labels[part]}`, undefined, lang) : named(part)).join(" · ");
+}
+
+/** When the newest of these quota readings was collected, if any. */
+export function latestQuotaCollection(views: { quota?: { collectedAtUnixMs: number } | null }[]): number | undefined {
+  const times = views.map(view => view.quota?.collectedAtUnixMs).filter((time): time is number => typeof time === "number");
+  return times.length ? Math.max(...times) : undefined;
 }
 
 export function quotaNativeResetLabel(quota: QuotaSnapshot, window: QuotaWindow, lang: ResolvedLanguage = "zh-CN"): string {

@@ -1021,6 +1021,8 @@ export const uiPtBR: UiMessages = {
   },
   executionTargets: executionTargetMessages.ptBR,
   projectPicker: {
+    thisComputer: "Este computador",
+    unknownHost: "Host indisponível",
     createProject: "Criar projeto…",
     directoryCount: "{count} pastas",
     noMatches: "Nenhum workspace correspondente",

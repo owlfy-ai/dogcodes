@@ -1021,6 +1021,8 @@ export const uiJa: UiMessages = {
   },
   executionTargets: executionTargetMessages.ja,
   projectPicker: {
+    thisComputer: "このコンピュータ",
+    unknownHost: "利用できないホスト",
     createProject: "プロジェクトを作成…",
     directoryCount: "{count} 個のフォルダ",
     noMatches: "一致するワークスペースがありません",

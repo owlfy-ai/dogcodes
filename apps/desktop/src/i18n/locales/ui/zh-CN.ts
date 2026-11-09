@@ -1021,6 +1021,8 @@ export const uiZhCN: UiMessages = {
   },
   executionTargets: executionTargetMessages.zhCN,
   projectPicker: {
+    thisComputer: "本机",
+    unknownHost: "已不可用的主机",
     createProject: "创建项目…",
     directoryCount: "{count} 个目录",
     noMatches: "没有匹配的工作区",

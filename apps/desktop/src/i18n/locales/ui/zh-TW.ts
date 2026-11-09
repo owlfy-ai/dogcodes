@@ -1021,6 +1021,8 @@ export const uiZhTW: UiMessages = {
   },
   executionTargets: executionTargetMessages.zhTW,
   projectPicker: {
+    thisComputer: "本機",
+    unknownHost: "已無法使用的主機",
     createProject: "建立專案…",
     directoryCount: "{count} 個目錄",
     noMatches: "沒有匹配的工作區",

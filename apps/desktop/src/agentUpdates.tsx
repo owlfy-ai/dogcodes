@@ -104,7 +104,7 @@ function UpgradeConfirmation({ update, actions }: { update: AgentUpdate; actions
 }
 function UpdateIcon({ kind }: { kind: "upgrade" | "retry" | "external" | "done" }) {
   const paths = {
-    upgrade: "M12 16V4m-4 4 4-4 4 4M5 14v5h14v-5",
+    upgrade: "M12 4v11m-4-4 4 4 4-4M5 15v4h14v-4",
     retry: "M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17",
     external: "M14 4h6v6m0-6-9 9M10 5H5v14h14v-5",
     done: "m5 12 4 4L19 6",

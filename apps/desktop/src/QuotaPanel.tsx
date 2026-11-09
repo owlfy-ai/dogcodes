@@ -12,7 +12,7 @@ import { quotaShowsLastReading } from "./quotaFallback";
 import { localizedAgentMessage } from "./agentI18n";
 import type { HostAgentInstall } from "./executionTargetClient";
 import { visibleQuotaViews } from "./quotaInstallations";
-import { formatProviderBalance, formatQuotaPercent, formatResetTime, quotaColor, quotaNativeResetLabel, quotaPlanLabel, quotaScopeLabel, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
+import { formatProviderBalance, formatQuotaPercent, formatResetTime, latestQuotaCollection, quotaColor, quotaNativeResetLabel, quotaPlanLabel, quotaScopeLabel, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
 
 export interface HostAgentActions {
   supports: (providerId: string) => boolean;
@@ -43,6 +43,17 @@ export function quotaDiagnostic(code?: string | null, lang?: ResolvedLanguage): 
     case "claude_quota_no_windows": return t("agentUi.claudeInvalidHint", undefined, lang);
     default: return t("agentUi.quotaEmptyHint", undefined, lang);
   }
+}
+
+/** "Updated 01:38" for a whole page of quota readings. */
+export function QuotaCollectedTime({ views }: { views: QuotaSnapshotView[] }) {
+  const { resolvedLanguage: lang } = useI18n();
+  const newest = latestQuotaCollection(views);
+  if (newest == null) return null;
+  const date = new Date(newest);
+  return <time className="agent-management-updated" dateTime={date.toISOString()} data-tooltip={date.toLocaleString(lang)}>
+    {t("agentUi.updatedAt", { time: date.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" }) }, lang)}
+  </time>;
 }
 
 /// Overall quota panel: every connected agent with a quota source.
@@ -79,6 +90,8 @@ export function QuotaPanel({
   const uninstalled = management ? supportedAgents.filter(agent => (!host || host.supports(agent.id)) && !installedViews.some(view => view.providerId === agent.id)) : [];
   const visible = orderAgents(installedViews, item => item.providerId, preferences);
   const providerOrder = visible.map(view => view.providerId);
+  // The page shows when quotas were read; a card repeats it only when it lags behind.
+  const newest = latestQuotaCollection(visible);
   const endDrag = () => { draggedRef.current = null; setDragged(null); setDrop(null); };
   const announce = (providerId: string, position: number) => setAnnouncement(t("agentUi.movedTo", { name: providerLabel(providerId, lang), position: position + 1, total: providerOrder.length }, lang));
   const startDrag = (event: DragEvent<HTMLButtonElement>, providerId: string) => {
@@ -145,9 +158,9 @@ export function QuotaPanel({
       return <section className="agent-management-card" key={view.installationId} aria-label={providerLabel(view.providerId, lang)}
         data-disabled={management && !enabled || undefined} data-provider-id={management ? view.providerId : undefined}
         data-dragging={management && dragged === view.providerId || undefined} data-drop-edge={drop?.providerId === view.providerId ? drop.edge : undefined}>
-        {management && !host && <AgentManagementControls providerId={view.providerId} enabled={enabled} order={providerOrder}
-          onDragStart={event => startDrag(event, view.providerId)} onDragEnd={endDrag} onMoved={announce} />}
         <header className="agent-card-heading">
+          {management && !host && <AgentManagementControls providerId={view.providerId} enabled={enabled} order={providerOrder}
+            onDragStart={event => startDrag(event, view.providerId)} onDragEnd={endDrag} onMoved={announce} />}
           <AgentIcon providerId={view.providerId} />
           <div className="agent-card-identity"><h3>{providerLabel(view.providerId, lang)}</h3>
             {loginRequired ? <span className="agent-card-login-status">{accountIssue!.label}{host
@@ -155,14 +168,13 @@ export function QuotaPanel({
               : <AgentLogin installationId={view.installationId} name={loginAgent.name} />}</span>
               : <span>{accountIssue?.label ?? (quota ? quotaPlanLabel(quota, lang) || (quota.balances?.length ? t("agentUi.providerBalance", undefined, lang) : t("agentUi.subscriptionQuota", undefined, lang)) : t("agentUi.quotaUnavailable", undefined, lang))}</span>}
           </div>
-          {quota && <time className="agent-card-updated" dateTime={new Date(quota.collectedAtUnixMs).toISOString()} data-tooltip={new Date(quota.collectedAtUnixMs).toLocaleString(lang)}>{t("agentUi.updatedAt", { time: new Date(quota.collectedAtUnixMs).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" }) }, lang)}</time>}
+          {quota && (!management || newest == null || newest - quota.collectedAtUnixMs > 5 * 60_000) && <time className="agent-card-updated" dateTime={new Date(quota.collectedAtUnixMs).toISOString()} data-tooltip={new Date(quota.collectedAtUnixMs).toLocaleString(lang)}>{t("agentUi.updatedAt", { time: new Date(quota.collectedAtUnixMs).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" }) }, lang)}</time>}
         </header>
         <div className="agent-card-content">
           {quota ? <>
             {!!quota.balances?.length && <div className="agent-provider-balances" aria-label={t("agentUi.providerBalance", undefined, lang)}>
               {quota.balances.map(balance => <div className="agent-quota-label" key={`${balance.label}:${balance.currency}`}><span>{balance.label}</span><strong>{formatProviderBalance(balance.amount, balance.currency, lang)}</strong></div>)}
             </div>}
-            {quota.windows.length > 0 && <div className="agent-quota-caption">{t("agentUi.remainingQuota", undefined, lang)}</div>}
             <div className="agent-quota-windows">
               {quota.windows.map(window => {
                 const reset = quotaWindowHasReset(window);

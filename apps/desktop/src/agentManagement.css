@@ -1,11 +1,11 @@
 .workspace.agent-management { grid-template-rows: minmax(0, 1fr); }
-.agent-management .quota-center-content { padding: 36px clamp(20px, 4vw, 64px) 48px; container-type: inline-size; }
+.agent-management .quota-center-content { padding: var(--page-padding); container-type: inline-size; }
 .agent-management .quota-center-intro,
 .agent-management .quota-center-content > .quota-panel,
 .agent-management .agent-uninstalled,
 .agent-management .quota-refresh-status,
 .agent-management .quota-empty,
-.agent-management-summary { width: min(1080px, 100%); box-sizing: border-box; margin-inline: auto; }
+.agent-management-summary { width: min(var(--page-content-width), 100%); box-sizing: border-box; margin-inline: auto; }
 .agent-management .quota-center-intro { align-items: center; margin-bottom: 28px; gap: 20px; }
 .agent-management .quota-center-intro > .agent-management-description { max-width: none; margin: 0; text-align: left; }
 .agent-management-description { color: var(--muted); font-size: calc(13px * var(--ui-scale, 1)); line-height: 1.6; }
@@ -15,7 +15,15 @@
 .agent-management-summary > :first-child { color: inherit; font-weight: 500; }
 .quota-panel.agent-management-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 16px; }
 .quota-panel .agent-management-card { min-width: 0; padding: 22px 24px 16px; border-radius: 18px; gap: 0; }
-.agent-card-heading { display: flex; align-items: center; gap: 12px; min-width: 0; margin-bottom: 24px; }
+.agent-card-heading { display: flex; align-items: center; gap: 12px; min-width: 0; margin-bottom: 22px; }
+/* Drag handle and switch share the name row instead of a row of their own. */
+.agent-card-heading > .agent-management-controls { display: contents; }
+.agent-card-heading .agent-drag-handle { order: -1; margin: 0 -6px 0 -12px; }
+.agent-card-heading .agent-enabled-label, .agent-card-heading .agent-enabled-switch { order: 1; }
+.agent-card-heading .agent-card-updated { order: 1; }
+.agent-card-identity { flex: 1; }
+.agent-management-updated { font-variant-numeric: tabular-nums; }
+.agent-management-updated::before { content: "·"; margin: 0 6px; }
 .agent-card-heading > .agent-icon { width: calc(34px * var(--ui-scale, 1)); height: calc(34px * var(--ui-scale, 1)); flex: none; }
 .agent-card-identity { min-width: 0; }
 .agent-card-identity h3 { font-size: calc(16px * var(--ui-scale, 1)); font-weight: 600; line-height: 1.4; margin: 0 0 4px; }
@@ -45,22 +53,23 @@
 .agent-card-footer .agent-update-version { min-width: 0; margin: 0; padding: 2px 8px; border-radius: 6px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .agent-card-footer .agent-update-progress { min-width: 0; }
 .agent-card-footer .agent-update-progress > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-card-updated { margin-left: auto; align-self: flex-start; flex-shrink: 0; padding-top: 3px; color: var(--muted); font-size: calc(10px * var(--ui-scale, 1)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.agent-card-updated { flex-shrink: 0; color: var(--muted); font-size: calc(10px * var(--ui-scale, 1)); font-variant-numeric: tabular-nums; white-space: nowrap; }
 @container (max-width: 780px) { .agent-management .agent-management-grid { grid-template-columns: minmax(0, 1fr); } }
 @container (max-width: 380px) { .agent-management .agent-quota-windows { grid-template-columns: minmax(0, 1fr); } .agent-management .agent-management-card { padding: 18px; } }
 @media (max-width: 600px) { .agent-management .quota-center-intro { align-items: flex-start; flex-wrap: wrap; } }
-.agent-management-controls { display: flex; align-items: center; gap: 8px; margin: -8px -8px 14px; color: var(--muted); }
-.agent-management-controls .agent-drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; border-radius: 6px; padding: 0; background: transparent; color: inherit; cursor: grab; }
-.agent-management-controls .agent-drag-handle:hover { background: var(--panel-raised); color: var(--text); }
-.agent-management-controls .agent-drag-handle:active { cursor: grabbing; }
-.agent-enabled-label { margin-left: auto; font-size: calc(11px * var(--ui-scale, 1)); }
-.agent-management-controls .agent-enabled-switch { display: inline-flex; align-items: center; flex: none; width: 30px; height: 18px; padding: 2px; border: 0; border-radius: 999px; background: color-mix(in srgb, currentColor 24%, transparent); cursor: pointer; transition: background .15s; }
+.agent-management-controls { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.agent-card-heading .agent-drag-handle, .agent-card-heading .agent-enabled-label { color: var(--muted); }
+.agent-card-heading .agent-drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; border-radius: 6px; padding: 0; background: transparent; color: inherit; cursor: grab; }
+.agent-card-heading .agent-drag-handle:hover { background: var(--panel-raised); color: var(--text); }
+.agent-card-heading .agent-drag-handle:active { cursor: grabbing; }
+.agent-enabled-label { flex: none; font-size: calc(11px * var(--ui-scale, 1)); }
+.agent-card-heading .agent-enabled-switch { display: inline-flex; align-items: center; flex: none; width: 30px; height: 18px; padding: 2px; border: 0; border-radius: 999px; background: color-mix(in srgb, currentColor 24%, transparent); cursor: pointer; transition: background .15s; }
 .agent-enabled-switch > span { width: 14px; height: 14px; border-radius: 50%; background: white; box-shadow: 0 1px 3px #0002; transition: transform .15s; }
-.agent-management-controls .agent-enabled-switch[aria-checked="true"] { background: var(--green); }
+.agent-card-heading .agent-enabled-switch[aria-checked="true"] { background: var(--green); }
 .agent-enabled-switch[aria-checked="true"] > span { transform: translateX(12px); }
 .agent-enabled-switch:disabled { opacity: .4; cursor: default; }
-.agent-management-controls button:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
-.agent-management-card[data-disabled] .agent-card-heading, .agent-management-card[data-disabled] .agent-card-content, .agent-management-card[data-disabled] .agent-card-footer { opacity: .55; }
+.agent-card-heading .agent-management-controls button:focus-visible, .agent-card-heading .agent-drag-handle:focus-visible, .agent-card-heading .agent-enabled-switch:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.agent-management-card[data-disabled] .agent-card-heading > :is(.agent-icon, .agent-card-identity, .agent-card-updated), .agent-management-card[data-disabled] .agent-card-content, .agent-management-card[data-disabled] .agent-card-footer { opacity: .55; }
 /* Drag sorting: the dragged card stays in place as a dashed ghost, and a bar in the gap shows exactly where it will land.
    Two columns place the bar left/right of a card (reading order); one column places it above/below. */
 .quota-panel .agent-management-card { position: relative; }

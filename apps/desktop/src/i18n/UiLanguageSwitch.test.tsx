@@ -66,6 +66,45 @@ describe("UiLanguage switching across international languages", () => {
     expect(toggle.getAttribute("aria-checked")).toBe("false");
   });
 
+  it("opens preference submenus on hover without dropping them on the way in", async () => {
+    await click(element.querySelector<HTMLButtonElement>(".preferences-trigger")!);
+    const row = (section: string) => document.body.querySelector<HTMLButtonElement>(`.preferences-popover [data-section="${section}"]`)!;
+    const submenu = () => document.body.querySelector<HTMLElement>(".preferences-submenu");
+    const move = (target: Element, x: number, y: number) => act(async () => {
+      target.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, clientX: x, clientY: y }));
+    });
+    const rect = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("preferences-submenu") ? new DOMRect(200, 0, 196, 120) : rect.call(this);
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+    await move(row("language"), 50, 10);
+    expect(submenu()?.getAttribute("aria-label")).toBe(row("language").textContent?.replace("›", ""));
+    expect(row("language").getAttribute("aria-expanded")).toBe("true");
+
+    // Crossing Theme diagonally toward the open submenu keeps Language open.
+    await move(row("theme"), 70, 20);
+    expect(row("language").getAttribute("aria-expanded")).toBe("true");
+    await move(submenu()!, 205, 40);
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(row("language").getAttribute("aria-expanded")).toBe("true");
+
+    // Moving away from the submenu switches at once.
+    await move(row("theme"), 40, 30);
+    expect(row("theme").getAttribute("aria-expanded")).toBe("true");
+
+    // Pausing on a row on the way switches after a short delay.
+    await move(row("scale"), 60, 35);
+    expect(row("theme").getAttribute("aria-expanded")).toBe("true");
+    await act(async () => { vi.advanceTimersByTime(300); });
+    expect(row("scale").getAttribute("aria-expanded")).toBe("true");
+
+    // A pointer click on an already hover-opened row keeps it open.
+    await act(async () => { row("scale").dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })); });
+    expect(row("scale").getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("switches interface language to English", async () => {
     const trigger = element.querySelector<HTMLButtonElement>(".preferences-trigger")!;
     expect(trigger).toBeTruthy();

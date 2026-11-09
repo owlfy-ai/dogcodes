@@ -1021,6 +1021,8 @@ export const uiEn = {
   },
   executionTargets: executionTargetMessages.en,
   projectPicker: {
+    thisComputer: "This computer",
+    unknownHost: "Unavailable host",
     createProject: "Create project…",
     directoryCount: "{count} folders",
     noMatches: "No matching workspaces",

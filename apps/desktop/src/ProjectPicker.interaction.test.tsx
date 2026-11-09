@@ -83,7 +83,7 @@ describe("native project picker interactions", () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("shows a local project on one line and a remote project's host, keeping paths for the tooltip", async () => {
+  it("groups projects under this computer and each host, keeping paths for the tooltip", async () => {
     const remote = { ...project, projectId: "prj_remote" as ProjectId, displayName: "Logs", path: "/root/logs", targetId: "tgt_one" };
     const list = vi.fn(async () => [{ target: { targetId: "tgt_one", displayName: "Build", connection: { destination: "192.168.1.100", auth: "system" } } }]) as unknown as TargetApi["list"];
     await act(async () => root.render(<ProjectPicker projects={[project, remote]} selectedProject={project}
@@ -93,17 +93,20 @@ describe("native project picker interactions", () => {
     expect(local.querySelector("small")).toBeNull();
     expect(local.textContent).not.toContain("/projects/one");
     expect(local.dataset.tooltip).toBe("/projects/one");
-    expect(server.querySelector("small")?.textContent).toBe("SSH 192.168.1.100");
+    const titles = [...container.querySelectorAll(".project-picker-group-title")].map(title => title.textContent);
+    expect(titles).toEqual(["本机", "Build192.168.1.100"]);
+    expect(server.closest('[role="group"]')?.getAttribute("aria-label")).toBe("Build");
+    expect(server.querySelector("small")).toBeNull();
     expect(server.textContent).not.toContain("/root/logs");
     expect(server.dataset.tooltip).toBe("/root/logs");
   });
 
-  it("keeps the SSH badge when the connection list cannot be read", async () => {
+  it("still groups a remote project when the connection list cannot be read", async () => {
     const remote = { ...project, projectId: "prj_remote" as ProjectId, targetId: "tgt_one" };
     await act(async () => root.render(<ProjectPicker projects={[remote]} selectedProject={remote}
       disabled={false} onSelect={onSelect} onOpenFolder={vi.fn()} targetApi={{ list: async () => { throw new Error("offline"); } }} />));
     await openMenu();
-    expect(container.querySelector(".project-picker-list small")?.textContent?.trim()).toBe("SSH");
+    expect(container.querySelector(".project-picker-group-title")?.textContent).toBe("远程主机");
   });
 
   describe("remote hosts menu", () => {

@@ -78,7 +78,8 @@ it("localizes management cards, missing agents, native update messages and toolt
       lang={lang} refreshProgress={{ running: false, total: 3, completed: 3, unavailable: 1, failed: false }} onRefresh={() => {}} onDetect={async () => {}} />));
     const dictionary = LOCALES[lang].agentUi;
     expect(host.textContent).toContain(dictionary.enabled);
-    expect(host.textContent).toContain(dictionary.remainingQuota);
+    // The meters name it; the card no longer repeats it as a caption.
+    expect(host.querySelector(".agent-quota-meter")?.getAttribute("aria-label")).toContain(dictionary.remainingQuota);
     expect(host.textContent).toContain(dictionary.providerBalance);
     expect(host.textContent).toContain(dictionary.notInstalled);
     expect(host.querySelector('[role="switch"]')?.getAttribute("aria-label")).toMatch(/DeepSeek Harness|OpenCode|CodeBuddy/);

@@ -266,8 +266,10 @@ export function TerminalDock({ projectId, directories, open, onClose, api = term
           next.push({ id: info.id, resourceId: info.id, status: info.status, epoch: info.epoch, directoryIndex: info.directoryIndex,
             ordinal: 1 + next.filter(tab => tab.directoryIndex === info.directoryIndex).length });
         }
-        if (!loaded && shells.length === 0 && current.length === 0) {
-          directories.forEach((_, directoryIndex) => next.push({ id: crypto.randomUUID(), directoryIndex, ordinal: 1 }));
+        // Opening the panel with nothing to show starts a shell instead of an empty state.
+        if (!next.some(tab => !tab.closed)) {
+          if (!loaded && current.length === 0) directories.forEach((_, directoryIndex) => next.push({ id: crypto.randomUUID(), directoryIndex, ordinal: 1 }));
+          else if (directories.length) next.push({ id: crypto.randomUUID(), directoryIndex: 0, ordinal: 1 });
         }
         return next;
       });

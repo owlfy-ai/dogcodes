@@ -1021,6 +1021,8 @@ export const uiEs: UiMessages = {
   },
   executionTargets: executionTargetMessages.es,
   projectPicker: {
+    thisComputer: "Este equipo",
+    unknownHost: "Host no disponible",
     createProject: "Crear proyecto…",
     directoryCount: "{count} carpetas",
     noMatches: "No hay espacios de trabajo coincidentes",

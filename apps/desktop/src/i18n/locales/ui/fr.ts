@@ -1021,6 +1021,8 @@ export const uiFr: UiMessages = {
   },
   executionTargets: executionTargetMessages.fr,
   projectPicker: {
+    thisComputer: "Cet ordinateur",
+    unknownHost: "Hôte indisponible",
     createProject: "Créer un projet…",
     directoryCount: "{count} dossiers",
     noMatches: "Aucun espace de travail correspondant",

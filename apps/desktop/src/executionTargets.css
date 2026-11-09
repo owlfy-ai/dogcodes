@@ -5,7 +5,7 @@
 .target-tab-state { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #639e57; }
 .target-tab-state.connecting { background: #c79a3b; }
 .target-tab-state.disconnected { background: #c35b4a; }
-.target-host-list { flex: 1; min-height: 0; overflow: auto; padding: 36px clamp(24px, 5vw, 72px); }
+.target-host-list { flex: 1; min-height: 0; overflow: auto; padding: var(--page-padding); }
 .target-host-list[hidden] { display: none; }
 .target-page .remote-header p small { display: block; margin-top: 2px; font-size: .6875rem; }
 .target-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
@@ -20,6 +20,12 @@
 .target-card:hover .target-row-actions, .target-card:focus-within .target-row-actions { opacity: 1; }
 @media (hover: none) { .target-card .target-row-actions { opacity: 1; } }
 .target-card .target-card-connect { opacity: 1; }
+.target-card-end { position: relative; display: flex; align-items: center; flex: none; }
+.target-card-end > .target-row-actions { position: absolute; right: calc(100% + 4px); top: 50%; transform: translateY(-50%); padding-left: 16px; background: linear-gradient(to right, transparent, var(--panel) 16px); pointer-events: none; }
+.target-card:hover .target-card-end > .target-row-actions, .target-card:focus-within .target-card-end > .target-row-actions { pointer-events: auto; }
+.target-page .target-card-terminal { flex: none; height: 28px; padding: 0 10px; gap: 5px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: inherit; font-size: .75rem; }
+.target-page .target-card-terminal svg { width: 15px; height: 15px; }
+.target-page .target-card-terminal:hover { border-color: var(--muted); background: var(--panel-raised); }
 .target-card-agents { display: flex; flex-basis: 100%; align-items: center; gap: 8px; min-width: 0; margin-top: -2px; padding-top: 5px; border-top: 1px solid var(--line); }
 .target-page .target-card-agents .target-row-actions button { width: 20px; height: 20px; }
 .target-page .target-card-agents .target-row-actions svg { width: 14px; height: 14px; }
@@ -100,7 +106,6 @@
 .project-dialog .target-browser > footer { display: flex; justify-content: flex-end; gap: 8px; }
 .target-offline { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 7px 14px; border-bottom: 1px solid #c79a3b55; background: #c79a3b14; font-size: .75rem; }
 .target-offline button { padding: 4px 9px; border: 1px solid #c79a3b88; border-radius: 6px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
-.project-target-badge { margin-right: 4px; padding: 0 4px; border: 1px solid currentColor; border-radius: 4px; font-size: .625rem; font-weight: 550; }
 .target-proxy { display: grid; grid-template-columns: 110px minmax(0, 1fr) 90px; gap: 8px; }
 .target-agents-page { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; }
 .target-agents-page[hidden] { display: none; }

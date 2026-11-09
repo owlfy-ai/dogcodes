@@ -108,11 +108,14 @@ export function RemoteDevices({ lang }: { lang?: ResolvedLanguage }) {
       }).catch(cause => { if (!closed && revision === requestRevision.current) setStatusError(String(cause)); });
     };
     refresh();
-    const timer = setInterval(() => { refresh(); setTime(Date.now()); }, 1500);
+    const timer = setInterval(refresh, 1500);
+    // The countdown ticks every second, independent of status polling.
+    const clock = setInterval(() => setTime(Date.now()), 1000);
     return () => {
       mounted.current = false;
       closed = true;
       clearInterval(timer);
+      clearInterval(clock);
       void invoke("core_remote_control", { call: { type: "cancel_invitation", dialogId: id } }).catch(() => {});
     };
     // Keep the invitation while on this page; leaving cancels only this page's invitation.
@@ -147,22 +150,23 @@ export function RemoteDevices({ lang }: { lang?: ResolvedLanguage }) {
   const devices = status?.devices.filter(device => !device.revoked) ?? [];
   const failure = serviceUpdateRequired ? tr("serviceUpdateRequired") : error || statusError || status?.error;
   const connection = failure ? "disconnected" : status?.connected ? "connected" : "connecting";
-  const expiry = status?.invitation ? new Intl.DateTimeFormat(language, { hour: "numeric", minute: "2-digit" }).format(status.invitation.expiresAt * 1000) : "";
+  // A countdown reads at a glance; a clock time ("1:44") could be either.
+  const left = status?.invitation ? Math.max(0, Math.ceil(status.invitation.expiresAt - time / 1000)) : 0;
+  const expiry = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
 
   return <section className="workspace remote-page" aria-label={tr("title")} aria-describedby={descriptionId}>
     <div className="remote-page-content">
-      <header className="remote-header">
-        <span className="remote-heading-icon"><SidebarNavIcon kind="phone" /></span>
-        <p id={descriptionId}>{tr("subtitle")}</p>
-      </header>
       <div className="remote-pairing-layout">
         <div className="remote-setup">
           <h2>{tr("setupTitle")}</h2>
-          <p className="remote-description">{tr("description")}</p>
+          <p className="remote-description" id={descriptionId}>{tr("description")}</p>
           <ol className="remote-steps"><li>{tr("stepOpen")}</li><li>{tr("stepScan")}</li></ol>
-          {status?.configured && <p className={`remote-connection ${connection}`} role="status"><span aria-hidden="true" />{tr(connection)}</p>}
-          {!status && !failure && <LoadingStatus>{tr("loading")}</LoadingStatus>}
-          <p className="remote-trust-note"><PairingIcon kind="shield" />{tr("trustNote")}</p>
+          {/* Status and the trust note sit at the bottom, level with the QR panel. */}
+          <div className="remote-setup-footer">
+            {status?.configured && <p className={`remote-connection ${connection}`} role="status"><span aria-hidden="true" />{tr(connection)}</p>}
+            {!status && !failure && <LoadingStatus>{tr("loading")}</LoadingStatus>}
+            <p className="remote-trust-note"><PairingIcon kind="shield" />{tr("trustNote")}</p>
+          </div>
         </div>
         <div className={`remote-qr-panel${active && qr ? " ready" : ""}`}>
           {active && qr ? <>

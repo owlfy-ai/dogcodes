@@ -153,6 +153,18 @@ it("creates a fresh terminal directly from the empty state", async () => {
   expect(element.querySelector(".terminal-empty")).toBeNull();
 });
 
+it("starts a terminal when the panel is reopened with none left", async () => {
+  const api = client();
+  const render = (open: boolean) => act(async () => root.render(<TerminalDock projectId="project" directories={directories} open={open} onClose={() => {}} api={api} />));
+  await render(true);
+  for (const name of ["web", "server"]) await act(async () => (element.querySelector(`[aria-label="关闭终端 ${name}"]`) as HTMLButtonElement).click());
+  await render(false); await render(true);
+  expect(api.open).toHaveBeenCalledTimes(3);
+  expect(vi.mocked(api.open).mock.calls[2].slice(0, 2)).toEqual(["project", 0]);
+  expect(element.querySelector(".terminal-empty")).toBeNull();
+  expect(element.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("web");
+});
+
 it("does not suggest creating a terminal without a project directory", async () => {
   const api = client();
   await act(async () => root.render(<TerminalDock projectId="project" directories={[]} open onClose={() => {}} api={api} />));
@@ -304,8 +316,7 @@ it("uses a fresh launch identity after stopping a terminal and does not restore 
   await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="关闭终端 web"]')!.click());
   vi.mocked(api.list).mockResolvedValue([info("session-0")]);
   await render(false); await render(true);
-  expect(element.querySelectorAll('[role="tab"]')).toHaveLength(0);
-  await act(async () => element.querySelector<HTMLButtonElement>('[aria-label="新建终端"]')!.click());
+  expect(element.querySelectorAll('[role="tab"]')).toHaveLength(1);
   expect(api.attach).not.toHaveBeenCalled();
   expect(api.open).toHaveBeenCalledTimes(2);
   expect(vi.mocked(api.open).mock.calls[1][5]).not.toBe(vi.mocked(api.open).mock.calls[0][5]);

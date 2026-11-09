@@ -1021,6 +1021,8 @@ export const uiRu: UiMessages = {
   },
   executionTargets: executionTargetMessages.ru,
   projectPicker: {
+    thisComputer: "Этот компьютер",
+    unknownHost: "Недоступный хост",
     createProject: "Создать проект…",
     directoryCount: "Папок: {count}",
     noMatches: "Нет подходящих рабочих областей",

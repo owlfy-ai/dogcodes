@@ -102,7 +102,7 @@ describe("remote device pairing",()=>{
     await act(async () => { root.render(createElement(RemoteDevices, { lang: "en" })); });
     expect(node.querySelector(".remote-page")?.getAttribute("aria-label")).toBe("Connect phone");
     expect(node.querySelector("img")?.alt).toBe("Phone pairing QR code");
-    expect(node.textContent).toContain(`Valid until ${new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(expiresAt * 1000)}`);
+    expect(node.textContent).toMatch(/Expires in [45]:\d\d/);
     expect(node.textContent).not.toMatch(/[\u3400-\u9fff]/);
     expect(invoke.mock.calls.length).toBe(calls);
     await act(async () => { root.unmount(); }); node.remove();
@@ -129,7 +129,7 @@ describe("remote device pairing",()=>{
       expect(node.querySelector("img")).not.toBeNull();
       expect(node.textContent).toContain("Copy pairing link");
       expect(node.textContent).not.toContain("Code expired");
-      expect(node.textContent).toContain(`Valid until ${new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(invitation.expiresAt * 1000)}`);
+      expect(node.textContent).toMatch(/Expires in [45]:\d\d/);
       await act(async () => { await vi.advanceTimersByTimeAsync(4500); });
       expect(created).toBe(2);
     } finally {
