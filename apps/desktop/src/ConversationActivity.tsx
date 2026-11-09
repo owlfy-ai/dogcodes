@@ -22,6 +22,7 @@ import { RemoteConversationContext, messageFileMenu } from "./workspaceFileMenu"
 import { parseGitDiff } from "./diffView";
 import { InlineFileEdit } from "./InlineFileEdit";
 import { terminalCommand, terminalOutput, truncateTerminalOutput } from "./terminalPresentation";
+import { activityMcpTool, isComputerUseServer, mcpToolLabel } from "./mcpToolName";
 
 export type Activity = {
   partial?: boolean;
@@ -296,22 +297,26 @@ export function ActivityRow({
   if (categoryOf(a) === "edit" && (a.changes?.length || inputPath(a)))
     return <FileEdits taskId={item.taskId} a={a} running={running} status={statusLabel} />;
   const terminal = categoryOf(a) === "terminal";
+  const mcp = categoryOf(a) === "tool" ? activityMcpTool(a) : null;
+  const computerTool = mcp && isComputerUseServer(mcp.server) ? mcp.tool : null;
+  const computerLabel = computerTool ? t(`computerUse.tools.${computerTool}`) : "";
   const command = terminal ? terminalCommand(a.input) : "";
   const preview = terminal ? truncateTerminalOutput(terminalOutput(a.output ?? a.content)) : null;
   const title = command ||
+    (computerTool && (computerLabel === `computerUse.tools.${computerTool}` ? computerTool : computerLabel)) ||
     inputPath(a) ||
     (typeof a.input === "string"
       ? a.input
       : ((a.input as { command?: string; pattern?: string })?.command ??
         (a.input as { pattern?: string })?.pattern)) ||
-    a.name;
+    (mcp ? mcpToolLabel(mcp) : a.name);
   return (
     <details className="conversation-activity">
       <summary
         className={`activity-line${running ? " activity-running" : ""}`}
       >
         <span className="activity-label">
-          <ActivityIcon kind={categoryOf(a)} /><span className="activity-text">{t(`activity.category.${categoryOf(a)}`)}</span>
+          <ActivityIcon kind={computerTool ? "computer" : categoryOf(a)} /><span className="activity-text">{computerTool ? t("computerUse.action") : t(`activity.category.${categoryOf(a)}`)}</span>
         </span>
         <span className="activity-title activity-text" data-tooltip={title}>
           {title}
@@ -334,6 +339,16 @@ export function ActivityRow({
       </div>}
     </details>
   );
+}
+// The core records every computer-use call that reaches its server as a
+// `computer_use` item. The agent's own row for that call is a duplicate, unless
+// it failed: then it may be the only trace (refused before reaching the server)
+// and carries the error text.
+function duplicateComputerUse(a: Activity | null) {
+  if (!a || a.type !== "tool" || categoryOf(a) !== "tool") return false;
+  const mcp = activityMcpTool(a);
+  return !!mcp && isComputerUseServer(mcp.server) &&
+    !["failed", "cancelled", "interrupted"].includes(a.status ?? "");
 }
 const TimelineActivityRow = memo(function TimelineActivityRow(props: Omit<Parameters<typeof ActivityRow>[0], "a">) {
   const a = activityOf(props.item);
@@ -380,7 +395,7 @@ export function ConversationContent({
   const visible = items.filter((i) => {
     const a = activityOf(i);
     const emptyMessage = i.kind === "assistant_message" ? !i.text.trim() : a?.type === "message" && !a.text?.trim();
-    return i.kind !== "review_result" && !emptyMessage && !parents.some((p) => belongsTo(i, p));
+    return i.kind !== "review_result" && !emptyMessage && !duplicateComputerUse(a) && !parents.some((p) => belongsTo(i, p));
   });
   const groups: TimelineItem[][] = [];
   const readOnly = (i: TimelineItem) => {

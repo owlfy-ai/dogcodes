@@ -93,3 +93,22 @@ it("folds a turn only after completion arrives and leaves the next turn live",as
   expect(host.querySelectorAll('[data-kind="user_message"]')).toHaveLength(2);
   expect(host.lastElementChild!.closest(".turn-process")).toBeNull();
 });
+it("shows one row per computer-use call and readable MCP names",async()=>{
+  const cu="dogcodes_cu_44d31cb7037d";
+  await render([
+    item("prompt","user_message","验证窗口"),
+    activity("native-click",{type:"tool",name:`mcp__${cu}__click`,status:"completed",input:{pid:7}}),
+    item("cu-click","computer_use",JSON.stringify({tool:"click",mode:"background",transportOk:true,effect:"unverifiable"})),
+    activity("native-busy",{type:"tool",name:`mcp__${cu}__get_window_state`,status:"failed",output:"desktop_busy"}),
+    activity("history",{type:"tool",name:"mcp__dogcodes_44d31cb7037d__getTurns",status:"completed",input:{limit:5}}),
+    activity("github",{type:"tool",name:"mcp__github__create_issue",status:"completed",input:{title:"x"}}),
+  ],"trn_one");
+  const text=host.textContent!;
+  expect(text).not.toContain("mcp__");
+  expect(text).not.toContain(cu);
+  expect(text.match(/点击/g)).toHaveLength(1);
+  // Refused before reaching the server: the agent's row is the only trace.
+  expect(text).toContain("读取窗口");
+  expect(text).toContain("getTurns");
+  expect(text).toContain("github · create_issue");
+});
