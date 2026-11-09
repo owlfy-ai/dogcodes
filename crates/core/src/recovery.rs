@@ -216,6 +216,7 @@ impl Core {
             // task projection. Release task-owned MCP listeners and temp configs
             // even if the independent review-file cleanup needs another attempt.
             self.forget_deleted_history(&task).await;
+            self.session_lanes.forget(&task);
             self.forget_deleted_computer_use(&task).await;
             // The task's project may be gone, so every connected machine is told. One
             // that is not connected is told when it next connects.

@@ -33,6 +33,7 @@ pub mod review_analysis;
 mod run_cleanup;
 mod run_control;
 mod running_permissions;
+mod session_lanes;
 mod session_recovery;
 mod session_startup;
 pub mod submission_intents;
@@ -574,6 +575,7 @@ pub struct Core {
     /// The working directories of connected machines' projects.
     target_workspaces: std::sync::RwLock<BTreeMap<TargetId, Arc<dyn WorkspaceContextProvider>>>,
     running_permissions: running_permissions::RunningPermissions,
+    session_lanes: session_lanes::SessionLanes,
 }
 
 impl Core {
@@ -772,6 +774,7 @@ impl Core {
             target_executors: RwLock::new(BTreeMap::new()),
             target_workspaces: std::sync::RwLock::new(BTreeMap::new()),
             running_permissions: running_permissions::RunningPermissions::default(),
+            session_lanes: session_lanes::SessionLanes::default(),
         }
     }
 
@@ -1223,7 +1226,13 @@ impl Core {
                     .await?
                 {
                     for mapping in state.session_maps {
-                        let driver = self.drivers.read().await.get(&mapping.executor).cloned();
+                        let driver = match self
+                            .session_lanes
+                            .existing(&command.task_id, &mapping.executor)
+                        {
+                            Some((lane, _)) => Some(lane),
+                            None => self.drivers.read().await.get(&mapping.executor).cloned(),
+                        };
                         if let Some(driver) = driver
                             && driver.has_autonomous_turn(&mapping.native_session_id).await
                         {
@@ -1488,7 +1497,9 @@ impl Core {
                 .map_err(|error| CoreError::Internal(error.to_string()))?;
             let run_id: RunId = serde_json::from_value(queued.payload["runId"].clone())
                 .map_err(|error| CoreError::Internal(error.to_string()))?;
-            let driver = self
+            let task_id: TaskId = serde_json::from_value(queued.payload["taskId"].clone())
+                .map_err(|error| CoreError::Internal(error.to_string()))?;
+            let base = self
                 .drivers
                 .read()
                 .await
@@ -1497,8 +1508,11 @@ impl Core {
                 .ok_or_else(|| CoreError::DriverUnavailable(executor.provider_id.to_string()))?;
             // Freeze telemetry with the original accepted run. A later registry
             // replacement must not supply either boundary of this turn's usage.
-            let usage_provider = self.quota_providers.read().await.get(&executor).cloned();
-            Some((run_id, driver, usage_provider))
+            let account = self.quota_providers.read().await.get(&executor).cloned();
+            // A shared native process runs one turn at a time: each conversation
+            // gets its own lane so concurrent conversations do not collide.
+            let lane = self.task_lane(&task_id, base, account)?;
+            Some((run_id, lane.driver, lane.usage))
         } else {
             None
         };
@@ -2769,6 +2783,14 @@ impl Core {
                 .await
                 .ok()
                 .map(|snapshot| {
+                    // An idle conversation on its own lane reads its session there.
+                    for executor in &executors {
+                        if let Some((_, Some(usage))) =
+                            self.session_lanes.existing(task_id, executor)
+                        {
+                            providers.insert(executor.clone(), usage);
+                        }
+                    }
                     if let Some(active) = snapshot
                         .tasks
                         .iter()

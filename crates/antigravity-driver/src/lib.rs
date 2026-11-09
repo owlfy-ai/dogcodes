@@ -1211,6 +1211,9 @@ impl AgentDriver for AntigravityDriver {
         .map_err(|_| DriverError::Protocol("cannot recreate Antigravity installation".into()))?;
         Ok(Some(Arc::new(driver)))
     }
+    fn session_usage_provider(self: Arc<Self>) -> Option<Arc<dyn driver_api::QuotaProvider>> {
+        Some(self)
+    }
     async fn permission_catalog(
         &self,
         _workspace: Option<&str>,

@@ -2302,6 +2302,9 @@ impl AgentDriver for AcpDriver {
         .map_err(|_| DriverError::Protocol("cannot recreate ACP installation".into()))?;
         Ok(Some(Arc::new(driver)))
     }
+    fn session_usage_provider(self: Arc<Self>) -> Option<Arc<dyn QuotaProvider>> {
+        Some(self)
+    }
     async fn permission_catalog(
         &self,
         workspace: Option<&str>,

@@ -1250,6 +1250,9 @@ impl AgentDriver for ZcodeDriver {
         .map_err(|_| DriverError::Protocol("cannot recreate ZCode installation".into()))?;
         Ok(Some(Arc::new(driver)))
     }
+    fn session_usage_provider(self: Arc<Self>) -> Option<Arc<dyn QuotaProvider>> {
+        Some(self)
+    }
     fn review_prompt_permission_mode(&self) -> Option<&str> {
         Some("yolo")
     }

@@ -452,6 +452,13 @@ pub trait AgentDriver: Send + Sync {
     ) -> Result<Option<std::sync::Arc<dyn AgentDriver>>, DriverError> {
         Ok(None)
     }
+    /// Session-scoped usage of an adapter returned by `independent_session_driver`.
+    /// Its native sessions are unknown to the registry driver's quota provider.
+    fn session_usage_provider(
+        self: std::sync::Arc<Self>,
+    ) -> Option<std::sync::Arc<dyn QuotaProvider>> {
+        None
+    }
     /// The machine this agent runs on: paths given to it must exist there.
     fn execution_target(&self) -> agent_runtime::SharedTarget {
         agent_runtime::local_target()
