@@ -214,6 +214,53 @@
 }
 .computer-use-detail dt { color: var(--text-secondary, #888); }
 .computer-use-detail dd { margin: 0; overflow-wrap: anywhere; }
+.computer-use-target { color: var(--text-secondary, #888); }
+.computer-use-windows { margin: 0; padding: 0; list-style: none; }
+.computer-use-overlay {
+  position: absolute;
+  top: calc(var(--window-titlebar-height, 40px) + 12px);
+  right: 16px;
+  z-index: 15;
+  width: min(240px, 40%);
+  margin: 0;
+  transition: width 0.15s ease;
+}
+.computer-use-overlay.expanded { width: min(560px, 70%); }
+.computer-use-frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  line-height: 0;
+  border: 1px solid #8884;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  cursor: zoom-in;
+}
+.computer-use-overlay.expanded .computer-use-frame { cursor: zoom-out; }
+.computer-use-frame img { display: block; width: 100%; max-height: 70vh; object-fit: contain; }
+.computer-use-marker {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: rgba(255, 59, 48, 0.85);
+  box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.35), 0 1px 4px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+.computer-use-overlay figcaption {
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--panel-raised, #222d);
+  font-size: 0.85em;
+  color: var(--text-secondary, #888);
+  overflow-wrap: anywhere;
+}
 .terminal-activity-detail {
   padding: 12px 16px;
   border-radius: 12px;

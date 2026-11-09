@@ -82,6 +82,19 @@ pub fn start(
     }
     let (escape_sender, mut escape_events) = tokio::sync::mpsc::unbounded_channel();
     let app = app.clone();
+    let preview_app = app.clone();
+    let preview_core = core.clone();
+    // Previews go only to the main window and are never written anywhere.
+    tauri::async_runtime::spawn(async move {
+        loop {
+            if let Ok(mut previews) = preview_core.computer_use_preview_stream().await {
+                while let Some(preview) = previews.recv().await {
+                    let _ = preview_app.emit_to("main", "computer-use-preview", preview);
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+    });
     tauri::async_runtime::spawn(async move {
         let mut escape: Option<dogcodes_remote_desktop::escape::EscapeMonitor> = None;
         let mut escape_operation: Option<String> = None;

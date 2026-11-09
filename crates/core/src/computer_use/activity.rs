@@ -34,6 +34,7 @@ pub(super) struct ActivityHub {
     pub state: watch::Sender<ComputerActivity>,
     presented: watch::Sender<Option<(String, bool)>>,
     pub notice_required: AtomicBool,
+    pub previews: tokio::sync::broadcast::Sender<super::ComputerPreview>,
 }
 impl Default for ActivityHub {
     fn default() -> Self {
@@ -41,6 +42,8 @@ impl Default for ActivityHub {
             state: watch::channel(ComputerActivity::default()).0,
             presented: watch::channel(None).0,
             notice_required: AtomicBool::new(false),
+            // Previews are transient: a slow viewer skips stale ones.
+            previews: tokio::sync::broadcast::channel(16).0,
         }
     }
 }

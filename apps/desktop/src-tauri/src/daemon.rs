@@ -146,6 +146,42 @@ impl CoreClient {
         });
         Ok(receiver)
     }
+    /// Window previews after computer-use calls; transient, never stored.
+    pub async fn computer_use_preview_stream(
+        &self,
+    ) -> Result<tokio::sync::mpsc::Receiver<agent_core::computer_use::ComputerPreview>, String>
+    {
+        let (sender, receiver) = tokio::sync::mpsc::channel(8);
+        #[cfg(any(test, feature = "review-acceptance"))]
+        if let Self::Local(core, _) = self {
+            let mut source = core.subscribe_computer_use_previews();
+            tokio::spawn(async move {
+                loop {
+                    match source.recv().await {
+                        Ok(preview) => {
+                            if sender.send(preview).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
+            return Ok(receiver);
+        }
+        let mut stream = self
+            .connect("computer_use_preview_watch", json!({}))
+            .await?;
+        tokio::spawn(async move {
+            while let Ok(preview) = read_frame(&mut stream).await {
+                if sender.send(preview).await.is_err() {
+                    break;
+                }
+            }
+        });
+        Ok(receiver)
+    }
     async fn connect(&self, method: &str, args: Value) -> Result<TcpStream, String> {
         let directory = match self {
             Self::Remote(directory) => directory,
@@ -1717,6 +1753,21 @@ async fn serve_connection(
             tokio::select! {
                 _ = stream.read_u8() => return Ok(()),
                 changed = receiver.changed() => { if changed.is_err() { return Ok(()); } }
+            }
+        }
+    }
+    if request.method == "computer_use_preview_watch" {
+        let mut receiver = core.subscribe_computer_use_previews();
+        drop(request_guard);
+        loop {
+            tokio::select! {
+                _ = stream.read_u8() => return Ok(()),
+                next = receiver.recv() => match next {
+                    Ok(preview) => write_frame(&mut stream, &preview).await?,
+                    // Skipped previews are simply not shown.
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return Ok(()),
+                },
             }
         }
     }

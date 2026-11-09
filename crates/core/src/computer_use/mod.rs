@@ -1,7 +1,9 @@
 //! Globally enabled host-desktop capability with per-turn leases and cancellation.
 mod activity;
+mod preview;
 mod runtime;
 pub use activity::{ActivityMode, ComputerActivity};
+pub use preview::{ComputerPreview, PreviewMarker};
 
 use crate::{AppendRequest, Core, CoreError, CoreRepository};
 use agent_domain::{CommandId, ProviderId, TaskId, TurnId};
@@ -117,6 +119,14 @@ impl Core {
 
     pub fn subscribe_computer_use_activity(&self) -> watch::Receiver<ComputerActivity> {
         self.computer_use.activity.state.subscribe()
+    }
+
+    /// Display-only window captures after computer-use calls. Nothing here is
+    /// stored: a viewer that is not subscribed when one is sent never sees it.
+    pub fn subscribe_computer_use_previews(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<ComputerPreview> {
+        self.computer_use.activity.previews.subscribe()
     }
 
     pub async fn computer_use_activity(&self, call: Value) -> Result<Value, CoreError> {
@@ -357,6 +367,7 @@ struct Endpoint {
     // Small retry cache; serial access is protected by runtime's mutex.
     receipts: std::sync::Mutex<Vec<(String, Value)>>,
     in_flight: std::sync::Mutex<Option<(Value, Value)>>,
+    grounding: std::sync::Mutex<preview::Grounding>,
     config: Config,
     task: TaskId,
     repository: Arc<dyn CoreRepository>,
@@ -408,6 +419,7 @@ impl Endpoint {
             runtime: Mutex::new(None),
             receipts: std::sync::Mutex::new(vec![]),
             in_flight: std::sync::Mutex::new(None),
+            grounding: std::sync::Mutex::new(preview::Grounding::default()),
             config,
             task,
             repository,
@@ -427,6 +439,7 @@ impl Endpoint {
                 };
                 let token = token.clone();
                 tokio::spawn(async move {
+                    let mut preview = None;
                     let result = async {
                         let mut line = String::new();
                         tokio::time::timeout(
@@ -461,7 +474,7 @@ impl Endpoint {
                             }
                             return Ok(json!({}));
                         }
-                        endpoint.handle(&input).await
+                        endpoint.handle(&input, &mut preview).await
                     }
                     .await;
                     let reply = match result {
@@ -471,6 +484,12 @@ impl Endpoint {
                     if let Ok(mut bytes) = serde_json::to_vec(&reply) {
                         bytes.push(b'\n');
                         let _ = socket.write_all(&bytes).await;
+                    }
+                    drop(socket);
+                    // The agent already has its reply; the preview only costs
+                    // the next call a short wait for the driver.
+                    if let Some(job) = preview {
+                        endpoint.publish_preview(job).await;
                     }
                 });
             }
@@ -505,7 +524,11 @@ impl Endpoint {
         self.desktop_owner.lock().expect("desktop owner").take();
     }
 
-    async fn handle(&self, input: &Value) -> Result<Value, String> {
+    async fn handle(
+        &self,
+        input: &Value,
+        preview: &mut Option<preview::PreviewJob>,
+    ) -> Result<Value, String> {
         let request = &input["request"];
         let method = request["method"].as_str().unwrap_or("");
         if method == "initialize" {
@@ -612,16 +635,72 @@ impl Endpoint {
         drop(slot);
         if method == "tools/call" {
             let tool = request["params"]["name"].as_str().unwrap_or("unknown");
-            self.audit(
-                tool,
-                result.as_ref().ok(),
-                started.elapsed().as_millis(),
-                planned_activity.as_ref(),
-                turn.as_ref(),
-            )
-            .await;
+            let item = self
+                .audit(
+                    tool,
+                    result.as_ref().ok(),
+                    started.elapsed().as_millis(),
+                    planned_activity.as_ref(),
+                    turn.as_ref(),
+                )
+                .await;
+            if let (Some(item), Ok(value)) = (item, &result) {
+                *preview = self.grounding.lock().expect("computer grounding").plan(
+                    item,
+                    self.task.clone(),
+                    tool,
+                    request["params"].get("arguments").unwrap_or(&Value::Null),
+                    value,
+                );
+                if let Some(job) = preview {
+                    job.preview.turn_id = turn.as_ref().map(|(turn, _)| turn.clone());
+                }
+            }
         }
         result
+    }
+
+    async fn publish_preview(&self, job: preview::PreviewJob) {
+        // Nobody is watching: skip the capture entirely.
+        if self.activity.previews.receiver_count() == 0 {
+            return;
+        }
+        let capture = match job.capture {
+            Some(window) => self.capture(window).await,
+            None => None,
+        };
+        let preview = job.finish(capture.as_ref());
+        if preview.image.is_some() || !preview.windows.is_empty() {
+            let _ = self.activity.previews.send(preview);
+        }
+    }
+
+    async fn capture(&self, window: (i64, i64)) -> Option<Value> {
+        let generation = *self.cancel.borrow();
+        let mut slot = self.runtime.lock().await;
+        // A revoked lease, cancellation or manual control ends previews too.
+        if !self.active.load(Ordering::Acquire)
+            || *self.cancel.borrow() != generation
+            || self.external_input.load(Ordering::Acquire) > 0
+        {
+            return None;
+        }
+        let driver = slot.as_mut()?;
+        let call = driver.call(
+            "tools/call",
+            json!({"name":"get_window_state","arguments":preview::PreviewJob::capture_args(window)}),
+        );
+        match tokio::time::timeout(Duration::from_secs(3), call).await {
+            Ok(Ok(value)) if value["isError"] != true => Some(value),
+            Ok(Ok(_)) => None,
+            // A failed or stuck driver is retired, as after any failed call.
+            _ => {
+                if let Some(mut driver) = slot.take() {
+                    let _ = driver.close().await;
+                }
+                None
+            }
+        }
     }
 
     async fn audit(
@@ -631,7 +710,7 @@ impl Endpoint {
         elapsed: u128,
         activity: Option<&ComputerActivity>,
         turn: Option<&(TurnId, ProviderId)>,
-    ) {
+    ) -> Option<String> {
         let id = CommandId::new();
         let images = result
             .and_then(|result| result["content"].as_array())
@@ -653,7 +732,7 @@ impl Endpoint {
             event.payload["turnId"] = json!(turn);
             event.payload["providerId"] = json!(provider);
         }
-        if let Ok(outcome) = self
+        let outcome = self
             .repository
             .append(AppendRequest {
                 request_fingerprint: None,
@@ -664,11 +743,16 @@ impl Endpoint {
                 events: vec![event],
             })
             .await
-        {
-            for event in outcome.events {
-                let _ = self.events.send(event);
-            }
+            .ok()?;
+        // The store keys the timeline item by this event's id.
+        let item = outcome
+            .events
+            .first()
+            .map(|event| event.event_id.to_string());
+        for event in outcome.events {
+            let _ = self.events.send(event);
         }
+        item
     }
 }
 

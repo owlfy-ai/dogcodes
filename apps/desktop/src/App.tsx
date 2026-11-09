@@ -1,4 +1,5 @@
 import { RemoteDevices } from "./RemoteDevices";
+import { ComputerUsePreviewOverlay } from "./ComputerUsePreviewOverlay";
 import { ExecutionTargets, HostProjectDialog, TargetOfflineBanner } from "./ExecutionTargets";
 import type { TargetEntry } from "./executionTargetClient";
 import { GitCredentialPrompt } from "./GitCredentialPrompt";
@@ -1336,6 +1337,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         onDragLeave={event => { event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDraggingFiles(false); } }}
         onDrop={event => { event.preventDefault(); dragDepth.current = 0; setDraggingFiles(false); if (!sending) void attachments.add(Array.from(event.dataTransfer.files)); }}
         data-accepts-pasted-files="" onPaste={event => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); if (!sending) { void attachments.add(files); const text = event.clipboardData.getData("text/plain"); if (text) setDraft(previous => previous + text); } } }}>
+        {showConversation && <ComputerUsePreviewOverlay taskId={selectedTask.taskId} turnId={selectedTask.activePrimaryRun?.state === "disconnected" ? undefined : selectedTask.activePrimaryRun?.turnId} />}
         {draggingFiles && <div className="attachment-drop-overlay">{t("welcome.dropFiles", undefined, resolvedLang)}</div>}
         <input ref={attachmentInput} type="file" multiple hidden onChange={event => { if (!sending) void attachments.add(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
 

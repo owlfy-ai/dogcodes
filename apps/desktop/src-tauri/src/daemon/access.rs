@@ -92,6 +92,7 @@ pub(crate) fn method_access(method: &str) -> Option<MethodAccess> {
         | "computer_use"
         | "computer_use_activity"
         | "computer_use_activity_watch"
+        | "computer_use_preview_watch"
         | "is_idle"
         | "workspace_lease"
         | "scan_agent"
@@ -167,6 +168,7 @@ mod tests {
             "computer_use",
             "computer_use_activity",
             "computer_use_activity_watch",
+            "computer_use_preview_watch",
             "workspace_lease",
             "scan_agent",
             "project_run_open",
