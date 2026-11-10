@@ -24,8 +24,10 @@ export function localizeBackendText(text: string, lang: ResolvedLanguage = getGl
     if (!match) continue;
     const params: Record<string, string> = {};
     names.forEach((name, index) => { params[name] = match[index + 1]; });
-    // A wrapped agent-reported error stays verbatim; only the guidance is translated.
-    if (params.message !== undefined) params.message = localizeBackendText(params.message, lang) ?? params.message;
+    // Translate known nested errors and recovery guidance; preserve unknown details.
+    for (const name of ["message", "recovery"]) {
+      if (params[name] !== undefined) params[name] = localizeBackendText(params[name], lang) ?? params[name];
+    }
     return translate(`backendText.${patternKey}`, params, lang);
   }
   return null;

@@ -3,6 +3,7 @@ import { mutationArguments, partialMutationResult, reviewMutations, type Pending
 import "./gitOperationRecovery.css";
 import { subscribeReviewChanges } from "./reviewWatch";
 import { translate as t } from "./i18n";
+import { displayBackendText } from "./backendText";
 
 function label(item: PendingMutation) {
   const args = mutationArguments(item);
@@ -20,18 +21,18 @@ export function ReviewMutationRecovery({ taskId, artifactId, visible = true, onC
   useEffect(() => {
     if (!visible || !ids) return;
     let active = true;
-    const refresh = () => { void Promise.all(items.map(item => reviewMutations.check(item))).catch(cause => { if (active) setError(String(cause)); }); };
+    const refresh = () => { void Promise.all(items.map(item => reviewMutations.check(item))).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); }); };
     refresh();
     const stop = subscribeReviewChanges(taskId, refresh);
     return () => { active = false; stop(); };
     // Query on opening, identity changes and service invalidations. Never auto-replay.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId, artifactId, visible, ids]);
-  if (!Array.isArray(parsed)) return <p role="alert">{parsed.error}</p>;
+  if (!Array.isArray(parsed)) return <p role="alert">{displayBackendText(parsed.error)}</p>;
   if (!items.length) return null;
   const run = async (action: () => unknown) => {
     setBusy(true); setError("");
-    try { await action(); onChanged(); } catch (cause) { setError(String(cause)); }
+    try { await action(); onChanged(); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(false); }
   };
   return <section className="git-operation-recovery" aria-label={t("mutationRecovery.label")}>
@@ -42,7 +43,7 @@ export function ReviewMutationRecovery({ taskId, artifactId, visible = true, onC
       const terminal = state?.status === "succeeded" || state?.status === "failed" || state?.status === "unknown";
       return <div key={item.request.operationId}>
         <p><strong>{label(item)}</strong>{typeof paths === "string" && ` · ${paths}`}</p>
-        <p role="status">{partial ? t("mutationRecovery.partial", { count: partial.completed.length, error: partial.error }) : state?.status === "succeeded" ? t("mutationRecovery.succeeded") : state?.status === "failed" ? t("mutationRecovery.failed", { message: state.message }) : state?.status === "running" ? t("mutationRecovery.running") : item.receipt === null ? t("mutationRecovery.notFound") : t("mutationRecovery.uncertain")}</p>
+        <p role="status">{partial ? t("mutationRecovery.partial", { count: partial.completed.length, error: displayBackendText(partial.error) }) : state?.status === "succeeded" ? t("mutationRecovery.succeeded") : state?.status === "failed" ? t("mutationRecovery.failed", { message: displayBackendText(state.message) }) : state?.status === "running" ? t("mutationRecovery.running") : item.receipt === null ? t("mutationRecovery.notFound") : t("mutationRecovery.uncertain")}</p>
         {partial && partial.completed.length > 0 && <details><summary>{t("mutationRecovery.completedFiles")}</summary><ul>{partial.completed.map(path => <li key={path}>{path}</li>)}</ul></details>}
         <div className="git-operation-recovery-actions">
           <button type="button" disabled={busy || item.sending} onClick={() => void run(() => reviewMutations.check(item))}>{t("mutationRecovery.verify")}</button>
@@ -51,6 +52,6 @@ export function ReviewMutationRecovery({ taskId, artifactId, visible = true, onC
         </div>
       </div>;
     })}
-    {error && <p role="alert">{error}</p>}
+    {error && <p role="alert">{displayBackendText(error)}</p>}
   </section>;
 }

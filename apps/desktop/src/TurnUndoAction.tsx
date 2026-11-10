@@ -6,6 +6,7 @@ import { mutationArguments, reviewMutations, type PendingMutation } from "./revi
 import { ReviewMutationRecovery } from "./ReviewMutationRecovery";
 import type { ArtifactMetadata, TaskId } from "@dogcodes/protocol";
 import { translate as t } from "./i18n";
+import { displayBackendText } from "./backendText";
 
 export function TurnUndoAction({ taskId, metadata, count }: { taskId: TaskId; metadata: ArtifactMetadata; count: number }) {
   const [undone, setUndone] = useState(false), [confirming, setConfirming] = useState(false);
@@ -54,7 +55,7 @@ export function TurnUndoAction({ taskId, metadata, count }: { taskId: TaskId; me
       <p>{t("undo.description", { count })}</p>
       <p>{t("undo.hint")}</p>
       {statusError && <p role="status">{statusError}</p>}
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert">{displayBackendText(error)}</p>}
       <ReviewMutationRecovery taskId={taskId} artifactId={metadata.artifactId} onChanged={() => { setError(""); refreshStatus.current(); }} />
     </AppDialog>}
   </>;

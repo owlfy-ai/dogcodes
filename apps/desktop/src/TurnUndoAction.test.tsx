@@ -9,6 +9,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 const watchers = vi.hoisted(() => ({ refresh: undefined as (() => void) | undefined }));
 vi.mock("./reviewWatch", () => ({ subscribeReviewChanges: (_task: string, refresh: () => void) => { watchers.refresh = refresh; return () => {}; } }));
 import { reviewMutations } from "./reviewMutations";
+import { setGlobalResolvedLanguage, translate as t } from "./i18n";
 const metadata: ArtifactMetadata = {artifactId:"art_one",payloadSha256:"sha",mediaType:"application/vnd.dogcodes.turn-changes.v1+json",byteLength:2,createdAt:"2026-09-15T00:00:00Z",redactionRulesetVersion:0,redactionCount:0};
 let root: Root, host: HTMLDivElement;
 const button = (text: string) => [...document.querySelectorAll("button")].find(b => b.textContent === text)!;
@@ -18,10 +19,11 @@ beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   HTMLDialogElement.prototype.close = function () { this.open = false; };
   localStorage.clear();
+  setGlobalResolvedLanguage("zh-CN");
   invoke.mockReset().mockResolvedValue(false);
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); localStorage.clear(); vi.unstubAllGlobals(); });
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); localStorage.clear(); setGlobalResolvedLanguage("zh-CN"); vi.unstubAllGlobals(); });
 async function render() { await act(async () => root.render(<details><summary>2 个文件已更改<TurnUndoAction taskId="tsk_one" metadata={metadata} count={2} /></summary></details>)); }
 it("requires confirmation and cancel never changes files or toggles the summary", async () => {
   await render(); await click("撤销");
@@ -45,6 +47,26 @@ it("keeps conflicts visible in the dialog without marking the turn undone", asyn
   expect(document.querySelector('[role="alert"]')?.textContent).toContain("后又有修改");
   expect(button("确认撤销")).toBeUndefined();
   expect(button("核实撤销").disabled).toBe(false);
+});
+it.each([
+  "本轮快照内容不完整，无法撤销全部修改",
+  "此记录不是完整的一轮修改，无法整轮撤销",
+  "file.txt 在本轮结束后又有修改，未撤销任何文件",
+])("localizes failed undo receipts in both the dialog and recovery status: %s", async message => {
+  setGlobalResolvedLanguage("en");
+  invoke.mockImplementation(async (name: string) => {
+    if (name === "core_turn_undo") throw "reply lost";
+    if (name === "core_review_file_operation") return { request: reviewMutations.entries("tsk_one")[0].request, outcome: { status: "failed", message } };
+    return false;
+  });
+  await render(); await click(t("undo.action")); await click(t("undo.confirm"));
+  const alert = document.querySelector('[role="alert"]')?.textContent;
+  const status = document.querySelector('[role="status"]')?.textContent;
+  expect(alert).toBeTruthy();
+  expect(status).toContain(alert);
+  expect(alert).not.toMatch(/\p{Script=Han}/u);
+  expect(status).not.toMatch(/\p{Script=Han}/u);
+  expect(button(t("undo.undone"))).toBeUndefined();
 });
 it("restores persisted undone state when revisiting the turn", async () => {
   invoke.mockResolvedValue(true); await render(); expect(button("已撤销").disabled).toBe(true);

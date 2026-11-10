@@ -10,6 +10,7 @@ import { userFacingError } from "./userFacingError";
 
 // Everything the management of agents and remote hosts can say to a person.
 const REMOTE_SOURCES = [
+  "crates/workspace/src/review/recovery/turn.rs", "crates/workspace-ops/src/turn_undo.rs",
   "apps/desktop/src-tauri/src/clipboard.rs", "apps/desktop/src-tauri/src/execution_targets.rs", "apps/desktop/src-tauri/src/execution_targets/agent_installs.rs",
   "apps/desktop/src-tauri/src/execution_targets/agent_updates.rs", "apps/desktop/src-tauri/src/execution_targets/agents.rs",
   "apps/desktop/src-tauri/src/terminal_host/remote.rs", "crates/antigravity-driver/src/approval_bridge.rs",
@@ -27,7 +28,7 @@ const TRANSLATED_ELSEWHERE = new Set([
 const anyParameter = (text: string) => text.replace(/\{\w*\}/g, "{}");
 
 describe("backend text localization", () => {
-  it("has a translation for all the text of agent and remote host management", () => {
+  it("has translations for agent management, remote hosts and whole-turn undo messages", () => {
     const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
     const known = new Set(backendMessages.map(([zh]) => anyParameter(zh)));
     const missing = REMOTE_SOURCES.flatMap(source => readFileSync(join(root, source), "utf8").split("#[cfg(test)]")[0].split("\n")
@@ -57,6 +58,24 @@ describe("backend text localization", () => {
     const wrapped = localizeBackendText("Agent 请求暂时受限，请稍后重试。\n\nAgent 返回的错误：\n429 too many", "en");
     expect(wrapped).toContain("rate limited");
     expect(wrapped).toContain("429 too many");
+  });
+
+  it("translates undo errors, nested failures and recovery guidance in every language", () => {
+    for (const lang of Object.keys(LOCALES) as ResolvedLanguage[]) {
+      for (const message of ["本轮快照内容不完整，无法撤销全部修改", "此记录不是完整的一轮修改，无法整轮撤销"]) {
+        expect(localizeBackendText(message, lang)).toBeTruthy();
+        if (lang !== "zh-CN") expect(localizeBackendText(message, lang)).not.toBe(message);
+      }
+      const conflict = "src/example.ts 在本轮结束后又有修改，未撤销任何文件";
+      const translated = localizeBackendText(conflict, lang)!;
+      expect(translated).toContain("src/example.ts");
+      for (const recovery of ["已恢复已处理的文件；备份保存在恢复记录中", "备份已保留，请在审查的恢复记录中处理"]) {
+        const wrapped = localizeBackendText(`撤销未完成：${conflict}。${recovery}`, lang)!;
+        expect(wrapped).toContain(translated);
+        expect(wrapped).toContain(localizeBackendText(recovery, lang));
+        expect(wrapped).not.toMatch(/\{\w+\}/);
+      }
+    }
   });
 
   it("never leaks unmapped Chinese through userFacingError outside zh-CN", () => {
