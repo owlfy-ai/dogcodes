@@ -23,16 +23,28 @@ pub(super) fn validate(snapshot: &Value, id: &str, workspace: &str) -> Result<()
             "ZCode resumed session belongs to a different workspace".into(),
         ));
     }
-    if snapshot.pointer("/session/status").and_then(Value::as_str) == Some("running")
-        || snapshot
-            .pointer("/projection/currentTurnId")
-            .is_some_and(|v| !v.is_null())
-    {
+    if busy(snapshot) {
         return Err(DriverError::CapabilityUnavailable(
             "ZCode session is still executing native work".into(),
         ));
     }
     Ok(())
+}
+
+/// `ZCode` 0.17 keeps `projection.currentTurnId` on the last turn after it ends
+/// while reporting `status: "idle"`, so a reported status decides. The turn id
+/// only counts for a runtime that reports no status at all.
+fn busy(snapshot: &Value) -> bool {
+    let status = snapshot
+        .pointer("/session/status")
+        .or_else(|| snapshot.pointer("/projection/status"))
+        .and_then(Value::as_str);
+    match status {
+        Some(status) => status != "idle",
+        None => snapshot
+            .pointer("/projection/currentTurnId")
+            .is_some_and(|v| !v.is_null()),
+    }
 }
 
 #[cfg(test)]
@@ -48,13 +60,20 @@ mod tests {
         validate(&state, "s", path).unwrap();
         assert!(validate(&state, "other", path).is_err());
         assert!(validate(&state, "s", other.path().to_str().unwrap()).is_err());
-        state["projection"]["currentTurnId"] = json!("active");
+        // ZCode 0.17: an idle session keeps the id of its finished turn.
+        state["projection"]["currentTurnId"] = json!("finished");
+        validate(&state, "s", path).unwrap();
+        state["session"]["status"] = json!("running");
         assert!(matches!(
             validate(&state, "s", path),
             Err(DriverError::CapabilityUnavailable(_))
         ));
-        state["projection"]["currentTurnId"] = Value::Null;
-        state["session"]["status"] = json!("running");
+        state["session"]["status"] = json!("awaiting_permission");
         assert!(validate(&state, "s", path).is_err());
+        // Without a status, a current turn still means native work.
+        state["session"].as_object_mut().unwrap().remove("status");
+        assert!(validate(&state, "s", path).is_err());
+        state["projection"]["currentTurnId"] = Value::Null;
+        validate(&state, "s", path).unwrap();
     }
 }
