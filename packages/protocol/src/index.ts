@@ -733,6 +733,8 @@ export interface ModelOption {
   label: string;
   thinkingOptions: ThinkingOption[];
   defaultThinking: string | null;
+  /** Failure kind when the native agent has already refused this model for the account. */
+  unavailableReason?: string | null;
 }
 export interface ModelCatalog { models: ModelOption[]; defaultModel: string | null }
 

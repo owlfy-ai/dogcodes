@@ -1,14 +1,52 @@
-//! Supplement `OpenCode`'s advertised catalog with confirmed native HTTP 410 retirements.
+//! Supplement `OpenCode`'s advertised catalog from its own request history: hide
+//! confirmed HTTP 410 retirements, and mark models the signed-in account was refused.
 //! Read only model/error metadata; never migrate the native DB or retain message contents.
 use driver_api::ModelCatalog;
 use rusqlite::{Connection, OpenFlags};
 use std::{collections::HashMap, path::Path, time::Duration};
+
+/// Zen (`opencode/…`) bills pay-as-you-go models to one account balance, so one refusal
+/// for funds applies to every paid Zen model. Go (`opencode-go/…`) is the subscription.
+const ZEN: &str = "opencode";
 
 pub(super) fn filter_retired(catalog: &mut ModelCatalog) {
     let Some(path) = super::request_usage::opencode_database_path() else {
         return;
     };
     filter_from_database(catalog, &path);
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Outcome {
+    Success,
+    Retired,
+    /// The provider refused this account for the model, with a stable failure kind.
+    Refused(&'static str),
+}
+
+fn outcome(status: Option<i64>, error: Option<&str>, success: bool) -> Option<Outcome> {
+    if success {
+        return Some(Outcome::Success);
+    }
+    let message = error?;
+    let lower = message.to_ascii_lowercase();
+    if status == Some(410)
+        && lower.contains("model")
+        && (lower.contains("has been deprecated") || lower.contains("has been retired"))
+    {
+        return Some(Outcome::Retired);
+    }
+    // Transient errors (rate limits, outages) say nothing about the account's access.
+    match driver_api::failure::classify(message)? {
+        kind @ ("insufficient_balance" | "access_denied" | "subscription_required") => {
+            Some(Outcome::Refused(kind))
+        }
+        _ => None,
+    }
+}
+
+fn is_free(model: &str) -> bool {
+    model.ends_with("-free")
 }
 
 fn filter_from_database(catalog: &mut ModelCatalog, path: &Path) {
@@ -21,7 +59,9 @@ fn filter_from_database(catalog: &mut ModelCatalog, path: &Path) {
     if db.busy_timeout(Duration::from_millis(100)).is_err() {
         return;
     }
-    let mut model_results: HashMap<String, (i64, bool)> = HashMap::new();
+    let mut latest: HashMap<String, (i64, Outcome)> = HashMap::new();
+    // The newest refusal for funds, and the newest paid Zen success (a top-up proves itself).
+    let (mut out_of_funds, mut paid_success) = (None::<i64>, None::<i64>);
     for (table, filter) in [
         ("session_message", "type = 'assistant'"),
         ("message", "json_extract(data, '$.role') = 'assistant'"),
@@ -56,29 +96,48 @@ fn filter_from_database(catalog: &mut ModelCatalog, path: &Path) {
             let (time, Some(provider), Some(model), status, error, success) = row else {
                 continue;
             };
-            let retired = status == Some(410)
-                && error.is_some_and(|message| {
-                    let message = message.to_ascii_lowercase();
-                    message.contains("model")
-                        && (message.contains("has been deprecated")
-                            || message.contains("has been retired"))
-                });
-            // Transient errors don't hide models. A later success clears a retirement.
-            if !retired && !success {
+            let Some(outcome) = outcome(status, error.as_deref(), success) else {
                 continue;
+            };
+            if provider == ZEN && !is_free(&model) {
+                let newest = match outcome {
+                    Outcome::Refused("insufficient_balance") => &mut out_of_funds,
+                    Outcome::Success => &mut paid_success,
+                    _ => &mut None,
+                };
+                *newest = Some(newest.map_or(time, |seen| seen.max(time)));
             }
             let key = format!("{provider}/{model}");
-            let state = model_results.entry(key).or_insert((time, retired));
+            let state = latest.entry(key).or_insert((time, outcome));
             if time > state.0 {
-                *state = (time, retired);
+                *state = (time, outcome);
             }
         }
     }
     catalog.models.retain(|model| {
-        !model_results
+        !latest
             .get(&model.id)
-            .is_some_and(|(_, retired)| *retired)
+            .is_some_and(|(_, outcome)| *outcome == Outcome::Retired)
     });
+    // Funds still missing: no paid Zen request has succeeded since the refusal.
+    let unfunded_since = out_of_funds.filter(|refused| paid_success.is_none_or(|ok| ok < *refused));
+    for model in &mut catalog.models {
+        let zen_paid = model
+            .id
+            .strip_prefix("opencode/")
+            .is_some_and(|id| !is_free(id));
+        model.unavailable_reason = match (latest.get(&model.id), unfunded_since) {
+            // Funds are account-wide: a later paid success clears every Zen refusal for them.
+            (Some((_, Outcome::Refused("insufficient_balance"))), None) if zen_paid => None,
+            (Some((_, Outcome::Refused(kind))), _) => Some((*kind).to_owned()),
+            (Some((time, Outcome::Success)), Some(refused)) if zen_paid && *time < refused => {
+                Some("insufficient_balance".to_owned())
+            }
+            (Some((_, Outcome::Success)), _) => None,
+            (_, Some(_)) if zen_paid => Some("insufficient_balance".to_owned()),
+            _ => None,
+        };
+    }
     // Preserve the actual native default ID, so callers can detect it is unavailable.
     // Never silently switch providers or select a possibly paid model.
 }
@@ -154,8 +213,106 @@ mod tests {
             );
             let mut catalog = initial.clone();
             filter_from_database(&mut catalog, &path);
+            // Only the refusal for this account is marked; the catalog is otherwise intact.
+            let refused: Vec<_> = catalog
+                .models
+                .iter()
+                .filter_map(|m| Some((m.id.as_str(), m.unavailable_reason.as_deref()?)))
+                .collect();
+            assert_eq!(refused, [("p/auth", "access_denied")]);
+            for model in &mut catalog.models {
+                model.unavailable_reason = None;
+            }
             assert_eq!(catalog, initial);
         }
+    }
+
+    #[test]
+    fn refused_models_are_marked_and_zen_funds_apply_to_every_paid_zen_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("opencode.db");
+        let db = Connection::open(&path).unwrap();
+        db.execute(
+            "CREATE TABLE session_message(id TEXT, type TEXT, time_created INTEGER, data TEXT)",
+            [],
+        )
+        .unwrap();
+        let insert =
+            |id: &str, time: i64, provider: &str, model: &str, error: Option<serde_json::Value>| {
+                let mut data =
+                    json!({"model":{"providerID":provider,"id":model},"time":{"completed":time}});
+                if let Some(error) = error {
+                    data["error"] = error;
+                }
+                db.execute(
+                    "INSERT INTO session_message VALUES (?1, 'assistant', ?2, ?3)",
+                    rusqlite::params![id, time, data.to_string()],
+                )
+                .unwrap();
+            };
+        // Shapes recorded by OpenCode 2.2.
+        insert("old", 1, "opencode", "claude-opus-5-5", None);
+        insert(
+            "funds",
+            2,
+            "opencode",
+            "deepseek-v4.1-flash",
+            Some(
+                json!({"type":"provider.quota","message":"Insufficient account funds","status":402}),
+            ),
+        );
+        insert(
+            "region",
+            3,
+            "opencode-go",
+            "deepseek-v4.1-flash",
+            Some(
+                json!({"type":"provider.invalid-request","message":"This Go model is hosted outside Europe and the United States. Select Global at https://opencode.ai/console/org_x/settings/privacy#regions to use it.","status":400}),
+            ),
+        );
+        insert(
+            "busy",
+            4,
+            "opencode-go",
+            "glm-5.3",
+            Some(
+                json!({"type":"provider.rate-limit","message":"Rate limit exceeded","status":429}),
+            ),
+        );
+        let ids = [
+            "opencode/deepseek-v4.1-flash",
+            "opencode/claude-opus-5-5",
+            "opencode/glm-5.3-flash-free",
+            "opencode-go/deepseek-v4.1-flash",
+            "opencode-go/glm-5.3",
+            "ollama/qwen3-vl:2b",
+        ];
+        let initial = ModelCatalog {
+            default_model: None,
+            models: ids.iter().map(|id| ModelOption::new(id, id)).collect(),
+        };
+        let reasons = |catalog: &ModelCatalog| {
+            catalog
+                .models
+                .iter()
+                .map(|m| m.unavailable_reason.clone())
+                .collect::<Vec<_>>()
+        };
+        let mut catalog = initial.clone();
+        filter_from_database(&mut catalog, &path);
+        let (balance, denied) = (
+            Some("insufficient_balance".to_owned()),
+            Some("access_denied".to_owned()),
+        );
+        assert_eq!(
+            reasons(&catalog),
+            [balance.clone(), balance, None, denied.clone(), None, None]
+        );
+        // A paid Zen success after the refusal shows the balance was topped up.
+        insert("topped", 5, "opencode", "claude-opus-5-5", None);
+        let mut catalog = initial.clone();
+        filter_from_database(&mut catalog, &path);
+        assert_eq!(reasons(&catalog), [None, None, None, denied, None, None]);
     }
 
     #[test]

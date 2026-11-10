@@ -842,10 +842,19 @@ impl Core {
                 self.catalogs.generation(executor),
             )
         };
-        self.catalogs
-            .models(driver, generation, model.map(str::to_owned), refresh, true)
-            .await
-            .map_err(Into::into)
+        let mut catalog = self
+            .catalogs
+            .models(
+                driver.clone(),
+                generation,
+                model.map(str::to_owned),
+                refresh,
+                true,
+            )
+            .await?;
+        // Inventory lasts for the driver's lifetime; account refusals change between turns.
+        driver.annotate_model_catalog(&mut catalog);
+        Ok(catalog)
     }
 
     pub async fn cached_permission_catalog(
@@ -4268,6 +4277,9 @@ impl Core {
                 source_sequence: None,
             };
             if matches!(event_type, "turn.completed" | "turn.failed") {
+                // The agent's own request history now holds this outcome; models marked
+                // from it (refused for this account, or working again) are re-read.
+                self.catalogs.touch();
                 terminal_events.push((event_type.into(), payload, source));
             } else {
                 self.append_runtime_event(task_id, event_type, payload, source)

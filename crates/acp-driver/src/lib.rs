@@ -450,6 +450,10 @@ enum Command {
         workspace: Option<PathBuf>,
         reply: oneshot::Sender<Result<driver_api::ModelCatalog, DriverError>>,
     },
+    /// Selects every model in turn inside one probe session to read its efforts.
+    CatalogWithAllEfforts {
+        reply: oneshot::Sender<Result<driver_api::ModelCatalog, DriverError>>,
+    },
     NewSession {
         app_mcps: Vec<driver_api::AppMcp>,
         grok: bool,
@@ -1808,6 +1812,31 @@ async fn handle_command(
             };
             let _ = reply.send(result);
         }
+        Command::CatalogWithAllEfforts { reply } => {
+            if reply.is_closed() {
+                return;
+            }
+            let result = async {
+                let directory = ProbeDirectory::create(&target).map_err(|_| DriverError::Protocol("无法创建模型探测工作区".into()))?;
+                let state = models::session_request(&connection,"session/new",serde_json::json!({"cwd":directory.path(),"mcpServers":[]}),Some(&quota.stderr_tail)).await?;
+                let mut catalog = models::catalog(&state);
+                let Some(config) = models::model_config(&state) else { return Ok(catalog) };
+                let ids: Vec<String> = catalog.models.iter().filter(|m| m.thinking_options.is_empty()).map(|m| m.id.clone()).collect();
+                for id in ids {
+                    if reply.is_closed() {
+                        return Err(driver_error_from_channel());
+                    }
+                    let response = models::raw(&connection,"session/set_config_option",serde_json::json!({"sessionId":state["sessionId"],"configId":config["id"],"value":id})).await?;
+                    let probed = models::catalog(&session_state::merge(&state, &response));
+                    if let (Some(found), Some(model)) = (probed.models.into_iter().find(|m| m.id == id), catalog.models.iter_mut().find(|m| m.id == id)) {
+                        model.thinking_options = found.thinking_options;
+                        model.default_thinking = found.default_thinking;
+                    }
+                }
+                Ok(catalog)
+            }.await;
+            let _ = reply.send(result);
+        }
         Command::NewSession {
             app_mcps,
             grok,
@@ -2466,6 +2495,30 @@ impl AgentDriver for AcpDriver {
             opencode_models::filter_retired(&mut catalog);
         }
         Ok(catalog)
+    }
+    fn annotate_model_catalog(&self, catalog: &mut driver_api::ModelCatalog) {
+        if self.executor.provider_id.as_str() == "opencode"
+            && self.shared.launch.executable.target.is_local()
+        {
+            opencode_models::filter_retired(catalog);
+        }
+    }
+    async fn model_catalog_with_all_efforts(
+        &self,
+    ) -> Option<Result<driver_api::ModelCatalog, DriverError>> {
+        // OpenCode reports efforts only for the selected model and lists dozens of models;
+        // probing each in its own process starts as many OpenCode servers in a row.
+        if self.executor.provider_id.as_str() != "opencode" {
+            return None;
+        }
+        let result = self
+            .metadata(None, |reply| Command::CatalogWithAllEfforts { reply })
+            .await
+            .map(|mut catalog| {
+                opencode_models::filter_retired(&mut catalog);
+                catalog
+            });
+        Some(result)
     }
     async fn create_selected_session(
         &self,
@@ -3633,6 +3686,17 @@ mod tests {
         assert!(matches!(
             map_session_error(&error, "agent rejected the ACP session/prompt request", None),
             DriverError::Protocol(kind) if kind == "access_denied"
+        ));
+    }
+
+    #[test]
+    fn an_opencode_balance_rejection_is_not_reported_as_a_protocol_fault() {
+        // OpenCode 2.2: a Zen pay-as-you-go model with no account balance.
+        let error = AcpError::new(-32_603, "Internal error: Insufficient account funds")
+            .data(serde_json::json!({"service": "session", "errorName": "provider.quota"}));
+        assert!(matches!(
+            map_session_error(&error, "agent rejected the ACP session/prompt request", None),
+            DriverError::Protocol(kind) if kind == "insufficient_balance"
         ));
     }
 

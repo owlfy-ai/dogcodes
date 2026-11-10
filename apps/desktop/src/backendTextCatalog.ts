@@ -50,6 +50,7 @@ export const backendMessages: [string, string][] = [
   ["Agent 登录或认证失败。请在原生客户端重新登录，或检查 API Key 是否有效及账号是否有访问权限，然后重试。", "authenticationFailed"],
   ["当前账号没有有效订阅或套餐已到期。请在原生客户端确认订阅、切换有权限的账号或模型后重试。", "subscriptionRequired"],
   ["当前账号没有访问所选服务或模型的权限。请在原生客户端检查账号资格、服务权限或模型配置后重试。", "accessDenied"],
+  ["账户余额不足，无法使用所选的按量计费模型。请充值，或切换到套餐内或免费的模型后重试。", "insufficientBalance"],
   ["Agent 请求暂时受限，请稍后重试。", "rateLimited"],
   ["Agent 的本地数据与当前客户端版本不兼容。请将命令行和桌面客户端更新到兼容版本，再重新检测 Agent；无需删除历史会话。", "databaseIncompatible"],
   ["Agent 响应超时。请检查网络和原生客户端是否正常，稍后重试。", "agentTimeout"],

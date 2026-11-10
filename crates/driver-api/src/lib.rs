@@ -563,6 +563,16 @@ pub trait AgentDriver: Send + Sync {
     ) -> Result<ModelCatalog, DriverError> {
         self.model_catalog_for(model).await
     }
+    /// Re-marks models from the agent's current local state (for example models the
+    /// signed-in account was refused). Runs on every read of a cached catalog, so it
+    /// must stay cheap and must not start the agent.
+    fn annotate_model_catalog(&self, _catalog: &mut ModelCatalog) {}
+    /// Every model's thinking options from one native probe, for agents that otherwise
+    /// report them only for the selected model. `None` leaves the inventory to fill them
+    /// per model, which can cost one native process per model.
+    async fn model_catalog_with_all_efforts(&self) -> Option<Result<ModelCatalog, DriverError>> {
+        None
+    }
     /// Explicit inventory refresh can discard an adapter's own metadata cache.
     async fn refresh_model_catalog_in_workspace(
         &self,

@@ -22,6 +22,11 @@ pub struct ModelOption {
     #[serde(default)]
     pub thinking_options: Vec<ThinkingOption>,
     pub default_thinking: Option<String>,
+    /// A failure kind (see `failure::user_message`) when the native agent has already
+    /// rejected this model for the signed-in account. It stays selectable: the account
+    /// may have changed since.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,6 +43,7 @@ impl ModelOption {
             label: label.into(),
             thinking_options: vec![],
             default_thinking: None,
+            unavailable_reason: None,
         }
     }
 }

@@ -67,12 +67,13 @@ pub fn turn_failure_text(kind: &str, detail: Option<&str>) -> String {
     }
 }
 
-const KNOWN_KINDS: [&str; 17] = [
+const KNOWN_KINDS: [&str; 18] = [
     "selection_rejected",
     "selection_unverifiable",
     "authentication_failed",
     "subscription_required",
     "access_denied",
+    "insufficient_balance",
     "agent_rate_limited",
     "model_unavailable",
     "database_incompatible",
@@ -113,6 +114,14 @@ pub fn classify(message: &str) -> Option<&'static str> {
     ]) {
         Some("subscription_required")
     } else if has(&[
+        // OpenCode Zen: pay-as-you-go models draw on the account balance (HTTP 402).
+        "insufficient account funds",
+        "insufficient funds",
+        "insufficient balance",
+        "余额不足",
+    ]) {
+        Some("insufficient_balance")
+    } else if has(&[
         "not eligible",
         "eligibility check failed",
         "access denied",
@@ -120,6 +129,9 @@ pub fn classify(message: &str) -> Option<&'static str> {
         // OpenCode Go: the account's data region excludes the selected model.
         "is hosted outside europe and the united states",
         "settings/privacy#regions",
+        // OpenCode Go: the model trains on request data, which the org has not allowed.
+        "trains on request data",
+        "settings/privacy#training",
     ]) {
         Some("access_denied")
     } else if has(&[
@@ -312,6 +324,9 @@ pub fn user_message(kind: &str) -> &'static str {
         "access_denied" => {
             "当前账号没有访问所选服务或模型的权限。请在原生客户端检查账号资格、服务权限或模型配置后重试。"
         }
+        "insufficient_balance" => {
+            "账户余额不足，无法使用所选的按量计费模型。请充值，或切换到套餐内或免费的模型后重试。"
+        }
         "agent_rate_limited" => "Agent 请求暂时受限，请稍后重试。",
         "database_incompatible" => {
             "Agent 的本地数据与当前客户端版本不兼容。请将命令行和桌面客户端更新到兼容版本，再重新检测 Agent；无需删除历史会话。"
@@ -346,6 +361,25 @@ pub fn user_message(kind: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opencode_account_rejections_have_their_own_guidance() {
+        assert_eq!(
+            classify("Internal error: Insufficient account funds"),
+            Some("insufficient_balance")
+        );
+        assert_eq!(
+            classify(
+                "This Go model trains on request data. Turn on \"Allow paid endpoints that train on request data\" to use it."
+            ),
+            Some("access_denied")
+        );
+        assert_ne!(user_message("insufficient_balance"), GENERIC_MESSAGE);
+        assert_eq!(
+            classify(user_message("insufficient_balance")),
+            Some("insufficient_balance")
+        );
+    }
 
     #[test]
     fn transport_error_text_is_not_confused_with_a_review_of_error_handling() {

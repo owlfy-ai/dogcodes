@@ -3765,6 +3765,7 @@ mod tests {
                             label: "High".into(),
                         }],
                         default_thinking: Some("high".into()),
+                        unavailable_reason: None,
                     },
                 ],
                 default_model: Some("fixture-model".into()),

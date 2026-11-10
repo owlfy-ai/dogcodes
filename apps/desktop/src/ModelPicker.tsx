@@ -8,6 +8,7 @@ import { useI18n } from "./i18n";
 
 // Known effort ids get translated labels; unknown ones keep the agent's label.
 const knownEfforts = new Set(["off", "auto", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
+const knownRefusals = new Set(["insufficient_balance", "access_denied", "subscription_required"]);
 export function ModelPicker({ catalog, model, thinking, loading, refreshing = false, error, disabled, onChange, onRetry, onOpen, refreshDisabled = false }: {
   catalog: ModelCatalog; model: string | null; thinking: string | null;
   loading: boolean; error: string | null; disabled: boolean;
@@ -72,8 +73,16 @@ export function ModelPicker({ catalog, model, thinking, loading, refreshing = fa
       </p>}
       {open === "model" ? <>
         <div className="model-options">
-          {catalog.models.map(option => <button type="button" disabled={loading} key={option.id} className={selected?.id === option.id ? "selected" : ""}
-            onClick={() => choose(option.id, option.defaultThinking ?? null)}>{option.label}<span>{selected?.id === option.id ? "✓" : ""}</span></button>)}
+          {catalog.models.map(option => {
+            // Still selectable: the account may have changed since the agent refused it.
+            const reason = option.unavailableReason && knownRefusals.has(option.unavailableReason) ? option.unavailableReason : null;
+            return <button type="button" disabled={loading} key={option.id}
+              className={[selected?.id === option.id ? "selected" : "", reason ? "unavailable" : ""].filter(Boolean).join(" ")}
+              data-tooltip={reason ? t(`modelPicker.unavailable.${reason}Hint`) : undefined}
+              onClick={() => choose(option.id, option.defaultThinking ?? null)}>
+              <span className="model-option-label">{option.label}{reason && <small>{t(`modelPicker.unavailable.${reason}`)}</small>}</span>
+              <span>{selected?.id === option.id ? "✓" : ""}</span></button>;
+          })}
         </div>
         {!loading && !error && !catalog.models.length && <p className="model-message">{t("modelPicker.noModels")}</p>}
       </> : <>

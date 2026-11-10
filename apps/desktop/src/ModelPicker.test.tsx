@@ -89,3 +89,22 @@ it("shows an empty catalog without inventing a default model",async()=>{
  expect(container.querySelectorAll('.model-options button')).toHaveLength(0);
  expect(change).not.toHaveBeenCalled();
 });
+it("greys out models the agent refused for this account but keeps them selectable",async () => {
+  const refused: ModelCatalog = { defaultModel: "go", models: [
+    {id:"go",label:"Go model",thinkingOptions:[],defaultThinking:null},
+    {id:"zen",label:"Zen model",thinkingOptions:[],defaultThinking:null,unavailableReason:"insufficient_balance"},
+    {id:"odd",label:"Odd model",thinkingOptions:[],defaultThinking:null,unavailableReason:"something_new"},
+  ] };
+  await act(async () => root.render(<ModelPicker catalog={refused} model="go" thinking={null} loading={false} error={null} disabled={false} onChange={change} onRetry={retry}/>));
+  await click(button("选择模型"));
+  const options = [...container.querySelectorAll<HTMLButtonElement>('.model-options button')];
+  const zen = options.find(node => node.textContent?.startsWith("Zen model"))!;
+  expect(zen.classList.contains("unavailable")).toBe(true);
+  expect(zen.textContent).toContain("余额不足");
+  expect(zen.dataset.tooltip).toContain("OpenCode Go");
+  // An unknown reason is not shown as a refusal.
+  expect(options.find(node => node.textContent?.startsWith("Odd model"))!.classList.contains("unavailable")).toBe(false);
+  expect(options.find(node => node.textContent?.startsWith("Go model"))!.classList.contains("unavailable")).toBe(false);
+  await click(zen);
+  expect(change).toHaveBeenLastCalledWith("zen",null);
+});

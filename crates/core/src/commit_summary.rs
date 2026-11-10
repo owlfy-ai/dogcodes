@@ -298,6 +298,7 @@ mod tests {
                     id: "native-default".into(),
                     label: "Default".into(),
                     default_thinking: Some("high".into()),
+                    unavailable_reason: None,
                     thinking_options: vec![
                         ThinkingOption {
                             id: "high".into(),

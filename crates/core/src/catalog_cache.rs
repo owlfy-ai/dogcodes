@@ -255,6 +255,10 @@ impl Catalogs {
     pub fn revision(&self) -> u64 {
         self.revision.load(Ordering::Acquire)
     }
+    /// Asks clients to read catalogs again without discarding any cached inventory.
+    pub fn touch(&self) {
+        self.revision.fetch_add(1, Ordering::AcqRel);
+    }
     pub fn replace(&self, executor: &ExecutorRef) {
         let generation = self.revision.fetch_add(1, Ordering::AcqRel) + 1;
         self.generations
@@ -304,6 +308,25 @@ impl Catalogs {
             .retain(|id| catalog.models.iter().any(|model| &model.id == id));
         inventory.catalog = catalog.clone();
         catalog
+    }
+    /// A catalog that already carries every model's efforts needs no per-model probe.
+    fn merge_complete(&self, executor: &ExecutorRef, generation: u64, mut catalog: ModelCatalog) {
+        let mut snapshots = self.snapshots.lock().unwrap();
+        let inventory = snapshots.entry((executor.clone(), generation)).or_default();
+        // The probe selected each model in turn; the native default stays the base one.
+        if inventory.catalog.default_model.is_some() {
+            catalog
+                .default_model
+                .clone_from(&inventory.catalog.default_model);
+        }
+        inventory.complete = catalog
+            .models
+            .iter()
+            .map(|model| model.id.clone())
+            .collect();
+        inventory.catalog = catalog;
+        drop(snapshots);
+        self.revision.fetch_add(1, Ordering::AcqRel);
     }
     fn model_reader(
         driver: Arc<dyn AgentDriver>,
@@ -460,7 +483,25 @@ impl Catalogs {
                     .permissions(driver.clone(), generation, false, false)
                     .await;
                 let mut complete = models.is_ok() && permissions.is_ok();
-                if let Ok(models) = models {
+                let all = match &models {
+                    Ok(_) => driver.model_catalog_with_all_efforts().await,
+                    Err(_) => None,
+                };
+                if cache.generation(driver.executor()) != generation {
+                    return;
+                }
+                let filled = match all {
+                    Some(Ok(catalog)) => {
+                        cache.merge_complete(driver.executor(), generation, catalog);
+                        true
+                    }
+                    Some(Err(_)) => {
+                        complete = false;
+                        true
+                    }
+                    None => false,
+                };
+                if !filled && let Ok(models) = models {
                     for model in models.models {
                         if cache.generation(driver.executor()) != generation {
                             return;
@@ -493,6 +534,8 @@ mod tests {
         calls: AtomicUsize,
         fail: AtomicBool,
         startup: Mutex<driver_api::models::StartupCatalogs>,
+        /// Reports every model's efforts in one probe, as the OpenCode driver does.
+        all_efforts: AtomicUsize,
     }
     #[async_trait::async_trait]
     impl AgentDriver for ProbeDriver {
@@ -520,6 +563,20 @@ mod tests {
             } else {
                 Ok(fixture_catalog(model))
             }
+        }
+        async fn model_catalog_with_all_efforts(&self) -> Option<Outcome<ModelCatalog>> {
+            if self.all_efforts.load(Ordering::SeqCst) == 0 {
+                return None;
+            }
+            self.all_efforts.fetch_add(1, Ordering::SeqCst);
+            let mut catalog = fixture_catalog(None);
+            for model in &mut catalog.models {
+                model.thinking_options = vec![driver_api::ThinkingOption {
+                    id: "high".into(),
+                    label: "High".into(),
+                }];
+            }
+            Some(Ok(catalog))
         }
         async fn permission_catalog(&self, _: Option<&str>) -> Outcome<PermissionCatalog> {
             panic!("seeded permission inventory must be reused")
@@ -567,6 +624,7 @@ mod tests {
             base: driver_api::FakeDriver::new("catalog-test").unwrap(),
             calls: AtomicUsize::new(0),
             fail: AtomicBool::new(fail),
+            all_efforts: AtomicUsize::new(0),
             startup: Mutex::new(driver_api::models::StartupCatalogs {
                 models: seeded_models.then(|| {
                     let mut catalog = fixture_catalog(None);
@@ -576,6 +634,41 @@ mod tests {
                 permissions: Some(PermissionCatalog::default()),
             }),
         })
+    }
+
+    #[tokio::test]
+    async fn one_probe_with_every_models_efforts_replaces_the_per_model_fill() {
+        let cache = Arc::new(Catalogs::default());
+        let probe = probe(true, false);
+        probe.all_efforts.store(1, Ordering::SeqCst);
+        let driver: Arc<dyn AgentDriver> = probe.clone();
+        cache.replace(driver.executor());
+        cache.seed_startup(&driver);
+        let generation = cache.generation(driver.executor());
+        let before = cache.revision();
+        cache.warm(&driver);
+        while probe.all_efforts.load(Ordering::SeqCst) < 2 || cache.revision() == before {
+            tokio::task::yield_now().await;
+        }
+        let other = cache
+            .models(
+                driver.clone(),
+                generation,
+                Some("other".into()),
+                false,
+                true,
+            )
+            .await
+            .unwrap();
+        assert!(
+            other
+                .models
+                .iter()
+                .all(|model| !model.thinking_options.is_empty())
+        );
+        assert_eq!(other.default_model.as_deref(), Some("fixture"));
+        // Neither warmup nor the selection started a probe of its own per model.
+        assert_eq!(probe.calls.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

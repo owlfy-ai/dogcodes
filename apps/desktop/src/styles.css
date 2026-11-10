@@ -867,6 +867,9 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
 .model-menu button { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; border: 0; border-radius: 7px; background: transparent; color: inherit; padding: 9px 8px; text-align: left; font: inherit; font-size: .8125rem; cursor: pointer; }
 .model-menu button:hover, .model-menu button.selected { background: #80808018; }
 .model-options { max-height: min(320px, 50vh); overflow-y: auto; }
+.model-option-label { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
+.model-menu button.unavailable .model-option-label { color: var(--muted); }
+.model-option-label small { font-size: .75rem; line-height: 1.3; color: var(--muted); }
 .model-message { padding: 6px 8px; margin: 0; font-size: .8125rem; color: var(--muted); line-height: 1.6; }
 :root[data-theme="light"] .model-menu { background: #fff; color: #222; border-color: #e4e4e4; }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .model-menu { background: #fff; color: #222; border-color: #e4e4e4; } }
