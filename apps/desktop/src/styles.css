@@ -814,7 +814,11 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
 .history-section-label { margin: 4px 7px 6px; color: var(--muted); font-size: calc(14px * var(--ui-scale)); font-weight: 400; }
 .history-pinned { margin-bottom: 20px; }
 .history-row { display: flex; align-items: center; min-width: 0; border-radius: 8px; }
-.history-row > .task { flex: 1; min-width: 0; padding-right: 5px; }
+.history-row > .task { flex: 1; min-width: 0; padding-right: 5px; position: relative; }
+/* Running and attention marks live in the gutter before the agent icon, a fixed slot that keeps titles still. */
+.history-status { position: absolute; left: 22px; top: 50%; display: grid; place-items: center; width: calc(14px * var(--ui-scale, 1)); height: calc(14px * var(--ui-scale, 1)); transform: translate(-100%, -50%); }
+/* Keep clear of the branch line that leads into a fork row. */
+.history-fork-row .history-status { left: 16px; }
 .history-agent { display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .history-agent > .agent-icon { pointer-events: none; }
 .history-agent .agent-icon { width: calc(16px * var(--ui-scale, 1)); height: calc(16px * var(--ui-scale, 1)); font-size: calc(10px * var(--ui-scale, 1)); border-radius: calc(4px * var(--ui-scale, 1)); }
@@ -838,7 +842,6 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
 .history-row-actions button:focus-visible { outline: 2px solid currentColor; }
 .history-row-actions svg { width: calc(15px * var(--ui-scale, 1)); height: calc(15px * var(--ui-scale, 1)); fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
 .history-row-actions .history-pin-icon { width: calc(16px * var(--ui-scale, 1)); height: calc(16px * var(--ui-scale, 1)); stroke-width: 1.7; }
-.history-pinned .task { padding-left: 10px; }
 .history-error { padding: 6px; font-size: calc(14px * var(--ui-scale)); color: #bd594e; }
 .history-archived { margin: 18px 7px 10px; color: var(--muted); font-size: calc(14px * var(--ui-scale)); }
 .history-archived summary { cursor: pointer; padding: 6px 0; }

@@ -507,6 +507,26 @@ it("shows what each conversation needs, and keeps it in sight when its list is c
   expect(container.querySelector('.project-heading-trigger [data-kind="approval"]')).not.toBeNull();
 });
 
+it("leads each row with its state, ahead of the Agent icon, and leaves the trailing edge to row actions", async () => {
+  const running = { ...tasks[0], activePrimaryRun: { executor: tasks[0].preferredExecutor } } as TaskSummary;
+  const fork: TaskSummary = { ...tasks[1], taskId: "tsk_FORK" as TaskId, title: "分支 · Fork", forkedFrom: running.taskId };
+  await act(async () => root.render(<ConversationHistory projects={[project]} tasks={[running, fork, tasks[2], tasks[3]]} selectedTaskId={null} onSelect={() => {}} onRename={async () => {}}
+    attention={{ [fork.taskId]: "approval", [tasks[3].taskId]: "completed" }} />));
+  const row = (title: string) => [...container.querySelectorAll(".history-row")].find(item => item.querySelector(".task-title")?.textContent === title)!;
+  const order = (title: string) => [...row(title).querySelector(".task")!.children].map(child => child.className.split(" ")[0]);
+  expect(order("对话 0")).toEqual(["history-status", "history-agent", "task-title"]);
+  expect(row("对话 0").querySelector(".history-status > .task-running-spinner")).not.toBeNull();
+  expect(row("分支").classList.contains("history-fork-row")).toBe(true);
+  expect(order("分支")).toEqual(["history-status", "history-agent", "task-title", "history-fork-badge"]);
+  expect(row("分支").querySelector(".history-status > [data-kind=\"approval\"]")).not.toBeNull();
+  expect(row("对话 3").querySelector(".history-status > [data-kind=\"completed\"]")).not.toBeNull();
+  // A row without a state keeps the same empty slot, so its title lines up with the others.
+  expect(row("对话 2").querySelector(".history-status")?.childElementCount).toBe(0);
+  // Only row actions follow the conversation button; no state mark shares their place.
+  for (const title of ["对话 0", "分支", "对话 2", "对话 3"]) expect(row(title).querySelector(".history-row-actions [role=\"status\"], .history-row-actions .task-attention")).toBeNull();
+  expect(row("对话 0").lastElementChild?.classList.contains("history-row-actions")).toBe(true);
+});
+
 it("lists forks under their source and hides a worktree fork's own project", async () => {
   const source = tasks[0];
   const fork: TaskSummary = { ...tasks[1], taskId: "tsk_FORK" as TaskId, title: "对话 0 · Fork", forkedFrom: source.taskId };

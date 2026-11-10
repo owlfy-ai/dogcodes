@@ -16,7 +16,7 @@ import { loadProjectHistoryPreferences, saveProjectHistoryPreference, PROJECT_HI
 import { translate, useI18n } from "./i18n";
 import { projectDisplayName, taskDisplayTitle } from "./displayNames";
 import { AttentionMark } from "./AttentionMark";
-import { strongestAttention, type ConversationAttention } from "./conversationAttention";
+import { strongestAttention, type AttentionKind, type ConversationAttention } from "./conversationAttention";
 
 const PREVIEW_COUNT = 5;
 const NO_ATTENTION: ConversationAttention = {};
@@ -26,6 +26,18 @@ function HistoryAgent({ task }: { task: TaskSummary }) {
   const label = translate(task.activePrimaryRun || task.lastTurnExecutor ? "history.lastTurnAgent" : "history.conversationAgent", { agent: providerLabel(executor.providerId) });
   return <span className="history-agent" role="img" aria-label={label} data-tooltip={label}>
     <AgentIcon providerId={executor.providerId} size="small" />
+  </span>;
+}
+
+/** Sits in the row's leading gutter, so a row's title never moves when its state changes. */
+function HistoryStatus({ task, kind }: { task: TaskSummary; kind?: AttentionKind }) {
+  // Waiting on the user isn't "running": the spinner would say the agent is busy.
+  const running = task.activePrimaryRun && kind !== "approval" && kind !== "question";
+  const label = running ? translate(task.activePrimaryRun?.state === "disconnected" ? "history.disconnected" : "history.running") : undefined;
+  return <span className="history-status">
+    {running
+      ? <span className="task-running-spinner" role="status" aria-label={label} data-tooltip={label} />
+      : kind && <AttentionMark kind={kind} />}
   </span>;
 }
 
@@ -235,11 +247,10 @@ export function ConversationHistory({ attention = NO_ATTENTION, projects, tasks,
   const row = (task: TaskSummary, isPinned = false, scope = "pinned", ids = pinned.map(item => item.taskId), fork = false) => renaming === task.taskId ? renameForm(task) : <div className={`history-row${fork ? " history-fork-row" : ""}${selectionVisible && task.taskId === selectedTaskId ? " active" : ""}`} key={task.taskId} data-drop-edge={fork ? undefined : dropEdge(scope, task.taskId)} {...(fork ? {} : dragProps(scope, task.taskId, ids, isPinned ? "pinned" : "projects"))} onContextMenu={event => showContextMenu(event, taskMenu(task, isPinned))}>
     <button type="button" className="task" data-tooltip={taskDisplayTitle(task.title)} data-tooltip-overflow=".task-title"
       aria-current={selectionVisible && task.taskId === selectedTaskId ? "page" : undefined} onClick={() => onSelect(task.taskId)}>
+      <HistoryStatus task={task} kind={attention[task.taskId]} />
       <HistoryAgent task={task} />
       <span className="task-title">{taskDisplayTitle(fork ? task.title.replace(/ · Fork$/, "") : task.title)}</span>
       {fork && <span className="history-fork-badge">{t("history.forkBadge")}</span>}
-      {attention[task.taskId] && <AttentionMark kind={attention[task.taskId]} />}
-      {task.activePrimaryRun && !["approval", "question"].includes(attention[task.taskId]) && <span className="task-running-spinner" role="status" aria-label={t(task.activePrimaryRun.state === "disconnected" ? "history.disconnected" : "history.running")} data-tooltip={t(task.activePrimaryRun.state === "disconnected" ? "history.disconnected" : "history.running")} />}
     </button>
     <div className="history-row-actions">
       {onRename && <button ref={renameButtonRef(task.taskId)} type="button" data-tooltip={t("nav.rename")} aria-label={t("nav.rename")} disabled={saving} onClick={() => beginRename(task)}>
