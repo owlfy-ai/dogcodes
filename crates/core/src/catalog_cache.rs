@@ -534,7 +534,7 @@ mod tests {
         calls: AtomicUsize,
         fail: AtomicBool,
         startup: Mutex<driver_api::models::StartupCatalogs>,
-        /// Reports every model's efforts in one probe, as the OpenCode driver does.
+        /// Reports every model's efforts in one probe, as the `OpenCode` driver does.
         all_efforts: AtomicUsize,
     }
     #[async_trait::async_trait]
