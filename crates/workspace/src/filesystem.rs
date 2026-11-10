@@ -388,11 +388,14 @@ mod tests {
         fs::create_dir_all(drafts.join("tsk_one")).unwrap();
         fs::write(drafts.join("tsk_one/screenshot.png"), b"\x89PNG").unwrap();
         fs::write(root.path().join("notes.txt"), b"mine").unwrap();
-        assert!(
-            snapshot(root.path())
-                .unwrap()
-                .contains_key("drafts/tsk_one/screenshot.png")
-        );
+        // Snapshot keys use the platform's separator.
+        let screenshot = Path::new("drafts")
+            .join("tsk_one")
+            .join("screenshot.png")
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(snapshot(root.path()).unwrap().contains_key(&screenshot));
         fs::write(
             drafts.join(agent_protocol::workspace_context::CONVERSATION_FOLDERS_MARKER),
             "",
