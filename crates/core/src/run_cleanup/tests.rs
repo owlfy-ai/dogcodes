@@ -232,6 +232,7 @@ async fn aborting_a_cleanup_waiter_keeps_the_run_lease_and_never_targets_registr
         preferred_executor: original.executor().clone(),
         last_turn_executor: None,
         forked_from: None,
+        working_directory: None,
         updated_at: None,
         stream_version: 0,
         active_primary_run: Some(agent_protocol::ActiveRunSummary {
@@ -342,6 +343,7 @@ async fn abandoned_run_keeps_ownership_until_workspace_and_terminal_bookkeeping_
             preferred_executor: original.executor().clone(),
             last_turn_executor: None,
             forked_from: None,
+            working_directory: None,
             updated_at: None,
             stream_version: 0,
             active_primary_run: Some(agent_protocol::ActiveRunSummary {

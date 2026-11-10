@@ -118,8 +118,9 @@ impl Driver {
         let name = params["name"]
             .as_str()
             .ok_or("computer_tool_name_required")?;
-        let args = params.get("arguments").cloned().unwrap_or(json!({}));
+        let mut args = params.get("arguments").cloned().unwrap_or(json!({}));
         validate_call(name, &args)?;
+        keep_images_in_result(name, &mut args);
         let mut result = self
             .request(method, json!({"name":name,"arguments":args}))
             .await?;
@@ -249,10 +250,53 @@ pub(super) fn validate_call(name: &str, args: &Value) -> Result<(), String> {
     Ok(())
 }
 
+/// Driver arguments that write an image to a caller-chosen path. The agent
+/// usually picks a path in its working directory, where the image would stay
+/// behind and be recorded as a file the turn changed.
+const IMAGE_FILE_ARGS: &[&str] = &["screenshot_out_file", "debug_image_out"];
+
+/// Screenshots are tool output for the current step only: they return in the
+/// result and are never written to disk.
+fn keep_images_in_result(name: &str, args: &mut Value) {
+    fn strip(value: &mut Value) -> bool {
+        let mut removed = false;
+        match value {
+            Value::Object(object) => {
+                for key in IMAGE_FILE_ARGS {
+                    removed |= object.remove(*key).is_some();
+                }
+                for nested in object.values_mut() {
+                    removed |= strip(nested);
+                }
+            }
+            Value::Array(values) => {
+                for nested in values {
+                    removed |= strip(nested);
+                }
+            }
+            _ => (),
+        }
+        removed
+    }
+    // A file path forces a capture even with include_screenshot:false; keep
+    // asking for the image so the call still returns what the agent wanted.
+    if name == "get_window_state" && strip(args) {
+        args["include_screenshot"] = json!(true);
+    } else if name == "run_steps" && args["observe"].is_object() && strip(&mut args["observe"]) {
+        args["observe"]["include_screenshot"] = json!(true);
+    }
+    strip(args);
+}
+
 fn compact_schema(value: &mut Value) {
     match value {
         Value::Object(object) => {
             object.remove("_meta");
+            if let Some(Value::Object(properties)) = object.get_mut("properties") {
+                for key in IMAGE_FILE_ARGS {
+                    properties.remove(*key);
+                }
+            }
             if let Some(description) = object
                 .get("description")
                 .and_then(Value::as_str)
@@ -316,6 +360,41 @@ mod tests {
         describe_images(&mut malformed_result);
         assert_eq!(malformed_result, json!("invalid tool result"));
     }
+    #[test]
+    fn screenshots_are_returned_and_never_written_to_a_path() {
+        let mut args = json!({"pid":1,"window_id":2,"include_screenshot":false,
+            "screenshot_out_file":"/project/jianying_home.png"});
+        keep_images_in_result("get_window_state", &mut args);
+        assert_eq!(
+            args,
+            json!({"pid":1,"window_id":2,"include_screenshot":true})
+        );
+        let mut args = json!({"screenshot_out_file":"shot.png"});
+        keep_images_in_result("get_desktop_state", &mut args);
+        assert_eq!(args, json!({}));
+        let mut args = json!({"x":1,"y":2,"debug_image_out":"click.png"});
+        keep_images_in_result("click", &mut args);
+        assert_eq!(args, json!({"x":1,"y":2}));
+        let mut args = json!({"steps":[{"click":{"x":1,"debug_image_out":"a.png"}}],
+            "observe":{"screenshot_out_file":"after.png"}});
+        keep_images_in_result("run_steps", &mut args);
+        assert_eq!(
+            args,
+            json!({"steps":[{"click":{"x":1}}],"observe":{"include_screenshot":true}})
+        );
+        // Without a path the agent's own choice is kept.
+        let mut args = json!({"include_screenshot":false});
+        keep_images_in_result("get_window_state", &mut args);
+        assert_eq!(args, json!({"include_screenshot":false}));
+        let mut tool = json!({"name":"get_window_state","inputSchema":{"properties":{
+            "pid":{"type":"integer"},"screenshot_out_file":{"type":"string"}}}});
+        compact_schema(&mut tool);
+        assert_eq!(
+            tool["inputSchema"]["properties"],
+            json!({"pid":{"type":"integer"}})
+        );
+    }
+
     #[test]
     fn batches_are_validated_before_any_native_action() {
         assert!(

@@ -19,6 +19,8 @@ pub mod command_identity;
 pub mod command_invalidation;
 mod commit_summary;
 pub mod context;
+mod conversation_drafts;
+mod exclusive_turns;
 mod execution_admission;
 pub use execution_admission::{AcceptedExecution, ExecutionAdmission};
 pub mod computer_use;
@@ -41,6 +43,7 @@ pub mod task_fork;
 mod text_segments;
 pub mod turn_review;
 pub mod turn_timing;
+mod workspace_occupancy;
 pub use driver_api::failure::user_message as turn_failure_message;
 
 use turn_timing::{TurnStartupTiming, TurnTimingSink};
@@ -299,12 +302,12 @@ pub trait CoreRepository: Send + Sync {
             return Ok(None);
         };
         Ok(Some(TaskExecutionState {
-            task,
             workspace: TaskWorkspace {
                 target_id: project.target_id,
-                path: project.path,
+                path: task.working_directory.clone().unwrap_or(project.path),
                 additional_directories: project.additional_directories,
             },
+            task,
             session_maps: snapshot
                 .session_maps
                 .into_iter()
@@ -547,6 +550,20 @@ struct TurnInput {
     permission_mode: Option<String>,
 }
 
+/// Whether `catalog` offers the selected (or default) model and thinking level.
+fn selection_in_catalog(
+    catalog: &driver_api::ModelCatalog,
+    model: Option<&String>,
+    thinking: Option<&String>,
+) -> bool {
+    model
+        .or(catalog.default_model.as_ref())
+        .and_then(|id| catalog.models.iter().find(|m| &m.id == id))
+        .is_some_and(|selected| {
+            thinking.is_none_or(|id| selected.thinking_options.iter().any(|o| &o.id == id))
+        })
+}
+
 pub struct Core {
     catalogs: Arc<catalog_cache::Catalogs>,
     turn_timing_sink: Option<TurnTimingSink>,
@@ -563,9 +580,12 @@ pub struct Core {
     redactor: Arc<dyn SecretRedactor>,
     workspace_context: Arc<dyn WorkspaceContextProvider>,
     history_query_program: Option<std::path::PathBuf>,
+    /// The scratch folder whose conversations each get their own folder.
+    draft_root: Option<std::path::PathBuf>,
     history_endpoints: tokio::sync::Mutex<BTreeMap<String, Arc<history_bridge::HistoryEndpoint>>>,
     computer_use: computer_use::Host,
     workspace_access: Arc<RwLock<()>>,
+    workspace_occupancy: Arc<workspace_occupancy::WorkspaceOccupancy>,
     drivers: RwLock<BTreeMap<ExecutorRef, Arc<dyn AgentDriver>>>,
     quota_providers: RwLock<BTreeMap<ExecutorRef, Arc<dyn QuotaProvider>>>,
     events: broadcast::Sender<EventEnvelope>,
@@ -576,6 +596,7 @@ pub struct Core {
     target_workspaces: std::sync::RwLock<BTreeMap<TargetId, Arc<dyn WorkspaceContextProvider>>>,
     running_permissions: running_permissions::RunningPermissions,
     session_lanes: session_lanes::SessionLanes,
+    exclusive_turns: exclusive_turns::ExclusiveTurns,
 }
 
 impl Core {
@@ -760,10 +781,12 @@ impl Core {
             auxiliary_activity: Arc::default(),
             owned_controls: Arc::default(),
             workspace_access: Arc::default(),
+            workspace_occupancy: Arc::default(),
             repository,
             redactor,
             workspace_context,
             history_query_program: None,
+            draft_root: None,
             history_endpoints: tokio::sync::Mutex::new(BTreeMap::new()),
             computer_use: computer_use::Host::default(),
             drivers: RwLock::new(BTreeMap::new()),
@@ -775,6 +798,7 @@ impl Core {
             target_workspaces: std::sync::RwLock::new(BTreeMap::new()),
             running_permissions: running_permissions::RunningPermissions::default(),
             session_lanes: session_lanes::SessionLanes::default(),
+            exclusive_turns: exclusive_turns::ExclusiveTurns::default(),
         }
     }
 
@@ -1256,25 +1280,36 @@ impl Core {
                             .await
                             .get(executor)
                             .is_some_and(|driver| driver.runs_on_this_machine());
-                    let catalog = if local_cursor {
-                        // The menu/readiness inventory already came from Cursor.
-                        // Creating a second temporary native session here is
-                        // expensive. The real session still applies and verifies
-                        // the selection before any prompt can be dispatched.
-                        self.cached_model_catalog(
+                    // The model menu is built from the cached inventory, so check
+                    // the selection there first; a native catalog query costs
+                    // seconds for some agents (ZCode, OpenCode) on every send.
+                    // Only a miss asks the agent for its live, project-specific
+                    // catalog. The real session still applies the selection.
+                    let cached = self
+                        .cached_model_catalog(
                             executor,
                             model.map(String::as_str),
                             Some(&command.task_id),
                             false,
                         )
-                        .await?
-                    } else {
-                        self.model_catalog_for_task(
-                            executor,
-                            model.map(String::as_str),
-                            Some(&command.task_id),
-                        )
-                        .await?
+                        .await;
+                    let catalog = match cached {
+                        // Creating a temporary native Cursor session is expensive;
+                        // its menu inventory already came from Cursor.
+                        cached if local_cursor => cached?,
+                        Ok(cached)
+                            if selection_in_catalog(&cached, model, command.thinking.as_ref()) =>
+                        {
+                            cached
+                        }
+                        _ => {
+                            self.model_catalog_for_task(
+                                executor,
+                                model.map(String::as_str),
+                                Some(&command.task_id),
+                            )
+                            .await?
+                        }
                     };
                     let selected = model
                         .or(catalog.default_model.as_ref())
@@ -1982,7 +2017,7 @@ impl Core {
 
         let mut workspace = self
             .workspace_for(project.target_id.as_ref())
-            .collect(&project.path)
+            .collect(&task.directories(project)[0])
             .await;
         if let Some(git) = &workspace.git_snapshot {
             workspace.change_summary.artifact_ref = self
@@ -2208,14 +2243,23 @@ impl Core {
                 "project.updated",
                 json!({"projectId": command.project_id, "displayName": command.display_name.trim(), "path": command.path, "additionalDirectories": command.additional_directories}),
             ),
-            CoreCommand::CreateTask(command) => (
-                StreamRef {
-                    stream_type: StreamType::Task,
-                    stream_id: command.task_id.to_string(),
-                },
-                "task.created",
-                to_value(command)?,
-            ),
+            CoreCommand::CreateTask(command) => {
+                let mut payload = to_value(command)?;
+                if let Some(directory) = self
+                    .new_draft_directory(&command.project_id, &command.task_id)
+                    .await?
+                {
+                    payload["workingDirectory"] = json!(directory);
+                }
+                (
+                    StreamRef {
+                        stream_type: StreamType::Task,
+                        stream_id: command.task_id.to_string(),
+                    },
+                    "task.created",
+                    payload,
+                )
+            }
             CoreCommand::DeleteTask(command) => (
                 StreamRef {
                     stream_type: StreamType::Task,
@@ -2455,7 +2499,7 @@ impl Core {
             .ok_or_else(|| CoreError::NotFound(format!("project {}", task.project_id)))?;
         let captured = self
             .workspace_for(project.target_id.as_ref())
-            .capture_diff(&project.path)
+            .capture_diff(&task.directories(project)[0])
             .await
             .map_err(|diagnostic| {
                 let code = workspace_diagnostic_code(diagnostic.kind);
@@ -3190,6 +3234,9 @@ impl Core {
                 .await,
         };
         change["workspacePaths"] = json!(scope.project_paths);
+        if scope.shared_since(None) {
+            workspace_occupancy::mark_shared(&mut change);
+        }
         self.record_workspace_artifact(
             scope,
             change,
@@ -3258,17 +3305,26 @@ impl Core {
 
     async fn turn_workspace_scope(&self, task_id: &TaskId) -> Option<TurnWorkspaceScope> {
         let state = self.repository.task_execution_state(task_id).await.ok()??;
+        Self::restore_draft_directory(&state.task, state.workspace.target_id.is_none()).await;
         let active = state.task.active_primary_run?;
         let project = state.workspace;
+        let project_paths: Vec<String> = std::iter::once(project.path.clone())
+            .chain(project.additional_directories.clone())
+            .collect();
+        let presence = self.workspace_occupancy.enter(
+            task_id.clone(),
+            project.target_id.clone(),
+            project_paths.clone(),
+        );
+        let start = presence.mark();
         Some(TurnWorkspaceScope {
             workspace: self.workspace_for(project.target_id.as_ref()),
             task_id: task_id.clone(),
             turn_id: active.turn_id,
             run_id: active.run_id,
             executor: active.executor,
-            project_paths: std::iter::once(project.path.clone())
-                .chain(project.additional_directories.clone())
-                .collect(),
+            project_paths,
+            occupancy: Some((Arc::new(presence), start)),
         })
     }
 
@@ -3355,6 +3411,18 @@ impl Core {
             self.running_permissions
                 .track(task_id, &active, permission_mode.as_deref());
         let driver = self.run_driver(&active.run_id, &active.executor)?;
+        // Agents that run one turn at a time queue this turn behind the running one.
+        let Some(_turn_slot) = self
+            .take_turn_slot(task_id, &active, &driver, &control)
+            .await
+        else {
+            terminal_events.push(run_control::interruption(
+                task_id,
+                &active.turn_id,
+                !control.session_attempted(),
+            ));
+            return Ok(());
+        };
         let mut attachments = attachments;
         driver
             .prepare_attachments(&mut attachments)
@@ -3844,6 +3912,7 @@ impl Core {
         let operation_timing = timing.stage("operation_capture_begin");
         // Independent interval snapshots preserve per-operation versions even for shell writes.
         // Parallel/external writes are explicitly attributed to the observed interval.
+        let mut operation_mark = workspace_scope.and_then(TurnWorkspaceScope::operation_mark);
         let mut operation_capture = if let Some(scope) = workspace_scope {
             multi_workspace::begin(scope.workspace.as_ref(), &scope.project_paths)
                 .await
@@ -4222,6 +4291,9 @@ impl Core {
                     changes["operationId"] = json!(id);
                     changes["parentId"] = parent;
                     changes["sessionId"] = session;
+                    if scope.shared_since(operation_mark.as_ref()) {
+                        workspace_occupancy::mark_shared(&mut changes);
+                    }
                     let _ = self
                         .record_workspace_artifact(
                             scope,
@@ -4231,6 +4303,7 @@ impl Core {
                         )
                         .await;
                 }
+                operation_mark = scope.operation_mark();
                 operation_capture =
                     multi_workspace::begin(scope.workspace.as_ref(), &scope.project_paths)
                         .await
@@ -4804,6 +4877,25 @@ struct TurnWorkspaceScope {
     run_id: RunId,
     executor: ExecutorRef,
     project_paths: Vec<String>,
+    /// This turn's claim on its folders, from the turn's start. Recovery of an
+    /// interrupted turn has none and checks the event history instead.
+    occupancy: Option<(
+        Arc<workspace_occupancy::Presence>,
+        workspace_occupancy::Mark,
+    )>,
+}
+
+impl TurnWorkspaceScope {
+    /// Whether another conversation ran in this turn's folders since `mark`.
+    fn shared_since(&self, mark: Option<&workspace_occupancy::Mark>) -> bool {
+        self.occupancy
+            .as_ref()
+            .is_some_and(|(presence, start)| presence.shared_since(mark.unwrap_or(start)))
+    }
+
+    fn operation_mark(&self) -> Option<workspace_occupancy::Mark> {
+        self.occupancy.as_ref().map(|(presence, _)| presence.mark())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -5064,6 +5156,7 @@ mod tests {
             preferred_executor: primary.clone(),
             last_turn_executor: None,
             forked_from: None,
+            working_directory: None,
             updated_at: None,
             stream_version: 1,
             active_primary_run: None,
@@ -5387,6 +5480,7 @@ mod tests {
         *repository.task_override.lock().await = Some(TaskSummary {
             last_turn_executor: None,
             forked_from: None,
+            working_directory: None,
             updated_at: None,
             task_id: task_id.clone(),
             project_id: ProjectId::new(),
@@ -5426,6 +5520,7 @@ mod tests {
         *repository.task_override.lock().await = Some(TaskSummary {
             last_turn_executor: None,
             forked_from: None,
+            working_directory: None,
             updated_at: None,
             task_id: task_id.clone(),
             project_id: ProjectId::new(),
@@ -5482,6 +5577,7 @@ mod tests {
         let mut task = TaskSummary {
             last_turn_executor: None,
             forked_from: None,
+            working_directory: None,
             updated_at: None,
             task_id: task_id.clone(),
             project_id: ProjectId::new(),
@@ -5735,6 +5831,7 @@ mod tests {
                         tasks.push(TaskSummary {
                             last_turn_executor: None,
                             forked_from: None,
+                            working_directory: None,
                             updated_at: None,
                             task_id: command.task_id,
                             project_id: command.project_id,

@@ -357,6 +357,9 @@ struct TurnResult {
 
 struct PendingApproval {
     server_id: Value,
+    /// Earlier native requests for the same permission in this turn. `ZCode`
+    /// asks again while a request stays unanswered; one answer settles them all.
+    repeated: Vec<Value>,
     option_ids: Vec<String>,
     responses: HashMap<String, Value>,
 }
@@ -412,6 +415,43 @@ fn permission_request_event(params: &Value) -> Option<(String, DriverEvent, Vec<
         options: approval_options,
     };
     Some((native_request_id, event, option_ids))
+}
+
+/// Identities of one permission request within a turn: `ZCode`'s own request or
+/// tool call id, and the tool with its exact input.
+fn permission_keys(native_key: &str, event: &DriverEvent) -> Vec<String> {
+    let mut keys = vec![format!("id:{native_key}")];
+    if let DriverEvent::ApprovalRequested {
+        tool_name,
+        command_summary,
+        ..
+    } = event
+    {
+        keys.push(format!("input:{tool_name}\n{command_summary}"));
+    }
+    keys
+}
+
+/// Attaches a repeated native request to the card still open for it in this
+/// turn. Returns false when there is none and a new card is needed.
+fn repeat_open_permission(
+    state: &SessionState,
+    open: &HashMap<String, String>,
+    keys: &[String],
+    server_id: &Value,
+) -> bool {
+    let mut pending = state.pending_approvals.lock().expect("pending approvals");
+    let Some(card) = keys
+        .iter()
+        .filter_map(|key| open.get(key))
+        .find(|card| pending.contains_key(*card))
+    else {
+        return false;
+    };
+    let approval = pending.get_mut(card).expect("open permission card");
+    let previous = std::mem::replace(&mut approval.server_id, server_id.clone());
+    approval.repeated.push(previous);
+    true
 }
 
 /// The runtime preferences the driver reports when the server asks. Only
@@ -638,6 +678,9 @@ impl Connection {
         let control_timeout = self.request_timeout;
         let start_deadline = tokio::time::Instant::now() + control_timeout;
         let mut stop_deadline = None;
+        // Open permission cards of this turn, by the native request identity and
+        // by tool + input, so a repeated native request reuses its card.
+        let mut open_permissions: HashMap<String, String> = HashMap::new();
         let mut stop_id = None;
         let mut cancel_open = true;
         let mut current_turn_started = false;
@@ -712,7 +755,7 @@ impl Connection {
                                 match driver_api::questions::native_form("zcode",&params){
                                     Ok(form)=>{
                                         let request_id=format!("zcode-question-{}",InstallationId::new());
-                                        let pending=PendingApproval {server_id:id.clone(),option_ids:vec![],responses:HashMap::from([("question".into(),params)])};
+                                        let pending=PendingApproval {server_id:id.clone(),repeated:vec![],option_ids:vec![],responses:HashMap::from([("question".into(),params)])};
                                         if !state.publish(handle,request_id.clone(),pending,DriverEvent::QuestionRequested {native_request_id:request_id,form},events) {
                                             self.send(&json!({"id":id,"result":{"action":"cancel"}})).await?;
                                         }
@@ -722,7 +765,7 @@ impl Connection {
                                 continue;
                             }
                             if method == "interaction/requestPermission" {
-                                let Some((_, mut event, option_ids)) =
+                                let Some((native_key, mut event, option_ids)) =
                                     permission_request_event(&params)
                                 else {
                                     self.send(&json!({
@@ -731,10 +774,18 @@ impl Connection {
                                     })).await?;
                                     continue;
                                 };
+                                let keys = permission_keys(&native_key, &event);
+                                if repeat_open_permission(state, &open_permissions, &keys, &id) {
+                                    continue;
+                                }
                                 let native_request_id=format!("zcode-approval-{}",InstallationId::new());
                                 if let DriverEvent::ApprovalRequested {native_request_id:id,..}=&mut event {id.clone_from(&native_request_id);}
+                                for key in keys {
+                                    open_permissions.insert(key, native_request_id.clone());
+                                }
                                 let pending=PendingApproval {
                                     server_id:id.clone(),
+                                    repeated:vec![],
                                     responses:params["options"].as_array().into_iter().flatten().filter_map(|option|Some((option["optionId"].as_str()?.into(),option.get("response")?.clone()))).collect(),
                                     option_ids,
                                 };
@@ -1712,20 +1763,28 @@ impl AgentDriver for ZcodeDriver {
         let response = pending.responses.get(option_id).cloned().ok_or_else(|| {
             DriverError::Protocol("ZCode approval option omitted its native response".into())
         })?;
-        let decision = InteractionDecision {
-            server_id: pending.server_id,
-            response,
-        };
-        let result = state
+        let sender = state
             .interaction_tx
             .lock()
             .expect("interaction sender")
-            .as_ref()
+            .clone()
             .ok_or_else(|| {
                 DriverError::CapabilityUnavailable("this zcode turn is no longer active".into())
-            })?
-            .send(decision)
-            .map_err(|_| DriverError::Disconnected("zcode interaction channel is closed".into()));
+            })?;
+        // Answer every native request for this card, the latest last.
+        let result = pending
+            .repeated
+            .into_iter()
+            .chain(std::iter::once(pending.server_id))
+            .try_for_each(|server_id| {
+                sender
+                    .send(InteractionDecision {
+                        server_id,
+                        response: response.clone(),
+                    })
+                    .map_err(drop)
+            })
+            .map_err(|()| DriverError::Disconnected("zcode interaction channel is closed".into()));
         if result.is_err() {
             // The native request can no longer be answered, so retaining it
             // would create a misleading retry surface.
@@ -2230,6 +2289,7 @@ mod tests {
                 "request-1".into(),
                 PendingApproval {
                     server_id: json!(42),
+                    repeated: vec![json!(41)],
                     option_ids: vec!["allow_once".into(), "deny".into()],
                     responses: HashMap::from([
                         ("allow_once".into(), json!({"decision":"allow"})),
@@ -2258,9 +2318,12 @@ mod tests {
             .respond_to_interaction(&handle, "request-1", "allow_once")
             .await
             .unwrap();
-        let decision = interaction_rx.recv().await.unwrap();
-        assert_eq!(decision.server_id, json!(42));
-        assert_eq!(decision.response, json!({"decision":"allow"}));
+        // A repeated native request is answered too, the latest one last.
+        for server_id in [json!(41), json!(42)] {
+            let decision = interaction_rx.recv().await.unwrap();
+            assert_eq!(decision.server_id, server_id);
+            assert_eq!(decision.response, json!({"decision":"allow"}));
+        }
     }
 
     #[test]

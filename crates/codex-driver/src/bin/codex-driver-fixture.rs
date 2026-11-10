@@ -206,19 +206,27 @@ fn main() {
                     id,
                     json!({ "turn": { "id": "fixture-turn", "status": "inProgress" } }),
                 );
-                emit(
-                    &mut stdout,
-                    json!({
-                        "id": "approval-1",
-                        "method": "item/commandExecution/requestApproval",
-                        "params": { "command": "must not escape" }
-                    }),
-                );
-                let approval = lines.next().and_then(Result::ok).unwrap_or_default();
-                let declined = serde_json::from_str::<Value>(&approval)
-                    .ok()
-                    .and_then(|value| value.pointer("/result/decision").cloned())
-                    == Some(json!("decline"));
+                // Codex may ask again while the first request is unanswered:
+                // the driver must show one card and answer both requests.
+                for approval_id in ["approval-1", "approval-1-repeat"] {
+                    emit(
+                        &mut stdout,
+                        json!({
+                            "id": approval_id,
+                            "method": "item/commandExecution/requestApproval",
+                            "params": { "itemId": "command-1", "command": "must not escape" }
+                        }),
+                    );
+                }
+                let mut answered = vec![];
+                for _ in 0..2 {
+                    let reply = lines.next().and_then(Result::ok).unwrap_or_default();
+                    let reply = serde_json::from_str::<Value>(&reply).unwrap_or_default();
+                    if reply.pointer("/result/decision") == Some(&json!("decline")) {
+                        answered.push(reply["id"].clone());
+                    }
+                }
+                let declined = answered == [json!("approval-1"), json!("approval-1-repeat")];
                 emit(
                     &mut stdout,
                     json!({

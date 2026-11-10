@@ -53,6 +53,12 @@ describe("backend text localization", () => {
     }
   });
 
+  it("names the agent in the one-task-at-a-time queue notice", () => {
+    const zh = "Antigravity同一时间只能执行一个任务，之前的任务执行完成后会开始执行此任务";
+    expect(localizeBackendText(zh, "en")).toBe("Antigravity can only run one task at a time. This task will start automatically when the previous one finishes.");
+    expect(displayBackendText(zh, "zh-CN")).toBe(zh);
+  });
+
   it("translates parameterized and agent-error-wrapped messages", () => {
     expect(localizeBackendText("Coding Agent 额度已用尽；预计于 2026-01-02 03:04 UTC 重置，也可以切换 Agent。", "en")).toContain("2026-01-02 03:04 UTC");
     const wrapped = localizeBackendText("Agent 请求暂时受限，请稍后重试。\n\nAgent 返回的错误：\n429 too many", "en");

@@ -512,6 +512,65 @@ async fn embedded_reasoning_selection_does_not_use_a_disabled_thought_level_api(
     stop(driver).await;
 }
 
+/// `ZCode` asks again while a permission stays unanswered. The repeat must not
+/// add a second card, and the one answer must settle every native request.
+#[tokio::test]
+async fn a_repeated_permission_request_in_one_turn_shows_one_card() {
+    let (root, launch) = fixture("normal");
+    edit(&launch, |s| {
+        s.replace("sessions={};next_session=0;close_count=0","sessions={};next_session=0;close_count=0;pending=None;answered=set()")
+        .replace(" if method=='session/list':",r" if method is None:
+  answered.add(r.get('id'))
+  if pending and answered>={'repeat-1','repeat-2'}:
+   out({'method':'turn.completed','params':{'sessionId':pending,'resultType':'success'}});pending=None
+  continue
+ if method=='session/list':")
+        .replace("  if r['params']['content']!='slow':",r"  if r['params']['content']=='repeat':
+   pending=id
+   for server in ['repeat-1','repeat-2']:
+    out({'id':server,'method':'interaction/requestPermission','params':{'sessionId':id,'requestId':'perm-1','toolName':'bash','input':'mdfind jianying','options':[{'kind':'allow_once','name':'Allow once','optionId':'allow_once','response':{'decision':'allow'}}]}})
+  if r['params']['content'] not in ['slow','repeat']:")
+    });
+    let driver = driver(launch);
+    let handle = session(&driver, root.path()).await;
+    let mut stream = driver
+        .prompt(&handle, prompt(root.path(), "repeat"))
+        .await
+        .unwrap();
+    let card = tokio::time::timeout(Duration::from_secs(4), async {
+        while let Some(event) = stream.next().await {
+            if let Ok(DriverEvent::ApprovalRequested {
+                native_request_id, ..
+            }) = event
+            {
+                return native_request_id;
+            }
+        }
+        panic!("approval stream ended");
+    })
+    .await
+    .unwrap();
+    // Let the driver read the repeated request before the user answers.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    driver
+        .respond_to_interaction(&handle, &card, "allow_once")
+        .await
+        .unwrap();
+    let rest = events(stream).await;
+    assert!(
+        !rest
+            .iter()
+            .any(|e| matches!(e, Ok(DriverEvent::ApprovalRequested { .. }))),
+        "the repeated request opened a second card"
+    );
+    assert!(
+        rest.iter()
+            .any(|e| matches!(e, Ok(DriverEvent::TurnCompleted { .. })))
+    );
+    driver.shutdown(handle).await.unwrap();
+    stop(driver).await;
+}
+
 #[tokio::test]
 async fn repeated_native_permission_ids_cannot_reuse_an_old_ui_answer_in_the_same_handle() {
     let (root, launch) = fixture("normal");

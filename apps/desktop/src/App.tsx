@@ -56,6 +56,7 @@ import { AttachmentPreviews, SentAttachments, useAttachments } from "./attachmen
 import { useModelReadyExecutors } from "./useModelReadyExecutors";
 import { ModelCatalogCache } from "./modelCatalogCache";
 import { useModelCatalog } from "./useModelCatalog";
+import { initialModelChoice, rememberModel } from "./modelPreferences";
 import { useCatalogWarmup } from "./useCatalogWarmup";
 import { PermissionPicker } from "./PermissionPicker";
 import { ModelPicker } from "./ModelPicker";
@@ -162,7 +163,7 @@ const TimelineEntry = memo(function TimelineEntry({ item, active = false }: { it
   if (role === "assistant") {
     return (
       <article className="message assistant-message" aria-label={`${providerLabel(item.providerId ?? "dogcodes")} · ${time}`}>
-        {item.text ? <StreamingMarkdownMessage text={item.text} streaming={active} /> : <span className="typing">{t("app.generating")}</span>}
+        {item.text ? <StreamingMarkdownMessage text={item.text} streaming={active} taskId={item.taskId} /> : <span className="typing">{t("app.generating")}</span>}
       </article>
     );
   }
@@ -947,10 +948,13 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const modelSelectionBlocked = !!client.availableModels && selectedTask?.preferredExecutor.providerId !== "fake"
     && (modelLoading || (!!modelError && !modelCatalog.hasCatalog) || !activeModel);
   useEffect(() => {
-    const first = nativeModels.models[0];
-    if (activeModel || !first || selectedTask?.preferredExecutor.providerId === "fake") return;
+    const providerId = selectedTask?.preferredExecutor.providerId;
+    if (activeModel || !providerId || providerId === "fake") return;
+    // Seeds only conversations without a saved model: the Agent's last pick when still offered, else the first model.
+    const initial = initialModelChoice(providerId, nativeModels.models);
+    if (!initial) return;
     setNewSessionModel(current => current?.key === modelSelectionKey && current.model ? current
-      : { key: modelSelectionKey, model: first.id, thinking: first.defaultThinking ?? null });
+      : { key: modelSelectionKey, ...initial });
   }, [activeModel, modelSelectionKey, nativeModels.models, selectedTask?.preferredExecutor.providerId]);
   useEffect(() => { refreshModelCatalog.current = modelCatalog.refresh; }, [modelCatalog.refresh]);
   const permissionKey = selectedTask ? `${selectedTask.taskId}:${selectedTask.preferredExecutor.providerId}:${selectedTask.preferredExecutor.installationId}` : "";
@@ -959,7 +963,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const modelPicker = selectedTask && selectedTask.preferredExecutor.providerId !== "fake" ? <ModelPicker key={modelSelectionKey}
     catalog={nativeModels} model={activeModel} thinking={activeThinking} loading={modelLoading} refreshing={modelCatalog.refreshing} error={modelError}
     disabled={sending}
-    onChange={(model, thinking) => setNewSessionModel({ key: modelSelectionKey, model, thinking })}
+    onChange={(model, thinking) => { rememberModel(selectedTask.preferredExecutor.providerId, model, thinking); setNewSessionModel({ key: modelSelectionKey, model, thinking }); }}
     onRetry={modelCatalog.refresh} onOpen={modelCatalog.check} refreshDisabled={!!selectedTask.activePrimaryRun} /> : null;
 
   const selectedQuota = useMemo(() => {
@@ -1298,7 +1302,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         </header>
         <nav className="primary-nav" aria-label={t("nav.mainNav", undefined, resolvedLang)}>
           <button ref={newConversationButton} aria-keyshortcuts={`${shortcutKey}+N`} className="primary-action" type="button" disabled={sending || creatingTask || snapshot.projects.length === 0} onClick={() => void createConversation()}>
-            <SidebarNavIcon kind="conversation" /><b>{creatingTask ? t("nav.creating", undefined, resolvedLang) : t("nav.newConversation", undefined, resolvedLang)}</b><kbd>{shortcutLabel("N")}</kbd>
+            <SidebarNavIcon kind="conversation" /><b>{t("nav.newConversation", undefined, resolvedLang)}</b><kbd>{shortcutLabel("N")}</kbd>
           </button>
           <button ref={quotaButton} aria-keyshortcuts={`${shortcutKey}+U`} className={activeView === "quota" ? "active" : ""} type="button" onClick={() => setActiveView("quota")}><SidebarNavIcon kind="quota" /><b>{t("nav.agentManagement", undefined, resolvedLang)}</b><kbd>{shortcutLabel("U")}</kbd></button>
           <button className={activeView === "remote" ? "active" : ""} type="button" aria-current={activeView === "remote" ? "page" : undefined} onClick={() => setActiveView("remote")}><SidebarNavIcon kind="phone" /><b>{t("remoteDevices.title", undefined, resolvedLang)}</b></button>

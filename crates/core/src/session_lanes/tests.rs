@@ -39,7 +39,7 @@ impl AgentDriver for Shared {
     fn driver_version(&self) -> &'static str {
         "test"
     }
-    fn independent_session_driver(&self) -> Result<Option<Arc<dyn AgentDriver>>, DriverError> {
+    fn conversation_lane_driver(&self) -> Result<Option<Arc<dyn AgentDriver>>, DriverError> {
         if !self.isolates {
             return Ok(None);
         }

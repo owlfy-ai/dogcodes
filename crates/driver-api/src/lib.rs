@@ -452,6 +452,19 @@ pub trait AgentDriver: Send + Sync {
     ) -> Result<Option<std::sync::Arc<dyn AgentDriver>>, DriverError> {
         Ok(None)
     }
+    /// True when the agent can run only one turn at a time across all of its
+    /// conversations. Core then queues later turns until the running one ends.
+    fn runs_one_turn_at_a_time(&self) -> bool {
+        false
+    }
+    /// An adapter for one more concurrent conversation, kept for its later turns.
+    /// Drivers whose native processes must never overlap return `None` and run
+    /// every conversation on the registry driver.
+    fn conversation_lane_driver(
+        &self,
+    ) -> Result<Option<std::sync::Arc<dyn AgentDriver>>, DriverError> {
+        self.independent_session_driver()
+    }
     /// Session-scoped usage of an adapter returned by `independent_session_driver`.
     /// Its native sessions are unknown to the registry driver's quota provider.
     fn session_usage_provider(

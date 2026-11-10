@@ -8,7 +8,9 @@ import type { ArtifactMetadata, TaskId } from "@dogcodes/protocol";
 import { translate as t } from "./i18n";
 import { displayBackendText } from "./backendText";
 
-export function TurnUndoAction({ taskId, metadata, count }: { taskId: TaskId; metadata: ArtifactMetadata; count: number }) {
+/** `available` is false for a capture that cannot be restored as a whole;
+ * the button then only appears to finish an earlier attempt or show it done. */
+export function TurnUndoAction({ taskId, metadata, count, available = true }: { taskId: TaskId; metadata: ArtifactMetadata; count: number; available?: boolean }) {
   const [undone, setUndone] = useState(false), [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [statusError, setStatusError] = useState("");
@@ -41,6 +43,7 @@ export function TurnUndoAction({ taskId, metadata, count }: { taskId: TaskId; me
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { guard.current = false; setBusy(false); }
   }
+  if (!available && !pending && !undone) return null;
   return <>
     <button ref={trigger} className="turn-summary-undo" type="button" disabled={(!pending && undone) || busy}
       aria-label={t(pending ? "undo.verifyLabel" : undone ? "undo.undoneLabel" : "undo.label")}

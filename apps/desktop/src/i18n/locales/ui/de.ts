@@ -1734,6 +1734,7 @@ export const uiDe: UiMessages = {
     loadFailed: "Die Änderungen dieses Durchgangs konnten nicht geladen werden",
     partialStats: "Die Änderungszahlen umfassen nur den geparsten Teil des Diffs.",
     recovered: "Wiederherstellungs-Snapshot nach Verbindungsverlust · Zeigt nur die Dateiänderungen zum Prüfzeitpunkt; externe Tools schreiben möglicherweise noch",
+    shared: "Zur gleichen Zeit liefen weitere Unterhaltungen in diesem Ordner · Diese Änderungen können von ihnen stammen und lassen sich daher nicht als ganze Runde rückgängig machen",
   },
   turnProcess: {
     worked: "Gearbeitet",
@@ -2034,6 +2035,7 @@ export const uiDe: UiMessages = {
     failureWithAgentError: "Der Agent konnte die Anfrage nicht abschließen und meldete folgenden Fehler:\n{detail}",
     failureAgentErrorSuffix: "{message}\n\nVom Agent gemeldeter Fehler:\n{detail}",
     connectionInterrupted: "Die Verbindung des letzten Laufs wurde unterbrochen. Senden Sie eine Nachricht, um fortzufahren; der Agent prüft das aktuelle Ergebnis anhand des vorhandenen Verlaufs.",
+    agentRunsOneTaskAtATime: "{agent} kann nur eine Aufgabe gleichzeitig ausführen. Diese Aufgabe startet automatisch, sobald die vorherige abgeschlossen ist.",
     quotaExhausted: "Das Kontingent des Coding-Agents ist aufgebraucht. Auf die Zurücksetzung warten oder den Agent wechseln.",
     quotaExhaustedReset: "Das Kontingent des Coding-Agents ist aufgebraucht. Es wird voraussichtlich um {time} zurückgesetzt; alternativ den Agent wechseln.",
     attachmentsTooMany: "Pro Sendung sind höchstens 16 Anhänge möglich.",

@@ -1734,6 +1734,7 @@ export const uiEs: UiMessages = {
     loadFailed: "No se pudieron cargar los cambios de este turno",
     partialStats: "Los recuentos de cambios solo incluyen la parte analizada del diff.",
     recovered: "Instantánea de recuperación tras perder la conexión · Solo refleja los cambios de archivos en el momento de la comprobación; las herramientas externas aún pueden estar escribiendo",
+    shared: "Otras conversaciones se ejecutaban en esta carpeta al mismo tiempo · Estos cambios pueden incluir los suyos, así que no se pueden deshacer como un solo turno",
   },
   turnProcess: {
     worked: "Trabajó",
@@ -2034,6 +2035,7 @@ export const uiEs: UiMessages = {
     failureWithAgentError: "El agente no pudo completar esta solicitud y devolvió este error:\n{detail}",
     failureAgentErrorSuffix: "{message}\n\nError devuelto por el agente:\n{detail}",
     connectionInterrupted: "Se interrumpió la conexión de la ejecución anterior. Envía un mensaje para continuar; el agente comprobará el resultado actual con el historial existente.",
+    agentRunsOneTaskAtATime: "{agent} solo puede ejecutar una tarea a la vez. Esta tarea empezará automáticamente cuando termine la anterior.",
     quotaExhausted: "La cuota del agente de programación se agotó. Espera a que se restablezca o cambia de agente.",
     quotaExhaustedReset: "La cuota del agente de programación se agotó. Se restablecerá aproximadamente a las {time}, o puedes cambiar de agente.",
     attachmentsTooMany: "Puedes enviar como máximo 16 adjuntos a la vez.",

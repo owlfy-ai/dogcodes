@@ -41,7 +41,7 @@ pub(super) fn execution_state(
                         .get::<_, Option<String>>(2)?
                         .map(super::parse_id)
                         .transpose()?,
-                    path: row.get(0)?,
+                    path: task.working_directory.clone().map_or_else(|| row.get(0), Ok)?,
                     additional_directories: serde_json::from_str(&row.get::<_, String>(1)?)
                         .map_err(sql_json_error)?,
                 })

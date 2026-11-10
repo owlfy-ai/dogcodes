@@ -135,6 +135,7 @@ async fn cancellation_and_approval_use_original_runtime_handles_not_database_rec
     *repository.task_override.lock().await = Some(agent_protocol::TaskSummary {
         last_turn_executor: None,
         forked_from: None,
+        working_directory: None,
         updated_at: None,
         task_id: task.clone(),
         project_id: ProjectId::new(),

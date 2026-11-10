@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
-import { MarkdownMessage } from "./MarkdownMessage";
+import { MarkdownMessage, localLinkPath } from "./MarkdownMessage";
 import {
   ActivityRow,
   SubagentPanel,
@@ -20,7 +20,9 @@ vi.mock("mermaid", () => ({
   },
 }));
 vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => true,
   invoke: vi.fn(async (command: string) => {
+    if (command === "core_open_workspace_file") return null;
     if (command === "core_workspace_file_applications") {
       return { absolutePath: "/project/src/example.ts", applications: [], error: null };
     }
@@ -90,6 +92,33 @@ it("preserves code dollars and currency while normalizing TeX delimiters", () =>
   );
   expect(mathSyntax("\\[x^2\\]")).toBe("$$x^2$$");
   expect(mathSyntax("```tex\n\\(x\\)\n```")).toBe("```tex\n\\(x\\)\n```");
+});
+it("renders local file links whose paths contain spaces", async () => {
+  const path = "/Users/me/Library/Application Support/app/3.txt";
+  await act(async () =>
+    root.render(<MarkdownMessage text={`已创建：[3.txt](${path})。`} />),
+  );
+  const link = container.querySelector("a");
+  expect(link?.textContent).toBe("3.txt");
+  expect(decodeURI(link?.getAttribute("href") ?? "")).toBe(path);
+  expect(mathSyntax("`[a](/x y)` [b](see also)")).toBe("`[a](/x y)` [b](see also)");
+  expect(mathSyntax('[a](/x "t")')).toBe('[a](/x "t")');
+});
+it("opens local file links from the task workspace", async () => {
+  const { invoke } = await import("@tauri-apps/api/core");
+  const path = "/Users/me/Library/Application Support/app/3.txt";
+  await act(async () =>
+    root.render(<MarkdownMessage taskId="tsk_1" text={`[3.txt](${path}) [web](https://example.com)`} />),
+  );
+  const [local] = container.querySelectorAll("a");
+  const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+  await act(async () => { local.dispatchEvent(click); });
+  expect(click.defaultPrevented).toBe(true);
+  expect(invoke).toHaveBeenCalledWith("core_open_workspace_file", { taskId: "tsk_1", path });
+  expect(localLinkPath("file:///C:/a%20b.txt")).toBe("C:/a b.txt");
+  expect(localLinkPath("./src/a.ts#L3")).toBe("./src/a.ts");
+  expect(localLinkPath("https://example.com/a")).toBeNull();
+  expect(localLinkPath("#section")).toBeNull();
 });
 it("routes explicit child records to the correct parent and turn", () => {
   const parent = item("task1", { type: "subagent", childId: "child1" });

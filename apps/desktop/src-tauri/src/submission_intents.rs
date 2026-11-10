@@ -715,6 +715,7 @@ async fn freeze(
             active_primary_run: None,
             stream_version: 0,
             forked_from: None,
+            working_directory: None,
         });
     let intent = SubmissionIntent {
         actor: (actor != agent_protocol::ActorRef::LocalUser).then_some(actor),
@@ -936,6 +937,7 @@ mod tests {
                 active_primary_run: None,
                 stream_version: 0,
                 forked_from: None,
+                working_directory: None,
             },
             input: SubmissionInput {
                 prompt: "private original message".into(),

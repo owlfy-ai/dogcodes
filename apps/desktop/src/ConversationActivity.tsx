@@ -255,7 +255,7 @@ export function ActivityRow({
   if (a.type === "message")
     return (
       <article className="message assistant-message">
-        <StreamingMarkdownMessage text={a.text ?? ""} streaming={active} />
+        <StreamingMarkdownMessage text={a.text ?? ""} streaming={active} taskId={item.taskId} />
       </article>
     );
   if (isSubagent(a))

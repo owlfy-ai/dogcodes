@@ -14,6 +14,7 @@ import type {
 } from "@dogcodes/protocol";
 import "./turnSummary.css";
 import { translate as t } from "./i18n";
+import { turnHasGitRoot, turnSharedWithOthers, turnUndoAvailable } from "./turnFileActions";
 
 export function TurnFiles({
   taskId,
@@ -60,8 +61,11 @@ export function TurnFiles({
   // temporary row that disappears when the saved change list is empty.
   if (!data) return null;
   if (!data.files.length) return null;
+  const recovered = data.attribution === "workspace_recovery_interval" || data.recoveredAfterInterruption;
+  const shared = turnSharedWithOthers(data);
   if (operation) return <>
-    {(data.attribution === "workspace_recovery_interval" || data.recoveredAfterInterruption) && <p className="subagent-notice">{t("turnFiles.recovered")}</p>}
+    {recovered && <p className="subagent-notice">{t("turnFiles.recovered")}</p>}
+    {shared && <p className="subagent-notice">{t("turnFiles.shared")}</p>}
     {data.files.map(f => <InlineFileEdit key={f.path} path={f.path}
       file={diff?.files.find(d => (d.newPath || d.oldPath) === f.path)} truncated={diff?.truncated}
       menu={() => messageFileMenu({ taskId, path: f.path, remote, deleted: f.status === "D" })}
@@ -76,11 +80,12 @@ export function TurnFiles({
         <svg className="turn-summary-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m6 4 4 4-4 4" /></svg>
         <strong>{t("turnFiles.changed", { count: data.files.length })}</strong>
         {diff && <span className="turn-summary-counts"><span className="additions">+{diff.additions}</span><span className="deletions">−{diff.deletions}</span></span>}
-        <TurnCommitAction key={`commit-${key}`} taskId={taskId} data={data} providerId={providerId} />
-        <TurnUndoAction key={key} taskId={taskId} metadata={metadata} count={data.files.length} />
+        {turnHasGitRoot(data) && <TurnCommitAction key={`commit-${key}`} taskId={taskId} data={data} providerId={providerId} />}
+        <TurnUndoAction key={key} taskId={taskId} metadata={metadata} count={data.files.length} available={turnUndoAvailable(data)} />
       </summary>
       <div className="turn-summary-list">
-        {(data.attribution === "workspace_recovery_interval" || data.recoveredAfterInterruption) && <p className="turn-summary-notice">{t("turnFiles.recovered")}</p>}
+        {recovered && <p className="turn-summary-notice">{t("turnFiles.recovered")}</p>}
+        {shared && <p className="turn-summary-notice">{t("turnFiles.shared")}</p>}
         {data.files.map(f => {
           const change = diff?.files.find(d => (d.newPath || d.oldPath) === f.path);
           const separator = Math.max(f.path.lastIndexOf("/"), f.path.lastIndexOf("\\"));

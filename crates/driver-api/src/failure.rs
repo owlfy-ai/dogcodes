@@ -117,6 +117,9 @@ pub fn classify(message: &str) -> Option<&'static str> {
         "eligibility check failed",
         "access denied",
         "access_denied",
+        // OpenCode Go: the account's data region excludes the selected model.
+        "is hosted outside europe and the united states",
+        "settings/privacy#regions",
     ]) {
         Some("access_denied")
     } else if has(&[
@@ -362,6 +365,13 @@ mod tests {
             assert!(reported_transport_error(&quoted).is_none());
         }
         assert!(reported_transport_error("Error: invalid test fixture").is_none());
+    }
+
+    #[test]
+    fn a_model_outside_the_account_region_is_an_access_failure() {
+        let error = "AI.Error: This Go model is hosted outside Europe and the United States. \
+            Select Global at https://opencode.ai/console/org_x/settings/privacy#regions to use it.";
+        assert_eq!(classify(error), Some("access_denied"));
     }
 
     #[test]

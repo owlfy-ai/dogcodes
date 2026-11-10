@@ -1236,7 +1236,8 @@ pub fn run() {
                                 .with_review_directory(app_data.join("review")),
                         ),
                     )
-                    .with_history_query_program(std::env::current_exe()?),
+                    .with_history_query_program(std::env::current_exe()?)
+                    .with_conversation_drafts(scratch_path.clone()),
                 );
                 if tauri::async_runtime::block_on(core.recover_interrupted_turns()).is_err() {
                     app.manage(StartupFailure(Some(

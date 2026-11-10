@@ -8,6 +8,12 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// A file marking a folder that holds other conversations' own folders (the
+/// scratch folder's `drafts`). Captures of an enclosing folder leave it out, so
+/// a conversation still working in the scratch folder itself is never credited
+/// with their files.
+pub const CONVERSATION_FOLDERS_MARKER: &str = ".dogcodes-conversations";
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WorkspaceContextSnapshot {
     pub relevant_files: Vec<RelevantFile>,

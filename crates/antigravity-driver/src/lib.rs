@@ -58,9 +58,11 @@ const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 /// keyring) and every process refreshes it on startup. Concurrent spawns race
 /// on that single file and a refresh interrupted mid-write leaves the CLI
 /// "not authenticated", whose silent fallback then adopts whatever account the
-/// keyring holds — an account switch with no prompt. All agy process spawns
-/// are therefore serialized process-wide, and probes back off after auth
-/// failures instead of hammering the chain again.
+/// keyring holds — an account switch with no prompt (2026-09 incident). agy
+/// 1.5.3 authenticates from the keychain instead, and six simultaneous token
+/// refreshes kept one valid account (2026-11-09). Session processes therefore
+/// start and run in parallel; short helpers stay serialized with each other.
+/// Probes back off after auth failures instead of hammering the chain.
 ///
 /// That shared state belongs to a machine, so each machine has its own of both.
 struct Account {
@@ -120,9 +122,9 @@ async fn acquire_spawn_slot(lock: &SpawnLock) -> tokio::sync::OwnedMutexGuard<()
     lock.clone().lock_owned().await
 }
 
-/// Waives the spawn guard for the duration of a process's *whole* lifetime:
-/// the guard must stay held until the child has exited, because the auth
-/// refresh happens at startup and a raced write can outlive the spawn call.
+/// Holds the spawn guard for a short agy helper (readiness probe, hook check,
+/// model catalog, quota) until that process has exited. Session processes do
+/// not take it: they run in parallel (see `Account`).
 struct SpawnSlot {
     _guard: tokio::sync::OwnedMutexGuard<()>,
 }
@@ -871,7 +873,6 @@ fn spawn_workspace(
 async fn run_session(
     mut child: Child,
     process: Arc<SessionProcess>,
-    slot: SpawnSlot,
     mut closing: tokio::sync::watch::Receiver<bool>,
     completed: tokio::sync::watch::Sender<Option<Result<(), String>>>,
 ) {
@@ -955,7 +956,6 @@ async fn run_session(
     }
     process.pending_approvals.lock().expect("approvals").clear();
     process.pending_questions.lock().expect("questions").clear();
-    drop(slot);
     process.finished.store(true, Ordering::Release);
     completed.send_replace(Some(Ok(())));
 }
@@ -1821,6 +1821,69 @@ done
         .unwrap();
         driver.spawn = lock;
         driver
+    }
+
+    /// Conversations run in parallel: session processes never hold the slot
+    /// that serializes short agy helpers.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_live_session_does_not_keep_other_conversations_from_starting() {
+        let directory = tempfile::tempdir().unwrap();
+        let executable = write_fake_agy(directory.path());
+        let lock = SpawnLock::default();
+        let request = || SessionRequest {
+            app_mcps: vec![],
+            permission_mode: Some("dangerously-skip-permissions".into()),
+            additional_directories: vec![],
+            working_directory: "/tmp".into(),
+        };
+        let prompt = || HubPromptRequest {
+            attachments: vec![],
+            permission_mode: Some("dangerously-skip-permissions".into()),
+            additional_directories: vec![],
+            prompt: "hello".into(),
+            working_directory: "/tmp".into(),
+            context: vec![],
+        };
+        let first = test_driver_with(executable.clone(), lock.clone());
+        let session = first.create_session(request()).await.unwrap();
+        // Before the first process has produced any output, the slot is free.
+        assert!(lock.clone().try_lock_owned().is_ok());
+        let events: Vec<_> = first
+            .prompt(&session, prompt())
+            .await
+            .unwrap()
+            .collect()
+            .await;
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Ok(DriverEvent::TurnCompleted { .. })))
+        );
+        // The first agy process is still alive and idle, yet the slot is free.
+        assert!(!first.processes.lock().await.is_empty());
+        assert!(lock.clone().try_lock_owned().is_ok());
+        let second = test_driver_with(executable, lock);
+        let other = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            second.create_session(request()),
+        )
+        .await
+        .expect("second conversation waited for the first process to exit")
+        .unwrap();
+        let events: Vec<_> = second
+            .prompt(&other, prompt())
+            .await
+            .unwrap()
+            .collect()
+            .await;
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Ok(DriverEvent::TurnCompleted { .. })))
+        );
+        first.shutdown(session).await.unwrap();
+        second.shutdown(other).await.unwrap();
     }
 
     #[cfg(unix)]

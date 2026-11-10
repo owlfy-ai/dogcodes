@@ -2,9 +2,10 @@
 //! native process (ACP, `ZCode`, Antigravity). Such a process runs one turn at a
 //! time, so concurrent conversations must not share it. The first conversation
 //! keeps the warm registry driver; every other conversation gets its own adapter
-//! from `independent_session_driver`, kept for later turns so its live native
-//! session is reused. Drivers that already isolate sessions return no adapter
-//! and keep using the registry driver directly.
+//! from `conversation_lane_driver`, kept for later turns so its live native
+//! session is reused. Drivers that already isolate sessions, or whose native
+//! processes must never overlap, return no adapter and keep using the registry
+//! driver directly.
 use crate::{AgentDriver, Core, CoreError, ExecutorRef, QuotaProvider, TaskId};
 use async_trait::async_trait;
 use driver_api::{DriverError, QuotaSnapshot, usage::SessionUsageSnapshot};
@@ -101,7 +102,7 @@ impl SessionLanes {
             agent.base_owner = Some(task.clone());
             return Ok(shared);
         }
-        let Some(driver) = base.independent_session_driver()? else {
+        let Some(driver) = base.conversation_lane_driver()? else {
             // Multi-session driver: every conversation may share it.
             return Ok(shared);
         };

@@ -120,6 +120,9 @@ impl AntigravityDriver {
         let slot = enter_spawn_slot(&self.spawn).await?;
         let (bridge, slot) =
             approval_bridge::Bridge::prepare(&self.executable, &workspace, slot).await?;
+        // The hook check above is a short helper and stays serialized with the
+        // others; the long-lived session process runs in parallel (see `Account`).
+        drop(slot);
         let usage_log = Scratch::create(&self.executable.target, "dogcodes-agy-usage-")
             .await
             .ok();
@@ -186,14 +189,8 @@ impl AntigravityDriver {
             .lock()
             .expect("background tasks")
             .push(bridge);
-        // Move child AND the auth slot before the first post-spawn await.
-        tokio::spawn(run_session(
-            child,
-            process.clone(),
-            slot,
-            close_rx,
-            completed,
-        ));
+        // Move the child before the first post-spawn await.
+        tokio::spawn(run_session(child, process.clone(), close_rx, completed));
         let mut map = self.processes.lock().await;
         if map.contains_key(&key) {
             drop(map);

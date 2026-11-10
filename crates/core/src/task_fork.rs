@@ -685,15 +685,20 @@ impl Core {
             stream_type: StreamType::Task,
             stream_id: request.new_task_id.to_string(),
         };
-        let created = NewEvent::hub(
-            stream.clone(),
-            "task.created",
-            json!({
-                "taskId":request.new_task_id,"projectId":project_id,
-                "title":format!("{} · Fork", plan.source.title.chars().take(110).collect::<String>()),
-                "preferredExecutor":plan.source.preferred_executor
-            }),
-        );
+        let mut created = json!({
+            "taskId":request.new_task_id,"projectId":project_id,
+            "title":format!("{} · Fork", plan.source.title.chars().take(110).collect::<String>()),
+            "preferredExecutor":plan.source.preferred_executor
+        });
+        // A fork without a project gets its own folder too; it starts empty,
+        // like any fork of a folder outside Git, with the copied conversation.
+        if let Some(directory) = self
+            .new_draft_directory(&project_id, &request.new_task_id)
+            .await?
+        {
+            created["workingDirectory"] = json!(directory);
+        }
+        let created = NewEvent::hub(stream.clone(), "task.created", created);
         let forked = NewEvent::hub(
             stream,
             "task.forked",

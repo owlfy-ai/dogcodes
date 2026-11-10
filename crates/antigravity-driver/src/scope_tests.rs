@@ -173,7 +173,8 @@ async fn busy_reconfiguration_does_not_close_the_current_scope() {
     ));
     assert!(!*process.closing.borrow());
     assert!(process.handle().same_scope(&handle));
-    assert!(driver.spawn.try_lock().is_err());
+    // A running session does not hold the helpers' slot: conversations run in parallel.
+    assert!(driver.spawn.try_lock().is_ok());
     driver.shutdown(handle).await.unwrap();
     drop(stream);
 }
@@ -263,16 +264,12 @@ async fn abandoned_candidate_is_supervised_before_its_map_installation() {
     assert!(creating.await.unwrap_err().is_cancelled());
     // Do not release the map: the original scope must clean up independently.
     tokio::time::timeout(Duration::from_secs(7), async {
-        loop {
-            if driver.spawn.try_lock().is_ok() {
-                break;
-            }
+        while alive(original) {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
     })
     .await
     .unwrap();
-    assert!(!alive(original));
     assert!(map.is_empty());
     drop(map);
 }

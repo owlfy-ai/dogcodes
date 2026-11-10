@@ -1752,6 +1752,15 @@ fn apply_projection(
                 update_task_stream_version(transaction, event)?;
             }
         }
+        "turn.waiting_for_agent" => {
+            // The agent runs one turn at a time; this turn starts when the running one ends.
+            transaction.execute(
+                "INSERT INTO timeline_items(item_id, task_id, turn_id, kind, text, provider_id, sequence, occurred_at) VALUES (?1, ?2, ?3, 'agent.queued', ?4, ?5, ?6, ?7)",
+                params![event.event_id.to_string(), payload_string(event,"taskId")?, payload_string(event,"turnId")?,
+                    payload_string(event,"message")?, payload_string(event,"providerId")?, to_i64(event.sequence)?, event.occurred_at.timestamp_millis()],
+            ).map_err(storage_error)?;
+            update_task_stream_version(transaction, event)?;
+        }
         "turn.started" => update_run_state(transaction, event, "running")?,
         "turn.cancel_requested" | "turn.interrupt_sent" => {
             update_matching_run_state(transaction, event, "interrupting")?;
@@ -2698,6 +2707,9 @@ fn load_tasks(
                      ORDER BY stream_version DESC LIMIT 1),
                     (SELECT json_extract(payload_json, '$.sourceTaskId') FROM events
                      WHERE stream_type='task' AND stream_id=tasks.task_id AND event_type='task.forked'
+                     ORDER BY sequence LIMIT 1),
+                    (SELECT json_extract(payload_json, '$.workingDirectory') FROM events
+                     WHERE stream_type='task' AND stream_id=tasks.task_id AND event_type='task.created'
                      ORDER BY sequence LIMIT 1)
              FROM tasks WHERE (?1 IS NULL OR task_id = ?1) ORDER BY rowid",
         )
@@ -2741,6 +2753,7 @@ fn load_tasks(
                     .get::<_, Option<String>>(13)?
                     .map(parse_id)
                     .transpose()?,
+                working_directory: row.get(14)?,
             })
         })
         .map_err(storage_error)?

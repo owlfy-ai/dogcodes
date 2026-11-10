@@ -1734,6 +1734,7 @@ export const uiKo: UiMessages = {
     loadFailed: "이 턴의 변경 사항을 불러오지 못했습니다",
     partialStats: "변경 수치는 파싱된 Diff 부분만 포함합니다.",
     recovered: "연결이 끊어진 후의 복구 스냅샷 · 확인 시점의 파일 변경만 반영하며 외부 도구가 아직 쓰는 중일 수 있습니다",
+    shared: "같은 시간에 이 폴더에서 다른 대화도 실행 중이었습니다 · 이 변경에는 다른 대화의 변경이 포함될 수 있어 턴 전체를 되돌릴 수 없습니다",
   },
   turnProcess: {
     worked: "작업함",
@@ -2034,6 +2035,7 @@ export const uiKo: UiMessages = {
     failureWithAgentError: "Agent가 이번 요청을 완료하지 못했으며 다음 오류를 반환했습니다:\n{detail}",
     failureAgentErrorSuffix: "{message}\n\nAgent가 반환한 오류:\n{detail}",
     connectionInterrupted: "지난 실행의 연결이 끊어졌습니다. 메시지를 보내 계속할 수 있으며, Agent가 기존 기록을 바탕으로 현재 결과를 확인합니다.",
+    agentRunsOneTaskAtATime: "{agent}은(는) 한 번에 하나의 작업만 실행할 수 있습니다. 이전 작업이 끝나면 이 작업이 자동으로 시작됩니다.",
     quotaExhausted: "Coding Agent 사용량을 모두 소진했습니다. 복구될 때까지 기다리거나 다른 Agent로 전환하세요.",
     quotaExhaustedReset: "Coding Agent 사용량을 모두 소진했습니다. {time}에 초기화될 예정이며, 다른 Agent로 전환할 수도 있습니다.",
     attachmentsTooMany: "한 번에 최대 16개의 첨부 파일을 보낼 수 있습니다.",

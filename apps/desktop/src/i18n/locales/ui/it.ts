@@ -1734,6 +1734,7 @@ export const uiIt: UiMessages = {
     loadFailed: "Impossibile caricare le modifiche di questo turno",
     partialStats: "I conteggi delle modifiche includono solo la parte analizzata del diff.",
     recovered: "Snapshot di ripristino dopo una connessione persa · Riflette solo le modifiche ai file al momento del controllo; strumenti esterni potrebbero ancora scrivere",
+    shared: "Altre conversazioni erano in esecuzione in questa cartella nello stesso momento · Queste modifiche potrebbero includere le loro, quindi non si possono annullare come un unico turno",
   },
   turnProcess: {
     worked: "Lavorato",
@@ -2034,6 +2035,7 @@ export const uiIt: UiMessages = {
     failureWithAgentError: "L'agente non ha potuto completare la richiesta e ha restituito questo errore:\n{detail}",
     failureAgentErrorSuffix: "{message}\n\nErrore restituito dall'agente:\n{detail}",
     connectionInterrupted: "La connessione dell'esecuzione precedente è stata interrotta. Invia un messaggio per continuare; l'agente verificherà il risultato attuale in base alla cronologia esistente.",
+    agentRunsOneTaskAtATime: "{agent} può eseguire solo un'attività alla volta. Questa attività partirà automaticamente al termine della precedente.",
     quotaExhausted: "La quota dell'agente di coding è esaurita. Attendi il ripristino o cambia agente.",
     quotaExhaustedReset: "La quota dell'agente di coding è esaurita. Dovrebbe ripristinarsi alle {time}, oppure puoi cambiare agente.",
     attachmentsTooMany: "Puoi inviare al massimo 16 allegati alla volta.",

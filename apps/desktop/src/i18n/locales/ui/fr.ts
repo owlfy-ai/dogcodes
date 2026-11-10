@@ -1734,6 +1734,7 @@ export const uiFr: UiMessages = {
     loadFailed: "Impossible de charger les modifications de ce tour",
     partialStats: "Les décomptes de modifications n’incluent que la partie analysée du diff.",
     recovered: "Instantané de récupération après une perte de connexion · Reflète uniquement les modifications de fichiers au moment de la vérification ; des outils externes peuvent encore écrire",
+    shared: "D’autres conversations s’exécutaient dans ce dossier en même temps · Ces modifications peuvent inclure les leurs et ne peuvent donc pas être annulées en un seul tour",
   },
   turnProcess: {
     worked: "Travaillé",
@@ -2034,6 +2035,7 @@ export const uiFr: UiMessages = {
     failureWithAgentError: "L'agent n'a pas pu terminer cette requête et a renvoyé l'erreur suivante :\n{detail}",
     failureAgentErrorSuffix: "{message}\n\nErreur renvoyée par l'agent :\n{detail}",
     connectionInterrupted: "La connexion de l'exécution précédente a été interrompue. Envoyez un message pour continuer ; l'agent vérifiera le résultat actuel à l'aide de l'historique existant.",
+    agentRunsOneTaskAtATime: "{agent} ne peut exécuter qu'une tâche à la fois. Cette tâche démarrera automatiquement une fois la précédente terminée.",
     quotaExhausted: "Le quota de l'agent de codage est épuisé. Attendez sa réinitialisation ou changez d'agent.",
     quotaExhaustedReset: "Le quota de l'agent de codage est épuisé. Il devrait être réinitialisé à {time}, ou vous pouvez changer d'agent.",
     attachmentsTooMany: "Vous pouvez envoyer 16 pièces jointes au maximum à la fois.",

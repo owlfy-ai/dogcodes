@@ -63,7 +63,12 @@ fn snapshot(root: &Path) -> Result<BTreeMap<String, Value>, WorkspaceCollectionD
                 .to_owned();
             let before = fs::symlink_metadata(&path).map_err(|_| failure())?;
             if before.is_dir() {
-                pending.push(path);
+                if !path
+                    .join(agent_protocol::workspace_context::CONVERSATION_FOLDERS_MARKER)
+                    .exists()
+                {
+                    pending.push(path);
+                }
                 continue;
             }
             #[cfg(unix)]
@@ -374,6 +379,33 @@ mod tests {
         large.set_len(MAX_HASH_BYTES as u64 + 1).unwrap();
         assert!(capture.finish().await.is_err());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_folder_of_conversation_folders_is_left_out() {
+        let root = tempfile::tempdir().unwrap();
+        let drafts = root.path().join("drafts");
+        fs::create_dir_all(drafts.join("tsk_one")).unwrap();
+        fs::write(drafts.join("tsk_one/screenshot.png"), b"\x89PNG").unwrap();
+        fs::write(root.path().join("notes.txt"), b"mine").unwrap();
+        assert!(
+            snapshot(root.path())
+                .unwrap()
+                .contains_key("drafts/tsk_one/screenshot.png")
+        );
+        fs::write(
+            drafts.join(agent_protocol::workspace_context::CONVERSATION_FOLDERS_MARKER),
+            "",
+        )
+        .unwrap();
+        let entries = snapshot(root.path()).unwrap();
+        assert_eq!(entries.keys().collect::<Vec<_>>(), ["notes.txt"]);
+        // The conversation's own folder still sees its files.
+        assert!(
+            snapshot(&drafts.join("tsk_one"))
+                .unwrap()
+                .contains_key("screenshot.png")
+        );
     }
 
     #[tokio::test]

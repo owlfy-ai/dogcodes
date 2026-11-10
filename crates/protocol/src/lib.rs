@@ -641,6 +641,26 @@ pub struct TaskSummary {
     /// The conversation this one was forked from, so lists can nest it there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forked_from: Option<TaskId>,
+    /// This conversation's own folder in place of its project's main folder.
+    /// Conversations without a project each get one under the shared scratch
+    /// folder, so they never see or change each other's files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_directory: Option<String>,
+}
+
+impl TaskSummary {
+    /// The folders this conversation works in: its own folder or the project's
+    /// main folder first, then the project's additional folders.
+    #[must_use]
+    pub fn directories(&self, project: &ProjectSummary) -> Vec<String> {
+        std::iter::once(
+            self.working_directory
+                .clone()
+                .unwrap_or_else(|| project.path.clone()),
+        )
+        .chain(project.additional_directories.iter().cloned())
+        .collect()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

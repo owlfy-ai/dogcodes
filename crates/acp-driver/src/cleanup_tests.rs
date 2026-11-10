@@ -29,7 +29,7 @@ sessions=0;pending=None;output_lock=threading.Lock()
 def out(v):
  with output_lock:print(json.dumps(v),flush=True)
 def reply(r,v):out({'jsonrpc':'2.0','id':r['id'],'result':v})
-def permission(session):out({'jsonrpc':'2.0','id':'permission-fixture','method':'session/request_permission','params':{'sessionId':session,'toolCall':{'toolCallId':'tool-1','title':'Fixture','kind':'execute'},'options':[{'optionId':'allow','name':'Allow once','kind':'allow_once'}]}})
+def permission(session,rid='permission-fixture'):out({'jsonrpc':'2.0','id':rid,'method':'session/request_permission','params':{'sessionId':session,'toolCall':{'toolCallId':'tool-1','title':'Fixture','kind':'execute'},'options':[{'optionId':'allow','name':'Allow once','kind':'allow_once'}]}})
 for line in sys.stdin:
  r=json.loads(line)
  with open('requests.jsonl','a') as f:f.write(json.dumps(dict(r,pid=os.getpid()))+'\n')
@@ -102,8 +102,9 @@ for line in sys.stdin:
   if mode=='foreign-update':
    for session,text in [('s-1','stale-other-session'),(r['params']['sessionId'],'current-session')]:
     out({'jsonrpc':'2.0','method':'session/update','params':{'sessionId':session,'update':{'sessionUpdate':'agent_message_chunk','content':{'type':'text','text':text}}}})
-  if mode in ['permission','foreign-permission']:
+  if mode in ['permission','foreign-permission','repeat-permission']:
    pending=r
+   if mode=='repeat-permission':permission(r['params']['sessionId'],'permission-repeat')
    permission('not-the-active-session' if mode=='foreign-permission' else r['params']['sessionId'])
   elif mode=='codebuddy-bridge':
    pending=r
@@ -737,6 +738,54 @@ async fn an_invalid_approval_option_preserves_the_request_and_a_valid_answer_is_
             .count(),
         1
     );
+}
+
+/// An agent that asks again while a permission is unanswered gets one card,
+/// and the one answer reaches every native request for it.
+#[tokio::test]
+async fn a_repeated_permission_request_shows_one_card_and_answers_both() {
+    let (root, driver) = fixture("repeat-permission");
+    let session = driver.create_session(request(root.path())).await.unwrap();
+    let mut stream = driver
+        .prompt(&session, prompt(root.path(), "slow"))
+        .await
+        .unwrap();
+    let id = approval_id(&mut stream).await;
+    // Let the driver read the repeated request before the user answers.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(driver.shared.pending_permissions.lock().unwrap().len(), 1);
+    driver
+        .respond_to_interaction(&session, &id, "allow")
+        .await
+        .unwrap();
+    let events = tokio::time::timeout(Duration::from_secs(3), stream.collect::<Vec<_>>())
+        .await
+        .unwrap();
+    driver.shutdown(session).await.unwrap();
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, Ok(DriverEvent::ApprovalRequested { .. }))),
+        "the repeated request opened a second card"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, Ok(DriverEvent::TurnCompleted { .. })))
+    );
+    let replies = std::fs::read_to_string(root.path().join("requests.jsonl")).unwrap();
+    for native in ["permission-repeat", "permission-fixture"] {
+        assert_eq!(
+            replies
+                .lines()
+                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+                .filter(|value| value["id"] == native
+                    && value["result"]["outcome"]["outcome"] == "selected")
+                .count(),
+            1,
+            "{native} was not answered once"
+        );
+    }
 }
 
 #[tokio::test]

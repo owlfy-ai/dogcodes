@@ -152,6 +152,12 @@ impl Control {
     pub fn stopping(&self) -> bool {
         self.state.borrow().stop
     }
+    /// Resolves once a stop has been requested for this run.
+    pub async fn stop_requested(&self) {
+        let mut state = self.state.subscribe();
+        // The sender lives as long as this control, so `changed` cannot fail here.
+        while !state.borrow_and_update().stop && state.changed().await.is_ok() {}
+    }
     pub fn finished(&self) -> bool {
         self.state.borrow().phase == Phase::Finished
     }

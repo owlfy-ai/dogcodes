@@ -261,3 +261,20 @@ it("does not submit an implicit default when the Agent reports no available mode
  await typePrompt("wait for a model");await send();
  expect(client.submitTurn).not.toHaveBeenCalled();
 });
+
+it("starts a new conversation with the model last picked for that Agent, keeping the old conversation's model", async () => {
+  expect(element.querySelector('[aria-label="选择模型"]')?.textContent).toContain("Old model");
+  await click(element.querySelector('[aria-label="选择模型"]')!);
+  await click(button("New model"));
+  await click(button("新建对话"));
+  expect(element.querySelector(".welcome-stage")).not.toBeNull();
+  expect(element.querySelector('[aria-label="选择模型"]')?.textContent).toContain("New model");
+  await typePrompt("draft with remembered model"); await send();
+  expect(client.submitTurn).toHaveBeenLastCalledWith(expect.anything(), "draft with remembered model", "new", null, null, [], expect.any(String));
+});
+
+it("starts a new conversation with the first model when the remembered one is gone", async () => {
+  localStorage.setItem("dogcodes.agents.models.v1", JSON.stringify({ [snapshot.tasks[0].preferredExecutor.providerId]: { model: "retired", thinking: null } }));
+  await click(button("新建对话"));
+  expect(element.querySelector('[aria-label="选择模型"]')?.textContent).toContain("Old model");
+});

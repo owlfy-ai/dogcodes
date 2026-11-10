@@ -402,6 +402,7 @@ impl Core {
             project_paths: std::iter::once(state.workspace.path)
                 .chain(state.workspace.additional_directories)
                 .collect(),
+            occupancy: None,
         };
         let through = self.repository.event_head().await?;
         self.recover_run_workspace(&task, &run.turn_id, Some(&scope), through)

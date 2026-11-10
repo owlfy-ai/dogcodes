@@ -5,7 +5,11 @@ import type { StructuredDiff } from "./diffView";
 import { translate as t } from "./i18n";
 
 export interface TurnArtifact {
-  data: { files: { path: string; status: string }[]; patch?: string; attribution?: string; recoveredAfterInterruption?: boolean };
+  data: {
+    files: { path: string; status: string; before?: unknown; after?: unknown }[];
+    patch?: string; attribution?: string; recoveredAfterInterruption?: boolean; sharedWorkspace?: boolean;
+    backend?: string; roots?: { workspacePath?: string; changes?: { backend?: string } }[];
+  };
   diff: StructuredDiff | null;
   expanded: boolean;
 }

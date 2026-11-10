@@ -24,6 +24,7 @@ import rehypeHighlight from "rehype-highlight";
 import "katex/dist/katex.min.css";
 import "./conversation.css";
 import { translate, useI18n } from "./i18n";
+import { userFacingError } from "./userFacingError";
 
 function textOf(node: ReactNode): string {
   return Children.toArray(node)
@@ -232,15 +233,40 @@ function CodeBlock({
     </section>
   );
 }
+/** The task whose workspace a local link in this message resolves against. */
+const LinkTaskContext = createContext<string | undefined>(undefined);
+const scheme = /^[a-z][a-z0-9+.-]*:/i;
+/** A link to a local file: an absolute, relative or `file:` path, not a web URL or anchor. */
+export function localLinkPath(href: string | undefined): string | null {
+  if (!href || href.startsWith("#") || href.startsWith("//") || href.startsWith("~")) return null;
+  let path = href;
+  if (/^file:/i.test(path)) path = path.replace(/^file:(\/\/(localhost)?)?/i, "");
+  else if (scheme.test(path) && !/^[a-z]:[\\/]/i.test(path)) return null;
+  path = path.replace(/[?#].*$/, "");
+  try { path = decodeURI(path); } catch { /* keep the raw path */ }
+  if (/^\/[a-z]:\//i.test(path)) path = path.slice(1);
+  return path || null;
+}
 function WebsiteLink({ href, children }: { href?: string; children: ReactNode }) {
   const { t } = useI18n();
-  const [error, setError] = useState(false);
+  const taskId = useContext(LinkTaskContext);
+  const [error, setError] = useState("");
+  const local = localLinkPath(href);
   return <><a href={href} target="_blank" rel="noopener noreferrer" onClick={event => {
+    if (local) {
+      // Never let the webview navigate to a file path.
+      event.preventDefault();
+      if (!taskId || !isTauri()) { setError(t("openFile.openFailed")); return; }
+      setError("");
+      void invoke("core_open_workspace_file", { taskId, path: local })
+        .catch(cause => setError(userFacingError(cause, t("openFile.openFailed"))));
+      return;
+    }
     if (!href || !/^https?:\/\//i.test(href) || !isTauri()) return;
     event.preventDefault();
-    setError(false);
-    void invoke("open_website", { url: href }).catch(() => setError(true));
-  }}>{children}</a>{error && <small role="alert">{t("markdown.browserFailed")}</small>}</>;
+    setError("");
+    void invoke("open_website", { url: href }).catch(() => setError(t("markdown.browserFailed")));
+  }}>{children}</a>{error && <small role="alert">{error}</small>}</>;
 }
 const SourceContext = createContext({ text: "", streaming: false });
 const messageComponents: Components = {
@@ -296,23 +322,28 @@ const MarkdownBlock = memo(function MarkdownBlock({ text, pending }: { text: str
 export const MarkdownMessage = memo(function MarkdownMessage({
   text,
   streaming = false,
+  taskId,
 }: {
   text: string;
   streaming?: boolean;
+  /** Lets local file links open from this task's workspace. */
+  taskId?: string;
 }) {
   const normalized = useMemo(() => mathSyntax(text), [text]);
   const segmenter = useRef(new StreamingMarkdown());
   const blocks = useMemo(() => segmenter.current.update(normalized, streaming), [normalized, streaming]);
   return (
-    <div className="markdown-body">
-      {blocks.map(block => <MarkdownBlock key={block.offset} text={block.text} pending={block.pending} />)}
-    </div>
+    <LinkTaskContext.Provider value={taskId}>
+      <div className="markdown-body">
+        {blocks.map(block => <MarkdownBlock key={block.offset} text={block.text} pending={block.pending} />)}
+      </div>
+    </LinkTaskContext.Provider>
   );
 });
 
 export const StreamingMarkdownMessage = memo(function StreamingMarkdownMessage({
-  text, streaming = false,
-}: { text: string; streaming?: boolean }) {
+  text, streaming = false, taskId,
+}: { text: string; streaming?: boolean; taskId?: string }) {
   const visible = useSmoothText(text, streaming);
-  return <MarkdownMessage text={visible} streaming={streaming} />;
+  return <MarkdownMessage text={visible} streaming={streaming} taskId={taskId} />;
 });

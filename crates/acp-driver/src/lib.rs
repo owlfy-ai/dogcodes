@@ -336,7 +336,14 @@ fn map_session_error(
         DriverError::QuotaExhausted {
             resets_at_unix: None,
         }
-    } else if let Some(kind) = driver_api::failure::classify(&error.message) {
+    } else if let Some(kind) = driver_api::failure::classify(&error.message).or_else(|| {
+        // Some agents (OpenCode) put the provider's reason in `data` behind a
+        // generic message. Only the classified kind leaves this function.
+        error
+            .data
+            .as_ref()
+            .and_then(|data| driver_api::failure::classify(&data.to_string()))
+    }) {
         DriverError::Protocol(kind.into())
     } else {
         let from_stderr = stderr.and_then(RequestStderr::failure);
@@ -506,9 +513,58 @@ struct ConnectionHandle {
 /// responder stays parked here until the operator picks an option.
 struct PendingPermission {
     responder: Responder<RequestPermissionResponse>,
+    /// Repeated native requests for this card while it stays unanswered.
+    repeated: Vec<Responder<RequestPermissionResponse>>,
     options: Vec<PermissionOption>,
     session_id: String,
     tool_call_id: String,
+    /// Tool and input as shown on the card, to recognise a repeat without a tool call id.
+    shown: (String, String),
+}
+
+impl PendingPermission {
+    /// Answers the card and every repeated request for it.
+    fn respond(
+        self,
+        outcome: impl Fn() -> RequestPermissionOutcome,
+    ) -> Result<(), agent_client_protocol::Error> {
+        let mut result = Ok(());
+        for responder in self
+            .repeated
+            .into_iter()
+            .chain(std::iter::once(self.responder))
+        {
+            if let Err(error) = responder.respond(RequestPermissionResponse::new(outcome())) {
+                result = Err(error);
+            }
+        }
+        result
+    }
+}
+
+/// Attaches a repeated request to the card still open for the same tool call
+/// in this session. Pending cards only live for the current turn. On no match
+/// the responder is handed back.
+fn repeat_open_permission(
+    pending: &PendingPermissions,
+    session_id: &str,
+    tool_call_id: &str,
+    shown: &(String, String),
+    responder: Responder<RequestPermissionResponse>,
+) -> Option<Responder<RequestPermissionResponse>> {
+    let mut pending = pending.lock().expect("pending permissions");
+    let card = pending.values_mut().find(|card| {
+        card.session_id == session_id
+            && ((!tool_call_id.is_empty() && card.tool_call_id == tool_call_id)
+                || &card.shown == shown)
+    });
+    match card {
+        Some(card) => {
+            card.repeated.push(responder);
+            None
+        }
+        None => Some(responder),
+    }
 }
 
 type PendingPermissions = Arc<std::sync::Mutex<HashMap<String, PendingPermission>>>;
@@ -610,9 +666,7 @@ impl Shared {
                 .collect::<Vec<_>>()
         };
         for pending in permissions {
-            let _ = pending.responder.respond(RequestPermissionResponse::new(
-                RequestPermissionOutcome::Cancelled,
-            ));
+            let _ = pending.respond(|| RequestPermissionOutcome::Cancelled);
         }
         // Dropping a question responder resolves the tracked vendor bridge as
         // cancelled. Never manufacture an allow or a user answer when stopping.
@@ -1393,6 +1447,26 @@ async fn run_connection(
                 // Surface the vendor request verbatim and park the responder;
                 // the hub answers through respond_to_interaction with one of
                 // the vendor option ids. No auto-approval path exists.
+                let tool_name = activity::permission_tool_name(&raw,
+                    request.tool_call.fields.title.as_deref().unwrap_or(&request.tool_call.tool_call_id.0));
+                let command_summary = permission_tasks.activity.lock().expect("activity")
+                    .permission_input(&request.session_id.to_string(), &request.tool_call.tool_call_id.0, request.tool_call.fields.raw_input.as_ref())
+                    .map(|input| input.to_string())
+                    .or_else(|| serde_json::to_string(&request.tool_call.fields).ok())
+                    .unwrap_or_else(|| {
+                        request.tool_call.fields.title.clone().unwrap_or_default()
+                    });
+                let shown = (tool_name.clone(), command_summary.clone());
+                // An agent may ask again while the card is unanswered; keep one card.
+                let Some(responder) = repeat_open_permission(
+                    &permission_tasks.pending,
+                    &request.session_id.to_string(),
+                    &request.tool_call.tool_call_id.0,
+                    &shown,
+                    responder,
+                ) else {
+                    return Ok(agent_client_protocol::Handled::Yes);
+                };
                 let native_request_id = format!("acp-perm-{}", uuid_question_id());
                 let options = map_permission_options(&request.options);
                 permission_tasks
@@ -1403,9 +1477,11 @@ async fn run_connection(
                         native_request_id.clone(),
                         PendingPermission {
                             responder,
+                            repeated: vec![],
                             options: request.options.clone(),
                             session_id: request.session_id.to_string(),
                             tool_call_id: request.tool_call.tool_call_id.0.to_string(),
+                            shown,
                         },
                     );
                 if let Some(updates) = permission_tasks
@@ -1416,15 +1492,8 @@ async fn run_connection(
                 {
                     let _ = updates.send(DriverEvent::ApprovalRequested {
                         native_request_id,
-                        tool_name: activity::permission_tool_name(&raw,
-                            request.tool_call.fields.title.as_deref().unwrap_or(&request.tool_call.tool_call_id.0)),
-                        command_summary: permission_tasks.activity.lock().expect("activity")
-                            .permission_input(&request.session_id.to_string(), &request.tool_call.tool_call_id.0, request.tool_call.fields.raw_input.as_ref())
-                            .map(|input| input.to_string())
-                            .or_else(|| serde_json::to_string(&request.tool_call.fields).ok())
-                            .unwrap_or_else(|| {
-                                request.tool_call.fields.title.clone().unwrap_or_default()
-                            }),
+                        tool_name,
+                        command_summary,
                         options,
                     });
                 }
@@ -2970,12 +3039,11 @@ impl AgentDriver for AcpDriver {
                 .reject(&pending.session_id, &pending.tool_call_id);
         }
         pending
-            .responder
-            .respond(RequestPermissionResponse::new(
+            .respond(|| {
                 RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
                     option.option_id.clone(),
-                )),
-            ))
+                ))
+            })
             .map_err(|_| DriverError::Disconnected("ACP agent connection is closed".into()))
     }
 
@@ -3555,6 +3623,17 @@ mod tests {
                 Some(expected)
             );
         }
+    }
+
+    #[test]
+    fn a_reason_carried_only_in_error_data_is_classified_without_leaking_it() {
+        let error = AcpError::new(-32_603, "Internal error").data(serde_json::json!({
+            "message": "This Go model is hosted outside Europe and the United States. secret-org"
+        }));
+        assert!(matches!(
+            map_session_error(&error, "agent rejected the ACP session/prompt request", None),
+            DriverError::Protocol(kind) if kind == "access_denied"
+        ));
     }
 
     #[test]

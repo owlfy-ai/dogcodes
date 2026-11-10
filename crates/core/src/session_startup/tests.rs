@@ -146,6 +146,7 @@ async fn fixture(mode: Mode, close_error: bool) -> Fixture {
         preferred_executor: driver.executor().clone(),
         last_turn_executor: None,
         forked_from: None,
+        working_directory: None,
         updated_at: None,
         stream_version: 0,
         active_primary_run: Some(agent_protocol::ActiveRunSummary {

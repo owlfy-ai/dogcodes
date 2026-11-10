@@ -121,7 +121,7 @@ agy 的认证是链式的（活动 token 文件 → **macOS 钥匙串** → 浏�
 
 **已落实的 driver 防护**（本次代码完善）：
 - 进程级 spawn 互斥（`AGY_SPAWN_GUARD`）：agy 进程整个生命周期内独占 spawn 槽，杜绝并发
-  token 刷新竞态；
+  token 刷新竞态（2026-11-09 起会话进程不再持槽，仅辅助进程互斥，见下文复验）；
 - 永不中途 kill：probe 与会话结束一律 `wait()` 回收（EOF/关闭 stdin 后 CLI 自行退出），
   `kill_on_drop` 仅作进程泄漏的最后保险；
 - 认证/资格失败指数退避（60s 起、上限 4 次幂）：`result.error` 含 Eligibility/authentication
@@ -132,6 +132,31 @@ agy 的认证是链式的（活动 token 文件 → **macOS 钥匙串** → 浏�
 
 **通用教训**（已同步应用到 Claude/ACP driver）：probe 的 kill-on-timeout 会打断 agent 的
 凭据持久化；这些 CLI 与交互式会话共享凭据存储，Hub 必须"优雅退出 + 串行 spawn"。
+
+## 2026-11-09 复验：并发会话不再触发换号（agy 1.5.3）
+
+上面的整进程生命周期独占结论在 agy 1.5.3 上未能复现，已改为**会话进程并行启动与执行**。
+
+- 认证路径已变：每次启动都是 `Print mode: not authenticated, trying silent auth` →
+  `keyringAuth: loaded token` → `ChainedAuth: authenticated via keyring`。旧的活动 token 文件
+  （`~/.gemini/antigravity-cli/antigravity-oauth-token`）自 11-04 起未再写入。
+- token 在到期前约 4–5 分钟由任一启动的 agy 进程刷新（`token refreshed, new expiry=…`）
+  并写回钥匙串。
+- 实测（只用 `agy models`，不消耗模型额度；另 3 个极小真实 prompt）：
+  - 有效 token 下 6 个进程同时启动：全部以同一账号认证成功；
+  - **刷新窗口内 6 个进程在 30ms 内同时刷新 token**：全部成功、账号不变，之后单独启动读取到
+    的钥匙串 token 有效（新到期 07:18:32）；
+  - 3 个真实对话轮次同时执行：各自正确回复、账号不变。
+- 历史日志（10-28 起 5703 次运行）：357 次启动时已有其它 agy 进程在运行（最多 3 个并发，
+  包括 IDE 等其它工具）。唯一一次账号变化是 10-28 23:16 的交互式登录（主动换号）；
+  37 次刷新失败均为访问 `oauth2.googleapis.com` 的网络错误（EOF）或超时。
+- 仍未覆盖：登出/切换账号过程中并发、断网期间的刷新、其它 agy 版本、钥匙串中残留旧账号。
+  2026-09 事故的必要条件是钥匙串残留旧账号 + 刷新被中途打断，"永不中途 kill"约束保留。
+
+driver 现状：会话进程不再占用 spawn 槽；短生命周期的辅助进程（就绪探针、会话前的 `/hooks`
+审批 Hook 校验、模型目录、额度查询）之间仍互斥并持槽至退出。每个对话使用独立的 Antigravity
+driver/进程，可并行执行。曾短暂保留"会话启动阶段持槽"作为保险，实测使同时发起的第二个对话
+多等约 6 秒，已移除。回归测试 `a_live_session_does_not_keep_other_conversations_from_starting`。
 
 ## 当前边界
 

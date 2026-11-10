@@ -24,8 +24,9 @@ pub async fn project_paths(core: &dyn ReviewFacts, task_id: &str) -> Result<Vec<
     if project.target_id.is_some() && core.on_hub() {
         return Err("这个项目在另一台机器上".into());
     }
-    Ok(std::iter::once(project.path.clone())
-        .chain(project.additional_directories.iter().cloned())
+    Ok(task
+        .directories(project)
+        .into_iter()
         .map(PathBuf::from)
         .collect())
 }

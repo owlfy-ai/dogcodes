@@ -77,7 +77,10 @@ it("ignores other modifiers, composition, repeats, dialogs and disabled actions"
   let reject!: (error: Error) => void;
   vi.mocked(client.createTask).mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
   await send();
-  expect(button("正在创建").disabled).toBe(true);
+  // The button is locked while the first message creates the conversation,
+  // but keeps its label.
+  expect(button("新建对话").disabled).toBe(true);
+  expect(button("正在创建")).toBeUndefined();
   await pressShortcut("n", { ctrlKey: true });
   await act(async () => reject(new Error("测试创建失败")));
   expect(element.querySelector("textarea")?.value).toBe("保留正在输入的草稿");

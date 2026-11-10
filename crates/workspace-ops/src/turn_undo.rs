@@ -66,9 +66,7 @@ pub async fn undo(state: &ReviewContext<'_>, request: UndoRequest) -> Result<(),
     if project.target_id.is_some() && state.core.on_hub() {
         return Err("这个项目在另一台机器上".into());
     }
-    let roots: Vec<String> = std::iter::once(project.path.clone())
-        .chain(project.additional_directories.clone())
-        .collect();
+    let roots = task.directories(project);
     let directory = state.review.directory.clone();
     let task_id = request.task_id.to_string();
     let artifact_id = request.artifact_id.to_string();

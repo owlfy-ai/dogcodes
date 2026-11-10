@@ -1,4 +1,6 @@
-/** Normalize common TeX delimiters only outside Markdown code. */
+import { spacedLinkPaths } from "./markdownLinks";
+
+/** Normalize TeX delimiters and spaced link paths only outside Markdown code. */
 export function mathSyntax(text: string): string {
   let fence = "";
   return text
@@ -18,7 +20,7 @@ export function mathSyntax(text: string): string {
         .map((part) =>
           part.startsWith("`")
             ? part
-            : part
+            : spacedLinkPaths(part)
                 .replace(/\\\[/g, "$$$$")
                 .replace(/\\\]/g, "$$$$")
                 .replace(/\\\(/g, "$")

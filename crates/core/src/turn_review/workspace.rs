@@ -19,9 +19,7 @@ impl Core {
             .into_iter()
             .find(|project| project.project_id == task.project_id)
             .ok_or_else(|| CoreError::NotFound("审查项目不存在".into()))?;
-        let directories: Vec<_> = std::iter::once(project.path)
-            .chain(project.additional_directories)
-            .collect();
+        let directories = task.directories(&project);
         // A directory on another machine says nothing about this file system.
         if project.target_id.is_none()
             && directories.iter().any(|path| {

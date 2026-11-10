@@ -172,6 +172,7 @@ export const backendMessages: [string, string][] = [
   ["Agent 未能完成本次请求，返回了以下错误：\n{detail}", "failureWithAgentError"],
   ["{message}\n\nAgent 返回的错误：\n{detail}", "failureAgentErrorSuffix"],
   ["上次执行连接已中断，可以直接发送消息继续。Agent 将结合已有历史检查当前结果。", "connectionInterrupted"],
+  ["{agent}同一时间只能执行一个任务，之前的任务执行完成后会开始执行此任务", "agentRunsOneTaskAtATime"],
   ["Coding Agent 额度已用尽；请等待额度恢复或切换 Agent。", "quotaExhausted"],
   ["Coding Agent 额度已用尽；预计于 {time} 重置，也可以切换 Agent。", "quotaExhaustedReset"],
   ["一次最多发送 16 个附件", "attachmentsTooMany"],

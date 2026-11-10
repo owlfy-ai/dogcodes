@@ -105,6 +105,9 @@ export interface TaskSummary {
   streamVersion: number;
   /** The conversation this one was forked from; lists nest it there. */
   forkedFrom?: TaskId | null;
+  /** This conversation's own folder in place of its project's main folder
+   * (each conversation without a project has one under the scratch folder). */
+  workingDirectory?: string | null;
 }
 
 export type ResumeCapability = "supported" | "unsupported" | "unknown";

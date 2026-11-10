@@ -1734,6 +1734,7 @@ export const uiZhCN: UiMessages = {
     loadFailed: "本轮变更加载失败",
     partialStats: "变更统计仅包含已解析的部分差异。",
     recovered: "连接中断后的恢复快照 · 仅反映检查时的文件变化，外部工具可能仍在写入",
+    shared: "同一时间还有其他对话在这个文件夹中运行 · 这些修改可能来自其他对话，因此不能整轮撤销",
   },
   turnProcess: {
     worked: "已工作",
@@ -2034,6 +2035,7 @@ export const uiZhCN: UiMessages = {
     failureWithAgentError: "Agent 未能完成本次请求，返回了以下错误：\n{detail}",
     failureAgentErrorSuffix: "{message}\n\nAgent 返回的错误：\n{detail}",
     connectionInterrupted: "上次执行连接已中断，可以直接发送消息继续。Agent 将结合已有历史检查当前结果。",
+    agentRunsOneTaskAtATime: "{agent}同一时间只能执行一个任务，之前的任务执行完成后会开始执行此任务",
     quotaExhausted: "Coding Agent 额度已用尽；请等待额度恢复或切换 Agent。",
     quotaExhaustedReset: "Coding Agent 额度已用尽；预计于 {time} 重置，也可以切换 Agent。",
     attachmentsTooMany: "一次最多发送 16 个附件",

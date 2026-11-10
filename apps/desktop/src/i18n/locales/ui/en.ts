@@ -1734,6 +1734,7 @@ export const uiEn = {
     loadFailed: "Couldn't load this turn's changes",
     partialStats: "Change counts only include the parsed part of the diff.",
     recovered: "Recovery snapshot after a lost connection · Only reflects file changes at check time; external tools may still be writing",
+    shared: "Other conversations were running in this folder at the same time · These changes may include theirs, so they cannot be undone as one turn",
   },
   turnProcess: {
     worked: "Worked",
@@ -2034,6 +2035,7 @@ export const uiEn = {
     failureWithAgentError: "The agent could not complete this request and returned this error:\n{detail}",
     failureAgentErrorSuffix: "{message}\n\nError returned by the agent:\n{detail}",
     connectionInterrupted: "The previous run lost its connection. Send a message to continue; the agent will check the current result against the existing history.",
+    agentRunsOneTaskAtATime: "{agent} can only run one task at a time. This task will start automatically when the previous one finishes.",
     quotaExhausted: "Coding agent quota is used up. Wait for it to reset or switch agents.",
     quotaExhaustedReset: "Coding agent quota is used up. It should reset at {time}, or you can switch agents.",
     attachmentsTooMany: "You can send at most 16 attachments at a time.",

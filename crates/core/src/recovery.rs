@@ -287,7 +287,15 @@ impl Core {
             {
                 continue;
             }
-            let scope = self.turn_workspace_scope(&task.task_id).await;
+            // The turn is no longer running: recovery checks the history for
+            // other conversations in its folders instead of claiming them now.
+            let scope = self
+                .turn_workspace_scope(&task.task_id)
+                .await
+                .map(|mut scope| {
+                    scope.occupancy = None;
+                    scope
+                });
             self.recover_run_workspace(
                 &task.task_id,
                 &run.turn_id,
@@ -321,6 +329,7 @@ impl Core {
         use sha2::{Digest, Sha256};
         let mut cursor = 0;
         let mut checkpoint = None;
+        let mut checkpoint_sequence = 0;
         let mut changes_recorded = false;
         loop {
             let events = self
@@ -336,6 +345,7 @@ impl Core {
                 }
                 if event.event_type == "workspace.turn_checkpoint_captured" {
                     checkpoint = Some(event.payload.clone());
+                    checkpoint_sequence = event.sequence;
                 }
                 if event.event_type == "workspace.turn_changes_captured" {
                     changes_recorded = true;
@@ -366,6 +376,13 @@ impl Core {
                         value,
                     )
                     .await;
+                    if let Ok(change) = &mut result
+                        && self
+                            .folder_used_by_others_since(scope, checkpoint_sequence, through)
+                            .await?
+                    {
+                        crate::workspace_occupancy::mark_shared(change);
+                    }
                 }
             }
             if let Some(scope) = scope {
@@ -373,6 +390,81 @@ impl Core {
             }
         }
         Ok(())
+    }
+
+    /// Whether another conversation ran a turn in `scope`'s folders between
+    /// the checkpoint and `through`: one still marked running (interrupted
+    /// too), one that started a turn in that range, or one that ended a turn
+    /// after the checkpoint. Ends are read up to the latest event, because a
+    /// conversation interrupted together with this one is closed by this same
+    /// recovery after `through`. A turn that both starts and ends later counts
+    /// too; that only withholds undo, which a recovered capture never has.
+    async fn folder_used_by_others_since(
+        &self,
+        scope: &crate::TurnWorkspaceScope,
+        after: u64,
+        through: u64,
+    ) -> Result<bool, CoreError> {
+        // Past this many events the range is too long to read at startup; a
+        // shared folder is then assumed, which only withholds undo.
+        const MAX_SCANNED: usize = 200_000;
+        let mut others = BTreeSet::new();
+        for task in self.repository.bootstrap().await?.tasks {
+            if task.task_id != scope.task_id && task.active_primary_run.is_some() {
+                others.insert(task.task_id);
+            }
+        }
+        let head = self.repository.event_head().await?.max(through);
+        let mut cursor = after;
+        let mut scanned = 0;
+        while cursor < head {
+            let events = self.repository.sync_events(cursor, 1000).await?;
+            let Some(last) = events.last() else {
+                break;
+            };
+            cursor = last.sequence;
+            scanned += events.len();
+            if scanned > MAX_SCANNED {
+                return Ok(true);
+            }
+            for event in events.iter().filter(|e| e.sequence <= head) {
+                let started = event.event_type == "workspace.turn_checkpoint_captured"
+                    && event.sequence <= through;
+                let ended = matches!(
+                    event.event_type.as_str(),
+                    "workspace.turn_changes_captured"
+                        | "turn.completed"
+                        | "turn.failed"
+                        | "turn.connection_lost"
+                );
+                if event.stream.stream_type == agent_protocol::StreamType::Task
+                    && event.stream.stream_id != scope.task_id.as_str()
+                    && (started || ended)
+                    && let Ok(task) = agent_domain::TaskId::parse(&event.stream.stream_id)
+                {
+                    others.insert(task);
+                }
+            }
+        }
+        let own_target = self
+            .repository
+            .task_execution_state(&scope.task_id)
+            .await?
+            .and_then(|own| own.workspace.target_id);
+        for task in others {
+            let Some(state) = self.repository.task_execution_state(&task).await? else {
+                continue;
+            };
+            let paths: Vec<String> = std::iter::once(state.workspace.path)
+                .chain(state.workspace.additional_directories)
+                .collect();
+            if state.workspace.target_id == own_target
+                && crate::workspace_occupancy::folders_overlap(&paths, &scope.project_paths)
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub async fn recovery_snapshot(&self, actor: &ActorRef) -> Result<RecoverySnapshot, CoreError> {

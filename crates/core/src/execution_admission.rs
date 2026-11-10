@@ -153,6 +153,7 @@ mod tests {
                 preferred_executor: executor("fake"),
                 last_turn_executor: None,
                 forked_from: None,
+                working_directory: None,
                 updated_at: None,
                 stream_version: 1,
                 active_primary_run: None,

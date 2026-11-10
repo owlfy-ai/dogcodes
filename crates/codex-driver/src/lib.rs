@@ -1494,6 +1494,7 @@ async fn run_turn(
     let stop_timeout = REQUEST_TIMEOUT;
     let mut pending_approvals: HashMap<String, Value> = HashMap::new();
     let mut next_approval_id = 1_u64;
+    let mut approval_repeats = ApprovalRepeats::default();
     let mut file_changes = file_approval::FileChanges::new(
         connection.thread_id.clone(),
         started.native_turn_id.clone(),
@@ -1512,130 +1513,140 @@ async fn run_turn(
             frame,
             &mut pending_approvals,
             &mut next_approval_id,
+            &mut approval_repeats,
             &mut file_changes,
         )
         .await;
     }
     while !terminal {
         tokio::select! {
-            command = next_command(commands, scope) => match command {
-                Some(SessionCommand::Answer {native_request_id,answer,response}) => {
-                    let result = if let Some(pending)=pending_approvals.get(&native_request_id).filter(|p|p.get("questionId").is_some()) {
-                        match driver_api::questions::native_form("codex", &pending["params"]).and_then(|form|form.validate(&answer)) {
-                            Ok(()) => {
-                                let pending=pending_approvals.remove(&native_request_id).expect("pending question");
-                                connection.transport.send_result(pending["questionId"].clone(),driver_api::questions::native_answer("codex",&pending["params"],&answer)).await
-                            },
-                            Err(error)=>Err(DriverError::Protocol(error)),
+                    command = next_command(commands, scope) => match command {
+                        Some(SessionCommand::Answer {native_request_id,answer,response}) => {
+                            let result = if let Some(pending)=pending_approvals.get(&native_request_id).filter(|p|p.get("questionId").is_some()) {
+                                match driver_api::questions::native_form("codex", &pending["params"]).and_then(|form|form.validate(&answer)) {
+                                    Ok(()) => {
+                                        let pending=pending_approvals.remove(&native_request_id).expect("pending question");
+                                        connection.transport.send_result(pending["questionId"].clone(),driver_api::questions::native_answer("codex",&pending["params"],&answer)).await
+                                    },
+                                    Err(error)=>Err(DriverError::Protocol(error)),
+                                }
+                            }else{Err(DriverError::Protocol("Question expired".into()))};
+                            let _=response.send(result);
                         }
-                    }else{Err(DriverError::Protocol("Question expired".into()))};
-                    let _=response.send(result);
-                }
-                Some(SessionCommand::Approve {
-                    native_request_id,
-                    option_id,
-                    response,
-                }) => {
-                    let Some(jsonrpc_id) = pending_approvals.remove(&native_request_id) else {
-                        let _ = response.send(Err(DriverError::CapabilityUnavailable(
-                            "this approval request is no longer pending".into(),
-                        )));
-                        continue;
-                    };
-                    // Only the two protocol decisions are answerable.
-                    let decision = match option_id.as_str() {
-                        "allow" => "accept",
-                        "decline" => "decline",
-                        _ => {
-                            pending_approvals.insert(native_request_id, jsonrpc_id);
-                            let _ = response.send(Err(DriverError::CapabilityUnavailable(
-                                "unknown approval option id".into(),
-                            )));
-                            continue;
+                        Some(SessionCommand::Approve {
+                            native_request_id,
+                            option_id,
+                            response,
+                        }) => {
+                            let Some(jsonrpc_id) = pending_approvals.remove(&native_request_id) else {
+                                let _ = response.send(Err(DriverError::CapabilityUnavailable(
+                                    "this approval request is no longer pending".into(),
+                                )));
+                                continue;
+                            };
+                            // Only the two protocol decisions are answerable.
+                            let decision = match option_id.as_str() {
+                                "allow" => "accept",
+                                "decline" => "decline",
+                                _ => {
+                                    pending_approvals.insert(native_request_id, jsonrpc_id);
+                                    let _ = response.send(Err(DriverError::CapabilityUnavailable(
+                                        "unknown approval option id".into(),
+                                    )));
+                                    continue;
+                                }
+                            };
+                            // Answer every native request for this card, the newest last.
+                            let mut result = Ok(());
+                            for jsonrpc_id in approval_repeats.answered(&native_request_id, jsonrpc_id) {
+                                let sent = connection
+                                    .transport
+                                    .send_result(jsonrpc_id, json!({ "decision": decision }))
+                                    .await;
+                                if result.is_ok() {
+                                    result = sent;
+                                }
+                            }
+                            let _ = response.send(result);
                         }
-                    };
-                    let result = connection
-                        .transport
-                        .send_result(jsonrpc_id, json!({ "decision": decision }))
-                        .await;
-                    let _ = response.send(result);
-                }
-                Some(SessionCommand::Interrupt { response }) => {
-                    interrupts.0.push(response);
-                    if stop_deadline.is_some() { continue; }
-                    stop_deadline=Some(tokio::time::Instant::now()+stop_timeout);
-                    let thread_id = connection.thread_id.clone();
-                    let result = connection.request(
-                        "turn/interrupt",
-                        json!({ "threadId": thread_id, "turnId": started.native_turn_id }),
-                    ).await;
-                    match result {
-                        Ok(exchange) => {
-                            for frame in exchange.interleaved {
-                                verified_terminal |= confirms_turn(&frame,&connection.thread_id,&started.native_turn_id);
-                                terminal |= handle_frame(
-                                    connection,
-                                    events,
-                                    frame,
-                                    &mut pending_approvals,
-                                    &mut next_approval_id,
-                                    &mut file_changes,
-                                )
-                                .await;
+                        Some(SessionCommand::Interrupt { response }) => {
+                            interrupts.0.push(response);
+                            if stop_deadline.is_some() { continue; }
+                            stop_deadline=Some(tokio::time::Instant::now()+stop_timeout);
+                            let thread_id = connection.thread_id.clone();
+                            let result = connection.request(
+                                "turn/interrupt",
+                                json!({ "threadId": thread_id, "turnId": started.native_turn_id }),
+                            ).await;
+                            match result {
+                                Ok(exchange) => {
+                                    for frame in exchange.interleaved {
+                                        verified_terminal |= confirms_turn(&frame,&connection.thread_id,&started.native_turn_id);
+                                        terminal |= handle_frame(
+                                            connection,
+                                            events,
+                                            frame,
+                                            &mut pending_approvals,
+                                            &mut next_approval_id,
+        &mut approval_repeats,
+                                            &mut file_changes,
+                                        )
+                                        .await;
+                                    }
+                                }
+                                Err(error) => {
+                                    interrupts.finish(Err(error));
+                                    connection.native.request_close();
+                                    return ActorControl::Stop;
+                                }
                             }
                         }
+                        Some(SessionCommand::Configure { response, .. }) => {
+                            let _ = response.send(Err(DriverError::Protocol("cannot configure an active codex turn".into())));
+                        }
+                        Some(SessionCommand::CheckReady { response, .. }) => {
+                            let _ = response.send(Err(DriverError::CapabilityUnavailable("codex turn is already active".into())));
+                        }
+                        Some(SessionCommand::Shutdown { response }) => {
+                            return ActorControl::Shutdown(response);
+                        }
+                        Some(SessionCommand::Prompt { response, .. }) => {
+                            let _ = response.send(Err(DriverError::CapabilityUnavailable(
+                                "codex turn is already active".into(),
+                            )));
+                        }
+                        None => return ActorControl::Stop,
+                    },
+                    frame = connection.transport.read_frame() => match frame {
+                        Ok(frame) => {
+                            verified_terminal |= confirms_turn(&frame,&connection.thread_id,&started.native_turn_id);
+                            terminal |= handle_frame(
+                                connection,
+                                events,
+                                frame,
+                                &mut pending_approvals,
+                                &mut next_approval_id,
+        &mut approval_repeats,
+                                &mut file_changes,
+                            )
+                            .await;
+                        }
                         Err(error) => {
-                            interrupts.finish(Err(error));
-                            connection.native.request_close();
+                            let _ = events.send(Err(error)).await;
                             return ActorControl::Stop;
                         }
-                    }
+                    },
+                    ()=async { if let Some(deadline)=stop_deadline {tokio::time::sleep_until(deadline).await;} else {std::future::pending::<()>().await;} }=>{
+                        connection.native.request_close();
+                        interrupts.finish(Err(DriverError::Disconnected("Codex stop did not receive a terminal event in time".into())));
+                        let _=events.send(Err(DriverError::Disconnected("Codex stop was not confirmed; closing the original worker".into()))).await;
+                        return ActorControl::Stop;
+                    },
+                    ()=events.closed()=>{
+                        connection.native.request_close();
+                        return ActorControl::Stop;
+                    },
                 }
-                Some(SessionCommand::Configure { response, .. }) => {
-                    let _ = response.send(Err(DriverError::Protocol("cannot configure an active codex turn".into())));
-                }
-                Some(SessionCommand::CheckReady { response, .. }) => {
-                    let _ = response.send(Err(DriverError::CapabilityUnavailable("codex turn is already active".into())));
-                }
-                Some(SessionCommand::Shutdown { response }) => {
-                    return ActorControl::Shutdown(response);
-                }
-                Some(SessionCommand::Prompt { response, .. }) => {
-                    let _ = response.send(Err(DriverError::CapabilityUnavailable(
-                        "codex turn is already active".into(),
-                    )));
-                }
-                None => return ActorControl::Stop,
-            },
-            frame = connection.transport.read_frame() => match frame {
-                Ok(frame) => {
-                    verified_terminal |= confirms_turn(&frame,&connection.thread_id,&started.native_turn_id);
-                    terminal |= handle_frame(
-                        connection,
-                        events,
-                        frame,
-                        &mut pending_approvals,
-                        &mut next_approval_id,
-                        &mut file_changes,
-                    )
-                    .await;
-                }
-                Err(error) => {
-                    let _ = events.send(Err(error)).await;
-                    return ActorControl::Stop;
-                }
-            },
-            ()=async { if let Some(deadline)=stop_deadline {tokio::time::sleep_until(deadline).await;} else {std::future::pending::<()>().await;} }=>{
-                connection.native.request_close();
-                interrupts.finish(Err(DriverError::Disconnected("Codex stop did not receive a terminal event in time".into())));
-                let _=events.send(Err(DriverError::Disconnected("Codex stop was not confirmed; closing the original worker".into()))).await;
-                return ActorControl::Stop;
-            },
-            ()=events.closed()=>{
-                connection.native.request_close();
-                return ActorControl::Stop;
-            },
-        }
     }
     if !interrupts.0.is_empty() {
         if !verified_terminal {
@@ -1646,12 +1657,47 @@ async fn run_turn(
     ActorControl::Continue
 }
 
+/// Repeated native approval requests within one turn, attached to the card
+/// that is still open for the same item.
+#[derive(Default)]
+struct ApprovalRepeats {
+    /// Item id or tool + summary, to the card's request id.
+    keys: HashMap<String, String>,
+    /// Earlier JSON-RPC ids per card, answered together with the latest.
+    extra: HashMap<String, Vec<Value>>,
+}
+
+impl ApprovalRepeats {
+    fn open_card(&self, keys: &[String], pending: &HashMap<String, Value>) -> Option<String> {
+        keys.iter()
+            .filter_map(|key| self.keys.get(key))
+            .find(|card| pending.contains_key(*card))
+            .cloned()
+    }
+    /// The JSON-RPC ids to answer for a card, oldest first: the card's own
+    /// request, then its repeats in arrival order.
+    fn answered(&mut self, card: &str, first: Value) -> Vec<Value> {
+        let mut ids = vec![first];
+        ids.extend(self.extra.remove(card).unwrap_or_default());
+        ids
+    }
+}
+
+fn approval_keys(params: &Value, tool_name: &str, summary: &str) -> Vec<String> {
+    let mut keys = vec![format!("input:{tool_name}\n{summary}")];
+    if let Some(item) = params.get("itemId").and_then(Value::as_str) {
+        keys.push(format!("item:{item}"));
+    }
+    keys
+}
+
 async fn handle_frame(
     connection: &mut Connection,
     events: &mpsc::Sender<Result<DriverEvent, DriverError>>,
     frame: IncomingFrame,
     pending_approvals: &mut HashMap<String, Value>,
     next_approval_id: &mut u64,
+    approval_repeats: &mut ApprovalRepeats,
     file_changes: &mut file_approval::FileChanges,
 ) -> bool {
     match frame {
@@ -1786,8 +1832,17 @@ async fn handle_frame(
                 }
                 return false;
             };
+            // Codex may ask again while a card is unanswered; keep one card.
+            let keys = approval_keys(&params, tool_name, &command_summary);
+            if let Some(card) = approval_repeats.open_card(&keys, pending_approvals) {
+                approval_repeats.extra.entry(card).or_default().push(id);
+                return false;
+            }
             let native_request_id = format!("codex-approval-{next_approval_id}");
             *next_approval_id += 1;
+            for key in keys {
+                approval_repeats.keys.insert(key, native_request_id.clone());
+            }
             pending_approvals.insert(native_request_id.clone(), id);
             let _ = events
                 .send(Ok(DriverEvent::ApprovalRequested {

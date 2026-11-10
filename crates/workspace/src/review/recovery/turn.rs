@@ -93,6 +93,12 @@ impl ReviewStore {
                 Err("上次撤销未完成，请到审查中的恢复记录处理后再操作".into())
             };
         }
+        if data["sharedWorkspace"] == true {
+            return Err(
+                "这段时间同一文件夹中还有其他对话在运行，无法确定这些修改属于本轮，不能整轮撤销"
+                    .into(),
+            );
+        }
         if data["attribution"] != "workspace_interval" || data["recoveredAfterInterruption"] == true
         {
             return Err("此记录不是完整的一轮修改，无法整轮撤销".into());
@@ -342,6 +348,25 @@ mod tests {
             .undo_turn("task", "artifact", &data, &allowed)
             .unwrap();
         assert_eq!(std::fs::read(root.path().join("edited")).unwrap(), b"later");
+    }
+    #[test]
+    fn a_capture_shared_with_another_conversation_is_never_undone() {
+        let root = tempfile::tempdir().unwrap();
+        let storage = tempfile::tempdir().unwrap();
+        let store = ReviewStore::open(storage.path().into()).unwrap();
+        std::fs::write(root.path().join("theirs.png"), b"\0\x01").unwrap();
+        let mut data = artifact(
+            root.path(),
+            json!([{"path":"theirs.png","before":null,"after":version(b"\0\x01")}]),
+        );
+        data["attribution"] = json!("shared_workspace_interval");
+        data["sharedWorkspace"] = json!(true);
+        let allowed = vec![root.path().to_str().unwrap().into()];
+        let error = store
+            .undo_turn("task", "artifact", &data, &allowed)
+            .unwrap_err();
+        assert!(error.contains("其他对话"), "{error}");
+        assert!(root.path().join("theirs.png").exists());
     }
     #[test]
     fn preflight_rejects_later_edits_incomplete_snapshots_and_outside_paths_before_any_write() {

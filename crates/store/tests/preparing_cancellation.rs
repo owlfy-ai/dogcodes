@@ -705,6 +705,54 @@ async fn cursor_submission_reuses_inventory_but_native_selection_still_gates_the
     assert_eq!(f.driver.catalog_reads.load(Ordering::Acquire), reads);
 }
 
+/// A send checks the chosen model against the inventory the model picker
+/// used; only a model missing there costs a live native catalog query.
+#[tokio::test]
+async fn a_selected_model_in_the_inventory_does_not_query_the_agent_again() {
+    let f = fixture_with_provider(
+        PromptMode::Complete,
+        10,
+        10,
+        10,
+        SqliteStore::open_in_memory().unwrap(),
+        "zcode",
+    )
+    .await;
+    f.core
+        .cached_model_catalog(&f.driver.executor, None, Some(&f.task), false)
+        .await
+        .unwrap();
+    let reads = f.driver.catalog_reads.load(Ordering::Acquire);
+    selected_submit(&f).await;
+    idle(&f.core, &f.task).await;
+    assert_eq!(f.driver.prompts.load(Ordering::Acquire), 1);
+    assert_eq!(f.driver.catalog_reads.load(Ordering::Acquire), reads);
+
+    // A model the inventory does not know is checked with the agent and refused.
+    let state = f.core.bootstrap().await.unwrap();
+    let mut command = CommandEnvelope::local(CoreCommand::SubmitTurn(SubmitTurn {
+        task_id: f.task.clone(),
+        prompt: "unknown model".into(),
+        model: Some("not-offered".into()),
+        thinking: None,
+        permission_mode: None,
+        attachments: vec![],
+        executor_override: None,
+        review_fix: None,
+    }));
+    command.expected_stream_version = Some(
+        state
+            .tasks
+            .iter()
+            .find(|t| t.task_id == f.task)
+            .unwrap()
+            .stream_version,
+    );
+    assert!(f.core.execute(command).await.is_err());
+    assert!(f.driver.catalog_reads.load(Ordering::Acquire) > reads);
+    assert_eq!(f.driver.prompts.load(Ordering::Acquire), 1);
+}
+
 #[tokio::test]
 async fn cancelling_reconfiguration_joins_original_retirement_and_never_starts_replacement() {
     let f = fixture(PromptMode::Complete, 10, 10, 0).await;

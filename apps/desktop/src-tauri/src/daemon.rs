@@ -1974,6 +1974,7 @@ async fn run_service(directory: PathBuf, owned: bool) -> Result<(), String> {
             ),
         )
         .with_history_query_program(std::env::current_exe().map_err(|e| e.to_string())?)
+        .with_conversation_drafts(scratch.clone())
         .with_turn_timing_sink(crate::turn_timing::file_sink(&directory)),
         &directory,
     ));

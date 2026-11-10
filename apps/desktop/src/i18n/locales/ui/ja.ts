@@ -1734,6 +1734,7 @@ export const uiJa: UiMessages = {
     loadFailed: "このターンの変更を読み込めませんでした",
     partialStats: "変更数は、解析できた Diff の部分のみを集計しています。",
     recovered: "接続が切れた後の復旧スナップショット · 確認時点のファイルの変更のみを反映しています。外部ツールがまだ書き込んでいる可能性があります",
+    shared: "同じ時間にこのフォルダーで他の会話も実行されていました · これらの変更には他の会話によるものが含まれる可能性があるため、ターン全体を元に戻すことはできません",
   },
   turnProcess: {
     worked: "作業完了",
@@ -2034,6 +2035,7 @@ export const uiJa: UiMessages = {
     failureWithAgentError: "Agent はこのリクエストを完了できず、次のエラーを返しました:\n{detail}",
     failureAgentErrorSuffix: "{message}\n\nAgent が返したエラー:\n{detail}",
     connectionInterrupted: "前回の実行の接続が中断されました。メッセージを送信して続行できます。Agent は既存の履歴と照らして現在の結果を確認します。",
+    agentRunsOneTaskAtATime: "{agent} は一度に 1 つのタスクしか実行できません。前のタスクが完了すると、このタスクが自動的に開始されます。",
     quotaExhausted: "Coding Agent の利用枠を使い切りました。回復を待つか、別の Agent に切り替えてください。",
     quotaExhaustedReset: "Coding Agent の利用枠を使い切りました。{time} にリセットされる見込みです。別の Agent に切り替えることもできます。",
     attachmentsTooMany: "一度に送信できる添付ファイルは最大 16 個です。",
