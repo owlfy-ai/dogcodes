@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { prepareBuild, parseArguments, signingVariables, linuxAppImageFiles } from './package-desktop.mjs';
 import { releaseInstallerName, renameReleaseInstallers } from './release-names.mjs';
 import { checkReleaseInputs, privateOrGeneratedPath } from './check-release-inputs.mjs';
-import { buildMacKeychainPackage, checkMacKeychain, macPackageOptions } from './signing-macos.mjs';
+import { buildMacKeychainPackage, checkMacKeychain, macPackageOptions, removeCodesignTemps } from './signing-macos.mjs';
 
 test('release index guard catches force-added secrets and generated directories', () => {
   for (const path of ['.env', '.env.production', 'release/.env.local', 'any/config.local.json',
@@ -139,6 +139,20 @@ test('Keychain notarization accepts an installed identity without exporting cred
   assert.throws(() => parseArguments(['--signed', '--target', 'one', '--target', 'two']), /only once/);
   assert.throws(() => macPackageOptions({ target: 'x86_64-pc-windows-msvc' }), /macOS Rust target/);
   assert.throws(() => macPackageOptions({ bundles: 'nsis' }), /only app and dmg/);
+});
+
+test('codesign temp copies are removed before notarization', () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'dogcodes-cstemp-'));
+  try {
+    const binary = resolve(root, 'dog.codes.app/Contents/Resources/computer-use/cua-driver');
+    mkdirSync(resolve(root, 'dog.codes.app/Contents/Resources/computer-use'), { recursive: true });
+    writeFileSync(binary, 'driver');
+    writeFileSync(`${binary}.cstemp`, 'stale');
+    removeCodesignTemps(resolve(root, 'dog.codes.app'));
+    assert.equal(existsSync(binary), true);
+    assert.equal(existsSync(`${binary}.cstemp`), false);
+    removeCodesignTemps(resolve(root, 'missing.app'));
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('Keychain preflight rejects missing identity and missing Rust targets without signing', async () => {

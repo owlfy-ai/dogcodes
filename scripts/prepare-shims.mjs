@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -42,6 +42,7 @@ export function prepareShims({ projectRoot = root, targets = shimTargets(), sign
     if (target.endsWith('-apple-darwin') && process.platform === 'darwin') {
       const flags = signingIdentity === '-' ? [] : ['--options', 'runtime', '--timestamp'];
       run('codesign', ['--force', '--sign', signingIdentity, ...flags, output], { stdio: 'pipe' });
+      rmSync(`${output}.cstemp`, { force: true });
     }
   }
   return destination;

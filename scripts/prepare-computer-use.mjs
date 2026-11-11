@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, cpSync, chmodSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, cpSync, chmodSync, rmSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -70,6 +70,7 @@ export async function prepareComputerUse({ projectRoot = root, platform = proces
     if (distribution.platform === 'darwin' && process.platform === 'darwin') {
       const flags = signingIdentity === '-' ? [] : ['--options', 'runtime', '--timestamp'];
       execFileSync('codesign', ['--force', '--sign', signingIdentity, ...flags, output], { stdio: 'pipe' });
+      rmSync(`${output}.cstemp`, { force: true });
     }
     // macOS resources are signed before Tauri copies them. Hash the shipped
     // bytes, after signing, so launch verification still succeeds in the app.

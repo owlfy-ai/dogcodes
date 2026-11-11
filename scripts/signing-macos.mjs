@@ -1,8 +1,16 @@
 import { spawn, execFile } from 'node:child_process';
-import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync, copyFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, copyFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { resolve, join } from 'node:path';
 import { macReleaseDmgName } from './release-names.mjs';
+
+// codesign --force leaves Name.cstemp beside a universal Mach-O. Notarization rejects that copy.
+export function removeCodesignTemps(directory) {
+  if (!existsSync(directory)) return;
+  for (const relative of readdirSync(directory, { recursive: true })) {
+    if (String(relative).endsWith('.cstemp')) rmSync(join(directory, relative), { force: true });
+  }
+}
 
 export function runBuild(command, args, options) {
   return new Promise((accept, reject) => {
@@ -69,6 +77,7 @@ export async function buildMacKeychainPackage({ root, env, config, cli, configAr
   const executable = (await capture('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleExecutable', join(app, 'Contents/Info.plist')], { cwd: root, env })).trim();
   const actual = (await capture('lipo', ['-archs', join(app, 'Contents/MacOS', executable)], { cwd: root, env })).trim().split(/\s+/).sort();
   if (actual.join(',') !== [...options.architectures].sort().join(',')) throw new Error('The built application has unexpected CPU architectures.');
+  removeCodesignTemps(app);
   const tool = (command, args) => run(command, args, { cwd: root, env });
   await tool('codesign', ['--verify', '--deep', '--strict', app]);
   await tool('codesign', ['--verify', '-R', `=identifier "${appConfig.identifier}" and anchor apple generic and certificate leaf[subject.OU] = "${team}"`, app]);
