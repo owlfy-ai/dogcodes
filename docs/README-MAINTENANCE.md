@@ -64,9 +64,9 @@ Playwright 不在项目运行依赖中；也可通过 `--playwright-module /abso
 
 ## 英文功能配图验收集
 
-英文首页已接入 `docs/images/readme/en/` 中 18 张功能图。本轮按照用户要求，使用内置 image_gen 参照软件 PC / 手机 UI 重绘；对话内容采用 Ledger 发票筛选、CSV 导出、代码审查、修复、测试与提交的开发场景，不直接使用应用里的测试会话截图。配图中的项目、代码、额度和版本是示例，不能作为原生运行或供应商验收证据。
+英文首页已接入 `docs/images/readme/en/` 中 20 张功能图。本轮按照用户要求，使用内置 image_gen 参照软件 PC / 手机 UI 重绘；对话内容采用 Ledger 发票筛选、CSV 导出、代码审查、修复、测试与提交的开发场景，不直接使用应用里的测试会话截图。配图中的项目、代码、额度和版本是示例，不能作为原生运行或供应商验收证据。
 
-Features 章节的 9 张图只展示 PC，完整窗口居中；总览及手机远程章节仍按先 PC（左上）、后对应手机（右下）组织。手机章节共享的切换 Agent、Git、运行项目三张图以 `*-phone.png` 保留原版，避免 Features 改图影响手机展示。`preview.html` 提供整套验收，`prompts.json` 保留提示词与校对记录，`manifest.json` 记录文件尺寸及 SHA-256。所有语言首页均已移除「最小化窗口，工作继续」「每次发送、提交和推送只发生一次」「界面使用你的语言」三个章节及其配图引用；英文资源目录与预览同步移除对应三张图。其他功能的图片与语言导航保留。
+Features 章节的配图只展示 PC，保留完整界面；总览及手机远程章节仍按先 PC（左上）、后对应手机（右下）组织。手机章节共享的切换 Agent、Git、运行项目三张图以 `*-phone.png` 保留原版，避免 Features 改图影响手机展示。`preview.html` 提供整套验收，`prompts.json` 保留提示词与校对记录，`manifest.json` 记录文件尺寸及 SHA-256。所有语言首页均已移除「最小化窗口，工作继续」「每次发送、提交和推送只发生一次」「界面使用你的语言」三个章节及其配图引用；英文资源目录与预览同步移除对应三张图。其他功能的图片与语言导航保留。
 
 图片原件为 1536 × 1024 PNG。不要用旧截图脚本覆盖英文目录，亦不要把这些重绘图描述为真实运行截图。
 
@@ -75,3 +75,9 @@ Features 章节的 9 张图只展示 PC，完整窗口居中；总览及手机�
 9 种语言的功能区最后一项为 Computer Use，沿用用户提供的 Codex 级别电脑操作与自主验证卖点；同时注明兼容 Agent/CLI、系统权限、Pi 暂不支持及 Mac 最低 macOS 13。共用英文图 `en/computer-use.png`，不在本轮生成其他语言图片。图中 Cursor 操作 Ledger 网页验证发票筛选与 CSV 导出；设置开关位于左下菜单，操作明细遵循 `ComputerUseActivity.tsx`，顶部使用后台状态提示。文案依据当前全局开关实现、`crates/core/src/computer_use/workflow.md` 及 Computer Use 实施报告，不把示意图当作原生验收证据或等效性能测试。
 
 Computer Use 图已校正：示例 Agent 统一为 Cursor，顶部状态提示与左下应用按钮使用项目正式的黑底白色侧面牧羊犬标志作为参考（`apps/desktop/src-tauri/icons/128x128@2x.png`），不使用新设计的正面卡通狗；Cursor 图标依据项目现有素材。
+
+## SSH 远程主机功能
+
+9 种语言 README 在 Computer Use 之前新增远程主机介绍，Computer Use 保持为 Features 最后一项。介绍覆盖通过 SSH 接入服务器、图形界面一键安装受支持的 Agent CLI、额度与版本管理及升级、浏览服务器目录创建项目、向同一主机上的 Agent 下达任务，以及远程文件、Git、审查、终端与运行。依据当前 `ExecutionTargets.tsx`、`HostAgentManagement.tsx`、`QuotaPanel.tsx`、`hostAgentCommands.ts` 和 SSH 实施方案的已实现部分；不把远端 Computer Use、跨机器切换 Agent 或断网持续运行写入功能。
+
+所有语言共用 `en/remote-host-agents.png` 与 `en/remote-host-project.png` 两张英文图。内置 image_gen 参照用户提供的实际界面及项目正式图标重绘；Build server、Ledger、额度、版本和开发结果是精选示例。源截图中的真实 IP 与测试对话不分发。第一张展示服务器 Agent 的安装、额度和版本升级；第二张展示目录选择与远程 Cursor 开发对话。

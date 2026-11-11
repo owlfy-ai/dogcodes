@@ -116,6 +116,19 @@ Verbinde die Agenten, die du bereits nutzt. Die folgenden 12 Integrationen sind 
 
 ![Verbrauch pro Runde, glasklar](../images/readme/en/turn-usage.png)
 
+### Agenten auf deinen Remote-Hosts ausführen und verwalten
+
+**Code und Agenten bleiben auf deinen eigenen Servern. Verbinde dich per SSH und entwickle remote im selben dog.codes-Arbeitsbereich.**
+
+- Installiere unterstützte Agenten-CLIs mit einem Klick auf dem Host und verwalte installierte Versionen, Updates, verbleibende Kontingente und Rücksetzzeiten in der Oberfläche.
+- Durchsuche die Verzeichnisse des Hosts grafisch und wähle einen Ordner als Projekt aus, ohne das Repository auf deinen Computer zu kopieren.
+- Wähle einen Agenten auf diesem Host, erteile ihm Aufgaben und nutze die vertraute Gesprächsoberfläche für gestreamte Antworten, Berechtigungsfreigaben und Rückfragen.
+- Arbeite vom Desktop aus mit Remote-Dateien, Git-Änderungen, Code-Reviews, Terminals und Befehlen zum Starten des Projekts.
+
+![Agenten auf einem Remote-Host installieren sowie Kontingente und Versionen verwalten](../images/readme/en/remote-host-agents.png)
+
+![Ein Remote-Verzeichnis auswählen und Cursor auf diesem Host eine Entwicklungsaufgabe erteilen](../images/readme/en/remote-host-project.png)
+
 ### Computer Use auf Codex-Niveau für alle Agenten
 
 **Gib Agenten und CLIs, die deinen Computer bisher nicht bedienen oder ihre Arbeit selbst überprüfen können, ebenso leistungsfähige Computersteuerung wie Codex.**

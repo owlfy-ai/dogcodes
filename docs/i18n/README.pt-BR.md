@@ -116,6 +116,19 @@ Conecte os agentes que você já usa. As 12 integrações abaixo estão implemen
 
 ![Uso por turno, com toda a clareza](../images/readme/en/turn-usage.png)
 
+### Execute e gerencie agentes nos seus hosts remotos
+
+**Mantenha seu código e seus agentes nos seus próprios servidores. Conecte-se por SSH e desenvolva remotamente no mesmo espaço de trabalho do dog.codes.**
+
+- Instale as CLIs de agentes compatíveis no host com um clique e gerencie versões instaladas, atualizações, cotas restantes e horários de renovação pela interface.
+- Navegue visualmente pelos diretórios do host e escolha uma pasta para criar um projeto, sem copiar o repositório para o seu computador.
+- Escolha um agente em execução nesse host, atribua tarefas e use a interface de conversa habitual para acompanhar respostas em tempo real, aprovar permissões e responder perguntas.
+- Trabalhe com arquivos remotos, alterações do Git, revisões de código, terminais e comandos de execução do projeto pelo aplicativo desktop.
+
+![Instale agentes e gerencie cotas e versões em um host remoto](../images/readme/en/remote-host-agents.png)
+
+![Escolha um diretório remoto e atribua uma tarefa de desenvolvimento ao Cursor nesse host](../images/readme/en/remote-host-project.png)
+
 ### Computer Use no nível do Codex para todos os agentes
 
 **Dê aos agentes e CLIs que não conseguem operar seu computador ou verificar o próprio trabalho recursos de controle do computador tão poderosos quanto os do Codex.**

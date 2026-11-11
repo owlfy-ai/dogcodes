@@ -116,6 +116,19 @@ dog.codes 將程式開發 Agent、對話、程式碼變更與專案執行指令�
 
 ![每一輪的用量明細一目了然](../images/readme/en/turn-usage.png)
 
+### 在遠端主機上執行與管理 Agent
+
+**程式碼與 Agent 留在你自己的伺服器上，透過 SSH 連線，在同一個 dog.codes 工作區中完成遠端開發。**
+
+- 在圖形介面中一鍵安裝支援的 Agent CLI，集中查看已安裝版本、剩餘額度與重設時間，並直接升級。
+- 直接瀏覽遠端主機上的目錄，選擇資料夾建立專案，不必將儲存庫複製到本機。
+- 選擇在該主機上執行的 Agent 下達任務，沿用熟悉的對話介面查看串流回覆、核准權限請求及回答問題。
+- 遠端檔案、Git 變更、程式碼審查、終端機與專案執行命令，都能在桌面端直接操作。
+
+![在遠端主機上一鍵安裝 Agent，管理額度與版本](../images/readme/en/remote-host-agents.png)
+
+![選擇遠端目錄建立專案，向主機上的 Cursor 下達開發任務](../images/readme/en/remote-host-project.png)
+
 ### 為所有 Agent 帶來 Codex 等級的 Computer Use 能力
 
 **讓原本無法操作電腦、自主驗證工作成果的 Agent 或 CLI，也具備像 Codex 一樣強大的電腦操作能力。**

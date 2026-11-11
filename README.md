@@ -116,6 +116,19 @@ Connect the agents you already use. The 12 integrations below are implemented; a
 
 ![Per-turn usage, crystal clear — desktop](docs/images/readme/en/turn-usage.png)
 
+### Run agents on your remote hosts
+
+**Keep your code and agents on your own servers. Connect over SSH and manage remote development from the same dog.codes workspace.**
+
+- Install supported agent CLIs on the host in one click, then manage installed versions, updates, remaining quotas and reset times in the UI.
+- Browse directories on the host visually and open a folder as a project, without copying the repository to your computer.
+- Choose an agent running on that host, assign tasks, and follow streamed responses, permission requests and questions in the familiar conversation UI.
+- Work with remote files, Git changes, code reviews, terminals and project run commands from the desktop.
+
+![Install agents and manage their quotas and versions on a remote host](docs/images/readme/en/remote-host-agents.png)
+
+![Choose a remote directory and assign a development task to Cursor on that host](docs/images/readme/en/remote-host-project.png)
+
 ### Codex-level computer use for every agent
 
 **Give agents and CLIs that cannot operate your computer or verify their own work the same powerful computer-use capabilities as Codex.**

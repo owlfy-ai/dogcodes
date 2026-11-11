@@ -116,6 +116,19 @@ dog.codes 把编程 Agent、对话、代码变更和项目运行命令放进同�
 
 ![每一轮的用量明细一目了然](../images/readme/en/turn-usage.png)
 
+### 在远程主机上运行和管理 Agent
+
+**代码和 Agent 留在你自己的服务器上，通过 SSH 接入，在同一个 dog.codes 工作区里完成远程开发。**
+
+- 在图形界面中一键安装受支持的 Agent CLI，集中查看已安装版本、剩余额度和重置时间，并直接升级。
+- 直接浏览远程主机上的目录，选择文件夹创建项目，无需把仓库复制到本机。
+- 选择那台主机上运行的 Agent 下达任务，沿用熟悉的对话界面查看流式回复、批准权限请求和回答问题。
+- 远程文件、Git 变更、代码审查、终端和项目运行命令，都可以在桌面端直接操作。
+
+![在远程主机上一键安装 Agent，管理额度和版本](../images/readme/en/remote-host-agents.png)
+
+![选择远程目录创建项目，向主机上的 Cursor 下达开发任务](../images/readme/en/remote-host-project.png)
+
 ### 为所有 Agent 带来 Codex 级别的 Computer Use 能力
 
 **让原本无法操作电脑、自主验证工作成果的 Agent 或 CLI，也具备像 Codex 一样强大的电脑操作能力。**

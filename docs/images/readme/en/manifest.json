@@ -4,7 +4,7 @@
   "tool": "Built-in image_gen",
   "scenario": "Ledger: invoice filters, CSV export, code review, tests and commits",
   "status": "English review set; other languages await user acceptance",
-  "layout": "Ten Features images show desktop only; overview and phone-remote illustrations retain desktop and phone views.",
+  "layout": "Features illustrations show desktop only; remote hosts use two views for agent management and project workflow. Overview and phone-remote illustrations retain desktop and phone views.",
   "assets": [
     {
       "file": "overview.png",
@@ -95,6 +95,34 @@
       "mode": "RGB",
       "sha256": "fffcae5172f0b33a6dd362debdeedce9f486eb06aa0f8860358862184fcfc916",
       "layout": "Desktop only; complete centered app window"
+    },
+    {
+      "file": "remote-host-agents.png",
+      "title": "Install and manage agents on your remote hosts",
+      "source_image": "exec-4079bd8a-59d5-48f7-a9de-6f86bc19390e.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "96767077d03394ed324d58dab8de1a5ea7809ee3dd06c82d391f013e8bd22dc7",
+      "layout": "Desktop only; remote SSH host agent management",
+      "scenario": "Curated Ledger development on Build server; illustrative quotas, versions and results",
+      "brand_reference": "apps/desktop/src-tauri/icons/128x128@2x.png",
+      "agent_reference": "docs/images/readme/agents/cursor.png",
+      "ui_reference": "User-provided Remote hosts screenshot and current desktop components; source screenshot not distributed"
+    },
+    {
+      "file": "remote-host-project.png",
+      "title": "Choose a server folder and work with its agents",
+      "source_image": "exec-1b7d9d37-0382-4874-9e7f-bf81ba9c4e77.png",
+      "width": 1536,
+      "height": 1024,
+      "mode": "RGB",
+      "sha256": "382ac37158807a75bee286717aa3a3d067182340d067916840f3cf0c3525bfd5",
+      "layout": "Desktop only; server-folder picker and remote project conversation",
+      "scenario": "Curated Ledger development on Build server; illustrative quotas, versions and results",
+      "brand_reference": "apps/desktop/src-tauri/icons/128x128@2x.png",
+      "agent_reference": "docs/images/readme/agents/cursor.png",
+      "ui_reference": "User-provided Remote hosts screenshot and current desktop components; source screenshot not distributed"
     },
     {
       "file": "computer-use.png",
