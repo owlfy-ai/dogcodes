@@ -311,7 +311,6 @@ export const ko: TranslationDict = {
     quotaSwitch: "{agent}(으)로 계속",
     quotaSwitchTooltip: "다음 메시지는 이 대화와 함께 {agent}에 전달됩니다",
     enableInManagement: "Agent 관리에서 활성화하거나 사용 가능한 다른 Agent로 전환하세요",
-    stopPending: "중지 결과 확인 대기 중",
   },
   turn: {
     copy: "내용 복사",

@@ -120,7 +120,8 @@ it("clears only the recovered approval error when a lost receipt is found", asyn
   const adapter = client as import("@dogcodes/protocol").CoreClient;
   vi.mocked(adapter.approvalReceipt!).mockImplementation(async query => ({ acknowledgement: { accepted: true, commandId: query.operationId, requestFingerprint: query.requestFingerprint, firstSequence: 20, lastSequence: 20 }, delivery: "sent" }));
   pending = [];
-  await click([...element.querySelectorAll("button")].find(node => node.textContent === "核实审批结果")!);
+  // The next conversation update rechecks silently and finds the receipt.
+  await sync();
   expect(element.textContent).not.toContain("本条审批暂未收到回执");
   expect(respond).toHaveBeenCalledOnce();
 });

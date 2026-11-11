@@ -311,7 +311,6 @@ export const ru: TranslationDict = {
     quotaSwitch: "Продолжить с {agent}",
     quotaSwitchTooltip: "Следующее сообщение уйдёт в {agent} вместе с этой беседой",
     enableInManagement: "Включите Agent в разделе «Управление Agents» или выберите доступный",
-    stopPending: "Ожидание подтверждения остановки",
   },
   turn: {
     copy: "Копировать",

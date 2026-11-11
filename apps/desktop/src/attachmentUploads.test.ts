@@ -55,7 +55,7 @@ it("does not upload after a failed initial receipt query", async () => {
 it("blocks changed bytes under the original identity before another RPC", async () => {
   const f = fixture(), id = crypto.randomUUID(); await uploads.prepare(file(), id, "text/plain", f.client);
   f.attachmentUploadReceipt.mockClear();
-  await expect(uploads.prepare(file("modified"), id, "text/plain", f.client)).rejects.toThrow("其他内容");
+  await expect(uploads.prepare(file("modified"), id, "text/plain", f.client)).rejects.toThrow("冲突");
   expect(f.uploadAttachment).toHaveBeenCalledTimes(1); expect(f.attachmentUploadReceipt).not.toHaveBeenCalled();
 });
 it("does not upload when persistence fails", async () => {
@@ -75,7 +75,7 @@ it("concurrent preparation of the same attachment publishes once and does not mi
   await uploads.prepare(file(), crypto.randomUUID(), "text/plain", f.client);
   uploads.forget(id); expect(uploads.list()).toHaveLength(1);
 });
-it("does not silently drop damaged records", () => {
+it("drops damaged records instead of letting them block attachments", () => {
   const id = crypto.randomUUID(); localStorage.setItem(`dogcodes:pending-attachment-upload:${id}`, "{}");
-  expect(uploads.snapshot()).toContain("损坏"); expect(() => uploads.forget(id)).toThrow("损坏");
+  expect(uploads.list()).toEqual([]); expect(localStorage.getItem(`dogcodes:pending-attachment-upload:${id}`)).toBeNull();
 });

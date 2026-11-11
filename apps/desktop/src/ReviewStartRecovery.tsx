@@ -10,37 +10,47 @@ import { translate as t } from "./i18n";
 
 export function usePendingReview(task: TaskId, scope: string) {
   const saved = useSyncExternalStore(operations.subscribe, () => operations.snapshot(task, scope), () => "null");
-  return JSON.parse(saved) as ReviewStartRequest | { error: string } | null;
+  const value = JSON.parse(saved) as ReviewStartRequest | { error: string } | null;
+  return value && "runId" in value ? value : null;
 }
+
+/**
+ * Finishes a review start whose reply was lost or that failed. It first looks
+ * the review up and retries the same request once on its own (the service starts
+ * one ID only once); only if that fails does it say so and let the person retry
+ * or drop it.
+ */
 export function ReviewStartRecovery({ client, taskId, scope, busy = false, onRecovered }: {
   client: CoreClient; taskId: TaskId; scope: string; busy?: boolean; onRecovered: (run: TurnReviewRun) => void;
 }) {
-  const record = usePendingReview(taskId, scope);
-  const pending = record && "runId" in record ? record : null;
-  const [working, setWorking] = useState(false), [missing, setMissing] = useState(false), [error, setError] = useState("");
-  const guard = useRef(false), mounted = useRef(true), context = useRef(""); context.current = `${taskId}:${scope}`;
+  const pending = usePendingReview(taskId, scope);
+  const [working, setWorking] = useState(false), [failure, setFailure] = useState<{ runId: string; message: string } | null>(null);
+  const guard = useRef(false), mounted = useRef(true), tried = useRef(new Set<string>()), context = useRef(""); context.current = `${taskId}:${scope}`;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const id = pending?.runId;
-  useEffect(() => { setMissing(false); setError(""); }, [id, taskId, scope]);
-  async function recover(resend: boolean) {
-    if (!pending || guard.current || busy) return;
-    guard.current = true; setWorking(true); setError("");
+  async function recover(record: ReviewStartRequest) {
+    if (guard.current || busy) return;
+    guard.current = true; setWorking(true);
     const origin = `${taskId}:${scope}`;
     try {
-      const run = resend ? await operations.resend(client, scope, pending) : await operations.check(client, scope, pending);
-      if (mounted.current && context.current === origin) { setMissing(!run); if (run) onRecovered(run); }
-    } catch (cause) { if (mounted.current && context.current === origin) setError(userFacingError(cause, t("reviewRecovery.verifyFailed"))); }
-    finally { guard.current = false; if (mounted.current) setWorking(false); }
+      const run = await operations.resend(client, scope, record);
+      if (mounted.current && context.current === origin) { setFailure(null); onRecovered(run); }
+    } catch (cause) {
+      if (mounted.current && context.current === origin) setFailure({ runId: record.runId, message: userFacingError(cause, t("reviewRecovery.failed")) });
+    } finally { guard.current = false; if (mounted.current) setWorking(false); }
   }
-  if (!record) return null;
-  if ("error" in record) return <InlineError>{record.error}</InlineError>;
+  const id = pending?.runId;
+  useEffect(() => {
+    if (!pending || busy || tried.current.has(pending.runId)) return;
+    tried.current.add(pending.runId);
+    void recover(pending);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per kept request
+  }, [id, busy, taskId, scope]);
+  if (!pending || failure?.runId !== pending.runId) return null;
   return <div className="turn-action-feedback" role="group" aria-label={t("reviewRecovery.label")}>
-    <p>{t("reviewRecovery.pending", { kind: reviewLabels[record.kind], agent: providerLabel(record.executor.providerId) })}</p>
-    <button type="button" disabled={busy || working} onClick={() => void recover(false)}>{t("reviewRecovery.verify")}</button>
-    {missing && <><p>{t("reviewRecovery.missing")}</p><button type="button" disabled={busy || working} onClick={() => void recover(true)}>{t("reviewRecovery.resend")}</button></>}
-    <button type="button" disabled={busy || working} onClick={() => { try { operations.forget(scope, record); } catch (cause) { setError(String(cause)); } }}>{t("reviewRecovery.forget")}</button>
-    <small>{t("reviewRecovery.note")}</small>
-    {working && <LoadingStatus>{t("reviewRecovery.verifying")}</LoadingStatus>}
-    {error && <InlineError>{error}</InlineError>}
+    <p>{t("reviewRecovery.notStarted", { kind: reviewLabels[pending.kind], agent: providerLabel(pending.executor.providerId) })}</p>
+    <InlineError>{failure.message}</InlineError>
+    <button type="button" disabled={busy || working} onClick={() => void recover(pending)}>{t("reviewRecovery.retry")}</button>
+    <button type="button" disabled={busy || working} onClick={() => { operations.forget(scope, pending); setFailure(null); }}>{t("reviewRecovery.discard")}</button>
+    {working && <LoadingStatus>{t("reviewRecovery.starting")}</LoadingStatus>}
   </div>;
 }

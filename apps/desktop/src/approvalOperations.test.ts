@@ -47,25 +47,27 @@ it("recovers lost acceptance without a second decision", async () => {
 });
 it("requires reentered answers to match and resends only the original version and ID", async () => {
   await expect(submit()).rejects.toThrow("offline"); const record = JSON.parse(JSON.stringify(pending()));
-  await expect(submit("different-choice")).rejects.toThrow("与原请求不同");
-  await expect(submit("native-once", { cancelled: false, values: { password: "changed" } })).rejects.toThrow("与原请求不同");
+  await expect(submit("different-choice")).rejects.toThrow("暂时无法更改回答");
+  await expect(submit("native-once", { cancelled: false, values: { password: "changed" } })).rejects.toThrow("暂时无法更改回答");
   expect(f.respondApproval).toHaveBeenCalledTimes(1);
   await expect(operations.submit(f.client, { ...task, streamVersion: 100 }, approval, "native-once", answer)).rejects.toThrow("offline");
   expect(f.respondApproval.mock.calls).toEqual(Array(2).fill([{ taskId: task.taskId, streamVersion: 7 }, approval.approvalId, "native-once", { turnId: approval.turnId, requestedAtSequence: 5 }, answer, record.query.operationId]));
 });
 it("never resends accepted unknown or failed deliveries", async () => {
   await expect(submit()).rejects.toThrow();
-  for (const delivery of ["unknown", "failed"] as const) {
-    f.approvalReceipt.mockImplementation(async query => acceptedApproval(query, delivery));
-    await submit("a different answer is ignored because the original was accepted");
-    expect(pending().accepted).toBe(true);
-  }
+  // An unknown delivery stays tracked (its card stays locked) until it resolves.
+  f.approvalReceipt.mockImplementation(async query => acceptedApproval(query, "unknown"));
+  await submit("a different answer is ignored because the original was accepted");
+  expect(pending().accepted).toBe(true);
+  // A failed delivery is final and has nothing to show, so its record is dropped.
+  f.approvalReceipt.mockImplementation(async query => acceptedApproval(query, "failed"));
+  await submit("a different answer is ignored because the original was accepted");
+  expect(operations.read(task.taskId)).toEqual([]);
   expect(f.respondApproval).toHaveBeenCalledTimes(1);
-  operations.dismiss(pending()); expect(operations.read(task.taskId)).toEqual([]);
 });
 it("does not discard unresolved requests or assume missing acceptance permits a new ID", async () => {
   await expect(submit()).rejects.toThrow(); const record = pending();
-  expect(() => operations.dismiss(record)).toThrow("先核实");
+  expect(() => operations.dismiss(record)).toThrow("仍在确认中");
   expect(await operations.check(f.client, record)).toEqual({ kind: "missing" });
   expect(pending().query.operationId).toBe(record.query.operationId);
 });
@@ -73,7 +75,7 @@ it("proves an old version cannot be admitted, rechecks the receipt, and requires
   await expect(submit()).rejects.toThrow();
   f.bootstrap.mockResolvedValue({ tasks: [{ ...task, streamVersion: 8 }] } as BootstrapSnapshot);
   const before = f.approvalReceipt.mock.calls.length;
-  await expect(submit()).rejects.toThrow("请重新查看请求");
+  await expect(submit()).rejects.toThrow("不再等待回答");
   expect(f.approvalReceipt.mock.calls.length - before).toBe(2);
   expect(f.respondApproval).toHaveBeenCalledTimes(1); expect(operations.read(task.taskId)).toEqual([]);
 });
@@ -87,14 +89,14 @@ it("observes acceptance winning between the missing query and a newer task snaps
 it("preserves confirmed acceptance when the host cannot find its receipt", async () => {
   f.respondApproval.mockResolvedValue(); await submit(); const record = pending();
   f.bootstrap.mockResolvedValue({ tasks: [{ ...task, streamVersion: 8 }] } as BootstrapSnapshot);
-  await expect(operations.check(f.client, record)).rejects.toThrow("已确认受理");
+  await expect(operations.check(f.client, record)).rejects.toThrow("已被接收");
   expect(pending()).toEqual(record); expect(f.respondApproval).toHaveBeenCalledTimes(1);
 });
 it("stops on failed or mismatched receipt queries without executing again", async () => {
   await expect(submit()).rejects.toThrow(); const record = pending();
   f.approvalReceipt.mockRejectedValueOnce(new Error("network")); await expect(submit()).rejects.toThrow("network");
   f.approvalReceipt.mockResolvedValueOnce({ ...acceptedApproval(record.query), acknowledgement: { ...acceptedApproval(record.query).acknowledgement, requestFingerprint: "other" } });
-  await expect(submit()).rejects.toThrow("与原请求不符"); expect(f.respondApproval).toHaveBeenCalledTimes(1);
+  await expect(submit()).rejects.toThrow("不一致"); expect(f.respondApproval).toHaveBeenCalledTimes(1);
 });
 it("keeps different request events separate even with the same native ID", async () => {
   await expect(submit()).rejects.toThrow(); const first = pending();
@@ -139,7 +141,7 @@ it("keeps the original decision if acceptance wins or invalidation fails", async
   invalidate.mockResolvedValueOnce({ status: "accepted", receipt: acceptedApproval(record.query) });
   expect((await operations.changeDecision(f.client, record)).kind).toBe("accepted");
   expect(pending().accepted).toBe(true); expect(f.respondApproval).toHaveBeenCalledTimes(1);
-  await expect(operations.changeDecision(f.client, pending())).rejects.toThrow("不能撤回");
+  await expect(operations.changeDecision(f.client, pending())).rejects.toThrow("无法更改");
   expect(invalidate).toHaveBeenCalledTimes(2);
 });
 
@@ -148,7 +150,7 @@ it("retains concurrent windows' identities without overwriting and requires sepa
   const firstKey = Object.keys(localStorage).find(item => item.startsWith("dogcodes:pending-approval:"))!;
   const second = { ...first, query: { ...first.query, operationId: "cmd_other_window" } };
   localStorage.setItem(firstKey.slice(0, -first.query.operationId.length) + second.query.operationId, JSON.stringify(second));
-  await expect(submit()).rejects.toThrow("多个待核实请求");
+  await expect(submit()).rejects.toThrow("多个回答正在处理");
   expect(operations.read(task.taskId)).toHaveLength(2);
   f.approvalReceipt.mockImplementation(async query => acceptedApproval(query, "sent"));
   await operations.check(f.client, first);

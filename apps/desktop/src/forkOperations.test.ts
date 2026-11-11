@@ -13,20 +13,20 @@ it("does not invoke Fork when persisting the original request fails", async () =
   expect(forkTask).not.toHaveBeenCalled();
 });
 it("preserves the original environment and target when the outcome is unknown", async () => {
-  await expect(operations.send(client, request)).rejects.toThrow("原 Fork 请求已保留");
-  await expect(operations.send(client, { ...request, environment: "workspace" })).rejects.toThrow("不能更换");
-  await expect(operations.send(client, { ...request, newTaskId: "tsk_other" })).rejects.toThrow("不能更换");
+  await expect(operations.send(client, request)).rejects.toThrow("lost");
+  await expect(operations.send(client, { ...request, environment: "workspace" })).rejects.toThrow("请先重试或放弃");
+  await expect(operations.send(client, { ...request, newTaskId: "tsk_other" })).rejects.toThrow("请先重试或放弃");
   expect(forkTask).toHaveBeenCalledTimes(1); expect(operations.read(request.taskId, request.turnId)).toEqual(request);
 });
 it("does not resend if the receipt belongs to a different source turn", async () => {
   await expect(operations.send(client, request)).rejects.toThrow();
   forkReceipt.mockResolvedValue({ request: { ...request, turnId: "trn_other" }, taskAvailable: true, completed: true });
-  await expect(operations.resend(client, request)).rejects.toThrow("不一致");
+  await expect(operations.resend(client, request)).rejects.toThrow("不同的设置");
   expect(forkTask).toHaveBeenCalledTimes(1);
 });
 it("does not recreate a previously created but unavailable task", async () => {
   forkReceipt.mockResolvedValue({ request, taskAvailable: false, completed: true });
-  await expect(operations.resend(client, request)).rejects.toThrow("目标会话已不可用");
+  await expect(operations.resend(client, request)).rejects.toThrow("对话已不可用");
   expect(forkTask).not.toHaveBeenCalled();
 });
 it("keeps an accepted request until its result has actually been opened", async () => {
@@ -43,13 +43,13 @@ it("retries an incomplete operation with its original identity without treating 
 });
 it("does not retry an operation that is still executing on the host", async () => {
   forkReceipt.mockResolvedValue({ request, completed: false, taskAvailable: false, status: "running" });
-  await expect(operations.resend(client, request)).rejects.toThrow("仍在后台执行");
+  await expect(operations.resend(client, request)).rejects.toThrow("仍在创建中");
   expect(forkTask).not.toHaveBeenCalled();
 });
 it("retires only the matching local intent after a canonical source deletion", async () => {
   await expect(operations.send(client, request)).rejects.toThrow();
   const taskDeletion = vi.fn(async () => ({ taskId: request.taskId, deletionSequence: 12 }));
-  await expect(operations.resend({ ...client, taskDeletion }, request)).rejects.toThrow("源会话已永久删除");
+  await expect(operations.resend({ ...client, taskDeletion }, request)).rejects.toThrow("原对话已被删除");
   expect(operations.read(request.taskId, request.turnId)).toBeNull();
   expect(forkTask).toHaveBeenCalledTimes(1);
 });

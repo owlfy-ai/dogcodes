@@ -94,7 +94,7 @@ it("reconciles a lost ack from current state without issuing a second mutation",
   await store.write({ order: ["kimi"], disabled: [] });
   expect(store.getSnapshot().snapshot?.revision).toBe(1);
   expect(store.getSnapshot().unconfirmed).toBe(false);
-  expect(store.getSnapshot().error).toContain("后台当前设置");
+  expect(store.getSnapshot().error).toContain("当前已保存的设置");
   await store.retry();
   expect(fixture.client.setAgentPreferences).toHaveBeenCalledTimes(1);
 });

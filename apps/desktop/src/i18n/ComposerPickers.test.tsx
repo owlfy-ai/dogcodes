@@ -73,7 +73,7 @@ it("translates every core-built permission mode and gives each mode its own icon
     for (const item of host.querySelectorAll('[role="menuitemradio"]')) {
       const label = item.querySelector("strong")!.textContent!;
       const icon = item.querySelector(".permission-icon")!.getAttribute("data-icon")!;
-      expect(item.classList.contains("dangerous"), `${providerId}: ${label}`).toBe(icon === "full");
+      expect(item.className, `${providerId}: ${label}`).toBe("");
       expect(iconByLabel.get(label) ?? icon, `${providerId}: ${label}`).toBe(icon);
       expect(labelByIcon.get(icon) ?? label, `${providerId}: ${icon}`).toBe(label);
       iconByLabel.set(label, icon);

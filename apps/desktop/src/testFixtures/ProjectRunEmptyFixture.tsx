@@ -23,7 +23,7 @@ function Fixture() {
       { path: "/projects/scratch", status: scenario === "analyzing" ? "analyzing" : scenario === "error" ? "error" : "ready", commands: [], error: scenario === "error" ? "分析失败，请稍后重新分析。" : null, userModified: scenario === "cleared" },
       ...(scenario === "mixed" ? [{ path: "/projects/web", status: "ready" as const, error: null, commands: [{ id: "dev", label: "启动开发服务", command: "npm run dev", cwd: ".", source: "package.json" }] }] : []),
     ] };
-    return { watch: () => () => {}, list: async () => [], restore: () => { throw new Error("验收页面没有进程"); }, hasPending: () => false, discardPending: () => {}, retryPending: async () => catalog, mutate: async () => catalog, get: async () => catalog, executors: async () => scenario === "noAgent" ? [] : [executor],
+    return { watch: () => () => {}, list: async () => [], restore: () => { throw new Error("验收页面没有进程"); }, hasPending: () => false, settlePending: async () => {}, mutate: async () => catalog, get: async () => catalog, executors: async () => scenario === "noAgent" ? [] : [executor],
       analyze: async () => { setAnalyses(value => value + 1); return catalog; },
       edit: async () => catalog, launch: () => { throw new Error("验收页面不启动进程"); },
     };

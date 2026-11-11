@@ -51,12 +51,24 @@ it("another window or phone invalidates old input and stale writes cannot be ado
   expect(await a.resume()).toBe(true); a.push(encode("C")); await inputTick();
   expect(new TextDecoder().decode(Uint8Array.from(f.writes.flat()))).toBe("ABC"); a.dispose(); b.dispose();
 });
-it("output reconnect preserves pending proof and does not automatically resume input", async () => {
+it("output reconnect settles pending input on its own by read-only inspection, never replaying it", async () => {
   const f = inputFixture(); let finish!: () => void; f.gate = new Promise<void>(resolve => { finish = resolve; });
   const api = f.client(), queue = terminalInput(api, vi.fn()); queue.ready("pty"); queue.push(encode("one")); await inputTick();
-  queue.push(encode("discard")); queue.suspend(); finish(); await inputTick(); queue.ready("pty");
-  expect(queue.state.paused).toBe(true); expect(queue.state.hasUnknown).toBe(true); expect(f.writes.length).toBe(1);
-  expect(await queue.verify()).toBe(true); expect(queue.state.paused).toBe(false); expect(f.writes.length).toBe(1); queue.dispose();
+  queue.push(encode("discard")); queue.suspend(); finish(); await inputTick();
+  expect(queue.state.paused).toBe(true); expect(queue.state.hasUnknown).toBe(true);
+  queue.ready("pty"); await inputTick();
+  expect(queue.state.paused).toBe(false); expect(queue.state.hasUnknown).toBe(false); expect(queue.state.message).toBeNull();
+  expect(f.writes.length).toBe(1);
+  queue.push(encode("two")); await inputTick();
+  expect(new TextDecoder().decode(Uint8Array.from(f.writes.flat()))).toBe("onetwo"); queue.dispose();
+});
+it("reconnect resumes input it can't prove and says the last input may be lost", async () => {
+  const f = inputFixture(); f.notAdmitted = true; const api = f.client(), queue = terminalInput(api, vi.fn());
+  queue.ready("pty"); queue.push(encode("old\n")); await inputTick(); expect(queue.state.hasUnknown).toBe(true);
+  queue.suspend(); f.notAdmitted = false; queue.ready("pty"); await inputTick();
+  expect(queue.state.paused).toBe(false); expect(queue.state.message).toContain("可能没有送达"); expect(f.writes).toEqual([]);
+  queue.push(encode("new\n")); await inputTick();
+  expect(new TextDecoder().decode(Uint8Array.from(f.writes.flat()))).toBe("new\n"); expect(queue.state.message).toBeNull(); queue.dispose();
 });
 it("dispose or suspend during preparation cannot steal a new input lease", async () => {
   for (const stop of ["dispose", "suspend"] as const) {

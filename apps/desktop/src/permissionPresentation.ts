@@ -58,15 +58,6 @@ export function permissionKind(providerId: string, mode?: Mode): PermissionKind 
   return known(providerId, mode)?.[0] ?? nativeKinds[mode.id] ?? (mode.dangerous ? "bypass" : "configured");
 }
 
-/** How much a mode lets an agent do without asking, for the class that marks it. `full` has
- * no guardrails left, so it alone is `dangerous`. Skipping approvals leaves hard limits in
- * place but still acts unasked, as may a mode the agent itself warns about. */
-export function permissionRiskClass(providerId: string, mode?: Mode): "dangerous" | "caution" | "" {
-  if (!mode) return "";
-  const kind = permissionKind(providerId, mode);
-  return kind === "full" ? "dangerous" : kind === "bypass" || mode.dangerous ? "caution" : "";
-}
-
 // Catalogs the core builds carry Chinese text; known modes are translated and
 // modes agents report natively keep their own text.
 export function permissionPresentation(providerId: string, mode: Mode): Mode {

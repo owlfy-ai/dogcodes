@@ -68,7 +68,24 @@ it("does not erase newer tracking when an old query finishes late", async () => 
   const newer = pending(); resolve(ack); await check;
   expect(pending()).toEqual(newer);
 });
-it("does not overwrite the original unresolved request on repeated clicks", async () => {
+it("reuses the original unresolved request on repeated clicks", async () => {
   await Promise.allSettled([operations.start(client, task), operations.start(client, task)]);
-  expect(cancelTurn).toHaveBeenCalledTimes(1); expect(operations.read(task.taskId)).toHaveLength(1);
+  const [record] = operations.read(task.taskId);
+  expect(operations.read(task.taskId)).toHaveLength(1);
+  expect(cancelTurn.mock.calls).toEqual([[task, record.operationId], [task, record.operationId]]);
+});
+it("drops an unreadable record instead of blocking stop", async () => {
+  localStorage.setItem(`dogcodes:pending-cancel:${task.taskId}:run_original`, "{");
+  expect(operations.read(task.taskId)).toEqual([]);
+  cancelTurn.mockResolvedValue(); await operations.start(client, task);
+  expect(cancelTurn).toHaveBeenCalledTimes(1);
+});
+it("settles quietly: accepted stops and stops for a finished run are dropped", async () => {
+  await expect(operations.start(client, task)).rejects.toThrow(); const record = pending();
+  expect(await operations.settle(client, record, "run_original")).toBe(false); expect(pending()).toEqual(record);
+  expect(await operations.settle(client, record, undefined)).toBe(false); expect(pending()).toEqual(record);
+  expect(await operations.settle(client, record, null)).toBe(false); expect(operations.read(task.taskId)).toEqual([]);
+  await expect(operations.start(client, task)).rejects.toThrow();
+  cancelTurnReceipt.mockResolvedValue(ack); expect(await operations.settle(client, pending(), "run_original")).toBe(true);
+  expect(operations.read(task.taskId)).toEqual([]); expect(cancelTurn).toHaveBeenCalledTimes(2);
 });

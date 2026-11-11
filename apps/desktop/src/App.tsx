@@ -24,7 +24,7 @@ import { PendingSubmissionError, UnconfirmedSubmissionError, submissionOperation
 import { ApprovalRecovery, usePendingApprovalResponses } from "./ApprovalRecovery";
 import { approvalOperations } from "./approvalOperations";
 import { ContextUsageRing } from "./ContextUsageRing";
-import { CancelRecovery, usePendingCancellations } from "./CancelRecovery";
+import { CancelRecovery } from "./CancelRecovery";
 import { cancelOperations } from "./cancelOperations";
 import { enabledAgents, useAgentPreferences, type AgentPreferences } from "./agentPreferences";
 import "./agentManagement.css";
@@ -407,7 +407,6 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const [startupError, setStartupError] = useState(false);
   const [snapshot, setSnapshot] = useState<BootstrapSnapshot | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<TaskId | null>(null);
-  const pendingCancellations = usePendingCancellations(selectedTaskId);
   const pendingApprovalResponses = usePendingApprovalResponses(selectedTaskId);
   const cancelGuard = useRef(false);
   const navigationTaskIds = useMemo(() => snapshot?.tasks.map(task => task.taskId) ?? [], [snapshot?.tasks]);
@@ -1245,9 +1244,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     {error && <p className="error" role="alert">{error}</p>}
   </div> : null;
 
-  const cancelPending = !Array.isArray(pendingCancellations) || pendingCancellations.some(record => record.task.activePrimaryRun?.runId === selectedTask?.activePrimaryRun?.runId);
   const cancelActiveTurn = async () => {
-    if (!selectedTask?.activePrimaryRun || cancelling || cancelGuard.current || cancelPending) return;
+    if (!selectedTask?.activePrimaryRun || cancelling || cancelGuard.current) return;
     cancelGuard.current = true;
     setCancelling(true);
     setError(null);
@@ -1437,7 +1435,6 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
               selectedInstallationStatus={selectedInstallation?.status}
               sending={sending || attachments.pending > 0}
               cancelling={cancelling}
-              cancelPending={cancelPending}
               draft={draft || (attachments.items.length ? t("app.attachment") : "")}
                 onAddAttachment={() => attachmentInput.current?.click()}
               onSelect={(executor) => void switchAgent(executor)}
@@ -1472,8 +1469,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
                 selectedInstallationStatus={selectedInstallation?.status}
                 sending={sending || attachments.pending > 0}
                 cancelling={cancelling}
-                cancelPending={cancelPending}
-                draft={draft || (attachments.items.length ? t("app.attachment") : "")}
+                  draft={draft || (attachments.items.length ? t("app.attachment") : "")}
                 onAddAttachment={() => attachmentInput.current?.click()}
                 onSelect={(executor) => void switchAgent(executor)}
                 onCancel={() => void cancelActiveTurn()}
@@ -1481,14 +1477,16 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             </form>}
           </div>
         </>}
-        <AttachmentUploadRecovery client={client} busy={sending} attachedIds={attachments.items.map(item => item.id)} onRecover={attachments.recover}/>
+        <AttachmentUploadRecovery busy={sending} attachedIds={attachments.items.map(item => item.id)}/>
         {approvalError?.taskId === selectedTaskId && <p className="error" role="alert">{approvalError.message}</p>}
-        {selectedTaskId && <ApprovalRecovery key={`approval:${selectedTaskId}`} client={client} taskId={selectedTaskId} busy={approving !== null} revision={selectedTask?.streamVersion ?? 0} onAccepted={record => {
+        {selectedTaskId && <ApprovalRecovery key={`approval:${selectedTaskId}`} client={client} taskId={selectedTaskId} busy={approving !== null}
+          revision={`${selectedTask?.streamVersion ?? 0}:${pendingApprovals.map(approval => `${approval.turnId}/${approval.requestedAtSequence}/${approval.approvalId}`).join(",")}`} onAccepted={record => {
           setApprovalError(current => current?.taskId === record.query.taskId && current.approval.approvalId === record.query.approvalId
             && current.approval.turnId === record.query.turnId && current.approval.requestedAtSequence === record.query.requestedAtSequence ? null : current);
           void refresh(); void loadConversation(selectedTaskId);
         }}/>}
-        {selectedTaskId && <CancelRecovery key={selectedTaskId} client={client} taskId={selectedTaskId} busy={cancelling} onAccepted={() => { void refresh(); }}/>}
+        {selectedTaskId && <CancelRecovery key={selectedTaskId} client={client} taskId={selectedTaskId} busy={cancelling}
+          activeRunId={selectedTask ? selectedTask.activePrimaryRun?.runId ?? null : undefined} revision={selectedTask?.streamVersion ?? 0} onAccepted={() => { void refresh(); }}/>}
       </section>}
       {hostFlow && <HostProjectDialog entry={hostFlow.entry} onClose={() => setHostFlow(null)} onProjectReady={async projectId => { await refresh(); createConversation(projectId as ProjectId); }} />}
       {/* Stays mounted once opened, so the shells in its tabs keep their screens. */}
@@ -1737,7 +1735,6 @@ export function ComposerFooter({
   selectedInstallationStatus,
   sending,
   cancelling,
-  cancelPending = false,
   draft,
   onSelect,
   onCancel,
@@ -1758,7 +1755,6 @@ export function ComposerFooter({
   selectedInstallationStatus?: InstallationStatus;
   sending: boolean;
   cancelling: boolean;
-  cancelPending?: boolean;
   draft: string;
   onSelect: (executor: ExecutorRef) => void;
   onCancel: () => void;
@@ -1792,9 +1788,9 @@ export function ComposerFooter({
         <button
           className="stop composer-submit"
           type="button"
-          disabled={cancelling || cancelPending || ["interrupting", "disconnected"].includes(selectedTask.activePrimaryRun.state)}
+          disabled={cancelling || ["interrupting", "disconnected"].includes(selectedTask.activePrimaryRun.state)}
           onClick={onCancel}
-          aria-label={cancelPending ? t("composer.stopPending", undefined, lang) : t("composer.stop", undefined, lang)}
+          aria-label={t("composer.stop", undefined, lang)}
         >
           {cancelling || selectedTask.activePrimaryRun.state === "interrupting" ? "…" : <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" stroke="none" /></svg>}
         </button>

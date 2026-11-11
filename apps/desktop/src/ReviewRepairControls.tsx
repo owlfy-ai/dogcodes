@@ -1,5 +1,5 @@
 import { ReviewStartRecovery, usePendingReview } from "./ReviewStartRecovery";
-import { reviewStartOperations } from "./reviewStartOperations";
+import { ReviewStartPending, reviewStartOperations } from "./reviewStartOperations";
 import { ReviewRepairRecovery, usePendingRepair } from "./ReviewRepairRecovery";
 import { reviewRepairOperations } from "./reviewRepairOperations";
 import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
@@ -73,7 +73,7 @@ export function ReviewRepairControls({client, run, executor, selected, clearSele
     const origin = scope.current;
     const request: TurnReviewRequest = {taskId: run.request.taskId, turnId, runId: `run_${ulid()}`, executor, kind: run.request.kind as ReviewKind, retryOf: null, recheckOf: {runId: run.request.runId, repairTurnId: turnId}};
     try {await reviewStartOperations.send(client, recheckScope, request); cache.get(client)?.delete(run.request.taskId); if (mounted.current && scope.current === origin) setRevision(value => value + 1);}
-    catch (cause) {if (mounted.current && scope.current === origin) setError(userFacingError(cause, t("repair.recheckFailed")));}
+    catch (cause) {if (mounted.current && scope.current === origin && !(cause instanceof ReviewStartPending)) setError(userFacingError(cause, t("repair.recheckFailed")));}
     finally {guard.current = false; if (mounted.current) setBusy(false);}
   }
   const hint = pendingRepair ? t("repair.pending") : primary?.busy ? t("repair.primaryBusy") : selected.length ? t("repair.selected", { count: selected.length }) : t("repair.hint");

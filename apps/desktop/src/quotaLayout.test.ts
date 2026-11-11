@@ -18,8 +18,8 @@ describe("composer permission label", () => {
     expect([0, 1, 2, 3, 4, 5].map(stage => visible(stage))).toEqual([true, true, false, false, false, false]);
   });
 
-  it.each(["dangerous", "caution"])("is the last to go for a %s mode", marker => {
-    expect([0, 1, 2, 3, 4, 5].map(stage => visible(stage, marker))).toEqual([true, true, true, true, true, false]);
+  it.each(["dangerous", "caution"])("hides on the same schedule for a former %s marker", marker => {
+    expect([0, 1, 2, 3, 4, 5].map(stage => visible(stage, marker))).toEqual([true, true, false, false, false, false]);
   });
 });
 

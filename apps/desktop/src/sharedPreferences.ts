@@ -28,6 +28,7 @@ export class SharedPreferences<T> {
   private listeners = new Set<() => void>();
   private stopStream: (() => void) | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private saveTimer: ReturnType<typeof setTimeout> | undefined;
   private generation = 0;
   private active = false;
   private pending: Pending<T> | null = null;
@@ -42,6 +43,7 @@ export class SharedPreferences<T> {
   }
   start() { this.active = true; void this.connect(); }
   stop() {
+    clearTimeout(this.saveTimer);
     this.active = false; this.generation++;
     this.stopStream?.(); this.stopStream = undefined;
     clearTimeout(this.timer);
@@ -118,6 +120,16 @@ export class SharedPreferences<T> {
     if (this.pending) await this.sendPending();
     else await this.connect();
   }
+  /**
+   * Resends the same save on its own. It carries its operation ID and the
+   * version it was based on, so it lands once at most and never overwrites a
+   * newer change.
+   */
+  private retrySave() {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => { if (this.active && this.pending && !this.view.busy) void this.sendPending(); }, this.retryDelay);
+    this.retryDelay = Math.min(this.retryDelay * 2, 8_000);
+  }
   private async sendPending() {
     const pending = this.pending;
     if (!pending) return;
@@ -138,10 +150,11 @@ export class SharedPreferences<T> {
           this.pending = null;
           if (this.active) this.update({ error: t("sharedPrefs.saveNotConfirmed") });
         } else if (this.active) {
-          this.update({ error: t("sharedPrefs.saveUnverified") });
+          this.update({ error: t("sharedPrefs.saveRetrying") });
+          this.retrySave();
         }
       } catch {
-        if (this.active) this.update({ error: t("sharedPrefs.saveUnknown") });
+        if (this.active) { this.update({ error: t("sharedPrefs.saveRetrying") }); this.retrySave(); }
       }
     } finally {
       this.update({ busy: false, unconfirmed: this.pending !== null });

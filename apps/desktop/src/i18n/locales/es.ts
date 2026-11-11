@@ -311,7 +311,6 @@ export const es: TranslationDict = {
     quotaSwitch: "Continuar con {agent}",
     quotaSwitchTooltip: "Tu próximo mensaje irá a {agent}, junto con esta conversación",
     enableInManagement: "Habilita un Agent en Gestión de Agents o cambia a uno disponible",
-    stopPending: "Esperando confirmación de detención",
   },
   turn: {
     copy: "Copiar contenido",

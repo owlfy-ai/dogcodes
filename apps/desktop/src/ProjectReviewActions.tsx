@@ -1,5 +1,5 @@
 import { ReviewStartRecovery, usePendingReview } from "./ReviewStartRecovery";
-import { reviewStartOperations } from "./reviewStartOperations";
+import { ReviewStartPending, reviewStartOperations } from "./reviewStartOperations";
 import { useEnabledAgents } from "./agentPreferences";
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { ulid } from "ulid";
@@ -95,7 +95,7 @@ export function ProjectReviewActions({ taskId, snapshot, disabled, onReviewFindi
     try {
       const run = await reviewStartOperations.send(client, "project", request);
       if (mounted.current) { setRuns(oldRuns => [...oldRuns.filter(r => r.request.runId !== run.request.runId), run]); setSelectedRunId(run.request.runId); setRevision(n => n + 1); }
-    } catch (cause) { if (mounted.current) setError(userFacingError(cause, t("turnActions.startFailed"))); }
+    } catch (cause) { if (mounted.current && !(cause instanceof ReviewStartPending)) setError(userFacingError(cause, t("turnActions.startFailed"))); }
     finally { guard.current = false; if (mounted.current) setBusy(false); }
   }
   async function cancel(run: TurnReviewRun) {

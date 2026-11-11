@@ -46,9 +46,10 @@ it("prevents duplicate creation while pending and retries a lost reply with the 
   expect(host.textContent).toContain("正在创建 Fork");
   await click(options()[1]); expect(fork).toHaveBeenCalledTimes(1);
   await act(async () => fail(new Error("服务连接中断")));
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain("服务连接中断");
+  expect(host.querySelector('[aria-label="未完成的 Fork"]')?.textContent).toContain("服务连接中断");
+  expect(host.textContent).not.toMatch(/核实|原请求|跟踪/);
   expect(opened).not.toHaveBeenCalled();
-  await click(label("核实并打开 Fork")); await click(label("重试原 Fork"));
+  await click(label("重试 Fork"));
   expect(fork.mock.calls[1][0]).toEqual(fork.mock.calls[0][0]);
   expect(opened).toHaveBeenCalledOnce();
 });
@@ -112,10 +113,10 @@ it("keeps the original Fork across unmount and does not automatically resend", a
   const original = fork.mock.calls[0][0];
   await act(async () => root.render(null)); await mount(fork);
   expect(fork).toHaveBeenCalledTimes(1);
-  expect(host.textContent).toContain("有待核实的 Fork 请求");
+  expect(host.textContent).toContain("有一个 Fork 没有完成");
   await click(trigger()); expect(options().slice(0, 2).every(option => option.disabled)).toBe(true);
-  expect(document.activeElement).toBe(label("核实并打开 Fork"));
-  await click(label("核实并打开 Fork")); await click(label("重试原 Fork"));
+  expect(document.activeElement).toBe(label("重试 Fork"));
+  await click(label("重试 Fork"));
   expect(fork.mock.calls[1][0]).toEqual(original);
 });
 it("opens an accepted Fork after a lost reply without a second creation", async () => {
@@ -126,15 +127,16 @@ it("opens an accepted Fork after a lost reply without a second creation", async 
   expect(fork).toHaveBeenCalledTimes(1); expect(opened).toHaveBeenCalledWith(fork.mock.calls[0][0].newTaskId);
   expect(host.textContent).not.toContain("待核实");
 });
-it("keeps an accepted Fork if opening its conversation fails and recovers it after remount", async () => {
+it("quietly drops a finished Fork whose conversation could not be opened, without creating it again", async () => {
   const fork = vi.fn(async (request: ForkRequest) => request.newTaskId);
   const receipt = vi.fn(async () => ({ request: fork.mock.calls[0][0], taskAvailable: true, completed: true }));
   const opened = vi.fn().mockRejectedValueOnce(new Error("navigation failed")).mockResolvedValue(undefined);
   await mount(fork, opened, receipt); await click(trigger()); await click(options()[0]);
   await act(async () => root.render(null)); await mount(fork, opened, receipt);
-  await click(trigger()); await click(label("核实并打开 Fork"));
-  expect(fork).toHaveBeenCalledTimes(1); expect(opened).toHaveBeenCalledTimes(2);
-  expect(opened.mock.calls[1][0]).toBe(fork.mock.calls[0][0].newTaskId);
+  expect(localStorage.getItem("dogcodes:pending-fork:tsk_source:trn_old")).toBeNull();
+  expect(host.textContent).not.toContain("没有完成");
+  await click(trigger()); expect(options().every(option => !option.disabled)).toBe(true);
+  expect(fork).toHaveBeenCalledTimes(1); expect(opened).toHaveBeenCalledTimes(1);
 });
 it("does not navigate from a request that finishes after its view has closed", async () => {
   let finish!: (id: TaskId) => void;
@@ -143,7 +145,7 @@ it("does not navigate from a request that finishes after its view has closed", a
   await act(async () => root.render(null));
   await act(async () => finish(fork.mock.calls[0][0].newTaskId));
   expect(opened).not.toHaveBeenCalled();
-  await mount(fork); expect(host.textContent).toContain("有待核实的 Fork 请求");
+  await mount(fork); expect(host.textContent).toContain("有一个 Fork 没有完成");
 });
 it("refreshes Fork progress from canonical events without retrying or reopening automatically", async () => {
   const pending: ForkRequest = { taskId: "tsk_source", turnId: "trn_old", newTaskId: "tsk_target", environment: "worktree" };
@@ -154,15 +156,16 @@ it("refreshes Fork progress from canonical events without retrying or reopening 
   const subscribe = vi.fn<CoreClient["subscribe"]>().mockImplementation(async (_cursor, listener) => { receive = listener; return stop; });
   const client = { forkTask, forkReceipt, bootstrap: async () => ({ lastSequence: 5 }), subscribe } as unknown as CoreClient;
   await act(async () => root.render(<TurnForkAction client={client} taskId="tsk_source" turnId="trn_old"/>));
+  expect(host.textContent).toContain("正在创建 Fork");
   await click(trigger());
-  expect(host.textContent).toContain("Fork 正在后台执行");
-  expect(host.textContent).not.toContain("重试原 Fork");
+  expect(host.textContent).toContain("正在创建 Fork");
+  expect(host.textContent).not.toContain("重试 Fork");
   forkReceipt.mockResolvedValue({ request: pending, completed: false, taskAvailable: false, status: "failed", stage: "restoring_worktrees", error: "第二个仓库权限不足" });
   await act(async () => receive({ type: "event", data: { sequence: 6, payload: { newTaskId: pending.newTaskId } } } as Parameters<typeof receive>[0]));
   expect(host.textContent).toContain("第二个仓库权限不足");
-  expect(host.textContent).toContain("重试原 Fork");
+  expect(host.textContent).toContain("重试 Fork");
   expect(forkTask).not.toHaveBeenCalled();
-  await click(trigger()); expect(stop).toHaveBeenCalledOnce();
+  await act(async () => root.render(null)); expect(stop).toHaveBeenCalledOnce();
   const reads = forkReceipt.mock.calls.length;
   await act(async () => receive({ type: "event", data: { sequence: 7, payload: { newTaskId: pending.newTaskId } } } as Parameters<typeof receive>[0]));
   expect(forkReceipt).toHaveBeenCalledTimes(reads);

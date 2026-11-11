@@ -97,8 +97,8 @@ it("keeps an unconfirmed import visible and retries its original operation", asy
   const request = api.write.mock.calls[0];
   expect(host.querySelector("output")).toBeNull();
   expect(button.disabled).toBe(true);
-  expect(host.textContent).toContain("保存结果尚未确认");
-  await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent === "重新核实")!.click());
+  expect(host.textContent).toContain("正在自动重试");
+  await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent === "重试")!.click());
   expect(api.write.mock.calls[1]).toEqual(request);
   expect(host.querySelector("output")?.textContent).toBe(JSON.stringify(legacy));
 });

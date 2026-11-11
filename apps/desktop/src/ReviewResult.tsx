@@ -22,7 +22,7 @@ const legacyNotices: Record<string, string | null> = {
   "安全检查仅分析冻结代码，未执行漏洞复现；风险等级为 Agent 的潜在影响评估，AI 复核支持不等于漏洞已实测确认。": null,
 };
 const fileLabel = (file: {path: string | null; rootLabel?: string | null}) => file.rootLabel && file.path && !file.path.startsWith("/") ? `${file.rootLabel.replace(/\/$/, "")}/${file.path}` : file.path;
-export function ReviewResult({ client, run: savedRun, executor, allowRepair = true, onReviewFinding, onRetry, retryDisabled, retryTooltip }: {client: CoreClient; run: TurnReviewRun; executor?: ExecutorRef; allowRepair?: boolean; onReviewFinding?: (finding: ReviewFinding) => void; onRetry?: () => void; retryDisabled?: boolean; retryTooltip?: string}) {
+export function ReviewResult({ client, run: savedRun, executor, allowRepair = true, onReviewFinding, onRetry, retryDisabled, retryTooltip, onSwitchAgent }: {client: CoreClient; run: TurnReviewRun; executor?: ExecutorRef; allowRepair?: boolean; onReviewFinding?: (finding: ReviewFinding) => void; onRetry?: () => void; retryDisabled?: boolean; retryTooltip?: string; onSwitchAgent?: () => void}) {
   const run = useReviewStream(client, savedRun);
   const notices = (run.report?.warnings ?? []).map(warning => !run.workspaceReview && Object.hasOwn(legacyNotices, warning) ? legacyNotices[warning] && t(legacyNotices[warning]) : warning).filter((warning): warning is string => Boolean(warning));
   const activity = <ReviewActivity client={client} run={run} notices={notices}/>;
@@ -32,7 +32,7 @@ export function ReviewResult({ client, run: savedRun, executor, allowRepair = tr
   const selectable = allowRepair && !!run.report?.findings.length && !!client.reviewRepair && !["queued", "running", "cancelling"].includes(run.status);
   const [finding, setFinding] = useState<ReviewFinding | null>(null);
   const report = run.report;
-  const failure = <ReviewFailure error={run.error ?? (run.status === "interrupted" ? t("reviewResult.interrupted") : run.status === "failed" ? t("reviewResult.failed") : null)} onRetry={onRetry} retryDisabled={retryDisabled} retryTooltip={retryTooltip}/>;
+  const failure = <ReviewFailure error={run.error ?? (run.status === "interrupted" ? t("reviewResult.interrupted") : run.status === "failed" ? t("reviewResult.failed") : null)} onRetry={onRetry} retryDisabled={retryDisabled} retryTooltip={retryTooltip} onSwitchAgent={onSwitchAgent}/>;
   if (!report) return <>{failure}{activity}</>;
   const reported = report.files.filter(file => file.status === "reported").length;
   return <div className="review-report">

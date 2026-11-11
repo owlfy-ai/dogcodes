@@ -12,9 +12,10 @@ const sending = new Set<string>();
 const key = (id: string) => `${prefix}${id}`;
 function notify() { listeners.forEach(listener => listener()); }
 function store(value: PendingGit) { localStorage.setItem(key(value.request.operationId), JSON.stringify(value)); notify(); }
-function parse(value: string): PendingGit {
-  const item = JSON.parse(value) as PendingGit;
-  if (!item.request?.operationId || !item.request.taskId || !item.request.rootId || !["commit", "push", "pull", "sync"].includes(item.request.action)) throw new Error(t("gitOps.corrupt"));
+function parse(value: string): PendingGit | null {
+  let item: PendingGit | null = null;
+  try { item = JSON.parse(value) as PendingGit; } catch { return null; }
+  if (!item?.request?.operationId || !item.request.taskId || !item.request.rootId || !["commit", "push", "pull", "sync"].includes(item.request.action)) return null;
   return item;
 }
 function entries(taskId: string) {
@@ -23,7 +24,10 @@ function entries(taskId: string) {
     const name = localStorage.key(i);
     if (!name?.startsWith(prefix)) continue;
     const raw = localStorage.getItem(name); if (!raw) continue;
-    const item = parse(raw); if (item.request.taskId === taskId) result.push(item);
+    const item = parse(raw);
+    // An unreadable record can't be checked; it would only block this repository.
+    if (!item) { localStorage.removeItem(name); continue; }
+    if (item.request.taskId === taskId) result.push(item);
   }
   return result.sort((a, b) => a.request.operationId.localeCompare(b.request.operationId));
 }

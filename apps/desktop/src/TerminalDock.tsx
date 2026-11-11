@@ -215,22 +215,18 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
     runtime.current?.fit(); runtime.current?.focus();
     if (reconnect.current.retry) setGeneration(n => n + 1);
   }, [visible]);
-  const continueInput = async (action: "verify" | "resume") => {
+  const continueInput = async () => {
     const controller = inputRuntime.current;
-    if (controller && await controller[action]() && inputRuntime.current === controller && isVisible.current) runtime.current?.focus();
+    if (controller && await controller.recover() && inputRuntime.current === controller && isVisible.current) runtime.current?.focus();
   };
   return <div className="terminal-pane" role="tabpanel" hidden={!visible}>
     {status && <div className="terminal-status" role={starting || retry ? undefined : "status"}>{starting ? <LoadingStatus>{status}</LoadingStatus>
       : retry ? <InlineError>{status} {t("terminal.reconnecting")}</InlineError> : status}</div>}
-    {inputState.paused && !retry && <div className="terminal-input-recovery">
-      <InlineError>{userFacingError(inputState.message, t("terminalInput.resultUnverified"))}</InlineError>
-      <span>{t("terminalDock.checkFirst")}</span>
-      {inputState.busy && <LoadingStatus>{t("terminalDock.verifyingInput")}</LoadingStatus>}
-      <div aria-busy={inputState.busy}>
-        {inputState.hasUnknown && <button type="button" disabled={inputState.busy} data-tooltip={t("terminalDock.verifyTooltip")} onClick={() => void continueInput("verify")}>{t("terminalDock.verify")}</button>}
-        {inputState.canResume && <button type="button" disabled={inputState.busy} data-tooltip={t("terminalDock.resumeTooltip")} onClick={() => void continueInput("resume")}>{t("terminalDock.resume")}</button>}
-      </div>
+    {inputState.paused && !retry && !inputState.busy && <div className="terminal-input-recovery">
+      <InlineError>{inputState.message ?? t("terminalInput.paused")}</InlineError>
+      {inputState.canResume && <div><button type="button" onClick={() => void continueInput()}>{t("terminalDock.resume")}</button></div>}
     </div>}
+    {!inputState.paused && inputState.message && <div className="terminal-input-recovery" role="status"><span>{inputState.message}</span></div>}
     <div className="terminal-emulator" ref={host} />
   </div>;
 }

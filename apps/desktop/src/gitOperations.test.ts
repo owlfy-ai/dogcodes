@@ -18,9 +18,9 @@ it("persists before sending and resolves a lost reply from its receipt without r
 });
 it("keeps an uncertain original payload and only explicitly resends the same identity when absent", async () => {
   vi.mocked(invoke).mockRejectedValue("offline");
-  await expect(gitOperations.run(input)).rejects.toThrow("尚未核实");
+  await expect(gitOperations.run(input)).rejects.toThrow("暂时无法确认");
   const pending = gitOperations.entries("task")[0];
-  await expect(gitOperations.run({ ...input, message: "different" })).rejects.toThrow("尚未核实");
+  await expect(gitOperations.run({ ...input, message: "different" })).rejects.toThrow("暂时无法确认");
   vi.mocked(invoke).mockImplementation(async method => method === "core_review_git_operation" ? null : true);
   await expect(gitOperations.resend(pending)).resolves.toBe(true);
   const calls = vi.mocked(invoke).mock.calls.filter(([name]) => name === "core_review_git_action");
@@ -54,14 +54,14 @@ it.each([
 it("waits for an earlier operation still running, without sending", async () => {
   const pending = await leftBehind();
   vi.mocked(invoke).mockResolvedValue({ request: pending.request, outcome: { status: "running" } });
-  await expect(gitOperations.run({ ...input, message: "next" })).rejects.toThrow("尚未核实");
+  await expect(gitOperations.run({ ...input, message: "next" })).rejects.toThrow("暂时无法确认");
   expect(actions()).toHaveLength(0); expect(gitOperations.entries("task")).toHaveLength(1);
 });
 it("says once that an earlier result can't be known, then lets the next commit through", async () => {
   const pending = await leftBehind();
   vi.mocked(invoke).mockImplementation(async method => method === "core_review_git_action" ? true
     : { request: pending.request, outcome: { status: "unknown" } });
-  await expect(gitOperations.run({ ...input, message: "next" })).rejects.toThrow("尚未核实");
+  await expect(gitOperations.run({ ...input, message: "next" })).rejects.toThrow("暂时无法确认");
   expect(actions()).toHaveLength(0);
   await expect(gitOperations.run({ ...input, message: "next" })).resolves.toBe(true);
   expect(actions()).toHaveLength(1);
@@ -70,7 +70,7 @@ it.each(["running", "unknown"] as const)("does not replay a %s intent", async st
   vi.mocked(invoke).mockRejectedValue("offline"); await expect(gitOperations.run(input)).rejects.toThrow();
   const pending = gitOperations.entries("task")[0];
   vi.mocked(invoke).mockReset().mockResolvedValue({ request: pending.request, outcome: { status } });
-  await expect(gitOperations.resend(pending)).rejects.toThrow("尚未核实");
+  await expect(gitOperations.resend(pending)).rejects.toThrow("暂时无法确认");
   expect(invoke).toHaveBeenCalledExactlyOnceWith("core_review_git_operation", { taskId: "task", operationId: pending.request.operationId });
   expect(gitOperations.entries("task")).toHaveLength(1);
 });
@@ -116,7 +116,7 @@ it("will not run without durable client identity or accept a mismatched receipt"
   vi.mocked(invoke).mockRejectedValue("offline"); await expect(gitOperations.run(input)).rejects.toThrow();
   const pending = gitOperations.entries("task")[0];
   vi.mocked(invoke).mockReset().mockResolvedValue({ request: { ...pending.request, message: "different" }, outcome: { status: "succeeded", completed: true } });
-  await expect(gitOperations.resend(pending)).rejects.toThrow("不匹配"); expect(invoke).toHaveBeenCalledOnce(); expect(gitOperations.entries("task")).toHaveLength(1);
+  await expect(gitOperations.resend(pending)).rejects.toThrow("不一致"); expect(invoke).toHaveBeenCalledOnce(); expect(gitOperations.entries("task")).toHaveLength(1);
 });
 it("retains a failed push after a commit and shares its reserved retry ID across recovery views", async () => {
   const push = { taskId: "task", rootId: "repo", action: "push" as const, message: "" };
@@ -135,7 +135,7 @@ it("retains a failed push after a commit and shares its reserved retry ID across
   await expect(gitOperations.run(push, "push", { committed: true })).rejects.toThrow("remote rejected");
   const saved = gitOperations.entries("task")[0];
   expect(saved.receipt?.outcome.status).toBe("failed"); expect(saved.retryOperationId).toBeTruthy();
-  await expect(gitOperations.run(push)).rejects.toThrow("尚未核实");
+  await expect(gitOperations.run(push)).rejects.toThrow("暂时无法确认");
   await expect(gitOperations.retryPush(saved)).resolves.toBe(true);
   // A second recovery view may still hold the old failed receipt. Its explicit
   // retry must reach the backend with the same ID, which the journal deduplicates.
@@ -150,7 +150,7 @@ it("does not turn an unknown push into a new retry operation", async () => {
   await expect(gitOperations.run({ taskId: "task", rootId: "repo", action: "push", message: "" }, "push", { committed: true })).rejects.toThrow();
   const pending = gitOperations.entries("task")[0];
   vi.mocked(invoke).mockReset().mockResolvedValue({ request: pending.request, outcome: { status: "unknown" } });
-  await expect(gitOperations.retryPush(pending)).rejects.toThrow("尚未核实");
+  await expect(gitOperations.retryPush(pending)).rejects.toThrow("暂时无法确认");
   expect(invoke).toHaveBeenCalledExactlyOnceWith("core_review_git_operation", { taskId: "task", operationId: pending.request.operationId });
 });
 it("keeps tracking when closure is unconfirmed and resolves a lost close reply from the backend", async () => {
@@ -161,7 +161,7 @@ it("keeps tracking when closure is unconfirmed and resolves a lost close reply f
     if (name === "core_review_git_close") throw "reply lost";
     return { request: pending.request, outcome: { status: "unknown" }, closed: false };
   });
-  await expect(gitOperations.acknowledge(pending)).rejects.toThrow("尚未确认");
+  await expect(gitOperations.acknowledge(pending)).rejects.toThrow("无法关闭");
   expect(gitOperations.entries("task")).toHaveLength(1);
   vi.mocked(invoke).mockImplementation(async name => {
     if (name === "core_review_git_close") throw "reply lost";
@@ -175,7 +175,7 @@ it("honors closure by another client without issuing a continuation", async () =
   await gitOperations.run(input, "commitPush");
   const pending = gitOperations.entries("task")[0];
   vi.mocked(invoke).mockReset().mockResolvedValue({ request: pending.request, outcome: { status: "succeeded", completed: true }, closed: true });
-  await expect(gitOperations.continuePush(pending)).rejects.toThrow("已在后台结束");
+  await expect(gitOperations.continuePush(pending)).rejects.toThrow("已经结束");
   expect(vi.mocked(invoke).mock.calls.map(([name]) => name)).toEqual(["core_review_git_operation"]);
   expect(gitOperations.entries("task")).toEqual([]);
 });

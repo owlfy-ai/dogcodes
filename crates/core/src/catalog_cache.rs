@@ -131,6 +131,10 @@ impl<T: Clone + Send + Sync + 'static> Inventory<T> {
             }))
         });
     }
+    fn peek(&self, key: &Key) -> Option<T> {
+        let entry = self.entries.lock().unwrap().get(key).cloned()?;
+        entry.lock().unwrap().value.clone()
+    }
     fn invalidate(&self, executor: &ExecutorRef) {
         self.entries
             .lock()
@@ -439,6 +443,15 @@ impl Catalogs {
                 }),
             )
             .await
+    }
+    /// The permission catalog already read for this installation, without
+    /// starting a read.
+    pub fn cached_permissions(&self, executor: &ExecutorRef) -> Option<PermissionCatalog> {
+        self.permissions.peek(&Key {
+            executor: executor.clone(),
+            generation: self.generation(executor),
+            model: None,
+        })
     }
     pub fn seed_startup(&self, driver: &Arc<dyn AgentDriver>) {
         let generation = self.generation(driver.executor());

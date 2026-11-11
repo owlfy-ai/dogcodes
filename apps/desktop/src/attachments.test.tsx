@@ -216,21 +216,3 @@ it("consumes only the sent attachment IDs and retains files selected later", asy
     expect(state.items[0].id).not.toBe(original[0]);
   } finally { await act(async () => root.unmount()); vi.unstubAllGlobals(); }
 });
-
-it("can send a recovered attachment without the original browser File, and rechecks its receipt", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); vi.stubGlobal("__TAURI_INTERNALS__", {});
-  const request = { uploadId: "11111111-1111-4111-8111-111111111111", name: "recovered.txt", mimeType: "text/plain", sha256: "a".repeat(64), byteLength: 5 };
-  const reference = { name: request.name, path: "/app/recovered.txt", mimeType: request.mimeType, integrity: { sha256: request.sha256, byteLength: request.byteLength } };
-  const receipt = vi.fn(async () => reference), upload = vi.fn();
-  const client = { attachmentUploadReceipt: receipt, uploadAttachment: upload } as unknown as import("@dogcodes/protocol").CoreClient;
-  let state!: ReturnType<typeof useAttachments>;
-  function Harness() { state = useAttachments(client); return null; }
-  const root = createRoot(document.createElement("div"));
-  try {
-    await act(async () => root.render(<Harness/>));
-    await act(async () => state.recover(request, reference));
-    expect(await state.prepare()).toEqual([reference]); expect(receipt).toHaveBeenCalledWith(request); expect(upload).not.toHaveBeenCalled();
-    receipt.mockRejectedValueOnce(new Error("content changed")); await expect(state.prepare()).rejects.toThrow("content changed");
-    expect(state.items).toHaveLength(1); expect(attachmentUploads.list()).toHaveLength(1);
-  } finally { await act(async () => root.unmount()); vi.unstubAllGlobals(); }
-});

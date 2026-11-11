@@ -64,6 +64,8 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
       if (loading) { dirty = true; return; }
       if (submitting.current) { timer = setTimeout(load, 1200); return; }
       loading = true; dirty = false;
+      // An earlier operation whose reply was lost is settled quietly first.
+      if (api.hasPending(taskId)) await api.settlePending(taskId).catch(() => { /* checked again on the next load */ });
       let delay = 10000;
       const token = ++request.current;
       try {
@@ -101,9 +103,8 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
     void load();
     return () => { valid = false; stop(); window.removeEventListener("focus", focus); clearTimeout(timer); request.current++; };
   }, [taskId, visible, api, revision]);
-  const pendingOperation = api.hasPending(taskId);
   const analyze = async (overwriteGeneration?: string) => {
-    if (submitting.current || !selectedAgent || !catalog || pendingOperation) return;
+    if (submitting.current || !selectedAgent || !catalog) return;
     submitting.current = true; setBusy(true); setError(""); request.current++;
     try {
       const value = await api.analyze(taskId, selectedAgent, overwriteGeneration, catalog.generation);
@@ -117,7 +118,7 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
     finally { submitting.current = false; if (mounted.current) { setBusy(false); setRevision(n => n + 1); } }
   };
   const edit = async (directoryIndex: number, commandId: string, change: ProjectRunEdit): Promise<boolean> => {
-    if (!catalog || submitting.current || pendingOperation) return false;
+    if (!catalog || submitting.current) return false;
     submitting.current = true; setBusy(true); setError(""); request.current++;
     try {
       const value = await api.edit(taskId, catalog.generation, directoryIndex, commandId, change);
@@ -173,7 +174,7 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
   };
   const closing = outputs.find(item => item.key === confirmClose);
   useEffect(() => { if (!outputs.some(item => item.key === selected)) setSelected(outputs[0]?.key ?? null); }, [executions, selected]);
-  const analyzing = busy || pendingOperation || catalog?.directories.some(d => d.status === "analyzing");
+  const analyzing = busy || catalog?.directories.some(d => d.status === "analyzing");
   const emptyCatalog = catalog && !error && !loadError && !analyzing
     && catalog.directories.every(directory => directory.status === "ready" && !directory.error && directory.commands.length === 0);
   const hasDirectories = Boolean(catalog?.directories.length);
@@ -197,13 +198,6 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
       </div>
       <button type="button" className="turn-action project-run-refresh" aria-label={t("projectRun.reanalyzeCommands")} data-tooltip={t("projectRun.reanalyze")} disabled={!canAnalyze} onClick={requestAnalysis}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9" /></svg></button>
     </div>
-    {pendingOperation && <p role="status">{t("projectRun.pendingOperation")}<button disabled={busy} onClick={() => {
-      if (submitting.current) return;
-      submitting.current = true; setBusy(true); request.current++;
-      void api.retryPending(taskId).then(value => { if (mounted.current) { setCatalog(value); setError(""); } })
-        .catch(cause => { if (mounted.current) setError(userFacingError(cause, t("projectRun.retryFailed"))); })
-        .finally(() => { submitting.current = false; if (mounted.current) { setBusy(false); setRevision(n => n + 1); } });
-    }}>{t("projectRun.retryOperation")}</button><button disabled={busy} data-tooltip={t("projectRun.discardTooltip")} onClick={() => { try { api.discardPending(taskId); setError(""); setRevision(n => n + 1); } catch (cause) { setError(userFacingError(cause, t("projectRun.discardFailed"))); } }}>{t("projectRun.discardRetry")}</button></p>}
     {error && <InlineError>{error}</InlineError>}
     {loadError && <InlineError onRetry={() => setRevision(n => n + 1)}>{loadError}</InlineError>}
     {!catalog && !error && !loadError && <LoadingStatus layout="panel">{t("projectRun.loading")}</LoadingStatus>}

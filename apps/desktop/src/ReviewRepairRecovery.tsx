@@ -6,6 +6,7 @@ import { LoadingStatus } from "./LoadingStatus";
 import { providerLabel } from "./agentPresentation";
 import { userFacingError } from "./userFacingError";
 import { translate as t } from "./i18n";
+import { displayBackendText } from "./backendText";
 
 const REFRESH_MS = 3000;
 
@@ -56,11 +57,9 @@ export function ReviewRepairRecovery({ client, pending, busy, onRecovered }: {
   if (!pending || pending.state !== "pending") return null;
   return <div className="turn-action-feedback" role="group" aria-label={t("repairRecovery.label")}>
     <p>{t("repairRecovery.pending", { findings: pending.intent.reference.findingIndices.map(index => t("repair.finding", { index: index + 1 })).join(t("submissionRecovery.nameSeparator")), agent: providerLabel(pending.intent.target.providerId) })}</p>
-    {pending.contextConfirmed && <p>{t("repairRecovery.contextConfirmed")}</p>}
-    {pending.lastError && <p>{t("repairRecovery.lastError", { error: pending.lastError })}</p>}
+    {pending.lastError && <p>{t("repairRecovery.lastError", { error: displayBackendText(pending.lastError) })}</p>}
     <button type="button" disabled={busy || working} onClick={() => void act("resume")}>{t("repairRecovery.resume")}</button>
     <button type="button" disabled={busy || working} onClick={() => void act("abandon")}>{t("repairRecovery.abandon")}</button>
-    <small>{t("repairRecovery.note")}</small>
     {working && <LoadingStatus>{t("repairRecovery.working")}</LoadingStatus>}
     {error && <InlineError>{error}</InlineError>}
   </div>;

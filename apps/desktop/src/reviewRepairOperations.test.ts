@@ -61,6 +61,6 @@ it("continues or abandons with the original identity and rejects invalid selecti
     { action: "abandon", taskId: "tsk_test", runId: "run_review", operationId: "cmd_original" },
   ]);
   await expect(operations.start(f.client, "tsk_test", { ...reference, findingIndices: [] })).rejects.toThrow("有效的审查问题");
-  await expect(operations.start({} as CoreClient, "tsk_test", reference)).rejects.toThrow("不支持可靠提交修复");
+  await expect(operations.start({} as CoreClient, "tsk_test", reference)).rejects.toThrow("无法可靠地提交修复");
   expect(f.reviewRepair).toHaveBeenCalledTimes(2);
 });

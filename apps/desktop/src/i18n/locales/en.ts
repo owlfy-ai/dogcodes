@@ -114,7 +114,6 @@ export const en: TranslationDict = {
     quotaSwitch: "Continue with {agent}",
     quotaSwitchTooltip: "Your next message goes to {agent}, along with this conversation",
     enableInManagement: "Please enable an Agent in Agent Management or switch to an available Agent",
-    stopPending: "Stop pending verification",
   },
   turn: {
     copy: "Copy content",

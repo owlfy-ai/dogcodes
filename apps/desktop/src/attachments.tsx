@@ -46,10 +46,6 @@ export function useAttachments(client?: CoreClient) {
     } catch (cause) { if (epoch === generation.current) setError(userFacingError(cause, t("attachments.addFailed"))); }
     finally { setPending(n => n - 1); }
   };
-  const recover = useCallback((upload: AttachmentUploadRequest, stored: PromptAttachment) => {
-    setItems(previous => previous.some(item => item.id === upload.uploadId) ? previous : [...previous,
-      { id: upload.uploadId, name: upload.name, path: stored.path, upload, stored }]);
-  }, []);
   const prepare = async () => {
     if (items.length > 16 || items.reduce((sum, item) => sum + (item.file?.size ?? item.stored?.integrity?.byteLength ?? 0), 0) > MAX_SIZE) throw new Error(t("attachments.limit"));
     if (items.length && !("__TAURI_INTERNALS__" in window)) throw new Error(t("attachments.desktopOnly"));
@@ -58,18 +54,13 @@ export function useAttachments(client?: CoreClient) {
       if (item.file) {
         const result = await attachmentUploads.prepare(item.file, item.id, attachmentMime(item.file), client);
         item.upload = result.request; item.stored = result.reference; item.path = result.reference.path;
-      } else if (item.upload) {
-        attachmentUploads.remember(item.upload);
-        const stored = await attachmentUploads.check({ schemaVersion: 1, request: item.upload }, client);
-        if (!stored) throw new Error(t("attachments.uploadUnconfirmed"));
-        item.stored = stored; item.path = stored.path;
       }
       if (!item.stored) throw new Error(t("attachments.unreadable"));
       prepared.push(structuredClone(item.stored));
     }
     return prepared;
   };
-  return { items, pending, error, add, clear, consume, recover, prepare, remove: (id: string) => setItems(previous => previous.filter(item => item.id !== id)) };
+  return { items, pending, error, add, clear, consume, prepare, remove: (id: string) => setItems(previous => previous.filter(item => item.id !== id)) };
 
 }
 interface GalleryImage { id: string; name: string; src?: string; file?: File; path?: string; mimeType?: string }

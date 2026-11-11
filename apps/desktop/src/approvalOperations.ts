@@ -48,7 +48,9 @@ function validateReceipt(record: PendingApprovalResponse, receipt: ApprovalRecei
   if (!receipt?.acknowledgement?.accepted || receipt.acknowledgement.commandId !== record.query.operationId
     || receipt.acknowledgement.requestFingerprint !== record.query.requestFingerprint || !["unknown", "sent", "failed"].includes(receipt.delivery))
     throw new Error(t("approvalOps.receiptMismatch"));
-  if (receipt.delivery === "sent") forget(record); else markAccepted(record);
+  // Nothing is shown for a decided answer: an unknown delivery stays tracked so
+  // its card stays locked until the backend reports the result, then is dropped.
+  if (receipt.delivery === "unknown") markAccepted(record); else forget(record);
   return { kind: "accepted", receipt } as const;
 }
 async function check(client: CoreClient, record: PendingApprovalResponse): Promise<ApprovalCheck> {
@@ -85,7 +87,7 @@ async function submit(client: CoreClient, task: ApprovalTask, approval: PendingA
   // Freeze transient input only. Neither the answer nor the form/option is saved.
   const original = structuredClone({ task: { taskId: task.taskId, streamVersion: task.streamVersion }, source: { turnId: approval.turnId, requestedAtSequence: approval.requestedAtSequence }, approvalId: approval.approvalId, optionId, answer });
   const storageKey = key(original.task.taskId, original.source, original.approvalId);
-  return withClientOperationLock(storageKey, async () => {
+  const outcome = await withClientOperationLock(storageKey, async () => {
     const existing = read(original.task.taskId).filter(item => scope(item) === storageKey);
     if (existing.length > 1) throw new Error(t("approvalOps.multiple"));
     let record = existing[0];
@@ -104,7 +106,15 @@ async function submit(client: CoreClient, task: ApprovalTask, approval: PendingA
       approvalId: prepared.approvalId, operationId: prepared.operationId, requestFingerprint: prepared.requestFingerprint };
     if (query.taskId !== frozenTask.taskId || query.turnId !== original.source.turnId || query.requestedAtSequence !== original.source.requestedAtSequence
       || query.approvalId !== original.approvalId || query.operationId !== operationId || typeof query.requestFingerprint !== "string" || !query.requestFingerprint) throw new Error(t("approvalOps.identityMismatch"));
-    if (record && query.requestFingerprint !== record.query.requestFingerprint) throw new Error(t("approvalOps.answerChanged"));
+    if (record && query.requestFingerprint !== record.query.requestFingerprint) {
+      // A different answer for an unconfirmed original: void the original first.
+      if (!client.invalidateApprovalResponse) throw new Error(t("approvalOps.answerChanged"));
+      const voided = await client.invalidateApprovalResponse(record.query, record.streamVersion);
+      if (voided.status === "accepted") { validateReceipt(record, voided.receipt); return; }
+      if (voided.status !== "invalidated") throw new Error(t("approvalOps.notInvalidated"));
+      forget(record);
+      return "retry" as const;
+    }
     if (!record) {
       record = { schemaVersion: 1, query, streamVersion: frozenTask.streamVersion, requestedAt: new Date().toISOString(), accepted: false };
       // Keep independent recovery identities even if Web Locks are unavailable
@@ -114,6 +124,13 @@ async function submit(client: CoreClient, task: ApprovalTask, approval: PendingA
     }
     await send(client, record, original.optionId, original.answer);
   });
+  // The original was voided for a different answer: submit it as a new request
+  // against the conversation version that voiding produced.
+  if (outcome === "retry") {
+    const latest = (await client.bootstrap()).tasks.find(item => item.taskId === task.taskId);
+    if (!latest) throw new Error(t("approvalOps.obsolete"));
+    await submit(client, { taskId: latest.taskId, streamVersion: latest.streamVersion }, approval, optionId, answer);
+  }
 }
 export const approvalOperations = {
   submit, read, check,

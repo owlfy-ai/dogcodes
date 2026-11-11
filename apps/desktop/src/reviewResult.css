@@ -92,3 +92,9 @@
 .review-execution > summary::before { content: ""; width: 5px; height: 5px; margin: 0 3px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s ease; }
 .review-execution[open] > summary::before { transform: rotate(45deg); }
 .review-execution > summary:hover { color: inherit; background: #8881; }
+.review-failure-actions { display: inline-flex; flex: none; gap: 6px; }
+.review-failure-actions button { font: inherit; font-size: calc(12px * var(--ui-scale, 1)); color: inherit; background: transparent; border: 1px solid #8884; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.review-failure-actions button:hover:not(:disabled) { background: #8882; }
+.review-failure-actions button:disabled { opacity: .5; cursor: default; }
+.review-failure-actions .review-failure-retry { border-color: transparent; color: #fff; background: #4f77b3; font-weight: 600; }
+.review-failure-actions .review-failure-retry:hover:not(:disabled) { background: #4368a3; }

@@ -83,6 +83,11 @@ const items = [
     input: { command: "pnpm test" },
     output: "7 tests passed",
   }),
+  row("todo", { type: "tool", name: "TodoWrite", title: "Updating todo list", status: "completed" }),
+  row("pkg", { type: "tool", name: "Edit", status: "completed", input: { file_path: "package.json", old_string: "\"sign\": false\n", new_string: "\"sign\": true\n" } }),
+  row("check", { type: "tool", name: "Bash", status: "failed", input: { command: "node --check scripts/notarize.cjs" }, output: "SyntaxError: Unexpected token" }),
+  row("build", { type: "tool", name: "Bash", status: "completed", input: { command: "npm run typecheck && npm run build" }, output: "built in 3.1s" }),
+  row("test", { type: "tool", name: "Bash", status: "completed", input: { command: "npm test" }, output: "42 tests passed" }),
   row("final", {
     type: "message",
     text: '### 渲染结果\n\n| 内容 | 展示 |\n| --- | --- |\n| Markdown | 标题、列表、表格 |\n| Mermaid | 图表与源码 |\n| LaTeX | 行内与独立公式 |\n\n行内公式 $E=mc^2$，以及：\n\n$$\n\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n$$\n\n```mermaid\nflowchart LR\n A[原生事件] --> B[统一投影]\n B --> C[主对话]\n B --> D[子智能体侧栏]\n```\n\n```typescript\nconst completed = tools.filter(tool => tool.status === "completed");\n```',
@@ -119,12 +124,14 @@ function Preview() {
         >
           切换主题
         </button>
+        <div className="timeline"><div className="conversation-flow">
         <ConversationContent
           items={items}
           client={client}
           onSubagent={setSelected}
           renderEntry={(i) => <MarkdownMessage key={i.itemId} text={i.text} />}
         />
+        </div></div>
         <div style={{position:"fixed",bottom:24,left:80,zIndex:100,padding:12,borderRadius:16,background:"var(--panel-raised)"}}>
           <ContextUsageRing providerId="codex" quota={{ windows: [], collectedAtUnixMs: Date.now(), staleAfterUnixMs: Date.now() + 60000, source: "preview", confidence: "provider_reported", parserVersion: "preview", sessionUsage: { contextUsedTokens: 157624, contextWindowTokens: 258400, cacheHitRatePercent: 99.2, cacheReadTokens: 640500000, cacheWriteTokens: 0, reasoningTokens: 708500, totalTokens: 657000000, inputTokens: 654400000, outputTokens: 2600000, totalsScope: "session", observedAtUnixMs: Date.now() } }} />
           <PermissionPicker client={client} executor={{providerId:"claude-code",installationId:"ins_preview"}} taskId="tsk_preview" disabled={false} onChange={()=>{}} />

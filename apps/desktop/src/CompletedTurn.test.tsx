@@ -41,7 +41,7 @@ it.each([false,true])("collapses work before the final answer and keeps prompt/f
   expect(details.open).toBe(true);
   await act(async()=>details.dispatchEvent(new Event("toggle")));
   expect(details.textContent).toContain("我先检查文件");
-  expect(details.textContent).toContain("查阅");
+  expect(details.textContent).toContain("2 次工具调用");
   const body = details.querySelector(".turn-process-body");
   await act(async()=>{ details.open = false; details.dispatchEvent(new Event("toggle")); });
   expect(details.querySelector(".turn-process-body")).toBe(body);
@@ -103,6 +103,8 @@ it("shows one row per computer-use call and readable MCP names",async()=>{
     activity("history",{type:"tool",name:"mcp__dogcodes_44d31cb7037d__getTurns",status:"completed",input:{limit:5}}),
     activity("github",{type:"tool",name:"mcp__github__create_issue",status:"completed",input:{title:"x"}}),
   ],"trn_one");
+  // The three agent calls after the screenshot fold into one run; open it.
+  await act(async()=>host.querySelector<HTMLButtonElement>(".tool-run-toggle")!.click());
   const text=host.textContent!;
   expect(text).not.toContain("mcp__");
   expect(text).not.toContain(cu);

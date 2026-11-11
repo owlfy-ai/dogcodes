@@ -17,7 +17,7 @@ const catalog: ProjectRunCatalog = { projectId: "project", generation: "v1", pla
 ] };
 function fixture() {
   const stop = vi.fn(async () => {});
-  const api: ProjectRunApi = { watch: vi.fn(() => () => {}), hasPending: () => false, discardPending: () => {}, retryPending: async () => catalog, mutate: async () => catalog, get: vi.fn(async () => catalog), edit: vi.fn(async () => catalog), analyze: vi.fn(async () => catalog), executors: vi.fn(async () => [catalog.executor!]), list: vi.fn(async () => []), restore: vi.fn(info => ({ id: info.id, api: {} as never, stop })), launch: vi.fn(() => ({ id: crypto.randomUUID(), api: {} as never, stop })) };
+  const api: ProjectRunApi = { watch: vi.fn(() => () => {}), hasPending: () => false, settlePending: vi.fn(async () => {}), mutate: async () => catalog, get: vi.fn(async () => catalog), edit: vi.fn(async () => catalog), analyze: vi.fn(async () => catalog), executors: vi.fn(async () => [catalog.executor!]), list: vi.fn(async () => []), restore: vi.fn(info => ({ id: info.id, api: {} as never, stop })), launch: vi.fn(() => ({ id: crypto.randomUUID(), api: {} as never, stop })) };
   return { api, stop };
 }
 const click = async (label: string) => act(async () => {
@@ -259,17 +259,14 @@ it("closes without asking when the process cannot be confirmed", async () => {
   expect(stop).toHaveBeenCalledTimes(1); expect(element.querySelectorAll('[data-terminal]')).toHaveLength(0);
 });
 
-it("blocks new mutations while a saved operation is unresolved and exposes explicit recovery", async () => {
+it("settles an operation whose reply was lost on its own, without a notice or a resend", async () => {
   const { api } = fixture(); let pending = true;
   vi.spyOn(api, "hasPending").mockImplementation(() => pending);
-  const retry = vi.spyOn(api, "retryPending").mockImplementation(async () => { pending = false; return catalog; });
+  const settle = vi.spyOn(api, "settlePending").mockImplementation(async () => { pending = false; });
   await act(async () => root.render(<ProjectRunPanel taskId="task" visible api={api} />));
-  expect(element.textContent).toContain("上次操作的结果尚未核实");
-  expect(element.querySelector<HTMLButtonElement>('[aria-label="重新分析运行命令"]')!.disabled).toBe(true);
-  await click("重新核实／重试原操作");
-  expect(retry).toHaveBeenCalledExactlyOnceWith("task");
+  expect(settle).toHaveBeenCalledWith("task");
   expect(api.analyze).not.toHaveBeenCalled(); expect(api.edit).not.toHaveBeenCalled();
-  expect(element.textContent).not.toContain("上次操作的结果尚未核实");
+  expect(element.querySelector<HTMLButtonElement>('[aria-label="重新分析运行命令"]')!.disabled).toBe(false);
 });
 it("keeps an analysis rejection visible after the catalog refresh", async () => {
   const { api } = fixture();
@@ -295,11 +292,9 @@ it("refreshes a conflicting edit without replaying it and uses the new version o
 it("does not mistake an unstructured failure for overwrite authorization", async () => {
   const { api } = fixture();
   await act(async () => root.render(<ProjectRunPanel taskId="task" visible api={api} />));
-  api.discardPending = vi.fn();
   vi.mocked(api.analyze).mockRejectedValueOnce("run_commands_confirmation_required");
   await click("重新分析运行命令");
   expect(document.querySelector("dialog[open]")).toBeNull();
-  expect(api.discardPending).not.toHaveBeenCalled();
   expect(element.querySelector('[role="alert"]')?.textContent).toContain("分析运行命令失败");
 });
 it("refreshes shared recipes immediately on invalidation and releases the watch when hidden", async () => {

@@ -63,8 +63,11 @@ it("reviews the full comparison with the chosen Agent and uses the current snaps
 });
 it("preserves the idempotency key after a lost response and disables empty or partial scopes", async () => {
   const f = fixture(); f.client.startProjectReview.mockRejectedValueOnce(new Error("connection lost"));
-  await render(f.core); await click("安全检查"); await click("核实审查结果"); await click("重发原审查");
+  await render(f.core); await click("安全检查");
+  // The kept request is retried once on its own, with the same ID.
+  expect(f.client.startProjectReview).toHaveBeenCalledTimes(2);
   expect(f.client.startProjectReview.mock.calls[0][0]).toEqual(f.client.startProjectReview.mock.calls[1][0]);
+  expect(container.textContent).not.toMatch(/核实|原审查|没有启动/);
   for (const value of [null, { ...snapshot, roots: [] }, { ...snapshot, roots: snapshot.roots.map(r => ({ ...r, error: "failed" })) }]) {
     await render(f.core, value);
     for (const label of ["审查代码", "安全检查", "性能分析"]) {
@@ -81,7 +84,6 @@ it("retries an interrupted review with its original scope and preserves the idem
   expect(container.querySelector('[role="alert"]')?.textContent).toContain('审查尚未完成');
   f.client.startProjectReview.mockRejectedValueOnce(new Error('connection lost'));
   await click('重试审查');
-  await click('核实审查结果'); await click('重发原审查');
   const [first, retry] = f.client.startProjectReview.mock.calls.map(([request])=>request);
   expect(first).toMatchObject({sourceSnapshot:'old-snapshot', retryOf:'failed-review', kind:'code', executor:original.executor});
   expect(first.runId).not.toBe(original.runId);
@@ -214,14 +216,16 @@ it("collapses the review dock, remembers the choice and reopens when a review st
 });
 
 it("recovers the original project review after reopening even when the current Diff changed", async () => {
-  const f = fixture(); f.client.startProjectReview.mockRejectedValueOnce(new Error("offline"));
+  const f = fixture(); f.client.startProjectReview.mockRejectedValueOnce(new Error("offline")).mockRejectedValueOnce(new Error("offline"));
   await render(f.core); await click("审查代码");
   const original = f.client.startProjectReview.mock.calls[0][0];
-  await act(async () => root.render(null)); await render(f.core, { ...snapshot, id: "new-diff" });
-  expect(f.client.startProjectReview).toHaveBeenCalledTimes(1);
+  expect(f.client.startProjectReview).toHaveBeenCalledTimes(2);
+  expect(container.querySelector('[aria-label="未完成的审查"]')?.textContent).toContain("没有启动");
   expect(container.querySelector<HTMLButtonElement>('[aria-label="安全检查"]')!.disabled).toBe(true);
-  await click("核实审查结果"); await click("重发原审查");
-  expect(f.client.startProjectReview.mock.calls[1][0]).toEqual(original);
+  await act(async () => root.render(null)); await render(f.core, { ...snapshot, id: "new-diff" });
+  expect(f.client.startProjectReview).toHaveBeenCalledTimes(3);
+  expect(f.client.startProjectReview.mock.calls[2][0]).toEqual(original);
+  expect(container.querySelector('[aria-label="未完成的审查"]')).toBeNull();
 });
 it("recovers an accepted project review from history when the response was lost", async () => {
   const f = fixture();

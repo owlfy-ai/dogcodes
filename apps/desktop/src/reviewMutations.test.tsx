@@ -33,44 +33,46 @@ it("binds each real client mutation to its persisted identity and recovers lost 
 });
 it("preserves a partial batch across reopen and never replays already completed members", async () => {
   vi.mocked(invoke).mockRejectedValue("offline");
-  await expect(reviewClient.batchFiles(batch)).rejects.toThrow("尚未核实");
+  await expect(reviewClient.batchFiles(batch)).rejects.toThrow("暂时无法确认");
   const saved = reviewMutations.entries("task")[0];
   vi.mocked(invoke).mockReset().mockResolvedValue({ request: saved.request, outcome: { status: "succeeded", result: { completed: ["a"], error: "b changed" } } });
   const changed = vi.fn();
   await act(async () => root.render(<ReviewMutationRecovery taskId="task" onChanged={changed}/>));
-  expect(host.textContent).toContain("已完成 1 个文件，部分未完成：b changed");
+  expect(host.textContent).toContain("已完成 1 个文件，其余没有完成：b changed");
   expect(host.querySelector("li")?.textContent).toBe("a");
-  expect(host.textContent).not.toContain("重发原请求");
-  await expect(reviewClient.batchFiles(batch)).rejects.toThrow("尚未核实");
+  expect(host.textContent).not.toMatch(/核实|重发|原请求/);
+  await expect(reviewClient.batchFiles(batch)).rejects.toThrow("暂时无法确认");
   await act(async () => root.render(null));
   await act(async () => root.render(<ReviewMutationRecovery taskId="task" onChanged={changed}/>));
   vi.mocked(invoke).mockResolvedValue({ request: saved.request, outcome: { status: "succeeded", result: { completed: ["a"], error: "b changed" } }, closed: true });
-  await click("已核对文件，结束此次操作");
+  await click("知道了");
   expect(reviewMutations.entries("task")).toEqual([]);
   expect(vi.mocked(invoke).mock.calls.every(([command]) => command === "core_review_file_operation" || command === "core_review_file_close")).toBe(true);
   expect(changed).toHaveBeenCalledOnce();
 });
-it("allows only an explicit exact resend when the service has no receipt yet", async () => {
-  const writes: unknown[] = [];
-  let online = false;
-  vi.mocked(invoke).mockImplementation(async (command, args) => {
-    if (command === "core_review_file_operation") return null;
-    writes.push(args); if (!online) throw "offline"; return "backup";
-  });
-  await expect(reviewClient.discard(discard)).rejects.toThrow("尚未核实");
-  await act(async () => root.render(<ReviewMutationRecovery taskId="task" onChanged={() => {}}/>));
-  expect(host.textContent).not.toContain("结束此次操作");
-  expect(writes).toHaveLength(1);
-  online = true; await click("重发原请求");
-  expect(writes).toHaveLength(2); expect(writes[1]).toEqual(writes[0]);
+it("drops a request the service never recorded and reports its failure, showing nothing later", async () => {
+  vi.mocked(invoke).mockImplementation(async command => { if (command === "core_review_file_operation") return null; throw "snapshot changed"; });
+  await expect(reviewClient.discard(discard)).rejects.toBe("snapshot changed");
   expect(reviewMutations.entries("task")).toEqual([]);
+  await act(async () => root.render(<ReviewMutationRecovery taskId="task" onChanged={() => {}}/>));
+  expect(host.textContent).toBe("");
+});
+it("quietly drops a kept request that finished or never started, without resending it", async () => {
+  vi.mocked(invoke).mockRejectedValue("offline"); await expect(reviewClient.discard(discard)).rejects.toThrow();
+  const saved = reviewMutations.entries("task")[0];
+  vi.mocked(invoke).mockReset().mockResolvedValue(null);
+  await act(async () => root.render(<ReviewMutationRecovery taskId="task" onChanged={() => {}}/>));
+  expect(host.textContent).toBe(""); expect(reviewMutations.entries("task")).toEqual([]);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("core_review_file_operation", { taskId: "task", operationId: saved.request.operationId });
 });
 it.each(["running", "unknown"])("does not reexecute a %s mutation", async status => {
   vi.mocked(invoke).mockRejectedValue("offline"); await expect(reviewClient.discard(discard)).rejects.toThrow();
   const saved = reviewMutations.entries("task")[0];
   vi.mocked(invoke).mockReset().mockResolvedValue({ request: saved.request, outcome: { status } });
-  await expect(reviewMutations.resend(saved)).rejects.toThrow("尚未核实");
-  expect(invoke).toHaveBeenCalledExactlyOnceWith("core_review_file_operation", { taskId: "task", operationId: saved.request.operationId });
+  await expect(reviewClient.discard(discard)).rejects.toThrow("暂时无法确认");
+  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "core_review_discard")).toBe(false);
+  await act(async () => root.render(<ReviewMutationRecovery taskId="task" onChanged={() => {}}/>));
+  if (status === "running") expect(host.textContent).toBe(""); else expect(host.textContent).toContain("可能没有完成");
 });
 it("rejects mismatched receipts and does not execute when local persistence fails", async () => {
   const save = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("storage full"); });
@@ -78,20 +80,22 @@ it("rejects mismatched receipts and does not execute when local persistence fail
   vi.mocked(invoke).mockRejectedValue("offline"); await expect(reviewClient.discard(discard)).rejects.toThrow();
   const saved = reviewMutations.entries("task")[0];
   vi.mocked(invoke).mockReset().mockResolvedValue({ request: { ...saved.request, arguments: { request: { ...discard, path: "other" } } }, outcome: { status: "succeeded", result: "backup" } });
-  await expect(reviewMutations.resend(saved)).rejects.toThrow("不匹配"); expect(invoke).toHaveBeenCalledOnce();
+  await expect(reviewMutations.check(saved)).rejects.toThrow("不一致"); expect(invoke).toHaveBeenCalledOnce();
 });
-it("retains known failures and partial live results for explicit inspection", async () => {
-  vi.mocked(invoke).mockResolvedValue({ completed: ["a"], error: "b changed" });
+it("ends live failures and partial results once the caller has them", async () => {
+  vi.mocked(invoke).mockImplementation(async command => command === "core_review_file_close"
+    ? { request: reviewMutations.entries("task")[0].request, outcome: { status: "succeeded", result: null }, closed: true }
+    : { completed: ["a"], error: "b changed" });
   expect(await reviewClient.batchFiles(batch)).toEqual({ completed: ["a"], error: "b changed" });
-  const partial = reviewMutations.entries("task")[0]; expect(partial.receipt?.outcome.status).toBe("succeeded");
-  vi.mocked(invoke).mockResolvedValue({ ...partial.receipt, closed: true });
-  await reviewMutations.acknowledge(partial);
+  expect(reviewMutations.entries("task")).toEqual([]);
   vi.mocked(invoke).mockImplementation(async command => {
-    if (command !== "core_review_file_operation") throw "read-only";
-    return { request: reviewMutations.entries("task")[0].request, outcome: { status: "failed", message: "read-only filesystem" } };
+    if (command === "core_review_discard") throw "read-only";
+    const request = reviewMutations.entries("task")[0].request;
+    return command === "core_review_file_close" ? { request, outcome: { status: "failed", message: "read-only filesystem" }, closed: true }
+      : { request, outcome: { status: "failed", message: "read-only filesystem" } };
   });
   await expect(reviewClient.discard(discard)).rejects.toThrow("read-only filesystem");
-  expect(reviewMutations.entries("task")[0].receipt?.outcome.status).toBe("failed");
+  expect(reviewMutations.entries("task")).toEqual([]);
 });
 it("keeps tracking until a shared closure is proven, including a lost close reply", async () => {
   vi.mocked(invoke).mockResolvedValue({ completed: ["a"], error: "b changed" });

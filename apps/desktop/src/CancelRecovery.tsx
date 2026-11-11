@@ -1,49 +1,51 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { CoreClient, TaskId } from "@dogcodes/protocol";
 import { cancelOperations as operations, type PendingCancellation } from "./cancelOperations";
-import { InlineError } from "./InlineError";
-import { LoadingStatus } from "./LoadingStatus";
-import { userFacingError } from "./userFacingError";
-import { translate as t } from "./i18n";
 
 export function usePendingCancellations(taskId: TaskId | null) {
   const saved = useSyncExternalStore(operations.subscribe, () => operations.snapshot(taskId), () => "[]");
   return JSON.parse(saved) as PendingCancellation[] | { error: string };
 }
-function CancelRecoveryItem({ client, record, busy, onAccepted }: { client: CoreClient; record: PendingCancellation; busy: boolean; onAccepted: () => void }) {
-  const [working, setWorking] = useState(false), [missing, setMissing] = useState(false), [error, setError] = useState("");
-  const guard = useRef(false), mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  async function recover(resend: boolean) {
-    if (guard.current || busy) return;
-    guard.current = true; setWorking(true); setError("");
-    try {
-      const accepted = resend ? (await operations.resend(client, record), true) : await operations.check(client, record);
-      // A matched receipt removes this row before its promise can resolve. The
-      // parent guards task lifetime so a still-visible task can refresh anyway.
-      if (accepted) onAccepted();
-      if (mounted.current) setMissing(!accepted);
-    } catch (cause) { if (mounted.current) setError(userFacingError(cause, t("cancelRecovery.verifyFailed"))); }
-    finally { guard.current = false; if (mounted.current) setWorking(false); }
-  }
-  return <div className="turn-action-feedback" role="group" aria-label={t("cancelRecovery.label")}>
-    <p>{t("cancelRecovery.pending", { time: new Date(record.requestedAt).toLocaleString() })}</p>
-    <button type="button" disabled={busy || working} onClick={() => void recover(false)}>{t("cancelRecovery.verify")}</button>
-    {missing && <><p>{t("cancelRecovery.missing")}</p>
-      <button type="button" disabled={busy || working} onClick={() => void recover(true)}>{t("cancelRecovery.resend")}</button></>}
-    <button type="button" disabled={busy || working} onClick={() => { try { operations.forget(record); } catch (cause) { setError(String(cause)); } }}>{t("cancelRecovery.forget")}</button>
-    <small>{t("cancelRecovery.note")}</small>
-    {working && <LoadingStatus>{t("cancelRecovery.verifying")}</LoadingStatus>}
-    {error && <InlineError>{error}</InlineError>}
-  </div>;
-}
-export function CancelRecovery({ client, taskId, busy, onAccepted }: { client: CoreClient; taskId: TaskId; busy: boolean; onAccepted: () => void }) {
+
+/**
+ * Settles stop requests whose reply was lost (a dropped connection or a closed
+ * window). It shows nothing: whenever the conversation changes it reads the
+ * receipt of each one, and drops the record once the stop was accepted or the
+ * run it targeted is over. Pressing stop again resends the same request.
+ * `activeRunId` is undefined while the conversation is not loaded yet.
+ */
+export function CancelRecovery({ client, taskId, busy, activeRunId, revision = 0, onAccepted }: {
+  client: CoreClient; taskId: TaskId; busy: boolean; activeRunId: string | null | undefined; revision?: number | string; onAccepted: () => void;
+}) {
   const pending = usePendingCancellations(taskId);
-  const mounted = useRef(true), scope = useRef({ client, taskId });
-  if (scope.current.client !== client || scope.current.taskId !== taskId) scope.current = { client, taskId };
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const origin = scope.current;
-  const accepted = () => { if (mounted.current && scope.current === origin) onAccepted(); };
-  if (!Array.isArray(pending)) return <InlineError>{pending.error}</InlineError>;
-  return <>{pending.map(record => <CancelRecoveryItem key={record.operationId} client={client} record={record} busy={busy} onAccepted={accepted}/>)}</>;
+  const records = Array.isArray(pending) ? pending : [];
+  const operationsKey = records.map(record => record.operationId).join(",");
+  const running = useRef(false), again = useRef(false), current = useRef({ client, taskId, activeRunId, onAccepted });
+  current.current = { client, taskId, activeRunId, onAccepted };
+  useEffect(() => {
+    if (busy || !records.length) return;
+    const origin = { client, taskId };
+    const settle = async () => {
+      if (running.current) { again.current = true; return; }
+      running.current = true;
+      try {
+        for (const record of records) {
+          try {
+            const accepted = await operations.settle(client, record, current.current.activeRunId);
+            const live = current.current;
+            // A result for a conversation that is no longer shown is not reported.
+            if (accepted && live.client === origin.client && live.taskId === origin.taskId) live.onAccepted();
+          } catch {
+            // Unreadable right now; the next conversation update checks again.
+          }
+        }
+      } finally {
+        running.current = false;
+        if (again.current) { again.current = false; void settle(); }
+      }
+    };
+    void settle();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- records are keyed by operationsKey
+  }, [client, taskId, busy, revision, activeRunId, operationsKey]);
+  return null;
 }

@@ -311,7 +311,6 @@ export const zhTW: TranslationDict = {
     quotaSwitch: "換 {agent} 繼續",
     quotaSwitchTooltip: "下一則訊息改由 {agent} 處理，對話內容會一併帶過去",
     enableInManagement: "請在 Agent 管理中啟用 Agent，或切換至可用的 Agent",
-    stopPending: "停止結果待確認",
   },
   turn: {
     copy: "複製內容",

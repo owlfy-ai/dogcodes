@@ -4,12 +4,10 @@ import { ReviewEmptyState } from "./ReviewEmptyState";
 import { userFacingError } from "./userFacingError";
 import { SentAttachments } from "./attachments";
 import { TurnFiles } from "./TurnFiles";
-import { ArtifactBrowser } from "./ArtifactBrowser";
 import { useEffect, useRef, useState } from "react";
 import type { ArtifactMetadata, CoreClient, HistoryPage, HistoryQuery, TaskId } from "@dogcodes/protocol";
 import { translate as t } from "./i18n";
 export function HistoryBrowser({client, taskId, onBack}: {client: CoreClient; taskId: TaskId; onBack: () => void}) {
-  const [artifactsOpen, setArtifactsOpen] = useState(false);
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<HistoryQuery["kind"]>("turns");
@@ -34,8 +32,6 @@ export function HistoryBrowser({client, taskId, onBack}: {client: CoreClient; ta
   return <section className="history-browser">
     <button type="button" onClick={onBack}>← {t("recovery.back")}</button>
     <h2>{t("historyBrowser.title")}</h2>
-    <button type="button" onClick={() => setArtifactsOpen(true)}>{t("historyBrowser.viewArtifacts")}</button>
-    {artifactsOpen && <ArtifactBrowser key={taskId} client={client} taskId={taskId} onClose={() => setArtifactsOpen(false)} />}
     <form onSubmit={e => { e.preventDefault(); setKind(text.trim() ? "search" : "turns"); setQuery(text.trim()); }}>
       <input ref={searchInput} aria-label={t("historyBrowser.searchLabel")} placeholder={t("historyBrowser.searchPlaceholder")} value={text} onChange={e => setText(e.target.value)} />
       <button type="submit">{t("historyBrowser.search")}</button>
@@ -67,6 +63,6 @@ function HistoryRecord({ item, client, taskId }: { item: HistoryPage["items"][nu
     <small>{labels[item.kind] ?? t("nav.history")} · {new Date(item.occurredAt).toLocaleString()}</small>
     {summary && <pre>{summary}</pre>}
     {item.kind === "user_message" && <SentAttachments items={item.attachments ?? []} />}
-    {metadata ? <div><button type="button" onClick={() => setExpanded(value => !value)}>{t(expanded ? "historyBrowser.hideChanges" : "historyBrowser.showChanges")}</button>{expanded && <TurnFiles client={client} taskId={taskId} metadata={metadata} operation={item.kind === "activity"} />}</div> : data && <details><summary>{t("historyBrowser.details")}</summary><pre>{JSON.stringify(data, null, 2)}</pre></details>}
+    {metadata ? <div><button type="button" onClick={() => setExpanded(value => !value)}>{t(expanded ? "historyBrowser.hideChanges" : "historyBrowser.showChanges")}</button>{expanded && <TurnFiles client={client} taskId={taskId} metadata={metadata} operation={item.kind === "activity"} />}</div> : null}
   </article>;
 }

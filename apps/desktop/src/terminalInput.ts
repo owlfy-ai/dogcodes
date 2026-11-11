@@ -21,7 +21,7 @@ async function timeout<T>(value: Promise<T>, ms: number): Promise<T> {
 }
 export function terminalInput(api: TerminalInputApi, changed: (state: TerminalInputState) => void) {
   let id: string | undefined, epoch: string | undefined, lease: Receipt | undefined, unknown: Receipt | undefined;
-  let stopped = false, busy = false, paused = false, scheduled = false, canResume = true, fence = 0, inflight = 0;
+  let stopped = false, busy = false, paused = false, scheduled = false, canResume = true, fence = 0, inflight = 0, recoverWhenIdle = false;
   let pending: number[] = [], last = "0", message: string | null = null;
   const state = (): TerminalInputState => ({ paused, busy, hasUnknown: !!unknown, canResume, message });
   const emit = () => { if (!stopped) changed(state()); };
@@ -83,12 +83,46 @@ export function terminalInput(api: TerminalInputApi, changed: (state: TerminalIn
           if (!stopped && fence === ticket) pause(userFacingError(error, t("terminalInput.resultUnverified")));
         } finally { inflight = 0; }
       }
-    } finally { busy = false; emit(); }
+    } finally {
+      busy = false; emit();
+      // Reconnected while a write was still in flight: settle it now.
+      if (recoverWhenIdle) { recoverWhenIdle = false; if (paused && canResume && !stopped) void recover(); }
+    }
   };
   const schedule = () => {
     if (stopped || busy || scheduled || paused || !id || !pending.length) return;
     scheduled = true;
     queueMicrotask(() => { scheduled = false; void run(); });
+  };
+  const verify = async () => {
+    if (stopped || busy || !unknown) return false;
+    const expected = unknown, ticket = fence; busy = true; emit();
+    try {
+      const reply = await inspect(expected, ticket);
+      if (applied(reply, expected)) { last = expected.sequence; unknown = undefined; paused = false; message = null; return true; }
+      message = t("terminalInput.mayBeLost");
+    } catch { if (!stopped && fence === ticket) message = t("terminalInput.notRecovered"); }
+    finally { busy = false; emit(); }
+    return false;
+  };
+  const resume = async () => {
+    if (stopped || busy || !canResume || !id) return false;
+    // Reopening never resends anything: input typed while paused was dropped.
+    const ticket = fence, uncertain = !!unknown; busy = true; lease = undefined; emit();
+    try {
+      await open(true, ticket); check(ticket); unknown = undefined; paused = false;
+      // Said until the next keystroke lands, so the person can look before retyping.
+      message = uncertain ? t("terminalInput.mayBeLost") : null;
+      return true;
+    }
+    catch (error) { if (!stopped && fence === ticket) { paused = true; message = userFacingError(error, t("terminalInput.notRecovered")); } }
+    finally { busy = false; emit(); }
+    return false;
+  };
+  /** Confirms the last input if it was in flight, then reopens input. */
+  const recover = async () => {
+    if (unknown && await verify() && !paused) return true;
+    return resume();
   };
   return {
     get state() { return state(); },
@@ -102,34 +136,19 @@ export function terminalInput(api: TerminalInputApi, changed: (state: TerminalIn
     ready(sessionId: string) {
       if (stopped) return;
       if (id && id !== sessionId) { canResume = false; pause(t("terminalInput.idChanged")); return; }
-      id = sessionId; schedule();
+      id = sessionId;
+      // Back after a dropped connection: pick input up again without asking.
+      if (paused && canResume) { if (busy) recoverWhenIdle = true; else void recover(); return; }
+      schedule();
     },
     suspend() { if (!stopped) pause(t("terminalInput.disconnected")); },
     ended() {
       if (stopped) return;
-      canResume = false; ++fence; pending = [];
-      if (unknown) { paused = true; message = t("terminalInput.ended"); }
+      // The terminal's own status says it ended; there is no input left to settle.
+      canResume = false; ++fence; pending = []; unknown = undefined; paused = false; message = null;
       emit();
     },
-    async verify() {
-      if (stopped || busy || !unknown) return false;
-      const expected = unknown, ticket = fence; busy = true; emit();
-      try {
-        const reply = await inspect(expected, ticket);
-        if (applied(reply, expected)) { last = expected.sequence; unknown = undefined; paused = false; message = null; return true; }
-        message = t("terminalInput.takenOver");
-      } catch { if (!stopped && fence === ticket) message = t("terminalInput.verifyFailed"); }
-      finally { busy = false; emit(); }
-      return false;
-    },
-    async resume() {
-      if (stopped || busy || !canResume || !id) return false;
-      const ticket = fence; busy = true; lease = undefined; emit();
-      try { await open(true, ticket); check(ticket); unknown = undefined; paused = false; message = null; return true; }
-      catch (error) { if (!stopped && fence === ticket) { paused = true; message = userFacingError(error, t("terminalInput.notRecovered")); } }
-      finally { busy = false; emit(); }
-      return false;
-    },
+    verify, resume, recover,
     dispose() { stopped = true; ++fence; pending = []; },
   };
 }

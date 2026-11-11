@@ -84,9 +84,14 @@ it("shares the event stream, fills gaps, and reconnects from the last delivered 
   await act(async () => vi.advanceTimersByTimeAsync(500));
   expect(f.client.subscribe).toHaveBeenLastCalledWith(12, expect.any(Function));
 });
+async function openPartial() {
+  const partial = container.querySelector<HTMLDetailsElement>(".review-execution")!;
+  await act(async () => { partial.open = true; partial.dispatchEvent(new Event("toggle", { bubbles: true })); });
+}
 it("restores failed output from saved activities without claiming running tools succeeded", async () => {
   const f = fixture();
   await act(async () => root.render(<ReviewResult client={f.core} run={{ ...f.run, status: "failed", activities: [read, message], result: message.data.text }}/>));
+  await openPartial();
   const work = container.querySelector<HTMLDetailsElement>(".turn-process")!;
   expect(work.open).toBe(false);
   await act(async () => { work.open = true; work.dispatchEvent(new Event("toggle", { bubbles: true })); });
@@ -100,6 +105,8 @@ it("shows a friendly network failure, preserves progress, and folds the native d
   const failed = {...f.run, status:'failed' as const, error, result:`正在检查调用关系。\n\n${error}`};
   await act(async () => root.render(<ReviewResult client={f.core} run={failed}/>));
   expect(container.querySelector('[role="alert"]')?.textContent).toBe('与审查 Agent 的连接中断，审查尚未完成。请检查网络或代理后重试。');
+  expect(container.querySelector('.review-execution')?.hasAttribute('open')).toBe(false);
+  await openPartial();
   expect(container.querySelector('.assistant-message')?.textContent).toBe('正在检查调用关系。');
   const details = container.querySelector<HTMLDetailsElement>('.review-failure details')!;
   expect(details.open).toBe(false);

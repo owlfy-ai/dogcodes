@@ -11,8 +11,13 @@ function matches(a: ForkRequest, b: ForkRequest) {
 function read(task: string, turn: string): ForkRequest | null {
   const raw = localStorage.getItem(key(task, turn));
   if (!raw) return null;
-  const value = JSON.parse(raw) as ForkRequest;
-  if (!value || value.taskId !== task || value.turnId !== turn || typeof value.newTaskId !== "string" || !value.newTaskId || !["workspace", "worktree"].includes(value.environment)) throw new Error(t("forkOps.corrupt"));
+  let value: ForkRequest | null = null;
+  try { value = JSON.parse(raw) as ForkRequest; } catch { /* dropped below */ }
+  if (!value || value.taskId !== task || value.turnId !== turn || typeof value.newTaskId !== "string" || !value.newTaskId || !["workspace", "worktree"].includes(value.environment)) {
+    // An unreadable record can't be checked or resent; it would only block forking.
+    localStorage.removeItem(key(task, turn));
+    return null;
+  }
   return value;
 }
 function forget(request: ForkRequest) {
@@ -21,6 +26,8 @@ function forget(request: ForkRequest) {
   }
 }
 class ForkSourceDeleted extends Error {}
+/** A fork request kept for recovery: its reply was lost or it did not finish. */
+export class ForkPending extends Error {}
 async function check(client: CoreClient, request: ForkRequest): Promise<ForkReceipt | null> {
   if (client.taskDeletion) {
     const deleted = await client.taskDeletion(request.taskId);
@@ -53,11 +60,22 @@ async function send(client: CoreClient, request: ForkRequest): Promise<TaskId> {
     let receipt: ForkReceipt | null = null;
     try { receipt = await check(client, request); } catch (error) { if (error instanceof ForkSourceDeleted) throw error; /* Preserve pending intent for explicit recovery. */ }
     if (receipt?.completed) return available(receipt);
-    throw new Error(t("forkOps.kept", { reason: cause instanceof Error ? cause.message : String(cause) }));
+    throw new ForkPending(cause instanceof Error ? cause.message : String(cause));
   }
 }
+/**
+ * Settles a kept fork from its receipt without asking: a finished one (opened or
+ * not) or one whose source was deleted is dropped. Returns the receipt when it
+ * is still running or needs the person to retry or drop it.
+ */
+async function settle(client: CoreClient, request: ForkRequest): Promise<ForkReceipt | null> {
+  let receipt: ForkReceipt | null;
+  try { receipt = await check(client, request); } catch (error) { if (error instanceof ForkSourceDeleted) return null; throw error; }
+  if (receipt?.completed) { forget(request); return null; }
+  return receipt;
+}
 export const forkOperations = {
-  read, forget, check, send, available,
+  read, forget, check, send, available, settle,
   async resend(client: CoreClient, request: ForkRequest) {
     const receipt = await check(client, request);
     if (receipt?.status === "running") throw new Error(t("forkOps.stillRunning"));

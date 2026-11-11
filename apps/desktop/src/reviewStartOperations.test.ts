@@ -25,12 +25,12 @@ it.each([
 ])("rejects conflicting receipt fields without forgetting or resending: %j", async change => {
   await expect(operations.send(client, "project", request)).rejects.toThrow();
   turnReviews.mockResolvedValue([result({ ...request, ...change })]);
-  await expect(operations.resend(client, "project", request)).rejects.toThrow("不匹配");
+  await expect(operations.resend(client, "project", request)).rejects.toThrow("不同的设置");
   expect(startProjectReview).toHaveBeenCalledTimes(1); expect(operations.read(request.taskId, "project")).toEqual(request);
 });
 it("rejects new payloads while the original outcome remains unknown", async () => {
   await expect(operations.send(client, "project", request)).rejects.toThrow();
-  await expect(operations.send(client, "project", { ...request, runId: "run_new" })).rejects.toThrow("先核实");
+  await expect(operations.send(client, "project", { ...request, runId: "run_new" })).rejects.toThrow("请先重试或放弃");
   expect(startProjectReview).toHaveBeenCalledTimes(1);
 });
 it("keeps a newer pending operation when an old lookup finishes late", async () => {

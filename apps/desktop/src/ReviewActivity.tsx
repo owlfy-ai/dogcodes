@@ -10,7 +10,9 @@ import { translate as t } from "./i18n";
 export function ReviewActivity({ client, run, notices = [] }: { client: CoreClient; run: TurnReviewRun; notices?: string[] }) {
   const activities = run.activities ?? [];
   const normalizedMessages = activities.some(item => !item.legacy && item.data.type === "message");
-  const visible = activities.filter(item => !(item.legacy && item.data.type === "message" && normalizedMessages)).flatMap(item => {
+  // A thought with no words (a lone "." placeholder) says nothing about the review.
+  const emptyThought = (item: ReviewActivityItem) => item.data.type === "thought" && !/[\p{L}\p{N}]/u.test(String(item.data.text ?? "") + String(item.data.delta ?? ""));
+  const visible = activities.filter(item => !(item.legacy && item.data.type === "message" && normalizedMessages) && !emptyThought(item)).flatMap(item => {
     if (item.data.type !== "message") return [item];
     const text = reviewActivityText(String(item.data.text ?? ""));
     return text ? [{ ...item, data: { ...item.data, text } }] : [];
@@ -41,7 +43,11 @@ export function ReviewActivity({ client, run, notices = [] }: { client: CoreClie
         {() => tools.map(entry => <div className="conversation-entry" key={entry.itemId}>{render(entry)}</div>)}
       </TurnProcess>
     : render(entry))}{notices.map((notice, index) => <p className="turn-review-notice" role="status" key={`notice-${index}`}>{notice}</p>)}</div>;
-  return run.status === "completed"
-    ? <DeferredDetails className="review-execution" summary={<summary>{t("reviewActivity.label")}</summary>}>{content}</DeferredDetails>
+  // A finished review keeps its process folded. A failed one has no conclusion,
+  // so its partial notes stay folded under a label that says so; a review the
+  // user cancelled keeps its output in view.
+  const stopped = run.status === "failed" || run.status === "interrupted";
+  return run.status === "completed" || stopped
+    ? <DeferredDetails className="review-execution" summary={<summary>{t(stopped ? "reviewActivity.partial" : "reviewActivity.label")}</summary>}>{content}</DeferredDetails>
     : content();
 }

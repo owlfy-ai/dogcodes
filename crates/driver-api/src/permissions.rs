@@ -64,20 +64,35 @@ impl PermissionCatalog {
                 DriverError::CapabilityUnavailable("Agent 未提供可用于审查的普通权限模式".into())
             })
     }
+    /// The mode that grants the agent the most, judged from the catalog: the
+    /// first known full-access ID, else any mode the agent marks dangerous.
+    /// `None` when the catalog offers nothing beyond its normal modes.
+    #[must_use]
+    pub fn most_permissive_mode(&self) -> Option<String> {
+        DANGEROUS_MODE_IDS
+            .iter()
+            .find_map(|id| {
+                self.modes
+                    .iter()
+                    .find(|mode| mode.id == *id && mode.dangerous)
+            })
+            .or_else(|| self.modes.iter().find(|mode| mode.dangerous))
+            .map(|mode| mode.id.clone())
+    }
+    /// New sessions default to the most permissive mode the catalog offers;
+    /// catalogs without one keep their own default.
+    #[must_use]
+    pub fn preferring_most_permissive(mut self) -> Self {
+        if let Some(mode) = self.most_permissive_mode() {
+            self.default_mode_id = Some(mode);
+        }
+        self
+    }
     /// Review runs explicitly use full native permissions; the prompt defines the no-edit intent.
     #[must_use]
     pub fn review_mode(&self) -> Option<String> {
-        for id in DANGEROUS_MODE_IDS {
-            if let Some(mode) = self
-                .modes
-                .iter()
-                .find(|mode| mode.id == *id && mode.dangerous)
-            {
-                return Some(mode.id.clone());
-            }
-        }
-        if let Some(mode) = self.modes.iter().find(|mode| mode.dangerous) {
-            return Some(mode.id.clone());
+        if let Some(mode) = self.most_permissive_mode() {
+            return Some(mode);
         }
         // Some agents expose work modes only. Keep their normal execution mode;
         // the review runner answers any vendor approval requests for this run.
@@ -314,6 +329,41 @@ mod tests {
             .as_deref(),
             Some("agent")
         );
+    }
+    #[test]
+    fn defaults_prefer_the_most_permissive_mode_the_catalog_offers() {
+        for (catalog, id) in [
+            (codex(), "full-access"),
+            (claude(), "bypassPermissions"),
+            (grok(), "always-approve"),
+            (zcode(), "yolo"),
+            (antigravity(), "dangerously-skip-permissions"),
+            (claude_for(true, false), "default"),
+        ] {
+            assert_eq!(
+                catalog
+                    .preferring_most_permissive()
+                    .default_mode_id
+                    .as_deref(),
+                Some(id)
+            );
+        }
+        let both = PermissionCatalog::new(
+            "default",
+            &[
+                ("default", "", "", false),
+                ("bypassPermissions", "", "", true),
+                ("fullAccess", "", "", true),
+            ],
+        );
+        assert_eq!(both.most_permissive_mode().as_deref(), Some("fullAccess"));
+        let custom = PermissionCatalog::new(
+            "ask",
+            &[("ask", "", "", false), ("never-ask", "", "", true)],
+        );
+        assert_eq!(custom.most_permissive_mode().as_deref(), Some("never-ask"));
+        let empty = PermissionCatalog::default().preferring_most_permissive();
+        assert_eq!(empty.default_mode_id, None);
     }
     #[test]
     fn auto_is_offered_only_when_native_claude_supports_it() {

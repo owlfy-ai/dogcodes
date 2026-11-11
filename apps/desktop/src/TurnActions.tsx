@@ -1,5 +1,5 @@
 import { ReviewStartRecovery, usePendingReview } from "./ReviewStartRecovery";
-import { reviewStartOperations } from "./reviewStartOperations";
+import { ReviewStartPending, reviewStartOperations } from "./reviewStartOperations";
 import { useEnabledAgents } from "./agentPreferences";
 import { useContext, useEffect, useRef, useState } from "react";
 import { ulid } from "ulid";
@@ -23,6 +23,8 @@ const labels: Record<HistoricalReviewKind, string> = { code: "code", tests: "tes
 const supportedKind = (kind: HistoricalReviewKind): kind is ReviewKind => kind === "code" || kind === "security" || kind === "performance";
 const states = { queued: "queued", running: "running", cancelling: "cancelling", completed: "completed", failed: "failed", cancelled: "cancelled", interrupted: "interrupted" };
 const active = (r: TurnReviewRun) => ["queued", "running", "cancelling"].includes(r.status);
+// A failed or interrupted review offers retry inside its failure notice instead of the footer.
+const stopped = (r: TurnReviewRun) => r.status === "failed" || r.status === "interrupted";
 const executorKey = (e: ExecutorRef) => `${e.providerId}:${e.installationId ?? ""}`;
 const executorCache = new WeakMap<CoreClient, { at: number; promise: Promise<[BootstrapSnapshot, ExecutorRef[]]> }>();
 function availableReviewExecutors(client: CoreClient, taskId: string, refresh = false): Promise<ExecutorRef[]> {
@@ -83,7 +85,7 @@ export function TurnActions({ client, items, turnId, completedAt, startedAt, onR
     busyRef.current = true; setBusy(true); setError("");
     const request: TurnReviewRequest = { taskId, turnId, runId: `run_${ulid()}`, executor, kind, retryOf, recheckOf: runs.find(run => run.request.runId === retryOf)?.request.recheckOf ?? null };
     try { const run = await reviewStartOperations.send(client, scope, request); freshRuns.current.add(run.request.runId); if (mounted.current) setRuns(previous => [...previous.filter(r => r.request.runId !== run.request.runId), run]); await reviews(client, taskId, true); }
-    catch (e) { if (mounted.current) setError(userFacingError(e, t("turnActions.startFailed"))); }
+    catch (e) { if (mounted.current && !(e instanceof ReviewStartPending)) setError(userFacingError(e, t("turnActions.startFailed"))); }
     finally { busyRef.current = false; if (mounted.current) setBusy(false); }
   }
   async function cancel(run: TurnReviewRun) {
@@ -118,8 +120,14 @@ export function TurnActions({ client, items, turnId, completedAt, startedAt, onR
 
     {runs.map(run => <details className="turn-review-result" key={run.request.runId} open={freshRuns.current.has(run.request.runId) || active(run) || run.status === "failed" || run.status === "interrupted" ? true : undefined}>
       <summary><AgentIcon providerId={run.request.executor.providerId}/><strong>{t(`turnActions.review.${labels[run.request.kind]}`)}</strong><span>{providerLabel(run.request.executor.providerId)} · {t(`turnActions.state.${states[run.status]}`)}</span></summary>
-      <ReviewResult client={client} run={run} executor={executor} onReviewFinding={onReviewFile ? finding => onReviewFile(reviewFindingPath(finding)) : undefined}/>
-      <footer><small>{new Date(run.createdAt).toLocaleString()} · {t(run.workspaceReview ? "turnActions.currentCode" : "turnActions.historicalReview")}</small>{active(run) ? <button type="button" disabled={run.status === "cancelling"} onClick={() => void cancel(run)}>{t("turnActions.cancelReview")}</button> : supportedKind(run.request.kind) ? <button type="button" className="turn-review-recheck" aria-label={t("turnActions.recheck")} disabled={busy || !!pending || !!disabledReason} data-tooltip={t("turnActions.recheckTooltip")} onClick={() => { if (supportedKind(run.request.kind)) void start(run.request.kind,run.workspaceReview ? run.request.runId : null); }}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"/></svg></button> : null}</footer>
+      <ReviewResult client={client} run={run} executor={executor} onReviewFinding={onReviewFile ? finding => onReviewFile(reviewFindingPath(finding)) : undefined}
+        {...stopped(run) && supportedKind(run.request.kind) ? {
+          onRetry: () => { if (supportedKind(run.request.kind)) void start(run.request.kind, run.workspaceReview ? run.request.runId : null); },
+          retryDisabled: busy || !!pending || !!disabledReason,
+          retryTooltip: disabledReason || (executor ? t("reviewActions.agentTooltip", { agent: providerLabel(executor.providerId) }) : undefined),
+          onSwitchAgent: executors.length > 1 ? () => setAgentMenu(true) : undefined,
+        } : {}}/>
+      <footer><small>{new Date(run.createdAt).toLocaleString()} · {t(run.workspaceReview ? "turnActions.currentCode" : "turnActions.historicalReview")}</small>{active(run) ? <button type="button" disabled={run.status === "cancelling"} onClick={() => void cancel(run)}>{t("turnActions.cancelReview")}</button> : supportedKind(run.request.kind) && !stopped(run) ? <button type="button" className="turn-review-recheck" aria-label={t("turnActions.recheck")} disabled={busy || !!pending || !!disabledReason} data-tooltip={t("turnActions.recheckTooltip")} onClick={() => { if (supportedKind(run.request.kind)) void start(run.request.kind,run.workspaceReview ? run.request.runId : null); }}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"/></svg></button> : null}</footer>
     </details>)}
   </div>;
 }

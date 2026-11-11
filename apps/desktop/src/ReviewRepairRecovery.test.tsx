@@ -13,7 +13,7 @@ const run: TurnReviewRun = { request: { taskId: task.taskId, turnId: null, sourc
 let element: HTMLDivElement, root: Root;
 const button = (label: string) => [...element.querySelectorAll("button")].find(node => node.textContent === label)!;
 const click = async (label: string) => act(async () => button(label).click());
-const panel = () => element.querySelector('[aria-label="待核实的修复请求"]');
+const panel = () => element.querySelector('[aria-label="未完成的修复"]');
 beforeEach(() => { vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); element = document.createElement("div"); document.body.append(element); root = createRoot(element); });
 afterEach(async () => { await act(async () => root.unmount()); element.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -43,9 +43,9 @@ function fixture(initial: ReviewRepairEntry | null) {
 it("shows a repair recorded by the service, including one started on another client, and blocks a new start", async () => {
   const f = fixture(pending("cmd_remote", [0, 2], { contextConfirmed: true, lastError: "会话已变化" }));
   await f.render([1]);
-  expect(panel()?.textContent).toContain("问题 1、问题 3 · ");
-  expect(panel()?.textContent).toContain("Agent 已切换");
-  expect(panel()?.textContent).toContain("会话已变化");
+  expect(panel()?.textContent).toContain("修复 问题 1、问题 3（");
+  expect(panel()?.textContent).toContain("原因：会话已变化");
+  expect(panel()?.textContent).not.toMatch(/核实|原请求|上下文/);
   expect(button("开始修复").disabled).toBe(true);
   expect(f.reviewRepair.mock.calls.every(([call]) => call.action === "get")).toBe(true);
 });
@@ -54,7 +54,7 @@ it("continues the original request once and clears the selection only after the 
   const original = pending("cmd_original");
   const f = fixture(original);
   await f.render();
-  await click("继续原修复");
+  await click("继续修复");
   expect(f.reviewRepair).toHaveBeenCalledWith({ action: "resume", taskId: task.taskId, runId: run.request.runId, operationId: "cmd_original" });
   expect(f.clearSelection).toHaveBeenCalledOnce();
   expect(panel()).toBeNull();
@@ -78,7 +78,7 @@ it("does not clear a newer selection when an older request's reply arrives late"
   f.reviewRepair.mockImplementationOnce(async () => original)
     .mockImplementationOnce(() => new Promise(done => { resolve = done; }));
   await f.render();
-  await act(async () => { button("继续原修复").click(); });
+  await act(async () => { button("继续修复").click(); });
   // Another client replaced the record while this reply was in flight.
   const newer = pending("cmd_newer", [2]);
   f.set(newer);

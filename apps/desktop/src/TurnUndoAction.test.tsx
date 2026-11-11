@@ -46,7 +46,7 @@ it("keeps conflicts visible in the dialog without marking the turn undone", asyn
   await render(); await click("撤销"); await click("确认撤销");
   expect(document.querySelector('[role="alert"]')?.textContent).toContain("后又有修改");
   expect(button("确认撤销")).toBeUndefined();
-  expect(button("核实撤销").disabled).toBe(false);
+  expect(button("撤销结果").disabled).toBe(false);
 });
 it.each([
   "本轮快照内容不完整，无法撤销全部修改",
@@ -87,7 +87,7 @@ it("keeps unknown undo identity after reopening and hides a second confirmation"
   expect(button("确认撤销")).toBeUndefined();
   const saved = reviewMutations.entries("tsk_one")[0];
   await act(async () => root.render(null)); await render();
-  await click("核实撤销");
+  await click("撤销结果");
   expect(button("确认撤销")).toBeUndefined();
   expect(reviewMutations.entries("tsk_one")[0].request).toEqual(saved.request);
   expect(invoke.mock.calls.filter(([name]) => name === "core_turn_undo")).toHaveLength(1);

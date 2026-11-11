@@ -311,7 +311,6 @@ export const fr: TranslationDict = {
     quotaSwitch: "Continuer avec {agent}",
     quotaSwitchTooltip: "Votre prochain message ira à {agent}, avec cette conversation",
     enableInManagement: "Veuillez activer un Agent dans la gestion des Agents ou passer à un Agent disponible",
-    stopPending: "En attente de confirmation de l'arrêt",
   },
   turn: {
     copy: "Copier le contenu",

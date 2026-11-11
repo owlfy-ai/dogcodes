@@ -72,7 +72,9 @@ it("cancels only the selected review and recovers persisted results", async () =
 it("reuses the request id after an uncertain response", async () => {
   const f = fixture(); f.client.startTurnReview.mockRejectedValueOnce(new Error("connection lost"));
   await mount(f.core);
-  await click(button("审查代码")); await click(textButton("核实审查结果")); await click(textButton("重发原审查"));
+  await click(button("审查代码"));
+  // The kept request is retried once on its own, with the same ID.
+  expect(f.client.startTurnReview).toHaveBeenCalledTimes(2);
   expect(f.client.startTurnReview.mock.calls[0][0]).toEqual(f.client.startTurnReview.mock.calls[1][0]);
   expect(button("从此轮分叉")).toBeNull();
   expect(button("复制本轮回复")).not.toBeNull();
@@ -141,12 +143,12 @@ it("offers only the three supported checks and keeps retired results readable wi
 });
 
 it("restores a pending turn review after remount without generating another run id", async () => {
-  const f = fixture(); f.client.startTurnReview.mockRejectedValueOnce(new Error("offline"));
+  const f = fixture(); f.client.startTurnReview.mockRejectedValueOnce(new Error("offline")).mockRejectedValueOnce(new Error("offline"));
   await mount(f.core); await click(button("审查代码"));
   const original = f.client.startTurnReview.mock.calls[0][0];
-  await act(async () => root.render(null)); await mount(f.core);
-  expect(f.client.startTurnReview).toHaveBeenCalledTimes(1);
+  expect(f.client.startTurnReview).toHaveBeenCalledTimes(2);
   expect(button("性能分析").disabled).toBe(true);
-  await click(textButton("核实审查结果")); await click(textButton("重发原审查"));
-  expect(f.client.startTurnReview.mock.calls[1][0]).toEqual(original);
+  await act(async () => root.render(null)); await mount(f.core);
+  expect(f.client.startTurnReview).toHaveBeenCalledTimes(3);
+  expect(f.client.startTurnReview.mock.calls[2][0]).toEqual(original);
 });

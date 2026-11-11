@@ -16,12 +16,17 @@ const valid = (request: AttachmentUploadRequest | undefined) => !!request
 function read(id: string): PendingAttachmentUpload | null {
   const raw = localStorage.getItem(prefix + id);
   if (raw === null) return null;
-  const record = JSON.parse(raw) as PendingAttachmentUpload;
-  if (!record || record.schemaVersion !== 1 || !valid(record.request) || record.request.uploadId !== id) throw new Error(t("uploads.corrupt"));
+  let record: PendingAttachmentUpload | null = null;
+  try { record = JSON.parse(raw) as PendingAttachmentUpload; } catch { /* dropped below */ }
+  if (!record || record.schemaVersion !== 1 || !valid(record.request) || record.request.uploadId !== id) {
+    // An unreadable record can't be checked; the file is simply chosen again.
+    localStorage.removeItem(prefix + id);
+    return null;
+  }
   return record;
 }
 function list() {
-  return Object.keys(localStorage).filter(key => key.startsWith(prefix)).sort().map(key => read(key.slice(prefix.length))!);
+  return Object.keys(localStorage).filter(key => key.startsWith(prefix)).sort().flatMap(key => read(key.slice(prefix.length)) ?? []);
 }
 const emit = () => listeners.forEach(listener => listener());
 function remember(request: AttachmentUploadRequest) {

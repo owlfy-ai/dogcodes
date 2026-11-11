@@ -78,15 +78,16 @@ it("uses the latest received version when cancelling before the UI batch flushes
   expect(client.cancelTurn).toHaveBeenCalledWith(expect.objectContaining({ streamVersion: 11 }), expect.stringMatching(/^cmd_/));
 });
 
-it("keeps an uncertain stop recoverable and never treats acknowledgement as task completion", async () => {
+it("keeps an uncertain stop quiet and lets stop be pressed again with the same request", async () => {
   vi.mocked(client.cancelTurn).mockRejectedValueOnce(new Error("connection lost"));
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="停止"]')!.click());
-  expect(host.querySelector<HTMLButtonElement>('[aria-label="停止结果待核实"]')?.disabled).toBe(true);
-  const query = [...host.querySelectorAll("button")].find(button => button.textContent === "核实停止请求")!;
-  expect(query).toBeTruthy();
-  await act(async () => query.click());
-  expect(client.cancelTurn).toHaveBeenCalledTimes(1);
-  expect(host.textContent).toContain("仍需等待任务实际退出");
+  expect(host.textContent).toContain("可以再按一次停止");
+  expect(host.textContent).not.toMatch(/核实|原请求|跟踪|回执/);
+  const stop = host.querySelector<HTMLButtonElement>('[aria-label="停止"]')!;
+  expect(stop.disabled).toBe(false);
+  await act(async () => stop.click());
+  expect(client.cancelTurn).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(client.cancelTurn).mock.calls[1][1]).toBe(vi.mocked(client.cancelTurn).mock.calls[0][1]);
   expect(host.querySelector('[aria-label="发送"]')).toBeNull();
 });
 it("uses the latest received version for an approval without refreshing task snapshots", async () => {

@@ -96,7 +96,7 @@ it("keeps an unconfirmed archive in place, disables more mutations and retries t
   const request = api.write.mock.calls[0];
   expect(element.querySelector(".history-archived")).toBeNull();
   expect(button("归档会话").disabled).toBe(true);
-  expect(element.textContent).toContain("保存结果尚未确认");
+  expect(element.textContent).toContain("正在自动重试");
   // Layout is independent even while a business operation is unresolved.
   await act(async () => element.querySelector<HTMLButtonElement>(".history-projects .history-section-toggle")!.click());
   expect(api.write).toHaveBeenCalledTimes(1);
@@ -118,7 +118,7 @@ it("does not overwrite another client's winning initialization or later conflict
   expect(current.preferences.tasks).toEqual({ tsk_1: "archived" });
   expect(current.preferences.projects).toEqual({});
   expect(b.getSnapshot().snapshot?.preferences).toEqual(current.preferences);
-  expect(b.getSnapshot().error).toContain("后台当前设置");
+  expect(b.getSnapshot().error).toContain("当前已保存的设置");
 });
 
 it("saves sorting and manual orders to the host without changing another section or local backup", async () => {

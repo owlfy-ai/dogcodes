@@ -114,7 +114,6 @@ export const zhCN: TranslationDict = {
     quotaSwitch: "换 {agent} 继续",
     quotaSwitchTooltip: "下一条消息改由 {agent} 处理，对话内容会一起带过去",
     enableInManagement: "请在 Agent 管理中启用 Agent，或切换到可用的 Agent",
-    stopPending: "停止结果待核实",
   },
   turn: {
     copy: "复制内容",

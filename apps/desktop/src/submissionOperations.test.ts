@@ -72,7 +72,7 @@ it("retires with the original identity and lists only service-pending originals"
 it("rejects empty content and clients without the service workflow before sending", async () => {
   const f = fixture();
   await expect(operations.start(f.client, { ...request, input: { ...input, prompt: " " } })).rejects.toThrow("发送内容无效");
-  await expect(operations.start({} as CoreClient, request)).rejects.toThrow("不支持可靠发送");
+  await expect(operations.start({} as CoreClient, request)).rejects.toThrow("无法可靠地发送消息");
   expect(f.submissionStart).not.toHaveBeenCalled();
 });
 

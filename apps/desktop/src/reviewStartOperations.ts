@@ -11,16 +11,23 @@ function identity(request: TurnReviewRun["request"]) {
     request.executor.installationId ?? null, request.retryOf ?? null, request.sourceSnapshot ?? null,
     request.recheckOf?.runId ?? null, request.recheckOf?.repairTurnId ?? null]);
 }
+/** A review request kept for recovery: its start reply was lost or it failed. */
+export class ReviewStartPending extends Error {}
 function read(task: string, scope: string): ReviewStartRequest | null {
   const raw = localStorage.getItem(key(task, scope));
   if (!raw) return null;
-  const value = JSON.parse(raw) as ReviewStartRequest;
+  let value: ReviewStartRequest | null = null;
+  try { value = JSON.parse(raw) as ReviewStartRequest; } catch { /* dropped below */ }
   if (!value || value.taskId !== task || typeof value.runId !== "string" || !value.runId || !["code", "security", "performance"].includes(value.kind)
     || typeof value.executor?.providerId !== "string" || !value.executor.providerId
     || (value.executor.installationId != null && typeof value.executor.installationId !== "string")
     || (value.retryOf != null && typeof value.retryOf !== "string")
     || (value.recheckOf != null && (typeof value.recheckOf.runId !== "string" || typeof value.recheckOf.repairTurnId !== "string"))
-    || (value.turnId === null ? !value.sourceSnapshot || typeof value.sourceSnapshot !== "string" : !value.turnId || typeof value.turnId !== "string")) throw new Error(t("reviewOps.corrupt"));
+    || (value.turnId === null ? !value.sourceSnapshot || typeof value.sourceSnapshot !== "string" : !value.turnId || typeof value.turnId !== "string")) {
+    // An unreadable record can't be checked or resent; it would only block reviews.
+    localStorage.removeItem(key(task, scope));
+    return null;
+  }
   return value;
 }
 function forget(scope: string, request: ReviewStartRequest) {
@@ -45,8 +52,9 @@ async function send(client: CoreClient, scope: string, request: ReviewStartReque
     const run = request.turnId === null ? await client.startProjectReview!(request) : await client.startTurnReview!(request);
     validate(request, run); forget(scope, request); return run;
   } catch (cause) {
-    try { const result = await check(client, scope, request); if (result) return result; } catch { /* Keep original payload for explicit recovery. */ }
-    throw new Error(t("reviewOps.kept", { reason: cause instanceof Error ? cause.message : String(cause) }));
+    try { const result = await check(client, scope, request); if (result) return result; } catch { /* Keep the original request for recovery. */ }
+    // Kept with its ID: recovery retries it once and then asks, never starting it twice.
+    throw new ReviewStartPending(cause instanceof Error ? cause.message : String(cause));
   }
 }
 export const reviewStartOperations = {

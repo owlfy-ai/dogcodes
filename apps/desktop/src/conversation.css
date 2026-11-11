@@ -597,7 +597,7 @@
   min-width: 0;
 }
 .conversation-flow > :is(.conversation-entry, .response-agent-anchor):empty { display: none; }
-.conversation-flow > :is(.conversation-entry, .response-agent-anchor) > :is(.conversation-activity, .inline-file-edit, .assistant-message, .thought-line, .turn-files) {
+.conversation-flow > :is(.conversation-entry, .response-agent-anchor) > :is(.conversation-activity, .inline-file-edit, .assistant-message, .thought-line, .turn-files, .tool-run-toggle) {
   margin-block: 0;
   width: 100%;
   box-sizing: border-box;
@@ -647,3 +647,35 @@
 .welcome-stage > .agent-pending { width:100%; max-width:var(--conversation-content-width); text-align:left; display:grid; gap:.4rem; margin-bottom:1rem; }
 @keyframes agent-wait { 0%, 80%, 100% { opacity:.3; } 40% { opacity:1; } }
 @media (prefers-reduced-motion:reduce) { .agent-pending-dots i { animation:none; opacity:.6; } }
+
+/* A folded run of consecutive tool calls: one row naming the latest call and
+   counting the run; it opens a compact list of every call. */
+.tool-run-toggle .activity-title { flex: 0 1 auto; }
+.tool-run-chevron {
+  width: calc(14px * var(--ui-scale, 1));
+  height: calc(14px * var(--ui-scale, 1));
+  flex: none;
+  transition: transform 120ms ease;
+}
+.tool-run-toggle[aria-expanded="true"] .tool-run-chevron { transform: rotate(90deg); }
+.tool-run-toggle .tool-run-count { padding-left: 12px; }
+.tool-run-toggle:focus-visible { outline: 2px solid var(--accent, #3687d2); outline-offset: 2px; border-radius: 6px; }
+.tool-run-list {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  max-width: var(--conversation-content-width);
+  margin-inline: auto;
+}
+.conversation-flow .tool-run-list { margin-top: calc(-1 * var(--conversation-entry-gap, 8px)); }
+.tool-run-list > :is(.conversation-activity, .inline-file-edit, .tool-activity) { margin: 0; width: 100%; max-width: 100%; box-sizing: border-box; }
+.tool-run-list :is(.activity-line, .inline-edit-heading),
+.conversation-flow .tool-run-list :is(.activity-line, .inline-edit-heading) {
+  min-height: calc(28px * var(--ui-scale, 1));
+  padding-block: calc(2px * var(--ui-scale, 1));
+}
+.tool-run-list details[open] > .activity-detail { margin-block: 4px 8px; }
+.activity-status-failed { color: #c54b45; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .activity-status-failed { color: #f07b72; } }
+:root[data-theme="dark"] .activity-status-failed { color: #f07b72; }
+@media (prefers-reduced-motion: reduce) { .tool-run-chevron { transition: none; } }

@@ -59,8 +59,29 @@ pub(super) struct Account {
     launch: ZcodeLaunch,
     builtin: PathBuf,
     grant: Value,
+    /// A grant re-confirmed during a long turn; cleared with every new grant.
+    renewed: std::sync::Arc<std::sync::Mutex<Option<Value>>>,
     checked: Option<tokio::time::Instant>,
     unsupported: bool,
+}
+
+/// The runtime helper refuses a grant checked more than five minutes ago, so a
+/// turn that runs longer re-checks the account before its next model request.
+const GRANT_RENEW_AFTER_MS: i64 = 4 * 60_000;
+
+/// A renewal keeps the turn going only when it confirms the account, plan,
+/// key and overlay that the native process was given at the turn's start.
+fn same_account(original: &Value, fresh: &Value) -> bool {
+    !original["authorized"].is_null()
+        && original["authorized"] == fresh["authorized"]
+        && original["overlay"]["revision"] == fresh["overlay"]["revision"]
+        && original["version"] == fresh["version"]
+}
+
+fn grant_is_stale(grant: &Value, now_ms: i64) -> bool {
+    grant["checkedAt"]
+        .as_i64()
+        .is_some_and(|checked| now_ms.saturating_sub(checked) >= GRANT_RENEW_AFTER_MS)
 }
 
 impl Account {
@@ -107,6 +128,7 @@ impl Account {
             launch: launch.clone(),
             builtin: launch.bundled_provider_config()?,
             grant: Value::Null,
+            renewed: std::sync::Arc::default(),
             checked: None,
             unsupported: false,
         })
@@ -118,12 +140,13 @@ impl Account {
         owner: tokio::sync::watch::Receiver<bool>,
     ) -> Value {
         let original = owner.clone();
+        let grant = self.current_grant(owner.clone()).await;
         let result = self
             .run_owned(
                 json!({
                     "action":"runtime", "request":request,
-                    "authorized":self.grant["authorized"], "checkedAt":self.grant["checkedAt"],
-                    "version":self.grant["version"],
+                    "authorized":grant["authorized"], "checkedAt":grant["checkedAt"],
+                    "version":grant["version"],
                 }),
                 Duration::from_secs(150),
                 Some(owner),
@@ -137,6 +160,45 @@ impl Account {
                 json!({"headersApplied":false,
             "errorMessage":"ZCode 账号验证未完成，请检查原生登录状态后重试。"})
             })
+    }
+
+    /// The turn's grant, re-checked online once it nears the helper's age
+    /// limit. A failed or different check leaves the old grant, which the
+    /// helper then refuses as before.
+    async fn current_grant(&self, owner: tokio::sync::watch::Receiver<bool>) -> Value {
+        let grant = self
+            .lock_renewed()
+            .clone()
+            .unwrap_or_else(|| self.grant.clone());
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| {
+                i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX)
+            });
+        if !grant_is_stale(&grant, now_ms) {
+            return grant;
+        }
+        match self
+            .run_owned(
+                json!({"action":"inspect","builtinFile":self.builtin}),
+                Duration::from_secs(22),
+                Some(owner),
+                None,
+            )
+            .await
+        {
+            Ok(fresh) if same_account(&self.grant, &fresh) => {
+                *self.lock_renewed() = Some(fresh.clone());
+                fresh
+            }
+            _ => grant,
+        }
+    }
+
+    fn lock_renewed(&self) -> std::sync::MutexGuard<'_, Option<Value>> {
+        self.renewed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     async fn run_owned(
@@ -282,6 +344,7 @@ impl Connection {
         // Cancellation or failure must not leave a previous account authorized.
         if let Some(account) = &mut self.account {
             account.grant = Value::Null;
+            account.renewed = std::sync::Arc::default();
             account.checked = None;
         }
         let grant = worker
@@ -349,6 +412,30 @@ mod tests {
         assert!(arguments[0].to_string_lossy().encode_utf16().count() < 32767);
         drop(helper);
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_long_turn_renews_its_grant_only_for_the_same_account() {
+        let grant = json!({"authorized":{"p":{"fingerprint":"a"}},"overlay":{"revision":"r"},"version":"1","checkedAt":1_000});
+        assert!(!grant_is_stale(&grant, 1_000 + GRANT_RENEW_AFTER_MS - 1));
+        assert!(grant_is_stale(&grant, 1_000 + GRANT_RENEW_AFTER_MS));
+        assert!(!grant_is_stale(&Value::Null, i64::MAX));
+        let mut fresh = grant.clone();
+        fresh["checkedAt"] = json!(999_999);
+        assert!(same_account(&grant, &fresh));
+        for (key, value) in [
+            ("authorized", json!({"p":{"fingerprint":"b"}})),
+            ("overlay", json!({"revision":"s"})),
+            ("version", json!("2")),
+        ] {
+            let mut changed = fresh.clone();
+            changed[key] = value;
+            assert!(
+                !same_account(&grant, &changed),
+                "{key} change must not renew"
+            );
+        }
+        assert!(!same_account(&Value::Null, &Value::Null));
     }
 
     #[cfg(unix)]

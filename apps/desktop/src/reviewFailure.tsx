@@ -6,18 +6,22 @@ export const isReviewTransportErrorLine = (text: string) => /^\s*(?:Error|Retria
 
 export function reviewFailureMessage(error: string): string {
   if (transport.test(error)) return t("reviewFailure.transport");
+  if (/model_request_failed|model request failed/i.test(error)) return t("reviewFailure.model");
   if (/timed out|timeout|超时/i.test(error)) return t("reviewFailure.timeout");
   return userFacingError(error, t("reviewResult.failed"));
 }
 
-export function ReviewFailure({ error, onRetry, retryDisabled, retryTooltip }: {
-  error: string | null; onRetry?: () => void; retryDisabled?: boolean; retryTooltip?: string;
+export function ReviewFailure({ error, onRetry, retryDisabled, retryTooltip, onSwitchAgent }: {
+  error: string | null; onRetry?: () => void; retryDisabled?: boolean; retryTooltip?: string; onSwitchAgent?: () => void;
 }) {
   if (!error) return null;
   const message = reviewFailureMessage(error);
   return <div className="review-failure">
     <p role="alert">{message}</p>
-    {onRetry && <button type="button" disabled={retryDisabled} data-tooltip={retryTooltip} onClick={onRetry}>{t("reviewFailure.retry")}</button>}
+    {(onRetry || onSwitchAgent) && <span className="review-failure-actions">
+      {onSwitchAgent && <button type="button" onClick={onSwitchAgent}>{t("reviewFailure.switchAgent")}</button>}
+      {onRetry && <button type="button" className="review-failure-retry" disabled={retryDisabled} data-tooltip={retryTooltip} onClick={onRetry}>{t("reviewFailure.retry")}</button>}
+    </span>}
     {message !== error && <details><summary>{t("gitMenu.errorDetails")}</summary><pre>{error}</pre></details>}
   </div>;
 }

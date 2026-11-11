@@ -12,18 +12,26 @@ it("recovers a lost mutation reply from the receipt without resending", async ()
   expect(vi.mocked(invoke).mock.calls.map(([method]) => method)).toEqual(["core_project_run_edit", "core_project_run_operation", "core_project_runs"]);
   expect(runOperations.hasPending("task")).toBe(false);
 });
-it("retains the original request across a client reload and retries only after an explicit action", async () => {
+it("settles a request left by a closed window from the service record, never resending it", async () => {
   vi.mocked(invoke).mockRejectedValue(new Error("offline"));
   await expect(runOperations.mutate("core_project_run_edit", request)).rejects.toThrow("offline");
   expect(runOperations.hasPending("task")).toBe(true);
-  await expect(runOperations.mutate("core_project_run_edit", { ...request, operationId: "second" })).rejects.toThrow("尚未核实");
   vi.resetModules();
   const reopened = (await import("./projectRunOperations")).runOperations;
   expect(reopened.hasPending("task")).toBe(true);
-  vi.mocked(invoke).mockReset().mockResolvedValueOnce(null).mockResolvedValueOnce(catalog);
-  expect(await reopened.retryPending("task")).toEqual(catalog);
-  expect(invoke).toHaveBeenNthCalledWith(2, "core_project_run_edit", { request });
+  vi.mocked(invoke).mockReset().mockResolvedValueOnce(null);
+  await reopened.settlePending("task");
+  expect(vi.mocked(invoke).mock.calls).toEqual([["core_project_run_operation", { taskId: "task", operationId: "original" }]]);
   expect(reopened.hasPending("task")).toBe(false);
+});
+it("settles the earlier request before sending a new one, and refuses while it can't be read", async () => {
+  vi.mocked(invoke).mockRejectedValue(new Error("offline"));
+  await expect(runOperations.mutate("core_project_run_edit", request)).rejects.toThrow("offline");
+  await expect(runOperations.mutate("core_project_run_edit", { ...request, operationId: "second" })).rejects.toThrow("还在确认中");
+  expect(vi.mocked(invoke).mock.calls.filter(([method]) => method === "core_project_run_edit")).toHaveLength(1);
+  vi.mocked(invoke).mockReset().mockResolvedValueOnce({ status: "succeeded" }).mockResolvedValueOnce(catalog);
+  expect(await runOperations.mutate("core_project_run_edit", { ...request, operationId: "second" })).toEqual(catalog);
+  expect(runOperations.hasPending("task")).toBe(false);
 });
 it("an older reply cannot clear another window's pending request", async () => {
   let finish!: (value: unknown) => void;
@@ -34,14 +42,17 @@ it("an older reply cannot clear another window's pending request", async () => {
   expect(runOperations.hasPending("task")).toBe(true);
   expect(localStorage.getItem("dogcodes.project-run.pending.task.second")).not.toBeNull();
 });
-it("never resends on a failed receipt query and discarding is local only", async () => {
+it("keeps the request when its record can't be read yet", async () => {
   vi.mocked(invoke).mockRejectedValue(new Error("offline"));
   await expect(runOperations.mutate("core_project_run_edit", request)).rejects.toThrow();
   vi.mocked(invoke).mockClear();
-  await expect(runOperations.retryPending("task")).rejects.toThrow();
-  expect(invoke).toHaveBeenCalledTimes(1);
-  runOperations.discardPending("task");
-  expect(runOperations.hasPending("task")).toBe(false); expect(invoke).toHaveBeenCalledTimes(1);
+  await expect(runOperations.settlePending("task")).rejects.toThrow();
+  expect(invoke).toHaveBeenCalledTimes(1); expect(runOperations.hasPending("task")).toBe(true);
+});
+it("drops an unreadable record instead of blocking run commands", () => {
+  localStorage.setItem("dogcodes.project-run.pending.task.bad", "{");
+  expect(runOperations.hasPending("task")).toBe(true);
+  return runOperations.settlePending("task").then(() => expect(runOperations.hasPending("task")).toBe(false));
 });
 it("clears only its request on an explicit rejection without querying or resending", async () => {
   vi.mocked(invoke).mockImplementationOnce(async () => {
@@ -58,14 +69,6 @@ it("keeps unknown storage outcomes pending and displays their message", async ()
   await expect(runOperations.mutate("core_project_run_edit", request)).rejects.toThrow("运行配置写入结果待核实");
   expect(runOperations.hasPending("task")).toBe(true);
   expect(invoke).toHaveBeenCalledTimes(2);
-});
-it("resolves a lost rejection on explicit retry with the original request", async () => {
-  vi.mocked(invoke).mockRejectedValueOnce("lost reply").mockResolvedValueOnce(null);
-  await expect(runOperations.mutate("core_project_run_edit", request)).rejects.toBe("lost reply");
-  vi.mocked(invoke).mockClear().mockResolvedValueOnce(null).mockRejectedValueOnce({ kind: "rejected", code: "version_conflict", message: "运行项已更新" });
-  await expect(runOperations.retryPending("task")).rejects.toMatchObject({ code: "version_conflict" });
-  expect(invoke).toHaveBeenNthCalledWith(2, "core_project_run_edit", { request });
-  expect(runOperations.hasPending("task")).toBe(false);
 });
 it("does not infer rejection from text that resembles a backend code", async () => {
   vi.mocked(invoke).mockRejectedValueOnce("run_commands_confirmation_required").mockResolvedValueOnce(null);

@@ -24,9 +24,14 @@ function store(taskId: string, operation: Pending) {
 }
 function pending(taskId: string): Pending | null {
   const value = read(taskId); if (!value) return null;
-  const parsed = JSON.parse(value) as Pending;
-  if (!["core_project_runs_analyze", "core_project_run_edit"].includes(parsed.method)
-    || parsed.request?.taskId !== taskId || typeof parsed.request.operationId !== "string") throw new Error(t("runOps.corrupt"));
+  let parsed: Pending | null = null;
+  try { parsed = JSON.parse(value) as Pending; } catch { /* dropped below */ }
+  if (!parsed || !["core_project_runs_analyze", "core_project_run_edit"].includes(parsed.method)
+    || parsed.request?.taskId !== taskId || typeof parsed.request.operationId !== "string") {
+    // An unreadable record can't be checked; it would only block run commands.
+    remove(taskId);
+    return null;
+  }
   return parsed;
 }
 export class RunOperationRejected extends Error {
@@ -43,22 +48,24 @@ function readableError(error: unknown): unknown {
   return error;
 }
 export const runOperations = {
-  hasPending: (taskId: string) => { try { return Boolean(read(taskId)); } catch { return true; } },
-  discardPending: (taskId: string) => { remove(taskId); },
-  async retryPending(taskId: string): Promise<ProjectRunCatalog> {
+  hasPending: (taskId: string) => Boolean(read(taskId)),
+  /**
+   * Settles an operation whose reply was lost (a closed window or a dropped
+   * connection) from the service's record, without asking. One the service
+   * received carries on there; one it never received did nothing. Either way the
+   * local record is dropped, and nothing is resent.
+   */
+  async settlePending(taskId: string): Promise<void> {
     const operation = pending(taskId);
-    if (!operation) return invoke("core_project_runs", { taskId });
-    // Explicit retry first asks for the persisted receipt. Only when there is
-    // no accepted receipt do we resend the original request, with its old ID.
-    const receipt = await invoke<RunOperation | null>("core_project_run_operation", { taskId, operationId: operation.request.operationId });
-    if (receipt) {
-      const catalog = await invoke<ProjectRunCatalog>("core_project_runs", { taskId });
-      remove(taskId, operation.request.operationId); return catalog;
-    }
-    return send(operation);
+    if (!operation) return;
+    await invoke<RunOperation | null>("core_project_run_operation", { taskId, operationId: operation.request.operationId });
+    remove(taskId, operation.request.operationId);
   },
   async mutate(method: Pending["method"], request: Pending["request"]): Promise<ProjectRunCatalog> {
-    if (pending(request.taskId)) throw new Error(t("runOps.pending"));
+    if (pending(request.taskId)) {
+      // Settle the earlier operation first so this one is not mixed up with it.
+      try { await runOperations.settlePending(request.taskId); } catch { throw new Error(t("runOps.pending")); }
+    }
     // Persist before invoking: a closed window must not lose the identity of an
     // operation already delivered to the service.
     store(request.taskId, { method, request });

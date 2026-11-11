@@ -146,22 +146,25 @@ it("does not carry an invalidated cached default policy into the next turn",asyn
  expect(read).toHaveBeenCalledTimes(2);
 });
 it.each([
- ["codex","full-access","dangerous"],["codebuddy","fullAccess","dangerous"],["claude","bypassPermissions","caution"],
- ["cursor","full-access","caution"],["kimi","auto","caution"],["kimi","yolo",""],["claude","default",""],["codex","default",""],
-])("marks %s %s with %j",async(providerId,id,marker)=>{
- const modes=[{id,label:id,description:"",dangerous:false}];
+ ["codex","full-access",true],["codebuddy","fullAccess",true],["claude","bypassPermissions",true],
+ ["cursor","full-access",true],["kimi","auto",true],["new-agent","default",true],["claude","default",false],["codex","default",false],
+])("shows %s %s like any other mode",async(providerId,id,dangerous)=>{
+ const modes=[{id,label:id,description:"",dangerous}];
  const client={permissionCatalog:vi.fn(async()=>({defaultModeId:id,modes}))} as unknown as CoreClient;
  await act(async()=>root.render(<PermissionPicker client={client} executor={{providerId,installationId:"ins_a"}} taskId="tsk_a" disabled={false} onChange={()=>{}}/>));
  const trigger=host.querySelector<HTMLButtonElement>("button")!;
- const marks=(element:Element)=>["dangerous","caution"].filter(name=>element.classList.contains(name)).join();
- expect(marks(trigger)).toBe(marker);
+ expect(trigger.className).toBe("permission-trigger");
  await act(async()=>trigger.click());
- expect(marks(host.querySelector('[role="menuitemradio"]')!)).toBe(marker);
+ expect(host.querySelector('[role="menuitemradio"]')!.className).toBe("");
 });
-it("heeds an agent's own warning about a mode that otherwise looks ordinary",async()=>{
- const client={permissionCatalog:vi.fn(async()=>({defaultModeId:"default",modes:[{id:"default",label:"Default",description:"",dangerous:true}]}))} as unknown as CoreClient;
- await act(async()=>root.render(<PermissionPicker client={client} executor={{providerId:"new-agent",installationId:"ins_a"}} taskId="tsk_a" disabled={false} onChange={()=>{}}/>));
- expect(host.querySelector("button")!.classList.contains("caution")).toBe(true);
+it("selects the catalog default, which the core sets to the most permissive mode, unless this task chose another",async()=>{
+ const client={permissionCatalog:vi.fn(async()=>({...catalog,defaultModeId:"bypass"}))} as unknown as CoreClient;const change=vi.fn();
+ await act(async()=>root.render(<PermissionPicker client={client} executor={executor} taskId="tsk_a" disabled={false} onChange={change}/>));
+ expect(change).toHaveBeenLastCalledWith("bypass");
+ await act(async()=>root.render(<></>));
+ localStorage.setItem("dogcodes.permissions:tsk_b:claude:ins_a","default");
+ await act(async()=>root.render(<PermissionPicker client={client} executor={executor} taskId="tsk_b" disabled={false} onChange={change}/>));
+ expect(change).toHaveBeenLastCalledWith("default");
 });
 it("says which policy is in force to assistive technology and in its tooltip",async()=>{
  const client={permissionCatalog:vi.fn(async()=>catalog)} as unknown as CoreClient;

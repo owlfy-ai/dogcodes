@@ -224,27 +224,29 @@ it("automatically checks the original operation after a lost launch reply instea
   expect(api.close).not.toHaveBeenCalled();
 });
 
-it("unknown input pauses only input, preserves output and resumes only after explicit inspection", async () => {
+it("unknown input pauses only input, preserves output and continues after read-only inspection without replay", async () => {
   vi.useFakeTimers(); const api = client(), fixture = inputFixtures.get(api)!; fixture.notAdmitted = true;
   await act(async () => root.render(<TerminalDock projectId="project" directories={["/project"]} open onClose={() => {}} api={api} />));
   await act(async () => { userInput(element); terminals[0].input?.("one\n"); await inputTick(); });
-  expect(element.textContent).toContain("输入结果尚未确认"); expect(element.textContent).not.toContain("终端已退出");
+  expect(element.textContent).toContain("无法确认输入是否已送达终端"); expect(element.textContent).not.toContain("终端已退出");
+  expect(element.textContent).not.toMatch(/核实|原输入|回执/);
   expect(terminals[0].options.disableStdin).toBe(true); expect(detach).not.toHaveBeenCalled();
   const receive = vi.mocked(api.open).mock.calls[0][4];
   await act(async () => receive({ kind: "data", bytes: [65] }));
   expect(terminals[0].write).toHaveBeenCalledWith(new Uint8Array([65]));
   await act(async () => receive({ kind: "state", info: info("session-0") }));
-  expect(element.textContent).toContain("输入结果尚未确认"); expect(terminals[0].options.disableStdin).toBe(true);
+  expect(element.textContent).toContain("无法确认输入是否已送达终端"); expect(terminals[0].options.disableStdin).toBe(true);
   await act(async () => vi.advanceTimersByTimeAsync(1000)); expect(api.attach).not.toHaveBeenCalled();
   const button = (text: string) => [...element.querySelectorAll<HTMLButtonElement>(".terminal-input-recovery button")].find(button => button.textContent === text)!;
   const before = vi.mocked(api.input).mock.calls.length;
-  await act(async () => { button("核实输入").click(); await inputTick(); });
-  expect(vi.mocked(api.input).mock.calls.slice(before).map(call => call[1].type)).toEqual(["inspect"]);
   fixture.notAdmitted = false;
   await act(async () => { button("继续输入").click(); await inputTick(); });
+  expect(vi.mocked(api.input).mock.calls.slice(before)[0][1].type).toBe("inspect");
   expect(terminals[0].options.disableStdin).toBe(false); expect(fixture.writes).toEqual([]);
+  expect(element.textContent).toContain("可能没有送达终端");
   await act(async () => { terminals[0].input?.("new\n"); await inputTick(); });
   expect(new TextDecoder().decode(Uint8Array.from(fixture.writes.flat()))).toBe("new\n");
+  expect(element.textContent).not.toContain("可能没有送达终端");
   expect(api.open).toHaveBeenCalledTimes(1); expect(api.close).not.toHaveBeenCalled();
 });
 
@@ -267,7 +269,7 @@ it("an ordinary focus click stays passive but a TUI mouse report may acquire inp
   expect(inputFixtures.get(api)!.writes.flat()).toEqual([27,91,77,32,33,33]);
 });
 
-it("output reattachment retains unresolved input, and read-only proof enables input without replay", async () => {
+it("output reattachment settles unresolved input on its own by read-only proof, without replay", async () => {
   vi.useFakeTimers(); const api = client(), fixture = inputFixtures.get(api)!; let finish!: () => void;
   fixture.gate = new Promise<void>(resolve => { finish = resolve; });
   await act(async () => root.render(<TerminalDock projectId="project" directories={["/project"]} open onClose={() => {}} api={api} />));
@@ -276,10 +278,9 @@ it("output reattachment retains unresolved input, and read-only proof enables in
   await act(async () => receive({ kind: "disconnected", error: "offline" }));
   await act(async () => vi.advanceTimersByTimeAsync(1000)); expect(api.attach).toHaveBeenCalledTimes(1);
   await act(async () => { finish(); await inputTick(); });
-  expect(terminals.at(-1)!.options.disableStdin).toBe(true);
-  const verify = [...element.querySelectorAll<HTMLButtonElement>(".terminal-input-recovery button")].find(button => button.textContent === "核实输入")!;
-  await act(async () => { verify.click(); await inputTick(); });
+  await act(async () => { await inputTick(); });
   expect(terminals.at(-1)!.options.disableStdin).toBe(false); expect(fixture.writes.length).toBe(1);
+  expect(element.querySelector(".terminal-input-recovery")).toBeNull();
   expect(api.open).toHaveBeenCalledTimes(1); expect(api.close).not.toHaveBeenCalled();
 });
 
@@ -289,12 +290,10 @@ it("replacing an API wrapper preserves the same terminal's unknown input identit
   await act(async () => { userInput(element); terminals[0].input?.("old"); await inputTick(); });
   expect(element.querySelector(".terminal-input-recovery")).not.toBeNull();
   const next = { ...api };
-  await act(async () => root.render(<TerminalDock projectId="project" directories={["/project"]} open onClose={() => {}} api={next} />));
-  expect(terminals.at(-1)!.options.disableStdin).toBe(true);
   const before = vi.mocked(api.input).mock.calls.length;
-  const verify = [...element.querySelectorAll<HTMLButtonElement>(".terminal-input-recovery button")].find(button => button.textContent === "核实输入")!;
-  await act(async () => { verify.click(); await inputTick(); });
-  expect(vi.mocked(api.input).mock.calls.slice(before).map(call => call[1].type)).toEqual(["inspect"]);
+  await act(async () => { root.render(<TerminalDock projectId="project" directories={["/project"]} open onClose={() => {}} api={next} />); await inputTick(); });
+  // Reconnecting checks the same input read-only before reopening it; nothing is replayed.
+  expect(vi.mocked(api.input).mock.calls.slice(before)[0][1].type).toBe("inspect");
   expect(vi.mocked(api.input).mock.calls.filter(call => call[1].type === "write").length).toBe(1);
 });
 
@@ -303,7 +302,7 @@ it("shows a friendly startup error instead of the raw exception, without a manua
   vi.mocked(api.open).mockRejectedValue(new TypeError("Cannot read properties of undefined (reading 'invoke')"));
   await act(async () => root.render(<TerminalDock projectId="project" directories={["/project"]} open onClose={() => {}} api={api} />));
   const alert = element.querySelector('.terminal-status .inline-error[role="alert"]');
-  expect(alert?.textContent).toContain("无法连接终端");
+  expect(alert?.textContent).toContain("无法连接到终端");
   expect(element.textContent).not.toContain("Cannot read properties");
   expect(alert?.querySelector("button.inline-error-retry")).toBeNull();
 });

@@ -667,7 +667,8 @@ impl Core {
         )
         .await
         .map_err(|_| CoreError::CapabilityUnavailable("权限策略读取超时".into()))?
-        .map_err(CoreError::from)?;
+        .map_err(CoreError::from)?
+        .preferring_most_permissive();
         if let Some(task_id) = task_id
             && let Some(mode) = self.running_permission_mode(task_id, executor).await
         {
@@ -875,7 +876,8 @@ impl Core {
         let mut catalog = self
             .catalogs
             .permissions(driver, generation, refresh, true)
-            .await?;
+            .await?
+            .preferring_most_permissive();
         if let Some(task_id) = task_id
             && let Some(mode) = self.running_permission_mode(task_id, executor).await
         {
@@ -3416,6 +3418,13 @@ impl Core {
             ));
             return Ok(());
         }
+        // A turn sent before the picker loaded its catalog carries no mode;
+        // use the same default the picker shows rather than the agent's own.
+        let permission_mode = permission_mode.or_else(|| {
+            self.catalogs
+                .cached_permissions(&active.executor)
+                .and_then(|catalog| catalog.most_permissive_mode())
+        });
         let _permission_lease =
             self.running_permissions
                 .track(task_id, &active, permission_mode.as_deref());

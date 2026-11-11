@@ -17,8 +17,13 @@ function entries(taskId: string): PendingMutation[] {
     const name = localStorage.key(i);
     if (!name?.startsWith(prefix)) continue;
     const raw = localStorage.getItem(name); if (!raw) continue;
-    const item = JSON.parse(raw) as PendingMutation;
-    if (!item.request?.operationId || !item.request.taskId || !item.request.arguments || !["core_review_index", "core_review_discard", "core_review_ignore", "core_review_batch_files", "core_turn_undo"].includes(item.request.command)) throw new Error(t("mutations.corrupt"));
+    let item: PendingMutation | null = null;
+    try { item = JSON.parse(raw) as PendingMutation; } catch { /* dropped below */ }
+    if (!item?.request?.operationId || !item.request.taskId || !item.request.arguments || !["core_review_index", "core_review_discard", "core_review_ignore", "core_review_batch_files", "core_turn_undo"].includes(item.request.command)) {
+      // An unreadable record can't be checked; it would only block file actions.
+      localStorage.removeItem(name);
+      continue;
+    }
     if (item.request.taskId === taskId) result.push(item);
   }
   return result.sort((a, b) => a.request.operationId.localeCompare(b.request.operationId));
@@ -56,18 +61,29 @@ function settle(value: PendingMutation, result: MutationReceipt): unknown {
   if (result.outcome.status === "failed") throw new Error(result.outcome.message);
   throw new MutationResultUnknown();
 }
+/**
+ * Settles a reply the caller is about to show. A failure or a partial result is
+ * shown by the caller, so it is ended here and not reported again later.
+ */
+async function settleLive(value: PendingMutation, result: MutationReceipt): Promise<unknown> {
+  const shown = result.outcome.status === "failed" || (result.outcome.status === "succeeded" && !!partialMutationResult(result.outcome.result));
+  try { return settle(value, result); }
+  finally { if (shown) await reviewMutations.acknowledge(value).catch(() => { /* reported on the next visit */ }); }
+}
 async function send(value: PendingMutation): Promise<unknown> {
   sending.add(value.request.operationId); notify();
   try {
     let result: unknown;
     try { result = await invoke(value.request.command, { ...value.request.arguments, operationId: value.request.operationId }); }
-    catch {
+    catch (cause) {
       let status: MutationReceipt | null;
       try { status = await receipt(value); } catch { throw new MutationResultUnknown(); }
-      if (status) return settle(value, status);
-      remember(value, null); throw new MutationResultUnknown();
+      if (status) return await settleLive(value, status);
+      // The service records an operation before it touches any file, so without
+      // a record nothing ran: report the refusal and drop the request.
+      remove(value); throw cause;
     }
-    return settle(value, { request: value.request, outcome: { status: "succeeded", result: result ?? null } });
+    return await settleLive(value, { request: value.request, outcome: { status: "succeeded", result: result ?? null } });
   } finally { sending.delete(value.request.operationId); notify(); }
 }
 export const reviewMutations = {
@@ -75,16 +91,28 @@ export const reviewMutations = {
   subscribe(listener: () => void) { listeners.add(listener); window.addEventListener("storage", listener); return () => { listeners.delete(listener); window.removeEventListener("storage", listener); }; },
   snapshot(taskId: string) { try { return JSON.stringify(entries(taskId).map(item => ({ ...item, sending: sending.has(item.request.operationId) }))); } catch (cause) { return JSON.stringify({ error: String(cause) }); } },
   async run<T>(command: MutationCommand, arguments_: Record<string, unknown>, taskId: string, rootId: string): Promise<T> {
-    if (entries(taskId).some(item => (item.request.command === "core_turn_undo" ? mutationArguments(item).artifactId : mutationArguments(item).rootId) === rootId)) throw new MutationResultUnknown();
+    for (const item of entries(taskId).filter(item => (item.request.command === "core_turn_undo" ? mutationArguments(item).artifactId : mutationArguments(item).rootId) === rootId)) {
+      // An earlier operation on the same files must be over first, so nothing
+      // changes them twice. A finished one is ended now, as the person moved on.
+      const result = await reviewMutations.check(item).catch(() => { throw new MutationResultUnknown(); });
+      if (!result) continue;
+      if (sending.has(item.request.operationId) || result.outcome.status === "running") throw new MutationResultUnknown();
+      await reviewMutations.acknowledge(item).catch(() => { throw new MutationResultUnknown(); });
+    }
     const value: PendingMutation = { request: { operationId: crypto.randomUUID(), taskId, command, arguments: JSON.parse(JSON.stringify(arguments_)) } };
     store(value); // Fail closed if the original request cannot survive a window restart.
     return await send(value) as T;
   },
-  async check(value: PendingMutation) { const result = await receipt(value); remember(value, result); return result; },
-  async resend(value: PendingMutation) {
+  /**
+   * Settles a kept operation from its record without showing anything when it
+   * needs no attention: one that finished cleanly or never started is dropped.
+   * Returns the record of one whose result the person should still see.
+   */
+  async check(value: PendingMutation) {
+    if (sending.has(value.request.operationId)) return value.receipt ?? null;
     const result = await receipt(value);
-    // Even when no record is visible yet, only resend the exact original identity.
-    return result ? settle(value, result) : send(value);
+    if (!result || (result.outcome.status === "succeeded" && !partialMutationResult(result.outcome.result))) { remove(value); return null; }
+    remember(value, result); return result;
   },
   async acknowledge(value: PendingMutation) {
     let result: MutationReceipt | null;

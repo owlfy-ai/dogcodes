@@ -213,7 +213,7 @@ it("recovers a repair recheck with its original Agent and linkage after reopenin
   const f = fixture();
   const repair = { turnId: "trn_fix", findingIndices: [0], status: "completed", recheckRuns: [] };
   const startTurnReview = vi.fn<(request: TurnReviewRequest) => Promise<TurnReviewRun>>()
-    .mockRejectedValueOnce(new Error("offline")).mockImplementation(async request => ({ ...f.run, request }));
+    .mockRejectedValueOnce(new Error("offline")).mockRejectedValueOnce(new Error("offline")).mockImplementation(async request => ({ ...f.run, request }));
   const client = { ...f.client, reviewRepair: vi.fn(async () => null), startTurnReview, bootstrap: vi.fn(async () => ({ tasks: [] })), turnReviews: vi.fn(async () => [{ ...f.run, repairs: [repair] }]) } as unknown as CoreClient;
   const executor = { providerId: "kimi", installationId: "original" };
   const render = (agent = executor) => act(async () => root.render(<ReviewResult client={client} run={f.run} executor={agent}/>));
@@ -221,9 +221,32 @@ it("recovers a repair recheck with its original Agent and linkage after reopenin
   await render();
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find(node => node.textContent?.startsWith("复审修复后的版本"))!.click());
   const original = startTurnReview.mock.calls[0][0];
+  expect(startTurnReview).toHaveBeenCalledTimes(2);
+  expect(byText("重试")).toBeDefined();
   await act(async () => root.render(null)); await render({ providerId: "codex", installationId: "different" });
-  expect(startTurnReview).toHaveBeenCalledTimes(1);
-  await act(async () => byText("核实审查结果").click()); await act(async () => byText("重发原审查").click());
-  expect(startTurnReview.mock.calls[1][0]).toEqual(original);
+  expect(startTurnReview).toHaveBeenCalledTimes(3);
+  expect(startTurnReview.mock.calls[2][0]).toEqual(original);
   expect(original.recheckOf).toEqual({ runId: f.run.request.runId, repairTurnId: "trn_fix" });
+});
+it("explains a failed review, offers retry and another Agent, and folds its unfinished notes", async () => {
+  const {translate: t} = await import("./i18n");
+  const f = fixture();
+  Object.assign(f.run, {status: "failed", report: null, result: "", error: "审查失败：ZCode turn failed (model_request_failed)", activities: [
+    {itemId: "thought:", data: {type: "thought", parentId: "", delta: ".", status: "running"}},
+    {itemId: "note", data: {type: "message", text: "我先查看当前项目的 Git 状态。"}},
+  ]});
+  const onRetry = vi.fn(), onSwitchAgent = vi.fn();
+  await act(async () => root.render(<ReviewResult client={f.client} run={f.run} onRetry={onRetry} onSwitchAgent={onSwitchAgent}/>));
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(t("reviewFailure.model"));
+  const buttons = [...container.querySelectorAll<HTMLButtonElement>(".review-failure-actions button")];
+  expect(buttons.map(button => button.textContent)).toEqual([t("reviewFailure.switchAgent"), t("reviewFailure.retry")]);
+  await act(async () => { buttons[0].click(); buttons[1].click(); });
+  expect(onSwitchAgent).toHaveBeenCalledOnce(); expect(onRetry).toHaveBeenCalledOnce();
+  const notes = container.querySelector<HTMLDetailsElement>(".review-execution")!;
+  expect(notes.open).toBe(false);
+  expect(notes.querySelector("summary")?.textContent).toBe(t("reviewActivity.partial"));
+  await openExecution();
+  expect(container.textContent).toContain("我先查看当前项目的 Git 状态。");
+  expect(container.querySelector(".thought-history, .conversation-activity [class*=think]")).toBeNull();
+  expect(container.textContent).not.toContain(t("activity.timeNotRecorded"));
 });
