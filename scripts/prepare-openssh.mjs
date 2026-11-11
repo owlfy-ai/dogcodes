@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSyn
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const version = '10.4.0.0p1-Preview';
@@ -21,16 +22,42 @@ export function opensshDistribution(target) {
   return release ? { folder: release[0], digest: release[1], archive: `${release[0]}.zip` } : null;
 }
 
-export async function prepareOpenSsh({ projectRoot = root, target, fetcher = fetch, extract = extractArchive, distribution = opensshDistribution(target) } = {}) {
+// Packaging builds shims synchronously between GitHub downloads. A pooled
+// connection can have expired by the time Node gets control again; retry the
+// entire transfer, including the response body, on a fresh request.
+async function downloadArchive(url, { fetcher, wait, timeoutMs }) {
+  const attempts = 3;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    let retryable = true;
+    try {
+      const response = await fetcher(url, { signal: AbortSignal.timeout(timeoutMs) });
+      if (!response.ok) {
+        retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+        await response.body?.cancel();
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+      const detail = [error.message, error.cause?.code, error.cause?.message].filter(Boolean).join(': ');
+      if (!retryable || attempt === attempts) {
+        throw new Error(`OpenSSH download failed for ${url} after ${attempt} attempt(s): ${detail}`, { cause: error });
+      }
+      console.warn(`OpenSSH download attempt ${attempt}/${attempts} failed: ${detail}; retrying.`);
+      await wait(1000 * attempt);
+    }
+  }
+}
+
+export async function prepareOpenSsh({ projectRoot = root, target, fetcher = fetch, extract = extractArchive, distribution = opensshDistribution(target), wait = delay, timeoutMs = 120_000 } = {}) {
   if (!distribution) return null;
   const { archive, digest, folder } = distribution;
   const cache = resolve(projectRoot, '.local/openssh', version);
   mkdirSync(cache, { recursive: true });
   const file = resolve(cache, archive);
   if (!existsSync(file) || sha256(readFileSync(file)) !== digest) {
-    const response = await fetcher(`https://github.com/PowerShell/Win32-OpenSSH/releases/download/${version}/${archive}`);
-    if (!response.ok) throw new Error(`OpenSSH download failed (${response.status}).`);
-    const bytes = Buffer.from(await response.arrayBuffer());
+    const url = `https://github.com/PowerShell/Win32-OpenSSH/releases/download/${version}/${archive}`;
+    console.log(`Downloading OpenSSH ${version}: ${archive}`);
+    const bytes = await downloadArchive(url, { fetcher, wait, timeoutMs });
     if (sha256(bytes) !== digest) throw new Error('OpenSSH archive checksum mismatch.');
     writeFileSync(file, bytes);
   }
