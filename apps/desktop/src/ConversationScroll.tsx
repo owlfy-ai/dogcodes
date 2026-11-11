@@ -160,7 +160,9 @@ export function ConversationScroll({
           if (Math.abs(node.scrollTop - restored) <= 1) { rememberPosition(node); return; }
         }
         trackScroll(node);
-        if (follow.current) bottom();
+        // A wheel or trackpad scroll that reaches the end may overshoot and bounce
+        // back on its own; pinning scrollTop then fights that native motion.
+        if (follow.current && node.scrollHeight - node.scrollTop - node.clientHeight > 1) bottom();
       }}
     >
       <div className="conversation-flow" ref={content}>{children}</div>

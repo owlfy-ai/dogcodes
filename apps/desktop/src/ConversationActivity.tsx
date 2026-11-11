@@ -382,11 +382,11 @@ export function foldableCall(item: TimelineItem) {
 }
 const approvalStates = ["awaiting_approval", "waiting_approval", "needs_approval", "pending_approval"];
 /** Calls that stay on screen while their run is folded. */
+// Failed calls fold like the rest; the run's row counts them in red.
 export function keepCallVisible(item: TimelineItem, active: boolean) {
-  if (item.kind === "tool.failed") return true;
   if (item.kind.startsWith("tool.")) return active && item.kind === "tool.started";
   const status = activityOf(item)?.status ?? "";
-  return status === "failed" || approvalStates.includes(status) ||
+  return approvalStates.includes(status) ||
     (active && ["pending", "running", "started", "in_progress"].includes(status));
 }
 const callFailed = (item: TimelineItem) => item.kind === "tool.failed" || activityOf(item)?.status === "failed";

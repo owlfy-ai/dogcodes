@@ -72,7 +72,7 @@ it("does not fold a single call or runs from different turns", async () => {
   expect(titles()).toEqual(["npm test"]);
 });
 
-it("keeps running, failed and approval-waiting calls on screen", async () => {
+it("keeps running and approval-waiting calls on screen and folds failed ones", async () => {
   await render([
     tool("a", "ls"),
     tool("b", "rm -rf build", "awaiting_approval"),
@@ -84,17 +84,31 @@ it("keeps running, failed and approval-waiting calls on screen", async () => {
   const [toggle] = toggles();
   expect(toggle.querySelector(".activity-title")!.textContent).toBe("npm test");
   expect(toggle.classList.contains("activity-running")).toBe(true);
-  expect(titles()).toEqual(["rm -rf build", "npm run build"]);
-  expect(toggle.dataset.hiddenCalls).toBe("2");
+  expect(titles()).toEqual(["rm -rf build"]);
+  expect(toggle.dataset.hiddenCalls).toBe("3");
   expect(toggle.querySelector(".activity-status-failed")!.textContent).toContain("1 次失败");
+  await act(async () => toggle.click());
   const failedRow = [...host.querySelectorAll(".activity-line")].find((row) => row.textContent?.includes("npm run build"))!;
   expect(failedRow.querySelector(".activity-status-failed")!.textContent).toBe("失败");
 });
 
 it("shows no fold when every call must stay visible", async () => {
-  await render([tool("a", "npm run build", "failed"), tool("b", "npm test", "running")]);
+  await render([tool("a", "rm -rf build", "awaiting_approval"), tool("b", "npm test", "running")]);
   expect(toggles()).toHaveLength(0);
-  expect(titles()).toEqual(["npm run build", "npm test"]);
+  expect(titles()).toEqual(["rm -rf build", "npm test"]);
+});
+
+it("folds a failed call with the rest of its run", async () => {
+  await render([tool("a", "cat AGENTS.md", "failed"), tool("b", "cat README.md")], null);
+  expect(toggles()).toHaveLength(1);
+  expect(titles()).toEqual([]);
+  expect(toggles()[0].querySelector(".tool-run-count")!.textContent).toBe("1 次失败 · 2 次工具调用");
+});
+
+it("shows a lone failed call as its own row", async () => {
+  await render([tool("a", "cat AGENTS.md", "failed")], null);
+  expect(toggles()).toHaveLength(0);
+  expect(titles()).toEqual(["cat AGENTS.md"]);
 });
 
 it("expands to the same rows the unfolded timeline renders", async () => {
@@ -113,7 +127,7 @@ it("expands to the same rows the unfolded timeline renders", async () => {
   expect(details.open).toBe(true);
   expect(details.querySelector(".terminal-activity-command")!.textContent).toContain("ls");
   await act(async () => toggles()[0].click());
-  expect(titles()).toEqual(["npm run build"]);
+  expect(titles()).toEqual([]);
 });
 
 it("folds history the same way once the turn is over", async () => {

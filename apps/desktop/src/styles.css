@@ -195,7 +195,7 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
 .welcome-composer > .composer { min-height: calc(140px * var(--ui-scale)); }
 
 
-.timeline { --conversation-font-size: 14px; min-height: 0; overflow: auto; padding: 42px 0 28px; }
+.timeline { --conversation-font-size: 14px; min-height: 0; overflow: auto; overscroll-behavior-y: none; padding: 42px 0 28px; }
 .message { width: min(var(--conversation-content-width), 100%); margin: 0 auto; }
 .user-message { display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; margin-bottom: 42px; }
 .user-message p { max-width: min(72%, 620px); margin: 0; padding: 11px 16px; border-radius: 19px; color: #ecece9; background: #292927; font-size: calc(14px * var(--ui-scale)); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
