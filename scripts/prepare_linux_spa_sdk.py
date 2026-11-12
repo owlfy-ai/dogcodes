@@ -68,15 +68,30 @@ def extract_headers(archive, destination, digest=SHA256):
     return written
 
 
-def prepare(root, archive=None):
+def _lock_sdk(lock):
+    """Exclusive lock held until the file is closed."""
+    if os.name == "nt":
+        import msvcrt
+        # msvcrt locks a byte range and refuses to lock an empty file.
+        if lock.seek(0, os.SEEK_END) == 0:
+            lock.write(b"\0")
+            lock.flush()
+        lock.seek(0)
+        msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+        return
     import fcntl  # Linux build helper; macOS can also run its isolated tests.
+    fcntl.flock(lock, fcntl.LOCK_EX)
+
+
+def prepare(root, archive=None):
     root = Path(root).resolve()
     if any(char in str(root) for char in "\r\n"):
         raise RuntimeError("SDK path cannot contain newlines")
     root.mkdir(parents=True, exist_ok=True)
     sdk = root / f"pipewire-spa-{VERSION}-{COMMIT[:12]}"
-    with (root / ".spa-sdk.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    # Append on macOS/Linux keeps the previous lock-file behavior. Windows needs a seekable handle.
+    with (root / ".spa-sdk.lock").open("a+b" if os.name == "nt" else "a") as lock:
+        _lock_sdk(lock)
         if archive is None:
             archive = root / f"{COMMIT}.tar.gz"
             if not archive.is_file() or archive.stat().st_size > LIMIT or hashlib.sha256(archive.read_bytes()).hexdigest() != SHA256:
