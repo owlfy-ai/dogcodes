@@ -6,13 +6,13 @@ use openh264::formats::{YUVBuffer, YUVSource};
 pub(super) fn write(source: &YUVBuffer, destination: &mut [u8]) -> Result<()> {
     let (width, height) = source.dimensions();
     if width == 0 || height == 0 || !width.is_multiple_of(2) || !height.is_multiple_of(2) {
-        return Err("NV12 画面尺寸无效".into());
+        return Err("backendText.mfbc0e08b".into());
     }
-    let pixels = width.checked_mul(height).ok_or("NV12 画面尺寸溢出")?;
-    let length = pixels.checked_add(pixels / 2).ok_or("NV12 画面尺寸溢出")?;
+    let pixels = width.checked_mul(height).ok_or("backendText.m9e765da4")?;
+    let length = pixels.checked_add(pixels / 2).ok_or("backendText.m9e765da4")?;
     // Validate before modifying any byte. YUVBuffer itself guarantees tight
     // planes with exactly width*height and width*height/4 bytes.
-    let destination = destination.get_mut(..length).ok_or("NV12 输入缓冲区不足")?;
+    let destination = destination.get_mut(..length).ok_or("backendText.m28033ea2")?;
     let (luma, chroma) = destination.split_at_mut(pixels);
     luma.copy_from_slice(source.y());
     for (out, (u, v)) in chroma

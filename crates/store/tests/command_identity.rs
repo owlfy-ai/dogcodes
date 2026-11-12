@@ -71,7 +71,7 @@ async fn command_identity_rejects_changed_payload_actor_version_and_variant() {
             .await
             .unwrap_err()
             .to_string()
-            .contains("不同")
+            .contains("backendText.requestIdConflict")
     );
     let mut changed = original.clone();
     changed.actor = ActorRef::SystemRecovery;
@@ -80,7 +80,7 @@ async fn command_identity_rejects_changed_payload_actor_version_and_variant() {
             .await
             .unwrap_err()
             .to_string()
-            .contains("不同")
+            .contains("backendText.requestIdConflict")
     );
     let mut changed = original.clone();
     changed.expected_stream_version = Some(0);
@@ -89,7 +89,7 @@ async fn command_identity_rejects_changed_payload_actor_version_and_variant() {
             .await
             .unwrap_err()
             .to_string()
-            .contains("不同")
+            .contains("backendText.requestIdConflict")
     );
     let mut changed = original.clone();
     if let CoreCommand::RegisterProject(project) = &changed.payload {
@@ -100,7 +100,7 @@ async fn command_identity_rejects_changed_payload_actor_version_and_variant() {
             .await
             .unwrap_err()
             .to_string()
-            .contains("不同")
+            .contains("backendText.requestIdConflict")
     );
     assert_eq!(store.event_head().await.unwrap(), 1);
     assert_eq!(
@@ -145,7 +145,7 @@ async fn command_identity_does_not_guess_legacy_or_unrelated_internal_receipts()
             .await
             .unwrap_err()
             .to_string()
-            .contains("旧操作回执")
+            .contains("backendText.m1a98db4b")
     );
     assert!(
         store
@@ -215,7 +215,7 @@ async fn command_receipt_validates_request_identity_and_does_not_guess_legacy_re
                 .await
                 .unwrap_err()
                 .to_string()
-                .contains("不同")
+                .contains("backendText.requestIdConflict")
         );
     }
     let legacy = command();
@@ -225,7 +225,7 @@ async fn command_receipt_validates_request_identity_and_does_not_guess_legacy_re
             .await
             .unwrap_err()
             .to_string()
-            .contains("旧操作回执")
+            .contains("backendText.m1a98db4b")
     );
     let head = store.event_head().await.unwrap();
     let mut invalid = command();

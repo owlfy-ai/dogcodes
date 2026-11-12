@@ -92,7 +92,7 @@ fn path(path: &str) -> Result<(), String> {
             .chars()
             .any(|c| c.is_control() || c == '\\' || c == '#')
     {
-        return Err("预览路径无效".into());
+        return Err("backendText.m87d19b41".into());
     }
     Ok(())
 }
@@ -147,9 +147,9 @@ impl Host {
     async fn target(&self, core: &Arc<Core>, id: &str) -> Result<u16, String> {
         let (port, task) = {
             let mut targets = self.targets.lock().await;
-            let target = targets.get_mut(id).ok_or("预览已结束，请重新打开")?;
+            let target = targets.get_mut(id).ok_or("backendText.mfac86680")?;
             if target.touched.elapsed() > Duration::from_mins(5) {
-                return Err("预览已过期，请重新打开".into());
+                return Err("backendText.m3d3af20f".into());
             }
             target.touched = Instant::now();
             (target.port, target.task.clone())
@@ -164,7 +164,7 @@ impl Host {
             .await
             .get(id)
             .cloned()
-            .ok_or("预览 WebSocket 已关闭")?;
+            .ok_or("backendText.m5ed3fc73")?;
         self.target(core, &web.target).await?;
         Ok(web)
     }
@@ -178,7 +178,7 @@ impl Host {
             "preview_open" => {
                 let request: Open = serde_json::from_value(args).map_err(failure)?;
                 if request.port == 0 {
-                    return Err("预览端口无效".into());
+                    return Err("backendText.meb8eacb5".into());
                 }
                 crate::workspace_service::project_paths(core, &request.task_id).await?;
                 let mut targets = self.targets.lock().await;
@@ -192,7 +192,7 @@ impl Host {
                     .await
                     .retain(|_, web| active.contains(&web.target));
                 if targets.len() >= 4 {
-                    return Err("最多同时打开 4 个项目预览".into());
+                    return Err("backendText.mfa91e6ee".into());
                 }
                 let id = uuid::Uuid::new_v4().to_string();
                 targets.insert(
@@ -208,7 +208,7 @@ impl Host {
                 )
             }
             "preview_close" => {
-                let id = args.as_str().ok_or("预览标识无效")?;
+                let id = args.as_str().ok_or("backendText.m63a3cc9d")?;
                 let removed = self.targets.lock().await.remove(id).is_some();
                 self.webs.lock().await.retain(|_, web| web.target != id);
                 Ok(json!({"closed":removed}))
@@ -228,16 +228,16 @@ impl Host {
                         | reqwest::Method::DELETE
                         | reqwest::Method::OPTIONS
                 ) {
-                    return Err("预览不支持此 HTTP 方法".into());
+                    return Err("backendText.m956f64a4".into());
                 }
                 if request.body.len() > BODY.div_ceil(3) * 4 || request.headers.len() > 64 {
-                    return Err("预览请求过大".into());
+                    return Err("backendText.m199579bc".into());
                 }
                 let body = STANDARD
                     .decode(&request.body)
-                    .map_err(|_| "预览请求编码无效")?;
+                    .map_err(|_| "backendText.m52a6c2b2")?;
                 if body.len() > BODY {
-                    return Err("预览请求过大".into());
+                    return Err("backendText.m199579bc".into());
                 }
                 let port = self.target(core, &request.preview_id).await?;
                 let origin = format!("http://localhost:{port}");
@@ -254,7 +254,7 @@ impl Host {
                     .body(body);
                 for (name, value) in request.headers {
                     if !end_header(&name) || name.len() > 128 || value.len() > 8192 {
-                        return Err("预览请求头无效".into());
+                        return Err("backendText.m49abc664".into());
                     }
                     // WebViews use a phone-local origin. Development servers expect their own.
                     let value = if name.eq_ignore_ascii_case("origin") {
@@ -269,7 +269,7 @@ impl Host {
                 let mut response = call
                     .send()
                     .await
-                    .map_err(|_| "无法访问项目服务，请确认项目运行及端口；未重发请求")?;
+                    .map_err(|_| "backendText.m4f8d0b4b")?;
                 let status = response.status().as_u16();
                 let headers = response
                     .headers()
@@ -292,16 +292,16 @@ impl Host {
                     .content_length()
                     .is_some_and(|length| length > BODY as u64)
                 {
-                    return Err("预览响应超过 4 MB".into());
+                    return Err("backendText.m25c06613".into());
                 }
                 let mut bytes = Vec::new();
                 while let Some(chunk) = response
                     .chunk()
                     .await
-                    .map_err(|_| "项目响应中断，未自动重发请求")?
+                    .map_err(|_| "backendText.ma129452f")?
                 {
                     if bytes.len().saturating_add(chunk.len()) > BODY {
-                        return Err("预览响应超过 4 MB".into());
+                        return Err("backendText.m25c06613".into());
                     }
                     bytes.extend_from_slice(&chunk);
                 }
@@ -319,12 +319,12 @@ impl Host {
                             })
                     })
                 {
-                    return Err("WebSocket 子协议无效".into());
+                    return Err("backendText.m64560970".into());
                 }
                 // Check again when inserting after the network handshake.
                 let mut webs = self.webs.lock().await;
                 if webs.len() >= 8 {
-                    return Err("预览 WebSocket 数量超过限制".into());
+                    return Err("backendText.m9e711520".into());
                 }
                 // Do not acquire targets while holding webs (preview_open uses the opposite order).
                 drop(webs);
@@ -349,8 +349,8 @@ impl Host {
                     tokio::net::TcpStream::connect(loopback_addresses(port).as_slice()),
                 )
                 .await
-                .map_err(|_| "项目 WebSocket 连接超时")?
-                .map_err(|_| "项目 WebSocket 未运行")?;
+                .map_err(|_| "backendText.mb00d83dd")?
+                .map_err(|_| "backendText.m70d6c96a")?;
                 let config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
                     .max_message_size(Some(WS_FRAME))
                     .max_frame_size(Some(WS_FRAME));
@@ -359,8 +359,8 @@ impl Host {
                     tokio_tungstenite::client_async_with_config(call, stream, Some(config)),
                 )
                 .await
-                .map_err(|_| "项目 WebSocket 握手超时")?
-                .map_err(|_| "项目 WebSocket 握手失败")?;
+                .map_err(|_| "backendText.meddcf29c")?
+                .map_err(|_| "backendText.m1ac37f9f")?;
                 let protocol = response
                     .headers()
                     .get("Sec-WebSocket-Protocol")
@@ -369,11 +369,11 @@ impl Host {
                 let (writer, reader) = socket.split();
                 let targets = self.targets.lock().await;
                 if !targets.contains_key(&request.preview_id) {
-                    return Err("预览已关闭".into());
+                    return Err("backendText.m99863b67".into());
                 }
                 webs = self.webs.lock().await;
                 if webs.len() >= 8 {
-                    return Err("预览 WebSocket 数量超过限制".into());
+                    return Err("backendText.m9e711520".into());
                 }
                 let id = uuid::Uuid::new_v4().to_string();
                 webs.insert(
@@ -389,12 +389,12 @@ impl Host {
                 )
             }
             "preview_ws_read" => {
-                let id = args.as_str().ok_or("WebSocket 标识无效")?;
+                let id = args.as_str().ok_or("backendText.mabcd107a")?;
                 let web = self.web(core, id).await?;
                 let mut reader = web
                     .reader
                     .try_lock()
-                    .map_err(|_| "已有 WebSocket 读取在进行")?;
+                    .map_err(|_| "backendText.ma5820bfc")?;
                 match tokio::time::timeout(Duration::from_secs(5), reader.next()).await {
                     Ok(Some(Ok(Message::Text(text)))) => {
                         Ok(json!({"type":"text","text":text.as_str()}))
@@ -407,8 +407,8 @@ impl Host {
                         let mut writer = web.writer.lock().await;
                         tokio::time::timeout(Duration::from_secs(5), writer.0.flush())
                             .await
-                            .map_err(|_| "项目 WebSocket 已中断")?
-                            .map_err(|_| "项目 WebSocket 已中断")?;
+                            .map_err(|_| "backendText.m20877a49")?
+                            .map_err(|_| "backendText.m20877a49")?;
                         Ok(json!({"type":"pending"}))
                     }
                     Err(_) | Ok(Some(Ok(Message::Pong(_)))) => Ok(json!({"type":"pending"})),
@@ -424,21 +424,21 @@ impl Host {
                 let message = match (request.text, request.bytes) {
                     (Some(text), None) if text.len() <= WS_FRAME => Message::Text(text.into()),
                     (None, Some(encoded)) if encoded.len() <= WS_FRAME.div_ceil(3) * 4 => {
-                        let bytes = STANDARD.decode(encoded).map_err(|_| "WebSocket 编码无效")?;
+                        let bytes = STANDARD.decode(encoded).map_err(|_| "backendText.mb71d94c3")?;
                         if bytes.len() > WS_FRAME {
-                            return Err("WebSocket 消息过大".into());
+                            return Err("backendText.me79c424a".into());
                         }
                         Message::Binary(bytes.into())
                     }
-                    _ => return Err("WebSocket 消息无效".into()),
+                    _ => return Err("backendText.m003345ff".into()),
                 };
                 let mut writer = web.writer.lock().await;
                 let sequence = request
                     .sequence
                     .parse::<u64>()
-                    .map_err(|_| "WebSocket 序号无效")?;
+                    .map_err(|_| "backendText.mbdb6ba74")?;
                 if Some(sequence) != writer.1.checked_add(1) {
-                    return Err("WebSocket 序号冲突，未重发".into());
+                    return Err("backendText.mdf3f08b9".into());
                 }
                 writer.1 = sequence;
                 if !matches!(
@@ -446,12 +446,12 @@ impl Host {
                     Ok(Ok(()))
                 ) {
                     self.webs.lock().await.remove(&request.socket_id);
-                    return Err("项目 WebSocket 已中断，未重发消息".into());
+                    return Err("backendText.m74ee91cd".into());
                 }
                 Ok(json!({"sequence":sequence.to_string()}))
             }
             "preview_ws_close" => Ok(
-                json!({"closed":self.webs.lock().await.remove(args.as_str().ok_or("WebSocket 标识无效")?).is_some()}),
+                json!({"closed":self.webs.lock().await.remove(args.as_str().ok_or("backendText.mabcd107a")?).is_some()}),
             ),
             _ => Err("remote preview operation unavailable".into()),
         }

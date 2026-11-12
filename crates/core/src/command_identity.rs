@@ -41,7 +41,7 @@ pub fn verify(ack: &CommandAck, fingerprint: &str) -> Result<(), CoreError> {
             "backendText.requestIdConflict".into(),
         )),
         None => Err(CoreError::Conflict(
-            "旧操作回执缺少原请求标识，无法核实本次重发；请先检查原操作结果".into(),
+            "backendText.m1a98db4b".into(),
         )),
     }
 }

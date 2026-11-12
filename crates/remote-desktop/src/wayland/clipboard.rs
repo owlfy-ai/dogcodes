@@ -168,18 +168,18 @@ impl Clipboard {
                 }
             }
             worker.data.lock().unwrap_or_else(|e| e.into_inner()).error =
-                Some("剪贴板连接已结束".into());
+                Some("backendText.m8fc1f885".into());
             worker.changed.notify_waiters();
         });
         Some(Self { shared, task })
     }
     pub(super) async fn begin(&self, text: String) -> Result<Temporary> {
         if text.is_empty() || text.len() > 64 * 1024 || text.contains('\0') {
-            return Err("临时粘贴文字无效或过长".into());
+            return Err("backendText.m057a48c3".into());
         }
         let shared = &self.shared;
         if !shared.state.active() {
-            return Err("远控已结束，未执行粘贴".into());
+            return Err("backendText.mf7e75d4d".into());
         }
         {
             let data = shared.data.lock().unwrap_or_else(|e| e.into_inner());
@@ -187,7 +187,7 @@ impl Clipboard {
                 return Err(error.clone());
             }
             if matches!(&data.source, Some(Source::Temporary { in_use: true, .. })) {
-                return Err("上一项粘贴尚未结束".into());
+                return Err("backendText.m03ce7048".into());
             }
         }
         let id = format!(
@@ -216,7 +216,7 @@ impl Clipboard {
             .proxy
             .call::<_, _, ()>("SetSelection", &(&shared.path, opts))
             .await
-            .map_err(|_| "临时剪贴板设置结果未知，禁止重放输入")?;
+            .map_err(|_| "backendText.md354a282")?;
         temporary.wait_owned().await?;
         Ok(temporary)
     }
@@ -238,7 +238,7 @@ impl Temporary {
                     return Ok(());
                 }
                 if !matches!(&data.source, Some(Source::Temporary { id, .. }) if id == &self.id) {
-                    return Err("剪贴板已被其他操作替换，未执行粘贴".into());
+                    return Err("backendText.m6edcd350".into());
                 }
             }
             notified.await;
@@ -251,14 +251,14 @@ impl Temporary {
             .as_ref()
             .is_some_and(|o| o.ours && o.formats.contains(&self.id))
         {
-            return Err("剪贴板已变化，未执行粘贴".into());
+            return Err("backendText.mc086a14d".into());
         }
         match &mut data.source {
             Some(Source::Temporary { id, armed, .. }) if id == &self.id => {
                 *armed = true;
                 Ok(())
             }
-            _ => Err("临时粘贴已失效".into()),
+            _ => Err("backendText.m51783431".into()),
         }
     }
     pub(super) async fn delivered(&self) -> Result<()> {
@@ -272,7 +272,7 @@ impl Temporary {
                             return result.clone();
                         }
                     }
-                    _ => return Err("粘贴期间剪贴板已变化，输入结果未知，禁止重放".into()),
+                    _ => return Err("backendText.m92b5f5e1".into()),
                 }
                 if let Some(error) = &data.error {
                     return Err(error.clone());
@@ -311,27 +311,27 @@ impl Shared {
         self.proxy
             .call::<_, _, ()>("SelectionWriteDone", &(&self.path, serial, success))
             .await
-            .map_err(|_| "剪贴板交付确认失败".into())
+            .map_err(|_| "backendText.m9cb211fd".into())
     }
     async fn write(&self, serial: u32, transfer: Option<(Arc<Vec<u8>>, Option<String>)>) {
         let result = tokio::time::timeout(Duration::from_secs(1), async {
-            let (bytes, _) = transfer.as_ref().ok_or("剪贴板格式已失效")?;
+            let (bytes, _) = transfer.as_ref().ok_or("backendText.m34a5b05c")?;
             if !self.state.active() {
-                return Err("远控授权已结束".into());
+                return Err("backendText.m47a7035d".into());
             }
             let fd: zbus::zvariant::OwnedFd = self
                 .proxy
                 .call("SelectionWrite", &(&self.path, serial))
                 .await
-                .map_err(|_| "无法交付剪贴板文字")?;
+                .map_err(|_| "backendText.mc63caae2")?;
             let channel = io::Channel::new(fd.into())?;
             if !self.state.active() {
-                return Err("远控授权已结束".into());
+                return Err("backendText.m47a7035d".into());
             }
             channel.write(bytes, || self.state.active()).await
         })
         .await
-        .unwrap_or_else(|_| Err("剪贴板数据交付超时".into()));
+        .unwrap_or_else(|_| Err("backendText.md619132a".into()));
         let confirmed =
             tokio::time::timeout(Duration::from_secs(1), self.done(serial, result.is_ok())).await;
         if let Some((_, Some(token))) = transfer {
@@ -341,7 +341,7 @@ impl Shared {
             {
                 *delivered = Some(match confirmed {
                     Ok(Ok(())) => result,
-                    _ => Err("剪贴板交付结果未知，禁止重放".into()),
+                    _ => Err("backendText.mfbe91ce3".into()),
                 });
                 self.changed.notify_waiters();
             }

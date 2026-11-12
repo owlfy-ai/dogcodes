@@ -56,14 +56,14 @@ impl SnapshotLeases {
         })
     }
     pub fn update(&mut self, request: &LeaseRequest, now: Instant) -> Result<(), String> {
-        uuid::Uuid::parse_str(&request.lease_id).map_err(|_| "无效的比较阅读租约")?;
+        uuid::Uuid::parse_str(&request.lease_id).map_err(|_| "backendText.m15728320")?;
         if request.revision == 0 {
-            return Err("无效的比较租约版本".into());
+            return Err("backendText.m3ffa2f98".into());
         }
         let state = self
             .0
             .get_mut(&request.snapshot_id)
-            .ok_or("比较结果已过期，请刷新")?;
+            .ok_or("backendText.md9b1193f")?;
         if let Some(reader) = state.readers.get(&request.lease_id) {
             if request.revision < reader.revision {
                 return Ok(());
@@ -72,14 +72,14 @@ impl SnapshotLeases {
                 return if request.release == reader.released {
                     Ok(())
                 } else {
-                    Err("比较租约版本已用于不同操作".into())
+                    Err("backendText.mdb198ce7".into())
                 };
             }
             if reader.released && !request.release {
-                return Err("此阅读租约已释放，请重新打开比较".into());
+                return Err("backendText.m5d973de4".into());
             }
         } else if state.readers.len() >= READERS_PER_SNAPSHOT {
-            return Err("此比较的阅读租约过多，请刷新比较后重试".into());
+            return Err("backendText.ma139ff1d".into());
         }
         // The publication grace only bridges the first reader's acquisition.
         // Existing readers now protect themselves independently.

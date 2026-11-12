@@ -50,7 +50,7 @@ struct Api {
     _library: Library,
 }
 fn error(e: impl std::fmt::Display) -> String {
-    format!("Windows 系统视频编码不可用：{e}")
+    format!("backendText.m1e65d465\u{1e}{}", serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into()))
 }
 impl Api {
     fn load() -> Result<Self> {
@@ -64,7 +64,12 @@ impl Api {
             macro_rules! load {
                 ($name:literal, $signature:ty) => {{
                     let proc = GetProcAddress(library.0, PCSTR(concat!($name, "\0").as_ptr()))
-                        .ok_or_else(|| error(concat!("缺少 ", $name)))?;
+                        .ok_or_else(|| {
+                            error(format!(
+                                "backendText.missingSymbol\u{1e}{}",
+                                serde_json::to_string(&[$name]).unwrap_or_else(|_| "[]".into())
+                            ))
+                        })?;
                     std::mem::transmute::<unsafe extern "system" fn() -> isize, $signature>(proc)
                 }};
             }
@@ -97,7 +102,7 @@ impl Api {
             || alignment > 65536
             || (alignment > 0 && !alignment.is_power_of_two())
         {
-            return Err(error("编码缓冲区预算无效"));
+            return Err(error("backendText.me72b7517"));
         }
         // SAFETY: bounded allocation, documented alignment mask, out pointer
         // initialized null. One returned reference is owned by this wrapper.
@@ -211,13 +216,13 @@ impl<'a> Locked<'a> {
             length,
         };
         if data.is_null() || length > capacity {
-            return Err(error("编码映射无效"));
+            return Err(error("backendText.m3ed2dba7"));
         }
         Ok(locked)
     }
     fn write_nv12(&mut self, source: &YUVBuffer, length: usize) -> Result<()> {
         if length > self.capacity as usize {
-            return Err(error("编码输入缓冲区不足"));
+            return Err(error("backendText.m3cc0378f"));
         }
         // SAFETY: this newly allocated input buffer is private to its codec
         // worker and not yet attached to a sample. Lock keeps the non-null
@@ -227,7 +232,7 @@ impl<'a> Locked<'a> {
     }
     fn bytes(&self) -> Result<Vec<u8>> {
         if self.length == 0 || self.length > 8 * 1024 * 1024 {
-            return Err(error("编码输出长度无效"));
+            return Err(error("backendText.m1dc49de2"));
         }
         // SAFETY: length <= mapped capacity, still locked, copied before unlock.
         Ok(unsafe { std::slice::from_raw_parts(self.data, self.length as usize) }.to_vec())
@@ -267,10 +272,10 @@ pub(super) struct Native {
 impl Native {
     pub fn new(size: (u32, u32), rate: (u32, u32), profile: VideoProfile) -> Result<Self> {
         if rate.1 > 30 || rate.0 > 9_000_000 {
-            return Err(error("系统编码速率超过当前等级预算"));
+            return Err(error("backendText.mf1fe1f87"));
         }
         if profile_size(size.0, size.1, size.0, VideoProfile::ConstrainedBaseline31)? != size {
-            return Err(error("尺寸超过系统编码等级预算"));
+            return Err(error("backendText.ma0f54ce1"));
         }
         let runtime = Runtime::start()?;
         let mut activations = Activations {
@@ -299,9 +304,9 @@ impl Native {
             .map_err(error)?;
         }
         if activations.array.is_null() || activations.count == 0 {
-            return Err(error("未找到可用的硬件 H.264 编码器"));
+            return Err(error("backendText.m93d68739"));
         }
-        let mut failure = error("硬件编码器未通过首帧验证");
+        let mut failure = error("backendText.m2bfcb9ae");
         // SAFETY: successful MFTEnumEx returned this count-sized array; the
         // allocation remains owned until all candidate references are released.
         let candidates =
@@ -324,10 +329,10 @@ impl Native {
                                     candidate.first = true;
                                     return Ok(candidate);
                                 }
-                                _ => failure = error("硬件编码首帧未通过实际解码验证"),
+                                _ => failure = error("backendText.mb57c10bd"),
                             }
                         }
-                        Ok(_) => failure = error("硬件编码首帧不是 IDR"),
+                        Ok(_) => failure = error("backendText.md69a7722"),
                         Err(e) => failure = e,
                     }
                 }
@@ -373,7 +378,7 @@ impl Native {
             };
             let attributes = native.transform.GetAttributes().map_err(error)?;
             if attributes.GetUINT32(&MF_TRANSFORM_ASYNC).map_err(error)? != 1 {
-                return Err(error("系统编码器不是异步硬件实现"));
+                return Err(error("backendText.mb9ea0e87"));
             }
             attributes
                 .SetUINT32(&MF_TRANSFORM_ASYNC_UNLOCK, 1)
@@ -397,7 +402,7 @@ impl Native {
                 .GetStreamCount(&mut inputs, &mut outputs)
                 .map_err(error)?;
             if (inputs, outputs) != (1, 1) {
-                return Err(error("系统编码流布局不支持"));
+                return Err(error("backendText.mc11fb309"));
             }
             let mut input_ids = [0];
             let mut output_ids = [0];
@@ -500,7 +505,7 @@ impl Native {
                 return Ok(());
             }
             if Instant::now() >= deadline {
-                return Err(error("硬件编码事件等待超时"));
+                return Err(error("backendText.mfec6e0d6"));
             }
             // SAFETY: own worker's event source, nonblocking GetEvent only.
             let event = unsafe { self.events.GetEvent(MF_EVENT_FLAG_NO_WAIT) };
@@ -515,13 +520,13 @@ impl Native {
                                 .input_credits
                                 .checked_add(1)
                                 .filter(|n| *n <= 64)
-                                .ok_or_else(|| error("编码输入事件超量"))?;
+                                .ok_or_else(|| error("backendText.m5b1a58f6"))?;
                         } else if kind == METransformHaveOutput.0 {
                             self.output_credits = self
                                 .output_credits
                                 .checked_add(1)
                                 .filter(|n| *n <= 64)
-                                .ok_or_else(|| error("编码输出事件超量"))?;
+                                .ok_or_else(|| error("backendText.mbe7b1d02"))?;
                         }
                     }
                 }
@@ -540,7 +545,7 @@ impl Native {
         rate: (u32, u32),
     ) -> Result<EncodedFrame> {
         if frame.size() != self.size {
-            return Err(error("画面尺寸已变化"));
+            return Err(error("backendText.me01206a1"));
         }
         if rate.1 != self.rate.1 {
             *self = Self::new(self.size, rate, self.profile)?;
@@ -581,7 +586,7 @@ impl Native {
         self.timestamp = self
             .timestamp
             .checked_add(10_000_000 / i64::from(rate.1))
-            .ok_or_else(|| error("视频时间戳溢出"))?;
+            .ok_or_else(|| error("backendText.m29fa4469"))?;
         // SAFETY: owned, unlocked NV12 memory of exact sample length; sample and
         // input timestamps stay valid through asynchronous MFT ownership.
         unsafe {
@@ -602,7 +607,7 @@ impl Native {
             match self.output() {
                 Ok((bytes, stamp)) => {
                     if stamp != self.timestamp {
-                        return Err(error("编码输出与输入帧身份不符"));
+                        return Err(error("backendText.mabb26f90"));
                     }
                     self.sequence_header()?;
                     let encoded = self.headers.frame(
@@ -611,7 +616,7 @@ impl Native {
                         captured,
                     )?;
                     if force && !encoded.keyframe {
-                        return Err(error("硬件编码器未确认关键帧"));
+                        return Err(error("backendText.m38d7efde"));
                     }
                     self.first = false;
                     return Ok(encoded);
@@ -628,7 +633,7 @@ impl Native {
                 Err(e) => return Err(e),
             }
         }
-        Err(error("系统编码输出格式反复变化"))
+        Err(error("backendText.m9064ae61"))
     }
     fn sequence_header(&mut self) -> Result<()> {
         // SAFETY: current media type/attribute is COM-owned; blob is copied
@@ -640,7 +645,7 @@ impl Native {
                 .map_err(error)?;
             if let Ok(size) = output.GetBlobSize(&MF_MT_MPEG_SEQUENCE_HEADER) {
                 if size > 131072 {
-                    return Err(error("编码参数超过预算"));
+                    return Err(error("backendText.m0423e303"));
                 }
                 if size > 0 {
                     let mut bytes = vec![0; size as usize];
@@ -696,11 +701,11 @@ impl Native {
                 .0
                 .pSample
                 .as_ref()
-                .ok_or_else(|| error("编码输出没有样本"))?;
+                .ok_or_else(|| error("backendText.m331d1e8c"))?;
             let stamp = sample.GetSampleTime().map_err(error)?;
             let length = sample.GetTotalLength().map_err(error)?;
             if length == 0 || length > 8 * 1024 * 1024 {
-                return Err(error("编码输出超过预算"));
+                return Err(error("backendText.me40286f0"));
             }
             let buffer = sample.ConvertToContiguousBuffer().map_err(error)?;
             Ok((Locked::new(&buffer)?.bytes()?, stamp))

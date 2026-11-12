@@ -9,7 +9,7 @@ pub(super) struct Headers {
 }
 fn nals(bytes: &[u8]) -> Result<Vec<&[u8]>> {
     if bytes.is_empty() || bytes.len() > MAX_FRAME {
-        return Err("系统编码画面大小无效".into());
+        return Err("backendText.m337fda12".into());
     }
     fn prefix(b: &[u8]) -> usize {
         if b.starts_with(&[0, 0, 0, 1]) {
@@ -28,10 +28,10 @@ fn nals(bytes: &[u8]) -> Result<Vec<&[u8]>> {
             let count = prefix(&bytes[i..]);
             if count > 0 {
                 if start == i {
-                    return Err("系统编码 NAL 为空".into());
+                    return Err("backendText.m4b798765".into());
                 }
                 if out.len() >= 8192 {
-                    return Err("系统编码 NAL 数量超限".into());
+                    return Err("backendText.mb41a657f".into());
                 }
                 out.push(&bytes[start..i]);
                 start = i + count;
@@ -41,25 +41,25 @@ fn nals(bytes: &[u8]) -> Result<Vec<&[u8]>> {
             }
         }
         if start == bytes.len() {
-            return Err("系统编码 NAL 截断".into());
+            return Err("backendText.mf5e16ddd".into());
         }
         if out.len() >= 8192 {
-            return Err("系统编码 NAL 数量超限".into());
+            return Err("backendText.mb41a657f".into());
         }
         out.push(&bytes[start..]);
     } else {
         let mut rest = bytes;
         while !rest.is_empty() {
             if rest.len() < 4 {
-                return Err("系统编码长度截断".into());
+                return Err("backendText.mafb53137".into());
             }
             let size = u32::from_be_bytes(rest[..4].try_into().unwrap()) as usize;
             rest = &rest[4..];
             if size == 0 || size > rest.len() {
-                return Err("系统编码长度无效".into());
+                return Err("backendText.mf42088ab".into());
             }
             if out.len() >= 8192 {
-                return Err("系统编码 NAL 数量超限".into());
+                return Err("backendText.mb41a657f".into());
             }
             out.push(&rest[..size]);
             rest = &rest[size..];
@@ -70,7 +70,7 @@ fn nals(bytes: &[u8]) -> Result<Vec<&[u8]>> {
             .iter()
             .any(|nal| nal.is_empty() || nal[0] & 0x80 != 0 || nal[0] & 31 == 0 || nal[0] & 31 > 23)
     {
-        return Err("系统编码 NAL 无效".into());
+        return Err("backendText.m252d28e0".into());
     }
     Ok(out)
 }
@@ -79,7 +79,7 @@ impl Headers {
         for nal in nals(bytes)? {
             if matches!(nal[0] & 31, 7 | 8) {
                 if nal.len() > 65536 {
-                    return Err("系统编码参数过长".into());
+                    return Err("backendText.m62bdf31f".into());
                 }
                 if nal[0] & 31 == 7 {
                     self.sps = nal.to_vec();
@@ -100,10 +100,10 @@ impl Headers {
         let nals = nals(bytes)?;
         let keyframe = nals.iter().any(|nal| nal[0] & 31 == 5);
         if !nals.iter().any(|nal| matches!(nal[0] & 31, 1..=5)) {
-            return Err("系统编码没有返回画面".into());
+            return Err("backendText.m2837ae89".into());
         }
         if keyframe && (self.sps.is_empty() || self.pps.is_empty()) {
-            return Err("系统关键帧缺少 SPS/PPS".into());
+            return Err("backendText.m14b21971".into());
         }
         let mut data = Vec::with_capacity(bytes.len() + self.sps.len() + self.pps.len() + 16);
         let mut append = |nal: &[u8]| {
@@ -124,7 +124,7 @@ impl Headers {
             append(nal);
         }
         if data.len() > MAX_FRAME {
-            return Err("系统编码画面超过传输预算".into());
+            return Err("backendText.mf356136e".into());
         }
         let frame = EncodedFrame {
             cursor_embedded: None,

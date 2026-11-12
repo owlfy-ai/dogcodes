@@ -1,7 +1,9 @@
 //! Immutable submission intent and read-only resolution from existing Core receipts.
 //! This is not a second task projection; the host service drives the commands.
 use crate::{Core, CoreError, command_invalidation::CommandInvalidation};
-use agent_domain::{CommandId, ExecutorRef, ProjectId, TaskId, TurnId};
+use agent_domain::{
+    CommandId, ExecutorRef, ProjectId, TaskId, TurnId, UNTITLED_TASK_TITLE,
+};
 use agent_protocol::{
     CommandAck, CommandEnvelope, ConfirmContextPackage, ContextStrength, CoreCommand, CreateTask,
     EventEnvelope, StreamType, SubmitTurn,
@@ -22,10 +24,10 @@ pub enum SubmissionStage {
     Ready { version: u64 },
 }
 fn invalid() -> CoreError {
-    CoreError::InvalidArgument("原发送记录无效，请保留记录并核实".into())
+    CoreError::InvalidArgument("backendText.mbde98a75".into())
 }
 fn conflict() -> CoreError {
-    CoreError::Conflict("原发送回执与事件不一致，未结束恢复记录".into())
+    CoreError::Conflict("backendText.m853048f2".into())
 }
 
 /// UI checkpoint and display metadata are derived, never part of immutable intent.
@@ -59,7 +61,7 @@ pub fn normalize(mut intent: SubmissionIntent) -> Result<SubmissionIntent, CoreE
     if let Some(creation) = &intent.creation
         && (intent.context.is_some()
             || task.stream_version != 0
-            || task.title != "新对话"
+            || task.title != UNTITLED_TASK_TITLE
             || task.preferred_executor != intent.target
             || creation.operation_id == intent.operation_id)
     {

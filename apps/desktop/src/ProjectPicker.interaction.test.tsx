@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import type { ProjectId } from "@dogcodes/protocol";
 import { ProjectPicker } from "./ProjectPicker";
 import type { TargetApi, TargetEntry } from "./executionTargetClient";
+import { UNTITLED_TASK_TITLE } from "./displayNames";
 import { openLocalProject } from "./localProject";
 import { TauriCoreClient } from "./tauriClient";
 import { invoke } from "@tauri-apps/api/core";
@@ -65,7 +66,7 @@ describe("native project picker interactions", () => {
     expect(invoke).toHaveBeenNthCalledWith(2, "core_register_local_project", { displayName: "", path: "/projects/selected" });
     expect(invoke).toHaveBeenNthCalledWith(3, "core_execute", expect.objectContaining({
       envelope: expect.objectContaining({ payload: {
-        type: "create_task", data: expect.objectContaining({ projectId: "prj_selected", title: "新对话", preferredExecutor: executor }),
+        type: "create_task", data: expect.objectContaining({ projectId: "prj_selected", title: UNTITLED_TASK_TITLE, preferredExecutor: executor }),
       } }),
     }));
     expect(container.querySelector('[role="dialog"]')).toBeNull();

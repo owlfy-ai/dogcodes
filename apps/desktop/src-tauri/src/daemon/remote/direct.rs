@@ -25,13 +25,13 @@ impl RemoteHost {
             request.purpose.as_str(),
             "business" | "desktop" | "preview" | "attachments"
         ) {
-            return Err("直连通道用途无效".into());
+            return Err("backendText.m752ea4e0".into());
         }
         let permit = self
             .direct_slots
             .clone()
             .try_acquire_owned()
-            .map_err(|_| "直连通道数量已达上限")?;
+            .map_err(|_| "backendText.m95c0e5ab")?;
         let (config, secrets, device) = {
             let state = self.state.lock().await;
             let ready = state.ready.as_ref().ok_or("remote unavailable")?;
@@ -49,7 +49,7 @@ impl RemoteHost {
         };
         let ice = match http(&config, &secrets, reqwest::Method::GET, "ice").await {
             Ok(value) => {
-                serde_json::from_value(value["iceServers"].clone()).map_err(|_| "ICE 配置无效")?
+                serde_json::from_value(value["iceServers"].clone()).map_err(|_| "backendText.mbeda4c88")?
             }
             // Older/local service deployments can still use LAN candidates.
             Err(_) => Vec::new(),

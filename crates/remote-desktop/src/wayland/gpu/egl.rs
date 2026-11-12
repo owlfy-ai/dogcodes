@@ -19,7 +19,7 @@ macro_rules! function {
     ($api:expr, $name:expr, $ty:ty) => {{
         let address = $api
             .get_proc_address($name)
-            .ok_or_else(|| format!("GPU 接口不可用：{}", $name))?;
+            .ok_or_else(|| format!("backendText.m6c73f17c\u{1e}{}", serde_json::to_string(&[$name.to_string()]).unwrap_or_else(|_| "[]".into())))?;
         // SAFETY: each private call site supplies the exact Khronos ABI for this
         // symbol. Its EGL library remains owned by the context using the pointer.
         unsafe { std::mem::transmute::<extern "system" fn(), $ty>(address) }
@@ -75,7 +75,7 @@ gl_api! {
 }
 
 fn error(error: impl std::fmt::Display) -> String {
-    format!("GPU 画面处理不可用：{error}")
+    format!("backendText.m35f16576\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))
 }
 fn extension(value: &CStr, name: &str) -> bool {
     value
@@ -97,7 +97,7 @@ static DISPLAYS: OnceLock<Mutex<HashMap<usize, usize>>> = OnceLock::new();
 impl Context {
     fn open(api: Rc<Egl>, display: Ptr) -> Result<Self> {
         if display.is_null() {
-            return Err(error("无法创建离屏显示"));
+            return Err(error("backendText.m3bc869bf"));
         }
         // SAFETY: obtained from eglGetPlatformDisplayEXT for a valid enumerated
         // EGL device, or the test-only surfaceless platform. No native window.
@@ -144,7 +144,7 @@ impl Context {
                 ],
             )
             .map_err(error)?
-            .ok_or_else(|| error("缺少离屏配置"))?;
+            .ok_or_else(|| error("backendText.maf2af4f5"))?;
         owner.surface = Some(
             owner
                 .api
@@ -254,12 +254,12 @@ impl Device {
         // SAFETY: a GLES2 context is current; GL owns this terminated extension string.
         let extensions = unsafe { (gl.string)(0x1F03) };
         if extensions.is_null() {
-            return Err(error("缺少 GLES 扩展"));
+            return Err(error("backendText.m3f8048b8"));
         }
         // SAFETY: non-null GL extension string remains live with the current context.
         let extensions = unsafe { CStr::from_ptr(extensions.cast()) };
         if !extension(extensions, "GL_OES_EGL_image_external") {
-            return Err(error("不支持外部纹理"));
+            return Err(error("backendText.mf95a808b"));
         }
         let create = function!(context.api, "eglCreateImageKHR", CreateImage);
         let destroy = function!(context.api, "eglDestroyImageKHR", DestroyImage);
@@ -296,7 +296,7 @@ impl Device {
         unsafe {
             let shader = (self.gl.create_shader)(kind);
             if shader == 0 {
-                return Err(error("无法创建着色器"));
+                return Err(error("backendText.m7d54c1d7"));
             }
             self.shaders.push(shader);
             (self.gl.shader_source)(shader, 1, &source.as_ptr(), ptr::null());
@@ -304,7 +304,7 @@ impl Device {
             let mut status = 0;
             (self.gl.shader_status)(shader, 0x8B81, &mut status);
             if status == 0 {
-                return Err(error("着色器编译失败"));
+                return Err(error("backendText.m7ec82e81"));
             }
             Ok(shader)
         }
@@ -318,7 +318,7 @@ impl Device {
         unsafe {
             self.program = (self.gl.create_program)();
             if self.program == 0 {
-                return Err(error("无法创建画面处理程序"));
+                return Err(error("backendText.m00a2f0df"));
             }
             (self.gl.attach)(self.program, vertex);
             (self.gl.attach)(self.program, fragment);
@@ -327,7 +327,7 @@ impl Device {
             let mut status = 0;
             (self.gl.program_status)(self.program, 0x8B82, &mut status);
             if status == 0 {
-                return Err(error("画面处理程序链接失败"));
+                return Err(error("backendText.ma75d541b"));
             }
             (self.gl.gen_buffers)(1, &mut self.vbo);
             (self.gl.bind_buffer)(0x8892, self.vbo);
@@ -345,7 +345,7 @@ impl Device {
             (self.gl.integer)(0x0D3A, viewport.as_mut_ptr());
             maximum = maximum.min(viewport[0]).min(viewport[1]);
             if maximum < 2 {
-                return Err(error("显卡画面尺寸无效"));
+                return Err(error("backendText.m50b91a69"));
             }
             self.maximum = (maximum as u32).min(16384);
             (self.gl.disable)(0x0BD0); // Disable dithering for deterministic 8-bit readback.
@@ -372,7 +372,7 @@ impl Device {
             || size.1 > self.maximum
             || u64::from(size.0) * u64::from(size.1) > 64 * 1024 * 1024
         {
-            return Err(error("画面尺寸超限"));
+            return Err(error("backendText.m3d6eaa43"));
         }
         // SAFETY: owned handles, validated sizes, and a null allocation pointer
         // request storage only. The FBO is checked before any draw/readback.
@@ -393,7 +393,7 @@ impl Device {
             (self.gl.bind_framebuffer)(0x8D40, self.framebuffer);
             (self.gl.framebuffer_texture)(0x8D40, 0x8CE0, 0x0DE1, self.target, 0);
             if (self.gl.framebuffer_status)(0x8D40) != 0x8CD5 {
-                return Err(error("离屏缓冲区不可用"));
+                return Err(error("backendText.m3d90398c"));
             }
         }
         self.check()?;
@@ -413,7 +413,7 @@ impl Device {
             )
         };
         if image.is_null() {
-            return Err(error("无法导入屏幕缓冲区"));
+            return Err(error("backendText.mda660045"));
         }
         let mut owner = Image {
             device: self,
@@ -492,7 +492,7 @@ impl Device {
         )?;
         let out = self.draw()?;
         if out.as_raw() != &pixels {
-            return Err(error("显卡画面通道或方向校验失败"));
+            return Err(error("backendText.m6b1edd98"));
         }
         Ok(())
     }

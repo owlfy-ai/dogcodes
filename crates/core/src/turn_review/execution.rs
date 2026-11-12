@@ -31,7 +31,7 @@ impl ReviewOutput {
     fn completed_result(&self, completed: bool) -> Result<String, String> {
         let text = self.text();
         if !completed || text.trim().is_empty() {
-            return Err("Agent 未返回完整审查结论，请重试或更换 Agent".into());
+            return Err("backendText.m4307c54b".into());
         }
         if self.report().is_none() {
             if let Some(error) =
@@ -41,9 +41,9 @@ impl ReviewOutput {
                         .find_map(|message| driver_api::failure::reported_transport_error(message))
                 })
             {
-                return Err(format!("审查连接中断：{error}"));
+                return Err(format!("backendText.m42b3c757\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
             }
-            return Err("Agent 未返回完整审查结论，请重试或更换 Agent".into());
+            return Err("backendText.m4307c54b".into());
         }
         Ok(text)
     }
@@ -77,7 +77,7 @@ impl ReviewOutput {
             _ => {}
         }
         if self.legacy.len() + self.messages.values().map(String::len).sum::<usize>() > 64_000 {
-            return Err("审查输出超过限制".into());
+            return Err("backendText.mff2f684a".into());
         }
         Ok(())
     }
@@ -115,7 +115,7 @@ pub(super) fn recover_incomplete_review(run: &mut ReviewRun) {
                 .filter_map(|item| item.data["text"].as_str())
                 .find_map(driver_api::failure::reported_transport_error)
         })
-        .map(|error| format!("审查连接中断：{error}"));
+        .map(|error| format!("backendText.m42b3c757\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
     if let Some(error) = error {
         run.status = ReviewStatus::Failed;
         run.error = Some(error);
@@ -164,7 +164,7 @@ impl Core {
             agent_protocol::EventSource::Hub,
         )
         .await
-        .map_err(|_| "无法保存审查输出".to_owned())?;
+        .map_err(|_| "backendText.md78cc02f".to_owned())?;
         output.committed();
         Ok(())
     }
@@ -235,30 +235,30 @@ impl Core {
             let activity = &mut activity;
             let cancel = &mut cancel;
             std::panic::AssertUnwindSafe(async move {
-            core.save_review(run, None).await.map_err(|_| "无法保存审查状态".to_owned())?;
-            if *cancel.borrow() { return Err("审查已取消".into()); }
+            core.save_review(run, None).await.map_err(|_| "backendText.m50d39098".to_owned())?;
+            if *cancel.borrow() { return Err("backendText.m2564c873".into()); }
             let startup_additional = additional.clone();
             let startup = crate::auxiliary_session::Session::start_in_workspace(
                 driver.clone(), Some(lifetime), cwd.clone(),
                 move |driver, cwd, _| async move {
                     driver.create_review_session(&cwd, &startup_additional).await
-                        .map_err(|error| format!("无法创建审查会话：{error}"))
+                        .map_err(|error| format!("backendText.m5b5c4d00\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))
                 },
             );
             let mut session = tokio::select! {
                 biased;
-                _ = cancel.changed() => return Err("审查已取消".into()),
+                _ = cancel.changed() => return Err("backendText.m2564c873".into()),
                 result = startup => result?,
             };
             let handle = session.handle().clone();
             run.native_session_id = Some(handle.native_session_id.clone());
             let analyze = async {
-                core.save_review(run, None).await.map_err(|_| "无法保存审查状态".to_owned())?;
+                core.save_review(run, None).await.map_err(|_| "backendText.m50d39098".to_owned())?;
                 let mut stream = driver.prompt(&handle, PromptRequest {
                     prompt: workspace::prompt(run.request.kind, &scope), working_directory: cwd,
                     additional_directories: additional, attachments: vec![], context: vec![],
                     permission_mode: driver.review_prompt_permission_mode().map(str::to_owned),
-                }).await.map_err(|error| format!("审查请求失败：{error}"))?;
+                }).await.map_err(|error| format!("backendText.m767e9747\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?;
                 let mut tick = tokio::time::interval(Duration::from_millis(250));
                 tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 let mut completed = false;
@@ -272,7 +272,7 @@ impl Core {
                         event = stream.next() => event,
                     };
                     let Some(event) = event else { break; };
-                    let event = event.map_err(|error| format!("审查连接中断：{error}"))?;
+                    let event = event.map_err(|error| format!("backendText.m42b3c757\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?;
                     activity.push(&event, &handle.native_session_id);
                     output.push(&event, &handle.native_session_id)?;
                     match event {
@@ -280,14 +280,14 @@ impl Core {
                         // User-authorized full-access review, scoped to this native session.
                         DriverEvent::ApprovalRequested { native_request_id, options, .. } => {
                             let option = options.iter().find(|option| option.semantic_role == driver_api::ApprovalSemanticRole::ApproveOnce)
-                                .ok_or_else(|| "Agent 未提供本次操作的允许选项，无法继续审查".to_owned())?;
+                                .ok_or_else(|| "backendText.mea3d977c".to_owned())?;
                             driver.respond_to_interaction(&handle, &native_request_id, &option.option_id).await
-                                .map_err(|error| format!("审查操作授权失败：{error}"))?;
+                                .map_err(|error| format!("backendText.m1f3dd881\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?;
                         }
-                        DriverEvent::QuestionRequested { .. } => return Err("审查 Agent 请求交互，未完成检查；请重试或更换 Agent".into()),
-                        DriverEvent::TurnFailed { reason } => return Err(format!("审查失败：{reason}")),
-                        DriverEvent::TurnInterrupted { .. } => return Err("审查执行中断".into()),
-                        DriverEvent::TurnQuotaExhausted { .. } => return Err("审查 Agent 额度已耗尽".into()),
+                        DriverEvent::QuestionRequested { .. } => return Err("backendText.m11c87ba5".into()),
+                        DriverEvent::TurnFailed { reason } => return Err(format!("backendText.m535822e9\u{1e}{}", serde_json::to_string(&[reason.to_string()]).unwrap_or_else(|_| "[]".into()))),
+                        DriverEvent::TurnInterrupted { .. } => return Err("backendText.m3c13b6e8".into()),
+                        DriverEvent::TurnQuotaExhausted { .. } => return Err("backendText.mbcdf4295".into()),
                         _ => {}
                     }
                 }
@@ -295,21 +295,21 @@ impl Core {
             };
             let result = tokio::select! {
                 biased;
-                _ = cancel.changed() => Err("审查已取消".into()),
-                result = tokio::time::timeout(Duration::from_mins(15), analyze) => result.unwrap_or_else(|_| Err("审查超过 15 分钟，可重试".into())),
+                _ = cancel.changed() => Err("backendText.m2564c873".into()),
+                result = tokio::time::timeout(Duration::from_mins(15), analyze) => result.unwrap_or_else(|_| Err("backendText.m283ebd0d".into())),
             };
             // Observation is independent. NativeLifetime carries the original
             // proof through Pending, and the outer worker waits for its release.
             drop(session.cleanup(result.is_err()));
             result
-            }).catch_unwind().await.unwrap_or_else(|_| Err("审查执行意外中断，正在清理原会话".into()))
+            }).catch_unwind().await.unwrap_or_else(|_| Err("backendText.m4ea5524e".into()))
         };
         // Preserve received output while original cleanup is still pending.
         let flush =
             std::panic::AssertUnwindSafe(self.flush_review_activity(&mut run, &mut activity))
                 .catch_unwind()
                 .await
-                .unwrap_or_else(|_| Err("无法保存审查输出".into()));
+                .unwrap_or_else(|_| Err("backendText.md78cc02f".into()));
         let outcome = outcome.and_then(|value| flush.map(|()| value));
         run.result = self.redactor.redact(&output.text()).text;
         self.wait_review_native(&mut run, &mut cancel, &mut settled, &mut pending)
@@ -388,7 +388,7 @@ mod tests {
             output
                 .completed_result(true)
                 .unwrap_err()
-                .contains("审查连接中断")
+                .contains("backendText.m16896af4")
         );
         assert!(output.text().contains(NETWORK_ERROR));
         let mut output = ReviewOutput::default();
@@ -449,7 +449,7 @@ mod tests {
         let old = run.clone();
         recover_incomplete_review(&mut run);
         assert_eq!(run.status, super::ReviewStatus::Failed);
-        assert!(run.error.as_ref().unwrap().contains("审查连接中断"));
+        assert!(run.error.as_ref().unwrap().contains("backendText.m16896af4"));
         assert_eq!(run.result, original);
         let mut legacy = old.clone();
         legacy.workspace_review = false;

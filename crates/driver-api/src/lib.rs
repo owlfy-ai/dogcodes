@@ -234,6 +234,10 @@ pub struct ProviderBalance {
     pub currency: String,
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 /// Account limits and monetary balances are separate from session spending.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -250,6 +254,18 @@ pub struct QuotaSnapshot {
     pub stale_after_unix_ms: i64,
     /// Vendor-reported plan type, when present. Never inferred from pricing.
     pub plan_type: Option<String>,
+    /// Date-only vendor reset, for display. It has no time of day and must never drive expiry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_reset_on: Option<String>,
+    /// Vendor on-demand billing, when the vendor reports it. `None` means unreported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_demand: Option<bool>,
+    /// The vendor reported a separate bonus balance.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub bonus_quota: bool,
+    /// The vendor reported a separate purchased balance.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub purchased_quota: bool,
     /// Stable source tag such as `native_pull` or `native_push`.
     pub source: String,
     /// Stable confidence tag. Provider-reported data uses `provider_reported`.

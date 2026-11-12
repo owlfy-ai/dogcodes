@@ -34,7 +34,7 @@ impl GitReview {
         let canonical = |value: &str| {
             Path::new(value.trim_end_matches('\n'))
                 .canonicalize()
-                .map_err(|_| "工作区目录不可用".to_owned())
+                .map_err(|_| "backendText.m0da4ab1e".to_owned())
         };
         let root = canonical(&root)?;
         let common = canonical(&common)?;
@@ -72,20 +72,20 @@ fn parse_status(bytes: &[u8]) -> ReviewResult<WorktreeStatus> {
         if let Some(branch) = record.strip_prefix(b"# branch.head ") {
             if branch != b"(detached)" {
                 result.branch =
-                    Some(String::from_utf8(branch.to_vec()).map_err(|_| "分支名编码无效")?);
+                    Some(String::from_utf8(branch.to_vec()).map_err(|_| "backendText.mbbc52cb7")?);
             }
         } else if let Some(head) = record.strip_prefix(b"# branch.oid ") {
             if head != b"(initial)" {
                 result.head =
-                    Some(String::from_utf8(head.to_vec()).map_err(|_| "提交标识编码无效")?);
+                    Some(String::from_utf8(head.to_vec()).map_err(|_| "backendText.mb44b099d")?);
             }
         } else if matches!(record.first(), Some(b'1' | b'2' | b'u' | b'?')) {
             result.changed_files += 1;
             if record[0] == b'2' {
-                records.next().ok_or("重命名状态不完整")?;
+                records.next().ok_or("backendText.mfca303a7")?;
             }
         } else if record[0] != b'#' {
-            return Err("Git 状态格式无效".into());
+            return Err("backendText.medce5457".into());
         }
     }
     Ok(result)

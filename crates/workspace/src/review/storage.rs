@@ -103,7 +103,7 @@ pub(super) fn lock_directory_with_wait(
             Err(fs::TryLockError::WouldBlock) => {
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 if remaining.is_zero() {
-                    return Err("Review 存储正在使用或维护，请稍后重试".into());
+                    return Err("backendText.md1886c60".into());
                 }
                 std::thread::sleep(remaining.min(Duration::from_millis(5)));
             }

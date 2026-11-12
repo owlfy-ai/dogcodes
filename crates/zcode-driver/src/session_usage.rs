@@ -151,7 +151,7 @@ fn requests(snapshot: &Value) -> driver_api::usage::RequestUsageReport {
         });
     }
     if report.records.is_empty() {
-        report.unavailable_reason = Some("原生快照未提供已完成请求的用量".into());
+        report.unavailable_reason = Some("backendText.me2037800".into());
     }
     report
 }

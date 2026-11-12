@@ -27,21 +27,21 @@ impl GitReview {
         paths: &[String],
     ) -> ReviewResult<crate::review::recovery::batch::FileBatchResult> {
         if paths.is_empty() || paths.len() > 2000 {
-            return Err("请选择 1 至 2000 个文件".into());
+            return Err("backendText.m7b62ad72".into());
         }
         let mut groups =
             std::collections::BTreeMap::<std::path::PathBuf, Vec<(String, String)>>::new();
         for path in paths.iter().collect::<std::collections::BTreeSet<_>>() {
             validate_relative(path)?;
             if path.contains(['\n', '\r']) {
-                return Err("文件名包含换行，无法写入 .gitignore".into());
+                return Err("backendText.m31b5fde0".into());
             }
             let scope = root
                 .scopes
                 .iter()
                 .filter(|scope| scope.is_empty() || path.starts_with(&format!("{scope}/")))
                 .max_by_key(|scope| scope.len())
-                .ok_or("文件不在当前项目目录内")?;
+                .ok_or("backendText.mc5379d0c")?;
             let tracked = self
                 .run(
                     Path::new(&root.path),
@@ -56,12 +56,12 @@ impl GitReview {
                 )
                 .await?;
             if !tracked.is_empty() {
-                return Err("文件已被 Git 跟踪，.gitignore 无法忽略已跟踪文件".into());
+                return Err("backendText.md16b81dc".into());
             }
             let base = canonical_root(Path::new(&root.path))?;
             let directory = base.join(scope).canonicalize().map_err(|e| e.to_string())?;
             if !directory.starts_with(&base) {
-                return Err("忽略目录超出项目范围".into());
+                return Err("backendText.m576c86ec".into());
             }
             let relative = if scope.is_empty() {
                 path.as_str()
@@ -89,7 +89,7 @@ impl GitReview {
             for (path, entries) in groups {
                 let rules: Vec<_> = entries.iter().map(|(_, rule)| rule.as_str()).collect();
                 if let Err(error) = append_ignore_rules(&path, &rules) {
-                    result.error = Some(format!("{}：{error}，请刷新检查忽略规则", path.display()));
+                    result.error = Some(format!("backendText.m50f066ee\u{1e}{}", serde_json::to_string(&[path.display().to_string(), error.to_string()]).unwrap_or_else(|_| "[]".into())));
                     break;
                 }
                 result
@@ -112,10 +112,10 @@ fn validate_ignore_document(path: &Path) -> ReviewResult<()> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
             if !metadata.is_file() {
-                return Err(".gitignore 不是普通文件".into());
+                return Err("backendText.m4ed03d75".into());
             }
             let bytes = crate::review::bounded_read::read(path, 1024 * 1024)?;
-            std::str::from_utf8(&bytes).map_err(|_| ".gitignore 不是 UTF-8 文本")?;
+            std::str::from_utf8(&bytes).map_err(|_| "backendText.mc7f73f03")?;
             Ok(())
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -138,12 +138,12 @@ fn append_ignore_rules(path: &Path, rules: &[&str]) -> ReviewResult<()> {
     if let Ok(metadata) = fs::symlink_metadata(path)
         && !metadata.is_file()
     {
-        return Err(".gitignore 不是普通文件".into());
+        return Err("backendText.m4ed03d75".into());
     }
     let mut file = options.open(path).map_err(|e| e.to_string())?;
     let metadata = file.metadata().map_err(|e| e.to_string())?;
     if !metadata.is_file() || metadata.len() > 1024 * 1024 {
-        return Err(".gitignore 不是普通文件或超过大小限制".into());
+        return Err("backendText.m8304e94c".into());
     }
     let mut bytes = Vec::new();
     (&mut file)
@@ -151,9 +151,9 @@ fn append_ignore_rules(path: &Path, rules: &[&str]) -> ReviewResult<()> {
         .read_to_end(&mut bytes)
         .map_err(|e| e.to_string())?;
     if bytes.len() > 1024 * 1024 {
-        return Err(".gitignore 超过大小限制".into());
+        return Err("backendText.m095e7f0f".into());
     }
-    let text = std::str::from_utf8(&bytes).map_err(|_| ".gitignore 不是 UTF-8 文本")?;
+    let text = std::str::from_utf8(&bytes).map_err(|_| "backendText.mc7f73f03")?;
     let rules: Vec<_> = rules
         .iter()
         .filter(|rule| !text.lines().any(|line| line == **rule))
@@ -170,7 +170,7 @@ fn append_ignore_rules(path: &Path, rules: &[&str]) -> ReviewResult<()> {
     };
     let additions = format!("{separator}{}{newline}", rules.join(newline));
     if bytes.len() + additions.len() > 1024 * 1024 {
-        return Err(".gitignore 超过大小限制".into());
+        return Err("backendText.m095e7f0f".into());
     }
     file.write_all(additions.as_bytes())
         .map_err(|e| e.to_string())?;

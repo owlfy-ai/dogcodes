@@ -200,7 +200,7 @@ pub(crate) fn engine(
     target: &Arc<AtomicU64>,
     keyframe: &Arc<AtomicBool>,
 ) -> Result<(MediaEngine, Registry), String> {
-    let failure = |e: rtc::shared::error::Error| format!("视频协商失败：{e}");
+    let failure = |e: rtc::shared::error::Error| format!("backendText.mf7890795\u{1e}{}", serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into()));
     let mut engine = MediaEngine::default();
     for (profile, payload_type) in H264_PROFILES {
         engine

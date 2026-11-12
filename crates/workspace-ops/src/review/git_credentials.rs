@@ -242,9 +242,9 @@ impl GitPrompts {
     }
 
     pub fn answer(&self, task: &str, id: u64, answer: Option<String>) -> Result<(), String> {
-        let mut waiting = self.waiting.lock().map_err(|_| "Git 询问状态不可用")?;
+        let mut waiting = self.waiting.lock().map_err(|_| "backendText.meaab543b")?;
         if waiting.get(&id).is_none_or(|item| item.task != task) {
-            return Err("这个问题已经结束".into());
+            return Err("backendText.m2a4c7e42".into());
         }
         if let Some(item) = waiting.remove(&id) {
             let _ = item.reply.send(answer);

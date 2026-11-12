@@ -51,7 +51,7 @@ pub(super) fn capture(
                 )?);
             }
             gdi.as_mut()
-                .ok_or("回退视频来源已结束")?
+                .ok_or("backendText.ma8db5cec")?
                 .frame(until.saturating_duration_since(Instant::now()))
         },
         paused,
@@ -83,20 +83,20 @@ impl Gdi {
             move || {
                 active(&starting)?;
                 xcap::Monitor::all()
-                    .map_err(|_| "无法枚举回退显示器")?
+                    .map_err(|_| "backendText.m90c6578f")?
                     .into_iter()
                     .find(|m| {
                         m.id().ok() == Some(display)
                             && m.name().ok().as_deref() == Some(name.as_str())
                     })
-                    .ok_or_else(|| "回退视频显示器已断开".into())
+                    .ok_or_else(|| "backendText.mc9bf0724".into())
             },
             move |monitor, ()| {
                 active(&cancelled)?;
                 monitor
                     .capture_image()
                     .map(Arc::new)
-                    .map_err(|_| "回退视频采集失败，请检查桌面权限".into())
+                    .map_err(|_| "backendText.mc7da7c74".into())
             },
             budget.min(Duration::from_secs(2)),
             Duration::from_secs(2),
@@ -146,7 +146,7 @@ impl Backend {
 }
 fn active(cancelled: &Cancellation) -> Result<()> {
     if cancelled.is_cancelled() {
-        Err("视频采集请求已结束".into())
+        Err("backendText.mb6a08dba".into())
     } else {
         Ok(())
     }

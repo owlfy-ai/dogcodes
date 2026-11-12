@@ -5,11 +5,11 @@ use serde_json::{Value, json};
 
 impl TerminalHost {
     pub(super) fn launch_retired(&self, id: &str) -> Result<bool, String> {
-        uuid::Uuid::parse_str(id).map_err(|_| "无效的终端启动标识")?;
+        uuid::Uuid::parse_str(id).map_err(|_| "backendText.mcb253829")?;
         if self
             .retired
             .lock()
-            .map_err(|_| "终端状态不可用")?
+            .map_err(|_| "backendText.m0e61b774")?
             .contains(id)
         {
             return Ok(true);
@@ -19,13 +19,13 @@ impl TerminalHost {
         };
         match std::fs::read_to_string(directory.join("retired").join(id)) {
             Ok(value) if value == id => Ok(true),
-            Ok(_) => Err("原启动取消记录损坏，未重新启动".into()),
+            Ok(_) => Err("backendText.m5a3f5973".into()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
             Err(error) => Err(error.to_string()),
         }
     }
     pub(crate) fn launch_receipt(&self, id: &str) -> Result<Option<Value>, String> {
-        uuid::Uuid::parse_str(id).map_err(|_| "无效的终端启动标识")?;
+        uuid::Uuid::parse_str(id).map_err(|_| "backendText.mcb253829")?;
         if let Some(session) = self.find_session(id)? {
             return Ok(Some(
                 json!({"operationId":id,"state":"accepted","intent":session.intent,"terminal":session.info()?}),
@@ -61,7 +61,7 @@ impl TerminalHost {
         }
         self.retired
             .lock()
-            .map_err(|_| "终端状态不可用")?
+            .map_err(|_| "backendText.m0e61b774")?
             .insert(id.into());
         Ok(json!({"operationId":id,"state":"retired"}))
     }

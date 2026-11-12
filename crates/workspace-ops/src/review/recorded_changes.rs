@@ -33,11 +33,11 @@ pub(super) async fn load(
             }
             remaining = remaining
                 .checked_sub(metadata.byte_length)
-                .ok_or("修改记录过多，请从具体轮次查看差异")?;
+                .ok_or("backendText.m244504d2")?;
             let artifact = core
                 .verified_artifact(&task, &metadata.artifact_id, &metadata.payload_sha256)
                 .await?;
-            let data = serde_json::from_slice(&artifact.content).map_err(|_| "修改记录无法读取")?;
+            let data = serde_json::from_slice(&artifact.content).map_err(|_| "backendText.m74279719")?;
             collect(&mut result, &data, roots)?;
         }
         cursor = page.next_cursor;
@@ -49,7 +49,7 @@ pub(super) async fn load(
 }
 
 fn collect(result: &mut RecordedChanges, data: &Value, roots: &[ReviewRoot]) -> Result<(), String> {
-    let files = data["files"].as_array().ok_or("修改记录缺少文件列表")?;
+    let files = data["files"].as_array().ok_or("backendText.m7ade7ac5")?;
     for file in files {
         let (source, relative) = if data["schemaVersion"] == 2 {
             (
@@ -65,7 +65,7 @@ fn collect(result: &mut RecordedChanges, data: &Value, roots: &[ReviewRoot]) -> 
                 file["path"].as_str(),
             )
         };
-        let source = source.ok_or("修改记录缺少工作目录")?;
+        let source = source.ok_or("backendText.m851300be")?;
         let Some(root) = roots.iter().find(|root| {
             !root.git
                 && (root.path == source
@@ -74,14 +74,14 @@ fn collect(result: &mut RecordedChanges, data: &Value, roots: &[ReviewRoot]) -> 
         }) else {
             continue;
         };
-        let path = relative.ok_or("修改记录缺少相对路径")?;
+        let path = relative.ok_or("backendText.m60b4a9df")?;
         agent_workspace::review::validate_relative(path)?;
         if !root.scopes.iter().any(|scope| {
             scope.is_empty() || path == scope || path.starts_with(&format!("{scope}/"))
         }) {
             continue;
         }
-        let before = file.get("before").ok_or("修改记录缺少原始内容")?;
+        let before = file.get("before").ok_or("backendText.m9c913b63")?;
         result
             .entry(root.id.clone())
             .or_default()

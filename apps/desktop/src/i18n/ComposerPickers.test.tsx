@@ -6,6 +6,7 @@ import type { CoreClient, ModelCatalog, PermissionCatalog, ProjectId, ProjectSum
 import { PermissionPicker } from "../PermissionPicker";
 import { ModelPicker } from "../ModelPicker";
 import { ProjectPicker } from "../ProjectPicker";
+import { SCRATCH_PROJECT_NAME } from "../displayNames";
 import { I18nProvider, LOCALES, type ResolvedLanguage } from "./index";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: vi.fn(() => false) }));
@@ -25,7 +26,7 @@ const codexCatalog: PermissionCatalog = { defaultModeId: "default", modes: [
 const models: ModelCatalog = { defaultModel: "gpt", models: [
   { id: "gpt", label: "GPT-6.1-Sol", thinkingOptions: [{ id: "low", label: "low" }, { id: "xhigh", label: "xhigh" }, { id: "ultra", label: "ultra" }, { id: "turbo", label: "Turbo Mode" }], defaultThinking: "low" },
 ] };
-const scratch: ProjectSummary = { projectId: "prj_scratch" as ProjectId, displayName: "快速对话", path: "/scratch", additionalDirectories: [], taskCount: 0 };
+const scratch: ProjectSummary = { projectId: "prj_scratch" as ProjectId, displayName: SCRATCH_PROJECT_NAME, path: "/scratch", additionalDirectories: [], taskCount: 0 };
 
 it("renders the permission picker in the UI language, including core-built mode descriptions", async () => {
   const client = { permissionCatalog: vi.fn(async () => codexCatalog) } as unknown as CoreClient;

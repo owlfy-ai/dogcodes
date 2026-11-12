@@ -35,7 +35,7 @@ fn system() -> Result<System, String> {
         .and_then(|p| p.user_id())
         .is_none()
     {
-        return Err("无法检查正在运行的 Agent，暂未执行升级".into());
+        return Err("backendText.md3ae2266".into());
     }
     Ok(s)
 }
@@ -58,7 +58,7 @@ impl Scope {
     fn new(i: &InstallationSummary, plan: &Plan) -> Result<Self, String> {
         let mut executable = Path::new(&i.executable)
             .canonicalize()
-            .map_err(|_| "Agent 安装已变化，请重新检测")?;
+            .map_err(|_| "backendText.m25ca2ed5")?;
         let directory = match plan {
             Plan::StandaloneCli { prefix, .. } => {
                 let launcher = super::managed_cli::launcher(prefix, &i.provider_id);
@@ -215,7 +215,7 @@ async fn scan(i: &InstallationSummary, p: &Plan) -> Result<Vec<Identity>, String
             };
             if scope.matches(process) {
                 return Err(
-                    "当前应用由此 Agent 启动，结束它可能关闭应用；请独立启动本软件后升级".into(),
+                    "backendText.m70d8ff22".into(),
                 );
             }
             cursor = process.parent();
@@ -223,7 +223,7 @@ async fn scan(i: &InstallationSummary, p: &Plan) -> Result<Vec<Identity>, String
         Ok(collect(&system, &scope))
     })
     .await
-    .map_err(|_| "Agent 进程检测中断")?
+    .map_err(|_| "backendText.mf1729c9a")?
 }
 fn target_task(t: &TaskSummary, i: &InstallationSummary) -> bool {
     t.active_primary_run.as_ref().is_some_and(|run| {
@@ -280,10 +280,10 @@ async fn stop_processes(processes: Vec<Identity>) -> Result<(), String> {
                 }
             }
         }
-        Err("无法结束部分 Agent 进程，未执行升级。请手动退出后重试".into())
+        Err("backendText.me1742274".into())
     })
     .await
-    .map_err(|_| "结束 Agent 进程失败")?
+    .map_err(|_| "backendText.mbaf906e6")?
 }
 
 pub(super) async fn prepare(
@@ -300,7 +300,7 @@ pub(super) async fn prepare(
         .any(|t| t.active_primary_run.is_some() && !target_task(t, i))
     {
         return Err(
-            "其他 Agent 仍在执行任务，请等待其结束后再升级；不会结束其他 Agent 的任务".into(),
+            "backendText.mc3595315".into(),
         );
     }
     let tasks: Vec<_> = snapshot
@@ -353,7 +353,7 @@ pub(super) async fn prepare(
                 )))
                 .await?;
             if !ack.accepted {
-                return Err("任务未接受取消请求，暂未执行升级".into());
+                return Err("backendText.mae92f7ee".into());
             }
         }
     }
@@ -375,7 +375,7 @@ pub(super) async fn prepare(
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
-    Err("任务仍在结束处理中，暂未升级，请稍后重试".into())
+    Err("backendText.mb872c404".into())
 }
 
 #[cfg(test)]

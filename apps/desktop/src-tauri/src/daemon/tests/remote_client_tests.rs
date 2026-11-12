@@ -180,7 +180,7 @@ async fn a_second_protocol_client_drives_daily_work_and_shares_state_with_the_de
         })
         .await
         .unwrap_err();
-    assert!(refused.contains("禁用"), "{refused}");
+    assert!(refused.contains("backendText.m7df5c456"), "{refused}");
 
     // The desktop discovers the phone's pending original and finishes it once allowed.
     let pending = desktop

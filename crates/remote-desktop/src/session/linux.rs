@@ -45,7 +45,7 @@ impl Native {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|_| "无法启动桌面状态检查")?;
+            .map_err(|_| "backendText.m65c2f267")?;
         Ok(Self {
             runtime,
             connection: None,
@@ -58,7 +58,7 @@ impl Native {
                     self.connection = Some(
                         Connection::system()
                             .await
-                            .map_err(|_| "无法连接系统桌面状态服务")?,
+                            .map_err(|_| "backendText.mb922de66")?,
                     );
                 }
                 // SAFETY: geteuid takes no pointers and returns this process UID.
@@ -72,7 +72,7 @@ impl Native {
                 .await
             })
             .await
-            .map_err(|_| "检查系统桌面状态超时")?
+            .map_err(|_| "backendText.m2ea94fde")?
         });
         if result.is_err() {
             self.connection = None;
@@ -94,10 +94,10 @@ async fn properties(
             &(interface,),
         )
         .await
-        .map_err(|_| "无法读取系统桌面状态")?
+        .map_err(|_| "backendText.ma13a97a7")?
         .body()
         .deserialize()
-        .map_err(|_| "系统桌面状态格式无效".into())
+        .map_err(|_| "backendText.m45b42acb".into())
 }
 async fn object<B>(connection: &Connection, method: &str, body: &B) -> Result<OwnedObjectPath>
 where
@@ -106,10 +106,10 @@ where
     connection
         .call_method(Some(DEST), ROOT, Some(MANAGER), method, body)
         .await
-        .map_err(|_| "无法定位当前登录桌面")?
+        .map_err(|_| "backendText.mbe750ef1")?
         .body()
         .deserialize()
-        .map_err(|_| "系统桌面身份无效".into())
+        .map_err(|_| "backendText.m1bbcb4cd".into())
 }
 pub(super) async fn query(
     connection: &Connection,
@@ -119,7 +119,7 @@ pub(super) async fn query(
 ) -> Result<bool> {
     let path = if let Some(session) = session.filter(|s| !s.is_empty()) {
         if session.len() > 256 {
-            return Err("系统桌面身份无效".into());
+            return Err("backendText.m1bbcb4cd".into());
         }
         // An explicit but expired session never falls back to another desktop.
         object(connection, "GetSession", &(session,)).await?
@@ -133,11 +133,11 @@ pub(super) async fn query(
                 let mut props = properties(connection, user.as_str(), USER).await?;
                 let (id, path): (String, OwnedObjectPath) = props
                     .remove("Display")
-                    .ok_or("没有已登录的图形桌面")?
+                    .ok_or("backendText.md338a450")?
                     .try_into()
-                    .map_err(|_| "系统桌面身份无效")?;
+                    .map_err(|_| "backendText.m1bbcb4cd")?;
                 if id.is_empty() || path.as_str() == "/" {
-                    return Err("没有已登录的图形桌面".into());
+                    return Err("backendText.md338a450".into());
                 }
                 path
             }
@@ -149,26 +149,26 @@ fn status(mut props: HashMap<String, OwnedValue>, uid: u32) -> Result<bool> {
     let locked = props
         .remove("LockedHint")
         .and_then(|v| bool::try_from(v).ok())
-        .ok_or("无法确认当前桌面锁屏状态")?;
+        .ok_or("backendText.ma77f32d6")?;
     let active = props
         .remove("Active")
         .and_then(|v| bool::try_from(v).ok())
-        .ok_or("无法确认活动桌面")?;
+        .ok_or("backendText.m253e97f6")?;
     let remote = props
         .remove("Remote")
         .and_then(|v| bool::try_from(v).ok())
-        .ok_or("无法确认本机桌面")?;
+        .ok_or("backendText.m26af25f9")?;
     let kind = props
         .remove("Type")
         .and_then(|v| String::try_from(v).ok())
-        .ok_or("无法确认图形桌面")?;
+        .ok_or("backendText.mb3d01d7d")?;
     let (owner, _): (u32, OwnedObjectPath) = props
         .remove("User")
-        .ok_or("无法确认桌面用户")?
+        .ok_or("backendText.m2466afa3")?
         .try_into()
-        .map_err(|_| "无法确认桌面用户")?;
+        .map_err(|_| "backendText.m2466afa3")?;
     if owner != uid || !active || remote || !matches!(kind.as_str(), "x11" | "wayland") {
-        return Err("当前没有此用户的活动本机图形桌面".into());
+        return Err("backendText.mc55b5de6".into());
     }
     Ok(locked)
 }

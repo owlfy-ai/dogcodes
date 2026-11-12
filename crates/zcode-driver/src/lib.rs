@@ -804,7 +804,7 @@ impl Connection {
                                             stop_id = Some(self.start_request("session/stop", json!({"sessionId":session_id})).await?);
                                             stop_deadline=Some(tokio::time::Instant::now()+control_timeout);
                                         } else { cancel_open = false; }
-                                        json!({"headersApplied":false,"errorMessage":"账号验证已取消。"})
+                                        json!({"headersApplied":false,"errorMessage":"backendText.m040d2b1c"})
                                     },
                                     value = self.provider_auth(&params) => value,
                                 }
@@ -958,7 +958,7 @@ fn answer_server_request(
         }
         "interaction/requestProviderRuntimeHeaders" => json!({
             "headersApplied": false,
-            "errorMessage": "请在 ZCode 中登录并重新检测 Agent。"
+            "errorMessage": "backendText.mfb3ccb90"
         }),
         // Unknown server requests get an empty ack; the schema treats missing
         // fields as defaults and the turn keeps running.
@@ -1947,10 +1947,11 @@ impl QuotaProvider for ZcodeDriver {
             context,
             collected_at_unix_ms: now,
             stale_after_unix_ms: now + ZCODE_USAGE_TTL_MS,
-            plan_type: Some("额度不可用：请检查 ZCode 当前模型与登录状态".into()),
+            plan_type: Some("backendText.m1192348d".into()),
             source: "native_pull".into(),
             confidence: "derived".into(),
             parser_version: "zcode-usage-stats-v1".into(),
+            ..Default::default()
         })
     }
 }

@@ -18,7 +18,7 @@ impl Core {
             .projects
             .into_iter()
             .find(|project| project.project_id == task.project_id)
-            .ok_or_else(|| CoreError::NotFound("审查项目不存在".into()))?;
+            .ok_or_else(|| CoreError::NotFound("backendText.me9087e85".into()))?;
         let directories = task.directories(&project);
         // A directory on another machine says nothing about this file system.
         if project.target_id.is_none()
@@ -26,7 +26,7 @@ impl Core {
                 !std::path::Path::new(path).is_absolute() || !std::path::Path::new(path).is_dir()
             })
         {
-            return Err(CoreError::InvalidArgument("审查项目目录不可用".into()));
+            return Err(CoreError::InvalidArgument("backendText.m2ce30a85".into()));
         }
         Ok(directories)
     }
@@ -37,7 +37,7 @@ pub(super) fn project_scope(input: &Value) -> Result<Value, CoreError> {
     let roots = input["roots"]
         .as_array()
         .filter(|roots| !roots.is_empty())
-        .ok_or_else(|| CoreError::InvalidArgument("比较目录为空".into()))?;
+        .ok_or_else(|| CoreError::InvalidArgument("backendText.maa4ff3f6".into()))?;
     let mut scopes = vec![];
     for root in roots {
         if root["path"].as_str().is_none_or(str::is_empty)
@@ -46,13 +46,13 @@ pub(super) fn project_scope(input: &Value) -> Result<Value, CoreError> {
                 Some("uncommitted" | "unstaged" | "staged" | "committed" | "branch" | "session")
             )
         {
-            return Err(CoreError::InvalidArgument("比较范围无效".into()));
+            return Err(CoreError::InvalidArgument("backendText.m4808d0e9".into()));
         }
         if matches!(root["mode"].as_str(), Some("committed" | "branch"))
             && (root["target"].as_str().is_none_or(str::is_empty)
                 || (root["mode"] == "branch" && root["base"].as_str().is_none_or(str::is_empty)))
         {
-            return Err(CoreError::InvalidArgument("历史比较缺少 Git 引用".into()));
+            return Err(CoreError::InvalidArgument("backendText.m455d3308".into()));
         }
         let files: Vec<_> = root["files"].as_array().into_iter().flatten().map(|file|
             json!({"path":file["path"],"previousPath":file["previousPath"],"kind":file["kind"]})
@@ -70,12 +70,12 @@ pub(super) fn bind_directories(scope: &mut Value, directories: &[String]) -> Res
         .iter()
         .map(std::fs::canonicalize)
         .collect::<Result<_, _>>()
-        .map_err(|_| CoreError::InvalidArgument("审查项目目录不可用".into()))?;
+        .map_err(|_| CoreError::InvalidArgument("backendText.m2ce30a85".into()))?;
     for root in scope["roots"].as_array_mut().into_iter().flatten() {
         let path = root["path"]
             .as_str()
             .and_then(|p| std::fs::canonicalize(p).ok())
-            .ok_or_else(|| CoreError::InvalidArgument("比较目录不可用".into()))?;
+            .ok_or_else(|| CoreError::InvalidArgument("backendText.meba71390".into()))?;
         if allowed.iter().any(|directory| path.starts_with(directory)) {
             continue;
         }
@@ -84,7 +84,7 @@ pub(super) fn bind_directories(scope: &mut Value, directories: &[String]) -> Res
             .filter_map(|directory| directory.strip_prefix(&path).ok())
             .collect();
         if prefixes.is_empty() {
-            return Err(CoreError::InvalidArgument("比较目录不属于当前项目".into()));
+            return Err(CoreError::InvalidArgument("backendText.mfc8fe023".into()));
         }
         let supplied: Vec<_> = root["scopes"]
             .as_array()
@@ -102,7 +102,7 @@ pub(super) fn bind_directories(scope: &mut Value, directories: &[String]) -> Res
                     .any(|c| matches!(c, std::path::Component::ParentDir))
                 || !prefixes.iter().any(|prefix| path.starts_with(prefix))
         }) {
-            return Err(CoreError::InvalidArgument("比较子目录超出当前项目".into()));
+            return Err(CoreError::InvalidArgument("backendText.mdb7d8e6c".into()));
         }
     }
     scope["directories"] = json!(directories);
@@ -178,7 +178,7 @@ pub(super) fn report(output: &str) -> Option<ReviewReport> {
             root_id: Some(item.root.clone()),
             root_label: Some(item.root),
             location_verified: false,
-            location_note: "Agent 报告的位置；工作区后续修改可能使行号变化。".into(),
+            location_note: "backendText.m5fa053c7".into(),
             verification: None,
             security: None,
         });
@@ -235,7 +235,7 @@ mod tests {
     }
     #[test]
     fn findings_are_agent_reported_and_invalid_entries_fall_back() {
-        let value = json!({"summary":"检查完成","findings":[{"root":"/repo","path":"a.rs","severity":"high","title":"bug","description":"reason","side":"after","startLine":1,"endLine":2}]});
+        let value = json!({"summary":"backendText.m67ec0b18","findings":[{"root":"/repo","path":"a.rs","severity":"high","title":"bug","description":"reason","side":"after","startLine":1,"endLine":2}]});
         let result = report(&value.to_string()).unwrap();
         assert!(!result.findings[0].location_verified);
         assert!(result.files.is_empty());

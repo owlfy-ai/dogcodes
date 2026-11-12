@@ -59,12 +59,12 @@ impl Default for WorkspaceContextSnapshot {
 pub trait WorkspaceContextProvider: Send + Sync {
     /// Persist the complete Git file state independently of bounded review diffs.
     async fn capture_fork_snapshot(&self, _paths: &[String]) -> Result<Value, String> {
-        Err("当前环境不支持保存 worktree 快照".into())
+        Err("backendText.mf9955dca".into())
     }
 
     /// Restore immutable turn snapshots into isolated checkouts, in root order.
     async fn fork_worktrees(&self, _snapshot: Value, _name: &str) -> Result<Vec<String>, String> {
-        Err("当前环境不支持创建 Git worktree".into())
+        Err("backendText.m7648bc84".into())
     }
 
     async fn delete_task_review_data(&self, _task_id: &str) -> Result<(), String> {

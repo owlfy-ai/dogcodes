@@ -204,6 +204,7 @@ impl QuotaState {
                             source: "native_push".into(),
                             confidence: "provider_reported".into(),
                             parser_version: QUOTA_PARSER_VERSION.into(),
+                            ..Default::default()
                         },
                         "native_push",
                     );
@@ -1216,6 +1217,7 @@ impl QuotaProvider for CodexDriver {
             source: "native_pull".into(),
             confidence: "provider_reported".into(),
             parser_version: QUOTA_PARSER_VERSION.into(),
+                            ..Default::default()
         };
         self.quota.record(snapshot, "native_pull");
         self.quota
@@ -1879,7 +1881,7 @@ fn file_change_approval_summary(params: &serde_json::Value) -> String {
     });
     serde_json::json!({
         "scope": if files.is_some() { "reported_files" } else { "unknown" },
-        "message": if files.is_some() { "文件修改审批" } else { "Agent 未提供具体文件修改范围；请勿在未核对修改内容时批准。" },
+        "message": if files.is_some() { "backendText.m6134c458" } else { "backendText.m0b23bcd4" },
         "files": files,
         "itemId": params.get("itemId").and_then(serde_json::Value::as_str),
         "reason": params.get("reason").and_then(serde_json::Value::as_str),
@@ -1906,12 +1908,12 @@ fn map_notification(method: &str, params: &Value) -> Option<DriverEvent> {
         "item/commandExecution/started" => Some(DriverEvent::ToolStarted {
             item_id: notification_item_id(params),
             tool_name: "command_execution".into(),
-            summary: "运行命令".into(),
+            summary: "backendText.me53f35dc".into(),
         }),
         "item/commandExecution/completed" => Some(DriverEvent::ToolCompleted {
             item_id: notification_item_id(params),
             tool_name: "command_execution".into(),
-            summary: "运行命令".into(),
+            summary: "backendText.me53f35dc".into(),
             success: item_completed_success(params.get("item").unwrap_or(params)),
         }),
         "turn/diff/updated" => Some(DriverEvent::ProtocolWarning {
@@ -1976,28 +1978,28 @@ fn map_tool_item(params: &Value, completed: bool) -> Option<DriverEvent> {
     let item = params.get("item")?;
     let item_type = item.get("type").and_then(Value::as_str)?;
     let (tool_name, summary) = match item_type {
-        "commandExecution" => ("command_execution".into(), "运行命令".into()),
-        "fileChange" => ("file_change".into(), "修改文件".into()),
+        "commandExecution" => ("command_execution".into(), "backendText.me53f35dc".into()),
+        "fileChange" => ("file_change".into(), "backendText.m533f9a4f".into()),
         "mcpToolCall" => {
             let name = item
                 .get("tool")
                 .and_then(Value::as_str)
-                .unwrap_or("MCP 工具");
-            (name.to_owned(), format!("调用 {name}"))
+                .unwrap_or("backendText.m7d7f9135");
+            (name.to_owned(), format!("backendText.m3ca5d89c\u{1e}{}", serde_json::to_string(&[name.to_string()]).unwrap_or_else(|_| "[]".into())))
         }
         "dynamicToolCall" => {
             let name = item
                 .get("tool")
                 .and_then(Value::as_str)
-                .unwrap_or("动态工具");
-            (name.to_owned(), format!("调用 {name}"))
+                .unwrap_or("backendText.me3cae5c4");
+            (name.to_owned(), format!("backendText.m3ca5d89c\u{1e}{}", serde_json::to_string(&[name.to_string()]).unwrap_or_else(|_| "[]".into())))
         }
-        "collabAgentToolCall" => ("collab_agent".into(), "协调子 Agent".into()),
-        "subAgentActivity" => ("sub_agent".into(), "执行子 Agent 任务".into()),
-        "webSearch" => ("web_search".into(), "搜索网页".into()),
-        "imageView" => ("image_view".into(), "查看图片".into()),
-        "sleep" => ("sleep".into(), "等待任务".into()),
-        "imageGeneration" => ("image_generation".into(), "生成图片".into()),
+        "collabAgentToolCall" => ("collab_agent".into(), "backendText.m5c0722d5".into()),
+        "subAgentActivity" => ("sub_agent".into(), "backendText.m31ba36bc".into()),
+        "webSearch" => ("web_search".into(), "backendText.m01aeaf3f".into()),
+        "imageView" => ("image_view".into(), "backendText.ma9769c63".into()),
+        "sleep" => ("sleep".into(), "backendText.m5ad9ad34".into()),
+        "imageGeneration" => ("image_generation".into(), "backendText.m71c9cf3d".into()),
         _ => return None,
     };
     let item_id = item
@@ -2590,7 +2592,7 @@ mod tests {
         assert_eq!(value["scope"], "unknown");
         assert_eq!(value["grantRoot"], "/temporary");
         assert!(!summary.contains("must not display"));
-        assert!(value["message"].as_str().unwrap().contains("未提供"));
+        assert!(value["message"].as_str().unwrap().contains("backendText.m756762e2"));
         for files in [
             serde_json::json!([]),
             serde_json::json!({}),
@@ -2732,6 +2734,7 @@ mod tests {
                 source: "native_pull".into(),
                 confidence: "provider_reported".into(),
                 parser_version: QUOTA_PARSER_VERSION.into(),
+                            ..Default::default()
             },
             "native_pull",
         );
@@ -2788,7 +2791,7 @@ mod tests {
             Some(DriverEvent::ToolStarted {
                 item_id: "web-1".into(),
                 tool_name: "web_search".into(),
-                summary: "搜索网页".into(),
+                summary: "backendText.m01aeaf3f".into(),
             })
         );
         assert_eq!(
@@ -2799,7 +2802,7 @@ mod tests {
             Some(DriverEvent::ToolCompleted {
                 item_id: "web-1".into(),
                 tool_name: "web_search".into(),
-                summary: "搜索网页".into(),
+                summary: "backendText.m01aeaf3f".into(),
                 success: true,
             })
         );

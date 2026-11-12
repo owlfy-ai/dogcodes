@@ -42,7 +42,9 @@ use std::{
 };
 
 use agent_core::Core;
-use agent_domain::{ExecutorRef, ProjectId, ProviderId, TaskId};
+use agent_domain::{
+    ExecutorRef, ProjectId, ProviderId, TaskId, SCRATCH_PROJECT_NAME, UNTITLED_TASK_TITLE,
+};
 use agent_protocol::{
     ActorRef, BootstrapSnapshot, BuiltContextPackage, CommandAck, CommandEnvelope,
     ContextEditRequest, ContextPreviewRequest, CoreCommand, CreateTask, EventEnvelope,
@@ -78,7 +80,7 @@ async fn core_execution_target(
     call: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     if window.label() != "main" {
-        return Err("请从主窗口管理远程连接".into());
+        return Err("backendText.m66f59e00".into());
     }
     state.core.execution_target(call).await
 }
@@ -266,9 +268,9 @@ async fn core_reveal_local_project(
     }
     let target = tokio::fs::canonicalize(&project.path)
         .await
-        .map_err(|_| "项目目录不存在或无法访问")?;
+        .map_err(|_| "backendText.m9145d731")?;
     if !target.is_dir() {
-        return Err("项目路径不是文件夹".into());
+        return Err("backendText.m167102a9".into());
     }
     #[cfg(target_os = "macos")]
     let mut command = {
@@ -288,9 +290,9 @@ async fn core_reveal_local_project(
         command.arg(&target);
         command
     };
-    let status = command.status().await.map_err(|_| "无法打开文件管理器")?;
+    let status = command.status().await.map_err(|_| "backendText.mded4e274")?;
     if !status.success() {
-        return Err("无法打开文件管理器".into());
+        return Err("backendText.mded4e274".into());
     }
     Ok(())
 }
@@ -306,7 +308,7 @@ async fn core_pick_project_directory(
         .dialog()
         .file()
         .set_parent(&window)
-        .set_title("选择项目目录");
+        .set_title("backendText.m54514257");
     // Without a starting folder the system picker reopens wherever it was last
     // left, often the filesystem root. Hidden entries stay governed by the
     // picker's own toggle (⌘⇧. on macOS), which is off by default.
@@ -316,14 +318,14 @@ async fn core_pick_project_directory(
     dialog.pick_folder(move |path| {
         let _ = sender.send(path);
     });
-    let Some(path) = receiver.await.map_err(|_| "目录选择窗口已关闭")? else {
+    let Some(path) = receiver.await.map_err(|_| "backendText.m0127acbc")? else {
         return Ok(None);
     };
-    let path = path.into_path().map_err(|_| "请选择本地目录")?;
+    let path = path.into_path().map_err(|_| "backendText.mbcbd68de")?;
     if !path.is_dir() {
-        return Err("所选路径不是目录".into());
+        return Err("backendText.mb64c7d94".into());
     }
-    let path = path.to_str().ok_or("目录路径不是有效的 UTF-8")?;
+    let path = path.to_str().ok_or("backendText.m6d00d2cb")?;
     Ok(Some(path.to_owned()))
 }
 
@@ -380,7 +382,7 @@ async fn core_prepare_session_rebuild(
         .core
         .prepare_session_rebuild(&ActorRef::LocalUser, &task_id, expected_version)
         .await
-        .map_err(|_| "会话状态已变化，请刷新后重试".into())
+        .map_err(|_| "backendText.mbc1fce2e".into())
 }
 
 #[tauri::command]
@@ -393,7 +395,7 @@ async fn core_recovery_snapshot(
         .core
         .recovery_snapshot(&ActorRef::LocalUser)
         .await
-        .map_err(|_| "恢复信息读取失败，请保留数据库并重试".into())
+        .map_err(|_| "backendText.m7c824ded".into())
 }
 
 #[tauri::command]
@@ -413,30 +415,30 @@ async fn core_export_startup_diagnostics(
     gate: tauri::State<'_, StartupExportGate>,
 ) -> Result<&'static str, String> {
     require_main_artifact_window(window.label())?;
-    let _guard = gate.0.try_lock().map_err(|_| "另一个导出窗口已打开")?;
+    let _guard = gate.0.try_lock().map_err(|_| "backendText.mfa6c91d8")?;
     let mut report = startup_diagnostic_value(&failure);
     if let Some(directory) = app.try_state::<service_diagnostics::DiagnosticDirectory>() {
         report["serviceDiagnostics"] = service_diagnostics::report(&directory.0);
     }
-    let content = serde_json::to_vec_pretty(&report).map_err(|_| "诊断信息序列化失败")?;
+    let content = serde_json::to_vec_pretty(&report).map_err(|_| "backendText.ma1ef9099")?;
     let (sender, receiver) = oneshot::channel();
     app.dialog()
         .file()
         .set_parent(&window)
-        .set_title("导出诊断报告")
+        .set_title("backendText.mb10acde3")
         .set_file_name("startup-diagnostics.json")
         .save_file(move |path| {
             let _ = sender.send(path);
         });
-    let Some(path) = receiver.await.map_err(|_| "导出窗口已关闭")? else {
+    let Some(path) = receiver.await.map_err(|_| "backendText.m2d1b9ea9")? else {
         return Ok("cancelled");
     };
-    let path = path.into_path().map_err(|_| "请选择本地文件")?;
+    let path = path.into_path().map_err(|_| "backendText.mf66f180b")?;
     tauri::async_runtime::spawn_blocking(move || {
         artifact_export::save_new_artifact(&path, &content)
     })
     .await
-    .map_err(|_| "导出失败")??;
+    .map_err(|_| "backendText.m6e4445df")??;
     Ok("saved")
 }
 
@@ -450,31 +452,31 @@ async fn core_export_diagnostics(
     let _guard = state
         .export_gate
         .try_lock()
-        .map_err(|_| "另一个导出窗口已打开")?;
+        .map_err(|_| "backendText.mfa6c91d8")?;
     let snapshot = state
         .core
         .recovery_snapshot(&ActorRef::LocalUser)
         .await
-        .map_err(|_| "诊断信息读取失败")?;
-    let content = serde_json::to_vec_pretty(&snapshot).map_err(|_| "诊断信息序列化失败")?;
+        .map_err(|_| "backendText.md85b7eb8")?;
+    let content = serde_json::to_vec_pretty(&snapshot).map_err(|_| "backendText.ma1ef9099")?;
     let (sender, receiver) = oneshot::channel();
     app.dialog()
         .file()
         .set_parent(&window)
-        .set_title("导出诊断摘要（不含对话或凭据）")
+        .set_title("backendText.m57cbe091")
         .set_file_name("diagnostics.json")
         .save_file(move |path| {
             let _ = sender.send(path);
         });
-    let Some(path) = receiver.await.map_err(|_| "导出窗口已关闭")? else {
+    let Some(path) = receiver.await.map_err(|_| "backendText.m2d1b9ea9")? else {
         return Ok("cancelled");
     };
-    let path = path.into_path().map_err(|_| "请选择本地文件")?;
+    let path = path.into_path().map_err(|_| "backendText.mf66f180b")?;
     tauri::async_runtime::spawn_blocking(move || {
         artifact_export::save_new_artifact(&path, &content)
     })
     .await
-    .map_err(|_| "导出失败")??;
+    .map_err(|_| "backendText.m6e4445df")??;
     Ok("saved")
 }
 
@@ -549,7 +551,7 @@ async fn core_export_artifact(
     app.dialog()
         .file()
         .set_parent(&window)
-        .set_title("导出已审阅的原始 Artifact（请使用新文件名）")
+        .set_title("backendText.m45cbb9cf")
         .set_file_name(format!("{}.{extension}", artifact.metadata.artifact_id))
         .save_file(move |path| {
             let _ = sender.send(path);
@@ -658,7 +660,7 @@ async fn core_set_running_permission_mode(
     mode: String,
 ) -> Result<(), String> {
     if window.label() != "main" {
-        return Err("权限策略只能在主窗口修改".into());
+        return Err("backendText.m29e2addc".into());
     }
     state
         .core
@@ -1518,7 +1520,7 @@ async fn ensure_initial_conversation(core: Arc<Core>, scratch_path: std::path::P
             target_id: None,
             additional_directories: vec![],
             project_id: project_id.clone(),
-            display_name: "快速对话".into(),
+            display_name: SCRATCH_PROJECT_NAME.into(),
             path: scratch_path.to_string_lossy().into_owned(),
         }));
         register.actor = ActorRef::SystemRecovery;
@@ -1537,7 +1539,7 @@ async fn ensure_initial_conversation(core: Arc<Core>, scratch_path: std::path::P
     let mut create = CommandEnvelope::local(CoreCommand::CreateTask(CreateTask {
         task_id: TaskId::new(),
         project_id,
-        title: "新对话".into(),
+        title: UNTITLED_TASK_TITLE.into(),
         preferred_executor,
     }));
     create.actor = ActorRef::SystemRecovery;
@@ -2712,7 +2714,7 @@ esac
             update_local_project(&client, id.clone(), 1, "Stale".into(), path.clone(), vec![])
                 .await
                 .unwrap_err()
-                .contains("项目已被修改")
+                .contains("backendText.mf4c7bfba")
         );
         assert!(
             update_local_project(
@@ -2898,7 +2900,7 @@ esac
 
         let snapshot = core.bootstrap().await.unwrap();
         assert_eq!(snapshot.projects.len(), 1);
-        assert_eq!(snapshot.projects[0].display_name, "快速对话");
+        assert_eq!(snapshot.projects[0].display_name, SCRATCH_PROJECT_NAME);
         assert_eq!(snapshot.projects[0].path, scratch.path().to_string_lossy());
         assert_eq!(snapshot.tasks.len(), 1);
         assert_eq!(
@@ -2966,5 +2968,5 @@ async fn core_subagent_history(
         .core
         .subagent_history(&task_id, &item_id)
         .await
-        .map_err(|_| "子智能体执行记录加载失败".into())
+        .map_err(|_| "backendText.mf83e3699".into())
 }

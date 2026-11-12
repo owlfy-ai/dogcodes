@@ -725,7 +725,7 @@ fn host_name() -> String {
         .filter(|&i| name.is_char_boundary(i) && name[i..].eq_ignore_ascii_case(".local"))
         .map_or(name, |i| name[..i].trim());
     if name.is_empty() {
-        "电脑".into()
+        "Computer".into()
     } else {
         name.chars().take(64).collect()
     }

@@ -12,7 +12,7 @@ pub(super) struct Presentation {
 impl Presentation {
     pub fn apply(self, image: RgbaImage) -> Result<RgbaImage> {
         if self.transform > 7 {
-            return Err("Wayland 画面方向元数据无效".into());
+            return Err("backendText.m6e2e6085".into());
         }
         let (x, y, w, h) = self.crop.unwrap_or((0, 0, image.width(), image.height()));
         if x < 0
@@ -26,7 +26,7 @@ impl Presentation {
                 .checked_add(h)
                 .is_none_or(|end| end > image.height())
         {
-            return Err("Wayland 画面裁剪区域超出缓冲区".into());
+            return Err("backendText.m03618205".into());
         }
         if self.transform == 0 && (x, y, w, h) == (0, 0, image.width(), image.height()) {
             return Ok(image);

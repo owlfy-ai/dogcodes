@@ -166,7 +166,7 @@ impl Host {
                         }
                         power.desktop.store(false, Ordering::Release);
                     })
-                    .map_err(|_| "无法启动远控系统线程".to_string())?;
+                    .map_err(|_| "backendText.m535a1dc2".to_string())?;
                 Ok(tx)
             })
             .as_ref()
@@ -179,11 +179,11 @@ impl Host {
                 args,
                 reply,
             })
-            .map_err(|_| "远控系统繁忙，请稍后重试")?;
+            .map_err(|_| "backendText.mfee83c4d")?;
         tokio::time::timeout(Duration::from_secs(15), result)
             .await
-            .map_err(|_| "系统远控操作超时，请核实系统权限")?
-            .map_err(|_| "远控系统线程已结束")?
+            .map_err(|_| "backendText.m4015bbcb")?
+            .map_err(|_| "backendText.m33eb2770")?
     }
 }
 struct Lease {
@@ -320,7 +320,7 @@ impl Worker {
         if wayland_required() {
             if let Some(lease) = &self.lease {
                 if lease.owner.id != connection.id {
-                    return Err("电脑正在被其它连接远控".into());
+                    return Err("backendText.m341d04db".into());
                 }
                 return Ok(lease.portal.clone());
             }
@@ -328,9 +328,9 @@ impl Worker {
                 .preparing
                 .as_ref()
                 .filter(|p| p.owner.id == connection.id)
-                .ok_or("请先在电脑上完成 Wayland 屏幕共享授权")?;
+                .ok_or("backendText.m41e2470f")?;
             if !pending.session.status()? {
-                return Err("请在电脑上完成屏幕共享授权".into());
+                return Err("backendText.m19c6afed".into());
             }
             return Ok(Some(pending.session.clone()));
         }
@@ -349,12 +349,12 @@ impl Worker {
         {
             os::require_unlocked()?;
             if self.lease.is_some() {
-                return Err("远控已经开启，请先结束原连接".into());
+                return Err("backendText.mc6a2b6b6".into());
             }
             let control = args["control"].as_bool().unwrap_or(true);
             let fresh = args["fresh"].as_bool().unwrap_or(false);
             if self.preparing.is_none() {
-                let store = self.portal_store.clone().ok_or("Wayland 授权存储未配置")?;
+                let store = self.portal_store.clone().ok_or("backendText.m3a90d1c1")?;
                 let liveness = handoff::Liveness::new(&connection);
                 let watch = liveness.clone();
                 let alive = Arc::new(move || watch.alive());
@@ -368,16 +368,16 @@ impl Worker {
                     transferred: false,
                 });
             }
-            let pending = self.preparing.as_mut().ok_or("Wayland 授权未开始")?;
+            let pending = self.preparing.as_mut().ok_or("backendText.m38cb1879")?;
             if pending.owner.id != connection.id
                 || pending.control != control
                 || pending.fresh != fresh
             {
-                return Err("另一项电脑授权正在进行，请先结束原连接".into());
+                return Err("backendText.m1a3aab95".into());
             }
             pending.expires = Instant::now() + Duration::from_secs(15);
             Ok(
-                json!({"state":if pending.session.status()?{"ready"}else{"pending"},"required":true,"message":"请在电脑上允许屏幕共享和键鼠控制"}),
+                json!({"state":if pending.session.status()?{"ready"}else{"pending"},"required":true,"message":"backendText.m6bf28c9b"}),
             )
         }
         #[cfg(not(target_os = "linux"))]
@@ -478,7 +478,7 @@ impl Worker {
                 Ok(json!(displays_for(portal.as_ref())?))
             }
             "remote_desktop_handoff" => {
-                let lease = self.lease.as_mut().ok_or("远控租约已结束，请重新连接")?;
+                let lease = self.lease.as_mut().ok_or("backendText.m93667b73")?;
                 handoff::call(lease, connection, args)
             }
             "remote_desktop_open" => {
@@ -487,24 +487,24 @@ impl Worker {
                 }
                 os::require_unlocked()?;
                 if self.lease.is_some() {
-                    return Err("电脑正在被远程查看或控制，请先结束原连接".into());
+                    return Err("backendText.m79a59e13".into());
                 }
                 let display = args["monitorId"]
                     .as_u64()
                     .and_then(|v| u32::try_from(v).ok())
-                    .ok_or("缺少显示器标识")?;
+                    .ok_or("backendText.m7163f001")?;
                 let portal = self.portal_for(&connection)?;
                 if !displays_for(portal.as_ref())?
                     .iter()
                     .any(|m| m.id == display)
                 {
-                    return Err("显示器已断开".into());
+                    return Err("backendText.m88561e63".into());
                 }
                 let control = args["control"].as_bool().unwrap_or(true);
                 #[cfg(target_os = "linux")]
                 if portal.is_some() && self.preparing.as_ref().is_none_or(|p| p.control != control)
                 {
-                    return Err("本次远控模式与电脑授权不一致，请重新连接".into());
+                    return Err("backendText.m8d62d8b1".into());
                 }
                 let liveness = handoff::Liveness::new(&connection);
                 #[cfg(target_os = "linux")]
@@ -554,7 +554,7 @@ impl Worker {
                         }
                     }
                     None if args["video"] == true => {
-                        (None, Some("当前连接不支持视频画面".to_string()), "")
+                        (None, Some("backendText.m19bd5019".to_string()), "")
                     }
                     None => (None, None, ""),
                 };
@@ -614,7 +614,7 @@ impl Worker {
             "remote_desktop_close" => {
                 if let Some(lease) = &self.lease {
                     if lease.owner.id != connection.id || args["leaseId"] != lease.id {
-                        return Err("远控租约不属于当前连接".into());
+                        return Err("backendText.m4e10a927".into());
                     }
                     self.lease = None;
                 }
@@ -627,19 +627,19 @@ impl Worker {
                     .lease
                     .as_mut()
                     .filter(|lease| lease.owner.id == connection.id && args["leaseId"] == lease.id)
-                    .ok_or("远控租约已结束，请重新连接")?;
+                    .ok_or("backendText.m93667b73")?;
                 lease.expires = Instant::now() + Duration::from_secs(15);
-                let video = lease.video.as_ref().ok_or("视频画面未开启")?;
+                let video = lease.video.as_ref().ok_or("backendText.m1cfa78dc")?;
                 if let Some(width) = args.get("targetWidth").and_then(Value::as_u64) {
-                    let width = u32::try_from(width).map_err(|_| "视频尺寸无效")?;
+                    let width = u32::try_from(width).map_err(|_| "backendText.mc168d9c6")?;
                     super::parse_sequence(args.get_mut("viewRequest"))?;
-                    let seq = args["viewRequest"].as_u64().ok_or("缺少视频配置请求序号")?;
-                    let instance = args["videoInstance"].as_str().ok_or("缺少视频实例身份")?;
+                    let seq = args["viewRequest"].as_u64().ok_or("backendText.m9d40b39a")?;
+                    let instance = args["videoInstance"].as_str().ok_or("backendText.m0ecc1f2a")?;
                     video.request_width(instance, seq, width)?;
                 }
                 if args["ready"] == true {
                     super::parse_sequence(args.get_mut("generation"))?;
-                    let generation = args["generation"].as_u64().ok_or("缺少视频代次")?;
+                    let generation = args["generation"].as_u64().ok_or("backendText.mb8b014f3")?;
                     if let Some(relay) = &lease.relay {
                         relay.activate(generation)?;
                     }
@@ -684,7 +684,7 @@ impl Worker {
                         };
                     os::require_unlocked()?;
                     if !lease.owner.alive() || Instant::now() >= lease.expires {
-                        return Err("远控租约已结束，请重新连接".into());
+                        return Err("backendText.m93667b73".into());
                     }
                 }
                 if let Some(relay) = &lease.relay {
@@ -701,14 +701,14 @@ impl Worker {
                     .lease
                     .as_mut()
                     .filter(|lease| lease.owner.id == connection.id && args["leaseId"] == lease.id)
-                    .ok_or("远控租约已结束，请重新连接")?;
+                    .ok_or("backendText.m93667b73")?;
                 lease.expires = Instant::now() + Duration::from_secs(15);
                 if method == "remote_desktop_frame"
                     && lease
                         .last_frame
                         .is_some_and(|last| last.elapsed() < MIN_FRAME_INTERVAL)
                 {
-                    return Err("画面请求过于频繁".into());
+                    return Err("backendText.m31001f63".into());
                 }
                 let result = (|| match method {
                     "remote_desktop_frame" => {
@@ -751,7 +751,7 @@ impl Worker {
                             // capture's final check; revalidate before returning.
                             os::require_unlocked()?;
                             if !lease.owner.alive() || Instant::now() >= lease.expires {
-                                return Err("远控租约已结束，请重新连接".into());
+                                return Err("backendText.m93667b73".into());
                             }
                         }
                         frame
@@ -760,12 +760,12 @@ impl Worker {
                         let display = args["monitorId"]
                             .as_u64()
                             .and_then(|v| u32::try_from(v).ok())
-                            .ok_or("显示器标识无效")?;
+                            .ok_or("backendText.mb55496ee")?;
                         if !displays_for(lease.portal.as_ref())?
                             .iter()
                             .any(|m| m.id == display)
                         {
-                            return Err("显示器已断开".into());
+                            return Err("backendText.m88561e63".into());
                         }
                         let capturer =
                             capturer_for(lease.portal.as_ref(), display, &lease.liveness)?;
@@ -809,16 +809,16 @@ impl Worker {
                         let sequence = args["sequence"]
                             .as_u64()
                             .filter(|seq| Some(*seq) == lease.sequence.checked_add(1))
-                            .ok_or("输入序号冲突，禁止重放键鼠操作")?;
+                            .ok_or("backendText.m82060f73")?;
                         let events = input_events(&args)?;
                         lease.sequence = sequence; // Consumed even if the OS reports an uncertain effect.
-                        let controller = lease.controller.as_mut().ok_or("当前连接为仅查看模式")?;
+                        let controller = lease.controller.as_mut().ok_or("backendText.mb84743f5")?;
                         let display = match &lease.capturer {
                             Some(capturer) => capturer.display.clone(),
                             None => displays_for(lease.portal.as_ref())?
                                 .into_iter()
                                 .find(|m| m.id == lease.display)
-                                .ok_or("显示器已断开")?,
+                                .ok_or("backendText.m88561e63")?,
                         };
                         // A slow native geometry reply must not turn an old
                         // gesture into a later action on a retired connection.
@@ -849,7 +849,7 @@ fn input_events(args: &Value) -> Result<Vec<os::Input>, String> {
         (Value::Null, Value::Array(events)) if (1..=MAX_INPUT_BATCH).contains(&events.len()) => {
             events.clone()
         }
-        _ => return Err("输入事件无效".into()),
+        _ => return Err("backendText.m1d17c3bf".into()),
     };
     raw.into_iter()
         .map(|event| serde_json::from_value(event).map_err(failure))

@@ -49,7 +49,7 @@ impl<T> Delivery<T> {
         if self.active.load(Ordering::Acquire) {
             Ok(())
         } else {
-            Err(self.error().unwrap_or_else(|| "采集请求已结束".into()))
+            Err(self.error().unwrap_or_else(|| "backendText.m939d4c98".into()))
         }
     }
     pub fn after_prepare<P, C>(
@@ -144,7 +144,7 @@ impl<T> Delivery<T> {
                 return result.clone();
             }
             if phase.stopped {
-                return Err(phase.error.clone().unwrap_or_else(|| "采集已结束".into()));
+                return Err(phase.error.clone().unwrap_or_else(|| "backendText.m5dcc32bb".into()));
             }
             phase = self.changed.wait(phase).unwrap_or_else(|e| e.into_inner());
         }
@@ -209,7 +209,7 @@ impl<T: Send + 'static> Capture<T> {
                 starting.check_active()?;
                 metadata
                     .try_send(info)
-                    .map_err(|_| "采集就绪接收者已结束")?;
+                    .map_err(|_| "backendText.ma09bcc07")?;
                 Ok(native)
             },
             process,
@@ -227,8 +227,8 @@ impl<T: Send + 'static> Capture<T> {
         let info = match received.try_recv() {
             Ok(info) => info,
             Err(_) => {
-                delivery.fail("采集未返回尺寸".into());
-                return Err("采集未返回尺寸".into());
+                delivery.fail("backendText.md1474398".into());
+                return Err("backendText.md1474398".into());
             }
         };
         delivery.check_active()?;
@@ -471,7 +471,7 @@ mod tests {
         let delivery = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
         capture.set_fps(20);
         let error = capture.error().expect("configuration timeout was hidden");
-        assert!(error.contains("采集"));
+        assert!(error.contains("backendText.m6a0ae77f"));
         assert!(weak.upgrade().is_none());
         let now = Instant::now();
         capture.stop();

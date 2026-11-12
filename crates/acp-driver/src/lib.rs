@@ -388,7 +388,7 @@ fn prompt_terminal(
             if is_grok && approval_rejected && !interrupt_requested =>
         {
             DriverEvent::TurnCompleted {
-                summary: "已拒绝工具操作，本轮已结束".into(),
+                summary: "backendText.me6fec589".into(),
             }
         }
         Ok(StopReason::EndTurn) => DriverEvent::TurnCompleted {
@@ -1025,7 +1025,7 @@ impl AcpDriver {
             permissions::cursor_catalog().validate(mode)?;
             if mode.is_some() && self.shared.turn_active.load(Ordering::Acquire) {
                 return Err(DriverError::CapabilityUnavailable(
-                    "请在 Cursor 空闲时切换权限策略".into(),
+                    "backendText.m4f7d6a04".into(),
                 ));
             }
         }
@@ -1044,7 +1044,7 @@ impl AcpDriver {
             })
         {
             return Err(DriverError::CapabilityUnavailable(
-                "当前会话运行中，无法重建 Agent 连接".into(),
+                "backendText.m6f5b290b".into(),
             ));
         }
         let force = if self.executor.provider_id.as_str() == "cursor" {
@@ -1109,7 +1109,7 @@ impl AcpDriver {
                 }
             })
             .await
-            .map_err(|_| DriverError::Disconnected("Agent 连接重建时旧进程未退出".into()))?;
+            .map_err(|_| DriverError::Disconnected("backendText.m2ea01aa8".into()))?;
             guard.take();
         }
         if let Some(existing) = guard.as_ref()
@@ -1774,7 +1774,7 @@ async fn handle_command(
                 return;
             }
             let result=async {
-                let directory=ProbeDirectory::create(&target).map_err(|_|DriverError::Protocol("无法创建权限探测目录".into()))?;
+                let directory=ProbeDirectory::create(&target).map_err(|_|DriverError::Protocol("backendText.mdafc565e".into()))?;
                 let state=models::session_request(&connection,"session/new",serde_json::json!({"cwd":workspace.as_deref().unwrap_or(directory.path()),"mcpServers":[]}),Some(&quota.stderr_tail)).await?;
                 Ok(permissions::catalog(&state))
             }.await;
@@ -1793,7 +1793,7 @@ async fn handle_command(
                 Ok(initial)
             } else {
                 async {
-                    let directory = ProbeDirectory::create(&target).map_err(|_| DriverError::Protocol("无法创建模型探测工作区".into()))?;
+                    let directory = ProbeDirectory::create(&target).map_err(|_| DriverError::Protocol("backendText.m5cba68ec".into()))?;
                     let mut state = models::session_request(&connection,"session/new",serde_json::json!({"cwd":workspace.as_deref().unwrap_or(directory.path()),"mcpServers":[]}),Some(&quota.stderr_tail)).await?;
                     let known = models::catalog(&state);
                     if let Some(model) = model {
@@ -1817,7 +1817,7 @@ async fn handle_command(
                 return;
             }
             let result = async {
-                let directory = ProbeDirectory::create(&target).map_err(|_| DriverError::Protocol("无法创建模型探测工作区".into()))?;
+                let directory = ProbeDirectory::create(&target).map_err(|_| DriverError::Protocol("backendText.m5cba68ec".into()))?;
                 let state = models::session_request(&connection,"session/new",serde_json::json!({"cwd":directory.path(),"mcpServers":[]}),Some(&quota.stderr_tail)).await?;
                 let mut catalog = models::catalog(&state);
                 let Some(config) = models::model_config(&state) else { return Ok(catalog) };
@@ -2077,7 +2077,7 @@ async fn handle_command(
                 && !supports_prompt_images(&initial_models, image_compatibility)
             {
                 let _ = reply.send(Err(DriverError::CapabilityUnavailable(
-                    "当前 Agent 未声明支持图片附件，请更新 Agent 后重试".into(),
+                    "backendText.m81eaaa50".into(),
                 )));
                 return;
             }
@@ -2248,7 +2248,7 @@ fn map_session_update(notification: &SessionNotification) -> Vec<DriverEvent> {
         SessionUpdate::ToolCall(call) => events.push(DriverEvent::ToolStarted {
             item_id: call.tool_call_id.0.to_string(),
             tool_name: call.title.clone(),
-            summary: format!("正在使用 {}", call.title),
+            summary: format!("backendText.m5741826f\u{1e}{}", serde_json::to_string(&[call.title.to_string()]).unwrap_or_else(|_| "[]".into())),
         }),
         SessionUpdate::ToolCallUpdate(update) => {
             if let Some(event) = map_tool_update(
@@ -2292,13 +2292,13 @@ fn map_tool_update(
         Some(ToolCallStatus::Completed) => Some(DriverEvent::ToolCompleted {
             item_id: tool_call_id.0.to_string(),
             tool_name: name,
-            summary: "工具调用已完成".into(),
+            summary: "backendText.m5ce35278".into(),
             success: true,
         }),
         Some(ToolCallStatus::Failed) => Some(DriverEvent::ToolCompleted {
             item_id: tool_call_id.0.to_string(),
             tool_name: name,
-            summary: "工具调用失败".into(),
+            summary: "backendText.md98de4d1".into(),
             success: false,
         }),
         Some(ToolCallStatus::Pending | ToolCallStatus::InProgress | _) | None => None,
@@ -2333,7 +2333,7 @@ fn supports_prompt_images(initial: &serde_json::Value, compatibility: bool) -> b
 /// The agent's own copy is a path on its machine, so this machine's path rules, which
 /// would refuse it on Windows, do not apply to it.
 fn attachment_uri(item: &agent_domain::PromptAttachment) -> Result<url::Url, DriverError> {
-    let invalid = || DriverError::CapabilityUnavailable("附件路径无效".into());
+    let invalid = || DriverError::CapabilityUnavailable("backendText.m6a586e00".into());
     let Some(delivered) = &item.delivered_path else {
         return url::Url::from_file_path(&item.path).map_err(|()| invalid());
     };
@@ -2363,7 +2363,7 @@ async fn attachment_blocks(
         };
         blocks.push(
             serde_json::from_value(value)
-                .map_err(|_| DriverError::Protocol("附件内容编码失败".into()))?,
+                .map_err(|_| DriverError::Protocol("backendText.mcd755857".into()))?,
         );
     }
     Ok(blocks)
@@ -2929,7 +2929,7 @@ impl AgentDriver for AcpDriver {
             Ok(if opencode && !observed_progress && matches!(event, DriverEvent::TurnCompleted { .. }) {
                 // OpenCode 1.15 can swallow native startup/database errors and
                 // return end_turn without a single agent event. Do not claim success.
-                DriverEvent::TurnFailed { reason: "OpenCode 未返回任何内容或工具活动，无法确认任务完成。请在原生客户端检查运行状态和日志后重试。".into() }
+                DriverEvent::TurnFailed { reason: "backendText.m62852aaf".into() }
             } else { event })
         }));
         Ok(stream)
@@ -3331,7 +3331,7 @@ impl AcpDriver {
         )
         .await
         .map_err(|_| {
-            DriverError::CapabilityUnavailable("上一项账户额度查询仍在结束，请稍后重试".into())
+            DriverError::CapabilityUnavailable("backendText.m0cbc0eba".into())
         })?;
         let executable = &self.shared.launch.executable;
         let payload = if executable.target.is_local() {
@@ -3374,6 +3374,7 @@ impl AcpDriver {
             source: "native_push".into(),
             confidence: "provider_reported".into(),
             parser_version: "acp-usage-update-v1".into(),
+            ..Default::default()
         })
     }
 }
@@ -3452,9 +3453,9 @@ impl QuotaProvider for AcpDriver {
         if usage.request_usage.is_none() {
             usage.request_usage = Some(driver_api::usage::RequestUsageReport::unavailable(
                 match self.executor.provider_id.as_str() {
-                    "kiro" => "原生仅提供 Credits 摘要，未确认逐请求 token",
-                    "cursor" => "原生 ACP 未提供逐请求用量",
-                    _ => "尚未取得当前原生会话的逐请求用量",
+                    "kiro" => "backendText.mfeebe28d",
+                    "cursor" => "backendText.mecf100f9",
+                    _ => "backendText.maa1a419b",
                 },
             ));
         }
@@ -3505,7 +3506,7 @@ impl QuotaProvider for AcpDriver {
         let result = tokio::time::timeout(std::time::Duration::from_secs(27), async {
             if self.executor.provider_id.as_str() == "kiro" {
                 let payload = self
-                    .isolated_query("账户额度", None, |reply| Command::ReadKiroUsage {
+                    .isolated_query("backendText.m3c8ac36b", None, |reply| Command::ReadKiroUsage {
                         reply,
                     })
                     .await?;
@@ -3523,7 +3524,7 @@ impl QuotaProvider for AcpDriver {
                     )
                 } else {
                     let read_once = || {
-                        self.isolated_query("账户额度", None, |reply| {
+                        self.isolated_query("backendText.m3c8ac36b", None, |reply| {
                             Command::ReadGrokBilling { reply }
                         })
                     };
@@ -3555,6 +3556,7 @@ impl QuotaProvider for AcpDriver {
                 source: "native_pull".into(),
                 confidence: "provider_reported".into(),
                 parser_version: parser_version.into(),
+                ..Default::default()
             })
         })
         .await
@@ -3600,7 +3602,7 @@ mod tests {
         for stop in [super::StopReason::Cancelled, super::StopReason::Refusal] {
             assert!(
                 matches!(super::prompt_terminal(Ok(stop), true, true, false),
-                super::DriverEvent::TurnCompleted { summary } if summary == "已拒绝工具操作，本轮已结束")
+                super::DriverEvent::TurnCompleted { summary } if summary == "backendText.me6fec589")
             );
         }
     }
@@ -3856,7 +3858,7 @@ mod tests {
                         models::session_request(&connection, "session/new", params.clone(), Some(&quota.stderr_tail)).await.unwrap();
                         assert!(matches!(
                             models::session_request(&connection, "session/new", params, Some(&quota.stderr_tail)).await,
-                            Err(DriverError::Protocol(message)) if message == "Agent 无法创建或恢复会话"
+                            Err(DriverError::Protocol(message)) if message == "backendText.medaa6b1f"
                         ));
                         let states = Arc::new(std::sync::Mutex::new(session_state::SessionStates::default()));
                         for turn in 0..2 {
@@ -3956,6 +3958,7 @@ mod tests {
             source: "native_pull".into(),
             confidence: "provider_reported".into(),
             parser_version: "test".into(),
+            ..Default::default()
         });
         assert!(state.account_snapshot(Some("b")).unwrap().context.is_none());
         assert_eq!(

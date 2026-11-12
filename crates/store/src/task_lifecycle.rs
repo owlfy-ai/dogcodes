@@ -49,7 +49,7 @@ pub(super) fn validate_append(
             || request.expected_stream_version.is_none())
     {
         return Err(RepositoryError::Unavailable(
-            "会话删除或恢复必须是独立的版本化操作".into(),
+            "backendText.m72c35e74".into(),
         ));
     }
     if deleted && event.event_type != "task.restored" {

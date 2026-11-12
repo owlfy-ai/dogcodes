@@ -502,7 +502,7 @@ impl RunningOperation {
     pub async fn next_event(&mut self, facts: &dyn ReviewFacts) -> Result<Value, String> {
         match self.advance(facts).await? {
             Step::Event(event) => Ok(event),
-            Step::Done(_) => Err("目录监听已结束".to_owned()),
+            Step::Done(_) => Err("backendText.mb2c29046".to_owned()),
         }
     }
 

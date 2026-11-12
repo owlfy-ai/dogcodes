@@ -195,6 +195,7 @@ export const ko: TranslationDict = {
     "diskFull": "디스크 공간이 부족합니다. 공간을 확보한 후 다시 시도하세요.",
     "activeConversation": "현재 대화가 끝난 후 Agent를 다시 검색하세요.",
       "nativeUpdater": "기본 업데이트 도구",
+    "npxInstall": "(현재 npx)",
     "onDemandOn": "사용량 기반 결제 활성화됨",
     "onDemandOff": "사용량 기반 결제 비활성화됨",
     "bonusQuota": "추가 보너스 한도 있음",

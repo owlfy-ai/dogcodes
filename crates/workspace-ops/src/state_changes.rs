@@ -29,7 +29,7 @@ impl Changes {
             .slots
             .clone()
             .try_acquire_owned()
-            .map_err(|_| "状态订阅数量已达上限，请关闭不使用的视图")?;
+            .map_err(|_| "backendText.m8ab68369")?;
         Ok(Subscription {
             receiver: self.version.subscribe(),
             initial: true,
@@ -56,7 +56,7 @@ impl Subscription {
         }
         match tokio::time::timeout(Duration::from_secs(15), self.receiver.changed()).await {
             Ok(result) => {
-                result.map_err(|_| "后台状态订阅已关闭")?;
+                result.map_err(|_| "backendText.m6a33073c")?;
                 Ok(WatchMessage::Invalidated)
             }
             Err(_) => Ok(WatchMessage::Heartbeat),

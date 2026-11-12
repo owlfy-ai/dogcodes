@@ -34,16 +34,16 @@ fn selected_changes(
     action: &BatchFileAction,
 ) -> Result<Vec<FileChange>, String> {
     if paths.is_empty() || paths.len() > 2000 {
-        return Err("请选择 1 至 2000 个文件".into());
+        return Err("backendText.m7b62ad72".into());
     }
     if result.error.is_some() {
-        return Err("目录比较不可用，请刷新".into());
+        return Err("backendText.ma469fa41".into());
     }
     if !matches!(
         result.mode,
         CompareMode::Uncommitted | CompareMode::Unstaged | CompareMode::Session
     ) {
-        return Err("当前比较范围不支持此操作".into());
+        return Err("backendText.mfc3fefd8".into());
     }
     let mut changes = Vec::new();
     for path in paths.iter().collect::<BTreeSet<_>>() {
@@ -51,13 +51,13 @@ fn selected_changes(
             .files
             .iter()
             .find(|change| &change.path == path)
-            .ok_or("文件不在此比较中")?;
+            .ok_or("backendText.mb800c3e3")?;
         for path in std::iter::once(&change.path).chain(change.previous_path.iter()) {
             agent_workspace::review::validate_relative(path)?;
             if !result.root.scopes.iter().any(|scope| {
                 scope.is_empty() || path == scope || path.starts_with(&format!("{scope}/"))
             }) {
-                return Err("文件不在当前项目范围内".into());
+                return Err("backendText.ma933526e".into());
             }
         }
         match action {
@@ -66,7 +66,7 @@ fn selected_changes(
                     || !result.untracked.contains(path)
                     || change.previous_path.is_some() =>
             {
-                return Err("只能将未跟踪文件加入 .gitignore，请先移除已跟踪文件的选择".into());
+                return Err("backendText.m8b82e11b".into());
             }
             BatchFileAction::Discard
                 if change
@@ -75,7 +75,7 @@ fn selected_changes(
                     .chain(change.after.iter())
                     .any(|version| version.kind == FileKind::Gitlink) =>
             {
-                return Err("子模块不支持丢弃工作文件".into());
+                return Err("backendText.m30d0802c".into());
             }
             _ => {}
         }
@@ -96,7 +96,7 @@ async fn discard_selected(
         let comparison = result
             .git_comparison
             .as_ref()
-            .ok_or("写入预览已失效，请刷新")?;
+            .ok_or("backendText.md14cf93d")?;
         service.check_working_preview(comparison, &store).await?;
         for change in &mut changes {
             change.before = service
@@ -114,7 +114,7 @@ async fn discard_selected(
         ReviewStore::open(directory)?.discard_changes(&task, Path::new(&root), &changes)
     })
     .await
-    .map_err(|_| "文件操作中断，请刷新检查；已准备的备份保留在恢复记录中")?
+    .map_err(|_| "backendText.meca147d3")?
 }
 
 pub(super) async fn execute(
@@ -122,7 +122,7 @@ pub(super) async fn execute(
     request: BatchFileRequest,
 ) -> Result<FileBatchResult, String> {
     if matches!(request.action, BatchFileAction::Discard) && !request.confirmed {
-        return Err("批量丢弃修改需要明确确认".into());
+        return Err("backendText.m5a33a6f9".into());
     }
     let _access = state.core.try_workspace_mutation().await?;
     let result = state
@@ -139,22 +139,22 @@ pub(super) async fn execute(
                 .find(|root| root.root.id == request.root_id)
         })
         .cloned()
-        .ok_or("比较已过期，请刷新")?;
+        .ok_or("backendText.m4f71804e")?;
     let current = roots(state.core, &request.task_id)
         .await?
         .into_iter()
         .find(|root| root.id == request.root_id)
-        .ok_or("项目目录已改变")?;
+        .ok_or("backendText.mbf11a90f")?;
     if current.path != result.root.path
         || current.scopes != result.root.scopes
         || current.git != result.root.git
     {
-        return Err("项目目录范围已改变，请刷新".into());
+        return Err("backendText.m8aa1b66e".into());
     }
     if state.core.bootstrap().await?.tasks.iter().any(|task| {
         task.task_id.to_string() == request.task_id && task.active_primary_run.is_some()
     }) {
-        return Err("Agent 正在运行，请等待结束后操作".into());
+        return Err("backendText.maceaefab".into());
     }
     let changes = selected_changes(&result, &request.paths, &request.action)?;
     let outcome = match request.action {

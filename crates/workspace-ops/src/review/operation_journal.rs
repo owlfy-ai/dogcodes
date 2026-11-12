@@ -80,10 +80,10 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
         self
     }
     pub(super) fn file(&self, task: &str, operation: &str) -> Result<PathBuf, String> {
-        agent_domain::TaskId::parse(task).map_err(|_| "无效的会话标识")?;
-        let id = uuid::Uuid::parse_str(operation).map_err(|_| "无效的操作标识")?;
+        agent_domain::TaskId::parse(task).map_err(|_| "backendText.mcb03be95")?;
+        let id = uuid::Uuid::parse_str(operation).map_err(|_| "backendText.mb67174da")?;
         if id.to_string() != operation {
-            return Err("无效的操作标识".into());
+            return Err("backendText.mb67174da".into());
         }
         Ok(self.directory.join(task).join(format!("{operation}.json")))
     }
@@ -100,25 +100,25 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
         let file = match std::fs::File::open(file) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(format!("无法读取操作记录：{error}")),
+            Err(error) => return Err(format!("backendText.m343bd1c8\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))),
         };
         let mut bytes = Vec::new();
         file.take(limit.map_or(u64::MAX, |limit| limit as u64 + 1))
             .read_to_end(&mut bytes)
-            .map_err(|error| format!("无法读取操作记录：{error}"))?;
+            .map_err(|error| format!("backendText.m343bd1c8\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?;
         if limit.is_some_and(|limit| bytes.len() > limit) {
-            return Err("记录较大，请单独查看详情".into());
+            return Err("backendText.m43fa3a33".into());
         }
         let receipt: OperationReceipt<R, O> =
-            serde_json::from_slice(&bytes).map_err(|_| "操作记录损坏，不能重发此操作")?;
+            serde_json::from_slice(&bytes).map_err(|_| "backendText.md8d1b808")?;
         if receipt.request.task_id() != task || receipt.request.operation_id() != operation {
-            return Err("操作记录归属不匹配".into());
+            return Err("backendText.me588fafa".into());
         }
         Ok(Some(receipt))
     }
     fn persist(&self, receipt: &OperationReceipt<R, O>) -> Result<(), String> {
         let path = self.file(receipt.request.task_id(), receipt.request.operation_id())?;
-        let directory = path.parent().ok_or("操作记录目录无效")?;
+        let directory = path.parent().ok_or("backendText.mc6224aa0")?;
         std::fs::create_dir_all(directory).map_err(|e| e.to_string())?;
         let mut file = tempfile::NamedTempFile::new_in(directory).map_err(|e| e.to_string())?;
         file.write_all(&serde_json::to_vec(receipt).map_err(|e| e.to_string())?)
@@ -151,13 +151,13 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
         if self
             .uncertain
             .lock()
-            .map_err(|_| "操作记录不可用")?
+            .map_err(|_| "backendText.m11b36aed")?
             .contains(&id)
             || (receipt.outcome.is_running()
                 && !self
                     .active
                     .lock()
-                    .map_err(|_| "操作记录不可用")?
+                    .map_err(|_| "backendText.m11b36aed")?
                     .contains(&id))
         {
             receipt.outcome = O::unknown();
@@ -169,17 +169,17 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
         task: &str,
         operation: &str,
     ) -> Result<Option<OperationReceipt<R, O>>, String> {
-        let _gate = self.gate.lock().map_err(|_| "操作记录不可用")?;
+        let _gate = self.gate.lock().map_err(|_| "backendText.m11b36aed")?;
         self.read(task, operation)?
             .map(|receipt| self.visible(receipt))
             .transpose()
     }
     /// Idempotent tracking closure. It never changes the recorded action result.
     pub fn close(&self, task: &str, operation: &str) -> Result<OperationReceipt<R, O>, String> {
-        let _gate = self.gate.lock().map_err(|_| "操作记录不可用")?;
+        let _gate = self.gate.lock().map_err(|_| "backendText.m11b36aed")?;
         let mut receipt = self
             .read(task, operation)?
-            .ok_or("原操作记录不存在，请先核实")?;
+            .ok_or("backendText.mfab7b848")?;
         if !receipt.closed {
             receipt.closed = true;
             self.persist(&receipt)?;
@@ -195,9 +195,9 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
         after: Option<&str>,
         limit: usize,
     ) -> Result<JournalPage<R, O>, String> {
-        agent_domain::TaskId::parse(task).map_err(|_| "无效的会话标识")?;
+        agent_domain::TaskId::parse(task).map_err(|_| "backendText.mcb03be95")?;
         if !(1..=50).contains(&limit) {
-            return Err("每页操作记录数量须为 1 至 50".into());
+            return Err("backendText.m85515fa9".into());
         }
         if let Some(cursor) = after {
             self.file(task, cursor)?;
@@ -210,11 +210,11 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
                     next_cursor: None,
                 });
             }
-            Err(error) => return Err(format!("无法读取操作记录目录：{error}")),
+            Err(error) => return Err(format!("backendText.m30d3294c\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))),
         };
         let mut ids = BTreeSet::new();
         for entry in directory {
-            let entry = entry.map_err(|error| format!("无法枚举操作记录：{error}"))?;
+            let entry = entry.map_err(|error| format!("backendText.mf200ec05\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?;
             let name = entry.file_name();
             let Some(id) = name.to_str().and_then(|name| name.strip_suffix(".json")) else {
                 continue;
@@ -222,7 +222,7 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
             // Temporary files are not published operation records. Invalid JSON
             // record names indicate storage damage rather than an empty history.
             self.file(task, id)
-                .map_err(|_| "操作记录文件名损坏，请检查后台存储")?;
+                .map_err(|_| "backendText.m63983086")?;
             if after.is_some_and(|cursor| id <= cursor) {
                 continue;
             }
@@ -239,19 +239,19 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
         let mut entries = Vec::with_capacity(ids.len());
         for id in ids {
             let result = (|| {
-                let _gate = self.gate.lock().map_err(|_| "操作记录不可用")?;
+                let _gate = self.gate.lock().map_err(|_| "backendText.m11b36aed")?;
                 let path = self.file(task, &id)?;
                 let metadata = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
                 if !metadata.is_file() {
-                    return Err("操作记录不是普通文件".into());
+                    return Err("backendText.m1b86e648".into());
                 }
                 // A single full receipt remains queryable by ID. Listing does not
                 // allocate unbounded payloads or silently drop oversized entries.
                 if metadata.len() > 256 * 1024 {
-                    return Err("记录较大，请单独查看详情".into());
+                    return Err("backendText.m43fa3a33".into());
                 }
                 self.read_with_limit(task, &id, Some(256 * 1024))?
-                    .ok_or_else(|| "记录已改变，请刷新".to_owned())
+                    .ok_or_else(|| "backendText.m93592ae0".to_owned())
                     .and_then(|receipt| self.visible(receipt))
             })();
             entries.push(match result {
@@ -283,18 +283,18 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
             closed: false,
         };
         let active = {
-            let _gate = self.gate.lock().map_err(|_| "操作记录不可用")?;
+            let _gate = self.gate.lock().map_err(|_| "backendText.m11b36aed")?;
             if let Some(previous) =
                 self.read(receipt.request.task_id(), receipt.request.operation_id())?
             {
                 if previous.request != receipt.request {
-                    return Err("操作标识已用于不同请求，请核实原操作".into());
+                    return Err("backendText.m57a0a3ba".into());
                 }
                 return self.visible(previous)?.outcome.result();
             }
             // Never start an action if the durable intent cannot be confirmed.
             if let Err(error) = self.persist(&receipt) {
-                return Err(format!("保存操作记录失败，未启动操作：{error}"));
+                return Err(format!("backendText.mc3d6a2e2\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
             }
             let id = format!(
                 "{}/{}",
@@ -303,38 +303,36 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
             );
             self.active
                 .lock()
-                .map_err(|_| "操作记录不可用")?
+                .map_err(|_| "backendText.m11b36aed")?
                 .insert(id.clone());
             Active(self.active.clone(), id, self.changes.clone())
         };
         let result = action().await;
         receipt.outcome = O::from_result(&result);
         {
-            let _gate = self.gate.lock().map_err(|_| "操作记录不可用")?;
+            let _gate = self.gate.lock().map_err(|_| "backendText.m11b36aed")?;
             if let Err(error) = self.persist(&receipt) {
                 self.uncertain
                     .lock()
-                    .map_err(|_| "操作记录不可用")?
+                    .map_err(|_| "backendText.m11b36aed")?
                     .insert(format!(
                         "{}/{}",
                         receipt.request.task_id(),
                         receipt.request.operation_id()
                     ));
-                return Err(format!(
-                    "操作已返回，但保存结果失败；请核实仓库，未重发操作：{error}"
-                ));
+                return Err(format!("backendText.mefdff2d9\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
             }
         }
         drop(active);
         result
     }
     pub fn forget_task(&self, task: &str) -> Result<(), String> {
-        agent_domain::TaskId::parse(task).map_err(|_| "无效的会话标识")?;
-        let _gate = self.gate.lock().map_err(|_| "操作记录不可用")?;
+        agent_domain::TaskId::parse(task).map_err(|_| "backendText.mcb03be95")?;
+        let _gate = self.gate.lock().map_err(|_| "backendText.m11b36aed")?;
         match std::fs::remove_dir_all(self.directory.join(task)) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(format!("清理操作记录失败：{error}")),
+            Err(error) => Err(format!("backendText.m0f5bda63\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))),
         }
     }
 }

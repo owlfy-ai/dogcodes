@@ -212,7 +212,7 @@ async fn startup_timeout_keeps_the_original_future_assets_and_late_session_clean
             .await
             .err()
             .unwrap()
-            .contains("启动尚未确认")
+            .contains("backendText.m6c20f455")
     );
     assert_eq!(driver.creates.load(Ordering::Acquire), 1);
     assert_eq!(flags.pending.load(Ordering::Acquire), 1);
@@ -279,7 +279,7 @@ async fn startup_panic_without_an_identity_keeps_assets_unknown_instead_of_claim
             .await
             .err()
             .unwrap()
-            .contains("启动尚未确认")
+            .contains("backendText.m6c20f455")
     );
     assert_eq!(flags.pending.load(Ordering::Acquire), 1);
     assert!(!flags.released.load(Ordering::Acquire));
@@ -299,7 +299,7 @@ async fn cleanup_uses_the_previously_captured_proof_and_keeps_assets_after_obser
         .unwrap();
     driver.proof_available.store(false, Ordering::Release);
     let cleanup = session.cleanup(false).unwrap();
-    assert!(cleanup.await.unwrap().unwrap_err().contains("关闭尚未确认"));
+    assert!(cleanup.await.unwrap().unwrap_err().contains("backendText.mfd1e8505"));
     drop(session);
     assert_eq!(flags.pending.load(Ordering::Acquire), 1);
     assert!(!flags.released.load(Ordering::Acquire));
@@ -404,7 +404,7 @@ async fn a_completed_summary_cannot_hide_unconfirmed_cleanup_or_release_its_asse
         Some(lifetime),
     )
     .await;
-    assert!(result.unwrap_err().contains("关闭尚未确认"));
+    assert!(result.unwrap_err().contains("backendText.m8bf8f125"));
     assert!(!flags.released.load(Ordering::Acquire));
     assert!(directory(&driver).is_dir());
     assert_eq!(driver.interrupts.load(Ordering::Acquire), 0);

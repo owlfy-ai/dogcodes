@@ -750,7 +750,7 @@ impl WorkspaceContextProvider for GitWorkspaceContextProvider {
             review::ReviewStore::try_open_maintenance(directory)?.delete_task_data(&task)
         })
         .await
-        .map_err(|_| "快照清理任务失败".to_string())?
+        .map_err(|_| "backendText.mf9c3149e".to_string())?
     }
 
     async fn validate_workspace_roots(

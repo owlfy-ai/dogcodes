@@ -17,13 +17,6 @@ const REMOTE_SOURCES = [
   "crates/agent-management/src/updates.rs", "crates/agent-management/src/updates/codex_host.rs", "crates/agent-management/src/updates/electron_host.rs",
   "crates/agent-management/src/updates/kiro.rs", "crates/agent-management/src/updates/managed_cli.rs", "crates/agent-management/src/updates/new_agents.rs",
 ];
-// Update sources are translated word by word by `localizedUpdateSource`, and approval options by their role.
-const TRANSLATED_ELSEWHERE = new Set([
-  "Kiro CLI 原生更新器", "Kiro 原生更新器", "Pi 原生更新器", "Grok 原生更新器", "Claude 原生更新器", "Kimi 原生更新器", "OpenCode 原生更新器",
-  "外部安装", "桌面应用", "ZCode 桌面应用", "npm（当前 npx 安装）", "Codex 桌面应用 · 官方更新源", "允许一次", "拒绝",
-  "更新命令未成功（退出码 {}），请检查网络和安装权限后重试", "未知", "桌面应用已是最新版本", "电脑",
-]);
-
 const coded = (code: string, ...params: string[]) => params.length ? `${code}\u001e${JSON.stringify(params)}` : code;
 
 describe("backend text localization", () => {
@@ -32,7 +25,7 @@ describe("backend text localization", () => {
     const missing = REMOTE_SOURCES.flatMap(source => readFileSync(join(root, source), "utf8").split("#[cfg(test)]")[0].split("\n")
       .filter(line => !line.trim().startsWith("//"))
       .flatMap(line => [...line.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map(match => match[1]))
-      .filter(text => /\p{Script=Han}/u.test(text) && !TRANSLATED_ELSEWHERE.has(text))
+      .filter(text => /\p{Script=Han}/u.test(text))
       .map(text => `${source}: ${text}`));
     expect(missing).toEqual([]);
   });
@@ -93,5 +86,16 @@ describe("backend text localization", () => {
     }
     expect(userFacingError("某个没有映射的后端错误", "fallback")).toBe("某个没有映射的后端错误");
     expect(userFacingError("phone.unconnected", "fallback")).toBe("手机配对连接未完成，请核实或重新生成邀请。");
+  });
+
+  it("translates permission, missing-export and redacted push details", () => {
+    expect(localizeBackendText("backendText.permissionModeUnconfirmed", "zh-CN")).toBe("Agent 未确认权限模式");
+    expect(localizeBackendText("backendText.permissionModeUnconfirmed", "en")).toBe("The agent did not confirm the permission mode.");
+    expect(displayBackendText("driver protocol error: backendText.permissionModeUnconfirmed", "en")).toBe("driver protocol error: The agent did not confirm the permission mode.");
+    expect(localizeBackendText(coded("backendText.m1e65d465", coded("backendText.missingSymbol", "MFStartup")), "zh-CN")).toBe("Windows 系统视频编码不可用：缺少 MFStartup");
+    expect(localizeBackendText(coded("backendText.m1e65d465", coded("backendText.missingSymbol", "MFStartup")), "en")).toContain("Missing MFStartup");
+    const pushed = localizeBackendText(coded("backendText.m2b08f8cc", "0", "1", "fatal: backendText.pushAddress"), "zh-CN");
+    expect(pushed).toContain("[推送地址]");
+    expect(pushed).not.toContain("backendText.pushAddress");
   });
 });

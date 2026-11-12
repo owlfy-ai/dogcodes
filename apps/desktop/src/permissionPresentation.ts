@@ -58,8 +58,8 @@ export function permissionKind(providerId: string, mode?: Mode): PermissionKind 
   return known(providerId, mode)?.[0] ?? nativeKinds[mode.id] ?? (mode.dangerous ? "bypass" : "configured");
 }
 
-// Catalogs the core builds carry Chinese text; known modes are translated and
-// modes agents report natively keep their own text.
+// Known modes are translated by id. A mode an agent reports itself keeps that
+// agent's own text.
 export function permissionPresentation(providerId: string, mode: Mode): Mode {
   const entry = known(providerId, mode);
   if (!entry) return mode;

@@ -2,8 +2,6 @@
 use super::{
     Agent, ConnectionTo, DriverError, QuotaSnapshot, QuotaWindow, map_session_error, now_unix_ms,
 };
-use std::fmt::Write;
-
 pub(super) async fn read(
     connection: &ConnectionTo<Agent>,
 ) -> Result<serde_json::Value, DriverError> {
@@ -47,33 +45,28 @@ pub(super) fn parse(payload: &serde_json::Value) -> Result<QuotaSnapshot, Driver
         .ok_or_else(invalid)?;
     // Native `percentage` is rounded to whole numbers; derive from exact usage.
     let used_percent = (used / limit * 100.0).clamp(0.0, 100.0);
-    let mut plan = data["planName"].as_str().unwrap_or("Kiro").to_owned();
+    let plan = data["planName"].as_str().unwrap_or("Kiro").to_owned();
     let reset = data["billingCycleReset"].as_str();
     let resets_at_unix = reset.and_then(super::parse_iso8601_unix);
-    if let Some(date) = reset.filter(|_| resets_at_unix.is_none())
-        && chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok()
-    {
-        // A date alone has no timezone/time-of-day. Keep it for display without
-        // inventing a reset timestamp that could expire the reading too soon.
-        let _ = write!(plan, " · 重置 {date}（原生日期）");
-    }
-    if data["overagesEnabled"] == true {
-        plan.push_str(" · 按量付费已开启");
-    }
-    for (key, label) in [
-        ("bonusCredits", "另有赠送额度"),
-        ("addOnCredits", "另有加购额度"),
-    ] {
-        if data[key].as_array().is_some_and(|items| !items.is_empty()) {
-            let _ = write!(plan, " · {label}");
-        }
-    }
+    // A date alone has no timezone or time of day. Keep it for display without
+    // inventing a reset timestamp that could expire the reading too soon.
+    let native_reset_on = reset
+        .filter(|_| resets_at_unix.is_none())
+        .filter(|date| chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok())
+        .map(str::to_owned);
+    let on_demand = (data["overagesEnabled"] == true).then_some(true);
+    let bonus_quota = data["bonusCredits"]
+        .as_array()
+        .is_some_and(|items| !items.is_empty());
+    let purchased_quota = data["addOnCredits"]
+        .as_array()
+        .is_some_and(|items| !items.is_empty());
     let now = now_unix_ms();
     Ok(QuotaSnapshot {
         balances: Vec::new(),
         session_usage: None,
         windows: vec![QuotaWindow {
-            scope: Some("套餐内（Kiro）".into()),
+            scope: Some("included".into()),
             id: "kiro-included".into(),
             window_minutes: 0,
             used_percent: Some(used_percent),
@@ -81,6 +74,10 @@ pub(super) fn parse(payload: &serde_json::Value) -> Result<QuotaSnapshot, Driver
         }],
         context: None,
         plan_type: Some(plan),
+        native_reset_on,
+        on_demand,
+        bonus_quota,
+        purchased_quota,
         collected_at_unix_ms: now,
         stale_after_unix_ms: now.saturating_add(30_000),
         source: "native_pull".into(),
@@ -104,12 +101,11 @@ mod tests {
     fn exact_usage_and_native_date_are_preserved_without_inventing_a_hard_limit() {
         let snapshot = parse(&fixture()).unwrap();
         assert_eq!(snapshot.windows[0].used_percent, Some(0.16));
-        assert_eq!(snapshot.windows[0].scope.as_deref(), Some("套餐内（Kiro）"));
+        assert_eq!(snapshot.windows[0].scope.as_deref(), Some("included"));
         assert_eq!(snapshot.windows[0].resets_at_unix, None);
-        assert_eq!(
-            snapshot.plan_type.as_deref(),
-            Some("KIRO FREE · 重置 2026-10-01（原生日期）")
-        );
+        assert_eq!(snapshot.plan_type.as_deref(), Some("KIRO FREE"));
+        assert_eq!(snapshot.native_reset_on.as_deref(), Some("2026-10-01"));
+        assert_eq!(snapshot.on_demand, None);
         assert_eq!(
             snapshot.stale_after_unix_ms - snapshot.collected_at_unix_ms,
             30_000
@@ -128,10 +124,11 @@ mod tests {
         assert_eq!(snapshot.windows[0].used_percent, Some(100.0));
         assert!(snapshot.windows[0].scope.is_some());
         assert!(snapshot.windows[0].resets_at_unix.is_some());
-        let plan = snapshot.plan_type.unwrap();
-        for label in ["按量付费已开启", "另有赠送额度", "另有加购额度"] {
-            assert!(plan.contains(label));
-        }
+        assert_eq!(snapshot.plan_type.as_deref(), Some("KIRO FREE"));
+        assert_eq!(snapshot.native_reset_on, None);
+        assert_eq!(snapshot.on_demand, Some(true));
+        assert!(snapshot.bonus_quota);
+        assert!(snapshot.purchased_quota);
     }
 
     #[test]

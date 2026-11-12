@@ -114,7 +114,7 @@ pub(super) async fn snapshot_lease(
     cache
         .get(&request.snapshot_id)
         .filter(|snapshot| snapshot.task_id == request.task_id)
-        .ok_or("比较结果已过期，请刷新")?;
+        .ok_or("backendText.md9b1193f")?;
     state
         .review
         .leases
@@ -135,7 +135,7 @@ pub(super) async fn file(
         .await?
         .into_iter()
         .find(|root| root.id == root_id)
-        .ok_or("项目目录已改变，请刷新")?;
+        .ok_or("backendText.mb3a29250")?;
     let store = ReviewStore::open(state.review.directory.clone())?;
     let change = state
         .review
@@ -150,9 +150,9 @@ pub(super) async fn file(
             .get(&snapshot_id)
             .filter(|s| s.task_id == task_id)
             .and_then(|s| s.roots.iter().find(|r| r.root.id == root_id))
-            .ok_or("比较结果已过期，请刷新")?;
+            .ok_or("backendText.md9b1193f")?;
         if root.root.path != current_root.path || root.root.scopes != current_root.scopes {
-            return Err("项目目录范围已改变，请刷新".into());
+            return Err("backendText.m8aa1b66e".into());
         }
         if let Some(error) = root.statistics.get(&path).and_then(|s| s.error.as_ref()) {
             return Err(error.clone());
@@ -165,7 +165,7 @@ pub(super) async fn file(
             let before_image = image_preview(&store, change.before.as_ref(), &path)?;
             let after_image = image_preview(&store, change.after.as_ref(), &path)?;
             if !binary && before_image.is_none() && after_image.is_none() {
-                return Err("图片超过 20 MB，暂不支持预览".into());
+                return Err("backendText.m8ff31036".into());
             }
             return Ok(ReviewFile {
                 text: None,
@@ -175,7 +175,7 @@ pub(super) async fn file(
             });
         }
         let (before, after) = read_text(&store, &change)?;
-        let plan = plan.ok_or("冻结的文本统计不可用，请刷新")?;
+        let plan = plan.ok_or("backendText.maf317991")?;
         let text = TextComparison {
             before: before.split_inclusive('\n').map(str::to_owned).collect(),
             after: after.split_inclusive('\n').map(str::to_owned).collect(),
@@ -241,15 +241,15 @@ pub(super) async fn index(
             .filter(|s| s.task_id == task_id)
             .and_then(|s| s.roots.iter().find(|r| r.root.id == root_id))
             .and_then(|r| r.git_comparison.clone())
-            .ok_or("比较已过期或不是 Git 目录，请刷新")?
+            .ok_or("backendText.m184ba3f0")?
     };
     let current_root = roots(state.core, &task_id)
         .await?
         .into_iter()
         .find(|r| r.id == root_id)
-        .ok_or("项目目录已改变")?;
+        .ok_or("backendText.mbf11a90f")?;
     if current_root.path != expected.root.path || current_root.scopes != expected.root.scopes {
-        return Err("项目目录范围已改变，请刷新".into());
+        return Err("backendText.m8aa1b66e".into());
     }
     let metadata = state.core.bootstrap().await?;
     if metadata
@@ -257,7 +257,7 @@ pub(super) async fn index(
         .iter()
         .any(|t| t.task_id.to_string() == task_id && t.active_primary_run.is_some())
     {
-        return Err("Agent 正在运行，请等待结束后操作索引".into());
+        return Err("backendText.m50462e72".into());
     }
     let action = match action {
         IndexAction::Stage => agent_workspace::review::git::operations::IndexAction::Stage,
@@ -289,7 +289,7 @@ pub(super) async fn discard(
     request: DiscardRequest,
 ) -> Result<String, String> {
     if !request.confirmed {
-        return Err("丢弃修改需要明确确认".into());
+        return Err("backendText.mc307421a".into());
     }
     let _access = state.core.try_workspace_mutation().await?;
     let result = {
@@ -303,33 +303,33 @@ pub(super) async fn discard(
             .filter(|s| s.task_id == request.task_id)
             .and_then(|s| s.roots.iter().find(|r| r.root.id == request.root_id))
             .cloned()
-            .ok_or("比较已过期，请刷新")?
+            .ok_or("backendText.m4f71804e")?
     };
     if !matches!(
         result.mode,
         CompareMode::Uncommitted | CompareMode::Unstaged | CompareMode::Session
     ) {
-        return Err("历史或暂存区视图不能丢弃工作文件".into());
+        return Err("backendText.m4e7f3f47".into());
     }
     let current = roots(state.core, &request.task_id)
         .await?
         .into_iter()
         .find(|r| r.id == request.root_id)
-        .ok_or("项目目录已改变")?;
+        .ok_or("backendText.mbf11a90f")?;
     if current.path != result.root.path || current.scopes != result.root.scopes {
-        return Err("项目范围已改变，请刷新".into());
+        return Err("backendText.m75580c95".into());
     }
     let mut change = result
         .files
         .iter()
         .find(|f| f.path == request.path)
         .cloned()
-        .ok_or("文件不在此比较中")?;
+        .ok_or("backendText.mb800c3e3")?;
     for path in std::iter::once(&change.path).chain(change.previous_path.iter()) {
         if !current.scopes.iter().any(|scope| {
             scope.is_empty() || path == scope || path.starts_with(&format!("{scope}/"))
         }) {
-            return Err("恢复路径不在当前项目范围内".into());
+            return Err("backendText.m1d926367".into());
         }
     }
     let service = GitReview::default();
@@ -340,7 +340,7 @@ pub(super) async fn discard(
         .chain(change.after.iter())
         .any(|version| version.kind == agent_workspace::review::FileKind::Gitlink)
     {
-        return Err("子模块仅支持查看及暂存提交指针，不支持目录恢复".into());
+        return Err("backendText.m81057745".into());
     }
     if current.git {
         service
@@ -348,7 +348,7 @@ pub(super) async fn discard(
                 result
                     .git_comparison
                     .as_ref()
-                    .ok_or("写入预览已失效，请刷新")?,
+                    .ok_or("backendText.md14cf93d")?,
                 &store,
             )
             .await?;
@@ -357,7 +357,7 @@ pub(super) async fn discard(
                 result
                     .git_comparison
                     .as_ref()
-                    .ok_or("写入预览已失效，请刷新")?,
+                    .ok_or("backendText.md14cf93d")?,
                 &change,
                 &store,
             )
@@ -387,7 +387,7 @@ pub(super) async fn discard(
         Ok(record.id)
     })
     .await
-    .map_err(|_| "文件备份准备失败")??;
+    .map_err(|_| "backendText.m9b0bf335")??;
     let _index = if current.git {
         let guard = service
             .lock_file_recovery(
@@ -405,7 +405,7 @@ pub(super) async fn discard(
                 result
                     .git_comparison
                     .as_ref()
-                    .ok_or("写入预览已失效，请刷新")?,
+                    .ok_or("backendText.md14cf93d")?,
                 &store,
             )
             .await?;
@@ -425,7 +425,7 @@ pub(super) async fn discard(
         Ok(record_id)
     })
     .await
-    .map_err(|_| "文件操作未完成，请刷新后检查文件状态")?
+    .map_err(|_| "backendText.mb2aef805")?
 }
 
 // Mirrors the frontend call's separate fields one to one.
@@ -444,7 +444,7 @@ pub(super) async fn git_action(
         .await?
         .into_iter()
         .find(|r| r.id == root_id && r.git)
-        .ok_or("当前目录未受 Git 管理")?;
+        .ok_or("backendText.m41c79dda")?;
     match action.as_str() {
         "commit" if !message.trim().is_empty() => {
             let _access = state.core.try_workspace_mutation().await?;
@@ -457,7 +457,7 @@ pub(super) async fn git_action(
                 .filter(|snapshot| snapshot.task_id == task_id)
                 .and_then(|snapshot| snapshot.roots.iter().find(|item| item.root.id == root_id))
                 .and_then(|item| item.git_comparison.clone())
-                .ok_or("REVIEW_STALE_COMMIT: 比较已过期，请刷新后重新确认提交")?;
+                .ok_or("backendText.mbcd5e312")?;
             validate_commit_preview(
                 &root,
                 &expected,
@@ -477,7 +477,7 @@ pub(super) async fn git_action(
             if state.core.bootstrap().await?.tasks.iter().any(|task| {
                 task.task_id.to_string() == task_id && task.active_primary_run.is_some()
             }) {
-                return Err("Agent 正在运行，请等待结束后操作".into());
+                return Err("backendText.maceaefab".into());
             }
             let outcome =
                 remote_actions::pull_or_sync(std::path::Path::new(&root.path), action == "sync")
@@ -509,7 +509,7 @@ pub(super) async fn git_action(
             )?;
             Ok(true)
         }
-        _ => Err("无效的 Git 操作或空提交说明".into()),
+        _ => Err("backendText.m2a52331f".into()),
     }
 }
 
@@ -526,7 +526,7 @@ pub(super) async fn commit_summary(
             .await?
             .into_iter()
             .find(|r| r.id == root_id && r.git)
-            .ok_or("当前目录未受 Git 管理")?;
+            .ok_or("backendText.m41c79dda")?;
         let path = std::path::Path::new(&root.path);
         let staged =
             run_commit_command(path, &["diff", "--cached", "--quiet", "--exit-code"]).await?;
@@ -580,7 +580,7 @@ pub(super) async fn commit_summary(
         }
         if !output.status.success() {
             require_git_success(output)?;
-            return Err("无法读取差异".into());
+            return Err("backendText.ma065a9fe".into());
         }
         let mut changes = String::from_utf8_lossy(&output.stdout).into_owned();
         if !cached {
@@ -598,7 +598,7 @@ pub(super) async fn commit_summary(
             .await?;
             if !untracked.status.success() {
                 require_git_success(untracked)?;
-                return Err("无法读取新增文件".into());
+                return Err("backendText.m78c9711e".into());
             }
             for name in untracked
                 .stdout
@@ -609,7 +609,7 @@ pub(super) async fn commit_summary(
                     break;
                 }
                 let name = String::from_utf8_lossy(name);
-                changes.push_str("\n新增文件：");
+                changes.push_str("\nNew file: ");
                 changes.push_str(&serde_json::to_string(&name).unwrap_or_default());
                 changes.push('\n');
                 let file = path.join(name.as_ref());
@@ -624,7 +624,7 @@ pub(super) async fn commit_summary(
             }
         }
         if changes.trim().is_empty() {
-            return Err("没有可总结的更改".into());
+            return Err("backendText.m12a07c6a".into());
         }
         if changes.len() > 100_000 {
             let mut end = 100_000;
@@ -632,7 +632,7 @@ pub(super) async fn commit_summary(
                 end -= 1;
             }
             changes.truncate(end);
-            changes.push_str("\n[更改内容已截断]");
+            changes.push_str("\n[Changes truncated]");
         }
         changes
     };
@@ -887,12 +887,12 @@ pub async fn dispatch(
             let receipt = review
                 .mutations
                 .get(&task_id, &operation_id)?
-                .ok_or("原文件操作不存在，请先核实")?;
+                .ok_or("backendText.m0e480a50")?;
             if matches!(
                 receipt.outcome,
                 mutation_operations::MutationOutcome::Running
             ) {
-                return Err("文件操作仍在执行，请等待结束后再结束跟踪".into());
+                return Err("backendText.m41f3f9ce".into());
             }
             response!(review.mutations.close(&task_id, &operation_id)?)
         }
@@ -1031,7 +1031,7 @@ pub async fn dispatch(
             let request: project_analysis::ProjectReviewRequest =
                 serde_json::from_value(raw.clone()).map_err(|e| e.to_string())?;
             if request.turn_id.is_some() || request.source_snapshot.is_none() {
-                return Err("项目审查来源无效".into());
+                return Err("backendText.m1ef2f75a".into());
             }
             // The core verifies the original immutable request/packet when replaying.
             let input = if request.retry_of.is_some()
@@ -1093,14 +1093,14 @@ async fn workspace_path(
                 return Ok(candidate);
             }
         }
-        Err("文件不存在或不属于当前工作区".into())
+        Err("backendText.m9fafd4a8".into())
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
 pub(super) async fn require_task(core: &dyn ReviewFacts, task: &str) -> Result<(), String> {
-    let task = TaskId::parse(task).map_err(|_| "无效的会话标识")?;
+    let task = TaskId::parse(task).map_err(|_| "backendText.mcb03be95")?;
     if core
         .bootstrap()
         .await?
@@ -1110,7 +1110,7 @@ pub(super) async fn require_task(core: &dyn ReviewFacts, task: &str) -> Result<(
     {
         Ok(())
     } else {
-        Err("会话已不存在".into())
+        Err("backendText.m1600e8a6".into())
     }
 }
 

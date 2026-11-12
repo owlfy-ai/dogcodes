@@ -34,9 +34,9 @@ pub(super) fn project(
         .filter(|e| e.event_type == "turn.queued" && !e.payload["reviewFix"].is_null())
     {
         let reference: ReviewFixRef = serde_json::from_value(event.payload["reviewFix"].clone())
-            .map_err(|_| CoreError::Internal("修复关联记录损坏".into()))?;
+            .map_err(|_| CoreError::Internal("backendText.m9111bd19".into()))?;
         let turn_id: TurnId = serde_json::from_value(event.payload["turnId"].clone())
-            .map_err(|_| CoreError::Internal("修复轮次记录损坏".into()))?;
+            .map_err(|_| CoreError::Internal("backendText.m05457071".into()))?;
         let status = events
             .iter()
             .rev()
@@ -92,16 +92,16 @@ impl Core {
             .await?
             .into_iter()
             .find(|r| r.request.run_id == reference.run_id)
-            .ok_or_else(|| CoreError::InvalidArgument("审查来源不属于当前对话".into()))?;
+            .ok_or_else(|| CoreError::InvalidArgument("backendText.m3c97f7a2".into()))?;
         if run.status.active() || run.input_sha256 != reference.input_sha256 {
             return Err(CoreError::Conflict(
-                "审查尚未结束或来源已变化，请刷新后重试".into(),
+                "backendText.me00adf36".into(),
             ));
         }
         let report = run
             .report
             .as_ref()
-            .ok_or_else(|| CoreError::InvalidArgument("没有可选择的问题".into()))?;
+            .ok_or_else(|| CoreError::InvalidArgument("backendText.m350f957a".into()))?;
         let indices: std::collections::BTreeSet<_> =
             reference.finding_indices.iter().copied().collect();
         if indices.is_empty()
@@ -110,13 +110,13 @@ impl Core {
             || indices.iter().any(|i| *i >= report.findings.len())
         {
             return Err(CoreError::InvalidArgument(
-                "请选择有效且不重复的问题条目".into(),
+                "backendText.mdbd03b2f".into(),
             ));
         }
         let material = json!({"runId":reference.run_id,"sourceTurnId":run.request.turn_id,"sourceSnapshot":run.request.source_snapshot,"inputSha256":run.input_sha256,"kind":run.request.kind,"findings":indices.iter().map(|i|json!({"index":i,"finding":report.findings[*i]})).collect::<Vec<_>>()});
         if material.to_string().len() > 128_000 {
             return Err(CoreError::ResourceExhausted(
-                "所选问题过多，请分批修复".into(),
+                "backendText.m50e0c92a".into(),
             ));
         }
         Ok(material)
@@ -156,12 +156,12 @@ impl Core {
         let link = request
             .recheck_of
             .as_ref()
-            .ok_or_else(|| CoreError::InvalidArgument("复审来源缺失".into()))?;
+            .ok_or_else(|| CoreError::InvalidArgument("backendText.m798fae9a".into()))?;
         if request.turn_id.as_ref() != Some(&link.repair_turn_id)
             || request.source_snapshot.is_some()
         {
             return Err(CoreError::InvalidArgument(
-                "复审必须关联对应修复轮次".into(),
+                "backendText.mb19cd8b1".into(),
             ));
         }
         let events = self.review_events(&request.task_id).await?;
@@ -170,28 +170,28 @@ impl Core {
             .find(|e| {
                 e.event_type == "turn.queued" && e.payload["turnId"] == json!(link.repair_turn_id)
             })
-            .ok_or_else(|| CoreError::InvalidArgument("修复轮次不存在".into()))?;
+            .ok_or_else(|| CoreError::InvalidArgument("backendText.m7edb732f".into()))?;
         let reference: ReviewFixRef =
             serde_json::from_value(queued.payload["reviewFix"].clone())
-                .map_err(|_| CoreError::InvalidArgument("该轮不是审查修复轮次".into()))?;
+                .map_err(|_| CoreError::InvalidArgument("backendText.mc2d1179e".into()))?;
         if reference.run_id != link.run_id {
-            return Err(CoreError::InvalidArgument("修复与原审查不匹配".into()));
+            return Err(CoreError::InvalidArgument("backendText.m2fde578f".into()));
         }
         let material = self
             .review_fix_material(&request.task_id, &reference)
             .await?;
         if material["kind"] != json!(request.kind) {
             return Err(CoreError::InvalidArgument(
-                "复审类型必须与原审查一致".into(),
+                "backendText.me8a363e4".into(),
             ));
         }
         let mut value: Value =
-            serde_json::from_str(packet).map_err(|_| CoreError::Internal("复审材料损坏".into()))?;
+            serde_json::from_str(packet).map_err(|_| CoreError::Internal("backendText.m77b117bd".into()))?;
         value["repairReview"] = material;
         let packet = value.to_string();
         if packet.len() > 768_000 {
             return Err(CoreError::ResourceExhausted(
-                "复审材料过大，请缩小修复范围".into(),
+                "backendText.m95582122".into(),
             ));
         }
         Ok(packet)

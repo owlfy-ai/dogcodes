@@ -31,15 +31,15 @@ pub(crate) fn validate(
     }
     if envelope.expected_stream_version.is_none() {
         return Err(CoreError::InvalidArgument(
-            "修改远程连接需要版本号，请重新读取设置".into(),
+            "backendText.md7650991".into(),
         ));
     }
     if value.targets.len() > MAX_TARGETS {
-        return Err(CoreError::InvalidArgument("远程连接数量过多".into()));
+        return Err(CoreError::InvalidArgument("backendText.mc4cd1638".into()));
     }
     let unique: BTreeSet<_> = value.targets.iter().map(|t| &t.target_id).collect();
     if unique.len() != value.targets.len() {
-        return Err(CoreError::InvalidArgument("远程连接标识重复".into()));
+        return Err(CoreError::InvalidArgument("backendText.me8ba9ea4".into()));
     }
     value.targets.iter().try_for_each(validate_target)
 }
@@ -49,7 +49,7 @@ fn validate_target(target: &ExecutionTarget) -> Result<(), CoreError> {
         || target.display_name.len() > MAX_NAME_BYTES
         || target.display_name.chars().any(char::is_control)
     {
-        return Err(CoreError::InvalidArgument("远程连接名称无效".into()));
+        return Err(CoreError::InvalidArgument("backendText.m322eff95".into()));
     }
     validate_connection(&target.connection)
 }
@@ -58,28 +58,28 @@ fn validate_target(target: &ExecutionTarget) -> Result<(), CoreError> {
 /// option (for example `-oProxyCommand=...`), so it is rejected rather than quoted.
 pub fn validate_connection(connection: &SshConnection) -> Result<(), CoreError> {
     if !valid_ssh_word(&connection.destination) {
-        return Err(CoreError::InvalidArgument("远程主机地址无效".into()));
+        return Err(CoreError::InvalidArgument("backendText.m798e384e".into()));
     }
     if connection.port == Some(0) {
-        return Err(CoreError::InvalidArgument("远程主机端口无效".into()));
+        return Err(CoreError::InvalidArgument("backendText.m4f9f9a91".into()));
     }
     if connection
         .user
         .as_deref()
         .is_some_and(|u| !valid_ssh_word(u))
     {
-        return Err(CoreError::InvalidArgument("远程用户名无效".into()));
+        return Err(CoreError::InvalidArgument("backendText.mcddb287d".into()));
     }
     match (connection.auth, connection.identity_file.as_deref()) {
         (SshAuth::PrivateKey, None) => {
-            return Err(CoreError::InvalidArgument("请选择私钥文件".into()));
+            return Err(CoreError::InvalidArgument("backendText.m5b1a68b1".into()));
         }
         (SshAuth::PrivateKey, Some(path)) if !valid_identity_path(path) => {
-            return Err(CoreError::InvalidArgument("私钥路径无效".into()));
+            return Err(CoreError::InvalidArgument("backendText.maa510224".into()));
         }
         (SshAuth::System | SshAuth::Password, Some(_)) => {
             return Err(CoreError::InvalidArgument(
-                "只有私钥认证可以指定私钥文件".into(),
+                "backendText.mfe119ca4".into(),
             ));
         }
         _ => {}
@@ -90,7 +90,7 @@ pub fn validate_connection(connection: &SshConnection) -> Result<(), CoreError> 
         .is_some_and(|path| !valid_install_directory(path))
     {
         return Err(CoreError::InvalidArgument(
-            "远端安装目录必须是绝对路径".into(),
+            "backendText.mda05d7b6".into(),
         ));
     }
     if let Some(agent_protocol::SshProxy::Custom { host, port, .. }) = &connection.proxy

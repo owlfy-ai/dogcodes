@@ -139,7 +139,7 @@ pub struct ReviewRepairs {
 fn regular(path: &Path, directory: bool) -> Result<bool, String> {
     match std::fs::symlink_metadata(path) {
         Ok(m) if (directory && m.is_dir()) || (!directory && m.is_file()) => Ok(true),
-        Ok(_) => Err("修复记录路径异常，未覆盖或重放操作".into()),
+        Ok(_) => Err("backendText.meb935a30".into()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(e.to_string()),
     }
@@ -236,14 +236,14 @@ impl ReviewRepairs {
             }
             let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
             let stored: Stored = serde_json::from_slice(&bytes)
-                .map_err(|_| "修复记录损坏，已保留原记录，请检查本机存储".to_string())?;
+                .map_err(|_| "backendText.m7c1c450b".to_string())?;
             if stored.schema_version != 1 {
-                return Err("修复记录版本不受支持，已保留原记录".into());
+                return Err("backendText.mec18d6a9".into());
             }
             Ok(Some(stored.entry))
         })
         .await
-        .map_err(|_| "修复记录读取失败".to_string())?
+        .map_err(|_| "backendText.m5b468f3e".to_string())?
     }
     async fn write(&self, entry: &RepairEntry) -> Result<(), String> {
         let directory = self.root.join(entry.intent.task_id.as_str());
@@ -276,7 +276,7 @@ impl ReviewRepairs {
             Ok(())
         })
         .await
-        .map_err(|_| "修复记录保存失败".to_string())?
+        .map_err(|_| "backendText.mb1d59d5b".to_string())?
     }
     /// Permanent task deletion removes that task's repair records.
     pub fn forget_task(&self, task: &str) -> Result<(), String> {
@@ -355,7 +355,7 @@ impl ReviewRepairs {
         self.read(task, run)
             .await?
             .filter(|entry| &entry.intent.operation_id == operation)
-            .ok_or_else(|| "原修复记录不存在或已被替换，请重新核实".into())
+            .ok_or_else(|| "backendText.mefb40284".into())
     }
 
     /// Records the frozen request without mutating the task. Callers hold the gate.
@@ -388,7 +388,7 @@ impl ReviewRepairs {
         actor: ActorRef,
     ) -> Result<RepairEntry, String> {
         if reference.input_sha256.trim().is_empty() || reference.finding_indices.is_empty() {
-            return Err("请选择有效的审查问题。".into());
+            return Err("backendText.md3738d37".into());
         }
         reference.finding_indices.sort_unstable();
         reference.finding_indices.dedup();
@@ -400,12 +400,12 @@ impl ReviewRepairs {
                         .as_ref()
                         .is_some_and(|target| target != &existing.intent.target)
                 {
-                    return Err("请求标识已用于不同的修复内容，未重复执行".into());
+                    return Err("backendText.mcad618c6".into());
                 }
                 return Ok(existing);
             }
             if existing.pending() {
-                return Err("请先核实原修复请求，不能更换问题或 Agent 重试。".into());
+                return Err("backendText.m319336cc".into());
             }
         }
         let snapshot = core.bootstrap().await.map_err(|e| e.to_string())?;
@@ -413,9 +413,9 @@ impl ReviewRepairs {
             .tasks
             .iter()
             .find(|task| task.task_id == task_id)
-            .ok_or("原对话已不可用。")?;
+            .ok_or("backendText.m4d10736d")?;
         if task.active_primary_run.is_some() {
-            return Err("请等待主对话当前回复结束后再提交修复。".into());
+            return Err("backendText.m88567d2e".into());
         }
         let target = target.unwrap_or_else(|| task.preferred_executor.clone());
         let context = if target == task.preferred_executor {
@@ -539,7 +539,7 @@ impl ReviewRepairs {
                         }
                     }
                 }
-                let receipt = receipt.ok_or("上下文结果尚未确认，请先核实原操作。")?;
+                let receipt = receipt.ok_or("backendText.m747152e9")?;
                 if let RepairState::Pending {
                     context_confirmed, ..
                 } = &mut entry.state
@@ -570,7 +570,7 @@ impl ReviewRepairs {
                 receipt
             }
         }
-        .ok_or("修复任务未被受理，请核实原操作。")?;
+        .ok_or("backendText.ma81e134a")?;
         entry.state = RepairState::Submitted {
             acknowledgement: ack,
         };
@@ -587,7 +587,7 @@ impl ReviewRepairs {
         let last = receipt
             .last_sequence
             .filter(|sequence| *sequence > 0)
-            .ok_or("上下文回执缺少版本边界，未提交修复。")?;
+            .ok_or("backendText.m6ace0e5e")?;
         let event = core
             .sync_events(last - 1, 1)
             .await
@@ -609,18 +609,18 @@ impl ReviewRepairs {
                     .is_some_and(|executor| executor == intent.target)
                 && event.stream_version > intent.base_version
         });
-        let event = verified.ok_or("无法核实原上下文的会话版本，未提交修复。")?;
+        let event = verified.ok_or("backendText.mb9157ceb")?;
         let snapshot = core.bootstrap().await.map_err(|e| e.to_string())?;
         let task = snapshot
             .tasks
             .iter()
             .find(|task| task.task_id == intent.task_id)
-            .ok_or("原对话已不可用。")?;
+            .ok_or("backendText.m4d10736d")?;
         if task.active_primary_run.is_some()
             || task.stream_version != event.stream_version
             || task.preferred_executor != intent.target
         {
-            return Err("上下文确认后会话已变化，未用新版本重新提交；请核对原操作。".into());
+            return Err("backendText.mfbea6332".into());
         }
         Ok(event.stream_version)
     }

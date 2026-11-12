@@ -21,15 +21,15 @@ impl QuestionForm {
             return Ok(());
         }
         if answer.values.to_string().len() > 128_000 {
-            return Err("回答内容过长".into());
+            return Err("backendText.m3f54ab3e".into());
         }
-        let values = answer.values.as_object().ok_or("回答必须为表单对象")?;
+        let values = answer.values.as_object().ok_or("backendText.m472145a9")?;
         let props = self.schema["properties"]
             .as_object()
-            .ok_or("不支持此问题格式")?;
+            .ok_or("backendText.m195411bd")?;
         for key in values.keys() {
             if !props.contains_key(key) {
-                return Err("回答包含未知字段".into());
+                return Err("backendText.m9427b5f3".into());
             }
         }
         for key in self.schema["required"]
@@ -39,7 +39,7 @@ impl QuestionForm {
             .filter_map(Value::as_str)
         {
             if !values.contains_key(key) {
-                return Err("请回答所有必填问题".into());
+                return Err("backendText.m636e4f60".into());
             }
         }
         for (key, value) in values {
@@ -52,52 +52,52 @@ fn validate_value(schema: &Value, value: &Value) -> Result<(), String> {
     if let Some(options) = schema["enum"].as_array()
         && !options.contains(value)
     {
-        return Err("请选择有效选项".into());
+        return Err("backendText.mefd04661".into());
     }
     if let Some(options) = schema["oneOf"]
         .as_array()
         .or_else(|| schema["anyOf"].as_array())
         && !options.iter().any(|o| o.get("const") == Some(value))
     {
-        return Err("请选择有效选项".into());
+        return Err("backendText.mefd04661".into());
     }
     match schema["type"].as_str().unwrap_or("string") {
         "string" => {
-            let s = value.as_str().ok_or("请输入文字")?;
+            let s = value.as_str().ok_or("backendText.m91e09dc3")?;
             let len = s.chars().count() as u64;
             if schema["minLength"].as_u64().is_some_and(|n| len < n)
                 || schema["maxLength"].as_u64().is_some_and(|n| len > n)
             {
-                return Err("文字长度不符合要求".into());
+                return Err("backendText.m99111038".into());
             }
             if let Some(pattern) = schema["pattern"].as_str() {
-                let re = regex::Regex::new(pattern).map_err(|_| "不支持此校验格式")?;
+                let re = regex::Regex::new(pattern).map_err(|_| "backendText.m536ae399")?;
                 if !re.is_match(s) {
-                    return Err("输入格式不符合要求".into());
+                    return Err("backendText.m51e64d01".into());
                 }
             }
         }
         "boolean" => {
             if !value.is_boolean() {
-                return Err("请选择是或否".into());
+                return Err("backendText.mff99b341".into());
             }
         }
         "integer" | "number" => {
             let n = value
                 .as_f64()
                 .filter(|n| n.is_finite())
-                .ok_or("请输入数字")?;
+                .ok_or("backendText.mfa388b72")?;
             if schema["type"] == "integer" && n.fract() != 0.0 {
-                return Err("请输入整数".into());
+                return Err("backendText.m9c751154".into());
             }
             if schema["minimum"].as_f64().is_some_and(|v| n < v)
                 || schema["maximum"].as_f64().is_some_and(|v| n > v)
             {
-                return Err("数字超出允许范围".into());
+                return Err("backendText.m01cb4b8d".into());
             }
         }
         "array" => {
-            let values = value.as_array().ok_or("请选择选项")?;
+            let values = value.as_array().ok_or("backendText.mc2089899")?;
             if schema["minItems"]
                 .as_u64()
                 .is_some_and(|n| (values.len() as u64) < n)
@@ -105,16 +105,16 @@ fn validate_value(schema: &Value, value: &Value) -> Result<(), String> {
                     .as_u64()
                     .is_some_and(|n| (values.len() as u64) > n)
             {
-                return Err("选项数量不符合要求".into());
+                return Err("backendText.m9eadaf9b".into());
             }
             for (i, v) in values.iter().enumerate() {
                 if values[..i].contains(v) {
-                    return Err("选项不能重复".into());
+                    return Err("backendText.m69b885d7".into());
                 }
                 validate_value(&schema["items"], v)?;
             }
         }
-        _ => return Err("暂不支持此问题类型".into()),
+        _ => return Err("backendText.md5d6d9e8".into()),
     }
     Ok(())
 }

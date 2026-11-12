@@ -12,7 +12,7 @@ pub async fn core_submission_watch(
     changes: tauri::ipc::Channel<WatchMessage>,
 ) -> Result<(), String> {
     crate::require_main_artifact_window(window.label())?;
-    uuid::Uuid::parse_str(&id).map_err(|_| "无效的状态订阅标识")?;
+    uuid::Uuid::parse_str(&id).map_err(|_| "backendText.m835a5438")?;
     let core = state.core.clone();
     let (ready, accepted) = tokio::sync::oneshot::channel();
     watchers.start(
@@ -43,7 +43,7 @@ pub async fn core_submission_watch(
             }
         },
     )?;
-    accepted.await.map_err(|_| "状态订阅已取消")?
+    accepted.await.map_err(|_| "backendText.m692358a7")?
 }
 #[tauri::command]
 pub fn core_submission_unwatch(

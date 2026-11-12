@@ -259,7 +259,7 @@ pub async fn core_upgrade_agent(
             let snapshot = core.scan_agent(&i.provider_id).await?;
             let resolved = launcher
                 .canonicalize()
-                .map_err(|_| "升级后无法找到 Agent 启动文件")?;
+                .map_err(|_| "backendText.m03d3f518")?;
             let fresh = snapshot
                 .installations
                 .iter()
@@ -298,7 +298,7 @@ pub async fn core_upgrade_agent(
         Ok(value)
     })
     .await
-    .map_err(|_| "升级任务意外中断".to_string())?
+    .map_err(|_| "backendText.m04fb2609".to_string())?
 }
 
 #[tauri::command]
@@ -311,11 +311,11 @@ pub async fn core_open_agent_updater(
     crate::require_main_artifact_window(window.label())?;
     let i = installation(&state.core, &installation_id).await?;
     let Plan::Host(app) = plan(&i) else {
-        return Err("此安装不是桌面应用更新".into());
+        return Err("backendText.mbe16dff4".into());
     };
     let checked = updates.check(&i, false).await;
     if !desktop_update_available(&checked) {
-        return Err("未检测到桌面应用新版本".into());
+        return Err("backendText.mea22e541".into());
     }
     #[cfg(target_os = "macos")]
     {
@@ -332,7 +332,7 @@ pub async fn core_open_agent_updater(
         let binary = match i.provider_id.as_str() {
             "zcode" => "ZCode.exe",
             "opencode" => "OpenCode.exe",
-            _ => return Err("请在宿主应用内检查更新".into()),
+            _ => return Err("backendText.m021b30a6".into()),
         };
         std::process::Command::new(app.join(binary))
             .env_remove("ELECTRON_RUN_AS_NODE")
@@ -340,13 +340,13 @@ pub async fn core_open_agent_updater(
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .map_err(|_| "无法打开桌面应用".to_string())?;
+            .map_err(|_| "backendText.m81ca8ed1".to_string())?;
         Ok(())
     }
     #[cfg(not(any(target_os = "macos", windows)))]
     {
         let _ = app;
-        Err("请在宿主应用内检查更新".into())
+        Err("backendText.m021b30a6".into())
     }
 }
 
@@ -804,7 +804,9 @@ mod tests {
         );
         assert!(message.contains("backendText.updateDownloadInterrupted"));
         assert!(!message.contains("private"));
-        assert!(command_failure(Some(2), "", "unknown private-token").contains("退出码 2"));
+        let unknown = command_failure(Some(2), "", "unknown private-token");
+        assert!(unknown.contains("backendText.updateCommandFailed"));
+        assert!(unknown.contains('2'));
     }
     #[test]
     fn cursor_install_lock_has_a_specific_safe_diagnostic() {
@@ -944,7 +946,8 @@ mod tests {
             .await
             .unwrap_err();
         assert!(!error.contains("private-token"));
-        assert!(error.contains("退出码 1"));
+        assert!(error.contains("backendText.updateCommandFailed"));
+        assert!(error.contains('1'));
     }
     #[cfg(unix)]
     #[tokio::test]

@@ -518,12 +518,10 @@ impl GitReview {
             || current.repository_version.as_ref() != Some(expected_state)
             || &self.repository_version(root).await? != expected_state
         {
-            return Err(format!(
-                "repository changed before locked publication · 索引恢复记录 {id}"
-            ));
+            return Err(format!("backendText.m62d1f394\u{1e}{}", serde_json::to_string(&[id.to_string()]).unwrap_or_else(|_| "[]".into())));
         }
         lock.publish(&index_path, &bytes)
-            .map_err(|error| format!("{error} · 索引恢复记录 {id}"))?;
+            .map_err(|error| format!("backendText.mcdb3584e\u{1e}{}", serde_json::to_string(&[error.to_string(), id.to_string()]).unwrap_or_else(|_| "[]".into())))?;
         store.complete_index_recovery(task, &id)
     }
 }

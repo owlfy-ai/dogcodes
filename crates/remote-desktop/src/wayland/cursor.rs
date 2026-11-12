@@ -38,7 +38,7 @@ impl Cursor {
             || length < size_of::<sys::spa_meta_cursor>()
             || length > MAX_BYTES
         {
-            return Err("Wayland 光标元数据范围无效".into());
+            return Err("backendText.m1c8c0905".into());
         }
         // SAFETY: the owned payload was bounded above; copy integer POD once,
         // so offsets cannot change between their validation and use.
@@ -55,7 +55,7 @@ impl Cursor {
         if cursor.bitmap_offset != 0 {
             let start = cursor.bitmap_offset as usize;
             if start < size_of::<sys::spa_meta_cursor>() {
-                return Err("Wayland 光标位图偏移无效".into());
+                return Err("backendText.m4e05b832".into());
             }
             let bitmap: sys::spa_meta_bitmap = pod(bytes, start)?;
             if bitmap.format != 0 {
@@ -64,7 +64,7 @@ impl Cursor {
                 } else {
                     let (w, h) = (bitmap.size.width, bitmap.size.height);
                     let pitch =
-                        usize::try_from(bitmap.stride).map_err(|_| "Wayland 光标行跨度无效")?;
+                        usize::try_from(bitmap.stride).map_err(|_| "backendText.m1bb49392")?;
                     let row = w as usize * 4;
                     if w == 0
                         || h == 0
@@ -78,21 +78,21 @@ impl Cursor {
                         || cursor.hotspot.y as u32 >= h
                         || (bitmap.offset as usize) < size_of::<sys::spa_meta_bitmap>()
                     {
-                        return Err("Wayland 光标位图尺寸或热点无效".into());
+                        return Err("backendText.m494a280c".into());
                     }
                     let offset = start
                         .checked_add(bitmap.offset as usize)
-                        .ok_or("Wayland 光标偏移溢出")?;
+                        .ok_or("backendText.ma1f01ad9")?;
                     let size = pitch
                         .checked_mul(h as usize - 1)
                         .and_then(|v| v.checked_add(row))
-                        .ok_or("Wayland 光标长度溢出")?;
+                        .ok_or("backendText.mdf13d39f")?;
                     let pixels = bytes
-                        .get(offset..offset.checked_add(size).ok_or("Wayland 光标长度溢出")?)
-                        .ok_or("Wayland 光标位图不完整")?;
+                        .get(offset..offset.checked_add(size).ok_or("backendText.mdf13d39f")?)
+                        .ok_or("backendText.me8ea3cf4")?;
                     let format = VideoFormat::from_raw(bitmap.format);
                     if !matches!(format, VideoFormat::RGBA | VideoFormat::BGRA) {
-                        return Err("Wayland 光标像素格式不支持".into());
+                        return Err("backendText.m36b8edaf".into());
                     }
                     Some(RgbaImage::from_fn(w, h, |x, y| {
                         let i = y as usize * pitch + x as usize * 4;
@@ -165,10 +165,10 @@ impl Cursor {
 fn pod<T: Copy>(bytes: &[u8], offset: usize) -> Result<T> {
     let extent = offset
         .checked_add(size_of::<T>())
-        .ok_or("Wayland 光标范围溢出")?;
+        .ok_or("backendText.mf57dbe44")?;
     let raw = bytes
         .get(offset..extent)
-        .ok_or("Wayland 光标元数据不完整")?;
+        .ok_or("backendText.m94e86a96")?;
     // SAFETY: callers request integer-only SPA PODs; bounded read may be unaligned.
     Ok(unsafe { std::ptr::read_unaligned(raw.as_ptr().cast::<T>()) })
 }

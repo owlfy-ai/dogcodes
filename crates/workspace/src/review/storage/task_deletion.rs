@@ -49,7 +49,7 @@ fn remove_if_present(path: &Path) -> ReviewResult<()> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(_) => Err("会话快照清理失败，请重试".into()),
+        Err(_) => Err("backendText.md4207d2f".into()),
     }
 }
 
@@ -59,15 +59,15 @@ impl ReviewStore {
             .directory
             .join("deleted-tasks")
             .join(digest(task.as_bytes()));
-        if marker.try_exists().map_err(|_| "无法读取会话删除状态")? {
-            return Err("会话已彻底删除".into());
+        if marker.try_exists().map_err(|_| "backendText.m897679bf")? {
+            return Err("backendText.mc2b732b1".into());
         }
         Ok(())
     }
 
     pub fn delete_task_data(&self, task: &str) -> ReviewResult<()> {
         if !self.maintenance || task.is_empty() {
-            return Err("删除会话快照需要独占存储锁".into());
+            return Err("backendText.m58116fb4".into());
         }
         let plans = self.directory.join("task-deletions");
         let tombstones = self.directory.join("deleted-tasks");
@@ -76,12 +76,12 @@ impl ReviewStore {
         let id = digest(task.as_bytes());
         let path = plans.join(&id);
         let marker = tombstones.join(&id);
-        let plan: DeletionPlan = if path.try_exists().map_err(|_| "无法读取快照清理记录")?
+        let plan: DeletionPlan = if path.try_exists().map_err(|_| "backendText.m50f208f8")?
         {
             serde_json::from_slice(&read_manifest(&path, 32 * 1024 * 1024)?)
-                .map_err(|_| "快照清理记录损坏")?
+                .map_err(|_| "backendText.mbd360aff")?
         } else {
-            if marker.try_exists().map_err(|_| "无法读取会话删除状态")? {
+            if marker.try_exists().map_err(|_| "backendText.m897679bf")? {
                 return Ok(());
             }
             let mut plan = DeletionPlan {
@@ -105,7 +105,7 @@ impl ReviewStore {
                     }
                     let value: Value =
                         serde_json::from_slice(&read_manifest(file, 32 * 1024 * 1024)?)
-                            .map_err(|_| "快照清单损坏，无法安全清理")?;
+                            .map_err(|_| "backendText.mc5c4db24")?;
                     let owned = if *inventory == "baselines" {
                         value["root"].as_str().is_some_and(|root| {
                             digest(format!("{task}\0{root}").as_bytes()) == name
@@ -132,7 +132,7 @@ impl ReviewStore {
 
             write_once(
                 &path,
-                &serde_json::to_vec(&plan).map_err(|_| "无法保存清理计划")?,
+                &serde_json::to_vec(&plan).map_err(|_| "backendText.mb1f4ef5a")?,
             )?;
             plan
         };

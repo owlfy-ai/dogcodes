@@ -124,9 +124,9 @@ fn clean(mut candidates: Vec<Candidate>) -> Vec<Candidate> {
 }
 
 fn file(path: &Path) -> Result<PathBuf, String> {
-    let path = path.canonicalize().map_err(|_| "文件不存在或无法访问")?;
+    let path = path.canonicalize().map_err(|_| "backendText.m534a8de1")?;
     if !path.is_file() {
-        return Err("只能打开普通文件".into());
+        return Err("backendText.meb31e4ec".into());
     }
     Ok(path)
 }
@@ -146,7 +146,7 @@ pub fn open_with(path: &Path, id: &str) -> Result<(), String> {
     let application = clean(platform::candidates(&path)?)
         .into_iter()
         .find(|candidate| candidate.app.id == id)
-        .ok_or("此应用已不可用，请重新打开应用列表")?;
+        .ok_or("backendText.md6962b39")?;
     platform::launch(&path, &application)
 }
 
@@ -155,10 +155,10 @@ mod platform {
     use super::*;
     pub fn load_icons(_: &Path, _: &mut [Candidate]) {}
     pub fn candidates(_: &Path) -> Result<Vec<Candidate>, String> {
-        Err("此平台暂不支持查询打开方式".into())
+        Err("backendText.m1f49f3e9".into())
     }
     pub fn launch(_: &Path, _: &Candidate) -> Result<(), String> {
-        Err("此平台暂不支持指定打开方式".into())
+        Err("backendText.m5742db39".into())
     }
 }
 

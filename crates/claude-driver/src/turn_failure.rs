@@ -3,7 +3,7 @@ use driver_api::DriverEvent;
 use serde_json::Value;
 
 const AUTH_FAILURE: &str =
-    "Claude Code 身份验证失败，请检查原生客户端登录状态、API Key 或服务权限后重试。";
+    "backendText.me34dd651";
 const EXECUTION_FAILURE: &str = "Claude Code turn ended with an error result";
 
 fn authentication_code(code: &str) -> bool {

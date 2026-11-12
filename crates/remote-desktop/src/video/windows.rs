@@ -12,7 +12,7 @@ pub(super) fn hardware_attempt(
 ) -> Result<Worker<Input, EncodedFrame>> {
     #[cfg(test)]
     if std::env::var("DOGCODES_MF_ENCODER_FIXTURE").as_deref() != Ok("synthetic-only") {
-        return Err("真实硬件编码验收需显式启用".into());
+        return Err("backendText.mafa4ba3b".into());
     }
     Worker::start(
         move || Native::new(size, rate, profile),

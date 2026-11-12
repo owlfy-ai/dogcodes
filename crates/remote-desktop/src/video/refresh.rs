@@ -107,13 +107,13 @@ impl Refresh {
             .pending
             .is_some_and(|since| now.duration_since(since) >= OUTPUT_TIMEOUT)
         {
-            return Err("视频编码器持续未输出画面，请重新连接".into());
+            return Err("backendText.m0c930a20".into());
         }
         if self
             .key_pending
             .is_some_and(|(since, _)| now.duration_since(since) >= OUTPUT_TIMEOUT)
         {
-            return Err("视频编码器未能输出关键帧，请重新连接".into());
+            return Err("backendText.m64a4bc5d".into());
         }
         let key = key || self.key_pending.is_some();
         if !admitted {
@@ -372,7 +372,7 @@ mod tests {
         let error = state
             .tick(start + OUTPUT_TIMEOUT, output, false, 30)
             .unwrap_err();
-        assert!(error.contains("关键帧"));
+        assert!(error.contains("backendText.m178fd037"));
     }
 
     #[test]

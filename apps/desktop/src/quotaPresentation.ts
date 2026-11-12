@@ -37,8 +37,7 @@ export function pickerQuotaWindows(windows: QuotaWindow[], providerId?: string, 
     return byWindowLength(go.length ? go : windows);
   }
   const account = windows.filter((window) => !window.scope);
-  const included = windows.every((window) => window.scope === "套餐内（终端读数）"
-    || (window.id === "kiro-included" && window.scope === "套餐内（Kiro）")) ? windows : [];
+  const included = windows.every((window) => window.scope === "included") ? windows : [];
   return byWindowLength(account.length ? account : included);
 }
 
@@ -94,8 +93,7 @@ export function primaryQuotaWindow(windows: QuotaWindow[]): QuotaWindow | null {
   // Multiple model groups still require a verified active-model association.
   const accountWindows = windows.filter((window) => !window.scope);
   windows = accountWindows.length ? accountWindows
-    : windows.every((window) => window.scope === "套餐内（终端读数）"
-      || (window.id === "kiro-included" && window.scope === "套餐内（Kiro）")) ? windows : [];
+    : windows.every((window) => window.scope === "included") ? windows : [];
   return windows.find((window) => window.windowMinutes === 300)
     ?? [...windows].sort((left, right) => left.windowMinutes - right.windowMinutes)[0]
     ?? null;
@@ -123,9 +121,6 @@ export function quotaIsExhausted(quota: QuotaSnapshot | null | undefined, nowUni
   });
 }
 
-// Native adapters preserve date-only resets in planType. Keep them
-// as display text: it must never drive expiry or quota enforcement.
-const NATIVE_RESET_DATE = / · 重置 ([^·]+?)（原生日期）/;
 function hasNativeBillingDate(id?: string): boolean {
   return id === "cursor-included" || id === "cursor-models" || id === "cursor-other-models" || id === "kiro-included";
 }
@@ -156,24 +151,23 @@ function nativeResetDisplayText(text: string, lang?: ResolvedLanguage): string {
   return text;
 }
 
-/** Bare reset date for a window whose native reading keeps it in planType. */
+/** Bare reset date for a window whose adapter stored a date-only reading. */
 export function nativeResetDisplay(quota: QuotaSnapshot, window: QuotaWindow, lang?: ResolvedLanguage): string {
   if (!hasNativeBillingDate(window.id)) return "";
-  const text = quota.planType?.match(NATIVE_RESET_DATE)?.[1]?.trim();
+  const text = quota.nativeResetOn?.trim();
   return text ? nativeResetDisplayText(text, lang) : "";
 }
 
 export function quotaPlanLabel(quota: QuotaSnapshot, lang: ResolvedLanguage = "zh-CN"): string | null | undefined {
-  const plan = quota.windows.some(window => hasNativeBillingDate(window.id))
-    ? quota.planType?.replace(NATIVE_RESET_DATE, "") : quota.planType;
-  // Translate only adapter-owned display labels; preserve provider plan names.
-  const labels: Record<string, string> = {
-    "订阅额度": "subscriptionQuota", "按量付费已开启": "onDemandOn",
-    "按量付费关闭": "onDemandOff", "另有赠送额度": "bonusQuota", "另有加购额度": "purchasedQuota",
-  };
   // Some providers report plans in lower case ("pro", "plus"); show them like names.
   const named = (part: string) => /^[a-z][a-z0-9]*$/.test(part) ? part[0].toUpperCase() + part.slice(1) : part;
-  return plan == null ? plan : plan.split(" · ").map(part => labels[part] ? t(`agentUi.${labels[part]}`, undefined, lang) : named(part)).join(" · ");
+  const parts = (quota.planType ?? "").split(" · ").map(part => part.trim()).filter(Boolean).map(named);
+  if (quota.onDemand === true) parts.push(t("agentUi.onDemandOn", undefined, lang));
+  if (quota.onDemand === false) parts.push(t("agentUi.onDemandOff", undefined, lang));
+  if (quota.bonusQuota) parts.push(t("agentUi.bonusQuota", undefined, lang));
+  if (quota.purchasedQuota) parts.push(t("agentUi.purchasedQuota", undefined, lang));
+  if (!parts.length) return quota.planType;
+  return parts.join(" · ");
 }
 
 /** When the newest of these quota readings was collected, if any. */
@@ -190,7 +184,7 @@ export function quotaNativeResetLabel(quota: QuotaSnapshot, window: QuotaWindow,
 export function quotaScopeLabel(scope: string | null | undefined): string {
   if (scope === "Gemini Models") return "Gemini";
   if (scope === "Claude and GPT models") return "Claude/GPT";
-  if (scope === "套餐内（终端读数）" || scope === "套餐内（Kiro）") return "";
+  if (scope === "included") return "";
   return scope ?? "";
 }
 

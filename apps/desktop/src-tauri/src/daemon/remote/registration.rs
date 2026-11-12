@@ -17,7 +17,7 @@ pub(super) async fn register_host(
         .post(format!("{service}/v1/hosts"))
         .send()
         .await
-        .map_err(|_| "无法连接接入服务，请确认服务已启动")?;
+        .map_err(|_| "backendText.me950fb54")?;
     let registration = decode_http(response).await?;
     Ok((
         Config {
@@ -25,7 +25,7 @@ pub(super) async fn register_host(
             host_id: registration["hostId"]
                 .as_str()
                 .filter(|id| !id.is_empty())
-                .ok_or("缺少电脑标识")?
+                .ok_or("backendText.m9549c944")?
                 .into(),
             public_key,
         },
@@ -33,7 +33,7 @@ pub(super) async fn register_host(
             token: registration["hostToken"]
                 .as_str()
                 .filter(|token| !token.is_empty())
-                .ok_or("缺少路由凭证")?
+                .ok_or("backendText.m28ff92e0")?
                 .into(),
             private_key,
         },
@@ -52,7 +52,7 @@ pub(super) async fn save_registration(
         persist_registration(&directory, &config, &secrets, &entry)
     })
     .await
-    .map_err(|_| "保存系统密钥失败")?
+    .map_err(|_| "backendText.m358a1df3")?
 }
 
 // Write credentials first, then atomically publish their reference. A failed save
@@ -63,16 +63,16 @@ fn persist_registration(
     secrets: &Secrets,
     entry: &keyring::Entry,
 ) -> Result<(), String> {
-    std::fs::create_dir_all(directory).map_err(|_| "无法保存远程配置")?;
-    let mut file = tempfile::NamedTempFile::new_in(directory).map_err(|_| "无法保存远程配置")?;
-    let bytes = serde_json::to_vec(config).map_err(|_| "无法保存远程配置")?;
-    file.write_all(&bytes).map_err(|_| "无法保存远程配置")?;
-    file.as_file().sync_all().map_err(|_| "无法保存远程配置")?;
+    std::fs::create_dir_all(directory).map_err(|_| "backendText.m80186537")?;
+    let mut file = tempfile::NamedTempFile::new_in(directory).map_err(|_| "backendText.m80186537")?;
+    let bytes = serde_json::to_vec(config).map_err(|_| "backendText.m80186537")?;
+    file.write_all(&bytes).map_err(|_| "backendText.m80186537")?;
+    file.as_file().sync_all().map_err(|_| "backendText.m80186537")?;
     entry
-        .set_password(&serde_json::to_string(secrets).map_err(|_| "无法保存电脑身份")?)
-        .map_err(|_| "系统密钥存储不可用，尚未更新电脑登记")?;
+        .set_password(&serde_json::to_string(secrets).map_err(|_| "backendText.m70912d34")?)
+        .map_err(|_| "backendText.m3af7a6ab")?;
     file.persist(directory.join("config.json"))
-        .map_err(|_| "无法保存远程配置")?;
+        .map_err(|_| "backendText.m80186537")?;
     Ok(())
 }
 

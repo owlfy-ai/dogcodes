@@ -36,8 +36,8 @@ pub(super) fn catalog(state: &Value) -> PermissionCatalog {
             "configured",
             &[(
                 "configured",
-                "原生权限规则",
-                "此 Agent 未报告可切换的权限模式；审批请求仍会显示在对话中。",
+                "permissionPicker.mode.configured",
+                "permissionPicker.description.configured",
                 false,
             )],
         )
@@ -66,7 +66,9 @@ pub(super) async fn select(
             .await?;
             updated = super::session_state::merge(&updated, &confirmed);
             if mode_config(&updated).and_then(|v| v["currentValue"].as_str()) != Some(mode) {
-                return Err(DriverError::Protocol("Agent 未确认权限模式".into()));
+                return Err(DriverError::Protocol(
+                    "backendText.permissionModeUnconfirmed".into(),
+                ));
             }
         }
         return Ok(updated);
@@ -157,9 +159,9 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["default", "yolo", "plan", "auto"]
         );
-        assert_eq!(modes.modes[1].label, "按需询问");
+        assert_eq!(modes.modes[1].label, "permissionPicker.mode.onRequest");
         assert!(!modes.modes[1].dangerous);
-        assert_eq!(modes.modes[3].label, "从不询问");
+        assert_eq!(modes.modes[3].label, "permissionPicker.mode.bypass");
         assert!(modes.modes[3].dangerous);
         assert_eq!(modes.review_mode().as_deref(), Some("auto"));
     }
@@ -210,17 +212,25 @@ pub(super) fn kimi_labels(catalog: &mut PermissionCatalog) {
     for mode in &mut catalog.modes {
         let (label, description, dangerous) = match mode.id.as_str() {
             "default" => (
-                "始终询问",
-                "仅自动读取；其他操作均需先征得你的批准。",
+                "permissionPicker.mode.ask",
+                "permissionPicker.description.kimiDefault",
                 false,
             ),
             "yolo" => (
-                "按需询问",
-                "常规编辑和命令自动执行；高风险操作、提问和计划仍会询问。",
+                "permissionPicker.mode.onRequest",
+                "permissionPicker.description.kimiYolo",
                 false,
             ),
-            "auto" => ("从不询问", "不中断任务；所有操作和决策均自动进行。", true),
-            "plan" => ("计划模式", "先制定计划；需要批准的操作仍会询问。", false),
+            "auto" => (
+                "permissionPicker.mode.bypass",
+                "permissionPicker.description.kimiAuto",
+                true,
+            ),
+            "plan" => (
+                "permissionPicker.mode.plan",
+                "permissionPicker.description.kimiPlan",
+                false,
+            ),
             _ => continue,
         };
         mode.label = label.into();
@@ -242,14 +252,14 @@ pub(super) fn cursor_catalog() -> PermissionCatalog {
         &[
             (
                 "default",
-                "操作前确认",
-                "按 Cursor 权限规则执行；需要审批的操作在此确认。",
+                "permissionPicker.mode.ask",
+                "permissionPicker.description.cursorDefault",
                 false,
             ),
             (
                 "full-access",
-                "完全访问",
-                "自动批准操作；明确禁止的操作和团队限制仍然生效。",
+                "permissionPicker.mode.bypass",
+                "permissionPicker.description.cursorFullAccess",
                 true,
             ),
         ],

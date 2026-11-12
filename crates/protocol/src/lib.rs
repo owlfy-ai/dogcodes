@@ -15,7 +15,7 @@ pub const SCHEMA_VERSION: u16 = 1;
 
 /// Why a turn-end fork snapshot was not captured when a project directory is
 /// outside Git. Core matches it to fork such turns with context only.
-pub const FORK_SNAPSHOT_REQUIRES_GIT: &str = "新 worktree 需要项目及附加目录均属于 Git 仓库";
+pub const FORK_SNAPSHOT_REQUIRES_GIT: &str = "backendText.mdccf719a";
 
 /// Identity and original metadata for a managed attachment upload. No file bytes
 /// are needed to query its receipt after a disconnected client reopens.

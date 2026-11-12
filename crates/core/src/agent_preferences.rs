@@ -25,7 +25,7 @@ pub(crate) fn validate(
     }
     if envelope.expected_stream_version.is_none() {
         return Err(CoreError::InvalidArgument(
-            "修改 Agent 设置需要版本号，请重新读取设置".into(),
+            "backendText.m9ecc624f".into(),
         ));
     }
     for values in [&preferences.order, &preferences.disabled] {
@@ -40,7 +40,7 @@ pub(crate) fn validate(
             || values.iter().collect::<BTreeSet<_>>().len() != values.len()
         {
             return Err(CoreError::InvalidArgument(
-                "Agent 设置包含无效、重复或过多的标识".into(),
+                "backendText.mfe516439".into(),
             ));
         }
     }

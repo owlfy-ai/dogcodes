@@ -135,7 +135,7 @@ async fn enter_spawn_slot(lock: &SpawnLock) -> Result<SpawnSlot, DriverError> {
         .await
         .map_err(|_| {
             DriverError::CapabilityUnavailable(
-                "Antigravity 上一个进程仍在运行或清理，请稍后重试".into(),
+                "backendText.mfa29bf87".into(),
             )
         })?;
     eprintln!(
@@ -535,7 +535,7 @@ impl AntigravityDriver {
             let map = self.processes.lock().await;
             if map.values().any(|p| p.turn_active.load(Ordering::Acquire)) {
                 return Err(DriverError::CapabilityUnavailable(
-                    "Antigravity 已有运行中的会话".into(),
+                    "backendText.m9ce27b85".into(),
                 ));
             }
             map.iter()
@@ -811,7 +811,7 @@ fn spawn_workspace(
     driver_api::permissions::antigravity().validate(mode)?;
     if matches!(mode, Some("desktop-approvals" | "plan")) && bridge.is_none() {
         return Err(DriverError::CapabilityUnavailable(
-            "桌面审批桥尚未验证".into(),
+            "backendText.m2ad2df81".into(),
         ));
     }
     // Headless native permission prompts cannot consume approval replies.
@@ -1103,7 +1103,7 @@ async fn stream_session(stdout: agent_runtime::ProcessStream, process: Arc<Sessi
                     && !has_answer
                     && matches!(driver_event, DriverEvent::TurnCompleted { .. })
                 {
-                    DriverEvent::TurnFailed {reason:"Antigravity 权限检查拒绝了工具执行，且未返回回答。可选择桌面审批策略后重试。".into()}
+                    DriverEvent::TurnFailed {reason:"backendText.md98b990e".into()}
                 } else {
                     driver_event
                 };
@@ -1281,7 +1281,7 @@ impl AgentDriver for AntigravityDriver {
         }
         let slot = SpawnSlot {
             _guard: self.spawn.clone().try_lock_owned().map_err(|_| {
-                DriverError::CapabilityUnavailable("请在 Agent 空闲时加载模型目录".into())
+                DriverError::CapabilityUnavailable("backendText.m6b7ac4c4".into())
             })?,
         };
         let result = catalog::read(self.executable.clone(), slot).await?;
@@ -1504,7 +1504,7 @@ impl AgentDriver for AntigravityDriver {
         option_id: &str,
     ) -> Result<(), DriverError> {
         if !["allow_once", "deny"].contains(&option_id) {
-            return Err(DriverError::Protocol("未知审批选项".into()));
+            return Err(DriverError::Protocol("backendText.mc3a0e8d8".into()));
         }
         let process = self.process_for(handle).await?;
         let _gate = process.lifecycle.lock().expect("session lifecycle");
@@ -1519,10 +1519,10 @@ impl AgentDriver for AntigravityDriver {
             .lock()
             .expect("approvals")
             .remove(native_request_id)
-            .ok_or_else(|| DriverError::Protocol("审批已过期".into()))?;
+            .ok_or_else(|| DriverError::Protocol("backendText.m88b50b98".into()))?;
         sender
             .send(option_id == "allow_once")
-            .map_err(|_| DriverError::Protocol("审批已过期".into()))
+            .map_err(|_| DriverError::Protocol("backendText.m88b50b98".into()))
     }
 
     async fn interrupt(&self, handle: &SessionHandle) -> Result<(), DriverError> {

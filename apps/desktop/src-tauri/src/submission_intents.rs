@@ -7,7 +7,7 @@ use agent_core::{
         stage_command, start_request_fingerprint, submission_command,
     },
 };
-use agent_domain::{CommandId, TaskId};
+use agent_domain::{CommandId, TaskId, UNTITLED_TASK_TITLE};
 use agent_protocol::submission::{
     SubmissionIntent, SubmissionIntentCall, SubmissionIntentEntry, SubmissionIntentPage,
 };
@@ -41,14 +41,14 @@ fn canonical(id: &CommandId) -> Result<(), String> {
             .bytes()
             .all(|b| b"0123456789ABCDEFGHJKMNPQRSTVWXYZ".contains(&b))
     {
-        return Err("发送操作标识不是规范格式".into());
+        return Err("backendText.ma33c8b54".into());
     }
     Ok(())
 }
 fn regular(path: &Path, directory: bool) -> Result<bool, String> {
     match std::fs::symlink_metadata(path) {
         Ok(m) if (directory && m.is_dir()) || (!directory && m.is_file()) => Ok(true),
-        Ok(_) => Err("发送记录路径异常，未覆盖或重放操作".into()),
+        Ok(_) => Err("backendText.mb3ccab3c".into()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(e.to_string()),
     }
@@ -70,19 +70,19 @@ impl Store {
             .read_to_end(&mut bytes)
             .map_err(|e| e.to_string())?;
         if bytes.len() > MAX_INTENT_BYTES + 4096 {
-            return Err("发送记录过大，未继续操作".into());
+            return Err("backendText.m4556d503".into());
         }
         let stored: Stored =
-            serde_json::from_slice(&bytes).map_err(|_| "发送记录损坏，请保留记录并核实")?;
+            serde_json::from_slice(&bytes).map_err(|_| "backendText.mde686dd2")?;
         if stored.schema_version != 1 || stored.operation_id != *id {
-            return Err("发送记录身份不一致".into());
+            return Err("backendText.me95871a2".into());
         }
         match &stored.entry {
             SubmissionIntentEntry::Pending { intent } => {
                 if intent.operation_id != *id
                     || normalize(*intent.clone()).map_err(|e| e.to_string())? != **intent
                 {
-                    return Err("发送记录内容不一致".into());
+                    return Err("backendText.mfb0d8da6".into());
                 }
             }
             SubmissionIntentEntry::Closed {
@@ -106,7 +106,7 @@ impl Store {
                 ) || !digest(fingerprint)
                     || request.as_ref().is_some_and(|request| !digest(request))
                 {
-                    return Err("发送结束记录损坏".into());
+                    return Err("backendText.m809a81c7".into());
                 }
             }
         }
@@ -151,7 +151,7 @@ impl Store {
     fn ids(&self) -> Result<Vec<CommandId>, String> {
         let (ids, incomplete) = self.scan()?;
         if incomplete {
-            return Err("发送记录目录含无法识别的条目，请保留记录并核实".into());
+            return Err("backendText.mec514cdd".into());
         }
         Ok(ids)
     }
@@ -246,11 +246,11 @@ impl Store {
                     }
                 };
                 if *task_id != intent.task.task_id {
-                    return Err("发送结束记录的会话不一致".into());
+                    return Err("backendText.mad03f0ea".into());
                 }
             }
             if actual != expected {
-                return Err("原发送标识已绑定其他内容，未继续操作".into());
+                return Err("backendText.m2d44b44a".into());
             }
         }
         Ok(found)
@@ -260,11 +260,11 @@ impl Store {
             return Ok(entry);
         }
         for id in self.ids()? {
-            let entry = self.read(&id)?.ok_or("发送记录读取中断，请重新核实")?;
+            let entry = self.read(&id)?.ok_or("backendText.m25b33bd8")?;
             if let SubmissionIntentEntry::Pending { intent: pending } = entry
                 && (pending.task.task_id == intent.task.task_id || pending.scope == intent.scope)
             {
-                return Err("此会话或草稿已有待核实发送，请先处理原操作".into());
+                return Err("backendText.mc8301a2c".into());
             }
         }
         let id = intent.operation_id.clone();
@@ -276,7 +276,7 @@ impl Store {
     }
     fn list(&self, after: Option<CommandId>, limit: usize) -> Result<SubmissionIntentPage, String> {
         if !(1..=100).contains(&limit) {
-            return Err("发送记录分页大小应为 1 至 100".into());
+            return Err("backendText.mf9dbdc8f".into());
         }
         if let Some(id) = &after {
             canonical(id)?;
@@ -341,11 +341,11 @@ impl SubmissionIntents {
             let _guard = store
                 .io_gate
                 .lock()
-                .map_err(|_| "发送记录存储不可用".to_string())?;
+                .map_err(|_| "backendText.m34c62cb3".to_string())?;
             work(&store)
         })
         .await
-        .map_err(|_| "发送记录后台处理失败".to_string())?
+        .map_err(|_| "backendText.m719e2e2a".to_string())?
     }
     pub async fn reconcile_deleted(
         &self,
@@ -416,7 +416,7 @@ impl SubmissionIntents {
         }
         if incomplete {
             Err(
-                "部分发送记录无法核实或清理；可核实的记录已处理，请保留异常记录并检查本机存储"
+                "backendText.m8f3c1afc"
                     .into(),
             )
         } else {
@@ -462,12 +462,12 @@ impl SubmissionIntents {
                     &input,
                 )
                 .map_err(|e| e.to_string())?;
-                let changed = || "原发送标识已绑定其他内容，未继续操作".to_string();
+                let changed = || "backendText.m2d44b44a".to_string();
                 if let Some(SubmissionIntentEntry::Closed { request, .. }) = &found {
                     return match request {
                         Some(original) if *original == requested => Ok(json!(found)),
                         Some(_) => Err(changed()),
-                        None => Err("原发送已结束，但无法核实其请求内容，未返回旧结果".into()),
+                        None => Err("backendText.m49d0d884".into()),
                     };
                 }
                 let intent = match found {
@@ -514,7 +514,7 @@ impl SubmissionIntents {
             }
             SubmissionIntentCall::Continue { operation_id } => {
                 match self.io(move |store| store.read(&operation_id)).await? {
-                    None => Err("原发送记录不存在，请刷新后核实".into()),
+                    None => Err("backendText.mcd9f756a".into()),
                     Some(SubmissionIntentEntry::Pending { intent }) => {
                         Ok(json!(self.drive(core, &intent).await?))
                     }
@@ -523,7 +523,7 @@ impl SubmissionIntents {
             }
             SubmissionIntentCall::Retire { operation_id } => {
                 match self.io(move |store| store.read(&operation_id)).await? {
-                    None => Err("原发送记录不存在，请刷新后核实".into()),
+                    None => Err("backendText.mcd9f756a".into()),
                     Some(SubmissionIntentEntry::Pending { intent }) => {
                         Ok(json!(self.retire(core, &intent).await?))
                     }
@@ -578,7 +578,7 @@ impl SubmissionIntents {
                 request,
             } => {
                 if request.operation_id != operation_id {
-                    return Err("查询与原发送身份不一致".into());
+                    return Err("backendText.mf8c65674".into());
                 }
                 let requested = start_request_fingerprint(
                     &request.scope,
@@ -597,7 +597,7 @@ impl SubmissionIntents {
                     None => return Ok(Value::Null),
                 };
                 if original.as_ref() != Some(&requested) {
-                    return Err("原发送回执与请求内容不一致，未返回旧结果".into());
+                    return Err("backendText.m0af5d559".into());
                 }
                 Ok(json!(found))
             }
@@ -608,7 +608,7 @@ impl SubmissionIntents {
                 if let Some(expected) = expected {
                     let expected = normalize(*expected).map_err(|e| e.to_string())?;
                     if expected.operation_id != operation_id {
-                        return Err("查询与原发送身份不一致".into());
+                        return Err("backendText.mf8c65674".into());
                     }
                     Ok(json!(
                         self.io(move |store| store.matching(&expected)).await?
@@ -641,7 +641,7 @@ impl SubmissionIntents {
                     .submission_intent_resolution(&intent)
                     .await
                     .map_err(|e| e.to_string())?
-                    .ok_or("尚未核实原消息已受理或已作废，恢复记录仍保留")?;
+                    .ok_or("backendText.m3c3f130c")?;
                 let entry = SubmissionIntentEntry::Closed {
                     fingerprint: fingerprint(&intent).map_err(|e| e.to_string())?,
                     resolution,
@@ -672,7 +672,7 @@ async fn freeze(
     canonical(&operation_id)?;
     let snapshot = core.bootstrap().await.map_err(|e| e.to_string())?;
     if !snapshot.projects.iter().any(|p| p.project_id == project_id) {
-        return Err("原项目已不可用。".into());
+        return Err("backendText.m6ddcc782".into());
     }
     let existing = match &task_id {
         Some(id) => {
@@ -680,9 +680,9 @@ async fn freeze(
                 .tasks
                 .iter()
                 .find(|task| &task.task_id == id && task.project_id == project_id)
-                .ok_or("原会话不可发送，请刷新后重试。")?;
+                .ok_or("backendText.m7fe13b6c")?;
             if task.active_primary_run.is_some() {
-                return Err("原会话不可发送，请等待回复结束或刷新后重试。".into());
+                return Err("backendText.m95906c40".into());
             }
             Some(task.clone())
         }
@@ -709,7 +709,7 @@ async fn freeze(
             updated_at: None,
             task_id: TaskId::new(),
             project_id,
-            title: "新对话".into(),
+            title: UNTITLED_TASK_TITLE.into(),
             preferred_executor: target.clone(),
             last_turn_executor: None,
             active_primary_run: None,
@@ -782,7 +782,7 @@ impl SubmissionIntents {
             return Ok(entry);
         }
         if Self::stage(core, intent).await? == SubmissionStage::Unresolved {
-            let command = stage_command(intent).ok_or("缺少原发送阶段。")?;
+            let command = stage_command(intent).ok_or("backendText.me086980d")?;
             if let Err(error) = core.execute(command).await {
                 // A lost reply may follow acceptance; only the original receipt decides.
                 if Self::stage(core, intent).await? == SubmissionStage::Unresolved {
@@ -794,7 +794,7 @@ impl SubmissionIntents {
             return Ok(self
                 .resolved(core, intent)
                 .await?
-                .ok_or("原操作结果尚未确认。")?);
+                .ok_or("backendText.m3472550d")?);
         };
         let snapshot = core.bootstrap().await.map_err(|e| e.to_string())?;
         let current = snapshot
@@ -807,7 +807,7 @@ impl SubmissionIntents {
                 && task.stream_version == version
                 && task.preferred_executor == intent.target
         }) {
-            return Err("会话已变化，消息未发送，请重试。".into());
+            return Err("backendText.mc02fc997".into());
         }
         let failure = core
             .execute(submission_command(intent, version))
@@ -816,7 +816,7 @@ impl SubmissionIntents {
         match self.resolved(core, intent).await? {
             Some(entry) => Ok(entry),
             None => Err(failure.map_or_else(
-                || "发送结果尚未确认。".to_string(),
+                || "backendText.mbfd741ad".to_string(),
                 |error| error.to_string(),
             )),
         }
@@ -842,7 +842,7 @@ impl SubmissionIntents {
         }
         self.resolved(core, intent)
             .await?
-            .ok_or_else(|| "无法确认原发送是否已停止受理。".into())
+            .ok_or_else(|| "backendText.meec58df7".into())
     }
 }
 
@@ -861,7 +861,7 @@ mod tests {
         CoreRepository,
         submission_intents::{stage_command, submission_command},
     };
-    use agent_domain::{ExecutorRef, ProjectId, ProviderId, TaskId};
+    use agent_domain::{ExecutorRef, ProjectId, ProviderId, TaskId, UNTITLED_TASK_TITLE};
     use agent_protocol::{
         CommandEnvelope, CoreCommand, RegisterProject, TaskSummary,
         submission::{SubmissionCreation, SubmissionInput},
@@ -931,7 +931,7 @@ mod tests {
                 updated_at: None,
                 task_id: TaskId::new(),
                 project_id,
-                title: "新对话".into(),
+                title: UNTITLED_TASK_TITLE.into(),
                 preferred_executor: target.clone(),
                 last_turn_executor: None,
                 active_primary_run: None,
@@ -1494,7 +1494,7 @@ mod tests {
                 .reconcile_deleted(&core, None)
                 .await
                 .unwrap_err()
-                .contains("部分")
+                .contains("backendText.m8f3c1afc")
         );
         assert_eq!(
             reopened.call(&core, get(&deleted)).await.unwrap()["resolution"]["status"],
@@ -1875,7 +1875,7 @@ mod tests {
             )
             .await
             .unwrap_err()
-            .contains("待核实发送")
+            .contains("backendText.m04f4f851")
         );
         // A retry of the same identity must carry the same content.
         let mut changed = start(&intent, &frozen.operation_id, None, &intent.target);
@@ -1886,7 +1886,7 @@ mod tests {
             host.call(&core, changed)
                 .await
                 .unwrap_err()
-                .contains("其他内容")
+                .contains("backendText.m797e8037")
         );
         let continued = host
             .call(
@@ -1991,7 +1991,7 @@ mod tests {
             host.call(&core, query(changed))
                 .await
                 .unwrap_err()
-                .contains("内容不一致")
+                .contains("backendText.m272c8aed")
         );
         let mut changed = request.clone();
         changed.task_id = Some(submitted_task(&first));
@@ -1999,7 +1999,7 @@ mod tests {
             host.call(&core, query(changed))
                 .await
                 .unwrap_err()
-                .contains("内容不一致")
+                .contains("backendText.m272c8aed")
         );
         let mut changed = request.clone();
         changed.target.provider_id = ProviderId::parse("other").unwrap();
@@ -2007,7 +2007,7 @@ mod tests {
             host.call(&core, query(changed))
                 .await
                 .unwrap_err()
-                .contains("内容不一致")
+                .contains("backendText.m272c8aed")
         );
         let mut wrong_id = request;
         wrong_id.operation_id = CommandId::new();
@@ -2015,7 +2015,7 @@ mod tests {
             host.call(&core, query(wrong_id))
                 .await
                 .unwrap_err()
-                .contains("身份不一致")
+                .contains("backendText.mffe718d4")
         );
         idle(&core).await;
         disable_fake(&core).await;
@@ -2056,7 +2056,7 @@ mod tests {
             )
             .await
             .unwrap_err()
-            .contains("内容不一致")
+            .contains("backendText.m272c8aed")
         );
         assert_eq!(queued(&core).await, 1);
     }
@@ -2087,7 +2087,7 @@ mod tests {
             host.call(&core, changed)
                 .await
                 .unwrap_err()
-                .contains("其他内容")
+                .contains("backendText.m797e8037")
         );
         assert!(
             host.call(
@@ -2096,7 +2096,7 @@ mod tests {
             )
             .await
             .unwrap_err()
-            .contains("其他内容")
+            .contains("backendText.m797e8037")
         );
         assert_eq!(queued(&core).await, 1);
 
@@ -2117,7 +2117,7 @@ mod tests {
             host.call(&core, start(&next, &pending, None, &intent.target))
                 .await
                 .unwrap_err()
-                .contains("其他内容")
+                .contains("backendText.m797e8037")
         );
 
         // A closed record without a request fingerprint cannot vouch for a retry.
@@ -2135,7 +2135,7 @@ mod tests {
             host.call(&core, start(&intent, &legacy, None, &intent.target))
                 .await
                 .unwrap_err()
-                .contains("无法核实")
+                .contains("backendText.m5bbbc4dd")
         );
     }
     async fn disable_fake(core: &Arc<Core>) {

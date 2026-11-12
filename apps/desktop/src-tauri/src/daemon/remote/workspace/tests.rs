@@ -1251,7 +1251,7 @@ async fn preview_does_not_replay_a_failed_post_on_the_other_loopback_family() {
     )
     .await
     .unwrap();
-    assert!(result.unwrap_err().contains("未重发请求"));
+    assert!(result.unwrap_err().contains("backendText.m4f8d0b4b"));
     assert!(
         tokio::time::timeout(Duration::from_millis(500), ipv4.accept())
             .await

@@ -43,7 +43,7 @@ impl Output {
     pub fn hold(&self, until: Option<Instant>) -> Result<(), String> {
         let mut state = self.state();
         if until.is_some() && state.ended.is_some() {
-            return Err("旧视频管线已结束，请重新连接".into());
+            return Err("backendText.m69ca3db8".into());
         }
         state.hold = until;
         Ok(())
@@ -62,15 +62,15 @@ impl Output {
     pub fn replace(&self, output: Arc<dyn VideoOut>) -> Result<u64, String> {
         let mut state = self.state();
         if state.ended.is_some() {
-            return Err("旧视频管线已结束，请重新连接".into());
+            return Err("backendText.m69ca3db8".into());
         }
         let next = state
             .generation
             .max(state.output.video_epoch().unwrap_or(0))
             .checked_add(1)
-            .ok_or("请重新开启视频租约")?;
+            .ok_or("backendText.mbc369a43")?;
         if output.video_epoch().is_some_and(|epoch| epoch != next) {
-            return Err("新视频发布代次不匹配".into());
+            return Err("backendText.mcad367c2".into());
         }
         state.output.retire();
         if state.profile != output.profile() {
@@ -113,10 +113,10 @@ impl Output {
     pub fn activate(&self, generation: u64) -> Result<(), String> {
         let mut state = self.state();
         if state.ended.is_some() {
-            return Err("视频管线已结束".into());
+            return Err("backendText.m91772e61".into());
         }
         if state.generation != generation {
-            return Err("视频代次已变化，请重新准备画面".into());
+            return Err("backendText.mb14bf5d1".into());
         }
         if !state.ready {
             state.resync = true;

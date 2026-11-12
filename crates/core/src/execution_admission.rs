@@ -81,7 +81,7 @@ impl Core {
                 if on_target {
                     "backendText.targetNotConnected"
                 } else {
-                    "所选 Agent 驱动不可用，请重新检测"
+                    "backendText.mc197e205"
                 }
                 .into(),
             ));
@@ -107,7 +107,7 @@ impl Core {
             .any(|id| id == executor.provider_id.as_str())
         {
             return Err(CoreError::CapabilityUnavailable(
-                "所选 Agent 已禁用，请启用后重试或选择其他 Agent".into(),
+                "backendText.m12a3f699".into(),
             ));
         }
         Ok(())
@@ -121,7 +121,7 @@ impl Core {
         let snapshot = self.bootstrap().await?;
         if !installation_is_ready(executor, &snapshot.installations) {
             return Err(CoreError::CapabilityUnavailable(
-                "所选 Agent 安装尚未就绪或已更换，请重新检测并选择可用的 Agent".into(),
+                "backendText.m83f9c5d0".into(),
             ));
         }
         Ok(())
@@ -185,7 +185,7 @@ mod tests {
             drop(held);
             tokio::time::timeout(std::time::Duration::from_secs(3), async {
                 update.await.unwrap();
-                assert!(send.await.unwrap_err().to_string().contains("已禁用"));
+                assert!(send.await.unwrap_err().to_string().contains("backendText.mbc5a87a7"));
             })
             .await
             .unwrap();

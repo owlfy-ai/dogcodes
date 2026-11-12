@@ -961,7 +961,7 @@ mod tests {
             "auxiliary",
             "COM10",
             "company",
-            "文件名.rs",
+            "backendText.m7bddc28e",
             ".gitignore",
             "space inside.txt",
         ] {

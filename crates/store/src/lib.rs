@@ -3423,9 +3423,9 @@ mod tests {
                 params![project_id],
             )
             .unwrap();
-        connection.execute("INSERT INTO tasks(task_id, project_id, title, preferred_executor_json, stream_version) VALUES (?1, ?2, '新对话', ?3, 1)",
-            params![task_id, project_id, serde_json::to_string(&executor("fake")).unwrap()]).unwrap();
-        assert_eq!(load_tasks(&connection, None).unwrap()[0].title, "新对话");
+        connection.execute("INSERT INTO tasks(task_id, project_id, title, preferred_executor_json, stream_version) VALUES (?1, ?2, ?3, ?4, 1)",
+            params![task_id, project_id, agent_domain::UNTITLED_TASK_TITLE, serde_json::to_string(&executor("fake")).unwrap()]).unwrap();
+        assert_eq!(load_tasks(&connection, None).unwrap()[0].title, agent_domain::UNTITLED_TASK_TITLE);
         for (sequence, kind, text) in [
             (1, "user_message", "第一条提示词"),
             (2, "assistant_message", "模型回复"),
@@ -3444,7 +3444,7 @@ mod tests {
             connection
                 .query_row("SELECT title FROM tasks", [], |row| row.get::<_, String>(0))
                 .unwrap(),
-            "新对话"
+            agent_domain::UNTITLED_TASK_TITLE
         );
     }
 
@@ -5701,12 +5701,12 @@ mod tests {
                     DriverEvent::ToolStarted {
                         item_id: "search-1".into(),
                         tool_name: "web_search".into(),
-                        summary: "搜索网页".into(),
+                        summary: "backendText.m01aeaf3f".into(),
                     },
                     DriverEvent::ToolCompleted {
                         item_id: "search-1".into(),
                         tool_name: "web_search".into(),
-                        summary: "搜索网页".into(),
+                        summary: "backendText.m01aeaf3f".into(),
                         success: true,
                     },
                     DriverEvent::TurnCompleted {
@@ -5727,7 +5727,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(activities.len(), 1);
         assert_eq!(activities[0].kind, "tool.completed");
-        assert_eq!(activities[0].text, "搜索网页");
+        assert_eq!(activities[0].text, "backendText.m01aeaf3f");
         assert_eq!(activities[0].provider_id.as_deref(), Some("scripted"));
 
         let events = core.sync_events(0, 10_000).await.unwrap();
@@ -7236,7 +7236,7 @@ mod tests {
                 review_fix: None,
                 attachments: vec![],
                 task_id: task_id.clone(),
-                prompt: "继续".into(),
+                prompt: "backendText.m7c969119".into(),
                 executor_override: None,
                 model: None,
                 thinking: None,
@@ -7260,7 +7260,7 @@ mod tests {
             .unwrap();
             let requests = driver.received_requests().await;
             assert_eq!(requests.len(), 1);
-            assert_eq!(requests[0].prompt, "继续");
+            assert_eq!(requests[0].prompt, "backendText.m7c969119");
             assert!(
                 String::from_utf8_lossy(&requests[0].context[0].content)
                     .contains("Before retrying any side effects")

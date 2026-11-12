@@ -64,7 +64,7 @@ impl LaunchIntent {
                 || request.generation.is_empty()
                 || self.command.is_none())
         {
-            return Err("项目启动记录与原请求不一致，请核实原操作".into());
+            return Err("backendText.ma2e8f0c5".into());
         }
         Ok(())
     }
@@ -203,14 +203,14 @@ impl Session {
     #[cfg(windows)]
     fn initialize_cursor(&self, directory: Option<&Path>) -> Result<(), String> {
         {
-            let mut input = self.input.lock().map_err(|_| "终端输入不可用")?;
-            let writer = input.as_mut().ok_or("终端输入已关闭")?;
+            let mut input = self.input.lock().map_err(|_| "backendText.m82e48394")?;
+            let writer = input.as_mut().ok_or("backendText.m892b1bec")?;
             writer
                 .write_all(b"\x1b[1;1R")
                 .and_then(|()| writer.flush())
-                .map_err(|error| format!("Windows 终端初始化失败：{error}"))?;
+                .map_err(|error| format!("backendText.ma211ea8c\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?;
         }
-        let mut output = self.output.lock().map_err(|_| "终端状态不可用")?;
+        let mut output = self.output.lock().map_err(|_| "backendText.m0e61b774")?;
         if output.info.status == TerminalStatus::Starting {
             output.info.status = TerminalStatus::Running;
             save(directory, &self.intent, &output.info)?;
@@ -224,7 +224,7 @@ impl Session {
         Ok(self
             .output
             .lock()
-            .map_err(|_| "终端状态不可用")?
+            .map_err(|_| "backendText.m0e61b774")?
             .info
             .clone())
     }
@@ -239,7 +239,7 @@ impl Session {
         self.changed.notify_waiters();
     }
     fn batch(&self, after: u64) -> Result<OutputBatch, String> {
-        let output = self.output.lock().map_err(|_| "终端输出不可用")?;
+        let output = self.output.lock().map_err(|_| "backendText.medfe6170")?;
         let from = after.clamp(output.first, output.info.output_end);
         let bytes: Vec<_> = output
             .bytes
@@ -361,7 +361,7 @@ impl Drop for TerminalHost {
 
 pub fn size(cols: u16, rows: u16) -> Result<PtySize, String> {
     if !(2..=1000).contains(&cols) || !(1..=500).contains(&rows) {
-        return Err("无效的终端尺寸".into());
+        return Err("backendText.m6d983d87".into());
     }
     Ok(PtySize {
         cols,
@@ -377,7 +377,7 @@ impl TerminalHost {
         host.directory = Some(directory.clone());
         if let Err(error) = host.recover(&directory) {
             host.recovery_error =
-                Some(format!("无法核实之前的终端记录，请保留数据后检查：{error}"));
+                Some(format!("backendText.mb202ac56\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
         }
         host
     }
@@ -441,7 +441,7 @@ impl TerminalHost {
             });
             self.sessions
                 .lock()
-                .map_err(|_| "终端状态不可用")?
+                .map_err(|_| "backendText.m0e61b774")?
                 .insert(session.intent.operation_id.clone(), session);
         }
         Ok(())
@@ -449,10 +449,10 @@ impl TerminalHost {
     fn session(&self, id: &str) -> Result<Arc<Session>, String> {
         self.sessions
             .lock()
-            .map_err(|_| "终端状态不可用")?
+            .map_err(|_| "backendText.m0e61b774")?
             .get(id)
             .cloned()
-            .ok_or_else(|| "终端不存在或属于已清除的后台实例".into())
+            .ok_or_else(|| "backendText.ma597cca3".into())
     }
     pub fn has_active(&self) -> bool {
         self.sessions.lock().map_or(true, |sessions| {
@@ -471,7 +471,7 @@ impl TerminalHost {
         let mut result: Vec<_> = self
             .sessions
             .lock()
-            .map_err(|_| "终端状态不可用")?
+            .map_err(|_| "backendText.m0e61b774")?
             .values()
             .map(|session| session.info())
             .collect::<Result<Vec<_>, _>>()?
@@ -488,17 +488,17 @@ impl TerminalHost {
         Ok(self
             .sessions
             .lock()
-            .map_err(|_| "终端状态不可用")?
+            .map_err(|_| "backendText.m0e61b774")?
             .get(id)
             .cloned())
     }
     pub fn existing(&self, intent: &LaunchIntent) -> Result<Option<TerminalInfo>, String> {
         if self.launch_retired(&intent.operation_id)? {
-            return Err("原启动已取消，未重新运行命令".into());
+            return Err("backendText.m3cb06684".into());
         }
         if let Some(session) = self.find_session(&intent.operation_id)? {
             if session.intent != *intent {
-                return Err("终端操作标识已用于不同请求，请核实原操作".into());
+                return Err("backendText.m0b1b510c".into());
             }
             return session.info().map(Some);
         }
@@ -508,17 +508,17 @@ impl TerminalHost {
         &self,
         request: &ProjectLaunchRequest,
     ) -> Result<Option<TerminalInfo>, String> {
-        uuid::Uuid::parse_str(&request.operation_id).map_err(|_| "无效的运行操作标识")?;
+        uuid::Uuid::parse_str(&request.operation_id).map_err(|_| "backendText.m4edc4015")?;
         if self.launch_retired(&request.operation_id)? {
-            return Err("原启动已取消，未重新运行命令".into());
+            return Err("backendText.m3cb06684".into());
         }
         let Some(session) = self.find_session(&request.operation_id)? else {
             return Ok(None);
         };
         match &session.intent.project_launch {
             Some(original) if original == request => session.info().map(Some),
-            Some(_) => Err("运行操作标识已用于不同请求，请核实原操作".into()),
-            None => Err("该终端记录未绑定此项目启动请求，请查看原终端状态；未重新启动".into()),
+            Some(_) => Err("backendText.m977d0b53".into()),
+            None => Err("backendText.m6cf6eaf4".into()),
         }
     }
     pub async fn start(&self, intent: LaunchIntent) -> Result<TerminalInfo, String> {
@@ -551,7 +551,7 @@ impl TerminalHost {
         if let Some(error) = &self.recovery_error {
             return Err(error.clone());
         }
-        uuid::Uuid::parse_str(&intent.operation_id).map_err(|_| "无效的终端操作标识")?;
+        uuid::Uuid::parse_str(&intent.operation_id).map_err(|_| "backendText.m7a3da231")?;
         let dimensions = size(intent.cols, intent.rows)?;
         intent.validate_binding()?;
         if let Some(existing) = self.existing(&intent)? {
@@ -560,13 +560,13 @@ impl TerminalHost {
         if self
             .sessions
             .lock()
-            .map_err(|_| "终端状态不可用")?
+            .map_err(|_| "backendText.m0e61b774")?
             .values()
             .filter(|session| session.info().is_ok_and(|info| info.status.active()))
             .count()
             >= RUNNING_LIMIT
         {
-            return Err("运行中的终端过多，请先停止不再需要的终端".into());
+            return Err("backendText.m133590f2".into());
         }
         if intent.project_id.is_empty()
             || intent.label.chars().count() > 200
@@ -575,14 +575,14 @@ impl TerminalHost {
                 .as_ref()
                 .is_some_and(|command| command.len() > 128 * 1024)
         {
-            return Err("无效的终端启动请求".into());
+            return Err("backendText.m82682b1b".into());
         }
         let cwd = match &place {
             Place::Here { .. } => {
                 let cwd = std::fs::canonicalize(&intent.cwd)
-                    .map_err(|e| format!("无法打开项目目录：{e}"))?;
+                    .map_err(|e| format!("backendText.mdc5f0200\u{1e}{}", serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())))?;
                 if !cwd.is_dir() {
-                    return Err("项目目录不存在".into());
+                    return Err("backendText.m3149b9e1".into());
                 }
                 cwd
             }
@@ -625,7 +625,7 @@ impl TerminalHost {
         });
         self.sessions
             .lock()
-            .map_err(|_| "终端状态不可用")?
+            .map_err(|_| "backendText.m0e61b774")?
             .insert(session.intent.operation_id.clone(), session.clone());
         self.changes.changed();
         let spawning = session.clone();
@@ -640,11 +640,11 @@ impl TerminalHost {
             Ok(Err(error)) => Some((TerminalStatus::Failed, error)),
             Err(_) => Some((
                 TerminalStatus::Unknown,
-                "终端启动结果无法确认，未自动重发".into(),
+                "backendText.m0ec5dc47".into(),
             )),
         };
         if let Some((status, error)) = failure {
-            let mut output = session.output.lock().map_err(|_| "终端状态不可用")?;
+            let mut output = session.output.lock().map_err(|_| "backendText.m0e61b774")?;
             output.info.status = status;
             output.info.error = Some(error);
             save(self.directory.as_deref(), &session.intent, &output.info)?;
@@ -669,38 +669,38 @@ impl TerminalHost {
     #[cfg(test)]
     pub async fn write(&self, id: &str, bytes: Vec<u8>) -> Result<(), String> {
         if bytes.len() > READ_LIMIT {
-            return Err("单次终端输入过长".into());
+            return Err("backendText.mec184c6a".into());
         }
         let session = self.session(id)?;
         tokio::task::spawn_blocking(move || {
             if session.info()?.status != TerminalStatus::Running {
-                return Err("终端未运行，未重放输入".into());
+                return Err("backendText.m7ae42b95".into());
             }
             // Linux may leave a blocking PTY write asleep even after the slave
             // dies. Nonblocking writes must observe stop between partial writes.
-            let mut input = session.input.lock().map_err(|_| "终端输入不可用")?;
-            let writer = input.as_mut().ok_or("终端未运行，未重放输入")?;
+            let mut input = session.input.lock().map_err(|_| "backendText.m82e48394")?;
+            let writer = input.as_mut().ok_or("backendText.m7ae42b95")?;
             let mut remaining = bytes.as_slice();
             while !remaining.is_empty() {
                 if session.info()?.status != TerminalStatus::Running {
-                    return Err("终端已停止，输入结果无法确认，未重放输入".into());
+                    return Err("backendText.maf9a3281".into());
                 }
                 match writer.write(remaining) {
-                    Ok(0) => return Err("终端输入未完成，未重放输入".into()),
+                    Ok(0) => return Err("backendText.m53b236a4".into()),
                     Ok(count) => remaining = &remaining[count..],
                     Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         std::thread::sleep(Duration::from_millis(5));
                     }
-                    Err(error) => return Err(format!("终端输入结果无法确认，未重放输入：{error}")),
+                    Err(error) => return Err(format!("backendText.m095dd247\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))),
                 }
             }
             writer
                 .flush()
-                .map_err(|error| format!("终端输入结果无法确认，未重放输入：{error}"))
+                .map_err(|error| format!("backendText.m095dd247\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))
         })
         .await
-        .map_err(|_| "终端输入结果无法确认，未重放输入")?
+        .map_err(|_| "backendText.m2c9eafa3")?
     }
     pub async fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), String> {
         let dimensions = size(cols, rows)?;
@@ -710,15 +710,15 @@ impl TerminalHost {
             resized
                 .process
                 .lock()
-                .map_err(|_| "终端不可用")?
+                .map_err(|_| "backendText.m4bad70b7")?
                 .as_mut()
-                .ok_or("终端未运行")?
+                .ok_or("backendText.m52628cce")?
                 .master
                 .resize(dimensions)
                 .map_err(|e| e.to_string())
         })
         .await
-        .map_err(|_| "终端尺寸更新失败")??;
+        .map_err(|_| "backendText.mf66d3c27")??;
         if let Ok(mut output) = session.output.lock() {
             output.info.cols = cols;
             output.info.rows = rows;
@@ -740,7 +740,7 @@ impl TerminalHost {
             return self.stop_admitted(id, expected_epoch).await;
         }
         {
-            let mut output = session.output.lock().map_err(|_| "终端状态不可用")?;
+            let mut output = session.output.lock().map_err(|_| "backendText.m0e61b774")?;
             output.info.dismissed = true;
             save(self.directory.as_deref(), &session.intent, &output.info)?;
         }
@@ -755,21 +755,21 @@ impl TerminalHost {
             return Ok(info);
         }
         if info.status == TerminalStatus::Unknown {
-            return Err("后台已重启，无法确认原进程身份；未按旧进程号停止进程".into());
+            return Err("backendText.m37e5dfad".into());
         }
         if !info.status.active() {
             return Ok(info);
         }
         let stopping = session.clone();
         tokio::task::spawn_blocking(move || -> Result<(), String> {
-            let mut process = stopping.process.lock().map_err(|_| "终端不可用")?;
+            let mut process = stopping.process.lock().map_err(|_| "backendText.m4bad70b7")?;
             // A concurrent reaper may have removed the process after the status
             // query. Never overwrite its terminal status with Stopping.
             if let Some(process) = process.as_mut() {
                 stopping
                     .output
                     .lock()
-                    .map_err(|_| "终端状态不可用")?
+                    .map_err(|_| "backendText.m0e61b774")?
                     .info
                     .status = TerminalStatus::Stopping;
                 process.stop()?;
@@ -777,7 +777,7 @@ impl TerminalHost {
             Ok(())
         })
         .await
-        .map_err(|_| "停止结果无法确认，请核实终端状态")??;
+        .map_err(|_| "backendText.m38879d64")??;
         session.changed.notify_waiters();
         session.state_changes.changed();
         session.info()
@@ -873,7 +873,7 @@ fn start_here(
     #[cfg(target_os = "linux")]
     {
         use nix::fcntl::{FcntlArg, OFlag, fcntl};
-        let fd = pair.master.as_raw_fd().ok_or("终端不支持可中断输入")?;
+        let fd = pair.master.as_raw_fd().ok_or("backendText.ma0e73164")?;
         let flags = fcntl(fd, FcntlArg::F_GETFL).map_err(|e| e.to_string())?;
         fcntl(
             fd,
@@ -928,7 +928,7 @@ fn spawn(
     // If recording the successful spawn fails, terminate and reap this exact
     // child before reporting failure; never leave an unrecorded process running.
     let setup = (|| {
-        let mut output = session.output.lock().map_err(|_| "终端状态不可用")?;
+        let mut output = session.output.lock().map_err(|_| "backendText.m0e61b774")?;
         // ConPTY inherits its initial cursor through an output/input handshake.
         // Keep writes gated until the service answers it, even with no view.
         output.info.status = if con_pty {
@@ -944,8 +944,8 @@ fn spawn(
         process.armed = false;
         return Err(error);
     }
-    *session.input.lock().map_err(|_| "终端输入不可用")? = Some(writer);
-    *session.process.lock().map_err(|_| "终端状态不可用")? = Some(process);
+    *session.input.lock().map_err(|_| "backendText.m82e48394")? = Some(writer);
+    *session.process.lock().map_err(|_| "backendText.m0e61b774")? = Some(process);
     session.state_changes.changed();
     let reading = session.clone();
     #[cfg(windows)]
@@ -1043,7 +1043,7 @@ fn spawn(
         if let Ok(mut input) = session.input.lock() {
             input.take();
         }
-        return Err(format!("无法读取终端输出：{error}"));
+        return Err(format!("backendText.m82100f78\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
     }
     #[cfg(windows)]
     {

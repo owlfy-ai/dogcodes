@@ -14,7 +14,7 @@ impl Bounds {
             || i64::from(self.x) + i64::from(self.width) - 1 > i64::from(i32::MAX)
             || i64::from(self.y) + i64::from(self.height) - 1 > i64::from(i32::MAX)
         {
-            return Err("显示器当前坐标范围无效".into());
+            return Err("backendText.m97923790".into());
         }
         Ok(Display {
             x: self.x,
@@ -97,7 +97,7 @@ pub(super) fn batch_guarded(
     mut send: impl FnMut(&Display, Input) -> Result<()>,
 ) -> Result<()> {
     if !active() {
-        return Err("输入请求已结束".into());
+        return Err("backendText.meea125cf".into());
     }
     let display = if needs_bounds(&events) {
         current(original)?
@@ -105,14 +105,14 @@ pub(super) fn batch_guarded(
         original.clone()
     };
     if display.id != original.id {
-        return Err("显示器身份已变化，禁止使用另一屏幕的坐标".into());
+        return Err("backendText.mf5cd0f7e".into());
     }
     if !active() {
-        return Err("输入请求已结束".into());
+        return Err("backendText.meea125cf".into());
     }
     events.into_iter().try_for_each(|e| {
         if !active() {
-            return Err("输入请求已结束".into());
+            return Err("backendText.meea125cf".into());
         }
         send(&display, e)
     })

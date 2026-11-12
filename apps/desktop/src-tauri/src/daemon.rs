@@ -226,7 +226,7 @@ impl CoreClient {
             result
         })
         .await
-        .map_err(|_| "后台服务响应超时，请重新连接检查结果；未自动重发操作".to_string())?
+        .map_err(|_| "backendText.m8286c516".to_string())?
     }
     pub(crate) async fn review<T: DeserializeOwned>(
         &self,
@@ -343,7 +343,7 @@ impl CoreClient {
         // back to its unsequenced writer when the new window protocol is absent.
         let caps: Value = self.call("ping", json!([])).await?;
         if caps["terminalInputWindowProtocol"] != 1 {
-            return Err("后台仍在运行旧版本，当前输入已暂停；输出仍可查看，请在任务安全结束后重新打开应用。".into());
+            return Err("backendText.m62272771".into());
         }
         self.call("terminal_input", json!((window, request))).await
     }
@@ -399,7 +399,7 @@ impl CoreClient {
             )
             .await?;
         if info.id != id || info.epoch != expected_epoch {
-            return Err("终端身份已变化，未关闭新的终端；请刷新后确认".into());
+            return Err("backendText.mb2fbdfec".into());
         }
         Ok(info)
     }
@@ -1025,7 +1025,7 @@ async fn rescan_agent(
         .iter()
         .any(|task| task.active_primary_run.is_some())
     {
-        return Err("请等待当前对话完成后重新检测 Agent".into());
+        return Err("backendText.m087f5a81".into());
     }
     scan_builtin_agent(Arc::clone(core), source, fresh).await?;
     core.bootstrap().await.map_err(|e| e.to_string())
@@ -2037,7 +2037,7 @@ async fn run_service(directory: PathBuf, owned: bool) -> Result<(), String> {
         {
             crate::service_diagnostics::record(
                 "submission_cleanup_incomplete",
-                "发送恢复记录清理未完成，请核实本机存储后重试",
+                "backendText.mb2a50b9a",
             );
         }
     });
@@ -2283,7 +2283,7 @@ mod tests {
                 .register_project(relative)
                 .await
                 .unwrap_err()
-                .contains("完整的本地目录路径")
+                .contains("backendText.m7a4b40b1")
         );
         let edit = ProjectEdit {
             project_id: a.project_id.clone(),
@@ -2310,7 +2310,7 @@ mod tests {
                 .update_project(edit)
                 .await
                 .unwrap_err()
-                .contains("项目已被修改")
+                .contains("backendText.mf4c7bfba")
         );
     }
     #[tokio::test]
@@ -2321,7 +2321,7 @@ mod tests {
         let f = fixture().await;
         let intent: SubmissionIntent = serde_json::from_value(json!({
             "schemaVersion": 1, "operationId": CommandId::new(), "scope": "draft:rpc", "requestedAt": "2026-10-16T12:00:00Z",
-            "task": { "taskId": TaskId::new(), "projectId": ProjectId::new(), "title": "新对话", "preferredExecutor": {"providerId":"fake","installationId":null}, "activePrimaryRun":null, "streamVersion":0 },
+            "task": { "taskId": TaskId::new(), "projectId": ProjectId::new(), "title": "dogcodes:untitled", "preferredExecutor": {"providerId":"fake","installationId":null}, "activePrimaryRun":null, "streamVersion":0 },
             "target": {"providerId":"fake","installationId":null}, "input": {"prompt":"original", "model":null, "thinking":null, "permissionMode":null,"attachments":[]},
             "creation": {"operationId": CommandId::new()}, "context":null, "submission":null
         })).unwrap();
@@ -2742,7 +2742,7 @@ mod tests {
         .unwrap();
         assert!(!cleanup.is_finished());
         release.send(()).unwrap();
-        assert!(cleanup.await.unwrap().unwrap_err().contains("部分"));
+        assert!(cleanup.await.unwrap().unwrap_err().contains("backendText.m8f3c1afc"));
         assert!(!f.control.startup_work.active());
         assert_eq!(
             std::fs::read(root.join("unrecognized.json")).unwrap(),
@@ -2774,7 +2774,7 @@ mod tests {
         f.core.execute(command).await.unwrap();
         let intent: SubmissionIntent = serde_json::from_value(json!({
             "schemaVersion":1, "operationId":CommandId::new(), "scope":"draft:startup", "requestedAt":"2026-10-16T12:00:00Z",
-            "task":{"taskId":TaskId::new(),"projectId":project_id,"title":"新对话","preferredExecutor":{"providerId":"fake","installationId":null},"activePrimaryRun":null,"streamVersion":0},
+            "task":{"taskId":TaskId::new(),"projectId":project_id,"title":"dogcodes:untitled","preferredExecutor":{"providerId":"fake","installationId":null},"activePrimaryRun":null,"streamVersion":0},
             "target":{"providerId":"fake","installationId":null},"input":{"prompt":"private startup fixture","model":null,"thinking":null,"permissionMode":null,"attachments":[]},
             "creation":{"operationId":CommandId::new()},"context":null,"submission":null
         })).unwrap();
@@ -2896,7 +2896,7 @@ mod tests {
             .terminal_input("main", json!({"type":"write","terminalId":"not-sent"}))
             .await
             .unwrap_err();
-        assert!(error.contains("旧版本"));
+        assert!(error.contains("backendText.m62272771"));
         server.await.unwrap();
     }
     #[cfg(unix)]
@@ -3191,7 +3191,7 @@ mod tests {
                 .terminal_start(intent.clone())
                 .await
                 .unwrap_err()
-                .contains("项目范围")
+                .contains("backendText.mdfacbea4")
         );
         intent.cwd = root.path().into();
         intent.task_id = Some("tsk_missing".into());
@@ -3200,7 +3200,7 @@ mod tests {
                 .terminal_start(intent.clone())
                 .await
                 .unwrap_err()
-                .contains("会话不属于")
+                .contains("backendText.ma0931a4c")
         );
         intent.task_id = None;
         intent.directory_index = 1;
@@ -3209,7 +3209,7 @@ mod tests {
                 .terminal_start(intent.clone())
                 .await
                 .unwrap_err()
-                .contains("项目目录不存在")
+                .contains("backendText.m3149b9e1")
         );
         intent.directory_index = 0;
         let endpoint: Endpoint = serde_json::from_slice(
@@ -3665,14 +3665,14 @@ mod tests {
                 .command_receipt(changed.clone())
                 .await
                 .unwrap_err()
-                .contains("不同")
+                .contains("backendText.mf2632a78")
         );
         assert!(
             f.client
                 .execute(changed)
                 .await
                 .unwrap_err()
-                .contains("不同")
+                .contains("backendText.mf2632a78")
         );
         assert_eq!(
             f.client.bootstrap().await.unwrap().projects[0].display_name,
@@ -3850,7 +3850,7 @@ mod tests {
                 .await
                 .unwrap_err()
                 .to_string()
-                .contains("不同请求")
+                .contains("backendText.m57a0a3ba")
         );
         let restored =
             crate::project_runs::ProjectRunHost::new(f.directory.path().join("project-runs"));
@@ -3899,7 +3899,7 @@ mod tests {
                 .project_run_open(request.clone())
                 .await
                 .unwrap_err()
-                .contains("配置已更新")
+                .contains("backendText.mad90de7d")
         );
         assert!(!f.directory.path().join("launches").exists());
         let request = crate::project_runs::LaunchRequest {
@@ -3991,7 +3991,7 @@ mod tests {
                     .project_run_open(changed)
                     .await
                     .unwrap_err()
-                    .contains("不同请求")
+                    .contains("backendText.m977d0b53")
             );
         }
         // A reload reads the binding from disk, even when current task/catalog
@@ -4042,7 +4042,7 @@ mod tests {
                 .terminal_start(bound)
                 .await
                 .unwrap_err()
-                .contains("项目启动入口")
+                .contains("backendText.m1d226441")
         );
         assert_eq!(
             std::fs::read(f.directory.path().join("launches")).unwrap(),

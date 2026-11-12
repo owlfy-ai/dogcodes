@@ -50,7 +50,7 @@ pub(crate) async fn dispatch(
             let intent: LaunchIntent = serde_json::from_value(args).map_err(|e| e.to_string())?;
             // Recipe bindings are created only by the validated recipe path.
             if intent.project_launch.is_some() {
-                return Err("项目运行请求必须通过项目启动入口发送".into());
+                return Err("backendText.m1d226441".into());
             }
             // Retry an accepted intent even after project configuration changes.
             // A new intent is always checked against the current project roots.
@@ -68,15 +68,15 @@ pub(crate) async fn dispatch(
                     task.task_id.as_str() == task_id && task.project_id == project.project_id
                 })
             {
-                return Err("会话不属于此项目".into());
+                return Err("backendText.ma0931a4c".into());
             }
             let root = std::iter::once(&project.path)
                 .chain(&project.additional_directories)
                 .nth(intent.directory_index)
-                .ok_or("项目目录不存在")?;
+                .ok_or("backendText.m3149b9e1")?;
             if let Some(target) = &project.target_id {
                 if !within_remote_root(root, &intent.cwd) {
-                    return Err("终端目录不在项目范围内".into());
+                    return Err("backendText.mdfacbea4".into());
                 }
                 let target = targets.target(target)?;
                 return Ok(json!(terminals.start_on(intent, target).await?));
@@ -84,7 +84,7 @@ pub(crate) async fn dispatch(
             let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
             let cwd = std::fs::canonicalize(&intent.cwd).map_err(|e| e.to_string())?;
             if !cwd.starts_with(&root) || !cwd.is_dir() {
-                return Err("终端目录不在项目范围内".into());
+                return Err("backendText.mdfacbea4".into());
             }
             Ok(json!(terminals.start(intent).await?))
         }
@@ -100,7 +100,7 @@ pub(crate) async fn dispatch(
                 directory_index: 0,
                 task_id: None,
                 command_id: None,
-                label: "终端".into(),
+                label: "backendText.me2a76ef1".into(),
                 cwd: home,
                 command: None,
                 cols: request.cols,
@@ -146,11 +146,11 @@ pub(crate) async fn dispatch(
             Ok(json!({ "released": true }))
         }
         "terminal_launch_intents" => {
-            let id = args["operationId"].as_str().ok_or("缺少原启动标识")?;
+            let id = args["operationId"].as_str().ok_or("backendText.mb89dee96")?;
             match args["type"].as_str() {
                 Some("get") => Ok(json!(terminals.launch_receipt(id)?)),
                 Some("retire") => terminals.retire_launch(id).await,
-                _ => Err("无效的启动恢复操作".into()),
+                _ => Err("backendText.mcc93931d".into()),
             }
         }
         "terminal_list" => {
@@ -174,9 +174,9 @@ pub(crate) async fn dispatch(
         }
         "terminal_input" => {
             let (window, request): (String, Value) =
-                serde_json::from_value(args).map_err(|_| "无效的桌面终端输入请求")?;
+                serde_json::from_value(args).map_err(|_| "backendText.m9c6917ec")?;
             if window != "main" && !window.starts_with("review-") {
-                return Err("此窗口不能访问终端输入".into());
+                return Err("backendText.mf86abf3f".into());
             }
             terminals
                 .input_operation(&format!("local-window:{window}"), request)

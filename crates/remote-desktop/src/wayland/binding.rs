@@ -36,7 +36,7 @@ impl CoreDone {
             }));
             if result.is_err() {
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    (callbacks.failed)("Wayland 来源身份回调失败，请重新连接".into());
+                    (callbacks.failed)("backendText.m7705d7a2".into());
                 }));
             }
         }
@@ -69,7 +69,7 @@ impl CoreDone {
             )
         };
         if result < 0 {
-            return Err("无法监听 Wayland 身份同步".into());
+            return Err("backendText.md9828a0d".into());
         }
         owner.registered = true;
         Ok(owner)
@@ -112,7 +112,7 @@ impl Identity {
             || self.frozen.is_some_and(|value| value != serial)
         {
             self.invalidate();
-            return Err("Wayland 授权来源身份已变化，请重新连接".into());
+            return Err("backendText.m075556cf".into());
         }
         self.current = Some(serial);
         Ok(())
@@ -120,7 +120,7 @@ impl Identity {
     fn initialize(&mut self) -> Result<()> {
         let serial = self
             .current
-            .ok_or("已授权的 Wayland 来源不可见，请重新连接")?;
+            .ok_or("backendText.mf048b4d1")?;
         self.observe(serial)?;
         self.frozen = Some(serial);
         self.initial = true;
@@ -129,7 +129,7 @@ impl Identity {
     fn confirm(&mut self) -> Result<()> {
         if self.invalid || !self.initial || self.current != self.frozen || self.current.is_none() {
             self.invalidate();
-            return Err("Wayland 屏幕连接身份无法确认，请重新连接".into());
+            return Err("backendText.m35454efc".into());
         }
         self.ready = self.linked;
         Ok(())
@@ -167,13 +167,13 @@ impl State {
         }
         let sequence = self.sequence.get();
         if sequence >= 0x3fff_fffe {
-            self.error("Wayland 身份同步次数超限".into());
+            self.error("backendText.mabfc1729".into());
             return;
         }
         self.sequence.set(sequence + 1);
         match self.core.sync(sequence) {
             Ok(pending) => self.pending.set(Some(pending)),
-            Err(_) => self.error("Wayland 身份同步失败".into()),
+            Err(_) => self.error("backendText.mb86ebddc".into()),
         }
     }
     pub fn linked(&self, linked: bool) {
@@ -198,7 +198,7 @@ impl Guard {
     ) -> Result<Self> {
         let registry = core
             .get_registry_rc()
-            .map_err(|_| "无法核对 Wayland 授权来源")?;
+            .map_err(|_| "backendText.m582849d4")?;
         let state = Rc::new(State {
             identity: RefCell::new(Identity {
                 expected,
@@ -223,7 +223,7 @@ impl Guard {
                     .and_then(|value| value.parse().ok());
                 let result = match serial {
                     Some(serial) => seen.identity.borrow_mut().observe(serial),
-                    None => Err("Wayland 来源缺少稳定身份".into()),
+                    None => Err("backendText.m3274d81a".into()),
                 };
                 if let Err(error) = result {
                     seen.error(error);
@@ -231,11 +231,11 @@ impl Guard {
             })
             .global_remove(move |id| {
                 if id == node {
-                    removed.error("Wayland 授权来源已移除，请重新连接".into());
+                    removed.error("backendText.mc79e096d".into());
                 }
             })
             .register();
-        let initial = core.sync(0).map_err(|_| "无法核对 Wayland 来源列表")?;
+        let initial = core.sync(0).map_err(|_| "backendText.m773aa9eb")?;
         let done = state.clone();
         let core_listener = CoreDone::new(
             core,

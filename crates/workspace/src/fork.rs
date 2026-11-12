@@ -40,19 +40,19 @@ struct CheckoutProgress {
 }
 
 fn save_marker(path: &Path, value: &impl Serialize) -> Result<(), String> {
-    let directory = path.parent().ok_or("Fork 标记目录无效")?;
-    std::fs::create_dir_all(directory).map_err(|_| "无法创建 Fork 恢复目录")?;
+    let directory = path.parent().ok_or("backendText.m0b810ca6")?;
+    std::fs::create_dir_all(directory).map_err(|_| "backendText.m3c2cd38a")?;
     let mut file =
-        tempfile::NamedTempFile::new_in(directory).map_err(|_| "无法保存 Fork 恢复记录")?;
-    serde_json::to_writer(&mut file, value).map_err(|_| "无法编码 Fork 恢复记录")?;
+        tempfile::NamedTempFile::new_in(directory).map_err(|_| "backendText.mc3ea13d1")?;
+    serde_json::to_writer(&mut file, value).map_err(|_| "backendText.m45c1d220")?;
     file.as_file_mut()
         .sync_all()
-        .map_err(|_| "无法持久保存 Fork 恢复记录")?;
-    file.persist(path).map_err(|_| "无法发布 Fork 恢复记录")?;
+        .map_err(|_| "backendText.me638422c")?;
+    file.persist(path).map_err(|_| "backendText.ma47314ba")?;
     #[cfg(unix)]
     std::fs::File::open(directory)
         .and_then(|file| file.sync_all())
-        .map_err(|_| "Fork 恢复记录保存结果待核实")?;
+        .map_err(|_| "backendText.mde054f51")?;
     Ok(())
 }
 
@@ -64,7 +64,7 @@ impl GitWorkspaceContextProvider {
     async fn fork_git(&self, workspace: &Path, args: &[&str]) -> Result<String, String> {
         self.git(workspace, args)
             .await
-            .map_err(|_| "读取或保存 Git 快照失败（请检查仓库、外部过滤器及目录权限）".into())
+            .map_err(|_| "backendText.mbf9f1c30".into())
     }
 
     async fn common_directory(&self, root: &Path) -> Result<PathBuf, String> {
@@ -76,7 +76,7 @@ impl GitWorkspaceContextProvider {
             .await?;
         Path::new(common.trim_end_matches('\n'))
             .canonicalize()
-            .map_err(|_| "Git 仓库目录不可用".into())
+            .map_err(|_| "backendText.m9a3632f6".into())
     }
 
     async fn snapshot_head(&self, root: &Path) -> Result<Option<String>, String> {
@@ -96,34 +96,34 @@ impl GitWorkspaceContextProvider {
                 GIT_OUTPUT_LIMIT,
             )
             .await
-            .map_err(|_| "无法读取本轮提交基点")?;
+            .map_err(|_| "backendText.m3f6636e4")?;
         if result.exit_code == Some(1) {
             Ok(None)
         } else {
-            Err("本轮 Git HEAD 不可用".into())
+            Err("backendText.m66e7fd9b".into())
         }
     }
 
     pub(super) async fn save_fork_snapshot(&self, paths: &[String]) -> Result<Value, String> {
         if paths.is_empty() {
-            return Err("没有可保存的项目目录".into());
+            return Err("backendText.me6c3a68c".into());
         }
         let mut repositories = BTreeMap::<PathBuf, RepositorySnapshot>::new();
         let mut roots = Vec::new();
         for path in paths {
             let source = Path::new(path)
                 .canonicalize()
-                .map_err(|_| "项目目录不可用")?;
+                .map_err(|_| "backendText.m50891e4c")?;
             let root = self
                 .fork_git(&source, &["rev-parse", "--show-toplevel"])
                 .await
                 .map_err(|_| agent_protocol::FORK_SNAPSHOT_REQUIRES_GIT)?;
             let root = Path::new(root.trim_end_matches('\n'))
                 .canonicalize()
-                .map_err(|_| "Git 根目录不可用")?;
+                .map_err(|_| "backendText.m785657d5")?;
             let relative_path = source
                 .strip_prefix(&root)
-                .map_err(|_| "项目目录不在 Git 工作区内")?
+                .map_err(|_| "backendText.ma5c66a34")?
                 .to_owned();
             let repository = if let Some(saved) = repositories.get(&root) {
                 saved.clone()
@@ -141,12 +141,12 @@ impl GitWorkspaceContextProvider {
             schema_version: 1,
             roots,
         })
-        .map_err(|_| "快照编码失败".into())
+        .map_err(|_| "backendText.m9a195011".into())
     }
 
     async fn save_repository_snapshot(&self, root: &Path) -> Result<RepositorySnapshot, String> {
         let common_directory = self.common_directory(root).await?;
-        let temporary = TemporaryGitIndex::new().map_err(|_| "无法创建快照临时索引")?;
+        let temporary = TemporaryGitIndex::new().map_err(|_| "backendText.m1f30c8ab")?;
         // The index is private; objects go into the repository and are pinned by a private ref.
         let environment = BTreeMap::from([
             (
@@ -181,7 +181,7 @@ impl GitWorkspaceContextProvider {
                 let args = args.iter().map(String::as_str).collect::<Vec<_>>();
                 self.git_with_options(root, &args, environment, GIT_OUTPUT_LIMIT)
                     .await
-                    .map_err(|_| "无法保存完整 Git 文件快照".to_owned())
+                    .map_err(|_| "backendText.mff902a21".to_owned())
             }
         };
         command(vec!["read-tree".into(), "--empty".into()]).await?;
@@ -195,7 +195,7 @@ impl GitWorkspaceContextProvider {
                 4 * 1024 * 1024,
             )
             .await
-            .map_err(|_| "无法读取本轮暂存文件")?;
+            .map_err(|_| "backendText.m92c009f8")?;
         let indexed = self
             .git_process_input(
                 root,
@@ -205,9 +205,9 @@ impl GitWorkspaceContextProvider {
                 Some(&staged),
             )
             .await
-            .map_err(|_| "无法保存本轮暂存文件")?;
+            .map_err(|_| "backendText.m59d6c07b")?;
         if !indexed.success {
-            return Err("无法保存本轮暂存文件".into());
+            return Err("backendText.m59d6c07b".into());
         }
         let index_tree = command(vec!["write-tree".into()]).await?.trim().to_owned();
         self.stage_snapshot_files(root, &environment).await?;
@@ -218,7 +218,7 @@ impl GitWorkspaceContextProvider {
             .split('\0')
             .any(|entry| entry.starts_with("160000 "))
         {
-            return Err("本轮含有 Git 子模块，尚不能完整恢复子模块文件快照".into());
+            return Err("backendText.m2cd26d8d".into());
         }
         // A second staging pass detects edits during capture without relying on bounded diff bytes.
         self.stage_snapshot_files(root, &environment).await?;
@@ -232,9 +232,9 @@ impl GitWorkspaceContextProvider {
                 4 * 1024 * 1024,
             )
             .await
-            .map_err(|_| "无法校验本轮暂存文件")?;
+            .map_err(|_| "backendText.m546e5d61")?;
         if tree != check_tree.trim() || base_commit != check_base || staged != check_staged {
-            return Err("保存轮末快照时文件仍在变化，未保存不一致的快照".into());
+            return Err("backendText.md51c69e6".into());
         }
         let mut args = vec![
             "commit-tree".into(),
@@ -247,7 +247,7 @@ impl GitWorkspaceContextProvider {
         }
         let commit = command(args).await?.trim().to_owned();
         if !oid(&commit) {
-            return Err("Git 快照提交无效".into());
+            return Err("backendText.mc9dc4978".into());
         }
         self.fork_git(
             root,
@@ -284,7 +284,7 @@ impl GitWorkspaceContextProvider {
         // Update tracked files first; this also checks for external content filters.
         self.git_with_options(root, &["add", "-u"], environment.clone(), GIT_OUTPUT_LIMIT)
             .await
-            .map_err(|_| "无法保存本轮已跟踪文件")?;
+            .map_err(|_| "backendText.mff986f2f")?;
         // Enumeration uses the user's global excludes, while content commands stay
         // isolated from global executable filters. Do not accidentally snapshot ignored files.
         let untracked = self
@@ -295,7 +295,7 @@ impl GitWorkspaceContextProvider {
                 4 * 1024 * 1024,
             )
             .await
-            .map_err(|_| "无法读取本轮新增文件")?;
+            .map_err(|_| "backendText.m7c59f6ea")?;
         if !untracked.is_empty() {
             let output = self
                 .git_process_input(
@@ -306,9 +306,9 @@ impl GitWorkspaceContextProvider {
                     Some(&untracked),
                 )
                 .await
-                .map_err(|_| "无法保存本轮新增文件")?;
+                .map_err(|_| "backendText.m786bca84")?;
             if !output.success {
-                return Err("无法保存本轮新增文件".into());
+                return Err("backendText.m786bca84".into());
             }
         }
         Ok(())
@@ -319,11 +319,11 @@ impl GitWorkspaceContextProvider {
         snapshot: Value,
         name: &str,
     ) -> Result<Vec<String>, String> {
-        agent_domain::TaskId::parse(name).map_err(|_| "无效的 fork 标识")?;
+        agent_domain::TaskId::parse(name).map_err(|_| "backendText.m3ebc4eab")?;
         let snapshot: ForkSnapshot =
-            serde_json::from_value(snapshot).map_err(|_| "轮末文件快照格式无效")?;
+            serde_json::from_value(snapshot).map_err(|_| "backendText.m25f13f5f")?;
         if snapshot.schema_version != 1 || snapshot.roots.is_empty() {
-            return Err("轮末文件快照版本无效".into());
+            return Err("backendText.md233bd6a".into());
         }
         // Validate every root before creating any checkout. Never share a live additional directory.
         let mut repositories = BTreeMap::<PathBuf, RepositorySnapshot>::new();
@@ -339,7 +339,7 @@ impl GitWorkspaceContextProvider {
                 || !oid(&repo.index_tree)
                 || repo.base_commit.as_ref().is_some_and(|base| !oid(base))
             {
-                return Err("轮末文件快照路径或对象无效".into());
+                return Err("backendText.m15ffb8ee".into());
             }
             // Do not follow a stored symlink back into the original workspace.
             let mut prefix = PathBuf::new();
@@ -355,17 +355,17 @@ impl GitWorkspaceContextProvider {
                     .await
                     && kind.trim() != "tree"
                 {
-                    return Err("快照中的项目目录已变成文件或符号链接".into());
+                    return Err("backendText.m760bad2d".into());
                 }
             }
             if let Some(previous) = repositories.get(&repo.repository_root) {
                 if previous != repo {
-                    return Err("轮末文件快照中的仓库状态不一致".into());
+                    return Err("backendText.m211516d6".into());
                 }
                 continue;
             }
             if self.common_directory(&repo.repository_root).await? != repo.common_directory {
-                return Err("源仓库位置或身份已变化，无法恢复本轮快照".into());
+                return Err("backendText.mdcd10ae9".into());
             }
             let pinned = self
                 .fork_git(
@@ -377,9 +377,9 @@ impl GitWorkspaceContextProvider {
                     ],
                 )
                 .await
-                .map_err(|_| "本轮的 Git 快照对象已不可用")?;
+                .map_err(|_| "backendText.m396e4ecc")?;
             if pinned.trim() != repo.commit {
-                return Err("本轮 Git 快照校验失败".into());
+                return Err("backendText.m0fcd7668".into());
             }
             let index = self
                 .fork_git(
@@ -391,9 +391,9 @@ impl GitWorkspaceContextProvider {
                     ],
                 )
                 .await
-                .map_err(|_| "本轮的 Git 暂存快照已不可用")?;
+                .map_err(|_| "backendText.m561d9365")?;
             if index.trim() != repo.index_tree {
-                return Err("本轮 Git 暂存快照校验失败".into());
+                return Err("backendText.mcb1da9cc".into());
             }
             let parents = self
                 .fork_git(
@@ -406,7 +406,7 @@ impl GitWorkspaceContextProvider {
                 None => repo.commit.clone(),
             };
             if parents.trim() != expected {
-                return Err("本轮 Git 快照基点校验失败".into());
+                return Err("backendText.m5af632f2".into());
             }
             repositories.insert(repo.repository_root.clone(), repo.clone());
         }
@@ -426,10 +426,7 @@ impl GitWorkspaceContextProvider {
                 .restore_repository_snapshot(repo, &suffix)
                 .await
                 .map_err(|error| {
-                    format!(
-                        "{error}；未完成的 Fork：{suffix}，此前已恢复 {} 个仓库，现有目录均已保留",
-                        destinations.len()
-                    )
+                    format!("backendText.m050c18db\u{1e}{}", serde_json::to_string(&[error.to_string(), suffix.to_string(), destinations.len().to_string()]).unwrap_or_else(|_| "[]".into()))
                 })?;
             destinations.insert(repo.repository_root.clone(), destination);
         }
@@ -439,7 +436,7 @@ impl GitWorkspaceContextProvider {
             .map(|root| {
                 let path = destinations[&root.repository.repository_root].join(&root.relative_path);
                 // Empty project directories are not represented by Git trees.
-                std::fs::create_dir_all(&path).map_err(|_| "无法恢复项目目录".to_owned())?;
+                std::fs::create_dir_all(&path).map_err(|_| "backendText.mc9a5cf71".to_owned())?;
                 Ok(path.to_string_lossy().into_owned())
             })
             .collect()
@@ -463,22 +460,22 @@ impl GitWorkspaceContextProvider {
         let progress = match std::fs::read(&progress_file) {
             Ok(bytes) => Some(
                 serde_json::from_slice::<CheckoutProgress>(&bytes)
-                    .map_err(|_| "Fork 恢复阶段记录损坏，未修改目录")?,
+                    .map_err(|_| "backendText.m265fb99c")?,
             ),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-            Err(_) => return Err("无法读取 Fork 恢复阶段，未修改目录".into()),
+            Err(_) => return Err("backendText.m49ad8051".into()),
         };
         if progress.as_ref().is_some_and(|record| {
             record.snapshot != *snapshot
                 || !matches!(record.stage.as_str(), "creating" | "head_restored")
         }) {
-            return Err("Fork 恢复计划不匹配，未修改目录".into());
+            return Err("backendText.m3b84bd03".into());
         }
         if destination.exists() && marker.exists() {
             let recorded: RepositorySnapshot = std::fs::read(&marker)
                 .ok()
                 .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-                .ok_or("Fork 完成记录损坏，未修改目录")?;
+                .ok_or("backendText.mad68dd5a")?;
             if recorded != *snapshot
                 || self.common_directory(&destination).await? != snapshot.common_directory
                 || self
@@ -487,17 +484,17 @@ impl GitWorkspaceContextProvider {
                     .trim()
                     != branch_ref
             {
-                return Err("fork 目录已被其他工作区使用".into());
+                return Err("backendText.m1de124a1".into());
             }
             // A completed checkout may contain new user work. Never reset it.
             return Ok(destination);
         }
         if destination.exists() && progress.is_none() {
-            return Err("fork 目录已存在但没有可核实的恢复计划，请保留目录并人工核实".into());
+            return Err("backendText.m3e27e5a3".into());
         }
         if !destination.exists() {
             if marker.exists() || progress.as_ref().is_some_and(|p| p.stage != "creating") {
-                return Err("Fork 目录已被移动或删除，未重新创建".into());
+                return Err("backendText.m73ae0b88".into());
             }
             // A branch without its checkout is ambiguous; never delete or adopt it.
             if self
@@ -505,7 +502,7 @@ impl GitWorkspaceContextProvider {
                 .await
                 .is_ok()
             {
-                return Err("Fork 分支已存在但目录不可用，请核实原 Worktree，未重新创建".into());
+                return Err("backendText.m1166051c".into());
             }
             save_marker(
                 &progress_file,
@@ -514,7 +511,7 @@ impl GitWorkspaceContextProvider {
                     stage: "creating".into(),
                 },
             )?;
-            let path = destination.to_str().ok_or("worktree 路径编码无效")?;
+            let path = destination.to_str().ok_or("backendText.mef97d36e")?;
             self.fork_git(
                 source,
                 &[
@@ -536,7 +533,7 @@ impl GitWorkspaceContextProvider {
                 .trim()
                 != branch_ref
         {
-            return Err("Fork 半成品的仓库或分支已改变，未修改目录".into());
+            return Err("backendText.m6ddf8d3e".into());
         }
         let head = self.snapshot_head(&destination).await?;
         let index = self
@@ -563,7 +560,7 @@ impl GitWorkspaceContextProvider {
         };
         if head.as_deref() == Some(snapshot.commit.as_str()) {
             if index != original_tree {
-                return Err("Fork 半成品的暂存区已被修改，未重置或覆盖".into());
+                return Err("backendText.m611308b5".into());
             }
             if let Some(base) = &snapshot.base_commit {
                 self.fork_git(&destination, &["reset", "--mixed", base])
@@ -580,7 +577,7 @@ impl GitWorkspaceContextProvider {
                 && base_tree.as_ref() != Some(&index)
                 && !(snapshot.base_commit.is_none() && index == original_tree))
         {
-            return Err("Fork 半成品的提交或暂存区已改变，未重置或覆盖".into());
+            return Err("backendText.mcafdfc36".into());
         }
         save_marker(
             &progress_file,
@@ -813,7 +810,7 @@ mod tests {
                 .capture_fork_snapshot(&selected)
                 .await
                 .unwrap_err()
-                .contains("附加目录")
+                .contains("backendText.mdccf719a")
         );
         let snapshot = provider
             .capture_fork_snapshot(&paths(directory.path()))
@@ -833,7 +830,7 @@ mod tests {
         let result = provider
             .fork_worktrees(snapshot, TaskId::new().as_str())
             .await;
-        assert!(result.unwrap_err().contains("快照对象已不可用"));
+        assert!(result.unwrap_err().contains("backendText.m396e4ecc"));
         assert!(!directory.path().join(".git/dogcodes-worktrees").exists());
     }
     #[tokio::test]
@@ -882,7 +879,7 @@ mod tests {
             let index = git(&destination, &["write-tree"]);
             let result = provider.fork_worktrees(value, &name).await;
             if user_staged {
-                assert!(result.unwrap_err().contains("暂存区已被修改"));
+                assert!(result.unwrap_err().contains("backendText.m06ff7f8a"));
                 assert_eq!(git(&destination, &["write-tree"]), index);
             } else {
                 let restored = result.unwrap();
@@ -929,7 +926,7 @@ mod tests {
                 .fork_worktrees(value.clone(), &name)
                 .await
                 .unwrap_err()
-                .contains("已恢复 1 个仓库")
+                .contains("backendText.m26abb690")
         );
         let destination = snapshot.roots[0]
             .repository

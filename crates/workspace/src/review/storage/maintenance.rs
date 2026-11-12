@@ -31,10 +31,7 @@ impl ReviewStore {
         let metadata = self
             .execute_metadata_cleanup(&plan.metadata)
             .map_err(|error| {
-                format!(
-                    "{error}; 已回收 {} 个内容对象（{} 字节），请重新盘点",
-                    content.removed_count, content.removed_bytes
-                )
+                format!("backendText.m9913c4e8\u{1e}{}", serde_json::to_string(&[error.to_string(), content.removed_count.to_string(), content.removed_bytes.to_string()]).unwrap_or_else(|_| "[]".into()))
             })?;
         Ok(StorageCleanupResult {
             removed_count: content.removed_count + metadata,

@@ -10,8 +10,7 @@ const src = join(dirname(fileURLToPath(import.meta.url)), "..");
 // Chinese here is data, not UI copy: demo/preview content, language endonyms, sentinels
 // stored by the core, and text matched against native agent or core messages.
 const allowedFiles = new Set([
-  "demoClient.ts", "renderingPreview.tsx", "CommitSummarySettings.tsx", "displayNames.ts",
-  "agentI18n.ts", "quotaPresentation.ts", "contextEdit.ts",
+  "demoClient.ts", "renderingPreview.tsx", "CommitSummarySettings.tsx", "contextEdit.ts",
 ]);
 const allowedLiterals = new Map([["PermissionPicker.tsx", ["空闲"]]]);
 

@@ -48,7 +48,7 @@ impl AttachmentStore {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
         {
-            return Err("附件上传身份或元数据无效".into());
+            return Err("backendText.ma9b6c8d9".into());
         }
         Ok(())
     }
@@ -84,12 +84,12 @@ impl AttachmentStore {
     }
     fn root(&self, create: bool) -> Result<Option<PathBuf>, String> {
         if create {
-            fs::create_dir_all(&self.root).map_err(|_| "无法创建附件目录")?;
+            fs::create_dir_all(&self.root).map_err(|_| "backendText.md93a995d")?;
         }
         match fs::canonicalize(&self.root) {
             Ok(path) => Ok(Some(path)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound && !create => Ok(None),
-            Err(_) => Err("附件目录不可用".into()),
+            Err(_) => Err("backendText.mdf03b726".into()),
         }
     }
     fn checked_child(root: &Path, relative: &Path) -> Result<Option<PathBuf>, String> {
@@ -97,21 +97,21 @@ impl AttachmentStore {
         let metadata = match fs::symlink_metadata(&candidate) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(_) => return Err("附件记录不可读取".into()),
+            Err(_) => return Err("backendText.mfd488c26".into()),
         };
         if metadata.file_type().is_symlink() {
-            return Err("附件路径已变化".into());
+            return Err("backendText.mdd354e76".into());
         }
-        let path = fs::canonicalize(candidate).map_err(|_| "附件路径不可读取")?;
+        let path = fs::canonicalize(candidate).map_err(|_| "backendText.m65f80153")?;
         if !path.starts_with(root) {
-            return Err("不是应用保存的附件".into());
+            return Err("backendText.mbae669e0".into());
         }
         Ok(Some(path))
     }
     fn read_file(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
         let metadata = fs::symlink_metadata(path).map_err(|_| "backendText.attachmentUnreadable")?;
         if !metadata.is_file() || metadata.len() > limit as u64 {
-            return Err("附件文件无效或过大".into());
+            return Err("backendText.meed11491".into());
         }
         let file = fs::File::open(path).map_err(|_| "backendText.attachmentUnreadable")?;
         let mut bytes = Vec::new();
@@ -119,7 +119,7 @@ impl AttachmentStore {
             .read_to_end(&mut bytes)
             .map_err(|_| "backendText.attachmentReadFailed")?;
         if bytes.len() > limit {
-            return Err("附件文件过大".into());
+            return Err("backendText.mb98b1efb".into());
         }
         Ok(bytes)
     }
@@ -134,9 +134,9 @@ impl AttachmentStore {
         };
         let manifest: Manifest =
             serde_json::from_slice(&Self::read_file(&directory.join("manifest.json"), 4096)?)
-                .map_err(|_| "附件回执损坏，请保留原记录")?;
+                .map_err(|_| "backendText.mff93ad98")?;
         if manifest.schema_version != 1 || manifest.request != *request {
-            return Err("原上传身份已绑定不同的附件，未覆盖文件".into());
+            return Err("backendText.mcf25406c".into());
         }
         let reference = Self::reference(&directory, request);
         let bytes = Self::read_file(Path::new(&reference.path), MAX_BYTES)?;
@@ -149,7 +149,7 @@ impl AttachmentStore {
         request: &AttachmentUploadRequest,
     ) -> Result<Option<PromptAttachment>, String> {
         Self::validate(request)?;
-        let _guard = self.gate.lock().map_err(|_| "附件服务暂时不可用")?;
+        let _guard = self.gate.lock().map_err(|_| "backendText.mf6348b90")?;
         let Some(root) = self.root(false)? else {
             return Ok(None);
         };
@@ -162,111 +162,111 @@ impl AttachmentStore {
     ) -> Result<PromptAttachment, String> {
         Self::validate(request)?;
         if encoded.len() > MAX_BASE64 {
-            return Err("附件超过 25 MB".into());
+            return Err("backendText.m962d0a69".into());
         }
-        let bytes = STANDARD.decode(encoded).map_err(|_| "附件编码无效")?;
+        let bytes = STANDARD.decode(encoded).map_err(|_| "backendText.m3e7c8aa9")?;
         let reference = Self::reference(Path::new("unused"), request);
         driver_api::attachments::verify_bytes(&reference, &bytes)
             .map_err(|error| error.to_string())?;
-        let _guard = self.gate.lock().map_err(|_| "附件服务暂时不可用")?;
-        let root = self.root(true)?.ok_or("附件目录不可用")?;
+        let _guard = self.gate.lock().map_err(|_| "backendText.mf6348b90")?;
+        let root = self.root(true)?.ok_or("backendText.mdf03b726")?;
         if let Some(receipt) = Self::receipt_at(&root, request)? {
             return Ok(receipt);
         }
         let uploads = root.join("uploads");
-        fs::create_dir_all(&uploads).map_err(|_| "无法创建上传目录")?;
-        let uploads = Self::checked_child(&root, Path::new("uploads"))?.ok_or("上传目录不可用")?;
+        fs::create_dir_all(&uploads).map_err(|_| "backendText.m2647bcd8")?;
+        let uploads = Self::checked_child(&root, Path::new("uploads"))?.ok_or("backendText.mcbcccc18")?;
         // Only a fully written and synced directory is published. Error paths
         // remove the staging directory; a process crash may leave an unreferenced
         // .pending directory, never a successful receipt or partially sent file.
         let staging = tempfile::Builder::new()
             .prefix(".pending-")
             .tempdir_in(&uploads)
-            .map_err(|_| "无法准备附件")?;
+            .map_err(|_| "backendText.m9f556214")?;
         let mut file = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(staging.path().join(Self::filename(request)))
-            .map_err(|_| "无法保存附件")?;
+            .map_err(|_| "backendText.m90c800d4")?;
         file.write_all(&bytes)
             .and_then(|()| file.sync_all())
-            .map_err(|_| "附件写入失败")?;
+            .map_err(|_| "backendText.m132867b8")?;
         let manifest = serde_json::to_vec(&Manifest {
             schema_version: 1,
             request: request.clone(),
         })
-        .map_err(|_| "附件回执编码失败")?;
+        .map_err(|_| "backendText.m3b5eb3a2")?;
         let mut receipt = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(staging.path().join("manifest.json"))
-            .map_err(|_| "无法保存附件回执")?;
+            .map_err(|_| "backendText.m9fee9f96")?;
         receipt
             .write_all(&manifest)
             .and_then(|()| receipt.sync_all())
-            .map_err(|_| "附件回执写入失败")?;
+            .map_err(|_| "backendText.m93e5c722")?;
         drop(file);
         drop(receipt);
         #[cfg(unix)]
         fs::File::open(staging.path())
             .and_then(|directory| directory.sync_all())
-            .map_err(|_| "附件目录同步失败")?;
+            .map_err(|_| "backendText.m3e70b36e")?;
         let destination = uploads.join(&request.upload_id);
         if fs::rename(staging.path(), &destination).is_err() {
             // Another service instance may have won publication. Never replace
             // an existing object or its metadata to resolve that race.
-            return Self::receipt_at(&root, request)?.ok_or("附件发布失败，请核实原上传".into());
+            return Self::receipt_at(&root, request)?.ok_or("backendText.m3af7dd39".into());
         }
         #[cfg(unix)]
         fs::File::open(&uploads)
             .and_then(|directory| directory.sync_all())
-            .map_err(|_| "附件发布结果尚未确认，请核实原上传")?;
-        Self::receipt_at(&root, request)?.ok_or("附件回执尚未可用".into())
+            .map_err(|_| "backendText.m2c09576c")?;
+        Self::receipt_at(&root, request)?.ok_or("backendText.mee685e76".into())
     }
     pub fn read(&self, path: &str) -> Result<String, String> {
-        let _guard = self.gate.lock().map_err(|_| "附件服务暂时不可用")?;
+        let _guard = self.gate.lock().map_err(|_| "backendText.mf6348b90")?;
         let root = self.root(false)?.ok_or("backendText.attachmentUnreadable")?;
         let candidate = Path::new(path);
         if !candidate.is_absolute() {
-            return Err("附件路径无效".into());
+            return Err("backendText.m6a586e00".into());
         }
         if fs::symlink_metadata(candidate)
             .map_err(|_| "backendText.attachmentUnreadable")?
             .file_type()
             .is_symlink()
         {
-            return Err("附件路径已变化".into());
+            return Err("backendText.mdd354e76".into());
         }
         let canonical = fs::canonicalize(candidate).map_err(|_| "backendText.attachmentUnreadable")?;
         if !canonical.starts_with(&root) {
-            return Err("不是应用保存的附件".into());
+            return Err("backendText.mbae669e0".into());
         }
         // Keep a managed path managed even if an ancestor was replaced with a
         // link to a legacy directory. It must still pass its original receipt.
         let relative = candidate
             .strip_prefix(&root)
             .or_else(|_| canonical.strip_prefix(&root))
-            .map_err(|_| "附件路径无效")?;
+            .map_err(|_| "backendText.m6a586e00")?;
         let parts: Vec<_> = relative.components().collect();
         if parts
             .first()
             .is_some_and(|part| part.as_os_str() == "uploads")
         {
             if parts.len() != 3 {
-                return Err("附件路径无效".into());
+                return Err("backendText.m6a586e00".into());
             }
             let manifest: Manifest = serde_json::from_slice(&Self::read_file(
                 &canonical
                     .parent()
-                    .ok_or("附件路径无效")?
+                    .ok_or("backendText.m6a586e00")?
                     .join("manifest.json"),
                 4096,
             )?)
-            .map_err(|_| "附件回执损坏")?;
+            .map_err(|_| "backendText.mda6b5ce9")?;
             Self::validate(&manifest.request)?;
-            let reference = Self::receipt_at(&root, &manifest.request)?.ok_or("附件回执不存在")?;
+            let reference = Self::receipt_at(&root, &manifest.request)?.ok_or("backendText.meac45010")?;
             if Path::new(&reference.path) != canonical {
-                return Err("附件引用与回执不一致".into());
+                return Err("backendText.mccb5a3a1".into());
             }
             let bytes = Self::read_file(&canonical, MAX_BYTES)?;
             driver_api::attachments::verify_bytes(&reference, &bytes)
@@ -280,7 +280,7 @@ impl AttachmentStore {
                 .to_str()
                 .is_none_or(|id| uuid::Uuid::parse_str(id).is_err())
         {
-            return Err("不是已保存的附件文件".into());
+            return Err("backendText.mcd68bbd4".into());
         }
         Ok(STANDARD.encode(Self::read_file(&canonical, MAX_BYTES)?))
     }
@@ -309,10 +309,10 @@ pub async fn dispatch(
             let path: String = serde_json::from_value(args).map_err(|e| e.to_string())?;
             serde_json::to_value(store.read(&path)?).map_err(|e| e.to_string())
         }
-        _ => Err("未知附件操作".into()),
+        _ => Err("backendText.mbbe58a52".into()),
     })
     .await
-    .map_err(|_| "附件服务执行失败".to_string())?
+    .map_err(|_| "backendText.m583901be".to_string())?
 }
 
 #[cfg(test)]

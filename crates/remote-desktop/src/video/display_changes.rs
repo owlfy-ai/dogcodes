@@ -47,7 +47,7 @@ impl Changes {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .filter(|at| now.saturating_duration_since(*at) >= Duration::from_secs(10))
-            .map(|_| "显示器配置更新超时，请稳定显示设置后重新连接".into())
+            .map(|_| "backendText.mf582b316".into())
     }
 }
 
@@ -115,7 +115,7 @@ impl Registry {
         let id = self
             .next
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_add(1))
-            .map_err(|_| "显示器观察身份已耗尽")?;
+            .map_err(|_| "backendText.m648d990a")?;
         let mut registered = self.registered.lock().unwrap_or_else(|e| e.into_inner());
         self.watchers
             .lock()
@@ -216,7 +216,7 @@ mod native {
             if status == CGError::Success {
                 Ok(())
             } else {
-                Err("无法监听显示器配置变化".into())
+                Err("backendText.m78333ad6".into())
             }
         }
         fn unregister(&self) -> Result<()> {
@@ -227,7 +227,7 @@ mod native {
             if status == CGError::Success {
                 Ok(())
             } else {
-                Err("显示器配置监听仍在退出".into())
+                Err("backendText.md8793074".into())
             }
         }
     }

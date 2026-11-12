@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectId, ProjectSummary } from "@dogcodes/protocol";
+import { SCRATCH_PROJECT_NAME } from "./displayNames";
 import { projectOptions } from "./ProjectPicker";
 
 const project = (id: string, displayName: string, path: string): ProjectSummary => ({additionalDirectories: [], 
   projectId: id as ProjectId, displayName, path, taskCount: 0,
 });
 const projects = [
-  project("scratch", "快速对话", "/tmp/scratch"),
+  project("scratch", SCRATCH_PROJECT_NAME, "/tmp/scratch"),
   project("one", "dogcodes", "/workspace/code"),
   project("alias", "Alias", "/workspace/code"),
   project("two", "Website", "/workspace/site"),

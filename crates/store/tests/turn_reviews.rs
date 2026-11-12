@@ -640,7 +640,7 @@ async fn review_close_failure_stays_pending_until_its_original_proof_without_a_r
             if run
                 .error
                 .as_deref()
-                .is_some_and(|message| message.contains("关闭尚未确认"))
+                .is_some_and(|message| message.contains("backendText.m419073f0"))
             {
                 break;
             }
@@ -686,7 +686,7 @@ async fn a_panicking_review_stream_preserves_partial_output_and_retires_only_its
     let failed = settled(&f, &f.request.run_id).await;
     assert_eq!(failed.status, ReviewStatus::Failed);
     assert!(failed.result.contains("已核对第一处调用方"));
-    assert!(failed.error.as_deref().unwrap().contains("意外中断"));
+    assert!(failed.error.as_deref().unwrap().contains("backendText.m4ea5524e"));
     assert_eq!(f.core.bootstrap().await.unwrap().session_maps, primary);
     assert_eq!(f.driver.stopped.lock().unwrap().len(), 1);
     assert!(f.driver.stopped.lock().unwrap()[0].starts_with("review-"));
@@ -1086,7 +1086,7 @@ async fn retired_checks_remain_readable_but_cannot_start_or_retry() {
             request.run_id = RunId::new();
             request.retry_of = retry_of;
             let error = f.core.start_turn_review(request).await.unwrap_err();
-            assert!(error.to_string().contains("该检查类型已移除"));
+            assert!(error.to_string().contains("backendText.m6d77242b"));
         }
     }
     let runs = f.core.turn_reviews(&f.request.task_id).await.unwrap();
@@ -1530,7 +1530,7 @@ async fn review_admission_blocks_disabled_agents_but_preserves_accepted_work_and
             .await
             .unwrap_err()
             .to_string()
-            .contains("已禁用")
+            .contains("backendText.mbc5a87a7")
     );
     assert_eq!(
         f.core.turn_reviews(&f.request.task_id).await.unwrap().len(),
@@ -1570,7 +1570,7 @@ async fn review_admission_rejects_nonready_missing_and_unselected_installations(
                 .await
                 .unwrap_err()
                 .to_string()
-                .contains("尚未就绪")
+                .contains("backendText.m83f9c5d0")
         );
     }
     f.core
@@ -1586,7 +1586,7 @@ async fn review_admission_rejects_nonready_missing_and_unselected_installations(
                 .await
                 .unwrap_err()
                 .to_string()
-                .contains("尚未就绪")
+                .contains("backendText.m83f9c5d0")
         );
     }
     f.core
@@ -1600,7 +1600,7 @@ async fn review_admission_rejects_nonready_missing_and_unselected_installations(
             .await
             .unwrap_err()
             .to_string()
-            .contains("尚未就绪")
+            .contains("backendText.m83f9c5d0")
     );
     assert!(
         f.core
@@ -1653,7 +1653,7 @@ async fn review_admission_replays_and_cancels_after_installation_removal() {
             .await
             .unwrap_err()
             .to_string()
-            .contains("尚未就绪")
+            .contains("backendText.m83f9c5d0")
     );
     f.core
         .cancel_turn_review(&f.request.task_id, &f.request.run_id)

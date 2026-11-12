@@ -27,24 +27,24 @@ pub async fn project_review_packet(
             .review
             .snapshots
             .lock()
-            .map_err(|_| "比较缓存不可用")?;
+            .map_err(|_| "backendText.m9840ff89")?;
         request
             .source_snapshot
             .as_ref()
             .and_then(|id| cache.get(id))
             .filter(|snapshot| snapshot.task_id == request.task_id.as_str())
             .cloned()
-            .ok_or("比较结果已过期或不属于当前任务，请刷新")?
+            .ok_or("backendText.m463dcdc7")?
     };
     assemble(&snapshot)
 }
 
 fn assemble(snapshot: &ReviewSnapshot) -> Result<Value, String> {
     if snapshot.roots.iter().any(|root| root.error.is_some()) {
-        return Err("部分目录读取失败，请刷新比较范围后再审查".into());
+        return Err("backendText.m78f6d7b6".into());
     }
     if snapshot.roots.iter().all(|root| root.files.is_empty()) {
-        return Err("当前比较范围没有代码改动".into());
+        return Err("backendText.mfcb49e5a".into());
     }
     let roots: Vec<_> = snapshot.roots.iter().map(|root| {
         let files: Vec<_> = root.files.iter().map(|file| json!({"path":file.path,"previousPath":file.previous_path,"kind":file.kind})).collect();
@@ -55,12 +55,12 @@ fn assemble(snapshot: &ReviewSnapshot) -> Result<Value, String> {
         .iter()
         .map(|root| {
             let mode = match root.mode {
-                super::CompareMode::Uncommitted => "全部未提交",
-                super::CompareMode::Unstaged => "未暂存",
-                super::CompareMode::Staged => "已暂存",
-                super::CompareMode::Committed => "历史提交",
-                super::CompareMode::Branch => "分支比较",
-                super::CompareMode::Session => "目录已记录修改（当前文件）",
+                super::CompareMode::Uncommitted => "backendText.m1075313c",
+                super::CompareMode::Unstaged => "backendText.m944994f5",
+                super::CompareMode::Staged => "backendText.m847d376a",
+                super::CompareMode::Committed => "backendText.mb665b16b",
+                super::CompareMode::Branch => "backendText.m33c6a103",
+                super::CompareMode::Session => "backendText.mdc24b257",
             };
             format!("{} · {}", root.root.path, mode)
         })

@@ -94,7 +94,7 @@ impl SessionProcess {
         self.validate_scope(handle)?;
         if only_idle && self.turn_active.load(Ordering::Acquire) {
             return Err(DriverError::CapabilityUnavailable(
-                "Antigravity 已有运行中的会话".into(),
+                "backendText.m9ce27b85".into(),
             ));
         }
         if interrupted {

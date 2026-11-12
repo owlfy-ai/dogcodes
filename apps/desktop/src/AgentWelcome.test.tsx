@@ -253,7 +253,7 @@ describe("welcome scan workflow", () => {
   });
   it("displays Cursor Models and Other Models as separate monthly allowances", async () => {
     const cursor = { ...installation, providerId: "cursor", installationId: "ins_cursor" };
-    const q = { ...quota(), planType: "Pro · 重置 Oct 4（原生日期）", windows: [
+    const q = { ...quota(), planType: "Pro", nativeResetOn: "Oct 4", windows: [
       { id: "cursor-models", scope: "Cursor Models", windowMinutes: 0, usedPercent: 20, resetsAtUnix: null },
       { id: "cursor-other-models", scope: "Other Models", windowMinutes: 0, usedPercent: 100, resetsAtUnix: null },
     ] };
@@ -272,7 +272,7 @@ describe("welcome scan workflow", () => {
   it("queries Kiro account allowance and displays its native billing date", async () => {
     const kiro = { ...installation, providerId: "kiro", installationId: "ins_kiro" };
     const resetDate = `${new Date().getFullYear()}-10-01`;
-    const q = { ...quota(), planType: `KIRO FREE · 重置 ${resetDate}（原生日期）`, windows: [{ id: "kiro-included", scope: "套餐内（Kiro）", windowMinutes: 0, usedPercent: 0.16, resetsAtUnix: null }] };
+    const q = { ...quota(), planType: "KIRO FREE", nativeResetOn: resetDate, windows: [{ id: "kiro-included", scope: "included", windowMinutes: 0, usedPercent: 0.16, resetsAtUnix: null }] };
     const quotaSnapshots = vi.fn(async () => [{ providerId: "kiro", installationId: "ins_kiro", quota: q }]);
     await mount({ scanAgent: async (id: string) => ({ installations: id === "kiro" ? [kiro] : [] }), quotaSnapshots } as unknown as CoreClient);
     expect(quotaSnapshots).toHaveBeenCalledWith(null, "ins_kiro");

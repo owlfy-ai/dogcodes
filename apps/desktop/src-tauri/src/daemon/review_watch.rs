@@ -27,7 +27,7 @@ impl CoreClient {
             Ok(InvalidationStream::Remote(stream))
         })
         .await
-        .map_err(|_| "状态订阅连接超时")?
+        .map_err(|_| "backendText.m523bbfca")?
     }
     pub(crate) async fn project_runs_watch(
         &self,
@@ -51,7 +51,7 @@ impl CoreClient {
             Ok(InvalidationStream::Remote(stream))
         })
         .await
-        .map_err(|_| "运行状态订阅连接超时")?
+        .map_err(|_| "backendText.m892da063")?
     }
     pub(crate) async fn submission_watch(&self) -> Result<InvalidationStream, String> {
         #[cfg(any(test, feature = "review-acceptance"))]
@@ -67,7 +67,7 @@ impl CoreClient {
             Ok(InvalidationStream::Remote(stream))
         })
         .await
-        .map_err(|_| "发送状态订阅连接超时")?
+        .map_err(|_| "backendText.m418dd5be")?
     }
 }
 pub(crate) enum InvalidationStream {
@@ -83,7 +83,7 @@ impl InvalidationStream {
             Self::Remote(stream) => {
                 tokio::time::timeout(Duration::from_secs(45), read_frame(stream))
                     .await
-                    .map_err(|_| "状态订阅连接超时".to_owned())?
+                    .map_err(|_| "backendText.m523bbfca".to_owned())?
             }
             #[cfg(any(test, feature = "review-acceptance"))]
             Self::Local(subscription) => subscription.next().await,
@@ -127,7 +127,7 @@ pub(super) async fn serve_submissions(
     let subscription = if args.is_null() {
         submissions.subscribe().map(LocalSubscription::State)
     } else {
-        Err("发送状态订阅参数无效".into())
+        Err("backendText.m3955f2cf".into())
     };
     forward(stream, subscription).await
 }
@@ -143,7 +143,7 @@ async fn forward(
         ),
     )
     .await
-    .map_err(|_| "状态订阅连接写入超时")??;
+    .map_err(|_| "backendText.ma5b4b48d")??;
     let mut subscription = subscription?;
     loop {
         let message = tokio::select! {
@@ -153,7 +153,7 @@ async fn forward(
         let ended = matches!(message, WatchMessage::Error { .. });
         tokio::time::timeout(Duration::from_secs(15), write_frame(stream, &message))
             .await
-            .map_err(|_| "状态订阅客户端停止读取")??;
+            .map_err(|_| "backendText.m32ca2672")??;
         if ended {
             return Ok(());
         }

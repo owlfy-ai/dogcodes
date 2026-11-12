@@ -17,7 +17,7 @@ impl<'a> Loan<'a> {
     }
     pub fn raw(&self) -> Result<&sys::spa_buffer> {
         // SAFETY: the dequeued pw_buffer stays live through this loan.
-        unsafe { self.raw.as_ref().buffer.as_ref() }.ok_or_else(|| "Wayland 原生缓冲区缺失".into())
+        unsafe { self.raw.as_ref().buffer.as_ref() }.ok_or_else(|| "backendText.m60f41b69".into())
     }
     pub fn datas_mut(&mut self) -> Result<&mut [Data]> {
         let raw = self.raw()?;
@@ -25,7 +25,7 @@ impl<'a> Loan<'a> {
             return Ok(&mut []);
         }
         if raw.n_datas > 16 || raw.datas.is_null() {
-            return Err("Wayland 数据描述符无效".into());
+            return Err("backendText.m6245bdb8".into());
         }
         // SAFETY: the native buffer owns this n_datas array for the exclusive
         // loan; libspa Data is transparent over spa_data. No data borrow escapes

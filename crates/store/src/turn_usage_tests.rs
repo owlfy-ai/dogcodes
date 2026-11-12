@@ -394,7 +394,7 @@ async fn rejected_selection_preserves_the_previous_mapping_and_never_dispatches_
             .await
             .unwrap()
             .iter()
-            .any(|i| i.text.contains("已恢复原选择"))
+            .any(|i| i.text.contains("backendText.selectionRejected"))
     );
 }
 #[async_trait::async_trait]

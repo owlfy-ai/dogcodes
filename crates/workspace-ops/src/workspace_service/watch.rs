@@ -42,7 +42,7 @@ impl WatchService {
         self.worker_slots
             .clone()
             .try_acquire_owned()
-            .map_err(|_| "目录监听资源正在释放，请稍后重试".into())
+            .map_err(|_| "backendText.mf4382cc6".into())
     }
     pub async fn open(
         &self,
@@ -53,14 +53,14 @@ impl WatchService {
             .slots
             .clone()
             .try_acquire_owned()
-            .map_err(|_| "展开的监听目录过多，请先折叠部分目录")?;
+            .map_err(|_| "backendText.m8e5df3fa")?;
         let base = directory_base(core.as_ref(), &request).await?;
         let registered_base = base.clone();
         let path = request.path.clone();
         let target = tokio::task::spawn_blocking(move || {
             let target = resolve(&base, &path)?;
             if !target.is_dir() {
-                return Err("不是目录".to_owned());
+                return Err("backendText.m53660bdc".to_owned());
             }
             Ok(target)
         })
@@ -79,8 +79,8 @@ impl WatchService {
             let (worker, ready) = Worker::start(target.clone(), None, self.worker_slot()?)?;
             tokio::time::timeout(Duration::from_secs(10), ready)
                 .await
-                .map_err(|_| "目录定时检查初始化超时")?
-                .map_err(|_| "目录定时检查初始化已结束")??;
+                .map_err(|_| "backendText.me5dce19f")?
+                .map_err(|_| "backendText.m5b0fac16")??;
             worker
         };
         Ok(Subscription {
@@ -126,7 +126,7 @@ impl Worker {
                         sender.send_modify(|signal| {
                             signal.revision = signal.revision.wrapping_add(1);
                             if let Err(error) = event {
-                                signal.error = Some(format!("目录监听失败：{error}"));
+                                signal.error = Some(format!("backendText.ma3fcbbc1\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
                             }
                         });
                     };
@@ -199,7 +199,7 @@ impl Subscription {
             tokio::time::timeout(Duration::from_secs(15), self.worker.changes.changed()).await;
         let invalidated = match changed {
             Ok(Ok(())) => true,
-            Ok(Err(_)) => return Err("目录监听已结束，请重新连接".into()),
+            Ok(Err(_)) => return Err("backendText.m5552643c".into()),
             Err(_) => false,
         };
         if invalidated {
@@ -226,7 +226,7 @@ impl Subscription {
         if base != self.registered_base {
             return Ok(WatchMessage::Error {
                 code: "scope_changed".into(),
-                message: "项目目录已变化，正在刷新文件树".into(),
+                message: "backendText.m1be30114".into(),
             });
         }
         let path = self.request.path.clone();
@@ -236,7 +236,7 @@ impl Subscription {
         if target != self.target {
             return Ok(WatchMessage::Error {
                 code: "scope_changed".into(),
-                message: "项目目录已变化，正在刷新文件树".into(),
+                message: "backendText.m1be30114".into(),
             });
         }
         Ok(if invalidated {

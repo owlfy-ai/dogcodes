@@ -87,11 +87,11 @@ pub(super) fn bgra(
     pitch: usize,
     rotation: u32,
 ) -> Result<RgbaImage> {
-    let row = (width as usize).checked_mul(4).ok_or("视频行尺寸溢出")?;
+    let row = (width as usize).checked_mul(4).ok_or("backendText.m577d9a5d")?;
     let length = pitch
         .checked_mul(height.saturating_sub(1) as usize)
         .and_then(|n| n.checked_add(row))
-        .ok_or("视频缓冲区溢出")?;
+        .ok_or("backendText.m7eeabe74")?;
     if width == 0
         || height == 0
         || u64::from(width) * u64::from(height) > 64 * 1024 * 1024
@@ -99,7 +99,7 @@ pub(super) fn bgra(
         || length > bytes.len()
         || rotation > 3
     {
-        return Err("系统视频缓冲区无效".into());
+        return Err("backendText.m3792ffda".into());
     }
     let size = if rotation % 2 == 1 {
         (height, width)
@@ -171,7 +171,7 @@ impl<
         if self.cancelled.is_cancelled() {
             self.paused.store(true, Ordering::Release);
             self.driver.take();
-            return Err("视频采集请求已结束".into());
+            return Err("backendText.mb6a08dba".into());
         }
         Ok(())
     }
@@ -247,7 +247,7 @@ impl<
                     return self
                         .latest
                         .clone()
-                        .ok_or_else(|| "视频来源缺少已就绪画面".into());
+                        .ok_or_else(|| "backendText.m43e231e9".into());
                 }
                 Ok(None) => self.clock.wait(
                     Duration::from_millis(10)
@@ -256,7 +256,7 @@ impl<
                 Err(Fault::Denied) => {
                     self.paused.store(true, Ordering::Release);
                     self.driver.take();
-                    return Err("无法访问当前桌面，请检查锁屏、登录状态和屏幕权限".into());
+                    return Err("backendText.m23f613bc".into());
                 }
                 Err(Fault::Unavailable) => return self.fallback(),
                 Err(Fault::Lost) => {

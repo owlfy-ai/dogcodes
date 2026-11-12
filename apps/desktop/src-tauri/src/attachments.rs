@@ -9,29 +9,29 @@ pub async fn core_export_attachment(
     bytes: Vec<u8>,
 ) -> Result<bool, String> {
     if bytes.len() > 25 * 1024 * 1024 {
-        return Err("附件超过 25 MB".into());
+        return Err("backendText.m962d0a69".into());
     }
     let filename = std::path::Path::new(&name)
         .file_name()
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
-        .ok_or("附件文件名无效")?;
+        .ok_or("backendText.mf04fa37b")?;
     let (sender, receiver) = tokio::sync::oneshot::channel();
     app.dialog()
         .file()
         .set_parent(&window)
-        .set_title("下载图片")
+        .set_title("backendText.m8894375c")
         .set_file_name(filename)
         .save_file(move |path| {
             let _ = sender.send(path);
         });
-    let Some(path) = receiver.await.map_err(|_| "保存窗口已关闭")? else {
+    let Some(path) = receiver.await.map_err(|_| "backendText.m101ee925")? else {
         return Ok(false);
     };
-    let path = path.into_path().map_err(|_| "请选择本地文件")?;
+    let path = path.into_path().map_err(|_| "backendText.mf66f180b")?;
     tokio::fs::write(path, bytes)
         .await
-        .map_err(|_| "图片保存失败")?;
+        .map_err(|_| "backendText.mdb0d7014")?;
     Ok(true)
 }
 
@@ -61,5 +61,5 @@ pub async fn core_read_attachment(
     let encoded = state.core.attachment_read(path).await?;
     STANDARD
         .decode(encoded)
-        .map_err(|_| "附件读取结果无效".into())
+        .map_err(|_| "backendText.mb7e7d559".into())
 }

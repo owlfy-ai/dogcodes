@@ -63,7 +63,7 @@ fn dimensions(width: u32, height: u32) -> Result<()> {
         || width.max(height) > 3840
         || width.min(height) > 2160
     {
-        return Err("软件视频尺寸无效".into());
+        return Err("backendText.mb187bfd1".into());
     }
     Ok(())
 }
@@ -102,7 +102,7 @@ impl Encoder {
     ) -> Result<Self> {
         dimensions(width, height)?;
         if profile_size(width, height, width, profile)? != (width, height) {
-            return Err("视频尺寸超过协商的 H.264 等级".into());
+            return Err("backendText.m0b577eef".into());
         }
         let rate = profile.rate(bitrate, fps);
         let mut config = EncoderConfig::new()
@@ -141,7 +141,7 @@ impl Encoder {
             latency: Duration::ZERO,
         };
         if !probe.keyframe || probe.data.is_empty() {
-            return Err("软件编码器初始化未输出关键帧".into());
+            return Err("backendText.m0da7cf6d".into());
         }
         validate_profile(&probe, profile)?;
         let mut encoder = Self {
@@ -233,7 +233,7 @@ impl Encoder {
             statuses
         };
         if statuses.into_iter().any(|code| code != 0) {
-            return Err("无法调整软件视频码率/帧率".into());
+            return Err("backendText.m2c000bd4".into());
         }
         self.applied_rate = self.rate;
         Ok(())
@@ -250,7 +250,7 @@ impl Encoder {
     }
     fn encode_inner(&mut self, frame: &Frame, captured: Instant, force: bool) -> Result<bool> {
         if frame.size() != self.size {
-            return Err("显示器尺寸变化，请重新建立视频连接".into());
+            return Err("backendText.ma2b8d5c2".into());
         }
         self.apply_rate()?;
         self.requested_keyframe |= force;
@@ -297,7 +297,7 @@ impl Encoder {
     }
 }
 fn codec_error(error: impl std::fmt::Display) -> String {
-    format!("软件 H.264 编码不可用：{error}")
+    format!("backendText.m51021f50\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))
 }
 
 /// At most one active source and one retiring OS call. A stuck capture must not
@@ -311,7 +311,7 @@ impl Permit {
                 (n < 2).then_some(n + 1)
             })
             .map(|_| Self)
-            .map_err(|_| "旧视频采集仍在停止，请稍后重试".into())
+            .map_err(|_| "backendText.m2f5f8099".into())
     }
 }
 impl Drop for Permit {
@@ -382,22 +382,22 @@ impl Capture {
         ) {
             // Screenshot portals cannot be polled as a video source: that may
             // repeatedly prompt. Only a persistent ScreenCast session is valid.
-            return Err("请先完成 Wayland 屏幕共享授权".into());
+            return Err("backendText.m62c91e67".into());
         }
         let monitor = xcap::Monitor::all()
-            .map_err(|_| "无法枚举视频显示器")?
+            .map_err(|_| "backendText.m04a6826f")?
             .into_iter()
             .find(|m| m.id().ok() == Some(config.display))
-            .ok_or("视频显示器已断开")?;
+            .ok_or("backendText.m3ffda476")?;
         let native = (
-            monitor.width().map_err(|_| "无法读取显示器尺寸")?,
-            monitor.height().map_err(|_| "无法读取显示器尺寸")?,
+            monitor.width().map_err(|_| "backendText.m17ce781e")?,
+            monitor.height().map_err(|_| "backendText.m17ce781e")?,
         );
         if native.0 == 0
             || native.1 == 0
             || u64::from(native.0) * u64::from(native.1) > 64 * 1024 * 1024
         {
-            return Err("显示器尺寸超过软件采集能力".into());
+            return Err("backendText.mbc32f9e8".into());
         }
         let display = config.display;
         #[cfg(target_os = "windows")]
@@ -409,10 +409,10 @@ impl Capture {
                 // Windows HMONITOR (and compositor handles) are not Send. Find
                 // and retain the native source on the capture thread itself.
                 let monitor = xcap::Monitor::all()
-                    .map_err(|_| "无法枚举视频显示器")?
+                    .map_err(|_| "backendText.m04a6826f")?
                     .into_iter()
                     .find(|m| m.id().ok() == Some(display))
-                    .ok_or("视频显示器已断开")?;
+                    .ok_or("backendText.m3ffda476")?;
                 #[cfg(not(target_os = "windows"))]
                 {
                     Ok(move || {
@@ -422,12 +422,12 @@ impl Capture {
                                 image: Arc::new(image),
                                 cursor_embedded: Some(false),
                             })
-                            .map_err(|_| "视频采集失败，请检查显示器和桌面权限".into())
+                            .map_err(|_| "backendText.m21d4e3af".into())
                     })
                 }
                 #[cfg(target_os = "windows")]
                 {
-                    let name = monitor.name().map_err(|_| "无法核实视频显示器身份")?;
+                    let name = monitor.name().map_err(|_| "backendText.m06b3596b")?;
                     Ok(super::dxgi::capture(display, name, cancelled, pause_source))
                 }
             },
@@ -623,7 +623,7 @@ impl Capture {
                         .wait_timeout(guard, interval.saturating_sub(started.elapsed()));
                 }
             })
-            .map_err(|_| "无法启动软件视频采集线程")?;
+            .map_err(|_| "backendText.m46f2c565")?;
         match wait.recv_timeout(timeout) {
             Ok(Ok(())) => Ok((capture, size)),
             Ok(Err(error)) => {
@@ -632,7 +632,7 @@ impl Capture {
             }
             Err(_) => {
                 capture.stop();
-                Err("视频采集启动超时，请核实桌面权限".into())
+                Err("backendText.m423c68de".into())
             }
         }
     }

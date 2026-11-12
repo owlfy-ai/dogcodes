@@ -373,7 +373,7 @@ fn a_failed_download_runs_nothing_and_a_failed_installer_says_why() {
     let request = json!({"type":"install","provider":"kiro"});
     let reply = ask(&request, home.path(), bin.path(), &[]);
     assert_eq!(reply["Err"]["kind"], "other");
-    assert!(reply["Err"]["message"].as_str().unwrap().contains("网络"));
+    assert!(reply["Err"]["message"].as_str().unwrap().contains("backendText.installUnreachable"));
     assert!(!ran.exists());
 
     std::fs::remove_file(bin.path().join("bash")).unwrap();
@@ -418,7 +418,7 @@ fn deepseek_harness_says_which_node_it_needs_and_which_is_there() {
     let reply = ask(&request, home.path(), bin.path(), &[]);
     let message = reply["Err"]["message"].as_str().unwrap();
     assert!(
-        message.contains("24.9") && message.contains("v22.3.0"),
+        message.contains("backendText.installNodeTooOld") && message.contains("v22.3.0"),
         "{message}"
     );
     assert!(!bin.path().join("npm.args").exists());
@@ -428,7 +428,7 @@ fn deepseek_harness_says_which_node_it_needs_and_which_is_there() {
         let reply = ask(&request, home.path(), bin.path(), &[]);
         let message = reply["Err"]["message"].as_str().unwrap();
         assert!(
-            message.contains("24.9") && message.contains("没有"),
+            message.contains("backendText.installNodeMissing"),
             "{message}"
         );
     }

@@ -55,7 +55,7 @@ describe("quota abnormal-state acceptance (fixed clock; no external requests)", 
     expect(quotaIsExhausted(antigravityQuotaForModel(quota, "unknown-model"), now)).toBe(false);
     expect(quota.windows.every(w => w.scope)).toBe(true);
   });
-  it.each(["套餐内（终端读数）", "工具调用", "MCP"])("never blocks general chat on informational scope %s", scope => {
+  it.each(["included", "工具调用", "MCP"])("never blocks general chat on informational scope %s", scope => {
     const quota = snapshot(100);
     quota.windows[0].scope = scope;
     expect(quotaIsExhausted(quota, now)).toBe(false);

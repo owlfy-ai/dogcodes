@@ -195,6 +195,7 @@ export const ptBR: TranslationDict = {
     "diskFull": "Disco cheio. Libere espaço.",
     "activeConversation": "Aguarde a conversa atual terminar antes de detectar agentes novamente.",
       "nativeUpdater": "Atualizador nativo",
+    "npxInstall": "(npx)",
     "onDemandOn": "Cobrança por uso ativada",
     "onDemandOff": "Cobrança por uso desativada",
     "bonusQuota": "Cota de bônus disponível",

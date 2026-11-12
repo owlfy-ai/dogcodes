@@ -20,7 +20,7 @@ impl TextError {
     pub(super) fn message(self) -> String {
         match self {
             Self::Unmappable => {
-                "当前桌面无法用现有键盘布局输入这段文字，且没有可用的文字粘贴通道；本次输入未执行"
+                "backendText.mbc3f5a58"
                     .into()
             }
             Self::Invalid(message) => message,
@@ -33,30 +33,30 @@ impl Map {
             || keymap.size == 0
             || keymap.size > 1024 * 1024
         {
-            return Err("Wayland 键盘布局类型或大小无效".into());
+            return Err("backendText.m3b2659ee".into());
         }
         let file = File::from(
             keymap
                 .fd
                 .try_clone()
-                .map_err(|_| "无法读取已授权的键盘布局")?,
+                .map_err(|_| "backendText.m02433004")?,
         );
-        let meta = file.metadata().map_err(|_| "无法读取键盘布局信息")?;
+        let meta = file.metadata().map_err(|_| "backendText.mcd60369d")?;
         // Do not read pipes/sockets (which can block the actor) or mmap a short
         // compositor FD (which can SIGBUS). read_at leaves the shared offset alone.
         if !meta.is_file() || meta.len() < u64::from(keymap.size) {
-            return Err("Wayland 键盘布局描述符无效".into());
+            return Err("backendText.mc51e9502".into());
         }
         let mut bytes = vec![0; keymap.size as usize];
         file.read_exact_at(&mut bytes, 0)
-            .map_err(|_| "Wayland 键盘布局读取失败")?;
+            .map_err(|_| "backendText.mecef96e5")?;
         if bytes.last() == Some(&0) {
             bytes.pop();
         }
         if bytes.contains(&0) {
-            return Err("Wayland 键盘布局包含无效字符".into());
+            return Err("backendText.m6ea9a539".into());
         }
-        let text = String::from_utf8(bytes).map_err(|_| "Wayland 键盘布局编码无效")?;
+        let text = String::from_utf8(bytes).map_err(|_| "backendText.m0f77e7b9")?;
         Self::parse(text)
     }
     fn parse(text: String) -> Result<Self> {
@@ -67,12 +67,12 @@ impl Map {
             xkb::KEYMAP_FORMAT_TEXT_V1,
             xkb::COMPILE_NO_FLAGS,
         )
-        .ok_or("Wayland 键盘布局无法解析")?;
+        .ok_or("backendText.ma4e87f67")?;
         if keymap.max_keycode().raw() > 4096
             || keymap.min_keycode().raw() < 8
             || keymap.num_layouts() > 32
         {
-            return Err("Wayland 键盘布局范围无效".into());
+            return Err("backendText.m921b4eea".into());
         }
         let own = xkb::State::new(&keymap);
         Ok(Self {
@@ -190,7 +190,7 @@ impl Map {
         // base key in the current group; do not silently inject Shift/AltGr.
         self.base(sym as u32)
             .map(|code| code - 8)
-            .ok_or_else(|| "当前键盘布局没有此按键，请切换布局后重试".into())
+            .ok_or_else(|| "backendText.m66bb9c01".into())
     }
     fn base(&self, sym: u32) -> Option<u32> {
         self.codes().find(|code| {
@@ -208,7 +208,7 @@ impl Map {
     pub(super) fn plan_text(&self, text: &str) -> std::result::Result<Vec<(u32, bool)>, TextError> {
         if self.modifiers.0 != 0 || self.modifiers.1 != 0 {
             return Err(TextError::Invalid(
-                "电脑仍有修饰键按下，请松开后再输入文字".into(),
+                "backendText.mcffed46f".into(),
             ));
         }
         let modifier = |name: &str, sym: u32| {
@@ -269,7 +269,7 @@ impl Map {
                 out.push((code - 8, false));
             }
             if out.len() > 32768 {
-                return Err(TextError::Invalid("单次文字输入过多".into()));
+                return Err(TextError::Invalid("backendText.mf85a991d".into()));
             }
         }
         Ok(out)

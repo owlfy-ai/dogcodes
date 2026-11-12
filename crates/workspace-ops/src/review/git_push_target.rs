@@ -29,13 +29,13 @@ pub(super) struct Observed {
 async fn text(path: &Path, args: &[&str]) -> Result<String, String> {
     let output = run_commit_command(path, args)
         .await
-        .map_err(|_| "无法核实 Git 推送目标")?;
+        .map_err(|_| "backendText.me051c6cc")?;
     if !output.status.success() || output.stdout.len() > 256 * 1024 {
-        return Err("无法核实 Git 推送目标，请检查分支和上游配置".into());
+        return Err("backendText.m67cb108b".into());
     }
     String::from_utf8(output.stdout)
         .map(|s| s.trim().to_owned())
-        .map_err(|_| "Git 目标编码无效".into())
+        .map_err(|_| "backendText.m1c399f19".into())
 }
 async fn config(path: &Path, key: &str) -> Result<Option<String>, String> {
     let out = run_commit_command(path, &["config", "--get-all", key]).await?;
@@ -43,12 +43,12 @@ async fn config(path: &Path, key: &str) -> Result<Option<String>, String> {
         return Ok(None);
     }
     if !out.status.success() || out.stdout.len() > 64 * 1024 {
-        return Err("Git 上游配置不可读取".into());
+        return Err("backendText.mb593d4ba".into());
     }
-    let value = String::from_utf8(out.stdout).map_err(|_| "Git 上游配置编码无效")?;
+    let value = String::from_utf8(out.stdout).map_err(|_| "backendText.mb200361d")?;
     let lines: Vec<_> = value.lines().collect();
     if lines.len() != 1 || lines[0].is_empty() {
-        return Err("Git 上游配置不唯一，无法绑定接续推送".into());
+        return Err("backendText.m7dfa3ca7".into());
     }
     Ok(Some(lines[0].to_owned()))
 }
@@ -56,15 +56,15 @@ pub(super) async fn observe(path: &Path) -> Result<Observed, String> {
     let branch = text(path, &["symbolic-ref", "--quiet", "HEAD"]).await?;
     let name = branch
         .strip_prefix("refs/heads/")
-        .ok_or("当前不在分支上，无法绑定接续推送")?;
+        .ok_or("backendText.m780db20b")?;
     let remote = config(path, &format!("branch.{name}.remote"))
         .await?
-        .ok_or("当前分支没有上游，提交后请核实推送目标")?;
+        .ok_or("backendText.mb208c591")?;
     let destination_ref = config(path, &format!("branch.{name}.merge"))
         .await?
-        .ok_or("当前分支没有上游引用")?;
+        .ok_or("backendText.m254f8837")?;
     if !destination_ref.starts_with("refs/heads/") {
-        return Err("上游不是分支引用，无法绑定接续推送".into());
+        return Err("backendText.m46035512".into());
     }
     let override_remote = config(path, &format!("branch.{name}.pushRemote"))
         .await?
@@ -79,7 +79,7 @@ pub(super) async fn observe(path: &Path) -> Result<Observed, String> {
             .await?
             .is_some_and(|v| v != "false")
     {
-        return Err("推送覆盖配置需要单独核实，请使用独立推送入口".into());
+        return Err("backendText.md5acec1e".into());
     }
     let urls: Vec<String> = text(path, &["remote", "get-url", "--push", "--all", &remote])
         .await?
@@ -90,23 +90,23 @@ pub(super) async fn observe(path: &Path) -> Result<Observed, String> {
         || urls.len() > 16
         || urls.iter().any(|url| url.is_empty() || url.contains('\0'))
     {
-        return Err("推送地址为空或过多，无法绑定接续推送".into());
+        return Err("backendText.me47eac4b".into());
     }
     let fingerprint = format!(
         "{:x}",
-        Sha256::digest(serde_json::to_vec(&urls).map_err(|_| "推送目标不可编码")?)
+        Sha256::digest(serde_json::to_vec(&urls).map_err(|_| "backendText.ma7075f98")?)
     );
     let git_dir = text(path, &["rev-parse", "--absolute-git-dir"]).await?;
     Ok(Observed {
         repository: RepositoryTarget {
             worktree: path
                 .canonicalize()
-                .map_err(|_| "仓库路径不可核实")?
+                .map_err(|_| "backendText.m87a76ac8")?
                 .to_string_lossy()
                 .into_owned(),
             git_directory: Path::new(&git_dir)
                 .canonicalize()
-                .map_err(|_| "Git 目录不可核实")?
+                .map_err(|_| "backendText.m9fcf9842")?
                 .to_string_lossy()
                 .into_owned(),
             branch,
@@ -130,7 +130,7 @@ pub(super) async fn bind(
 ) -> Result<PushTarget, String> {
     let after = observe(path).await?;
     if before.repository != after.repository {
-        return Err("提交期间分支或推送目标已变化，请核实后单独推送".into());
+        return Err("backendText.mca8688de".into());
     }
     // A post-commit hook or another client can move HEAD after our commit. A
     // unique reflog action identifies the command; ambiguity never authorizes push.
@@ -152,11 +152,11 @@ pub(super) async fn bind(
         .filter(|(_, subject)| subject.starts_with(&prefix))
         .collect();
     if matches.len() != 1 || !valid_oid(matches[0].0) {
-        return Err("本次提交已完成，但无法唯一核实其引用记录，请检查仓库后单独推送".into());
+        return Err("backendText.m6d8e11c5".into());
     }
     let oid = matches[0].0.to_owned();
     if text(path, &["rev-parse", "--verify", "HEAD"]).await? != oid {
-        return Err("提交后 HEAD 已变化，请检查最新提交后单独推送".into());
+        return Err("backendText.m00154676".into());
     }
     Ok(PushTarget {
         repository: before.repository,
@@ -168,10 +168,10 @@ pub(super) async fn push(path: &Path, target: &PushTarget) -> Result<(), String>
     if observed.repository != target.repository
         || text(path, &["rev-parse", "--verify", "HEAD"]).await? != target.oid
     {
-        return Err("REVIEW_PUSH_TARGET_CHANGED: 分支、提交或远端已变化；未沿用旧操作推送，请核实后重新发起推送".into());
+        return Err("backendText.mcc7e52da".into());
     }
     if !valid_oid(&target.oid) {
-        return Err("原推送提交标识损坏，未执行推送".into());
+        return Err("backendText.m4b9d00c3".into());
     }
     require_git_success(
         run_commit_command(
@@ -207,12 +207,9 @@ pub(super) async fn push(path: &Path, target: &PushTarget) -> Result<(), String>
             Err(error) => {
                 use redaction::SecretRedactor;
                 let detail = redaction::DeterministicRedactor
-                    .redact(&error.replace(url, "[推送地址]"))
+                    .redact(&error.replace(url, "backendText.pushAddress"))
                     .text;
-                return Err(format!(
-                    "推送未完成（已完成 {index}/{} 个目标）：{detail}",
-                    observed.urls.len()
-                ));
+                return Err(format!("backendText.m2b08f8cc\u{1e}{}", serde_json::to_string(&[index.to_string(), observed.urls.len().to_string(), detail.to_string()]).unwrap_or_else(|_| "[]".into())));
             }
         }
     }

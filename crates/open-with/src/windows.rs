@@ -22,7 +22,7 @@ impl Apartment {
         if result == RPC_E_CHANGED_MODE {
             return Ok(Self(false));
         }
-        result.ok().map_err(|_| "无法初始化系统应用查询")?;
+        result.ok().map_err(|_| "backendText.m39f7c734")?;
         Ok(Self(true))
     }
 }
@@ -80,14 +80,14 @@ fn handlers(path: &Path) -> Result<Vec<(Candidate, IAssocHandler)>, String> {
     };
     // SAFETY: Called with COM initialized and a valid extension string.
     let enumerator = unsafe { SHAssocEnumHandlers(&extension, ASSOC_FILTER_RECOMMENDED) }
-        .map_err(|_| "无法查询系统推荐应用")?;
+        .map_err(|_| "backendText.m932c84b3")?;
     let mut result = Vec::new();
     loop {
         let mut items = [None];
         let mut count = 0;
         // SAFETY: The one-element output slice and fetched count outlive this call.
         unsafe { enumerator.Next(&mut items, Some(&mut count)) }
-            .map_err(|_| "读取系统应用列表失败")?;
+            .map_err(|_| "backendText.mf69dcbf1")?;
         if count == 0 {
             break;
         }
@@ -97,8 +97,8 @@ fn handlers(path: &Path) -> Result<Vec<(Candidate, IAssocHandler)>, String> {
         // SAFETY: The handler is a live enumerated COM object on this initialized thread.
         let (id, name, recommended) = unsafe {
             (
-                owned_string(handler.GetName().map_err(|_| "读取应用标识失败")?),
-                owned_string(handler.GetUIName().map_err(|_| "读取应用名称失败")?),
+                owned_string(handler.GetName().map_err(|_| "backendText.m8df87f61")?),
+                owned_string(handler.GetUIName().map_err(|_| "backendText.m576a145c")?),
                 handler.IsRecommended().0 == 0,
             )
         };
@@ -136,19 +136,19 @@ pub fn launch(path: &Path, candidate: &Candidate) -> Result<(), String> {
     let (_, handler) = handlers(path)?
         .into_iter()
         .find(|(entry, _)| entry.app.id == candidate.app.id)
-        .ok_or("此应用已不可用")?;
+        .ok_or("backendText.maf388132")?;
     let path = HSTRING::from(path.as_os_str());
     // SAFETY: The canonical file path is NUL-terminated; all objects stay on this
     // COM thread. Let the system handler build the launch request (including UWP).
     unsafe {
         let item: IShellItem =
-            SHCreateItemFromParsingName(&path, None).map_err(|_| "无法读取系统文件对象")?;
+            SHCreateItemFromParsingName(&path, None).map_err(|_| "backendText.mabbcb43f")?;
         let data: IDataObject = item
             .BindToHandler(None, &BHID_DataObject)
-            .map_err(|_| "无法准备打开文件")?;
+            .map_err(|_| "backendText.m73db7960")?;
         handler
             .Invoke(&data)
-            .map_err(|_| "应用无法打开此文件".into())
+            .map_err(|_| "backendText.ma01ddfae".into())
     }
 }
 

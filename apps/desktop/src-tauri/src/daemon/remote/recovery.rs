@@ -15,13 +15,13 @@ impl RemoteHost {
         let id = args
             .as_str()
             .filter(|id| !id.is_empty() && id.len() <= 128)
-            .ok_or("配对邀请标识无效")?;
+            .ok_or("backendText.ma2d2d187")?;
         let (config, secrets, grant) = {
             let state = self.state.lock().await;
             let ready = state.ready.as_ref().ok_or("remote unavailable")?;
             let grant = ready.book.receipt_for_lease(id, lease).map_err(failure)?;
             if grant.public_key != hex::encode(peer) {
-                return Err("配对身份不一致".into());
+                return Err("backendText.m6dc484f8".into());
             }
             (ready.config.clone(), ready.secrets.clone(), grant)
         };

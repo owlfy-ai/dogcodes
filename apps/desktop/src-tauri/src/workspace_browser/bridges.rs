@@ -47,7 +47,7 @@ impl WorkspaceWatchers {
         }
     }
     pub(crate) fn stop(&self, key: Key) -> Result<(), String> {
-        if let Some(entry) = self.0.lock().map_err(|_| "监听状态不可用")?.remove(&key) {
+        if let Some(entry) = self.0.lock().map_err(|_| "backendText.m89dbc51f")?.remove(&key) {
             entry.abort.abort();
         }
         Ok(())
@@ -71,7 +71,7 @@ impl WorkspaceWatchers {
             }
         });
         // Gate the task so a quick failure cannot clean up before registration.
-        let mut entries = self.0.lock().map_err(|_| "监听状态不可用")?;
+        let mut entries = self.0.lock().map_err(|_| "backendText.m89dbc51f")?;
         if let Some(old) = entries.insert(
             key,
             Bridge {
@@ -101,7 +101,7 @@ pub async fn core_workspace_watch(
     changes: tauri::ipc::Channel<WatchMessage>,
 ) -> Result<(), String> {
     require_task_window(window.label(), &task_id)?;
-    uuid::Uuid::parse_str(&id).map_err(|_| "无效的目录订阅标识")?;
+    uuid::Uuid::parse_str(&id).map_err(|_| "backendText.m248b1cfb")?;
     let core = state.core.clone();
     let (ready, accepted) = tokio::sync::oneshot::channel();
     watchers.start((window.label().into(), id), async move {
@@ -136,7 +136,7 @@ pub async fn core_workspace_watch(
             }
         }
     })?;
-    accepted.await.map_err(|_| "目录订阅已取消")?
+    accepted.await.map_err(|_| "backendText.m862d754c")?
 }
 #[tauri::command]
 pub fn core_workspace_unwatch(

@@ -10,7 +10,7 @@ fn authorize(label: &str) -> Result<(), String> {
     if label == "main" || label.starts_with("review-") {
         Ok(())
     } else {
-        Err("此窗口不能访问终端".into())
+        Err("backendText.m34f6bae8".into())
     }
 }
 
@@ -22,7 +22,7 @@ async fn authorize_resource(label: &str, state: &DesktopState, id: &str) -> Resu
     if label != "main" {
         let info = state.core.terminal_get(id).await?;
         if !allows_task(label, info.task_id.as_deref()) {
-            return Err("此窗口不能访问其他会话的终端".into());
+            return Err("backendText.m9ecc3357".into());
         }
     }
     Ok(())
@@ -39,9 +39,9 @@ pub async fn core_terminal_open(
     rows: u16,
 ) -> Result<TerminalInfo, String> {
     if window.label() != "main" {
-        return Err("请从主窗口创建项目终端".into());
+        return Err("backendText.m4eb7494b".into());
     }
-    let snapshot = state.core.bootstrap().await.map_err(|_| "项目目录不可用")?;
+    let snapshot = state.core.bootstrap().await.map_err(|_| "backendText.m50891e4c")?;
     let project = snapshot
         .projects
         .iter()
@@ -50,7 +50,7 @@ pub async fn core_terminal_open(
     let path = std::iter::once(&project.path)
         .chain(&project.additional_directories)
         .nth(directory_index)
-        .ok_or("项目目录不存在")?;
+        .ok_or("backendText.m3149b9e1")?;
     state
         .core
         .terminal_start(LaunchIntent {
@@ -60,7 +60,7 @@ pub async fn core_terminal_open(
             directory_index,
             task_id: None,
             command_id: None,
-            label: "终端".into(),
+            label: "backendText.me2a76ef1".into(),
             cwd: path.into(),
             command: None,
             cols,
@@ -80,7 +80,7 @@ pub async fn core_terminal_open_on_target(
     rows: u16,
 ) -> Result<TerminalInfo, String> {
     if window.label() != "main" {
-        return Err("请从主窗口打开服务器终端".into());
+        return Err("backendText.me8f2bd5d".into());
     }
     state
         .core
@@ -96,7 +96,7 @@ pub async fn core_terminal_release_target(
     target_id: String,
 ) -> Result<serde_json::Value, String> {
     if window.label() != "main" {
-        return Err("请从主窗口操作服务器连接".into());
+        return Err("backendText.m13337cd3".into());
     }
     state.core.terminal_release_target(&target_id).await
 }
@@ -125,7 +125,7 @@ pub async fn core_terminal_get(
     authorize(window.label())?;
     let info = state.core.terminal_get(&id).await?;
     if !allows_task(window.label(), info.task_id.as_deref()) {
-        return Err("此窗口不能访问其他会话的终端".into());
+        return Err("backendText.m9ecc3357".into());
     }
     Ok(info)
 }
@@ -145,7 +145,7 @@ pub async fn core_terminal_input(
     state: tauri::State<'_, DesktopState>,
     request: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let id = request["terminalId"].as_str().ok_or("缺少终端标识")?;
+    let id = request["terminalId"].as_str().ok_or("backendText.m833d6e18")?;
     authorize_resource(window.label(), &state, id).await?;
     state.core.terminal_input(window.label(), request).await
 }

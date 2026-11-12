@@ -1,3 +1,4 @@
+import { SCRATCH_PROJECT_NAME, UNTITLED_TASK_TITLE } from "./displayNames";
 import type {
   ArtifactId, ArtifactChunk, ArtifactCursor, ArtifactExportRequest, ArtifactPage, ArtifactReadRequest, TaskArtifactSummary,
   BootstrapSnapshot, CommandReceipt, CommandInvalidation, TaskCreationIdentity, TurnSubmission, PromptAttachment,
@@ -66,7 +67,7 @@ export class DemoCoreClient implements CoreClient {
   private cancelReceipts = new Map<string, { signature: string; receipt: import("@dogcodes/protocol").CommandReceipt }>();
   private projects: BootstrapSnapshot["projects"] = [
     {additionalDirectories: [],  projectId, displayName: "dogcodes", path: "/workspace/dogcodes", taskCount: 0 },
-    {additionalDirectories: [],  projectId: id<ProjectId>("prj"), displayName: "快速对话", path: "/demo/scratch", taskCount: 0 },
+    {additionalDirectories: [],  projectId: id<ProjectId>("prj"), displayName: SCRATCH_PROJECT_NAME, path: "/demo/scratch", taskCount: 0 },
   ];
   async scanAgent(_providerId: string): Promise<BootstrapSnapshot> { return this.bootstrap(); }
 
@@ -562,7 +563,7 @@ export class DemoCoreClient implements CoreClient {
     const existing = request.taskId ? this.tasks.find(task => task.taskId === request.taskId) : undefined;
     if (request.taskId && (!existing || existing.activePrimaryRun || existing.projectId !== request.projectId)) throw new Error("原会话不可发送，请等待回复结束或刷新后重试。");
     const task: TaskSummary = existing ? structuredClone(existing)
-      : { taskId: id<TaskId>("tsk"), projectId: request.projectId, title: "新对话", preferredExecutor: structuredClone(request.target), activePrimaryRun: null, streamVersion: 0 };
+      : { taskId: id<TaskId>("tsk"), projectId: request.projectId, title: UNTITLED_TASK_TITLE, preferredExecutor: structuredClone(request.target), activePrimaryRun: null, streamVersion: 0 };
     const switching = !!existing && (existing.preferredExecutor.providerId !== request.target.providerId
       || (existing.preferredExecutor.installationId ?? null) !== (request.target.installationId ?? null));
     let context: SubmissionIntent["context"] = null;

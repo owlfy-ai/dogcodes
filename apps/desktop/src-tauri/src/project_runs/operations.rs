@@ -102,12 +102,12 @@ impl std::ops::DerefMut for StoredCatalog {
 impl StoredCatalog {
     pub fn replay(&self, id: &str, request: &serde_json::Value) -> Result<bool, MutationError> {
         uuid::Uuid::parse_str(id)
-            .map_err(|_| MutationError::rejected("invalid_request", "无效的运行操作标识"))?;
+            .map_err(|_| MutationError::rejected("invalid_request", "backendText.m4edc4015"))?;
         if let Some(receipt) = self.operations.get(id) {
             if &receipt.request != request {
                 return Err(MutationError::rejected(
                     "operation_conflict",
-                    "运行操作标识已用于不同请求，请核实原操作",
+                    "backendText.m977d0b53",
                 ));
             }
             return Ok(true);

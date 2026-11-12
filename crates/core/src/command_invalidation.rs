@@ -137,10 +137,10 @@ impl Core {
         let version = match self.repository.task_summary(task_id).await? {
             Some(task) => task.stream_version,
             None if may_be_absent => 0,
-            None => return Err(CoreError::NotFound("原会话已不可用，请核实原操作".into())),
+            None => return Err(CoreError::NotFound("backendText.m336cbf00".into())),
         };
         if version < original_version {
-            return Err(CoreError::Conflict("后台版本早于原请求，未作废操作".into()));
+            return Err(CoreError::Conflict("backendText.m1653378d".into()));
         }
         let command_id = CommandId::new();
         let mut event = NewEvent::hub(
@@ -172,7 +172,7 @@ impl Core {
                 return match self.command_receipt(envelope).await? {
                     Some(acknowledgement) => Ok(CommandInvalidation::Accepted { acknowledgement }),
                     None => Err(CoreError::Conflict(
-                        "会话状态已变化，请先核实原操作结果".into(),
+                        "backendText.m86b8ee7a".into(),
                     )),
                 };
             }

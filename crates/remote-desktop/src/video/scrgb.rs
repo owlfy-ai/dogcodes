@@ -19,7 +19,7 @@ impl Converter {
     }
     pub fn update(&mut self, white: u32) -> Result<()> {
         if white == 0 {
-            return Err("系统 SDR 白电平无效".into());
+            return Err("backendText.mfc0ac359".into());
         }
         if white == self.white {
             return Ok(());
@@ -38,11 +38,11 @@ impl Converter {
         pitch: usize,
         rotation: u32,
     ) -> Result<RgbaImage> {
-        let row = (width as usize).checked_mul(8).ok_or("视频行尺寸溢出")?;
+        let row = (width as usize).checked_mul(8).ok_or("backendText.m577d9a5d")?;
         let length = pitch
             .checked_mul(height.saturating_sub(1) as usize)
             .and_then(|n| n.checked_add(row))
-            .ok_or("视频缓冲区溢出")?;
+            .ok_or("backendText.m7eeabe74")?;
         if width == 0
             || height == 0
             || u64::from(width) * u64::from(height) > 64 * 1024 * 1024
@@ -50,7 +50,7 @@ impl Converter {
             || length > bytes.len()
             || rotation > 3
         {
-            return Err("系统浮点视频缓冲区无效".into());
+            return Err("backendText.mb1916f5e".into());
         }
         let size = if rotation % 2 == 1 {
             (height, width)

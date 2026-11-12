@@ -46,7 +46,7 @@ pub(super) fn hardware_attempt(
     // tests below use only an explicitly selected synthetic software element.
     #[cfg(test)]
     if std::env::var("DOGCODES_LINUX_ENCODER_FIXTURE").as_deref() != Ok("hardware-synthetic-only") {
-        return Err("硬件编码实机验证尚未启用".into());
+        return Err("backendText.m9141ebe1".into());
     }
     Worker::start_with_deadlines(
         move || Native::new(size, rate, profile),
@@ -68,7 +68,7 @@ struct Native {
 }
 impl Native {
     fn new(size: (u32, u32), rate: (u32, u32), profile: VideoProfile) -> Result<Self> {
-        gst::init().map_err(|e| format!("Linux 编码组件无法初始化：{e}"))?;
+        gst::init().map_err(|e| format!("backendText.me3ad7a8a\u{1e}{}", serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())))?;
         let mut failures = Vec::new();
         for spec in CANDIDATES {
             let Some(factory) = gst::ElementFactory::find(spec.factory) else {
@@ -86,9 +86,9 @@ impl Native {
             }
         }
         Err(if failures.is_empty() {
-            "没有可用的 Linux H.264 硬件插件".into()
+            "backendText.md20814fb".into()
         } else {
-            format!("Linux 硬件试编码失败：{}", failures.join("; "))
+            format!("backendText.m4e2fdb6d\u{1e}{}", serde_json::to_string(&[failures.join("; ").to_string()]).unwrap_or_else(|_| "[]".into()))
         })
     }
     fn open(spec: Spec, size: (u32, u32), rate: (u32, u32), profile: VideoProfile) -> Result<Self> {
@@ -108,7 +108,7 @@ impl Native {
                 .stream
                 .encode(&probe, Instant::now(), false, Duration::from_millis(500))?;
         if !frame.keyframe {
-            return Err("硬件试编码没有返回 IDR".into());
+            return Err("backendText.mafa9f755".into());
         }
         verify_probe(&frame, size)?;
         // Warmup proves the real negotiated bitstream and is never published.
@@ -122,7 +122,7 @@ impl Native {
         rate: (u32, u32),
     ) -> Result<EncodedFrame> {
         if frame.size() != self.size {
-            return Err("Linux 编码画面尺寸已变化".into());
+            return Err("backendText.m78ab6640".into());
         }
         let rate = self.profile.rate(rate.0, rate.1);
         if rate != self.rate {
@@ -132,7 +132,7 @@ impl Native {
             self.stream
                 .pipeline
                 .set_state(gst::State::Null)
-                .map_err(|_| "旧 Linux 编码器未停止")?;
+                .map_err(|_| "backendText.m61e5309b")?;
             *self = Self::open(self.spec, self.size, rate, self.profile)?;
         }
         let output = self.stream.encode(
@@ -148,15 +148,15 @@ impl Native {
 fn verify_probe(frame: &EncodedFrame, size: (u32, u32)) -> Result<()> {
     use openh264::formats::YUVSource;
     if !frame.keyframe {
-        return Err("试编码不是关键帧".into());
+        return Err("backendText.mfa069733".into());
     }
-    let mut decoder = openh264::decoder::Decoder::new().map_err(|_| "无法验证硬件画面")?;
+    let mut decoder = openh264::decoder::Decoder::new().map_err(|_| "backendText.m3fa7b7c3")?;
     let decoded = decoder
         .decode(&frame.data)
-        .map_err(|_| "硬件试编码无法解码")?
-        .ok_or("硬件试编码未产生可显示画面")?;
+        .map_err(|_| "backendText.mef143e0d")?
+        .ok_or("backendText.mbe41fd3d")?;
     if decoded.dimensions() != (size.0 as usize, size.1 as usize) {
-        return Err("硬件试编码尺寸不匹配".into());
+        return Err("backendText.m91fae541".into());
     }
     Ok(())
 }
@@ -187,7 +187,7 @@ struct Stream {
 impl Stream {
     fn open(spec: Spec, size: (u32, u32), rate: (u32, u32), profile: VideoProfile) -> Result<Self> {
         if super::profile_size(size.0, size.1, size.0, profile)? != size {
-            return Err("Linux 硬编尺寸超出协商范围".into());
+            return Err("backendText.m3df07e9c".into());
         }
         // All interpolated text is from our literal candidate table or bounded
         // integers; neither remote input nor environment supplies a pipeline.
@@ -213,19 +213,19 @@ impl Stream {
             level,
         );
         let pipeline = gst::parse::launch(&description)
-            .map_err(|e| format!("Linux 编码管线不可用：{e}"))?
+            .map_err(|e| format!("backendText.m726c32d3\u{1e}{}", serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())))?
             .downcast::<gst::Pipeline>()
-            .map_err(|_| "Linux 编码对象类型无效")?;
+            .map_err(|_| "backendText.m595a419d")?;
         let source = pipeline
             .by_name("source")
             .and_then(|v| v.downcast::<AppSrc>().ok())
-            .ok_or("缺少视频输入")?;
+            .ok_or("backendText.mdd2399fd")?;
         let target = pipeline
             .by_name("target")
             .and_then(|v| v.downcast::<AppSink>().ok())
-            .ok_or("缺少视频输出")?;
-        let encoder = pipeline.by_name("encoder").ok_or("缺少硬件编码器")?;
-        let bus = pipeline.bus().ok_or("缺少编码状态通道")?;
+            .ok_or("backendText.m56b2c29a")?;
+        let encoder = pipeline.by_name("encoder").ok_or("backendText.m1927cec9")?;
+        let bus = pipeline.bus().ok_or("backendText.mc2ab565f")?;
         let stream = Self {
             pipeline,
             source,
@@ -241,7 +241,7 @@ impl Stream {
         stream
             .pipeline
             .set_state(gst::State::Playing)
-            .map_err(|_| "Linux 编码管线无法启动")?;
+            .map_err(|_| "backendText.mbb7b9730")?;
         Ok(stream)
     }
     fn encode(
@@ -255,16 +255,16 @@ impl Stream {
         self.next_pts = self
             .next_pts
             .checked_add(self.duration)
-            .ok_or("Linux 视频时间戳耗尽")?;
+            .ok_or("backendText.mf256c9b7")?;
         if frame.size() != self.size {
-            return Err("Linux 视频尺寸不匹配".into());
+            return Err("backendText.m0e9598e5".into());
         }
         // At most one input is in flight. A surplus sample or queued buffer
         // must not be attached to this request's capture timestamp.
         if self.source.current_level_buffers() != 0
             || self.target.try_pull_sample(gst::ClockTime::ZERO).is_some()
         {
-            return Err("Linux 编码残留了旧画面，停止使用原编码器".into());
+            return Err("backendText.ma27917c0".into());
         }
         if force {
             let event = gstreamer_video::DownstreamForceKeyUnitEvent::builder()
@@ -276,16 +276,16 @@ impl Stream {
                 .static_pad("sink")
                 .is_some_and(|pad| pad.send_event(event))
             {
-                return Err("Linux 编码器拒绝关键帧请求".into());
+                return Err("backendText.m1d50e28c".into());
             }
         }
         let mut buffer = input_buffer(frame);
-        let buffer_mut = buffer.get_mut().ok_or("Linux 视频缓冲区不可写")?;
+        let buffer_mut = buffer.get_mut().ok_or("backendText.mea4aebb0")?;
         buffer_mut.set_pts(pts);
         buffer_mut.set_duration(gst::ClockTime::from_nseconds(self.duration));
         self.source
             .push_buffer(buffer)
-            .map_err(|_| "Linux 编码输入已关闭")?;
+            .map_err(|_| "backendText.mc54c6188")?;
         let sample = self
             .target
             .try_pull_sample(gst::ClockTime::from_nseconds(timeout.as_nanos() as u64))
@@ -299,18 +299,18 @@ impl Stream {
         captured: Instant,
         force: bool,
     ) -> Result<EncodedFrame> {
-        let buffer = sample.buffer().ok_or("Linux 编码没有画面数据")?;
+        let buffer = sample.buffer().ok_or("backendText.m2e7f0644")?;
         if buffer.pts() != Some(pts) || buffer.size() == 0 || buffer.size() > MAX_FRAME {
-            return Err("Linux 编码时间戳或画面大小无效".into());
+            return Err("backendText.mae12f0b7".into());
         }
         let mapped = buffer
             .map_readable()
-            .map_err(|_| "Linux 编码画面无法读取")?;
+            .map_err(|_| "backendText.mce4409ef")?;
         let output = self
             .headers
             .frame(mapped.as_slice(), self.profile, captured)?;
         if force && !output.keyframe {
-            return Err("Linux 编码器未返回请求的 IDR".into());
+            return Err("backendText.mdfdb82a4".into());
         }
         Ok(output)
     }
@@ -318,9 +318,9 @@ impl Stream {
         if let Some(message) = self.bus.pop_filtered(&[gst::MessageType::Error])
             && let gst::MessageView::Error(error) = message.view()
         {
-            return format!("Linux 编码失败：{}", error.error());
+            return format!("backendText.m40a82a9a\u{1e}{}", serde_json::to_string(&[error.error().to_string()]).unwrap_or_else(|_| "[]".into()));
         }
-        "Linux 编码未按时返回画面".into()
+        "backendText.m5a136e63".into()
     }
 }
 impl Drop for Stream {

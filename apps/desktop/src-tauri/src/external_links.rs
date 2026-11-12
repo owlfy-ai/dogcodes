@@ -1,8 +1,8 @@
 #[tauri::command]
 pub async fn open_website(url: String) -> Result<(), String> {
-    let parsed = tauri::Url::parse(&url).map_err(|_| "无效的网站地址".to_string())?;
+    let parsed = tauri::Url::parse(&url).map_err(|_| "backendText.m375a9f81".to_string())?;
     if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
-        return Err("仅支持 HTTP 和 HTTPS 网站链接".into());
+        return Err("backendText.m63b0fcd8".into());
     }
     #[cfg(target_os = "macos")]
     let mut command = tokio::process::Command::new("/usr/bin/open");
@@ -18,10 +18,10 @@ pub async fn open_website(url: String) -> Result<(), String> {
         .arg(parsed.as_str())
         .status()
         .await
-        .map_err(|_| "无法启动浏览器".to_string())?;
+        .map_err(|_| "backendText.mbd4e2081".to_string())?;
     if status.success() {
         Ok(())
     } else {
-        Err("无法打开网站，请检查默认浏览器设置".into())
+        Err("backendText.m0b0f81bc".into())
     }
 }

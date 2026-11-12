@@ -20,7 +20,7 @@ impl Resolver {
     pub fn current(&self, display: &Display) -> Result<Display> {
         use objc2_core_graphics::{CGDisplayBounds, CGDisplayIsActive};
         if !CGDisplayIsActive(display.id) {
-            return Err("显示器已断开".into());
+            return Err("backendText.m88561e63".into());
         }
         let r = CGDisplayBounds(display.id);
         let values = [r.origin.x, r.origin.y, r.size.width, r.size.height];
@@ -34,7 +34,7 @@ impl Resolver {
             || r.size.width > f64::from(u32::MAX)
             || r.size.height > f64::from(u32::MAX)
         {
-            return Err("显示器当前坐标范围无效".into());
+            return Err("backendText.m97923790".into());
         }
         Bounds {
             x: r.origin.x as i32,

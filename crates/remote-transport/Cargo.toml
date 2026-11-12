@@ -13,9 +13,9 @@ tokio.workspace = true
 async-trait.workspace = true
 bytes = "1"
 serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 dogcodes-endpoint = { path = "../remote-endpoint", default-features = false }
 # examples/video_loopback.rs drives the real encoder through the track.
 dogcodes-remote-desktop = { path = "../remote-desktop" }

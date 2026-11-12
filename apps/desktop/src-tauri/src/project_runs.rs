@@ -104,7 +104,7 @@ impl ProjectRunHost {
     fn load(&self, id: &str) -> Result<Option<StoredCatalog>, String> {
         // Read and install under one lock, so an older disk snapshot cannot
         // overwrite an edit or an analysis accepted by another client.
-        let mut cache = self.cache.lock().map_err(|_| "项目分析状态不可用")?;
+        let mut cache = self.cache.lock().map_err(|_| "backendText.mbbc11202")?;
         self.flush_finalization(&mut cache, id)?;
         if let Some(value) = cache.get(id) {
             return Ok(Some(value.clone()));
@@ -112,21 +112,21 @@ impl ProjectRunHost {
         let bytes = match std::fs::read(self.file(id)) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(format!("无法读取运行配置，已保留原文件：{error}")),
+            Err(error) => return Err(format!("backendText.me7e90449\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))),
         };
         let mut catalog: StoredCatalog = serde_json::from_slice(&bytes)
-            .map_err(|error| format!("运行配置损坏，已保留原文件：{error}"))?;
+            .map_err(|error| format!("backendText.md38255fc\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?;
         // Whether a server's catalog suits its project is checked where the project is known.
         let this_machine_or_server =
             catalog.platform == std::env::consts::OS || catalog.platform == SERVER_PLATFORM;
         if catalog.project_id != id || !this_machine_or_server {
-            return Err("运行配置归属不匹配，已保留原文件".into());
+            return Err("backendText.me6604551".into());
         }
         let interrupted =
             catalog.interrupt_analysis("interrupted", "project.analysisRestarted");
         if interrupted {
             self.save(&catalog).map_err(|error| {
-                format!("上次分析已中断，恢复状态尚未保存；请检查磁盘后重试：{error}")
+                format!("backendText.mda6fd7b2\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))
             })?;
         }
         cache.insert(id.into(), catalog.clone());
@@ -141,16 +141,16 @@ impl ProjectRunHost {
         let mut finalizations = self
             .finalizations
             .lock()
-            .map_err(|_| "项目分析恢复状态不可用")?;
+            .map_err(|_| "backendText.mf280d8d7")?;
         if let Some(finalization) = finalizations.get(id) {
             if cache
                 .get(id)
                 .is_none_or(|c| c.generation != finalization.generation)
             {
-                return Err("分析恢复版本不匹配，已保留原运行配置；请重新打开后台核实".into());
+                return Err("backendText.mddd3e899".into());
             }
             self.save(finalization).map_err(|error| {
-                format!("分析已停止，状态尚未保存；请检查磁盘后重试，未重新执行分析：{error}")
+                format!("backendText.m2ce343c8\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))
             })?;
             cache.insert(id.into(), finalization.clone());
             finalizations.remove(id);
@@ -163,7 +163,7 @@ impl ProjectRunHost {
             .uncertain_storage
             .load(std::sync::atomic::Ordering::Acquire)
         {
-            return Err("运行配置写入结果待核实，请检查磁盘后重启后台；未重新执行操作".into());
+            return Err("backendText.md15fd313".into());
         }
         Ok(())
     }
@@ -184,7 +184,7 @@ impl ProjectRunHost {
             // in-memory catalog if directory durability could not be confirmed.
             self.uncertain_storage
                 .store(true, std::sync::atomic::Ordering::Release);
-            return Err(format!("运行配置写入结果待核实：{error}"));
+            return Err(format!("backendText.m4e556eeb\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
         }
         Ok(())
     }
@@ -210,13 +210,13 @@ impl ProjectRunHost {
         operation: Option<(&str, serde_json::Value)>,
     ) -> Result<RunCatalog, MutationError> {
         self.load(id)?
-            .ok_or_else(|| MutationError::rejected("catalog_missing", "请先分析项目"))?;
-        let mut cache = self.cache.lock().map_err(|_| "项目分析状态不可用")?;
+            .ok_or_else(|| MutationError::rejected("catalog_missing", "backendText.m97d54518"))?;
+        let mut cache = self.cache.lock().map_err(|_| "backendText.mbbc11202")?;
         self.flush_finalization(&mut cache, id)?;
         let mut catalog = cache
             .get(id)
             .cloned()
-            .ok_or_else(|| MutationError::rejected("catalog_missing", "请先分析项目"))?;
+            .ok_or_else(|| MutationError::rejected("catalog_missing", "backendText.m97d54518"))?;
         if let Some((operation_id, request)) = &operation
             && catalog.replay(operation_id, request)?
         {
@@ -225,24 +225,24 @@ impl ProjectRunHost {
         if catalog.generation != generation {
             return Err(MutationError::rejected(
                 "version_conflict",
-                "运行项已更新，请刷新后重试",
+                "backendText.m5ee6adf5",
             ));
         }
         if catalog.directories.iter().any(|d| d.status == "analyzing") {
             return Err(MutationError::rejected(
                 "analysis_running",
-                "分析过程中不能修改运行项",
+                "backendText.mc7eb7aea",
             ));
         }
         let directory = catalog
             .directories
             .get_mut(index)
-            .ok_or_else(|| MutationError::rejected("directory_missing", "目录不存在"))?;
+            .ok_or_else(|| MutationError::rejected("directory_missing", "backendText.m85c01696"))?;
         let position = directory
             .commands
             .iter()
             .position(|c| c.id == command_id)
-            .ok_or_else(|| MutationError::rejected("command_missing", "运行项已不存在"))?;
+            .ok_or_else(|| MutationError::rejected("command_missing", "backendText.m8d3974cd"))?;
         match edit {
             RunEdit::Rename { label } => {
                 let label = label.trim();
@@ -252,7 +252,7 @@ impl ProjectRunHost {
                 {
                     return Err(MutationError::rejected(
                         "invalid_request",
-                        "名称需为 1–60 个字符，且不能包含换行",
+                        "backendText.m66f2aa45",
                     ));
                 }
                 if directory.commands[position].label != label {
@@ -482,7 +482,7 @@ async fn analyze_recorded(
     let cached = host.load(&id)?;
     if let Some(request) = &operation {
         uuid::Uuid::parse_str(&request.operation_id)
-            .map_err(|_| MutationError::rejected("invalid_request", "无效的运行操作标识"))?;
+            .map_err(|_| MutationError::rejected("invalid_request", "backendText.m4edc4015"))?;
         if let Some(cached) = &cached
             && cached.replay(
                 &request.operation_id,
@@ -496,7 +496,7 @@ async fn analyze_recorded(
         {
             return Err(MutationError::rejected(
                 "version_conflict",
-                "运行配置已更新，请刷新后再分析",
+                "backendText.mda8c9bfd",
             ));
         }
     }
@@ -532,7 +532,7 @@ async fn analyze_recorded(
     {
         return Err(MutationError::rejected(
             "executor_unavailable",
-            "分析 Agent 当前不可用或已禁用",
+            "backendText.m50afa06b",
         ));
     }
     let requested = executor.or_else(|| {
@@ -550,7 +550,7 @@ async fn analyze_recorded(
     if operation.is_some() && chosen.is_none() {
         return Err(MutationError::rejected(
             "executor_unavailable",
-            "没有可用的分析 Agent，请连接 Agent 后重新分析",
+            "backendText.m4a2deac2",
         ));
     }
     // Replay above precedes new-work admission. Hold the Core guard through the
@@ -576,20 +576,20 @@ async fn analyze_recorded(
         directories: vec![],
     };
     {
-        let mut cache = host.cache.lock().map_err(|_| "项目分析状态不可用")?;
+        let mut cache = host.cache.lock().map_err(|_| "backendText.mbbc11202")?;
         // Background completion may fail while Agent admission is awaited.
         // Save its terminal state before creating a replacement generation.
         host.flush_finalization(&mut cache, &id)?;
         if host
             .cleanup_pending
             .lock()
-            .map_err(|_| "分析清理状态不可用")?
+            .map_err(|_| "backendText.m6844e422")?
             .iter()
             .any(|(project_id, _)| project_id == &id)
         {
             return Err(MutationError::rejected(
                 "analysis_cleanup_pending",
-                "原分析 Agent 会话关闭待核实，后台正在清理，请稍后重试",
+                "backendText.m2dd9d0c5",
             ));
         }
         // Coalesce concurrent openings, but allow an explicit refresh to supersede old work.
@@ -651,12 +651,12 @@ async fn analyze_recorded(
                 return;
             }
             let result = async {
-                let execution = execution.as_ref().ok_or("没有可用的分析 Agent，请连接 Agent 后重新分析")?;
+                let execution = execution.as_ref().ok_or("backendText.m4a2deac2")?;
                 let root = PathBuf::from(path); let scan_root = root.clone();
                 let on_target = project_target(&target)?;
                 let files = match &on_target {
                     Some(target) => workspace_ops::operation::scan_project(target, path).await?,
-                    None => tokio::task::spawn_blocking(move || scan(&scan_root)).await.map_err(|_| "读取目录失败")??,
+                    None => tokio::task::spawn_blocking(move || scan(&scan_root)).await.map_err(|_| "backendText.m6ae2f82b")??,
                 };
                 if files.is_empty() { return Ok(vec![]); }
                 let packet = serde_json::json!({ "platform": packet_platform, "shell": packet_shell, "files": files }).to_string();
@@ -845,7 +845,7 @@ async fn launch(
     let project = task_project(core, &request.task_id).await?;
     let catalog = host
         .load(project.project_id.as_str())?
-        .ok_or("请先分析项目")?;
+        .ok_or("backendText.m97d54518")?;
     if catalog.generation != request.generation
         || catalog.platform != platform(&project)
         || !catalog
@@ -854,18 +854,18 @@ async fn launch(
             .map(|d| &d.path)
             .eq(roots(&project).iter())
     {
-        return Err("运行配置已更新，请刷新后再运行".into());
+        return Err("backendText.mad90de7d".into());
     }
     let directory = catalog
         .directories
         .get(request.directory_index)
         .filter(|d| d.status != "analyzing")
-        .ok_or("目录尚未分析完成")?;
+        .ok_or("backendText.m73d9e8a4")?;
     let command = directory
         .commands
         .iter()
         .find(|c| c.id == request.command_id)
-        .ok_or("运行命令已变化，请刷新")?;
+        .ok_or("backendText.maf2e9c66")?;
     let target = host.target_of(&project)?;
     let cwd = if target.is_some() {
         resolve_remote_cwd(Path::new(&directory.path), &command.cwd)?
@@ -917,7 +917,7 @@ pub async fn dispatch(
         "project_runs_analyze" => {
             let result: Result<RunCatalog, MutationError> = async {
                 let request: AnalyzeRequest = from_value(args).map_err(|e| {
-                    MutationError::rejected("invalid_request", &format!("分析请求无效：{e}"))
+                    MutationError::rejected("invalid_request", &format!("backendText.md17f2f75\u{1e}{}", serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())))
                 })?;
                 analyze_recorded(
                     host.clone(),
@@ -938,7 +938,7 @@ pub async fn dispatch(
         "project_run_edit" => {
             let result: Result<RunCatalog, MutationError> = async {
                 let request: EditRequest = from_value(args).map_err(|e| {
-                    MutationError::rejected("invalid_request", &format!("编辑请求无效：{e}"))
+                    MutationError::rejected("invalid_request", &format!("backendText.me392685a\u{1e}{}", serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())))
                 })?;
                 let _admission = host.admission.lock().await;
                 let project = task_project_for_mutation(core, &request.task_id).await?;
@@ -992,7 +992,7 @@ fn inside_project(relative: &str) -> bool {
 /// By name only: the directory is on another machine, which reports if it is missing.
 fn resolve_remote_cwd(root: &Path, relative: &str) -> Result<PathBuf, String> {
     if !inside_project(relative) {
-        return Err("运行目录必须位于项目内".into());
+        return Err("backendText.m35c92c72".into());
     }
     // Joined by hand: `Path` would use this machine's separator in a path on the server.
     let root = root.to_string_lossy();
@@ -1005,15 +1005,15 @@ fn resolve_remote_cwd(root: &Path, relative: &str) -> Result<PathBuf, String> {
 }
 fn resolve_cwd(root: &Path, relative: &str) -> Result<PathBuf, String> {
     if !inside_project(relative) {
-        return Err("运行目录必须位于项目内".into());
+        return Err("backendText.m35c92c72".into());
     }
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     let target = root
         .join(relative)
         .canonicalize()
-        .map_err(|_| "运行目录不存在")?;
+        .map_err(|_| "backendText.mf431b534")?;
     if !target.starts_with(&root) || !target.is_dir() {
-        return Err("运行目录必须位于项目内".into());
+        return Err("backendText.m35c92c72".into());
     }
     Ok(target)
 }
@@ -1042,14 +1042,14 @@ fn parse_commands(
     let text = if text.starts_with("```") {
         text.split_once('\n')
             .and_then(|(_, rest)| rest.rsplit_once("```").map(|(json, _)| json))
-            .ok_or("Agent 返回格式不正确")?
+            .ok_or("backendText.m760ca55f")?
     } else {
         text
     };
     let response: Response =
-        serde_json::from_str(text).map_err(|_| "Agent 返回格式不正确，请重新分析")?;
+        serde_json::from_str(text).map_err(|_| "backendText.m67c6f6c7")?;
     if response.commands.len() > 24 {
-        return Err("Agent 返回了过多命令".into());
+        return Err("backendText.m930c81f2".into());
     }
     let mut seen = HashSet::new();
     let mut result = vec![];
@@ -1064,7 +1064,7 @@ fn parse_commands(
             || command.chars().any(char::is_control)
             || !files.iter().any(|f| f.path == recipe.source)
         {
-            return Err("Agent 返回的命令缺少有效名称、来源或单行命令，请重新分析".into());
+            return Err("backendText.m8f9b60a3".into());
         }
         if local {
             resolve_cwd(root, &recipe.cwd)?;
@@ -1430,7 +1430,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let host = ProjectRunHost::new(root.path().into());
         std::fs::write(host.file("project"), b"broken").unwrap();
-        assert!(host.load("project").unwrap_err().contains("已保留"));
+        assert!(host.load("project").unwrap_err().contains("backendText.me309f226"));
         assert_eq!(std::fs::read(host.file("project")).unwrap(), b"broken");
         let blocked = root.path().join("blocked");
         std::fs::write(&blocked, b"keep").unwrap();
@@ -1474,7 +1474,7 @@ mod tests {
                 .error
                 .as_ref()
                 .unwrap()
-                .contains("中断")
+                .contains("backendText.mf9d19345")
         );
         assert_eq!(loaded.directories[0].commands[0].label, "我的命令");
         assert!(loaded.directories[0].commands[0].pinned);
@@ -1537,7 +1537,7 @@ mod tests {
                 .error
                 .as_ref()
                 .unwrap()
-                .contains("没有可用")
+                .contains("backendText.mc02698ad")
         );
         assert_eq!(
             analyze(host.clone(), core, project, None, false, None)
@@ -1580,7 +1580,7 @@ mod tests {
         let error = analyze(host.clone(), core, project, Some(executor), true, None)
             .await
             .unwrap_err();
-        assert!(error.contains("禁用"));
+        assert!(error.contains("backendText.m7df5c456"));
         assert!(!host.has_active());
         assert!(driver.received_requests().await.is_empty());
     }
