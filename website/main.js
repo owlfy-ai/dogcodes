@@ -61,7 +61,7 @@ let lang = 'en';
 const D = () => DYN[lang];
 const EN = new Map();
 const EN_META = { title: document.title, desc: document.querySelector('meta[name="description"]').content };
-const OS_EN = { mobile: 'Get the desktop app', desktop: n => `Download for ${n}` };
+const OS_EN = { mobile: 'Get the desktop app', desktop: n => `Download for ${n}`, linux: 'Linux app coming soon' };
 const WHEN_EN = ['Mon 09:00', 'Nov 4', 'Oct 23', 'Fri 22:00'];
 const RUNS_EN = ['Dev server', 'Tests', 'Debug API', 'Build'];
 const LANGS = [
@@ -108,6 +108,11 @@ async function applyLanguage(next) {
     const key = el.dataset.i18n || el.dataset.i18nHtml;
     if (!EN.has(key)) EN.set(key, el.innerHTML);
     el.innerHTML = t(key);
+  });
+  document.querySelectorAll('[data-i18n-alt]').forEach(el => {
+    const key = el.dataset.i18nAlt;
+    if (!EN.has(key)) EN.set(key, el.alt);
+    el.alt = t(key);
   });
   document.title = (next !== 'en' && pack.ui['meta.title']) || EN_META.title;
   document.querySelector('meta[name="description"]').content = (next !== 'en' && pack.ui['meta.desc']) || EN_META.desc;
@@ -163,6 +168,14 @@ async function osButton() {
     return;
   }
   const os = /Windows/i.test(ua) ? 'win' : /Mac/i.test(ua) ? 'mac' : /Linux|X11/i.test(ua) ? 'linux' : 'mac';
+  // No Linux package yet: point at the download section, which says so.
+  if (os === 'linux') {
+    label.textContent = pack.os.linux;
+    button.href = '#download';
+    button.removeAttribute('target');
+    button.removeAttribute('rel');
+    return;
+  }
   const names = { mac: 'macOS', win: 'Windows', linux: 'Linux' };
   label.textContent = pack.os.desktop(names[os]);
   external(button, await downloadHref(os));

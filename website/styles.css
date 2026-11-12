@@ -717,3 +717,48 @@ h1, h2 { text-wrap: balance; }
 :is(:lang(es), :lang(fr), :lang(de), :lang(pt-BR)) .host-item h3 { font-size: 17px; }
 /* Follows the white Git and run section, so a line marks where it starts. */
 #hosts { border-top: 1px solid var(--line); }
+
+/* ---------- Computer use ---------- */
+.cu-sec { border-top: 1px solid #141414; }
+.cu-shot { margin: 64px auto 0; max-width: 1080px; border-radius: 22px; overflow: hidden; border: 1px solid #222; background: #fff; box-shadow: 0 50px 120px -40px rgba(183, 243, 76, .18), 0 40px 100px -40px rgba(0, 0, 0, .9); }
+.cu-shot img { width: 100%; height: auto; }
+.cu-note { margin: 28px auto 0; max-width: 760px; text-align: center; font-size: 13.5px; color: #6f6f6a; }
+/* Computer use and fork are both black: a line marks where fork starts. */
+#fork { border-top: 1px solid #141414; }
+
+/* ---------- Undo a turn ---------- */
+.tile.w6 { grid-column: span 6; min-height: 0; }
+.undo-tile { display: grid; grid-template-columns: 1fr 1.15fr; gap: 40px; align-items: center; }
+.undo-tile .viz { margin-top: 0; padding-top: 0; }
+.undo-viz { display: grid; gap: 8px; font-size: 13px; }
+.undo-turn { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; border: 1px solid #262626; background: #0b0b0b; }
+.undo-turn b { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.undo-turn > span:not(.undo-btn) { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.undo-turn em, .undo-files em { font-style: normal; font-family: var(--mono); font-size: 11.5px; }
+.undo-turn.dim { opacity: .55; }
+.undo-btn { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 5px 10px; border-radius: 999px; background: var(--lime); color: #0a0f02; font-size: 12px; font-weight: 600; }
+.undo-btn svg { width: 13px; height: 13px; }
+.undo-files { display: grid; gap: 2px; margin: 0 0 0 26px; padding: 6px 0 6px 14px; border-left: 1px solid #262626; font-family: var(--mono); font-size: 12px; color: #c9c9c4; }
+.undo-files div { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.undo-files i { font-style: normal; width: 12px; font-weight: 700; color: var(--lime); }
+.undo-files em:first-of-type { margin-left: auto; }
+
+/* ---------- Download: Linux and building from source ---------- */
+.dl .soon { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 22px 16px; border-radius: 18px; border: 1px dashed #2a2a2a; color: #77776f; }
+.dl .soon svg { width: 28px; height: 28px; opacity: .6; }
+.dl .soon b { font-size: 16px; color: #a3a39e; }
+.dl .soon small { font-size: 12px; font-family: var(--mono); }
+.src { margin-top: 14px; font-size: 13px; color: #66665f; }
+.src summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+.src summary::-webkit-details-marker { display: none; }
+.src summary::before { content: "▸"; color: #77776f; transition: transform .2s; }
+.src[open] summary::before { transform: rotate(90deg); }
+.src summary a { color: #cfcfca; text-decoration: underline; text-decoration-color: #444; }
+.src .cmd { display: flex; width: max-content; max-width: 100%; margin: 14px auto 0; }
+
+@media (max-width: 1080px) { .tile.w6 { grid-column: span 2; } .undo-tile { grid-template-columns: 1fr; gap: 24px; } }
+@media (max-width: 720px) { .tile.w6 { grid-column: span 1; } .cu-shot { margin-top: 44px; border-radius: 14px; } .dl .soon { padding: 18px 16px; } }
+/* Grid items default to their content's width: let the turn rows shrink and truncate. */
+.undo-tile > *, .undo-viz > * { min-width: 0; }
+@media (max-width: 1080px) { .undo-tile { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 720px) { .bento { grid-template-columns: minmax(0, 1fr); } .undo-btn > span { display: none; } }
