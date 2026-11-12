@@ -26,6 +26,8 @@ pub fn apply_platform_environment(command: &mut Command) {
         "USERPROFILE",
         "LOCALAPPDATA",
         "APPDATA",
+        // Win32-OpenSSH exits with 255 before even handling `-V` without this.
+        "PROGRAMDATA",
     ] {
         if let Some(value) = std::env::var_os(name) {
             command.env(name, value);
@@ -52,6 +54,7 @@ mod tests {
             "USERPROFILE",
             "LOCALAPPDATA",
             "APPDATA",
+            "PROGRAMDATA",
         ];
         let actual = command.as_std().get_envs().collect::<Vec<_>>();
         for name in names {
@@ -66,5 +69,41 @@ mod tests {
                 .iter()
                 .all(|(key, _)| names.iter().any(|name| key.eq_ignore_ascii_case(name)))
         );
+    }
+
+    #[tokio::test]
+    async fn windows_openssh_runs_with_a_cleared_environment() {
+        use std::path::PathBuf;
+
+        let system =
+            PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join("System32/OpenSSH/ssh.exe");
+        let bundled = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../apps/desktop/src-tauri/resources/openssh/ssh.exe");
+        let mut checked = 0;
+        for executable in [system, bundled].into_iter().filter(|path| path.is_file()) {
+            // Neither command connects or reads the person's SSH config.
+            for args in [vec!["-V"], vec!["-G", "-F", "NUL", "localhost"]] {
+                let output = crate::run_bounded(&crate::ProcessSpec::probe(
+                    executable.clone(),
+                    args.iter().map(|arg| (*arg).to_owned()).collect(),
+                ))
+                .await
+                .unwrap();
+                assert!(
+                    output.success,
+                    "{} {args:?}: {output:?}",
+                    executable.display()
+                );
+                if args == ["-V"] {
+                    assert!(output.stderr.contains("OpenSSH_"), "{output:?}");
+                } else {
+                    assert!(output.stdout.contains("hostname localhost"), "{output:?}");
+                }
+            }
+            checked += 1;
+        }
+        if checked == 0 {
+            eprintln!("skipped: no system or bundled Windows OpenSSH client");
+        }
     }
 }

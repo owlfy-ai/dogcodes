@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
-import { files, opensshDistribution, prepareOpenSsh, version } from './prepare-openssh.mjs';
+import { files, hostWindowsTarget, opensshDistribution, prepareOpenSsh, version } from './prepare-openssh.mjs';
 
 const target = 'x86_64-pc-windows-msvc';
 const project = () => mkdtempSync(join(tmpdir(), 'dogcodes-openssh-'));
@@ -14,6 +14,17 @@ const unpack = (names, folder = 'OpenSSH-Win64') => (_file, destination) => {
   mkdirSync(resolve(destination, folder), { recursive: true });
   for (const name of names) writeFileSync(resolve(destination, folder, name), name);
 };
+
+test('development and packaging select the native Windows client without an explicit target', () => {
+  for (const [platform, arch, expected] of [
+    ['win32', 'x64', 'OpenSSH-Win64.zip'],
+    ['win32', 'arm64', 'OpenSSH-ARM64.zip'],
+    ['darwin', 'arm64', undefined],
+    ['linux', 'x64', undefined],
+  ]) {
+    assert.equal(opensshDistribution(hostWindowsTarget({ platform, arch }))?.archive, expected);
+  }
+});
 
 test('only Windows targets carry a client', async () => {
   assert.equal(opensshDistribution(target).archive, 'OpenSSH-Win64.zip');

@@ -10,6 +10,7 @@ import { AgentPickerTrigger } from "./AgentPickerTrigger";
 import { ReviewEmptyState } from "./ReviewEmptyState";
 import { LoadingStatus } from "./LoadingStatus";
 import { InlineError } from "./InlineError";
+import { displayBackendText } from "./backendText";
 import { userFacingError } from "./userFacingError";
 import { TerminalPane } from "./TerminalDock";
 import { projectRunClient, type ProjectRunApi, type ProjectRunCatalog, type ProjectRunCommand, type ProjectRunEdit, type RunProcess } from "./projectRunClient";
@@ -207,7 +208,7 @@ export function ProjectRunPanel({ taskId, visible, api = projectRunClient, onEdi
         action={canAnalyze ? <button type="button" className="review-empty-action" onClick={requestAnalysis}>{t("projectRun.reanalyze")}</button> : !hasDirectories && onEditProject ? <button type="button" className="review-empty-action" onClick={onEditProject}>{t("projectRun.addDirectory")}</button> : undefined} /> : catalog?.directories.map((directory, index) => <section key={directory.path} className="project-run-directory" aria-label={directory.path}>
         <h3 data-tooltip={directory.path}>{directoryName(directory.path)}</h3>
         {directory.status === "analyzing" && <LoadingStatus className="project-run-analyzing">{t("projectRun.analyzing")}</LoadingStatus>}
-        {directory.error && <p role="alert">{directory.error}</p>}
+        {directory.error && <p role="alert">{displayBackendText(directory.error)}</p>}
         {directory.status === "ready" && !directory.error && directory.commands.length === 0 && <ReviewEmptyState kind="run" compact
           description={t(directory.userModified ? "projectRun.directoryEmpty" : "projectRun.directoryNoCommands")} />}
         {[...directory.commands].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))).map(command => <ProjectRunItem key={command.id} command={command} path={directory.path}

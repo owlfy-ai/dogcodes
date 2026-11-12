@@ -7,7 +7,7 @@ import { parseEnv } from 'node:util';
 import { parseSigningConfig } from './signing-config.mjs';
 import { checkMacKeychain, buildMacKeychainPackage, runBuild } from './signing-macos.mjs';
 import { prepareComputerUse } from './prepare-computer-use.mjs';
-import { prepareOpenSsh } from './prepare-openssh.mjs';
+import { hostWindowsTarget, prepareOpenSsh } from './prepare-openssh.mjs';
 import { prepareShims } from './prepare-shims.mjs';
 import { renameReleaseInstallers } from './release-names.mjs';
 
@@ -21,12 +21,6 @@ export const signingVariables = [
 ];
 
 // Never echo local file contents or credentials, including in parse errors.
-/** Without `--target`, a Windows host builds for itself. */
-export function hostWindowsTarget({ platform = process.platform, arch = process.arch } = {}) {
-  if (platform !== 'win32') return null;
-  return arch === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc';
-}
-
 export function prepareBuild({ platform, signed, environment, localEnvironment = '', signingConfig = null }) {
   if (!['darwin', 'win32', 'linux'].includes(platform)) throw new Error('Unsupported desktop build host.');
   const env = { ...environment };

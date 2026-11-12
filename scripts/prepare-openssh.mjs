@@ -16,6 +16,12 @@ const releases = {
 // The client and what it runs. Hardware keys need the helpers beside `ssh.exe`.
 export const files = ['ssh.exe', 'libcrypto.dll', 'ssh-sk-helper.exe', 'ssh-pkcs11-helper.exe', 'LICENSE.txt', 'NOTICE.txt'];
 
+/** Without `--target`, a Windows host builds for itself. */
+export function hostWindowsTarget({ platform = process.platform, arch = process.arch } = {}) {
+  if (platform !== 'win32') return null;
+  return arch === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc';
+}
+
 /** Only Windows installers carry a client: Windows may not have one, or an old one. */
 export function opensshDistribution(target) {
   const release = releases[target];

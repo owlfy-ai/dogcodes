@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 import { parseSigningConfig } from './signing-config.mjs';
 import { prepareComputerUse } from './prepare-computer-use.mjs';
+import { hostWindowsTarget, prepareOpenSsh } from './prepare-openssh.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -46,6 +47,7 @@ async function main() {
   const targetIndex = plan.args.indexOf('--target');
   const target = targetIndex >= 0 ? plan.args[targetIndex + 1] : undefined;
   await prepareComputerUse({ target, signingIdentity: plan.env.DOGCODES_DEV_SIGNING_IDENTITY || '-' });
+  await prepareOpenSsh({ target: target ?? hostWindowsTarget() });
   if (process.platform === 'darwin') console.log(plan.signed
     ? `Development signing: ${plan.env.DOGCODES_DEV_SIGNING_IDENTITY} (${appConfig.identifier}).`
     : 'Development signing: ad-hoc. Set APPLE_SIGNING_IDENTITY in release/.env.local for stable Keychain access.');

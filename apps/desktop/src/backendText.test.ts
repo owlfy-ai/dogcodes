@@ -13,7 +13,7 @@ const REMOTE_SOURCES = [
   "crates/workspace/src/review/recovery/turn.rs", "crates/workspace-ops/src/turn_undo.rs",
   "apps/desktop/src-tauri/src/clipboard.rs", "apps/desktop/src-tauri/src/execution_targets.rs", "apps/desktop/src-tauri/src/execution_targets/agent_installs.rs",
   "apps/desktop/src-tauri/src/execution_targets/agent_updates.rs", "apps/desktop/src-tauri/src/execution_targets/agents.rs",
-  "apps/desktop/src-tauri/src/terminal_host/remote.rs", "crates/antigravity-driver/src/approval_bridge.rs",
+  "apps/desktop/src-tauri/src/terminal_host/remote.rs", "apps/desktop/src-tauri/src/daemon/remote.rs", "crates/antigravity-driver/src/approval_bridge.rs",
   "crates/agent-management/src/install.rs", "crates/agent-management/src/operation.rs", "crates/agent-management/src/http.rs",
   "crates/agent-management/src/updates.rs", "crates/agent-management/src/updates/codex_host.rs", "crates/agent-management/src/updates/electron_host.rs",
   "crates/agent-management/src/updates/kiro.rs", "crates/agent-management/src/updates/managed_cli.rs", "crates/agent-management/src/updates/new_agents.rs",
@@ -24,6 +24,7 @@ const TRANSLATED_ELSEWHERE = new Set([
   "Kiro CLI 原生更新器", "Kiro 原生更新器", "Pi 原生更新器", "Grok 原生更新器", "Claude 原生更新器", "Kimi 原生更新器", "OpenCode 原生更新器",
   "外部安装", "桌面应用", "ZCode 桌面应用", "npm（当前 npx 安装）", "Codex 桌面应用 · 官方更新源", "允许一次", "拒绝",
   "更新命令未成功（退出码 {}），请检查网络和安装权限后重试", "未知", "桌面应用可升级至 {latest}，请在 ZCode 中完成升级", "桌面应用已是最新版本",
+  "电脑", "远程连接失败：{e:?}",
 ]);
 const anyParameter = (text: string) => text.replace(/\{\w*\}/g, "{}");
 
@@ -57,6 +58,14 @@ describe("backend text localization", () => {
     const zh = "Antigravity同一时间只能执行一个任务，之前的任务执行完成后会开始执行此任务";
     expect(localizeBackendText(zh, "en")).toBe("Antigravity can only run one task at a time. This task will start automatically when the previous one finishes.");
     expect(displayBackendText(zh, "zh-CN")).toBe(zh);
+  });
+
+  it("translates remote pairing, terminal and analysis failures", () => {
+    expect(localizeBackendText("手机配对连接未完成，请核实或重新生成邀请。", "en")).toBe("Phone pairing didn't finish. Check it or generate a new invitation.");
+    expect(localizeBackendText("接入服务暂时无法处理请求（HTTP 503），请稍后重试", "en")).toContain("503");
+    expect(localizeBackendText("远程连接失败：timeout", "ja")).toContain("timeout");
+    expect(localizeBackendText("无法核实退出结果：reaper unavailable", "de")).toContain("reaper unavailable");
+    expect(displayBackendText("项目分析已中断，请重新分析；未自动重新执行", "zh-CN")).toBe("项目分析已中断，请重新分析；未自动重新执行");
   });
 
   it("translates parameterized and agent-error-wrapped messages", () => {

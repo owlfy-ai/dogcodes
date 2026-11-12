@@ -1,6 +1,7 @@
 import { LoadingStatus } from "./LoadingStatus";
 import { TabBar } from "./TabBar";
 import { InlineError } from "./InlineError";
+import { displayBackendText } from "./backendText";
 import { userFacingError } from "./userFacingError";
 import { ReviewEmptyState } from "./ReviewEmptyState";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -23,7 +24,7 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
   /** Typed into the shell once it's there, for something the person just asked to run in it. */
   initialCommand?: string;
 }) {
-  const { t } = useI18n();
+  const { t, resolvedLanguage } = useI18n();
   const host = useRef<HTMLDivElement>(null);
   const runtime = useRef<{ fit: () => void; focus: () => void; setInputPaused: (paused: boolean) => void } | null>(null);
   const inputRuntime = useRef<ReturnType<typeof terminalInput> | null>(null);
@@ -163,8 +164,8 @@ export function TerminalPane({ projectId, directoryIndex, visible, api, resource
         else if (info.status === "stopping") setStatus(t("terminalDock.stopping"));
         else {
           inputQueue.ended(); exited = true; terminal.options.disableStdin = true; setRetry(false);
-          setStatus(info.status === "unknown" ? (info.error ?? t("terminalDock.unknownProcess"))
-            : info.status === "failed" ? (info.error ?? t("terminalDock.startFailed")) : info.exitCode === null ? t("terminalDock.exited") : t("terminalDock.exitedWithCode", { code: info.exitCode }));
+          setStatus(info.status === "unknown" ? (info.error ? displayBackendText(info.error, resolvedLanguage) : t("terminalDock.unknownProcess"))
+            : info.status === "failed" ? (info.error ? displayBackendText(info.error, resolvedLanguage) : t("terminalDock.startFailed")) : info.exitCode === null ? t("terminalDock.exited") : t("terminalDock.exitedWithCode", { code: info.exitCode }));
         }
       }
     };

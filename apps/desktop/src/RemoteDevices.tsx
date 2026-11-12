@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import QRCode from "qrcode";
 import { LoadingStatus } from "./LoadingStatus";
 import { SidebarNavIcon } from "./SidebarNavIcon";
+import { displayBackendText } from "./backendText";
 import { t, useI18n, type ResolvedLanguage } from "./i18n";
 import "./remoteDevices.css";
 
@@ -148,7 +149,8 @@ export function RemoteDevices({ lang }: { lang?: ResolvedLanguage }) {
   const active = !generating && !serviceUpdateRequired && status?.invitation && status.invitation.expiresAt * 1000 > time;
   const expiredInvitation = !serviceUpdateRequired && status?.invitation && !active;
   const devices = status?.devices.filter(device => !device.revoked) ?? [];
-  const failure = serviceUpdateRequired ? tr("serviceUpdateRequired") : error || statusError || status?.error;
+  const backendFailure = error || statusError || status?.error || "";
+  const failure = serviceUpdateRequired ? tr("serviceUpdateRequired") : backendFailure ? displayBackendText(backendFailure, language) : "";
   const connection = failure ? "disconnected" : status?.connected ? "connected" : "connecting";
   // A countdown reads at a glance; a clock time ("1:44") could be either.
   const left = status?.invitation ? Math.max(0, Math.ceil(status.invitation.expiresAt - time / 1000)) : 0;
