@@ -5,6 +5,7 @@ import { resolve, dirname, basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runBuild } from './signing-macos.mjs';
 import { prepareBuild } from './package-desktop.mjs';
+import { runLocalTests } from './test-local.mjs';
 
 const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const lockName = 'RELEASE_UPLOAD_LOCK.json';
@@ -338,7 +339,8 @@ export async function releaseDesktop({ root = rootDirectory, platform = process.
     const pnpm = process.env.npm_execpath;
     if (!pnpm || !/pnpm\.(?:c?js|mjs)$/.test(pnpm)) throw new Error('Run this entry point using pnpm desktop:release.');
     await runBuild(process.execPath, [pnpm, 'install', '--frozen-lockfile'], { cwd: root });
-    for (const task of ['test:release', 'check:release-inputs']) await runBuild(process.execPath, [pnpm, task], { cwd: root });
+    await runLocalTests({ projectRoot: root });
+    await runBuild(process.execPath, [pnpm, 'check:release-inputs'], { cwd: root });
     await runBuild('rustup', ['target', 'add', ...targets], { cwd: root });
     if (platform === 'darwin') {
       const local = readFileSync(resolve(root, 'release/.env.local'), 'utf8');
@@ -353,7 +355,7 @@ export async function releaseDesktop({ root = rootDirectory, platform = process.
     for (const target of targets) {
       console.log(`Building and signing ${target}…`);
       const started = Date.now();
-      await runBuild(process.execPath, [packageScript, '--signed', '--target', target, '--bundles', platform === 'darwin' ? 'dmg' : 'nsis'], { cwd: root });
+      await runBuild(process.execPath, [packageScript, '--signed', '--skip-tests', '--target', target, '--bundles', platform === 'darwin' ? 'dmg' : 'nsis'], { cwd: root });
       const directory = platform === 'darwin' ? resolve(root, 'release/installers', version, target) : join(cargo.target_directory, target, 'release/bundle/nsis');
       const files = readdirSync(directory).filter(name => name.includes(`-${version}-`) && name.endsWith(platform === 'darwin' ? '.dmg' : '.exe')
         && statSync(join(directory, name)).mtimeMs >= started - 2000);

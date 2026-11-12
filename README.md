@@ -213,9 +213,13 @@ Agent conversations, project analysis, reviews, and commit-message generation us
 <summary>For contributors</summary>
 
 ```bash
-cargo test --workspace
-pnpm check
+pnpm test:local
+pnpm typecheck
+pnpm build
 ```
+
+Tests run locally and before local packaging; GitHub Actions runs build and static
+checks only. The local suite requires Python 3 in addition to Node, pnpm and Rust.
 
 `pnpm dev` opens a browser-only UI demo with a fake adapter. Use `pnpm desktop:dev` for real agents and project commands.
 

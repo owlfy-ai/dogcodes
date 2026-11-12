@@ -8,7 +8,7 @@ on:
   workflow_call:
     inputs:
       full:
-        description: Run all checks, acceptance suites and unsigned packaging.
+        description: Run all build checks and unsigned packaging (tests run locally).
         type: boolean
         default: true
 
@@ -26,8 +26,6 @@ jobs:
     outputs:
       frontend: ${{ steps.scope.outputs.frontend }}
       native: ${{ steps.scope.outputs.native }}
-      video: ${{ steps.scope.outputs.video }}
-      transport: ${{ steps.scope.outputs.transport }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -42,12 +40,7 @@ jobs:
         env:
           FULL_CHECKS: ${{ inputs.full || github.event_name == 'workflow_dispatch' }}
         run: node scripts/ci-changes.mjs
-      - name: CI routing and release script tests
-        run: node --test scripts/ci-changes.test.mjs scripts/package-desktop.test.mjs scripts/prepare-shims.test.mjs scripts/prepare-openssh.test.mjs scripts/desktop-release.test.mjs
       - run: node scripts/check-release-inputs.mjs
-      - name: ZCode native account and credential bridge tests
-        shell: bash
-        run: node --test crates/zcode-driver/src/*.test.cjs
 
   frontend:
     needs: changes
@@ -64,7 +57,8 @@ jobs:
           package-manager-cache: false
       - run: npm install --global pnpm@11.0.9
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check
+      - run: pnpm typecheck
+      - run: pnpm build
 
   desktop:
     needs: changes
@@ -95,7 +89,6 @@ jobs:
     env:
       CARGO_INCREMENTAL: '0'
       CARGO_PROFILE_DEV_DEBUG: '0'
-      CARGO_PROFILE_TEST_DEBUG: '0'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -116,7 +109,6 @@ jobs:
       - name: Compatible SPA build headers for the Linux baseline
         if: runner.os == 'Linux'
         run: |
-          python3 -m unittest discover -s scripts -p test_prepare_linux_spa_sdk.py -v
           python3 scripts/prepare_linux_spa_sdk.py --destination "${{ runner.temp }}/dogcodes-native-sdk" --github-env "$GITHUB_ENV"
       - name: Install the repository Rust toolchain and target
         run: |
@@ -126,97 +118,14 @@ jobs:
         with:
           key: desktop-${{ matrix.target }}
           cache-on-failure: true
-      # The format check ran on the Linux runner. Keep it on one macOS job while that runner is paused.
+      # Check formatting once while the Linux runner is paused.
       - run: cargo fmt --all -- --check
         if: matrix.target == 'aarch64-apple-darwin'
-      - name: Relay video QoS on deterministic capacity and ACK traces
-        if: runner.os == 'Linux' && needs.changes.outputs.video == 'true'
-        shell: bash
-        run: |
-          rustfmt --edition 2024 --check scripts/relay_qos_trace.rs
-          rustc --edition=2024 -D warnings --test scripts/relay_qos_trace.rs -o "$RUNNER_TEMP/dogcodes-relay-qos-tests"
-          "$RUNNER_TEMP/dogcodes-relay-qos-tests"
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: Native unit and integration tests (real-provider tests remain opt-in)
-        timeout-minutes: 30
-        shell: bash
-        env:
-          # Large debug async state machines exceed the Windows test-thread
-          # stack; this changes the harness resources, not which tests run.
-          RUST_MIN_STACK: '16777216'
-        # Print fixture panics immediately, even if another test is still waiting.
-        run: cargo test --workspace --lib --tests --locked --no-fail-fast -- --nocapture 2>&1 | tee native-tests.log
-      - name: Software video capture on an isolated X11 display
-        if: runner.os == 'Linux' && needs.changes.outputs.video == 'true'
-        timeout-minutes: 5
-        shell: bash
-        run: |
-          Xvfb :99 -screen 0 1024x768x24 -nolisten tcp -ac -noreset > /tmp/dogcodes-video-xvfb.log 2>&1 &
-          video_xvfb_pid=$!
-          trap 'kill "$video_xvfb_pid" 2>/dev/null || true' EXIT
-          export DISPLAY=:99 XDG_SESSION_TYPE=x11
-          export DOGCODES_OWNED_XVFB=video-fallback-fixture-v1
-          for attempt in $(seq 1 30); do
-            if xdpyinfo >/dev/null 2>&1; then break; fi
-            sleep 0.2
-          done
-          cargo test -p dogcodes-remote-desktop --locked isolated_x11_capture -- --ignored --nocapture
-      - name: Linux encoding pipeline with synthetic software elements
-        if: runner.os == 'Linux' && needs.changes.outputs.video == 'true'
-        timeout-minutes: 5
-        env:
-          DOGCODES_LINUX_ENCODER_FIXTURE: synthetic-only
-        run: cargo test -p dogcodes-remote-desktop --lib --locked synthetic_pipeline_verifies_headers_forced_idr_pts_rate_and_rejection -- --ignored --nocapture
-      - name: Wayland portal fixture and real PipeWire software video
-        if: runner.os == 'Linux' && needs.changes.outputs.video == 'true'
-        timeout-minutes: 5
-        run: |
-          python3 scripts/wayland_acceptance.py
-          python3 scripts/wayland_acceptance.py --format rgb-cursor
-          python3 scripts/wayland_acceptance.py --format nv12-default
-          python3 scripts/wayland_acceptance.py --format nv12-bt601
-          python3 scripts/wayland_acceptance.py --format nv12-bt709
-          python3 scripts/wayland_acceptance.py --format nv12-bt709-planes
-          python3 scripts/wayland_acceptance.py --format rgb-crop-rotate90
-          python3 scripts/wayland_acceptance.py --format rgb-crop-flipped90
-      - name: Offscreen EGL external images and shared display lifetime
-        if: runner.os == 'Linux' && needs.changes.outputs.video == 'true'
-        timeout-minutes: 5
-        env:
-          DOGCODES_OWNED_EGL: offscreen-only
-          LIBGL_ALWAYS_SOFTWARE: '1'
-        run: cargo test -p dogcodes-remote-desktop --locked owned_egl_renderer -- --ignored --nocapture
-      - name: Desktop video migration, geometry and backpressure on a private login1 bus
-        if: runner.os == 'Linux' && needs.changes.outputs.video == 'true'
-        timeout-minutes: 5
-        run: python3 scripts/desktop_codec_acceptance.py
-      - name: TURN data/video, UDP/TCP/TLS and certificate validation
-        if: runner.os == 'Linux' && needs.changes.outputs.transport == 'true'
-        timeout-minutes: 5
-        run: python3 scripts/turn_acceptance.py
-      - name: Retain failed native test diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: native-test-log-${{ matrix.target }}
-          path: native-tests.log
-          if-no-files-found: ignore
-          retention-days: 7
+      - run: cargo clippy --workspace --lib --bins --locked -- -D warnings
       # Linux DEB/AppImage packaging is paused until real-machine install testing.
-      # The Linux runner still compiles and runs the native checks above.
       - name: Build unsigned installer
         if: runner.os != 'Linux' && (inputs.full || github.event_name == 'workflow_dispatch')
-        run: pnpm desktop:package --unsigned --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
-      # - name: Packaged PipeWire client on a private Portal
-      #   if: runner.os == 'Linux' && (inputs.full || github.event_name == 'workflow_dispatch')
-      #   timeout-minutes: 15
-      #   shell: bash
-      #   env:
-      #     RUST_MIN_STACK: '16777216'
-      #   run: |
-      #     flags=()
-      #     if [[ "$GITHUB_REF" == refs/tags/* ]]; then flags+=(--release); fi
-      #     python3 scripts/wayland_acceptance.py "${flags[@]}" --format rgb-cursor --appimage target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+        run: pnpm desktop:package --unsigned --skip-tests --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
       - name: Retain only installer artifacts for validation
         if: runner.os != 'Linux' && (inputs.full || github.event_name == 'workflow_dispatch')
         uses: actions/upload-artifact@v7

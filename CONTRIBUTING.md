@@ -30,25 +30,35 @@ run real agents, terminals or Git.
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --lib --tests --locked
-pnpm check
-pnpm test:release
+pnpm typecheck
+pnpm build
+pnpm test:local
 pnpm check:release-inputs
 ```
 
-CI selects checks from the changed paths on pull requests and pushes to `main` or
-`master`. Documentation-only changes run the inexpensive CI routing, release script
-and release-input checks. Frontend changes run `pnpm check`; native changes run
-Clippy and native tests on Windows, macOS and Linux, with formatting checked once
-on Linux. Frontend and native jobs run in parallel when both are needed. Remote
-video/transport changes also run their Linux acceptance fixtures. Shared dependency
-or CI changes run all checks; unavailable diff history falls back to all checks.
-Path selection lives in `scripts/ci-changes.mjs`.
+Tests run locally. `pnpm test:local` runs the Node script and credential bridge
+tests, Python unit tests, relay QoS trace tests, frontend tests and Rust workspace
+tests (including doctests) on the host OS. It requires Python 3 (`python` on Windows,
+`python3` on macOS/Linux) as well as the development tools above. Local packaging
+also runs this suite before building; `pnpm desktop:release` runs it once before
+building the platform's installers. Real-provider and Linux desktop acceptance
+fixtures remain opt-in and require their documented accounts or system setup.
+
+GitHub Actions does not run test suites, including release and manual workflows.
+CI selects build checks from the changed paths on pull requests and pushes to
+`main` or `master`. Documentation-only changes run routing and release-input
+checks. Frontend changes run type checking and a production build; native changes
+run Clippy for libraries and binaries on Windows and macOS, with formatting checked
+once on macOS ARM64. Linux CI is paused. Frontend and native jobs run in parallel
+when both are needed. Shared dependency or CI changes run all build checks;
+unavailable diff history falls back to all build checks. Path selection lives in
+`scripts/ci-changes.mjs`.
 
 Ordinary pushes and pull requests do not build installers. Use **Run workflow** on
-`Desktop checks and unsigned packages` for all checks, all acceptance fixtures and
-unsigned installers on all four platform/architecture targets. Release tags reuse
-that full workflow before creating a draft release. The `checks` job is the stable
+`Desktop checks and unsigned packages` for all build checks and unsigned installers
+on Windows x64 and macOS ARM64/Intel. CI packaging passes `--skip-tests`; local
+packaging tests by default. Release tags reuse that workflow before creating a
+draft release. The `checks` job is the stable
 aggregate status for branch protection, including documentation-only changes.
 
 Tests that need a real agent account stay opt-in; describe any manual verification

@@ -61,11 +61,21 @@ python3 scripts/wayland_acceptance.py --format rgb-cursor --appimage /path/to/do
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm check
-pnpm test:release
 pnpm check:release-inputs
 pnpm desktop:package --unsigned
 ```
+
+Local packaging first runs `pnpm test:local`: script/credential bridge, Python,
+relay QoS trace, frontend and Rust workspace tests on the host OS. Install Python 3
+alongside Node, pnpm and Rust (`python` on Windows, `python3` on macOS/Linux).
+Any failed suite stops packaging. `pnpm desktop:release` runs the suite once for
+both Mac architectures, rather than repeating it per installer. `--check` and
+`--upload-only` do not run tests. Real-provider and Linux desktop acceptance
+fixtures remain opt-in.
+
+GitHub workflows run build and static checks only. They use `--skip-tests` when
+packaging installers; this option is also used internally after the local release
+suite has passed. Run `pnpm test:local` to test without building installers.
 
 Build on the destination OS. Tauri writes packages under `target/release/bundle`
 (or `target/<target-triple>/release/bundle` when `--target` is supplied). Use

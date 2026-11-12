@@ -10,6 +10,7 @@ import { prepareComputerUse } from './prepare-computer-use.mjs';
 import { hostWindowsTarget, prepareOpenSsh } from './prepare-openssh.mjs';
 import { prepareShims } from './prepare-shims.mjs';
 import { renameReleaseInstallers } from './release-names.mjs';
+import { runLocalTests } from './test-local.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const signingVariables = [
@@ -91,6 +92,7 @@ export function parseArguments(args) {
   let signed = false;
   let mode;
   let check = false;
+  let skipTests = false;
   const forwarded = [];
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -100,17 +102,19 @@ export function parseArguments(args) {
       signed = arg === '--signed';
     } else if (arg === '--check' && !check) {
       check = true;
+    } else if (arg === '--skip-tests' && !skipTests) {
+      skipTests = true;
     } else if (['--target', '--bundles'].includes(arg)) {
       if (forwarded.includes(arg)) throw new Error(`Specify ${arg} only once.`);
       const value = args[++i];
       if (!value || value.startsWith('-')) throw new Error(`Missing value for ${arg}.`);
       forwarded.push(arg, value);
     } else {
-      throw new Error('Usage: pnpm desktop:package [--unsigned|--signed] [--check] [--target TRIPLE] [--bundles FORMAT,...]');
+      throw new Error('Usage: pnpm desktop:package [--unsigned|--signed] [--check] [--skip-tests] [--target TRIPLE] [--bundles FORMAT,...]');
     }
   }
   if (check && !signed) throw new Error('--check requires --signed.');
-  return { signed, forwarded, ...(check ? { check } : {}) };
+  return { signed, forwarded, ...(check ? { check } : {}), ...(skipTests ? { skipTests } : {}) };
 }
 
 // PipeWire loads these client components with dlopen; linuxdeploy only discovers
@@ -138,7 +142,7 @@ export function linuxAppImageFiles({ projectRoot = root, env = process.env, capt
 }
 
 async function main() {
-  const { signed, forwarded, check } = parseArguments(process.argv.slice(2));
+  const { signed, forwarded, check, skipTests } = parseArguments(process.argv.slice(2));
   const envPath = resolve(root, 'release/.env.local');
   const configPath = resolve(root, 'release/tauri.signing.local.json');
   const { env, config } = prepareBuild({
@@ -166,6 +170,7 @@ async function main() {
     console.log('Signing prerequisites verified. No package was built or submitted.');
     return;
   }
+  if (!skipTests) await runLocalTests();
   console.log(signed ? 'Building with local signing settings.' : 'Building without distribution signing or notarization.');
   const computerUse = await prepareComputerUse({ target,
     signingIdentity: signed ? env.APPLE_SIGNING_IDENTITY || config.bundle.macOS?.signingIdentity || '-' : '-',
