@@ -1871,7 +1871,7 @@ mod tests {
             )
             .await
             .unwrap_err()
-            .contains("backendText.m04f4f851")
+            .contains("backendText.mc8301a2c")
         );
         // A retry of the same identity must carry the same content.
         let mut changed = start(&intent, &frozen.operation_id, None, &intent.target);
@@ -1882,7 +1882,7 @@ mod tests {
             host.call(&core, changed)
                 .await
                 .unwrap_err()
-                .contains("backendText.m797e8037")
+                .contains("backendText.m2d44b44a")
         );
         let continued = host
             .call(
@@ -1987,7 +1987,7 @@ mod tests {
             host.call(&core, query(changed))
                 .await
                 .unwrap_err()
-                .contains("backendText.m272c8aed")
+                .contains("backendText.m0af5d559")
         );
         let mut changed = request.clone();
         changed.task_id = Some(submitted_task(&first));
@@ -1995,7 +1995,7 @@ mod tests {
             host.call(&core, query(changed))
                 .await
                 .unwrap_err()
-                .contains("backendText.m272c8aed")
+                .contains("backendText.m0af5d559")
         );
         let mut changed = request.clone();
         changed.target.provider_id = ProviderId::parse("other").unwrap();
@@ -2003,7 +2003,7 @@ mod tests {
             host.call(&core, query(changed))
                 .await
                 .unwrap_err()
-                .contains("backendText.m272c8aed")
+                .contains("backendText.m0af5d559")
         );
         let mut wrong_id = request;
         wrong_id.operation_id = CommandId::new();
@@ -2011,7 +2011,7 @@ mod tests {
             host.call(&core, query(wrong_id))
                 .await
                 .unwrap_err()
-                .contains("backendText.mffe718d4")
+                .contains("backendText.mf8c65674")
         );
         idle(&core).await;
         disable_fake(&core).await;
@@ -2052,7 +2052,7 @@ mod tests {
             )
             .await
             .unwrap_err()
-            .contains("backendText.m272c8aed")
+            .contains("backendText.m0af5d559")
         );
         assert_eq!(queued(&core).await, 1);
     }
@@ -2083,7 +2083,7 @@ mod tests {
             host.call(&core, changed)
                 .await
                 .unwrap_err()
-                .contains("backendText.m797e8037")
+                .contains("backendText.m2d44b44a")
         );
         assert!(
             host.call(
@@ -2092,7 +2092,7 @@ mod tests {
             )
             .await
             .unwrap_err()
-            .contains("backendText.m797e8037")
+            .contains("backendText.m2d44b44a")
         );
         assert_eq!(queued(&core).await, 1);
 
@@ -2113,7 +2113,7 @@ mod tests {
             host.call(&core, start(&next, &pending, None, &intent.target))
                 .await
                 .unwrap_err()
-                .contains("backendText.m797e8037")
+                .contains("backendText.m2d44b44a")
         );
 
         // A closed record without a request fingerprint cannot vouch for a retry.
@@ -2131,7 +2131,7 @@ mod tests {
             host.call(&core, start(&intent, &legacy, None, &intent.target))
                 .await
                 .unwrap_err()
-                .contains("backendText.m5bbbc4dd")
+                .contains("backendText.m49d0d884")
         );
     }
     async fn disable_fake(core: &Arc<Core>) {

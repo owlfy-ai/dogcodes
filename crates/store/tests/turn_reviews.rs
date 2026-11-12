@@ -1536,7 +1536,7 @@ async fn review_admission_blocks_disabled_agents_but_preserves_accepted_work_and
             .await
             .unwrap_err()
             .to_string()
-            .contains("backendText.mbc5a87a7")
+            .contains("backendText.m12a3f699")
     );
     assert_eq!(
         f.core.turn_reviews(&f.request.task_id).await.unwrap().len(),

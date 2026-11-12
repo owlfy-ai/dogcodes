@@ -1462,7 +1462,7 @@ mod tests {
         assert!(
             host.load("project")
                 .unwrap_err()
-                .contains("backendText.me309f226")
+                .contains("backendText.md38255fc")
         );
         assert_eq!(std::fs::read(host.file("project")).unwrap(), b"broken");
         let blocked = root.path().join("blocked");
@@ -1507,7 +1507,7 @@ mod tests {
                 .error
                 .as_ref()
                 .unwrap()
-                .contains("backendText.mf9d19345")
+                .contains("project.analysisRestarted")
         );
         assert_eq!(loaded.directories[0].commands[0].label, "我的命令");
         assert!(loaded.directories[0].commands[0].pinned);
@@ -1570,7 +1570,7 @@ mod tests {
                 .error
                 .as_ref()
                 .unwrap()
-                .contains("backendText.mc02698ad")
+                .contains("backendText.m4a2deac2")
         );
         assert_eq!(
             analyze(host.clone(), core, project, None, false, None)
@@ -1613,7 +1613,7 @@ mod tests {
         let error = analyze(host.clone(), core, project, Some(executor), true, None)
             .await
             .unwrap_err();
-        assert!(error.contains("backendText.m7df5c456"));
+        assert!(error.contains("backendText.m50afa06b"), "{error}");
         assert!(!host.has_active());
         assert!(driver.received_requests().await.is_empty());
     }

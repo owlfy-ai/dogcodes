@@ -118,7 +118,7 @@ mod tests {
                     .is_ok()
             );
         }
-        assert!(probe.read().unwrap_err().contains("backendText.mf4556f0c"));
+        assert!(probe.read().unwrap_err().contains("backendText.m624aa847"));
         release.send(()).unwrap();
         let until = Instant::now() + Duration::from_secs(1);
         loop {

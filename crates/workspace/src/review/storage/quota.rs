@@ -202,7 +202,7 @@ mod tests {
             let result = result_rx.recv_timeout(Duration::from_secs(5)).unwrap();
             if capacity == 3 {
                 let error = result.unwrap_err();
-                assert!(error.contains("backendText.m3276c0f6"), "{error}");
+                assert!(error.contains("backendText.m3c99adb7"), "{error}");
             } else {
                 assert_eq!(first.read_blob(&result.unwrap()).unwrap(), b"bb");
             }
@@ -247,7 +247,7 @@ mod tests {
             first
                 .put_blob_with_capacity(b"cc", 4)
                 .unwrap_err()
-                .contains("backendText.m3276c0f6")
+                .contains("backendText.m3c99adb7")
         );
         let reservation = second.reserve_blob_capacity(1, 4).unwrap();
         drop(reservation); // Simulate failure after epoch publication, before blob publication.
@@ -290,7 +290,7 @@ mod tests {
             store
                 .put_blob_with_capacity(b"x", 4)
                 .unwrap_err()
-                .contains("backendText.m3276c0f6")
+                .contains("backendText.m3c99adb7")
         );
         assert_eq!(store.put_blob_with_capacity(b"1234", 1).unwrap(), hash);
         assert_eq!(store.read_blob(&hash).unwrap(), b"1234");

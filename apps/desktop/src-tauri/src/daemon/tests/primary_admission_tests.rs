@@ -65,7 +65,7 @@ async fn primary_admission_rpc_rejects_disabled_work_and_replays_accepted_work()
             .execute(request.clone())
             .await
             .unwrap_err()
-            .contains("backendText.mbc5a87a7")
+            .contains("backendText.m12a3f699")
     );
     assert!(
         f.repository
@@ -123,7 +123,7 @@ async fn primary_admission_rpc_rejects_disabled_work_and_replays_accepted_work()
             .execute(overridden.clone())
             .await
             .unwrap_err()
-            .contains("backendText.mbc5a87a7")
+            .contains("backendText.m12a3f699")
     );
     assert!(
         f.repository

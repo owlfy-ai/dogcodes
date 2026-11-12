@@ -887,7 +887,7 @@ mod tests {
             let index = git(&destination, &["write-tree"]);
             let result = provider.fork_worktrees(value, &name).await;
             if user_staged {
-                assert!(result.unwrap_err().contains("backendText.m06ff7f8a"));
+                assert!(result.unwrap_err().contains("backendText.m050c18db"));
                 assert_eq!(git(&destination, &["write-tree"]), index);
             } else {
                 let restored = result.unwrap();
@@ -934,7 +934,7 @@ mod tests {
                 .fork_worktrees(value.clone(), &name)
                 .await
                 .unwrap_err()
-                .contains("backendText.m26abb690")
+                .contains("backendText.m050c18db")
         );
         let destination = snapshot.roots[0]
             .repository

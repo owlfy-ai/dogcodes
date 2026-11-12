@@ -369,7 +369,9 @@ mod tests {
         commit(&repo, "ours").await;
         let target = bind(&repo, before, "ours").await.unwrap();
         let error = push(&repo, &target).await.unwrap_err();
-        assert!(error.contains("1/2"), "{error}");
+        assert!(error.contains("backendText.m2b08f8cc"), "{error}");
+        assert!(error.contains("\"1\""), "{error}");
+        assert!(error.contains("\"2\""), "{error}");
         assert_eq!(git(&remote, &["rev-parse", "main"]).await, target.oid);
         git(&repo, &["init", "--bare", "-q", second.to_str().unwrap()]).await;
         push(&repo, &target).await.unwrap();

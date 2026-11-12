@@ -2455,7 +2455,7 @@ done
     #[test]
     fn authentication_failure_is_actionable_without_exposing_native_details() {
         let message = claude_result_failure(&json!({"error_code":"authentication_failed"}));
-        assert!(message.contains("身份验证失败"));
+        assert!(message.contains("backendText.me34dd651"));
         for event in [
             json!({"result":"Failed to authenticate. API Error: 403 status code (no body)"}),
             json!({"errors":["invalid API key: private-credential"]}),

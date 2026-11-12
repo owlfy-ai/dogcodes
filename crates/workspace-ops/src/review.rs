@@ -964,7 +964,7 @@ mod smart_commit_tests {
             validate_commit_preview(&root, &clean, &store)
                 .await
                 .unwrap_err()
-                .contains("REVIEW_NO_CHANGES")
+                .contains("backendText.mec1c88c2")
         );
         std::fs::write(path.join("a"), "changed").unwrap();
         let preview = git
@@ -979,7 +979,7 @@ mod smart_commit_tests {
             validate_commit_preview(&root, &preview, &store)
                 .await
                 .unwrap_err()
-                .contains("REVIEW_STALE_COMMIT")
+                .contains("backendText.m5659c1af")
         );
         std::fs::write(path.join("a"), "changed").unwrap();
         require_git_success(
@@ -995,7 +995,7 @@ mod smart_commit_tests {
             validate_commit_preview(&root, &preview, &store)
                 .await
                 .unwrap_err()
-                .contains("REVIEW_STALE_COMMIT")
+                .contains("backendText.m5659c1af")
         );
         let preview = git
             .compare(&root, CompareMode::Uncommitted, None, 0, &store)
@@ -1006,7 +1006,7 @@ mod smart_commit_tests {
             validate_commit_preview(&root, &preview, &store)
                 .await
                 .unwrap_err()
-                .contains("REVIEW_STALE_COMMIT")
+                .contains("backendText.m5659c1af")
         );
         let staged = git
             .compare(&root, CompareMode::Staged, None, 0, &store)
@@ -1022,7 +1022,7 @@ mod smart_commit_tests {
             validate_commit_preview(&root, &staged, &store)
                 .await
                 .unwrap_err()
-                .contains("REVIEW_STALE_COMMIT")
+                .contains("backendText.m5659c1af")
         );
         let count = run_commit_command(&path, &["rev-list", "--count", "HEAD"])
             .await
@@ -1110,7 +1110,7 @@ mod timeout_tests {
         let error = collect_git_output(child, std::time::Duration::from_millis(20))
             .await
             .unwrap_err();
-        assert!(error.starts_with(UNKNOWN_GIT_EFFECT));
+        assert!(error.contains(UNKNOWN_GIT_EFFECT), "{error}");
         assert_eq!(std::fs::read_to_string(effect).unwrap(), "done");
     }
 }

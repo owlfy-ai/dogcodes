@@ -774,7 +774,7 @@ async fn active_fork_prevents_source_deletion_and_directory_rebinding_until_fini
             .await
             .unwrap_err()
             .to_string()
-            .contains("Fork")
+            .contains("backendText.m7e1ffec1")
     );
     let project = snapshot.projects.first().unwrap();
     let extra = directory.path().join("extra");
@@ -792,7 +792,7 @@ async fn active_fork_prevents_source_deletion_and_directory_rebinding_until_fini
             .await
             .unwrap_err()
             .to_string()
-            .contains("Fork")
+            .contains("backendText.m89b41da2")
     );
     provider.release.notify_one();
     // Finalization includes real Git and SQLite I/O. Keep this a bounded

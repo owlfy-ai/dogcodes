@@ -2310,7 +2310,7 @@ mod tests {
                 .update_project(edit)
                 .await
                 .unwrap_err()
-                .contains("backendText.mf4c7bfba")
+                .contains("backendText.mbd1d34ba")
         );
     }
     #[tokio::test]
@@ -3671,14 +3671,14 @@ mod tests {
                 .command_receipt(changed.clone())
                 .await
                 .unwrap_err()
-                .contains("backendText.mf2632a78")
+                .contains("backendText.requestIdConflict")
         );
         assert!(
             f.client
                 .execute(changed)
                 .await
                 .unwrap_err()
-                .contains("backendText.mf2632a78")
+                .contains("backendText.requestIdConflict")
         );
         assert_eq!(
             f.client.bootstrap().await.unwrap().projects[0].display_name,
@@ -3856,7 +3856,7 @@ mod tests {
                 .await
                 .unwrap_err()
                 .to_string()
-                .contains("backendText.m57a0a3ba")
+                .contains("backendText.m977d0b53")
         );
         let restored =
             crate::project_runs::ProjectRunHost::new(f.directory.path().join("project-runs"));

@@ -189,7 +189,7 @@ mod tests {
                     send.await
                         .unwrap_err()
                         .to_string()
-                        .contains("backendText.mbc5a87a7")
+                        .contains("backendText.m12a3f699")
                 );
             })
             .await

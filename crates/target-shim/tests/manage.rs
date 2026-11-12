@@ -388,7 +388,10 @@ fn a_failed_download_runs_nothing_and_a_failed_installer_says_why() {
     );
     let reply = ask(&request, home.path(), bin.path(), &[]);
     let message = reply["Err"]["message"].as_str().unwrap();
-    assert!(message.contains("unzip") && !message.contains("hunter2"));
+    assert!(
+        message.contains("backendText.installNeedUnzip") && !message.contains("hunter2"),
+        "{message}"
+    );
 }
 
 #[test]

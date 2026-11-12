@@ -396,7 +396,7 @@ mod tests {
             output
                 .completed_result(true)
                 .unwrap_err()
-                .contains("backendText.m16896af4")
+                .contains("backendText.m42b3c757")
         );
         assert!(output.text().contains(NETWORK_ERROR));
         let mut output = ReviewOutput::default();
@@ -461,7 +461,7 @@ mod tests {
             run.error
                 .as_ref()
                 .unwrap()
-                .contains("backendText.m16896af4")
+                .contains("backendText.m42b3c757")
         );
         assert_eq!(run.result, original);
         let mut legacy = old.clone();

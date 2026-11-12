@@ -809,7 +809,7 @@ mod clipboard_image_tests {
             clipboard_image_set_png_if_current(b"not decoded", &|| false)
                 .err()
                 .unwrap()
-                .contains("backendText.ma37778f1")
+                .contains("backendText.mbf63964d")
         );
     }
     #[test]

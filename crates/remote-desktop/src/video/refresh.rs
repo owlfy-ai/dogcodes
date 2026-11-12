@@ -372,7 +372,7 @@ mod tests {
         let error = state
             .tick(start + OUTPUT_TIMEOUT, output, false, 30)
             .unwrap_err();
-        assert!(error.contains("backendText.m178fd037"));
+        assert!(error.contains("backendText.m64a4bc5d"), "{error}");
     }
 
     #[test]

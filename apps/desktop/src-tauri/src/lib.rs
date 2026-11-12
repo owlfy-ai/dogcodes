@@ -2717,7 +2717,7 @@ esac
             update_local_project(&client, id.clone(), 1, "Stale".into(), path.clone(), vec![])
                 .await
                 .unwrap_err()
-                .contains("backendText.mf4c7bfba")
+                .contains("backendText.mbd1d34ba")
         );
         assert!(
             update_local_project(

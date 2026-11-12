@@ -323,7 +323,7 @@ mod tests {
                 .error
                 .as_ref()
                 .unwrap()
-                .contains("backendText.m5a10fb74")
+                .contains("backendText.md8d1b808")
         );
         assert!(host.page(&req.task_id, Some("../other"), 2).is_err());
         assert!(host.page(&req.task_id, None, 0).is_err());
