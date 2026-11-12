@@ -688,6 +688,38 @@ describe("connections page", () => {
         expect(reason("Grok Build")).not.toMatch(/\p{Script=Han}/u);
       });
 
+      it("keeps failed commands out of installed cards and shows their retryable errors", async () => {
+        const api = withAgents(connected, {
+          list: vi.fn(async () => [{ ...entry, status: connected, agents: [
+            { installationId: "ins_kimi" as const, providerId: "kimi", executable: "/k", version: null, status: "broken" as const, diagnostic: "agent_runtime_incompatible" },
+            { installationId: "ins_cursor" as const, providerId: "cursor", executable: "/c", version: null, status: "broken" as const, diagnostic: "agent_command_failed" },
+            { installationId: "ins_codex" as const, providerId: "codex", executable: "/codex", version: "1", status: "not_configured" as const, diagnostic: "authentication_failed" },
+            { installationId: "ins_pi" as const, providerId: "pi", executable: "/pi", version: "1", status: "unsupported_version" as const, diagnostic: null },
+          ] }]),
+          agentInstalls: vi.fn(async () => [
+            { providerId: "kimi", status: "failed" as const, message: "backendText.installRuntimeIncompatible" },
+            { providerId: "cursor", status: "failed" as const, message: "backendText.installCommandFailed" },
+            { providerId: "pi", status: "failed" as const, message: "backendText.installVersionUnsupported" },
+          ]),
+        });
+        await page(api);
+        await act(async () => { manage().click(); });
+        await flush();
+        expect([...container.querySelectorAll(".agent-management-card")].map(node => node.getAttribute("data-provider-id"))).toEqual(["codex"]);
+        expect(container.querySelector(".agent-management-summary")?.textContent).toContain("1 installed Agent");
+        for (const name of ["Kimi Code", "Cursor", "Pi"]) {
+          expect(installButton(name).textContent).toContain("Try again");
+          expect(container.querySelector(`.agent-uninstalled li[aria-label="${name}"] [role="alert"]`)).not.toBeNull();
+        }
+        expect(container.querySelector('.agent-uninstalled li[aria-label="Kimi Code"]')?.textContent).toContain("glibc or libstdc++");
+        expect(section("Codex").querySelector(".agent-login-button")).not.toBeNull();
+        expect(api.quota).toHaveBeenCalledTimes(1);
+        expect(api.quota).toHaveBeenCalledWith("ins_codex", false);
+        expect(api.agentUpdate).toHaveBeenCalledTimes(1);
+        await act(async () => { installButton("Cursor").click(); });
+        expect(api.installAgent).toHaveBeenCalledWith("tgt_one", "cursor");
+      });
+
       it("picks up an install already running and says why one failed, offering another try", async () => {
         const api = withAgents(connected, { agentInstalls: vi.fn(async () => [
           { providerId: "grok", status: "installing" as const, message: null },

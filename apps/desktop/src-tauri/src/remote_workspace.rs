@@ -192,7 +192,7 @@ pub(crate) async fn review(
             request,
             ReviewCall::RevealPath { .. } | ReviewCall::WorkspacePath { .. }
         ) {
-            return Err("这个文件在服务器上，无法在本机打开".into());
+            return Err("backendText.fileOnServer".into());
         }
         let result = operation::call(&target, &facts, &Operation::Review(request)).await;
         // Open views refresh from the same signal as a local change.

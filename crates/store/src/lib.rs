@@ -9,7 +9,7 @@ use agent_core::{
     PendingReconciliationOptOut, RepositoryError, StoredArtifact,
 };
 use agent_domain::{
-    ArtifactId, ExecutorRef, InstallationId, ProviderId, RunState, TargetId, TaskId,
+    user_text, ArtifactId, ExecutorRef, InstallationId, ProviderId, RunState, TargetId, TaskId,
 };
 use agent_protocol::{
     ActiveRunSummary, AgentSessionMapSummary, ArtifactCursor, ArtifactMetadata, BootstrapSnapshot,
@@ -348,7 +348,7 @@ impl CoreRepository for SqliteStore {
             // Core command cannot collide with an unbound internal operation.
             if ack.request_fingerprint != request.request_fingerprint {
                 return Err(RepositoryError::Unavailable(
-                    "请求标识已用于不同的命令或版本条件，未重复执行".into(),
+                    "backendText.requestIdConflict".into(),
                 ));
             }
             return Ok(AppendOutcome {
@@ -407,7 +407,7 @@ impl CoreRepository for SqliteStore {
                     ).map_err(storage_error)?;
                     if active {
                         return Err(RepositoryError::Unavailable(
-                            "请先停止项目中正在运行的任务和审查，再修改目录".into(),
+                            "backendText.stopBeforeChangingDirectory".into(),
                         ));
                     }
                 }
@@ -1746,7 +1746,7 @@ fn apply_projection(
                 transaction.execute(
                     "INSERT INTO timeline_items(item_id, task_id, turn_id, kind, text, provider_id, sequence, occurred_at) VALUES (?1, ?2, ?3, 'connection.interrupted', ?4, NULL, ?5, ?6)",
                     params![event.event_id.to_string(), payload_string(event,"taskId")?, payload_string(event,"turnId")?,
-                        "上次执行连接已中断，可以直接发送消息继续。Agent 将结合已有历史检查当前结果。", to_i64(event.sequence)?, event.occurred_at.timestamp_millis()],
+                        "backendText.connectionInterrupted", to_i64(event.sequence)?, event.occurred_at.timestamp_millis()],
                 ).map_err(storage_error)?;
             } else {
                 update_task_stream_version(transaction, event)?;
@@ -2348,11 +2348,11 @@ fn apply_projection(
                     .and_then(Value::as_i64)
                     .and_then(|timestamp| DateTime::<Utc>::from_timestamp(timestamp, 0));
                 let text = reset_at.map_or_else(
-                    || "Coding Agent 额度已用尽；请等待额度恢复或切换 Agent。".to_owned(),
+                    || "backendText.quotaExhausted".to_owned(),
                     |reset_at| {
-                        format!(
-                            "Coding Agent 额度已用尽；预计于 {} 重置，也可以切换 Agent。",
-                            reset_at.format("%Y-%m-%d %H:%M UTC")
+                        user_text(
+                            "backendText.quotaExhaustedReset",
+                            &[&reset_at.format("%Y-%m-%d %H:%M UTC").to_string()],
                         )
                     },
                 );
@@ -5470,27 +5470,27 @@ mod tests {
             (
                 "Claude Code 身份验证失败 Bearer secret-token",
                 "authentication_failed",
-                "登录或认证失败",
+                "backendText.authenticationFailed",
             ),
             (
                 "NOT NULL constraint failed: session_message.seq password=secret-path",
                 "database_incompatible",
-                "版本不兼容",
+                "backendText.databaseIncompatible",
             ),
             (
                 "request timed out api_key=secret-host",
                 "agent_timeout",
-                "响应超时",
+                "backendText.agentTimeout",
             ),
             (
                 "driver_not_configured",
                 "driver_not_configured",
-                "尚未配置好",
+                "backendText.driverNotConfigured",
             ),
             (
                 "OpenCode 未返回任何内容或工具活动",
                 "agent_no_response",
-                "没有返回回复",
+                "backendText.agentNoResponse",
             ),
         ] {
             let store = Arc::new(SqliteStore::open_in_memory().unwrap());
@@ -5565,7 +5565,7 @@ mod tests {
             .find(|item| item.kind == "quota.exhausted")
             .unwrap();
         assert_eq!(exhausted.provider_id.as_deref(), Some("scripted"));
-        assert!(exhausted.text.contains("额度已用尽"));
+        assert!(exhausted.text.contains("backendText.quotaExhausted"));
 
         store.rebuild_projections().unwrap();
         assert_eq!(core.timeline(&task_id).await.unwrap(), timeline);
@@ -7548,7 +7548,7 @@ mod tests {
         );
         let timeline = restarted.timeline(&task_id).await.unwrap();
         let failure = timeline.iter().find(|i| i.kind == "turn.failed").unwrap();
-        assert!(failure.text.contains("上下文交接"));
+        assert!(failure.text.contains("backendText.targetSession"));
         store.rebuild_projections().unwrap();
         assert_eq!(restarted.timeline(&task_id).await.unwrap(), timeline);
     }

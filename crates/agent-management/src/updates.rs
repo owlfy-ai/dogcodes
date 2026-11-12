@@ -13,6 +13,7 @@ pub mod managed_cli;
 pub mod new_agents;
 pub mod windows;
 pub mod zcode_host;
+use agent_domain::user_text;
 use agent_protocol::InstallationSummary;
 use agent_runtime::{ProcessError, ProcessSpec, run_bounded};
 use serde::{Deserialize, Serialize};
@@ -85,7 +86,7 @@ pub enum UpgradeResource {
 pub fn upgrade_resource(i: &InstallationSummary, plan: &Plan) -> Result<UpgradeResource, String> {
     let canonical = |path: &Path| {
         path.canonicalize()
-            .map_err(|_| "升级安装路径已变化，请重新检测 Agent".to_string())
+            .map_err(|_| "backendText.updatePathChanged".to_string())
     };
     match plan {
         Plan::Npm { prefix, .. } | Plan::NpmLocal { prefix, .. } => {
@@ -95,7 +96,7 @@ pub fn upgrade_resource(i: &InstallationSummary, plan: &Plan) -> Result<UpgradeR
         Plan::Native(_) | Plan::StandaloneCli { .. } => {
             Ok(UpgradeResource::Native(i.provider_id.clone()))
         }
-        Plan::Host(_) | Plan::Unsupported => Err("请在宿主应用或原安装渠道中升级".into()),
+        Plan::Host(_) | Plan::Unsupported => Err("backendText.updateInHost".into()),
     }
 }
 
@@ -392,8 +393,8 @@ pub fn version(s: &str) -> Option<semver::Version> {
     })
 }
 pub fn newer(current: &str, latest: &str) -> Result<bool, String> {
-    let a = version(current).ok_or("无法识别本机版本，暂不自动升级")?;
-    let b = version(latest).ok_or("官方更新源返回了无法识别的版本")?;
+    let a = version(current).ok_or("backendText.updateLocalUnknownNoAuto")?;
+    let b = version(latest).ok_or("backendText.updateSourceVersionUnknown")?;
     Ok(b > a)
 }
 pub fn spec(executable: &Path, args: Vec<String>, updating: bool) -> ProcessSpec {
@@ -448,9 +449,9 @@ pub fn spec(executable: &Path, args: Vec<String>, updating: bool) -> ProcessSpec
 }
 pub async fn command(p: ProcessSpec) -> Result<String, String> {
     let out = run_bounded(&p).await.map_err(|error| match error {
-        ProcessError::TimedOut { .. } => "更新命令等待超时，请重新检测版本后重试升级".to_string(),
-        ProcessError::Spawn(_) => "无法启动更新命令，请重新检测安装路径和权限".to_string(),
-        _ => "更新命令执行中断，请重新检测版本后重试".to_string(),
+        ProcessError::TimedOut { .. } => "backendText.updateCommandTimeout".to_string(),
+        ProcessError::Spawn(_) => "backendText.updateCommandNoStart".to_string(),
+        _ => "backendText.updateCommandInterrupted".to_string(),
     })?;
     if !out.success {
         return Err(command_failure(out.exit_code, &out.stdout, &out.stderr));
@@ -462,7 +463,7 @@ pub fn command_failure(code: Option<i32>, stdout: &str, stderr: &str) -> String 
     // Match known diagnostics, but never return the raw output: it may contain secrets.
     let output = format!("{stdout}\n{stderr}").to_ascii_lowercase();
     if output.contains("another cli update is already in progress") {
-        return "Cursor 原生更新器存在升级锁，请等待当前更新结束后重试升级".into();
+        return "backendText.updateCursorLocked".into();
     }
     if [
         "connection dropped while downloading",
@@ -473,7 +474,7 @@ pub fn command_failure(code: Option<i32>, stdout: &str, stderr: &str) -> String 
     .iter()
     .any(|needle| output.contains(needle))
     {
-        return "更新下载连接中断，请检查代理或网络后重试升级".into();
+        return "backendText.updateDownloadInterrupted".into();
     }
     format!(
         "更新命令未成功（退出码 {}），请检查网络和安装权限后重试",
@@ -482,14 +483,14 @@ pub fn command_failure(code: Option<i32>, stdout: &str, stderr: &str) -> String 
 }
 pub use crate::http::get;
 pub fn json(s: &str) -> Result<Value, String> {
-    serde_json::from_str(s).map_err(|_| "更新源未返回有效的版本信息".into())
+    serde_json::from_str(s).map_err(|_| "backendText.updateSourceInvalid".into())
 }
 pub fn field(v: &Value, name: &str) -> Result<String, String> {
     v[name]
         .as_str()
         .filter(|s| !s.is_empty() && s.len() < 128)
         .map(str::to_owned)
-        .ok_or("更新源缺少版本信息".into())
+        .ok_or("backendText.updateSourceNoVersion".into())
 }
 pub fn claude_channel() -> String {
     std::env::var_os("HOME")
@@ -545,7 +546,7 @@ pub fn complete_check(
     let available = newer(
         out.current_version
             .as_deref()
-            .ok_or("本机版本未知，请先重新检测 Agent")?,
+            .ok_or("backendText.updateLocalUnknown")?,
         &latest,
     )?;
     out.can_upgrade = available && can_upgrade;
@@ -567,7 +568,7 @@ pub async fn inspect(i: &InstallationSummary, p: &Plan) -> Result<AgentUpdate, S
             out.status = "managed".into();
             out.source = "桌面应用".into();
             out.current_version = out.desktop_version.clone();
-            out.message = Some("此 CLI 随宿主应用更新，请在应用内检查更新".into());
+            out.message = Some("backendText.updateCliWithHost".into());
             if i.provider_id == "codex" {
                 return codex_host::inspect(app, out).await;
             }
@@ -590,7 +591,7 @@ pub async fn inspect(i: &InstallationSummary, p: &Plan) -> Result<AgentUpdate, S
             if i.provider_id == "zcode" {
                 out.current_version = out.desktop_version.clone();
                 if out.current_version.is_none() {
-                    return Err("无法读取 ZCode 应用版本".into());
+                    return Err("backendText.zcodeVersionUnreadable".into());
                 }
                 out.source = "ZCode 桌面应用".into();
                 // The desktop's update API uses host versions, never compare against zcode-cli versions.
@@ -609,13 +610,13 @@ pub async fn inspect(i: &InstallationSummary, p: &Plan) -> Result<AgentUpdate, S
                     .lines()
                     .find_map(|l| l.strip_prefix("version:"))
                     .map(|s| s.trim().trim_matches(['\'', '"']).to_string())
-                    .ok_or("ZCode 更新源缺少应用版本")?;
+                    .ok_or("backendText.zcodeSourceNoVersion")?;
                 out.latest_version = Some(latest.clone());
                 if newer(
-                    out.current_version.as_deref().ok_or("应用版本未知")?,
+                    out.current_version.as_deref().ok_or("backendText.appVersionUnknown")?,
                     &latest,
                 )? {
-                    out.message = Some(format!("桌面应用可升级至 {latest}，请在 ZCode 中完成升级"));
+                    out.message = Some(user_text("backendText.zcodeAppUpgrade", &[&latest]));
                 } else {
                     out.message = Some("桌面应用已是最新版本".into());
                 }
@@ -670,17 +671,17 @@ pub async fn inspect(i: &InstallationSummary, p: &Plan) -> Result<AgentUpdate, S
                     let latest=field(&v,"latestVersion")?;
                     let status=field(&v,"latestStatus")?;
                     // Cursor uses date/hash builds, not semver; trust its native comparator.
-                    out.status=match status.as_str(){"up_to_date"=>"up_to_date","update_available"=>"available",_=>return Err("Cursor 暂未确认更新状态".into())}.into();
+                    out.status=match status.as_str(){"up_to_date"=>"up_to_date","update_available"=>"available",_=>return Err("backendText.updateCursorUnconfirmed".into())}.into();
                     out.latest_version=Some(latest);out.can_upgrade=out.status=="available";return Ok(out);
                 },
-                "grok"=> {let v=json(&command(spec(Path::new(&i.executable),vec!["update".into(),"--check".into(),"--json".into()],false)).await?)?;if !v["error"].is_null(){return Err("Grok 官方更新检查失败".into());} field(&v,"latestVersion")?},
+                "grok"=> {let v=json(&command(spec(Path::new(&i.executable),vec!["update".into(),"--check".into(),"--json".into()],false)).await?)?;if !v["error"].is_null(){return Err("backendText.updateGrokFailed".into());} field(&v,"latestVersion")?},
                 "antigravity"=> {let os=if cfg!(target_os="macos"){"darwin"}else if cfg!(windows){"windows"}else{"linux"};let arch=if cfg!(target_arch="aarch64"){"arm64"}else{"amd64"};let suffix=if cfg!(target_env="musl"){"_musl"}else{""};field(&json(&get(&format!("https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/{os}_{arch}{suffix}.json")).await?)?,"version")?},
                 "kimi"=>get("https://code.kimi.com/kimi-code/latest").await?.trim().to_string(),
                 "pi"=>field(&json(&get("https://pi.dev/api/latest-version").await?)?,"version")?,
                 "opencode"=>field(&json(&get("https://registry.npmjs.org/opencode-ai/latest").await?)?,"version")?,
                 "kiro"=>if kiro::bundle(Path::new(&i.executable)).is_some() { kiro::latest(i).await? } else { kiro::latest_from_check(&command(spec(Path::new(&i.executable), vec!["update".into(), "--check".into()], false)).await?)? },
                 "claude-code"=>get(&format!("https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/{}",claude_channel())).await?.trim().to_string(),
-                _=>return Err("尚未接入此更新源".into()),
+                _=>return Err("backendText.updateSourceUnsupported".into()),
             }
         }
     };
@@ -698,7 +699,7 @@ pub fn install_spec(
             prefix,
             package,
         } => {
-            let v = version(latest).ok_or("更新版本无效")?;
+            let v = version(latest).ok_or("backendText.updateVersionInvalid")?;
             Ok(spec(
                 node,
                 vec![
@@ -730,7 +731,7 @@ pub fn install_spec(
             let args = match i.provider_id.as_str() {
                 "kimi" => vec![
                     "__update_download".into(),
-                    version(latest).ok_or("更新版本无效")?.to_string(),
+                    version(latest).ok_or("backendText.updateVersionInvalid")?.to_string(),
                     "--manual".into(),
                 ],
                 "pi" => vec!["update".into(), "--self".into()],
@@ -740,15 +741,15 @@ pub fn install_spec(
                 "cursor" | "grok" | "antigravity" | "claude-code" | "kiro" => vec!["update".into()],
                 "opencode" => vec![
                     "upgrade".into(),
-                    version(latest).ok_or("更新版本无效")?.to_string(),
+                    version(latest).ok_or("backendText.updateVersionInvalid")?.to_string(),
                     "--method".into(),
                     "curl".into(),
                 ],
-                _ => return Err("此安装方式不支持自动升级".into()),
+                _ => return Err("backendText.updateMethodNoAuto".into()),
             };
             Ok(spec(Path::new(&i.executable), args, true))
         }
-        _ => Err("请在宿主应用或原安装渠道中升级".into()),
+        _ => Err("backendText.updateInHost".into()),
     }
 }
 
@@ -771,7 +772,7 @@ pub async fn wait_for_updated_version(
         }
     })
     .await
-    .map_err(|_| "更新器已退出，但尚未确认目标版本生效。请重新检测或在原安装渠道完成升级".into())
+    .map_err(|_| "backendText.updateUnconfirmed".into())
 }
 
 #[must_use]

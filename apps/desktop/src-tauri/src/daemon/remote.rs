@@ -1,6 +1,7 @@
 //! Paired-device gateway owned by the daemon, independently of desktop windows.
 #![allow(clippy::too_many_lines, clippy::type_complexity)]
 use super::{Core, ServiceControl, dispatch, project_scoped};
+use agent_domain::user_text;
 use agent_protocol::submission::SubmissionIntentCall as C;
 use agent_protocol::{ActorRef, CommandEnvelope, CoreCommand};
 use base64::Engine;
@@ -96,7 +97,7 @@ fn now() -> u64 {
     chrono::Utc::now().timestamp().try_into().unwrap_or(0)
 }
 fn failure(e: impl std::fmt::Debug) -> String {
-    format!("远程连接失败：{e:?}")
+    user_text("phone.connectionFailed", &[&format!("{e:?}")])
 }
 impl RemoteHost {
     pub fn for_default_service(directory: PathBuf) -> Self {
@@ -137,37 +138,37 @@ impl RemoteHost {
         let mut state = self.state.lock().await;
         if let Some(ready) = &state.ready {
             if service.is_some_and(|s| s.trim_end_matches('/') != ready.config.service) {
-                return Err("已配置其他接入服务，请先核实原设备绑定。".into());
+                return Err("phone.serviceAlreadyConfigured".into());
             }
             return Ok(());
         }
         let path = self.directory.join("config.json");
         let (config, secrets) = if path.exists() {
             let config: Config =
-                serde_json::from_slice(&std::fs::read(&path).map_err(|_| "无法读取远程配置")?)
-                    .map_err(|_| "远程配置损坏")?;
+                serde_json::from_slice(&std::fs::read(&path).map_err(|_| "phone.configUnreadable")?)
+                    .map_err(|_| "phone.configCorrupt")?;
             if service.is_some_and(|s| s.trim_end_matches('/') != config.service) {
-                return Err("接入服务与已有配置不一致。".into());
+                return Err("phone.serviceMismatch".into());
             }
             let id = config.host_id.clone();
             let secrets = tokio::task::spawn_blocking(move || {
                 let entry = keyring::Entry::new("ai.owlfy.dogcodes.remote", &id)
-                    .map_err(|_| "无法访问系统密钥存储")?;
+                    .map_err(|_| "phone.keystoreUnavailable")?;
                 let raw = entry
                     .get_password()
-                    .map_err(|_| "电脑身份无法读取，请解锁系统密钥存储；未生成替代身份")?;
-                serde_json::from_str::<Secrets>(&raw).map_err(|_| "电脑身份损坏")
+                    .map_err(|_| "phone.identityLocked")?;
+                serde_json::from_str::<Secrets>(&raw).map_err(|_| "phone.identityCorrupt")
             })
             .await
-            .map_err(|_| "读取系统密钥存储失败")??;
+            .map_err(|_| "phone.keystoreReadFailed")??;
             (config, secrets)
         } else {
             let service = service
-                .ok_or("尚未配置接入服务")?
+                .ok_or("phone.serviceNotConfigured")?
                 .trim_end_matches('/')
                 .to_owned();
             validate_service(&service)?;
-            let key = dogcodes_endpoint::keypair().map_err(|_| "无法生成电脑身份")?;
+            let key = dogcodes_endpoint::keypair().map_err(|_| "phone.identityGenerateFailed")?;
             let (config, secrets) =
                 register_host(&service, hex::encode(key.public), hex::encode(key.private)).await?;
             save_registration(&self.directory, &config, &secrets).await?;
@@ -175,7 +176,7 @@ impl RemoteHost {
         };
         validate_service(&config.service)?;
         let book = PairingBook::load(self.directory.join("devices.json"))
-            .map_err(|_| "配对记录不可用；未自动清空")?;
+            .map_err(|_| "phone.pairingRecordUnavailable")?;
         state.ready = Some(Ready {
             config,
             secrets,
@@ -200,12 +201,12 @@ impl RemoteHost {
                 let dialog = call["dialogId"]
                     .as_str()
                     .filter(|s| !s.is_empty() && s.len() <= 128)
-                    .ok_or("缺少配对窗口标识")?
+                    .ok_or("phone.dialogIdMissing")?
                     .to_owned();
                 {
                     let state = self.state.lock().await;
                     if state.canceled_dialogs.contains(&dialog) {
-                        return Err("配对窗口已关闭，请重新打开。".into());
+                        return Err("phone.dialogClosedRetry".into());
                     }
                 }
                 self.initialize(call["service"].as_str()).await?;
@@ -215,9 +216,9 @@ impl RemoteHost {
                 }
                 let mut state = self.state.lock().await;
                 if state.canceled_dialogs.contains(&dialog) {
-                    return Err("配对窗口已关闭。".into());
+                    return Err("phone.dialogClosed".into());
                 }
-                let ready = state.ready.as_mut().ok_or("电脑身份不可用")?;
+                let ready = state.ready.as_mut().ok_or("phone.identityUnavailable")?;
                 let old_host = ready.config.host_id.clone();
                 let result = ready
                     .invitation(
@@ -241,14 +242,14 @@ impl RemoteHost {
                         return Err(error);
                     }
                 };
-                let ready = state.ready.as_mut().ok_or("电脑身份不可用")?;
+                let ready = state.ready.as_mut().ok_or("phone.identityUnavailable")?;
                 let id = grant["sessionId"]
                     .as_str()
-                    .ok_or("邀请响应无效")?
+                    .ok_or("phone.invitationInvalid")?
                     .to_owned();
-                let expires = grant["expiresAt"].as_u64().ok_or("邀请响应无效")?;
-                let key = dogcodes_endpoint::keypair().map_err(|_| "无法生成配对凭证")?;
-                let secret: [u8; 32] = key.private.try_into().map_err(|_| "配对凭证无效")?;
+                let expires = grant["expiresAt"].as_u64().ok_or("phone.invitationInvalid")?;
+                let key = dogcodes_endpoint::keypair().map_err(|_| "phone.pairingCredentialGenerateFailed")?;
+                let secret: [u8; 32] = key.private.try_into().map_err(|_| "phone.pairingCredentialInvalid")?;
                 let context = serde_json::to_vec(&json!([
                     "dogcodes-pairing",
                     1,
@@ -257,30 +258,30 @@ impl RemoteHost {
                     id,
                     expires.to_string()
                 ]))
-                .map_err(|_| "无法创建邀请")?;
+                .map_err(|_| "phone.invitationCreateFailed")?;
                 ready
                     .book
                     .issue(&id, secret, context, expires, now())
                     .map_err(failure)?;
-                let qr = json!({"version":1,"service":ready.config.service,"hostId":ready.config.host_id,"hostKey":base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hex::decode(&ready.config.public_key).map_err(|_|"电脑公钥无效")?),"invitationId":id,"secret":base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(secret),"expiresAt":expires.to_string(),"phoneTicket":grant["phoneTicket"]});
+                let qr = json!({"version":1,"service":ready.config.service,"hostId":ready.config.host_id,"hostKey":base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hex::decode(&ready.config.public_key).map_err(|_|"phone.hostKeyInvalid")?),"invitationId":id,"secret":base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(secret),"expiresAt":expires.to_string(),"phoneTicket":grant["phoneTicket"]});
                 let qr = format!(
                     "dogcodes://pair#{}",
                     base64::engine::general_purpose::URL_SAFE_NO_PAD
-                        .encode(serde_json::to_vec(&qr).map_err(|_| "无法创建邀请")?)
+                        .encode(serde_json::to_vec(&qr).map_err(|_| "phone.invitationCreateFailed")?)
                 );
                 state.invitation_owner = Some(dialog);
                 state.error = None;
                 state.invitation = Some(json!({"uri":qr,"expiresAt":expires,"sessionId":id}));
                 let ticket = grant["hostTicket"]
                     .as_str()
-                    .ok_or("邀请响应无效")?
+                    .ok_or("phone.invitationInvalid")?
                     .to_owned();
                 drop(state);
                 self.spawn_connection(core, control, id, ticket, None);
                 Ok(self.status().await)
             }
             "cancel_invitation" => {
-                let dialog = call["dialogId"].as_str().ok_or("缺少配对窗口标识")?;
+                let dialog = call["dialogId"].as_str().ok_or("phone.dialogIdMissing")?;
                 let mut state = self.state.lock().await;
                 // Only the authenticated local UI can create dialog identities. Keep
                 // tombstones for this daemon lifetime so a delayed IPC cannot reopen one.
@@ -296,17 +297,17 @@ impl RemoteHost {
                 Ok(self.status().await)
             }
             "revoke" => {
-                let id = call["deviceId"].as_str().ok_or("缺少设备标识")?;
+                let id = call["deviceId"].as_str().ok_or("phone.deviceIdMissing")?;
                 self.revoke_device(id).await?;
                 Ok(self.status().await)
             }
-            _ => Err("未知的远程配置操作".into()),
+            _ => Err("phone.unknownOperation".into()),
         }
     }
     async fn revoke_device(&self, id: &str) -> Result<(), String> {
         let (config, secrets) = {
             let mut state = self.state.lock().await;
-            let ready = state.ready.as_mut().ok_or("尚未启用远程连接")?;
+            let ready = state.ready.as_mut().ok_or("phone.notEnabled")?;
             ready.book.revoke(id).map_err(failure)?;
             (ready.config.clone(), ready.secrets.clone())
         };
@@ -407,7 +408,7 @@ impl RemoteHost {
                     let mut state = host.state.lock().await;
                     if current_registration(&state, &config) {
                         state.error =
-                            Some("接入服务连接中断，正在重连；若配对失败，请重新生成二维码".into());
+                            Some("phone.reconnecting".into());
                     }
                 }
                 {
@@ -445,7 +446,7 @@ impl RemoteHost {
                         .as_ref()
                         .is_some_and(|v| v["sessionId"] == id)
                 {
-                    state.error = Some("手机配对连接未完成，请核实或重新生成邀请。".into());
+                    state.error = Some("phone.unconnected".into());
                 }
             }
         });
@@ -737,7 +738,7 @@ fn response(id: &str, result: Result<Value, String>) -> Value {
     };
     if serde_json::to_vec(&wire_json(&value)).map_or(true, |bytes| bytes.len() > MAX_FRAME_BYTES) {
         return json!({"type":"response","requestId":id,"error":{
-            "code":"response_too_large","message":"内容超过远程传输大小限制，请缩小查询范围后重试"
+            "code":"response_too_large","message":"phone.responseTooLarge"
         }});
     }
     value
@@ -910,7 +911,7 @@ fn device_actor(peer: &[u8; 32]) -> Result<ActorRef, String> {
     ))
 }
 fn validate_service(service: &str) -> Result<(), String> {
-    let url = reqwest::Url::parse(service).map_err(|_| "接入服务地址无效")?;
+    let url = reqwest::Url::parse(service).map_err(|_| "phone.serviceAddressInvalid")?;
     if (url.scheme() != "https"
         && !(cfg!(debug_assertions) && url.scheme() == "http" && development_service_host(&url)))
         || url.username() != ""
@@ -919,7 +920,7 @@ fn validate_service(service: &str) -> Result<(), String> {
         || url.fragment().is_some()
         || url.path() != "/"
     {
-        return Err("接入服务须使用 HTTPS；调试版本支持本机或局域网 IP".into());
+        return Err("phone.httpsRequired".into());
     }
     Ok(())
 }
@@ -972,23 +973,20 @@ async fn http_request(
     request
         .send()
         .await
-        .map_err(|_| "无法连接接入服务，请确认服务已启动并检查网络".into())
+        .map_err(|_| "phone.serviceUnreachable".into())
 }
 async fn decode_http(response: reqwest::Response) -> Result<Value, String> {
     let status = response.status();
     if status == reqwest::StatusCode::UNAUTHORIZED {
-        return Err("电脑登记凭证已失效，请在本机撤销原手机绑定后重新生成配对二维码".into());
+        return Err("phone.registrationExpired".into());
     }
     if !status.is_success() {
-        return Err(format!(
-            "接入服务暂时无法处理请求（HTTP {}），请稍后重试",
-            status.as_u16()
-        ));
+        return Err(user_text("phone.httpError", &[&status.as_u16().to_string()]));
     }
     if status == reqwest::StatusCode::NO_CONTENT {
         Ok(Value::Null)
     } else {
-        response.json().await.map_err(|_| "接入服务响应无效".into())
+        response.json().await.map_err(|_| "phone.serviceResponseInvalid".into())
     }
 }
 fn initialize_tls_provider() {
@@ -1203,7 +1201,7 @@ fn http_client(service: &str) -> Result<reqwest::Client, String> {
     {
         builder = builder.no_proxy();
     }
-    builder.build().map_err(|_| "连接配置失败".into())
+    builder.build().map_err(|_| "phone.connectionConfigFailed".into())
 }
 
 fn wire_json(value: &Value) -> Value {
@@ -1408,7 +1406,7 @@ mod tests {
                 json!({"type":"invite","dialogId":"closed","service":"http://127.0.0.1:1"}),
             )
             .await;
-        assert!(result.unwrap_err().contains("窗口已关闭"));
+        assert!(result.unwrap_err().contains("phone.dialogClosed"));
         assert!(control.remote.state.lock().await.ready.is_none());
         for i in 0..260 {
             control
@@ -1426,7 +1424,7 @@ mod tests {
             .remote
             .call(&core, &control, json!({"type":"invite","dialogId":"fresh"}))
             .await;
-        assert_eq!(fresh.unwrap_err(), "尚未配置接入服务");
+        assert_eq!(fresh.unwrap_err(), "phone.serviceNotConfigured");
     }
     #[tokio::test]
     async fn remote_gateway_rejects_host_and_internal_commands() {

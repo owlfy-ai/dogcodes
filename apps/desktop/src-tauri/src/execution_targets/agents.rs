@@ -23,8 +23,8 @@ pub(crate) struct TargetAgent {
     display_name: String,
     executable: String,
     version: Option<String>,
-    status: InstallationStatus,
-    diagnostic: Option<String>,
+    pub(super) status: InstallationStatus,
+    pub(super) diagnostic: Option<String>,
 }
 
 async fn installation_of(

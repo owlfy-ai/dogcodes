@@ -1787,7 +1787,7 @@ async fn serve_connection(
             drop(request_guard);
             return write_frame(
                 &mut stream,
-                &Err::<Vec<EventEnvelope>, _>("项目不存在".to_string()),
+                &Err::<Vec<EventEnvelope>, _>("backendText.projectMissing".to_string()),
             )
             .await;
         }
@@ -4027,7 +4027,7 @@ mod tests {
             )
             .await
             .unwrap_err()
-            .contains("会话不存在")
+            .contains("backendText.conversationMissing")
         );
         let journal = f
             .directory
@@ -4185,7 +4185,7 @@ mod tests {
                 .project_runs("missing")
                 .await
                 .unwrap_err()
-                .contains("会话不存在")
+                .contains("backendText.conversationMissing")
         );
     }
 

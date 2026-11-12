@@ -38,7 +38,7 @@ pub async fn list(core: &dyn ReviewFacts, task_id: &str) -> Result<Vec<ReviewWor
         .find(|p| p.project_id == source.project_id)
         .ok_or("项目已不存在")?;
     if project.target_id.is_some() && core.on_hub() {
-        return Err("这个项目在另一台机器上".into());
+        return Err("backendText.projectOnOtherMachine".into());
     }
     let git = GitReview::default();
     let identity = git.worktree_identity(Path::new(&project.path)).await?;

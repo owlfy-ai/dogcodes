@@ -13,6 +13,7 @@ native-http = ["dep:reqwest"]
 test-support = []
 
 [dependencies]
+agent-domain = { path = "../domain" }
 agent-protocol = { path = "../protocol" }
 agent-registry = { path = "../agent-registry" }
 agent-runtime = { path = "../runtime", default-features = false }
@@ -32,7 +33,6 @@ tokio = { workspace = true, features = ["io-std", "io-util", "process", "time"] 
 url = "2.5.8"
 
 [dev-dependencies]
-agent-domain = { path = "../domain" }
 tokio = { workspace = true, features = ["io-std", "io-util", "macros", "net", "process", "rt", "time"] }
 
 [lints]

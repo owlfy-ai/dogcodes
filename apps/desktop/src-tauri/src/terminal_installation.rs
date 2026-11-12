@@ -296,7 +296,7 @@ fn select_existing_executable(
     for name in &manifest.discovery.candidate_executables {
         match commands.and_then(|values| values.get(name)) {
             Some(Resolution::Executable(path)) => return Ok(Some(path.clone())),
-            Some(Resolution::ShellOverride) => return Err("终端中的命令使用了自定义别名或函数，暂时无法确认对应安装。请使用直接指向客户端的命令后重新检测。".into()),
+            Some(Resolution::ShellOverride) => return Err("backendText.shellOverride".into()),
             _ => {}
         }
     }
@@ -543,7 +543,7 @@ pub(crate) async fn preferred_executable(
     let commands = shell_commands(context).await;
     #[cfg(unix)]
     if commands.is_none() {
-        return Err("暂时无法读取终端的命令位置，请检查终端能否正常打开后重新检测。".into());
+        return Err("backendText.terminalPathUnreadable".into());
     }
     let selected = select_executable(manifest, context, commands.as_ref())?;
     Ok(compatible_opencode(manifest, context, selected).await)

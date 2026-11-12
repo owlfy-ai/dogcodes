@@ -42,15 +42,19 @@ fn blank(i: &InstallationSummary) -> AgentUpdate {
 /// for people, for the interface to translate; anything else isn't fit to show.
 pub(super) fn message_of(failure: Failure) -> String {
     if failure.kind == "disconnected" {
-        "和这台主机的连接断开了，请重新连接后重试".into()
+        "backendText.targetOperationLost".into()
     } else if failure
         .message
-        .chars()
-        .any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c))
+        .strip_prefix("backendText.")
+        .is_some_and(|key| !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric()))
+        || failure
+            .message
+            .chars()
+            .any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c))
     {
         failure.message
     } else {
-        "这台主机上的操作没有成功，请重试".into()
+        "backendText.targetOperationFailed".into()
     }
 }
 
@@ -77,7 +81,7 @@ impl TargetHost {
             .installations
             .into_iter()
             .find(|i| i.target_id.as_ref() == Some(target) && i.installation_id.to_string() == id)
-            .ok_or_else(|| "此 Agent 安装已不存在，请重新检测".to_owned())
+            .ok_or_else(|| "backendText.updateInstallationGone".to_owned())
     }
 
     pub(super) async fn agent_update(
@@ -130,12 +134,12 @@ impl TargetHost {
                 .as_ref()
                 .is_some_and(|run| run.executor.installation_id.as_deref() == Some(id))
         }) {
-            return Err("请等待正在执行的任务结束后再升级 Agent".into());
+            return Err("backendText.updateWaitForTask".into());
         }
         let machine = self.target(target)?;
         let started = AgentUpdate {
             status: "upgrading".into(),
-            message: Some("正在下载并安装，较大的更新可能需要几分钟".into()),
+            message: Some("backendText.updateDownloading".into()),
             ..self
                 .agent_updates
                 .lock()
@@ -149,7 +153,7 @@ impl TargetHost {
                 .get(id)
                 .is_some_and(|known| known.value.status == "upgrading")
             {
-                return Err("另一个升级正在使用相同的安装目录或更新器，请等待其完成后重试".into());
+                return Err("backendText.updateBusy".into());
             }
             known.insert(
                 id.to_owned(),
@@ -217,7 +221,7 @@ impl TargetHost {
         };
         value.latest_version = Some(goal.clone());
         value.source.clone_from(&upgraded.update.source);
-        value.message = Some("正在重新检测并验证新版本".into());
+        value.message = Some("backendText.updateVerifying".into());
         self.remember(i, value.clone());
         self.scan_now(core, target).await?;
         let fresh = core
@@ -227,17 +231,18 @@ impl TargetHost {
             .installations
             .into_iter()
             .find(|v| v.target_id.as_ref() == Some(target) && v.provider_id == i.provider_id)
-            .ok_or("升级后未找到原安装，请重新检测 Agent")?;
-        let now = fresh.version.as_deref().ok_or("升级后无法读取版本")?;
+            .ok_or("backendText.updateInstallationLost")?;
+        let now = fresh
+            .version
+            .as_deref()
+            .ok_or("backendText.updateVersionUnreadable")?;
         if !verified_version(&i.provider_id, now, &goal) {
-            return Err(
-                "更新器已退出，但尚未确认目标版本生效。请重新检测或在原安装渠道完成升级".into(),
-            );
+            return Err("backendText.updateUnconfirmed".into());
         }
         value.installation_id = fresh.installation_id.to_string();
         value.current_version.clone_from(&fresh.version);
         value.status = "updated".into();
-        value.message = Some("升级完成，已重新加载 Agent".into());
+        value.message = Some("backendText.updateFinished".into());
         Ok((fresh, value))
     }
 
@@ -250,16 +255,19 @@ impl TargetHost {
             .unwrap()
             .get(target)
             .cloned()
-            .ok_or("连接不存在")?;
+            .ok_or("backendText.targetConnectionMissing")?;
         connection.update(|status| status.scanning = true);
         link.refresh_environment().await;
         let found = agents::scan(core, target, &link.target()).await;
+        let scanned = found.is_some();
         connection.update(|status| {
             status.scanning = false;
             if let Some(found) = found {
                 status.agents = found;
             }
         });
-        Ok(())
+        scanned
+            .then_some(())
+            .ok_or_else(|| "backendText.targetOperationFailed".to_owned())
     }
 }

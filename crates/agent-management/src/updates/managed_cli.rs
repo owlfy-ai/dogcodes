@@ -114,18 +114,18 @@ pub fn existing_prefix(i: &InstallationSummary) -> Option<PathBuf> {
 }
 
 fn register(prefix: &Path, provider: &str, target: &str, actual: &str) -> Result<(), String> {
-    let info = package_info(prefix, provider).ok_or("CLI 安装包校验失败")?;
+    let info = package_info(prefix, provider).ok_or("backendText.cliPackageInvalid")?;
     if !verified_version(provider, actual, target)
         || version(actual) != info["version"].as_str().and_then(version)
     {
-        return Err("CLI 升级后版本校验失败，尚未切换安装".into());
+        return Err("backendText.cliVersionMismatch".into());
     }
     let mut marker =
-        tempfile::NamedTempFile::new_in(prefix).map_err(|_| "无法保存 CLI 安装记录")?;
-    marker.write_all(json!({"kind":"dogcodes-managed-cli","schemaVersion":1,"provider":provider,"package":package(provider),"version":version(actual).map(|v|v.to_string())}).to_string().as_bytes()).map_err(|_| "无法保存 CLI 安装记录")?;
+        tempfile::NamedTempFile::new_in(prefix).map_err(|_| "backendText.cliRecordFailed")?;
+    marker.write_all(json!({"kind":"dogcodes-managed-cli","schemaVersion":1,"provider":provider,"package":package(provider),"version":version(actual).map(|v|v.to_string())}).to_string().as_bytes()).map_err(|_| "backendText.cliRecordFailed")?;
     marker
         .persist(prefix.join("managed-cli.json"))
-        .map_err(|_| "无法保存 CLI 安装记录")?;
+        .map_err(|_| "backendText.cliRecordFailed")?;
     Ok(())
 }
 

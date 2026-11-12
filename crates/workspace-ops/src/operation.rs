@@ -35,7 +35,7 @@ use tokio::{
 
 type PendingAnswers = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>>;
 
-const LOST: &str = "与服务器的连接已断开，这项操作的结果未知，请重新连接后核实";
+const LOST: &str = "backendText.operationResultUnknown";
 
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "kind", content = "body", rename_all = "snake_case")]
@@ -469,7 +469,7 @@ impl RunningOperation {
     pub async fn start(target: &SharedTarget, operation: &Operation) -> Result<Self, String> {
         let mut child = target
             .spawn_operation()
-            .map_err(|_| "这个项目所在的服务器未连接，请先连接后重试".to_owned())?;
+            .map_err(|_| "backendText.projectTargetNotConnected".to_owned())?;
         let (Some(mut input), Some(output)) = (child.stdin.take(), child.stdout.take()) else {
             return Err(LOST.to_owned());
         };

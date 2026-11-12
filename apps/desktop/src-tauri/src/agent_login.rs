@@ -210,7 +210,7 @@ pub async fn open_agent_login(
         .into_iter()
         // A path on a server means nothing to this machine's terminal.
         .find(|i| i.installation_id.to_string() == installation_id && i.target_id.is_none())
-        .ok_or("此 Agent 安装已不存在，请重新检测")?;
+        .ok_or("backendText.updateInstallationGone")?;
     if installation.version.as_deref() == Some("demo") {
         return Err("演示 Agent 不支持本机登录".into());
     }

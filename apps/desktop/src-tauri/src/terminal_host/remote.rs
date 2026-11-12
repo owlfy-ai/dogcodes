@@ -110,7 +110,7 @@ pub(super) fn start(
         .map_err(|error| error.to_string())?;
     let mut child = started.child;
     let (Some(input), Some(output)) = (child.stdin.take(), child.stdout.take()) else {
-        return Err("终端连接不可用".into());
+        return Err("backendText.targetTerminalUnavailable".into());
     };
     Ok(Started {
         master: Box::new(RemoteMaster {

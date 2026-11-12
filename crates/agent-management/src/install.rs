@@ -1,6 +1,7 @@
 //! Installs an agent on this machine, without a terminal, the way its vendor says to.
 //! What runs is fixed here: the asker only names an agent.
 use crate::{operation::Failure, updates};
+use agent_domain::user_text;
 use agent_runtime::run_bounded;
 use std::path::Path;
 
@@ -74,8 +75,8 @@ fn explain(code: Option<i32>, stdout: &str, stderr: &str) -> String {
             .then_some(found)
             .filter(|found| *found != "none");
         return current.map_or_else(
-            || "DeepSeek Harness 需要 Node.js 24.9 或更高版本，这台主机上没有 Node.js 或 npm。请安装后重试".to_owned(),
-            |current| format!("DeepSeek Harness 需要 Node.js 24.9 或更高版本，这台主机当前是 {current}。请升级后重试"),
+            || "backendText.installNodeMissing".to_owned(),
+            |current| user_text("backendText.installNodeTooOld", &[current]),
         );
     }
     let output = format!("{stdout}\n{stderr}").to_ascii_lowercase();
@@ -94,7 +95,7 @@ fn explain(code: Option<i32>, stdout: &str, stderr: &str) -> String {
             "fetch failed",
         ]);
     if unreachable {
-        "这台主机连不上下载地址，可能是它的网络、防火墙或代理的问题，请检查后重试".into()
+        "backendText.installUnreachable".into()
     } else if says(&[
         "npm: not found",
         "npm: command not found",
@@ -103,28 +104,28 @@ fn explain(code: Option<i32>, stdout: &str, stderr: &str) -> String {
         "npm is required",
         "requires node",
     ]) {
-        "需要先在这台主机上安装 Node.js 和 npm".into()
+        "backendText.installNeedNode".into()
     } else if output.contains("unzip")
         && says(&["required", "missing", "not found", "not installed"])
     {
-        "需要先在这台主机上安装 unzip".into()
+        "backendText.installNeedUnzip".into()
     } else if code == Some(127) || says(&["curl: not found", "bash: not found", "tar: not found"]) {
-        "这台主机缺少安装所需的命令（curl、tar 或 bash）".into()
+        "backendText.installMissingTools".into()
     } else if says(&["no space left", "enospc"]) {
-        "这台主机的磁盘空间不足".into()
+        "backendText.installDiskFull".into()
     } else if says(&["permission denied", "eacces"]) {
-        "没有写入安装目录的权限，请检查这个账号的权限".into()
+        "backendText.installNoPermission".into()
     } else if says(&[
         "glibc",
         "musl is not supported",
         "unsupported",
         "not supported",
     ]) {
-        "这个 Agent 的安装程序不支持这台主机的系统".into()
+        "backendText.installUnsupported".into()
     } else {
         code.map_or_else(
-            || "安装程序未成功，请检查这台主机的网络和权限后重试".to_owned(),
-            |code| format!("安装程序未成功（退出码 {code}），请检查这台主机的网络和权限后重试"),
+            || "backendText.installFailed".to_owned(),
+            |code| user_text("backendText.installFailedCode", &[&code.to_string()]),
         )
     }
 }
@@ -133,7 +134,7 @@ fn explain(code: Option<i32>, stdout: &str, stderr: &str) -> String {
 /// When it isn't an agent installed this way, or its installer didn't succeed.
 pub async fn install(provider: &str) -> Result<(), Failure> {
     let script = script(provider)
-        .ok_or_else(|| Failure::new("capability", "这个 Agent 不能安装到服务器"))?;
+        .ok_or_else(|| Failure::new("capability", "backendText.installNotOnServers"))?;
     let mut spec = updates::spec(Path::new("/bin/sh"), vec!["-c".into(), script], true);
     // Installers put themselves on PATH through whichever shell this account logs in with.
     spec.env_allowlist.extend(
@@ -153,7 +154,7 @@ pub async fn install(provider: &str) -> Result<(), Failure> {
     let output = run_bounded(&spec).await.map_err(|_| {
         Failure::new(
             "other",
-            "安装程序没有在时限内结束，请检查这台主机的网络后重试",
+            "backendText.installTimedOut",
         )
     })?;
     if output.success {
@@ -185,26 +186,26 @@ mod tests {
     fn output_decides_the_message_but_is_never_part_of_it() {
         let secret = "https://user:hunter2@proxy";
         for (code, stderr, expected) in [
-            (Some(1), "sh: npm: not found", "Node.js"),
-            (Some(1), "dogcodes-node-required: v22.1.0", "当前是 v22.1.0"),
-            (Some(1), "dogcodes-node-required: none", "没有 Node.js"),
+            (Some(1), "sh: npm: not found", "backendText.installNeedNode"),
+            (Some(1), "dogcodes-node-required: v22.1.0", "backendText.installNodeTooOld"),
+            (Some(1), "dogcodes-node-required: none", "backendText.installNodeMissing"),
             (
                 Some(1),
                 "dogcodes-node-required: $(hunter2 x)",
-                "没有 Node.js",
+                "backendText.installNodeMissing",
             ),
-            (Some(35), "", "连不上"),
+            (Some(35), "", "backendText.installUnreachable"),
             (
                 Some(1),
                 "curl: (22) The requested URL returned error: 404",
-                "连不上",
+                "backendText.installUnreachable",
             ),
-            (Some(1), "npm error code ENOTFOUND", "连不上"),
-            (Some(1), "version `GLIBC_2.28' not found", "不支持"),
-            (Some(1), "Error: unzip is required", "unzip"),
-            (Some(6), "curl: (6) Could not resolve host", "网络"),
-            (Some(1), "EACCES: permission denied", "权限"),
-            (Some(3), "something else", "退出码 3"),
+            (Some(1), "npm error code ENOTFOUND", "backendText.installUnreachable"),
+            (Some(1), "version `GLIBC_2.28' not found", "backendText.installUnsupported"),
+            (Some(1), "Error: unzip is required", "backendText.installNeedUnzip"),
+            (Some(6), "curl: (6) Could not resolve host", "backendText.installUnreachable"),
+            (Some(1), "EACCES: permission denied", "backendText.installNoPermission"),
+            (Some(3), "something else", "backendText.installFailedCode"),
         ] {
             let message = explain(code, secret, stderr);
             assert!(message.contains(expected), "{message}");

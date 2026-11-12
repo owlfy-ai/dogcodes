@@ -10,7 +10,7 @@ nativeMessages.set("桌面应用已是最新版本", "latest");
 
 export function localizedAgentMessage(message: string | null | undefined, fallback: keyof AgentUiMessages, lang: ResolvedLanguage): string {
   if (!message) return t(`agentUi.${fallback}`, undefined, lang);
-  const key = message.startsWith("agentUi.") ? message : nativeMessages.has(message) ? `agentUi.${nativeMessages.get(message)}` : null;
+  const key = message.startsWith("agentUi.") || message.startsWith("backendText.") ? message : nativeMessages.has(message) ? `agentUi.${nativeMessages.get(message)}` : null;
   if (key) return t(key, undefined, lang);
   const translated = localizeBackendText(message, lang);
   if (translated) return translated;

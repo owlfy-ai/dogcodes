@@ -44,17 +44,16 @@ function useHostAgentUpdates(api: TargetApi, targetId: string, installationIds: 
 }
 
 /** Installs go on without this page, so it picks up whatever is under way. */
-function useHostAgentInstalls(api: TargetApi, targetId: string, connected: boolean) {
+function useHostAgentInstalls(api: TargetApi, targetId: string, connected: boolean, scanKey: string) {
   const [installs, setInstalls] = useState<HostAgentInstall[]>([]);
   const running = installs.some(install => install.status === "installing");
   useEffect(() => {
-    if (!connected) return;
     let alive = true;
     const read = () => void api.agentInstalls(targetId).then(found => { if (alive) setInstalls(found); }).catch(() => {});
     read();
-    const timer = running ? setInterval(read, INSTALL_FOLLOW_INTERVAL) : undefined;
+    const timer = connected && running ? setInterval(read, INSTALL_FOLLOW_INTERVAL) : undefined;
     return () => { alive = false; clearInterval(timer); };
-  }, [api, targetId, connected, running]);
+  }, [api, targetId, connected, running, scanKey]);
   const install = useCallback((providerId: string) => {
     setInstalls(old => [...old.filter(item => item.providerId !== providerId), { providerId, status: "installing", message: null }]);
     void api.installAgent(targetId, providerId).then(setInstalls).catch((cause: unknown) => {
@@ -78,10 +77,14 @@ export function HostAgentManagement({ api, entry, visible, offlineBanner, onRunI
   const [views, setViews] = useState<QuotaSnapshotView[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [failure, setFailure] = useState("");
-  const ids = entry.agents.map(agent => agent.installationId);
+  // Finding a file is not a successful installation when its command cannot run.
+  // Failed probes stay available through agentInstalls as retryable error rows.
+  const installed = entry.agents.filter(agent => agent.status !== "broken" && agent.status !== "unsupported_version");
+  const scanKey = entry.agents.map(agent => `${agent.installationId}:${agent.status}:${agent.diagnostic}`).join("|");
+  const ids = installed.map(agent => agent.installationId);
   const idsKey = ids.join("|");
   const updates = useHostAgentUpdates(api, targetId, ids, connected);
-  const { installs, install } = useHostAgentInstalls(api, targetId, connected);
+  const { installs, install } = useHostAgentInstalls(api, targetId, connected, scanKey);
   const read = useCallback(async (force: boolean) => {
     await Promise.all(idsKey.split("|").filter(Boolean).map(async id => {
       try {
@@ -137,8 +140,8 @@ export function HostAgentManagement({ api, entry, visible, offlineBanner, onRunI
           </button>
         </div>
         {failure && <div className="remote-error" role="alert">{failure}</div>}
-        <div className="agent-management-summary"><span>{t("agentManagement.installedCount", { count: entry.agents.length })}</span><span>{t("agentManagement.quotaCalculation")}<QuotaCollectedTime views={views} /></span></div>
-        <QuotaPanel views={views} installations={entry.agents} agentUpdates={updates} onDetect={detect} management host={host} />
+        <div className="agent-management-summary"><span>{t("agentManagement.installedCount", { count: installed.length })}</span><span>{t("agentManagement.quotaCalculation")}<QuotaCollectedTime views={views.filter(view => ids.some(id => id === view.installationId))} /></span></div>
+        <QuotaPanel views={views} installations={installed} agentUpdates={updates} onDetect={detect} management host={host} />
       </div>
     </div>
   </div>;

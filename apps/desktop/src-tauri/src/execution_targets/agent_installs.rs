@@ -3,6 +3,7 @@
 use super::TargetHost;
 use agent_core::Core;
 use agent_domain::TargetId;
+use agent_management::detect::installation_failure;
 use agent_management::operation::{self, Failure, Request};
 use serde::Serialize;
 use std::sync::Arc;
@@ -24,20 +25,47 @@ pub(super) struct Installs {
 
 fn explained(failure: Failure) -> String {
     if failure.kind == "disconnected" {
-        "和这台主机的连接断开了，安装可能没有完成。请重新连接后再试".into()
+        "backendText.installConnectionLost".into()
     } else {
         super::agent_updates::message_of(failure)
     }
 }
 
 impl TargetHost {
-    pub(super) fn agent_installs(&self, target: &TargetId) -> Vec<AgentInstall> {
+    fn current_installs(&self, target: &TargetId) -> Vec<AgentInstall> {
         self.agent_installs
             .lock()
             .unwrap()
             .get(target)
             .map(|installs| installs.current.clone())
             .unwrap_or_default()
+    }
+
+    pub(super) async fn agent_installs(&self, core: &Core, target: &TargetId) -> Vec<AgentInstall> {
+        let mut current = self.current_installs(target);
+        // Failed probes survive reconnects and app restarts in installation records.
+        // Keep an ongoing install or its explicit failure ahead of the last scan.
+        if let Ok(snapshot) = core.bootstrap().await {
+            for installation in snapshot.installations {
+                if installation.target_id.as_ref() != Some(target)
+                    || current
+                        .iter()
+                        .any(|i| i.provider_id == installation.provider_id)
+                {
+                    continue;
+                }
+                if let Some(message) =
+                    installation_failure(installation.status, installation.diagnostic.as_deref())
+                {
+                    current.push(AgentInstall {
+                        provider_id: installation.provider_id,
+                        status: "failed",
+                        message: Some(message.into()),
+                    });
+                }
+            }
+        }
+        current
     }
 
     fn settle_install(&self, target: &TargetId, provider: &str, failure: Option<String>) {
@@ -105,7 +133,7 @@ impl TargetHost {
             };
             host.settle_install(&target_id, &provider, failure);
         });
-        Ok(self.agent_installs(target))
+        Ok(self.current_installs(target))
     }
 
     /// An installer saying it finished doesn't mean anything can run it yet.
@@ -121,15 +149,99 @@ impl TargetHost {
             .lock()
             .unwrap()
             .get(target)
-            .is_some_and(|connection| {
+            .and_then(|connection| {
                 connection
                     .snapshot()
                     .agents
                     .iter()
-                    .any(|agent| agent.provider_id == provider)
+                    .find(|agent| agent.provider_id == provider)
+                    .map(|agent| installation_failure(agent.status, agent.diagnostic.as_deref()))
             });
-        found
-            .then_some(())
-            .ok_or_else(|| "安装程序已结束，但在这台主机上没有找到它。请重新检测".to_owned())
+        match found {
+            Some(None) => Ok(()),
+            Some(Some(message)) => Err(message.to_owned()),
+            None => Err("backendText.installNotFound".to_owned()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agent_protocol::{
+        ActorRef, CommandEnvelope, CoreCommand, InstallationStatus, RecordInstallationProbe,
+    };
+
+    #[test]
+    fn install_failures_keep_safe_localized_error_codes() {
+        assert_eq!(
+            explained(Failure::new(
+                "other",
+                "backendText.installRuntimeIncompatible"
+            )),
+            "backendText.installRuntimeIncompatible"
+        );
+        assert_eq!(
+            explained(Failure::new("other", "private command output")),
+            "backendText.targetOperationFailed"
+        );
+    }
+
+    #[tokio::test]
+    async fn stored_failed_probes_reappear_as_errors_but_never_override_an_ongoing_install() {
+        let core = Arc::new(Core::new(Arc::new(
+            agent_store::SqliteStore::open_in_memory().unwrap(),
+        )));
+        let target = TargetId::new();
+        let other = TargetId::new();
+        for (provider, machine, status) in [
+            ("kimi", Some(target.clone()), InstallationStatus::Broken),
+            (
+                "cursor",
+                Some(target.clone()),
+                InstallationStatus::NotConfigured,
+            ),
+            ("pi", Some(other), InstallationStatus::Broken),
+            ("codex", None, InstallationStatus::Broken),
+        ] {
+            let mut command = CommandEnvelope::local(CoreCommand::RecordInstallationProbe(
+                RecordInstallationProbe {
+                    target_id: machine,
+                    provider_id: provider.into(),
+                    executable: format!("/bin/{provider}"),
+                    fingerprint: "fixture".into(),
+                    status,
+                    version: None,
+                    version_text: None,
+                    diagnostic: Some("agent_runtime_incompatible".into()),
+                    elapsed_millis: 1,
+                },
+            ));
+            command.actor = ActorRef::SystemRecovery;
+            core.execute(command).await.unwrap();
+        }
+        let host = TargetHost::default();
+        let errors = host.agent_installs(&core, &target).await;
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].provider_id, "kimi");
+        assert_eq!(errors[0].status, "failed");
+        assert_eq!(
+            errors[0].message.as_deref(),
+            Some("backendText.installRuntimeIncompatible")
+        );
+        host.agent_installs
+            .lock()
+            .unwrap()
+            .entry(target.clone())
+            .or_default()
+            .current
+            .push(AgentInstall {
+                provider_id: "kimi".into(),
+                status: "installing",
+                message: None,
+            });
+        let errors = host.agent_installs(&core, &target).await;
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].status, "installing");
     }
 }

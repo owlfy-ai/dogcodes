@@ -260,9 +260,9 @@ async fn core_reveal_local_project(
         .projects
         .into_iter()
         .find(|project| project.project_id == project_id)
-        .ok_or("项目不存在")?;
+        .ok_or("backendText.projectMissing")?;
     if project.target_id.is_some() {
-        return Err("远程项目的目录在服务器上，无法在本机打开".into());
+        return Err("backendText.projectFolderOnServer".into());
     }
     let target = tokio::fs::canonicalize(&project.path)
         .await

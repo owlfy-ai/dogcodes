@@ -196,7 +196,7 @@ async fn update_inner(
         if project.path != request.path
             || project.additional_directories != request.additional_directories
         {
-            return Err("远程项目暂不支持修改目录".into());
+            return Err("backendText.remoteDirectoriesFixed".into());
         }
         (
             request.path,

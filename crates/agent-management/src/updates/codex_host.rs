@@ -1,5 +1,6 @@
 //! The bundled CLI and its desktop host have independent version numbers.
 use super::{AgentUpdate, get, newer};
+use agent_domain::user_text;
 use serde::Deserialize;
 use std::path::Path;
 
@@ -56,8 +57,8 @@ fn system_version(value: &str) -> Option<Vec<u64>> {
 }
 
 fn latest_release(xml: &str, arch: &str, os: &str) -> Result<String, String> {
-    let feed: Appcast = quick_xml::de::from_str(xml).map_err(|_| "Codex 更新源格式无效")?;
-    let os = system_version(os).ok_or("无法识别 macOS 版本")?;
+    let feed: Appcast = quick_xml::de::from_str(xml).map_err(|_| "backendText.codexSourceInvalid")?;
+    let os = system_version(os).ok_or("backendText.macosVersionUnrecognized")?;
     feed.channel
         .items
         .into_iter()
@@ -94,20 +95,20 @@ fn latest_release(xml: &str, arch: &str, os: &str) -> Result<String, String> {
         })
         .max()
         .map(|v| v.to_string())
-        .ok_or("Codex 更新源未提供适用于当前 Mac 的正式版本".into())
+        .ok_or("backendText.codexNoReleaseForMac".into())
 }
 
 pub async fn inspect(app: &Path, mut out: AgentUpdate) -> Result<AgentUpdate, String> {
     let info = plist::Value::from_file(app.join("Contents/Info.plist"))
-        .map_err(|_| "无法读取 Codex 桌面应用版本")?;
+        .map_err(|_| "backendText.codexAppUnreadable")?;
     if plist_string(&info, "CFBundleIdentifier").as_deref() != Some(BUNDLE_ID) {
-        return Err("此 Codex 由其他宿主应用提供，请在原应用内检查更新".into());
+        return Err("backendText.codexOtherHost".into());
     }
     let current =
-        plist_string(&info, "CFBundleShortVersionString").ok_or("Codex 桌面应用版本未知")?;
+        plist_string(&info, "CFBundleShortVersionString").ok_or("backendText.codexAppUnknown")?;
     let system = plist::Value::from_file("/System/Library/CoreServices/SystemVersion.plist")
-        .map_err(|_| "无法读取 macOS 版本")?;
-    let os = plist_string(&system, "ProductVersion").ok_or("macOS 版本未知")?;
+        .map_err(|_| "backendText.macosVersionUnreadable")?;
+    let os = plist_string(&system, "ProductVersion").ok_or("backendText.macosVersionUnknown")?;
     let arch = if cfg!(target_arch = "aarch64") {
         "arm64"
     } else {
@@ -115,9 +116,9 @@ pub async fn inspect(app: &Path, mut out: AgentUpdate) -> Result<AgentUpdate, St
     };
     let latest = latest_release(&get(FEED).await?, arch, &os)?;
     out.message = Some(if newer(&current, &latest)? {
-        format!("Codex 桌面应用 {current} 可升级至 {latest}，请在 Codex 中完成升级")
+        user_text("backendText.codexAppUpgrade", &[&current, &latest])
     } else {
-        format!("Codex 桌面应用 {current} 已是最新正式版本")
+        user_text("backendText.codexAppLatest", &[&current])
     });
     out.source = "Codex 桌面应用 · 官方更新源".into();
     out.current_version = Some(current);

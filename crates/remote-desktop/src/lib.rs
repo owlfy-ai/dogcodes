@@ -546,9 +546,9 @@ pub const MAX_CLIPBOARD_IMAGE_PIXELS: u64 = 8 * 1024 * 1024;
 pub fn clipboard_image_get_png() -> Result<Vec<u8>> {
     require_unlocked()?;
     let image = arboard::Clipboard::new()
-        .map_err(|_| "无法访问电脑剪贴板，请检查桌面会话和剪贴板权限")?
+        .map_err(|_| "backendText.clipboardAccess")?
         .get_image()
-        .map_err(|_| "无法读取电脑剪贴板图片，请重新复制图片并允许剪贴板访问")?;
+        .map_err(|_| "backendText.clipboardImageRead")?;
     encode_clipboard_image(image)
 }
 
@@ -570,24 +570,24 @@ fn encode_clipboard_image(image: arboard::ImageData<'_>) -> Result<Vec<u8>> {
 /// What pasting here would insert. A clipboard holding something else isn't a failure.
 pub fn clipboard_text_for_paste() -> Result<Option<String>> {
     match arboard::Clipboard::new()
-        .map_err(|_| "无法访问电脑剪贴板，请检查桌面会话和剪贴板权限")?
+        .map_err(|_| "backendText.clipboardAccess")?
         .get_text()
     {
         Ok(text) => Ok(Some(text)),
         Err(arboard::Error::ContentNotAvailable) => Ok(None),
-        Err(_) => Err("无法读取电脑剪贴板，请重新复制后重试".into()),
+        Err(_) => Err("backendText.clipboardRead".into()),
     }
 }
 
 /// The same for an image, as a PNG.
 pub fn clipboard_image_for_paste() -> Result<Option<Vec<u8>>> {
     match arboard::Clipboard::new()
-        .map_err(|_| "无法访问电脑剪贴板，请检查桌面会话和剪贴板权限")?
+        .map_err(|_| "backendText.clipboardAccess")?
         .get_image()
     {
         Ok(image) => encode_clipboard_image(image).map(Some),
         Err(arboard::Error::ContentNotAvailable) => Ok(None),
-        Err(_) => Err("无法读取电脑剪贴板图片，请重新复制图片并允许剪贴板访问".into()),
+        Err(_) => Err("backendText.clipboardImageRead".into()),
     }
 }
 

@@ -1,5 +1,6 @@
 //! Whole-turn restoration uses the same guarded, durable file transactions as Review.
 use super::{ReviewStore, digest, private_directory, transaction, write_once};
+use agent_domain::user_text;
 use crate::review::{FileKind, FileVersion, validate_relative};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -24,13 +25,13 @@ impl ReviewStore {
         before: &std::collections::BTreeMap<String, Value>,
     ) -> Result<Vec<crate::review::FileChange>, String> {
         use crate::review::{ChangeKind, FileChange};
-        let root = root.canonicalize().map_err(|_| "工作目录不可用")?;
-        let root = root.to_str().ok_or("工作目录编码无效")?;
+        let root = root.canonicalize().map_err(|_| "backendText.workspaceUnavailable")?;
+        let root = root.to_str().ok_or("backendText.workspaceEncoding")?;
         let mut changes = Vec::new();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         for (path, value) in before {
             if std::time::Instant::now() >= deadline {
-                return Err("读取已记录修改超时".into());
+                return Err("backendText.recordedChangesTimeout".into());
             }
             validate_relative(path)?;
             let before = snapshot_version(self, value)?;
@@ -66,10 +67,10 @@ impl ReviewStore {
             return Ok(false);
         }
         let undo: TurnUndo =
-            serde_json::from_slice(&std::fs::read(path).map_err(|_| "无法读取撤销记录")?)
-                .map_err(|_| "撤销记录损坏")?;
+            serde_json::from_slice(&std::fs::read(path).map_err(|_| "backendText.undoRecordRead")?)
+                .map_err(|_| "backendText.undoRecordCorrupt")?;
         if undo.task != task || undo.artifact != artifact {
-            return Err("撤销记录不匹配".into());
+            return Err("backendText.undoRecordMismatch".into());
         }
         Ok(!undo.records.is_empty()
             && undo.records.iter().all(|id| {
@@ -90,22 +91,22 @@ impl ReviewStore {
             return if self.turn_is_undone(task, artifact)? {
                 Ok(())
             } else {
-                Err("上次撤销未完成，请到审查中的恢复记录处理后再操作".into())
+                Err("backendText.undoPreviousIncomplete".into())
             };
         }
         if data["sharedWorkspace"] == true {
             return Err(
-                "这段时间同一文件夹中还有其他对话在运行，无法确定这些修改属于本轮，不能整轮撤销"
+                "backendText.undoSharedWorkspace"
                     .into(),
             );
         }
         if data["attribution"] != "workspace_interval" || data["recoveredAfterInterruption"] == true
         {
-            return Err("此记录不是完整的一轮修改，无法整轮撤销".into());
+            return Err("backendText.undoIncompleteTurn".into());
         }
-        let files = data["files"].as_array().ok_or("缺少文件快照")?;
+        let files = data["files"].as_array().ok_or("backendText.snapshotMissing")?;
         if files.is_empty() {
-            return Err("本轮没有可撤销的文件修改".into());
+            return Err("backendText.undoNoChanges".into());
         }
         let roots = data["workspacePaths"].as_array();
         let mut seen = BTreeSet::new();
@@ -127,26 +128,26 @@ impl ReviewStore {
                         .or_else(|| file["path"].as_str()),
                 )
             };
-            let root = root.ok_or("旧记录缺少原始工作目录，无法安全撤销")?;
-            let relative = relative.ok_or("记录缺少文件路径")?;
+            let root = root.ok_or("backendText.undoOriginalRootMissing")?;
+            let relative = relative.ok_or("backendText.snapshotPathMissing")?;
             validate_relative(relative)?;
             if !allowed.iter().any(|p| p == root) {
-                return Err("本轮工作目录已不在当前项目中，无法撤销".into());
+                return Err("backendText.undoRootRemoved".into());
             }
             let canonical = Path::new(root)
                 .canonicalize()
-                .map_err(|_| "原始工作目录不可用")?;
+                .map_err(|_| "backendText.undoOriginalRootUnavailable")?;
             if !seen.insert(canonical.join(relative)) {
-                return Err("记录包含重复文件路径".into());
+                return Err("backendText.snapshotDuplicatePath".into());
             }
-            let before = snapshot_version(self, file.get("before").ok_or("缺少修改前快照")?)?;
-            let after = snapshot_version(self, file.get("after").ok_or("缺少修改后快照")?)?;
+            let before = snapshot_version(self, file.get("before").ok_or("backendText.snapshotBeforeMissing")?)?;
+            let after = snapshot_version(self, file.get("after").ok_or("backendText.snapshotAfterMissing")?)?;
             if before == after {
                 continue;
             }
-            let canonical_root = canonical.to_str().ok_or("工作目录编码无效")?;
+            let canonical_root = canonical.to_str().ok_or("backendText.workspaceEncoding")?;
             if transaction::current_version(self, canonical_root, relative)? != after {
-                return Err(format!("{relative} 在本轮结束后又有修改，未撤销任何文件"));
+                return Err(user_text("backendText.undoFileChanged", &[relative]));
             }
             changes.push((
                 canonical_root.to_owned(),
@@ -158,11 +159,11 @@ impl ReviewStore {
         // File/directory topology replacement needs a separate operation ordering.
         for a in &seen {
             if seen.iter().any(|b| a != b && a.starts_with(b)) {
-                return Err("本轮包含文件与目录互换，暂不能整轮撤销".into());
+                return Err("backendText.undoTopology".into());
             }
         }
         if changes.is_empty() {
-            return Err("本轮没有可撤销的文件修改".into());
+            return Err("backendText.undoNoChanges".into());
         }
         let mut records = Vec::new();
         for (root, path, after, before) in changes {
@@ -172,7 +173,7 @@ impl ReviewStore {
             );
         }
         // Preserve the complete operation intent before the first file is touched.
-        private_directory(manifest.parent().ok_or("撤销存储不可用")?)?;
+        private_directory(manifest.parent().ok_or("backendText.undoStorageUnavailable")?)?;
         write_once(
             &manifest,
             &serde_json::to_vec(&TurnUndo {
@@ -180,7 +181,7 @@ impl ReviewStore {
                 artifact: artifact.into(),
                 records: records.clone(),
             })
-            .map_err(|_| "无法保存撤销记录")?,
+            .map_err(|_| "backendText.undoRecordSave")?,
         )?;
         for (index, id) in records.iter().enumerate() {
             if let Err(error) = self.apply_recovery(task, id) {
@@ -195,13 +196,16 @@ impl ReviewStore {
                         recovered &= self.undo_recovery(task, previous).is_ok();
                     }
                 }
-                return Err(format!(
-                    "撤销未完成：{error}。{}",
-                    if recovered {
-                        "已恢复已处理的文件；备份保存在恢复记录中"
-                    } else {
-                        "备份已保留，请在审查的恢复记录中处理"
-                    }
+                return Err(user_text(
+                    "backendText.undoIncomplete",
+                    &[
+                        &error,
+                        if recovered {
+                            "backendText.undoRolledBack"
+                        } else {
+                            "backendText.undoBackupsRetained"
+                        },
+                    ],
                 ));
             }
         }
@@ -214,29 +218,29 @@ fn snapshot_version(store: &ReviewStore, value: &Value) -> Result<Option<FileVer
         return Ok(None);
     }
     if value["contentOmitted"] == true {
-        return Err("本轮快照内容不完整，无法撤销全部修改".into());
+        return Err("backendText.undoIncompleteSnapshot".into());
     }
-    let bytes = hex::decode(value["hex"].as_str().ok_or("缺少完整文件内容")?)
-        .map_err(|_| "文件快照编码错误")?;
+    let bytes = hex::decode(value["hex"].as_str().ok_or("backendText.snapshotContentMissing")?)
+        .map_err(|_| "backendText.snapshotEncoding")?;
     let hash = store.put_blob(&bytes)?;
     if value["sha256"].as_str() != Some(&hash) {
-        return Err("文件快照校验失败".into());
+        return Err("backendText.snapshotChecksum".into());
     }
     let (kind, executable) = if let Some(mode) = value["mode"].as_str() {
         match mode {
             "100644" => (FileKind::File, false),
             "100755" => (FileKind::File, cfg!(unix)),
             "120000" => (FileKind::Symlink, false),
-            _ => return Err("不支持撤销此文件类型".into()),
+            _ => return Err("backendText.undoFileType".into()),
         }
     } else if let (Some(kind), Some(mode)) = (value["kind"].as_str(), value["mode"].as_u64()) {
         match kind {
             "file" => (FileKind::File, cfg!(unix) && mode & 0o111 != 0),
             "symlink" => (FileKind::Symlink, false),
-            _ => return Err("不支持撤销此文件类型".into()),
+            _ => return Err("backendText.undoFileType".into()),
         }
     } else {
-        return Err("旧记录缺少文件类型快照，无法安全撤销".into());
+        return Err("backendText.undoFileTypeMissing".into());
     };
     Ok(Some(FileVersion {
         hash,
@@ -365,7 +369,7 @@ mod tests {
         let error = store
             .undo_turn("task", "artifact", &data, &allowed)
             .unwrap_err();
-        assert!(error.contains("其他对话"), "{error}");
+        assert!(error.contains("backendText.undoSharedWorkspace"), "{error}");
         assert!(root.path().join("theirs.png").exists());
     }
     #[test]
@@ -387,7 +391,7 @@ mod tests {
             store
                 .undo_turn("task", "drift", &data, &allowed)
                 .unwrap_err()
-                .contains("后又有修改")
+                .contains("backendText.undoFileChanged")
         );
         data["files"][1]["before"] = json!({"contentOmitted":true});
         assert!(store.undo_turn("task", "omitted", &data, &allowed).is_err());

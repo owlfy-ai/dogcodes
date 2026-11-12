@@ -404,3 +404,16 @@ pub struct AttachmentIntegrity {
     pub sha256: String,
     pub byte_length: u64,
 }
+
+/// A user-facing message id. Optional parameters follow U+001E as a JSON string
+/// array, so the UI translates the code instead of matching Chinese text.
+#[must_use]
+pub fn user_text(code: &str, params: &[&str]) -> String {
+    if params.is_empty() {
+        return code.to_owned();
+    }
+    format!(
+        "{code}\u{1e}{}",
+        serde_json::to_string(params).unwrap_or_else(|_| "[]".into())
+    )
+}

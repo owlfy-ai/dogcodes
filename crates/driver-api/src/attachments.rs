@@ -12,7 +12,7 @@ fn invalid(message: &str) -> DriverError {
 
 pub async fn validate(items: &[PromptAttachment]) -> Result<(), DriverError> {
     if items.len() > 16 {
-        return Err(invalid("一次最多发送 16 个附件"));
+        return Err(invalid("backendText.attachmentsTooMany"));
     }
     let mut total = 0_u64;
     for item in items {
@@ -21,20 +21,20 @@ pub async fn validate(items: &[PromptAttachment]) -> Result<(), DriverError> {
             || item.mime_type.len() > 128
             || !std::path::Path::new(&item.path).is_absolute()
         {
-            return Err(invalid("附件信息无效"));
+            return Err(invalid("backendText.attachmentInvalid"));
         }
         let metadata = tokio::fs::metadata(&item.path)
             .await
-            .map_err(|_| invalid("附件已不可读取，请重新添加"))?;
+            .map_err(|_| invalid("backendText.attachmentUnreadableRetry"))?;
         let original_size = item
             .integrity
             .as_ref()
             .map_or(metadata.len(), |value| value.byte_length);
         total = total
             .checked_add(original_size)
-            .ok_or_else(|| invalid("附件总大小无效"))?;
+            .ok_or_else(|| invalid("backendText.attachmentsTotalInvalid"))?;
         if !metadata.is_file() || total > MAX_BYTES {
-            return Err(invalid("附件总大小不能超过 25 MB"));
+            return Err(invalid("backendText.attachmentsTooLarge"));
         }
         if item.integrity.is_some() {
             let _ = read_verified(item).await?;
@@ -46,7 +46,7 @@ pub async fn validate(items: &[PromptAttachment]) -> Result<(), DriverError> {
             )
         {
             return Err(invalid(
-                "图片附件支持 PNG、JPEG、GIF 和 WebP，请转换格式后添加",
+                "backendText.attachmentImageFormat",
             ));
         }
     }
@@ -67,7 +67,7 @@ pub fn verify_bytes(item: &PromptAttachment, bytes: &[u8]) -> Result<(), DriverE
             || bytes.len() as u64 != integrity.byte_length
             || format!("{:x}", Sha256::digest(bytes)) != integrity.sha256)
     {
-        return Err(invalid("附件内容已变化，请重新添加；未使用变化后的文件"));
+        return Err(invalid("backendText.attachmentChanged"));
     }
     Ok(())
 }
@@ -76,21 +76,21 @@ pub async fn read_verified(item: &PromptAttachment) -> Result<Vec<u8>, DriverErr
     use tokio::io::AsyncReadExt;
     let file = tokio::fs::File::open(&item.path)
         .await
-        .map_err(|_| invalid("附件已不可读取"))?;
+        .map_err(|_| invalid("backendText.attachmentUnreadable"))?;
     let metadata = file
         .metadata()
         .await
-        .map_err(|_| invalid("附件已不可读取"))?;
+        .map_err(|_| invalid("backendText.attachmentUnreadable"))?;
     if !metadata.is_file() || metadata.len() > MAX_BYTES {
-        return Err(invalid("附件大小无效"));
+        return Err(invalid("backendText.attachmentSizeInvalid"));
     }
     let mut bytes = Vec::new();
     file.take(MAX_BYTES + 1)
         .read_to_end(&mut bytes)
         .await
-        .map_err(|_| invalid("附件读取失败"))?;
+        .map_err(|_| invalid("backendText.attachmentReadFailed"))?;
     if bytes.len() as u64 > MAX_BYTES {
-        return Err(invalid("附件大小无效"));
+        return Err(invalid("backendText.attachmentSizeInvalid"));
     }
     verify_bytes(item, &bytes)?;
     Ok(bytes)
@@ -99,7 +99,7 @@ pub async fn read_verified(item: &PromptAttachment) -> Result<Vec<u8>, DriverErr
 pub async fn image_data(item: &PromptAttachment) -> Result<String, DriverError> {
     let bytes = read_verified(item).await?;
     if bytes.is_empty() || bytes.len() as u64 > MAX_BYTES {
-        return Err(invalid("图片附件大小无效"));
+        return Err(invalid("backendText.imageSizeInvalid"));
     }
     let matches = match item.mime_type.as_str() {
         "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
@@ -109,7 +109,7 @@ pub async fn image_data(item: &PromptAttachment) -> Result<String, DriverError> 
         _ => false,
     };
     if !matches {
-        return Err(invalid("图片内容与格式不符，请重新添加"));
+        return Err(invalid("backendText.imageMismatch"));
     }
     Ok(STANDARD.encode(bytes))
 }
@@ -146,7 +146,7 @@ pub async fn deliver_to_target(
         );
         agent_runtime::write_target_file(target, &path, &bytes)
             .await
-            .map_err(|_| invalid("附件无法上传到服务器，请检查连接和磁盘空间"))?;
+            .map_err(|_| invalid("backendText.attachmentUploadFailed"))?;
         item.delivered_path = Some(path);
     }
     Ok(())

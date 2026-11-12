@@ -79,7 +79,7 @@ impl Core {
             });
             return Err(CoreError::CapabilityUnavailable(
                 if on_target {
-                    "这个 Agent 所在的服务器未连接，请先连接后重试"
+                    "backendText.targetNotConnected"
                 } else {
                     "所选 Agent 驱动不可用，请重新检测"
                 }

@@ -53,11 +53,11 @@ fn latest_from_index(index: &Value) -> Result<String, String> {
         .as_array()
         .is_some_and(|items| items.iter().any(matches_package))
     {
-        return Err("Kiro 更新源不支持当前 CLI 安装平台".into());
+        return Err("backendText.kiroPlatformUnsupported".into());
     }
     let releases = index["versions"]
         .as_array()
-        .ok_or("Kiro 更新源缺少版本列表")?;
+        .ok_or("backendText.kiroNoVersionList")?;
     let mut latest = None;
     for release in releases {
         if !release["packages"]
@@ -69,14 +69,14 @@ fn latest_from_index(index: &Value) -> Result<String, String> {
         let version = release["version"]
             .as_str()
             .and_then(|s| semver::Version::parse(s).ok())
-            .ok_or("Kiro 更新源包含无效版本")?;
+            .ok_or("backendText.kiroInvalidVersion")?;
         if latest.as_ref().is_none_or(|previous| &version > previous) {
             latest = Some(version);
         }
     }
     latest
         .map(|v| v.to_string())
-        .ok_or("Kiro 当前平台没有可用发布版本".into())
+        .ok_or("backendText.kiroNoRelease".into())
 }
 
 // The newer standalone CLI (including Windows) exposes a read-only check,
@@ -84,8 +84,8 @@ fn latest_from_index(index: &Value) -> Result<String, String> {
 pub fn latest_from_check(output: &str) -> Result<String, String> {
     for line in output.lines().map(str::trim) {
         let latest = if let Some(release) = line.strip_prefix("Update available: ") {
-            let (current, latest) = release.split_once('→').ok_or("Kiro 更新检查结果无效")?;
-            semver::Version::parse(current.trim()).map_err(|_| "Kiro 更新检查结果无效")?;
+            let (current, latest) = release.split_once('→').ok_or("backendText.kiroCheckInvalid")?;
+            semver::Version::parse(current.trim()).map_err(|_| "backendText.kiroCheckInvalid")?;
             Some(latest.trim())
         } else {
             ["Already up to date (", "You are on the current version ("]
@@ -95,20 +95,20 @@ pub fn latest_from_check(output: &str) -> Result<String, String> {
         if let Some(latest) = latest {
             return semver::Version::parse(latest)
                 .map(|v| v.to_string())
-                .map_err(|_| "Kiro 更新检查结果无效".into());
+                .map_err(|_| "backendText.kiroCheckInvalid".into());
         }
     }
-    Err("Kiro 暂未确认更新状态".into())
+    Err("backendText.kiroUnconfirmed".into())
 }
 
 pub async fn latest(i: &InstallationSummary) -> Result<String, String> {
     let executable = Path::new(&i.executable);
-    let app = bundle(executable).ok_or("Kiro CLI 安装已变化，请重新检测")?;
-    let manifest = metadata(&app).ok_or("无法读取 Kiro CLI 发布信息")?;
+    let app = bundle(executable).ok_or("backendText.kiroInstallChanged")?;
+    let manifest = metadata(&app).ok_or("backendText.kiroReleaseUnreadable")?;
     // Only the verified stable channel is enabled. Never advertise a stable
     // release as the target for an unverified beta/custom-channel updater.
     if manifest["default_channel"] != "stable" {
-        return Err("此 Kiro 发布频道暂不支持自动更新，请使用原生更新器".into());
+        return Err("backendText.kiroChannelManual".into());
     }
     let beta = json(
         &command(spec(
@@ -124,7 +124,7 @@ pub async fn latest(i: &InstallationSummary) -> Result<String, String> {
         .await?,
     )?;
     if beta != Value::Null && beta != false {
-        return Err("Kiro 测试频道暂不支持自动更新，请使用原生更新器".into());
+        return Err("backendText.kiroTestChannelManual".into());
     }
     // Native get-index honours the installed CLI's release endpoint and returns
     // JSON without downloading/installing an update or starting a model turn.
@@ -297,7 +297,7 @@ pub mod tests {
             .unwrap();
         assert_eq!(std::fs::read_to_string(marker).unwrap(), "2.25.0");
         std::fs::write(executable.with_extension("beta"), "true").unwrap();
-        assert!(inspect(&i, &p).await.unwrap_err().contains("测试频道"));
+        assert!(inspect(&i, &p).await.unwrap_err().contains("backendText.kiroTestChannelManual"));
     }
 
     #[cfg(unix)]

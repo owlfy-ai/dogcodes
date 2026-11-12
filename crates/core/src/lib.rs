@@ -1059,7 +1059,7 @@ impl Core {
                     .projects
                     .iter()
                     .find(|project| project.project_id == command.project_id)
-                    .ok_or_else(|| CoreError::NotFound("项目不存在".into()))?;
+                    .ok_or_else(|| CoreError::NotFound("backendText.projectMissing".into()))?;
                 if project.target_id != command.target_id {
                     return Err(CoreError::InvalidArgument("项目不能更换所在的机器".into()));
                 }

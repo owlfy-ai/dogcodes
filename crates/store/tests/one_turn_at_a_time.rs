@@ -199,7 +199,7 @@ async fn a_later_conversation_waits_with_a_notice_and_starts_by_itself() {
     let notice = notices(&core, &tasks[1]).await.remove(0);
     assert_eq!(
         notice.text,
-        "Antigravity同一时间只能执行一个任务，之前的任务执行完成后会开始执行此任务"
+        "backendText.agentRunsOneTaskAtATime\u{1e}[\"Antigravity\"]"
     );
     assert_eq!(notice.provider_id.as_deref(), Some("antigravity"));
     tokio::time::sleep(Duration::from_millis(100)).await;

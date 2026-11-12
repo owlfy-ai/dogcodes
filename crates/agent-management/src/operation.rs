@@ -74,7 +74,7 @@ async fn upgrade(mut i: InstallationSummary) -> Result<Upgraded, Failure> {
     let npm = crate::npm_runtime_on_path;
     let plan = updates::plan(&i);
     if matches!(plan, updates::Plan::Host(_) | updates::Plan::Unsupported) {
-        return Err(Failure::other("请在宿主应用或原安装渠道中升级"));
+        return Err(Failure::other("backendText.updateInHost"));
     }
     let launcher = if let updates::Plan::StandaloneCli { prefix, .. } = &plan {
         updates::managed_cli::launcher(prefix, &i.provider_id)
@@ -93,7 +93,7 @@ async fn upgrade(mut i: InstallationSummary) -> Result<Upgraded, Failure> {
         actual.trim().to_owned()
     } else {
         updates::version(&actual)
-            .ok_or_else(|| Failure::other("升级前无法验证当前版本"))?
+            .ok_or_else(|| Failure::other("backendText.updateVersionUnverified"))?
             .to_string()
     });
     let update = updates::inspect(&i, &plan).await.map_err(Failure::other)?;
@@ -103,7 +103,7 @@ async fn upgrade(mut i: InstallationSummary) -> Result<Upgraded, Failure> {
     let goal = update
         .latest_version
         .clone()
-        .ok_or_else(|| Failure::other("缺少目标版本"))?;
+        .ok_or_else(|| Failure::other("backendText.updateNoTarget"))?;
     let install = updates::new_agents::install_spec(&i, &plan, &goal, npm)
         .await
         .map_err(Failure::other)?;
@@ -118,7 +118,7 @@ async fn upgrade(mut i: InstallationSummary) -> Result<Upgraded, Failure> {
         .map_err(Failure::other)?;
         if !help.contains("--manual") {
             return Err(Failure::other(
-                "此 Kimi 版本不支持非交互更新，请在终端执行 kimi upgrade",
+                "backendText.updateKimiManual",
             ));
         }
     }

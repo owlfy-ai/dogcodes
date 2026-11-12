@@ -46,7 +46,7 @@ pub async fn core_terminal_open(
         .projects
         .iter()
         .find(|p| p.project_id.as_str() == project_id)
-        .ok_or("项目不存在")?;
+        .ok_or("backendText.projectMissing")?;
     let path = std::iter::once(&project.path)
         .chain(&project.additional_directories)
         .nth(directory_index)

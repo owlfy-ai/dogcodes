@@ -24,18 +24,18 @@ pub async fn status(
         ReviewStore::open(directory)?.turn_is_undone(&task_id.to_string(), &artifact_id.to_string())
     })
     .await
-    .map_err(|_| "撤销状态读取失败")?
+    .map_err(|_| "backendText.undoStatusRead")?
 }
 
 pub async fn undo(state: &ReviewContext<'_>, request: UndoRequest) -> Result<(), String> {
     if !request.confirmed {
-        return Err("撤销本轮修改需要明确确认".into());
+        return Err("backendText.undoConfirmationRequired".into());
     }
     let _access = state
         .core
         .try_workspace_mutation()
         .await
-        .map_err(|_| "Agent 正在执行任务，请结束后再撤销")?;
+        .map_err(|_| "backendText.undoAgentBusy")?;
     let artifact = state
         .core
         .verified_artifact(
@@ -49,22 +49,22 @@ pub async fn undo(state: &ReviewContext<'_>, request: UndoRequest) -> Result<(),
         "application/vnd.dogcodes.turn-changes.v1+json"
             | "application/vnd.dogcodes.turn-changes.v2+json"
     ) {
-        return Err("只能撤销整轮文件修改记录".into());
+        return Err("backendText.undoTurnOnly".into());
     }
-    let data = serde_json::from_slice(&artifact.content).map_err(|_| "本轮文件快照无法读取")?;
+    let data = serde_json::from_slice(&artifact.content).map_err(|_| "backendText.undoSnapshotRead")?;
     let snapshot = state.core.bootstrap().await?;
     let task = snapshot
         .tasks
         .iter()
         .find(|t| t.task_id == request.task_id)
-        .ok_or("会话不存在")?;
+        .ok_or("backendText.conversationMissing")?;
     let project = snapshot
         .projects
         .iter()
         .find(|p| p.project_id == task.project_id)
-        .ok_or("项目不存在")?;
+        .ok_or("backendText.projectMissing")?;
     if project.target_id.is_some() && state.core.on_hub() {
-        return Err("这个项目在另一台机器上".into());
+        return Err("backendText.projectOnOtherMachine".into());
     }
     let roots = task.directories(project);
     let directory = state.review.directory.clone();
@@ -75,5 +75,5 @@ pub async fn undo(state: &ReviewContext<'_>, request: UndoRequest) -> Result<(),
         ReviewStore::open(directory)?.undo_turn(&task_id, &artifact_id, &data, &roots)
     })
     .await
-    .map_err(|_| "撤销任务执行失败；请检查恢复记录")?
+    .map_err(|_| "backendText.undoTaskFailed")?
 }

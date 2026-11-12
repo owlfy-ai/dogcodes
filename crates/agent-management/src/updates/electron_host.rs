@@ -133,11 +133,11 @@ pub fn check_opencode(mut out: AgentUpdate, body: &str) -> Result<AgentUpdate, S
         .find_map(|line| line.strip_prefix("version:"))
         .map(|s| s.trim().trim_matches(['\'', '"']))
         .filter(|s| semver::Version::parse(s).is_ok())
-        .ok_or("OpenCode 更新源缺少应用版本")?;
+        .ok_or("backendText.opencodeSourceNoVersion")?;
     let current = out
         .desktop_version
         .clone()
-        .ok_or("无法读取 OpenCode 应用版本")?;
+        .ok_or("backendText.opencodeVersionUnreadable")?;
     let available = newer(&current, latest)?;
     out.status = "managed".into();
     out.source = "桌面应用".into();

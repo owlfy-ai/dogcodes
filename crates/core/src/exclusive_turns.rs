@@ -3,6 +3,7 @@
 //! A later turn is accepted at once, tells its conversation that it is waiting,
 //! and starts by itself when the running turn ends. Stopping it while it waits
 //! cancels it without touching the agent.
+use agent_domain::user_text;
 use crate::{AgentDriver, Core, EventSource, ExecutorRef, TaskId, run_control::Control};
 use agent_protocol::ActiveRunSummary;
 use serde_json::json;
@@ -40,12 +41,9 @@ fn agent_name(provider: &str) -> &str {
     }
 }
 
-/// Stored Chinese text; the desktop translates it (`agentRunsOneTaskAtATime`).
+/// Stored as an i18n code; the desktop translates `backendText.agentRunsOneTaskAtATime`.
 pub(crate) fn waiting_message(provider: &str) -> String {
-    format!(
-        "{}同一时间只能执行一个任务，之前的任务执行完成后会开始执行此任务",
-        agent_name(provider)
-    )
+    user_text("backendText.agentRunsOneTaskAtATime", &[agent_name(provider)])
 }
 
 impl Core {
@@ -89,7 +87,7 @@ mod tests {
     fn the_waiting_notice_names_the_agent() {
         assert_eq!(
             waiting_message("antigravity"),
-            "Antigravity同一时间只能执行一个任务，之前的任务执行完成后会开始执行此任务"
+            "backendText.agentRunsOneTaskAtATime\u{1e}[\"Antigravity\"]"
         );
     }
 

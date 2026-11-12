@@ -5,7 +5,7 @@ use crate::{
     terminal_host::{LaunchIntent, TerminalInfo},
 };
 use agent_core::Core;
-use agent_domain::{ExecutorRef, ProjectId};
+use agent_domain::{user_text, ExecutorRef, ProjectId};
 use agent_protocol::ProjectSummary;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -123,7 +123,7 @@ impl ProjectRunHost {
             return Err("运行配置归属不匹配，已保留原文件".into());
         }
         let interrupted =
-            catalog.interrupt_analysis("interrupted", "后台重启，原分析已中断，未自动重新执行");
+            catalog.interrupt_analysis("interrupted", "project.analysisRestarted");
         if interrupted {
             self.save(&catalog).map_err(|error| {
                 format!("上次分析已中断，恢复状态尚未保存；请检查磁盘后重试：{error}")
@@ -341,7 +341,7 @@ impl ProjectRunHost {
             let mut failed = original.clone();
             failed.interrupt_analysis(
                 "failed",
-                &format!("分析结果未能保存，请检查磁盘后重新分析：{error}"),
+                &user_text("project.analysisNotSaved", &[&error]),
             );
             finalizations.insert(id.into(), failed);
             self.changes.changed();
@@ -352,7 +352,7 @@ impl ProjectRunHost {
         true
     }
     fn interrupt(&self, id: &str, generation: &str) {
-        self.interrupt_with_message(id, generation, "项目分析已中断，请重新分析；未自动重新执行");
+        self.interrupt_with_message(id, generation, "project.analysisInterrupted");
     }
     fn interrupt_with_message(&self, id: &str, generation: &str, message: &str) {
         let Ok(mut cache) = self.cache.lock() else {
@@ -733,7 +733,7 @@ pub async fn schedule(
         .projects
         .into_iter()
         .find(|project| project.project_id == project_id)
-        .ok_or("项目不存在")?;
+        .ok_or("backendText.projectMissing")?;
     analyze(host.clone(), core, project, None, false, None).await
 }
 async fn task_project(core: &Core, task_id: &str) -> Result<ProjectSummary, String> {
@@ -750,13 +750,13 @@ async fn task_project_for_mutation(
         .tasks
         .iter()
         .find(|task| task.task_id.as_str() == task_id)
-        .ok_or_else(|| MutationError::rejected("task_missing", "会话不存在"))?;
+        .ok_or_else(|| MutationError::rejected("task_missing", "backendText.conversationMissing"))?;
     snapshot
         .projects
         .iter()
         .find(|project| project.project_id == task.project_id)
         .cloned()
-        .ok_or_else(|| MutationError::rejected("project_missing", "项目不存在"))
+        .ok_or_else(|| MutationError::rejected("project_missing", "backendText.projectMissing"))
 }
 
 // Only desktop entry-point checks live here. The same business operations run in

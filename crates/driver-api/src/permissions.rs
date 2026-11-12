@@ -61,7 +61,7 @@ impl PermissionCatalog {
             .or_else(|| self.modes.iter().find(|m| !m.dangerous))
             .map(|m| Some(m.id.clone()))
             .ok_or_else(|| {
-                DriverError::CapabilityUnavailable("Agent 未提供可用于审查的普通权限模式".into())
+                DriverError::CapabilityUnavailable("backendText.noReviewPermissionMode".into())
             })
     }
     /// The mode that grants the agent the most, judged from the catalog: the
@@ -127,7 +127,7 @@ impl PermissionCatalog {
     pub fn validate(&self, id: Option<&str>) -> Result<(), DriverError> {
         if id.is_some_and(|id| !self.modes.iter().any(|m| m.id == id)) {
             return Err(DriverError::CapabilityUnavailable(
-                "当前 Agent 不支持所选权限策略".into(),
+                "backendText.permissionPolicyUnsupported".into(),
             ));
         }
         Ok(())

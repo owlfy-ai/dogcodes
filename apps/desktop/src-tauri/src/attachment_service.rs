@@ -109,15 +109,15 @@ impl AttachmentStore {
         Ok(Some(path))
     }
     fn read_file(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
-        let metadata = fs::symlink_metadata(path).map_err(|_| "附件已不可读取")?;
+        let metadata = fs::symlink_metadata(path).map_err(|_| "backendText.attachmentUnreadable")?;
         if !metadata.is_file() || metadata.len() > limit as u64 {
             return Err("附件文件无效或过大".into());
         }
-        let file = fs::File::open(path).map_err(|_| "附件已不可读取")?;
+        let file = fs::File::open(path).map_err(|_| "backendText.attachmentUnreadable")?;
         let mut bytes = Vec::new();
         file.take(limit as u64 + 1)
             .read_to_end(&mut bytes)
-            .map_err(|_| "附件读取失败")?;
+            .map_err(|_| "backendText.attachmentReadFailed")?;
         if bytes.len() > limit {
             return Err("附件文件过大".into());
         }
@@ -225,19 +225,19 @@ impl AttachmentStore {
     }
     pub fn read(&self, path: &str) -> Result<String, String> {
         let _guard = self.gate.lock().map_err(|_| "附件服务暂时不可用")?;
-        let root = self.root(false)?.ok_or("附件已不可读取")?;
+        let root = self.root(false)?.ok_or("backendText.attachmentUnreadable")?;
         let candidate = Path::new(path);
         if !candidate.is_absolute() {
             return Err("附件路径无效".into());
         }
         if fs::symlink_metadata(candidate)
-            .map_err(|_| "附件已不可读取")?
+            .map_err(|_| "backendText.attachmentUnreadable")?
             .file_type()
             .is_symlink()
         {
             return Err("附件路径已变化".into());
         }
-        let canonical = fs::canonicalize(candidate).map_err(|_| "附件已不可读取")?;
+        let canonical = fs::canonicalize(candidate).map_err(|_| "backendText.attachmentUnreadable")?;
         if !canonical.starts_with(&root) {
             return Err("不是应用保存的附件".into());
         }

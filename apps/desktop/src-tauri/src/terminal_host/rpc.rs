@@ -62,7 +62,7 @@ pub(crate) async fn dispatch(
                 .projects
                 .iter()
                 .find(|project| project.project_id.as_str() == intent.project_id)
-                .ok_or("项目不存在")?;
+                .ok_or("backendText.projectMissing")?;
             if let Some(task_id) = &intent.task_id
                 && !snapshot.tasks.iter().any(|task| {
                     task.task_id.as_str() == task_id && task.project_id == project.project_id

@@ -48,7 +48,7 @@ pub(super) async fn save_registration(
     let (directory, config, secrets) = (directory.to_owned(), config.clone(), secrets.clone());
     tokio::task::spawn_blocking(move || {
         let entry = keyring::Entry::new("ai.owlfy.dogcodes.remote", &config.host_id)
-            .map_err(|_| "无法访问系统密钥存储")?;
+            .map_err(|_| "phone.keystoreUnavailable")?;
         persist_registration(&directory, &config, &secrets, &entry)
     })
     .await
@@ -97,10 +97,10 @@ impl Ready {
         // explicit local pairing action may renew an unpaired registration.
         // Never erase existing trust, rotate endpoint keys, or retry an uncertain request.
         if self.book.grants().iter().any(|grant| !grant.revoked) {
-            return Err("电脑登记凭证已失效，请在本机撤销原手机绑定后重新生成配对二维码".into());
+            return Err("phone.registrationExpired".into());
         }
         if active_sessions {
-            return Err("电脑登记凭证已失效，请等待远程连接结束后重新生成配对二维码".into());
+            return Err("phone.registrationExpiredBusy".into());
         }
         let (config, secrets) = register_host(
             &self.config.service,
@@ -214,12 +214,14 @@ mod tests {
             let (service, requests) = server(vec![(401, json!({}))]).await;
             let mut ready = ready(directory.path(), service, paired);
             let before = ready.book.grants();
-            assert!(
-                ready
-                    .invitation(directory.path(), active)
-                    .await
-                    .unwrap_err()
-                    .contains("凭证已失效")
+            let error = ready.invitation(directory.path(), active).await.unwrap_err();
+            assert_eq!(
+                error,
+                if paired {
+                    "phone.registrationExpired"
+                } else {
+                    "phone.registrationExpiredBusy"
+                }
             );
             assert_eq!(requests.await.unwrap().len(), 1);
             assert_eq!(ready.config.host_id, "old-host");

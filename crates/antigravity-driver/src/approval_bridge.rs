@@ -199,7 +199,7 @@ impl Bridge {
             return Err(abandoned());
         }
         let fail =
-            || DriverError::CapabilityUnavailable("桌面审批 Hook 验证失败，未启动工具".into());
+            || DriverError::CapabilityUnavailable("backendText.agyHookFailed".into());
         let started = std::time::Instant::now();
         // What invalidates a verification is on the machine `agy` runs on. Another
         // machine's files can't be watched from here, so it's verified every time.
@@ -335,7 +335,7 @@ impl Bridge {
                 }
                 Ok(bytes)
             }) => result.map_err(|_| {
-                DriverError::CapabilityUnavailable("桌面审批 Hook 验证超时，未启动工具".into())
+                DriverError::CapabilityUnavailable("backendText.agyHookTimeout".into())
             }),
         };
         // Continue retirement of this exact OS scope even when the query failed.
@@ -677,7 +677,7 @@ fn question_response(answer: &agent_domain::QuestionAnswer) -> Value {
 
 pub(super) fn validate_answer(answer: &agent_domain::QuestionAnswer) -> Result<(), DriverError> {
     if question_response(answer).to_string().len() as u64 > LIMIT {
-        return Err(DriverError::Protocol("回答过长，请缩短后重试".into()));
+        return Err(DriverError::Protocol("backendText.agyAnswerTooLong".into()));
     }
     Ok(())
 }

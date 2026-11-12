@@ -126,7 +126,7 @@ async fn installation(
         // Everything here judges paths by this machine. One on a server could name
         // something else entirely, so those go through its own host's page.
         .find(|i| i.installation_id.to_string() == id && i.target_id.is_none())
-        .ok_or("此 Agent 安装已不存在，请重新检测".into())
+        .ok_or("backendText.updateInstallationGone".into())
 }
 #[tauri::command]
 pub async fn core_check_agent_update(
@@ -158,13 +158,13 @@ pub async fn core_upgrade_agent(
         let _guard = lock.lock().await;
         let p = plan(&i);
         if matches!(p, Plan::Host(_) | Plan::Unsupported) {
-            return Err("请在宿主应用或原安装渠道中升级".into());
+            return Err("backendText.updateInHost".into());
         }
         let resource = upgrade_resource(&i, &p)?;
         let resource_lock = updates.resource_lock(resource).await;
         let _upgrade = resource_lock
             .try_lock()
-            .map_err(|_| "另一个升级正在使用相同的安装目录或更新器，请等待其完成后重试")?;
+            .map_err(|_| "backendText.updateBusy")?;
         let launcher = if let Plan::StandaloneCli { prefix, .. } = &p {
             managed_cli::launcher(prefix, &i.provider_id)
         } else {
@@ -180,7 +180,7 @@ pub async fn core_upgrade_agent(
                 actual.trim().to_string()
             } else {
                 version(&actual)
-                    .ok_or("升级前无法验证当前版本")?
+                    .ok_or("backendText.updateVersionUnverified")?
                     .to_string()
             });
         }
@@ -209,7 +209,7 @@ pub async fn core_upgrade_agent(
         let _lease = updates
             .execution_lease(&core)
             .await
-            .map_err(|_| "请等待正在执行的任务结束后再升级 Agent")?;
+            .map_err(|_| "backendText.updateWaitForTask")?;
         if core
             .bootstrap()
             .await?
@@ -217,7 +217,7 @@ pub async fn core_upgrade_agent(
             .iter()
             .any(|t| t.active_primary_run.is_some())
         {
-            return Err("请等待正在执行的任务结束后再升级 Agent".into());
+            return Err("backendText.updateWaitForTask".into());
         }
         // Recheck after acquiring the execution gate; external processes can start at any time.
         if let Some(confirmation) = usage::prepare(&core, &updates, &i, &p, None).await? {
@@ -226,13 +226,13 @@ pub async fn core_upgrade_agent(
             value.in_use = Some(confirmation);
             return Ok(value);
         }
-        let target = value.latest_version.clone().ok_or("缺少目标版本")?;
+        let target = value.latest_version.clone().ok_or("backendText.updateNoTarget")?;
         let command_spec =
             new_agents::install_spec(&i, &p, &target, crate::terminal_installation::npm_runtime)
                 .await?;
         value.status = "upgrading".into();
         value.can_upgrade = false;
-        value.message = Some("正在下载并安装，较大的更新可能需要几分钟".into());
+        value.message = Some("backendText.updateDownloading".into());
         updates.save(&i, value.clone()).await;
         let _ = app.emit("agent-update-changed", &value);
         let result = async {
@@ -244,13 +244,13 @@ pub async fn core_upgrade_agent(
                 ))
                 .await?;
                 if !help.contains("--manual") {
-                    return Err("此 Kimi 版本不支持非交互更新，请在终端执行 kimi upgrade".into());
+                    return Err("backendText.updateKimiManual".into());
                 }
             }
             command(command_spec).await?;
             managed_cli::activate(&i, &p, &target, crate::terminal_installation::npm_runtime)
                 .await?;
-            value.message = Some("正在重新检测并验证新版本".into());
+            value.message = Some("backendText.updateVerifying".into());
             updates.save(&i, value.clone()).await;
             let _ = app.emit("agent-update-changed", &value);
             if matches!(i.provider_id.as_str(), "kiro" | "kimi") && matches!(p, Plan::Native(_)) {
@@ -269,17 +269,17 @@ pub async fn core_upgrade_agent(
                             .canonicalize()
                             .is_ok_and(|p| p == resolved)
                 })
-                .ok_or("升级后未找到原安装，请重新检测 Agent")?;
-            let now = fresh.version.as_deref().ok_or("升级后无法读取版本")?;
+                .ok_or("backendText.updateInstallationLost")?;
+            let now = fresh.version.as_deref().ok_or("backendText.updateVersionUnreadable")?;
             let verified = verified_version(&i.provider_id, now, &target);
             if !verified {
                 return Err(
-                    "更新器已退出，但尚未确认目标版本生效。请重新检测或在原安装渠道完成升级".into(),
+                    "backendText.updateUnconfirmed".into(),
                 );
             }
             value.current_version.clone_from(&fresh.version);
             value.status = "updated".into();
-            value.message = Some("升级完成，已重新加载 Agent".into());
+            value.message = Some("backendText.updateFinished".into());
             updates.save(&i, value.clone()).await;
             let mut current = value.clone();
             current.installation_id = fresh.installation_id.to_string();
@@ -802,8 +802,7 @@ mod tests {
             "private-account",
             "TelemetrySafeError: The connection dropped while downloading the update (attempt 3/3: aborted). private-token",
         );
-        assert!(message.contains("下载连接中断"));
-        assert!(message.contains("重试升级"));
+        assert!(message.contains("backendText.updateDownloadInterrupted"));
         assert!(!message.contains("private"));
         assert!(command_failure(Some(2), "", "unknown private-token").contains("退出码 2"));
     }
@@ -814,8 +813,7 @@ mod tests {
             "private-account",
             "Error: Update failed: Another CLI update is already in progress. remove /private/path/.install.lock private-token",
         );
-        assert!(message.contains("Cursor 原生更新器存在升级锁"));
-        assert!(message.contains("重试升级"));
+        assert!(message.contains("backendText.updateCursorLocked"));
         assert!(!message.contains("private"));
         assert!(!message.contains("remove"));
     }
@@ -954,12 +952,11 @@ mod tests {
         let mut slow = spec(Path::new("/bin/sleep"), vec!["30".into()], true);
         slow.timeout = Duration::from_millis(30);
         let timeout = command(slow).await.unwrap_err();
-        assert!(timeout.contains("等待超时"));
-        assert!(timeout.contains("重试升级"));
+        assert!(timeout.contains("backendText.updateCommandTimeout"));
         let missing = command(spec(Path::new("/missing/update-command"), vec![], true))
             .await
             .unwrap_err();
-        assert!(missing.contains("无法启动"));
+        assert!(missing.contains("backendText.updateCommandNoStart"));
         assert!(!missing.contains("超时"));
     }
     #[cfg(windows)]

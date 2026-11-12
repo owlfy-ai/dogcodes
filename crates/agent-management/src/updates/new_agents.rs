@@ -76,16 +76,16 @@ pub fn is_opencode_native(executable: &Path) -> bool {
 }
 
 fn with_node_path(mut spec: ProcessSpec, node: &Path, npm: &Path) -> Result<ProcessSpec, String> {
-    let bin = agent_runtime::external_path(node.parent().ok_or("Node 安装目录无效")?);
+    let bin = agent_runtime::external_path(node.parent().ok_or("backendText.nodeDirInvalid")?);
     // Native Pi invokes npm itself; make both executables visible from GUI launches.
-    let npm_bin = agent_runtime::external_path(npm.parent().ok_or("npm 安装目录无效")?);
+    let npm_bin = agent_runtime::external_path(npm.parent().ok_or("backendText.npmDirInvalid")?);
     let inherited = std::env::var_os("PATH").unwrap_or_default();
     let path = std::env::join_paths(
         [bin, npm_bin]
             .into_iter()
             .chain(std::env::split_paths(&inherited)),
     )
-    .map_err(|_| "Node PATH 无效")?;
+    .map_err(|_| "backendText.nodePathInvalid")?;
     spec.env_overrides.insert("PATH".into(), path);
     Ok(spec)
 }
@@ -97,7 +97,7 @@ fn local_npm_spec(
     node: &Path,
     npm: &Path,
 ) -> Result<ProcessSpec, String> {
-    let target = version(target).ok_or("更新版本无效")?;
+    let target = version(target).ok_or("backendText.updateVersionInvalid")?;
     let mut command = spec(
         node,
         vec![
@@ -135,7 +135,7 @@ pub async fn version_spec(
     {
         let (node, npm) = npm_runtime()
             .await
-            .ok_or("无法定位终端使用的 Node/npm，请安装 npm 后重试")?;
+            .ok_or("backendText.npmNotFoundTerminal")?;
         return with_node_path(command, &node, &npm);
     }
     Ok(command)
@@ -150,7 +150,7 @@ pub async fn install_spec(
     if let Plan::StandaloneCli { prefix, package } = plan {
         let (node, npm) = npm_runtime()
             .await
-            .ok_or("CLI 升级需要 Node/npm，请安装后重试")?;
+            .ok_or("backendText.cliNeedsNpm")?;
         let npm_plan = Plan::Npm {
             node: node.clone(),
             npm: npm.clone(),
@@ -162,7 +162,7 @@ pub async fn install_spec(
     if let Plan::NpmLocal { prefix, package } = plan {
         let (node, npm) = npm_runtime()
             .await
-            .ok_or("无法定位终端使用的 Node/npm，请安装 npm 后重试")?;
+            .ok_or("backendText.npmNotFoundTerminal")?;
         return local_npm_spec(prefix, package, latest, &node, &npm);
     }
     let mut command = super::install_spec(i, plan, latest)?;
@@ -174,11 +174,11 @@ pub async fn install_spec(
             .canonicalize()
             .ok()
             .and_then(|p| pi_managed_root(&p))
-            .ok_or("Pi 托管安装已变化，请重新检测")?;
+            .ok_or("backendText.piInstallChanged")?;
         command.executable = pi_launcher(&root);
         let (node, npm) = npm_runtime()
             .await
-            .ok_or("Pi 更新需要 Node/npm，请确认终端可用")?;
+            .ok_or("backendText.piNeedsNpm")?;
         command = with_node_path(command, &node, &npm)?;
     }
     Ok(command)

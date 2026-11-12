@@ -5,6 +5,7 @@ mod launch_intents;
 mod remote;
 #[cfg(any(windows, test))]
 mod startup;
+use agent_domain::user_text;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -422,7 +423,7 @@ impl TerminalHost {
             if record.info.status.active() {
                 record.info.status = TerminalStatus::Unknown;
                 record.info.error = Some(
-                    "后台已重启，原进程状态无法确认；未自动重新执行，也不会按旧进程号操作。".into(),
+                    "shell.restartedUnknown".into(),
                 );
             }
             let session = Arc::new(Session {
@@ -1009,11 +1010,11 @@ fn spawn(
                     Ok(status) => output.info.exit_code = Some(status.exit_code()),
                     Err(error) => {
                         output.info.status = TerminalStatus::Unknown;
-                        output.info.error = Some(format!("无法核实退出结果：{error}"));
+                        output.info.error = Some(user_text("shell.exitUnverified", &[&error.to_string()]));
                     }
                 }
                 if let Err(error) = save(directory.as_deref(), &session.intent, &output.info) {
-                    output.info.error = Some(format!("进程已结束，但状态保存失败：{error}"));
+                    output.info.error = Some(user_text("shell.exitSaveFailed", &[&error.to_string()]));
                 }
             }
             // Publish exit before waiting for input: a nonblocking writer must

@@ -62,22 +62,22 @@ pub async fn get(url: &str) -> Result<String, String> {
         .timeout(Duration::from_secs(25))
         .user_agent("dogcodes/agent-updates")
         .build()
-        .map_err(|_| "无法初始化版本检查")?;
+        .map_err(|_| "backendText.versionCheckInit")?;
     let mut response = client
         .get(url)
         .send()
         .await
-        .map_err(|_| "连接官方更新源失败，请稍后重试")?
+        .map_err(|_| "backendText.versionSourceConnect")?
         .error_for_status()
-        .map_err(|_| "官方更新源暂时不可用")?;
+        .map_err(|_| "backendText.versionSourceDown")?;
     let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| "读取版本信息失败")? {
+    while let Some(chunk) = response.chunk().await.map_err(|_| "backendText.versionReadFailed")? {
         if body.len() + chunk.len() > 1024 * 1024 {
-            return Err("版本信息过大".into());
+            return Err("backendText.versionTooLarge".into());
         }
         body.extend_from_slice(&chunk);
     }
-    String::from_utf8(body).map_err(|_| "版本信息编码无效".into())
+    String::from_utf8(body).map_err(|_| "backendText.versionBadEncoding".into())
 }
 
 #[cfg(not(feature = "native-http"))]
@@ -88,9 +88,9 @@ pub async fn get(url: &str) -> Result<String, String> {
         &["--fail", "--location", url],
     )
     .await
-    .map_err(|_| "连接官方更新源失败，请稍后重试")?;
+    .map_err(|_| "backendText.versionSourceConnect")?;
     if !output.status.success() {
-        return Err("官方更新源暂时不可用".into());
+        return Err("backendText.versionSourceDown".into());
     }
-    String::from_utf8(output.stdout).map_err(|_| "版本信息编码无效".into())
+    String::from_utf8(output.stdout).map_err(|_| "backendText.versionBadEncoding".into())
 }

@@ -18,11 +18,11 @@ pub async fn project_paths(core: &dyn ReviewFacts, task_id: &str) -> Result<Vec<
         .projects
         .iter()
         .find(|p| p.project_id == task.project_id)
-        .ok_or("项目不存在")?;
+        .ok_or("backendText.projectMissing")?;
     // These paths belong to another machine. Reading them here could reach a
     // different directory that happens to have the same name on this one.
     if project.target_id.is_some() && core.on_hub() {
-        return Err("这个项目在另一台机器上".into());
+        return Err("backendText.projectOnOtherMachine".into());
     }
     Ok(task
         .directories(project)

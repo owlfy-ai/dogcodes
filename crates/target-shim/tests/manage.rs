@@ -263,7 +263,10 @@ fn a_deepseek_harness_grant_goes_only_to_its_issuer() {
 #[test]
 fn detection_finds_an_agent_on_path_and_reports_its_version() {
     let (home, bin) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    script(&bin.path().join("kimi"), "echo 'kimi, version 2.5.0'");
+    script(
+        &bin.path().join("kimi"),
+        "if [ \"$1\" = acp ]; then echo 'kimi-code as an agent client protocol'; else echo 'kimi, version 2.5.0'; fi",
+    );
     let reply = ask(&json!({"type":"detect"}), home.path(), bin.path(), &[]);
     let probes = reply["Ok"]["probes"].as_array().unwrap();
     let kimi = probes
@@ -274,7 +277,32 @@ fn detection_finds_an_agent_on_path_and_reports_its_version() {
         kimi["executable"],
         bin.path().join("kimi").to_str().unwrap()
     );
+    assert_eq!(kimi["version"], "2.5.0");
+    assert_eq!(kimi["status"], "installed");
     assert!(reply["Ok"]["complete"].as_bool().unwrap());
+}
+
+#[test]
+fn binaries_that_cannot_load_are_failed_probes_instead_of_successful_installations() {
+    let (home, bin) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    for name in ["kimi", "cursor-agent"] {
+        script(
+            &bin.path().join(name),
+            "echo 'version GLIBC_2.28 not found' >&2; exit 1",
+        );
+    }
+    let reply = ask(&json!({"type":"detect"}), home.path(), bin.path(), &[]);
+    let probes = reply["Ok"]["probes"].as_array().unwrap();
+    for provider in ["kimi", "cursor"] {
+        let probe = probes
+            .iter()
+            .find(|probe| probe["providerId"] == provider)
+            .unwrap();
+        assert_eq!(probe["status"], "broken");
+        assert_eq!(probe["version"], Value::Null);
+        assert_eq!(probe["diagnostic"], "agent_runtime_incompatible");
+    }
+    assert_eq!(reply["Ok"]["complete"], true);
 }
 
 #[test]

@@ -22,8 +22,8 @@ impl ReviewStore {
         if changes.is_empty() || changes.len() > 2000 {
             return Err("请选择 1 至 2000 个文件".into());
         }
-        let root = root.canonicalize().map_err(|_| "工作目录不可用")?;
-        let root_text = root.to_str().ok_or("工作目录编码无效")?;
+        let root = root.canonicalize().map_err(|_| "backendText.workspaceUnavailable")?;
+        let root_text = root.to_str().ok_or("backendText.workspaceEncoding")?;
         let mut paths = BTreeSet::new();
         for change in changes {
             for path in std::iter::once(&change.path).chain(change.previous_path.iter()) {

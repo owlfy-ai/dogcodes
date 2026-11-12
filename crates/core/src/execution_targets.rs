@@ -96,7 +96,7 @@ pub fn validate_connection(connection: &SshConnection) -> Result<(), CoreError> 
     if let Some(agent_protocol::SshProxy::Custom { host, port, .. }) = &connection.proxy
         && (*port == 0 || !valid_proxy_host(host))
     {
-        return Err(CoreError::InvalidArgument("代理地址无效".into()));
+        return Err(CoreError::InvalidArgument("backendText.invalidProxyAddress".into()));
     }
     Ok(())
 }

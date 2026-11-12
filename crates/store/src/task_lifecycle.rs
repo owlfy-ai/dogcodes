@@ -36,7 +36,7 @@ pub(super) fn validate_append(
         [id], |row| row.get::<_, bool>(0)).map_err(storage_error)?;
     if permanent {
         return Err(RepositoryError::Unavailable(
-            "会话已彻底删除，无法恢复或继续写入".into(),
+            "backendText.conversationPurged".into(),
         ));
     }
     let lifecycle = request
@@ -54,11 +54,11 @@ pub(super) fn validate_append(
     }
     if deleted && event.event_type != "task.restored" {
         return Err(RepositoryError::Unavailable(
-            "会话已删除，请先从最近删除中恢复".into(),
+            "backendText.conversationDeleted".into(),
         ));
     }
     if event.event_type == "task.restored" && !deleted {
-        return Err(RepositoryError::Unavailable("最近删除中没有此会话".into()));
+        return Err(RepositoryError::Unavailable("backendText.conversationNotRecentlyDeleted".into()));
     }
     if event.event_type != "task.deleted" {
         return Ok(());
@@ -80,7 +80,7 @@ pub(super) fn validate_append(
         [id], |row| row.get::<_,bool>(0)).map_err(storage_error)?;
     if active || review_active {
         return Err(RepositoryError::Unavailable(
-            "请先停止主任务和审查，再删除会话".into(),
+            "backendText.stopBeforeDelete".into(),
         ));
     }
     Ok(())

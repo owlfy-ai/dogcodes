@@ -498,9 +498,9 @@ impl TargetHost {
                 &target_id,
                 &provider_id,
             )?)),
-            TargetCall::AgentInstalls { target_id } => {
-                json(serde_json::to_value(self.agent_installs(&target_id)))
-            }
+            TargetCall::AgentInstalls { target_id } => json(serde_json::to_value(
+                self.agent_installs(core, &target_id).await,
+            )),
             TargetCall::Answer {
                 target_id,
                 prompt_id,
@@ -588,7 +588,7 @@ impl TargetHost {
             .unwrap()
             .get(target)
             .cloned()
-            .ok_or("连接不存在")?;
+            .ok_or("backendText.targetConnectionMissing")?;
         let mut started = false;
         connection.update(|status| {
             if status.phase == Phase::Connected && !status.scanning {
@@ -703,14 +703,14 @@ impl TargetHost {
             .unwrap()
             .get(target)
             .and_then(|connection| connection.link.lock().unwrap().clone())
-            .ok_or_else(|| "设备未连接".to_owned())
+            .ok_or_else(|| "backendText.targetDeviceNotConnected".to_owned())
     }
 
     /// The machine a project on this target runs things on, while it is connected.
     pub(crate) fn target(&self, target: &TargetId) -> Result<agent_runtime::SharedTarget, String> {
         self.link(target)
             .map(|link| link.target())
-            .map_err(|_| "这个项目所在的服务器未连接，请先连接后重试".to_owned())
+            .map_err(|_| "backendText.projectTargetNotConnected".to_owned())
     }
 
     /// Where a shell opened on the host itself runs: the machine and its home directory.
@@ -718,7 +718,7 @@ impl TargetHost {
         &self,
         target: &TargetId,
     ) -> Result<(agent_runtime::SharedTarget, std::path::PathBuf), String> {
-        let not_connected = || "这台服务器未连接，请先连接后重试".to_owned();
+        let not_connected = || "backendText.targetHostNotConnected".to_owned();
         let link = self.link(target).map_err(|_| not_connected())?;
         let home = self.status(target).info.ok_or_else(not_connected)?.home;
         Ok((link.target(), home.into()))
@@ -732,7 +732,7 @@ impl TargetHost {
         let link = self.link(target)?;
         let path = path.unwrap_or_else(|| link.info().home.clone());
         if !path.starts_with('/') {
-            return Err("请输入绝对路径".into());
+            return Err("backendText.targetAbsolutePathRequired".into());
         }
         link.list_directory(&path).await
     }
@@ -788,13 +788,13 @@ impl TargetHost {
         remember: bool,
     ) -> Result<(), String> {
         let connections = self.connections.lock().unwrap();
-        let connection = connections.get(target).ok_or("连接不存在")?;
+        let connection = connections.get(target).ok_or("backendText.targetConnectionMissing")?;
         let waiting = connection
             .waiting
             .lock()
             .unwrap()
             .remove(prompt_id)
-            .ok_or("该问题已经失效")?;
+            .ok_or("backendText.targetPromptExpired")?;
         let _ = waiting.send(AnswerValue { answer, remember });
         Ok(())
     }
@@ -822,7 +822,7 @@ impl TargetHost {
             .targets
             .into_iter()
             .find(|target| target.target_id == target_id)
-            .ok_or("远程连接不存在")?;
+            .ok_or("backendText.targetRemoteConnectionMissing")?;
         let askpass_program = std::env::current_exe().map_err(|e| e.to_string())?;
         let connection = {
             let mut connections = self.connections.lock().unwrap();
@@ -1372,12 +1372,12 @@ mod tests {
         .await
         .unwrap();
         for _ in 0..300 {
-            if host.agent_installs(&id)[0].status != "installing" {
+            if host.agent_installs(&core, &id).await[0].status != "installing" {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        assert_eq!(host.agent_installs(&id)[0].status, "failed");
+        assert_eq!(host.agent_installs(&core, &id).await[0].status, "failed");
         assert_eq!(host.status(&id).phase, Phase::Connected);
 
         // A shell on the host itself, outside any project, in the account's home.
@@ -1520,7 +1520,7 @@ mod tests {
             .shell_place(&TargetId::new())
             .err()
             .unwrap();
-        assert!(error.contains("未连接"));
+        assert!(error.contains("backendText.targetHostNotConnected"));
     }
 
     #[tokio::test]

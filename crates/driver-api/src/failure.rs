@@ -1,5 +1,6 @@
 //! Classify native errors into stable kinds, and carry the agent's own error
 //! text alongside so the user can see what the agent actually reported.
+use agent_domain::user_text;
 use crate::DriverError;
 
 /// Separates a stable failure kind from the agent's own error text inside a
@@ -7,7 +8,7 @@ use crate::DriverError;
 /// the vendor message.
 const DETAIL_SEPARATOR: char = '\u{1f}';
 
-const GENERIC_MESSAGE: &str = "Agent 未能完成本次请求，未提供可识别的具体原因。请先确认原生客户端能否正常对话；仍有问题时可查看“帮助与恢复”中的诊断信息。";
+const GENERIC_MESSAGE: &str = "backendText.genericFailure";
 
 /// A `TurnFailed` reason that keeps `kind` for classification and `detail`
 /// (the agent's own error text) for display.
@@ -61,9 +62,9 @@ pub fn turn_failure_text(kind: &str, detail: Option<&str>) -> String {
     match detail.map(str::trim).filter(|detail| !detail.is_empty()) {
         None => message.to_owned(),
         Some(detail) if message == GENERIC_MESSAGE => {
-            format!("Agent 未能完成本次请求，返回了以下错误：\n{detail}")
+            user_text("backendText.failureWithAgentError", &[detail])
         }
-        Some(detail) => format!("{message}\n\nAgent 返回的错误：\n{detail}"),
+        Some(detail) => user_text("backendText.failureAgentErrorSuffix", &[message, detail]),
     }
 }
 
@@ -306,54 +307,54 @@ pub fn quota_diagnostic(error: &DriverError) -> &'static str {
 pub fn user_message(kind: &str) -> &'static str {
     match kind {
         "selection_rejected" => {
-            "模型或思考强度切换未生效，已恢复原选择。本条消息尚未发送，请确认选择后重试。"
+            "backendText.selectionRejected"
         }
         "selection_unverifiable" => {
-            "无法确认模型或思考强度是否生效，已停止本次发送。请重新选择后重试，必要时更新原生 Agent。"
+            "backendText.selectionUnverifiable"
         }
         "autonomous_turn_busy" => {
-            "Agent 正在继续处理后台任务。这条消息尚未发送，请等待续答完成后重试。"
+            "backendText.autonomousTurnBusy"
         }
-        "model_unavailable" => "所选模型已下线或不可用，请在模型列表中切换模型后重试。",
+        "model_unavailable" => "backendText.modelUnavailable",
         "authentication_failed" => {
-            "Agent 登录或认证失败。请在原生客户端重新登录，或检查 API Key 是否有效及账号是否有访问权限，然后重试。"
+            "backendText.authenticationFailed"
         }
         "subscription_required" => {
-            "当前账号没有有效订阅或套餐已到期。请在原生客户端确认订阅、切换有权限的账号或模型后重试。"
+            "backendText.subscriptionRequired"
         }
         "access_denied" => {
-            "当前账号没有访问所选服务或模型的权限。请在原生客户端检查账号资格、服务权限或模型配置后重试。"
+            "backendText.accessDenied"
         }
         "insufficient_balance" => {
-            "账户余额不足，无法使用所选的按量计费模型。请充值，或切换到套餐内或免费的模型后重试。"
+            "backendText.insufficientBalance"
         }
-        "agent_rate_limited" => "Agent 请求暂时受限，请稍后重试。",
+        "agent_rate_limited" => "backendText.rateLimited",
         "database_incompatible" => {
-            "Agent 的本地数据与当前客户端版本不兼容。请将命令行和桌面客户端更新到兼容版本，再重新检测 Agent；无需删除历史会话。"
+            "backendText.databaseIncompatible"
         }
-        "agent_timeout" => "Agent 响应超时。请检查网络和原生客户端是否正常，稍后重试。",
+        "agent_timeout" => "backendText.agentTimeout",
         "agent_connection_failed" | "driver_disconnected" | "driver_stream_ended" => {
-            "与 Agent 的连接已中断。请检查网络和原生客户端是否正常，再重试。"
+            "backendText.agentConnectionLost"
         }
         "agent_no_response" => {
-            "Agent 已结束运行，但没有返回回复。请在原生客户端确认能否正常对话，并检查客户端版本后重试。"
+            "backendText.agentNoResponse"
         }
         "driver_not_configured" => {
-            "Agent 尚未配置好。请在原生客户端确认登录、模型及服务配置，然后重新检测 Agent。"
+            "backendText.driverNotConfigured"
         }
         "target_session_missing" => {
-            "Agent 中的原会话已不存在。请重新选择 Agent，并通过上下文交接继续对话。"
+            "backendText.targetSessionMissing"
         }
         "target_session_incompatible"
         | "driver_capability_unavailable"
         | "capability_unavailable" => {
-            "Agent 无法继续原会话或不支持本次操作。请重新选择 Agent，并通过上下文交接继续对话。"
+            "backendText.targetSessionIncompatible"
         }
         "driver_protocol_error" => {
-            "Agent 返回了无法处理的响应。请检查原生客户端能否正常对话，更新客户端后重新检测 Agent。"
+            "backendText.driverProtocolError"
         }
-        "driver_unavailable" => "当前 Agent 尚未连接。请在“连接 Agent”中重新检测后重试。",
-        "interrupted" => "本次执行已停止，可以发送消息继续。",
+        "driver_unavailable" => "backendText.driverUnavailable",
+        "interrupted" => "backendText.interrupted",
         _ => GENERIC_MESSAGE,
     }
 }
@@ -429,8 +430,16 @@ mod tests {
             "agent_connection_failed",
             Some("Eligibility check failed: EOF"),
         );
-        assert!(text.starts_with(user_message("agent_connection_failed")));
-        assert!(text.ends_with("Eligibility check failed: EOF"));
+        assert_eq!(
+            text,
+            user_text(
+                "backendText.failureAgentErrorSuffix",
+                &[
+                    user_message("agent_connection_failed"),
+                    "Eligibility check failed: EOF",
+                ],
+            )
+        );
 
         // Fixed codes and fixed user messages carry no extra detail.
         assert_eq!(

@@ -24,5 +24,5 @@ pub async fn read_clipboard(include_image: bool) -> Result<ClipboardContent, Str
         Ok(ClipboardContent { text, image })
     })
     .await
-    .map_err(|_| "无法读取电脑剪贴板，请重新复制后重试".to_owned())?
+    .map_err(|_| "backendText.clipboardRead".to_owned())?
 }
