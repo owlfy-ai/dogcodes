@@ -44,6 +44,17 @@ const DYN = {
       ['Wire all three into the gateway and run the suite.', 'Ledger extracted, all 3 services wired into the gateway. 118 tests passed — ready for review.'],
     ],
     reset: c => `resets in ${c}`, resetOn: w => `resets ${w}`, upgrade: 'Upgrade', upgraded: 'Updated', week: 'weekly', h5: '5-hour', month: 'monthly',
+    hosts: {
+      rail: [
+        ['Install and manage agents on the host', 'Install supported agents on the server in one click, then keep an eye on their versions, updates, remaining quota and reset times.'],
+        ['Open a folder on the host as a project', 'Browse the server’s directories in a visual picker and open one as a project. Nothing is copied to your computer.'],
+        ['Assign tasks to agents on the host', 'Choose an agent running on that server and give it work. Replies, permission requests and questions arrive in the conversation you know.'],
+      ],
+      // The task and its tool lines reuse u1, c1t and x1t above, and the folder tag reuses the phone's.
+      connected: 'connected', agents: 'Agents on gpu-box', install: 'Install', installing: 'Installing…', notInstalled: 'not installed', ready: 'ready',
+      browse: 'Choose a folder on gpu-box', open: 'Open as project', opened: '✓ checkout-api is a project on gpu-box',
+      reply: 'Done on gpu-box: a token bucket in Redis, keyed per client. The middleware is wired in and the tests pass.',
+    },
   },
 };
 let lang = 'en';
@@ -103,7 +114,7 @@ async function applyLanguage(next) {
   $('#lang-cur').textContent = entry[2];
   document.querySelectorAll('#lang-list button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.lang === next)));
   try { localStorage.setItem('dogcodes.site.lang', next); } catch { /* storage is optional */ }
-  await wireLinks(); await osButton(); resetHandoff(); renderRemote(); renderQuota(); renderRuns(); countFindings();
+  await wireLinks(); await osButton(); resetHandoff(); renderRemote(); renderHosts(); renderQuota(); renderRuns(); countFindings();
   setCommitLanguage(COMMIT_LANG[next] || 'en');
 }
 
@@ -345,6 +356,115 @@ $('#rem-rail').addEventListener('click', e => {
   const b = e.target.closest('.rem-item'); if (!b) return;
   remHoldUntil = Date.now() + 25000; $('#rem-rail').classList.add('hold');
   showScene(Number(b.dataset.i));
+});
+
+/* ---------------- Remote hosts ---------------- */
+// Cursor starts uninstalled so the first scene can install it; Codex has an update waiting.
+const HOST_AGENTS = [
+  { a: 'Claude Code', v: '2.1.304', p: 62, w: 'h5', secs: 2 * 3600 + 14 * 60 },
+  { a: 'Codex', v: '0.47.0', nv: '0.48.1', p: 76, w: 'week', wi: 0 },
+  { a: 'Cursor', v: '1.7.52', p: 86, w: 'month', wi: 1, absent: true },
+  { a: 'Kimi Code', v: '0.9.5', p: 91, w: 'h5', secs: 4 * 3600 + 2 * 60 },
+];
+const HOST_START = HOST_AGENTS.map(h => ({ ...h }));
+const HOST_DIRS = [['checkout-api', true], ['ml-pipeline', true], ['notes', false]];
+let hostIdx = 0, hostTimer = 0, hostHoldUntil = 0, hostVisible = false, hostToken = 0;
+function hostAgentRow(h, i, d) {
+  const x = d.hosts, quota = h.absent ? `<em class="hx-dim">${x.notInstalled}</em>`
+    : `<span class="ring-sm" style="--v:${h.p}"></span><em>${h.p}% · ${d[h.w]} · ${h.secs != null ? d.reset(`${Math.floor(h.secs / 3600)}h ${String(Math.floor(h.secs / 60) % 60).padStart(2, '0')}m`) : d.resetOn(pack.when[h.wi])}</em>`;
+  const action = h.absent ? `<button type="button" class="hx-btn go" data-install="${i}">${x.install}</button>`
+    : h.nv ? `<button type="button" class="hx-btn" data-upgrade="${i}">${d.upgrade} → ${h.nv}</button>`
+    : `<span class="hx-ok">${x.ready}</span>`;
+  return `<div class="hx-agent" data-h="${i}"><span class="ic ${tone(h.a)}">${logo(h.a)}</span><div class="hx-who"><b>${h.a}</b><small>${h.absent ? '' : `v${h.v}`}</small></div><div class="hx-quota">${quota}</div>${action}<i class="hx-progress"></i></div>`;
+}
+function hostScenes(d) {
+  const x = d.hosts;
+  return [
+    `<div class="hx-title">${x.agents}</div><div class="hx-agents">${HOST_AGENTS.map((h, i) => hostAgentRow(h, i, d)).join('')}</div>`,
+    `<div class="hx-title">${x.browse}</div><div class="hx-path"><span>gpu-box</span>›<span>/home/dev</span></div>
+      <div class="hx-dirs">${HOST_DIRS.map(([n, git], i) => `<div class="hx-dir${i === 0 ? ' sel' : ''}">${FOLDER}<b>${n}</b>${git ? `<small>${PH[lang].s4.repo}</small>` : ''}</div>`).join('')}</div>
+      <div class="hx-foot"><span class="hx-done">${x.opened}</span><button type="button" class="hx-btn go" data-open>${x.open}</button></div>`,
+    `<div class="hx-chat-head"><span class="chip">${FOLDER}checkout-api · gpu-box</span><span class="chip">${mini('Cursor')}Cursor</span></div>
+      <div class="hx-feed" id="hx-feed"></div>`,
+  ];
+}
+function renderHostAgents() {
+  const list = $('#host-screens .hx-agents');
+  if (list) list.innerHTML = HOST_AGENTS.map((h, i) => hostAgentRow(h, i, D())).join('');
+}
+async function installHostAgent(i) {
+  const h = HOST_AGENTS[i], row = $(`#host-screens [data-h="${i}"]`);
+  if (!h.absent || !row || row.classList.contains('busy')) return;
+  row.classList.add('busy');
+  row.querySelector('[data-install]').textContent = D().hosts.installing;
+  await sleep(1800);
+  h.absent = false; renderHostAgents();
+  $(`#host-screens [data-h="${i}"]`)?.classList.add('fresh');
+}
+function upgradeHostAgent(i) {
+  const h = HOST_AGENTS[i], b = $(`#host-screens [data-upgrade="${i}"]`);
+  if (!h.nv || !b) return;
+  b.textContent = '…';
+  setTimeout(() => { h.v = h.nv; delete h.nv; renderHostAgents(); }, 900);
+}
+async function playHostScene(i) {
+  const token = ++hostToken, live = () => token === hostToken;
+  if (i === 0) {
+    // Each pass of the tour starts from a host with something left to install.
+    HOST_AGENTS.splice(0, HOST_AGENTS.length, ...HOST_START.map(h => ({ ...h })));
+    renderHostAgents();
+    await sleep(1400);
+    if (live()) installHostAgent(2);
+  } else if (i === 1) {
+    const screen = $('#host-screens .hx-scene[data-i="1"]');
+    screen.classList.remove('opened');
+    await sleep(2200);
+    if (live()) screen.classList.add('opened');
+  } else {
+    const d = D(), x = d.hosts, feed = $('#hx-feed');
+    feed.innerHTML = '';
+    await sleep(500); if (!live()) return;
+    feed.insertAdjacentHTML('beforeend', userMessage(d.u1));
+    await sleep(1100); if (!live()) return;
+    feed.insertAdjacentHTML('beforeend', message('Cursor', '', d.c1t));
+    const reply = feed.lastElementChild;
+    reply.querySelector('.tool').insertAdjacentHTML('afterend', `<div class="tool">${d.x1t}</div>`);
+    await typeInto(reply.querySelector('.text'), x.reply);
+  }
+}
+function showHostScene(i) {
+  hostIdx = i;
+  document.querySelectorAll('.hx-scene').forEach(el => el.classList.toggle('on', Number(el.dataset.i) === i));
+  document.querySelectorAll('.host-item').forEach(el => el.classList.toggle('on', Number(el.dataset.i) === i));
+  playHostScene(i);
+  clearTimeout(hostTimer);
+  if (reduced) return;
+  const next = () => {
+    if (!hostVisible || Date.now() < hostHoldUntil) { hostTimer = setTimeout(next, 1000); return; }
+    showHostScene((hostIdx + 1) % 3);
+  };
+  hostTimer = setTimeout(next, 8000);
+}
+function renderHosts() {
+  const d = D();
+  $('#host-rail').innerHTML = d.hosts.rail.map(([t, p], i) => `<button type="button" class="host-item" data-i="${i}" data-n="${i + 1}"><h3>${t}</h3><p>${p}</p><i></i></button>`).join('');
+  $('#host-state').textContent = d.hosts.connected;
+  $('#host-screens').innerHTML = hostScenes(d).map((body, i) => `<div class="hx-scene" data-i="${i}">${body}</div>`).join('');
+  $('#host-rail').classList.remove('hold');
+  showHostScene(hostIdx);
+}
+new IntersectionObserver(([e]) => { hostVisible = e.isIntersecting; }, { threshold: 0.25 }).observe($('.host-win'));
+$('#host-rail').addEventListener('click', e => {
+  const b = e.target.closest('.host-item'); if (!b) return;
+  hostHoldUntil = Date.now() + 25000; $('#host-rail').classList.add('hold');
+  showHostScene(Number(b.dataset.i));
+});
+$('#host-screens').addEventListener('click', e => {
+  const install = e.target.closest('[data-install]'), upgrade = e.target.closest('[data-upgrade]'), open = e.target.closest('[data-open]');
+  if (install || upgrade || open) { hostHoldUntil = Date.now() + 25000; $('#host-rail').classList.add('hold'); }
+  if (install) installHostAgent(Number(install.dataset.install));
+  if (upgrade) upgradeHostAgent(Number(upgrade.dataset.upgrade));
+  if (open) $('#host-screens .hx-scene[data-i="1"]').classList.add('opened');
 });
 
 /* ---------------- Quota grid ---------------- */

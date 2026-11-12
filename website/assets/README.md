@@ -2,13 +2,13 @@
 
 `logo-transparent.png` is the website-only mark with a real alpha-transparent background and no app-icon tile. It is black with white facial details for light surfaces; the navbar, download section and footer invert it with CSS for their dark surfaces. Keep its transparent canvas intact.
 
-`favicon.svg` embeds a 64px PNG export of the same mark and inverts it for dark browser themes. It has no background tile and no external image dependency.
+`favicon.svg`, `favicon-32.png` and `apple-touch-icon.png` are the app icon (`apps/desktop/src-tauri/icons/icon-master.png`): the white sheepdog on its black square, so a browser tab shows the same mark as the dock. The SVG and 32px PNG have rounded corners; the touch icon is square because iOS rounds it. They look the same in light and dark browser themes.
 
 The application icon remains in `apps/desktop/src-tauri/icons`. Running `pnpm icons` only regenerates application assets and does not overwrite these website assets.
 
 ## Generation
 
-Created with built-in imagegen from the approved application icon. The favicon PNG was resized with the installed Tauri icon CLI (`--png 64`); the generated alpha channel was preserved.
+`logo-transparent.png` was created with built-in imagegen from the approved application icon. The favicons are `icon-master.png` resized with Pillow (Lanczos), with corners rounded at 22% of the side.
 
 Final prompt:
 
