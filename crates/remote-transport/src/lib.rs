@@ -22,7 +22,7 @@ pub const MAX_MESSAGE: usize = 16_384;
 pub const PLAINTEXT_CHUNK: usize = 16_000;
 type Result<T> = std::result::Result<T, String>;
 fn failure(error: impl std::fmt::Display) -> String {
-    format!("直连协商失败：{error}")
+    format!("backendText.mc6547b5b\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))
 }
 struct NegotiationGuard(Option<Arc<dyn PeerConnection>>);
 impl Drop for NegotiationGuard {
@@ -73,8 +73,8 @@ impl Answer {
     pub async fn accept(mut self) -> Result<Channel> {
         let channel = tokio::time::timeout(Duration::from_secs(15), self.incoming.recv())
             .await
-            .map_err(|_| "直连未建立，请保留中继连接")?
-            .ok_or("直连已关闭")?;
+            .map_err(|_| "backendText.me1426c21")?
+            .ok_or("backendText.mefa9d6d5")?;
         validate_channel(&channel).await?;
         wait_open(&channel).await?;
         self.handed_off = true;
@@ -111,10 +111,10 @@ async fn answer_with_policy(
     video: bool,
 ) -> Result<Answer> {
     if offer.sdp.len() > 256 * 1024 || offer.sdp_type != RTCSdpType::Offer {
-        return Err("直连 offer 无效".into());
+        return Err("backendText.mc414aa15".into());
     }
     if servers.len() > 8 || servers.iter().any(|s| s.urls.len() > 8) {
-        return Err("ICE 配置过大".into());
+        return Err("backendText.mcf6c5dae".into());
     }
     let (tx, rx) = mpsc::channel(1);
     let gathered = Arc::new(Notify::new());
@@ -218,9 +218,9 @@ async fn gathered_description(
     gathered: &Notify,
 ) -> Result<Description> {
     let _ = tokio::time::timeout(Duration::from_secs(8), gathered.notified()).await;
-    let description = peer.local_description().await.ok_or("ICE 描述不可用")?;
+    let description = peer.local_description().await.ok_or("backendText.m61622fce")?;
     if !description.sdp.contains("a=candidate:") {
-        return Err("没有可用的 ICE 候选，请使用中继".into());
+        return Err("backendText.m869986af".into());
     }
     Ok(description)
 }
@@ -235,7 +235,7 @@ async fn validate_channel(channel: &Arc<dyn DataChannel>) -> Result<()> {
             .is_some()
         || channel.max_retransmits().await.map_err(failure)?.is_some()
     {
-        return Err("直连需要 dogcodes-v1 可靠有序通道".into());
+        return Err("backendText.m4e81429c".into());
     }
     Ok(())
 }
@@ -249,13 +249,13 @@ async fn wait_open(channel: &Arc<dyn DataChannel>) -> Result<()> {
                     | DataChannelEvent::OnClose
                     | DataChannelEvent::OnClosing,
                 )
-                | None => return Err("直连通道已关闭".into()),
+                | None => return Err("backendText.m107eefb8".into()),
                 _ => {}
             }
         }
     })
     .await
-    .map_err(|_| "直连通道开启超时")?
+    .map_err(|_| "backendText.m9aefe508")?
 }
 pub struct Channel {
     peer: Arc<dyn PeerConnection>,
@@ -287,7 +287,7 @@ async fn offer_with_policy(
     policy: RTCIceTransportPolicy,
 ) -> Result<Offer> {
     if servers.len() > 8 || servers.iter().any(|s| s.urls.len() > 8) {
-        return Err("ICE 配置过大".into());
+        return Err("backendText.mcf6c5dae".into());
     }
     let (tx, _rx) = mpsc::channel(1);
     let gathered = Arc::new(Notify::new());
@@ -417,14 +417,14 @@ impl Channel {
     }
     pub async fn send(&self, bytes: &[u8]) -> Result<()> {
         if bytes.is_empty() || bytes.len() > MAX_MESSAGE {
-            return Err("直连消息大小无效".into());
+            return Err("backendText.m1011e750".into());
         }
         tokio::time::timeout(
             Duration::from_secs(5),
             self.channel.send(bytes::BytesMut::from(bytes)),
         )
         .await
-        .map_err(|_| "直连发送超时")?
+        .map_err(|_| "backendText.md4db579a")?
         .map_err(failure)
     }
     pub async fn receive(&self) -> Result<Option<Vec<u8>>> {
@@ -435,14 +435,14 @@ impl Channel {
                         || message.data.is_empty()
                         || message.data.len() > MAX_MESSAGE
                     {
-                        return Err("直连消息格式无效".into());
+                        return Err("backendText.ma60b0339".into());
                     }
                     return Ok(Some(message.data.to_vec()));
                 }
                 Some(DataChannelEvent::OnClose | DataChannelEvent::OnClosing) | None => {
                     return Ok(None);
                 }
-                Some(DataChannelEvent::OnError) => return Err("直连通道异常".into()),
+                Some(DataChannelEvent::OnError) => return Err("backendText.m2740130d".into()),
                 _ => {}
             }
         }

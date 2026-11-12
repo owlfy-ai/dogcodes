@@ -99,15 +99,15 @@ impl Host {
         }
         let value = match std::fs::read(&self.path) {
             Ok(bytes) => serde_json::from_slice::<Policy>(&bytes)
-                .map_err(|_| "电源偏好损坏，未覆盖原设置".into()),
+                .map_err(|_| "backendText.m3f2bed6f".into()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Policy::default()),
-            Err(_) => Err("电源偏好不可读取".into()),
+            Err(_) => Err("backendText.m8ff29dbb".into()),
         };
         *cache = Some(value.clone());
         value
     }
     fn loaded(&self) -> Result<Policy, String> {
-        let mut cache = self.policy.lock().map_err(|_| "电源偏好不可用")?;
+        let mut cache = self.policy.lock().map_err(|_| "backendText.m5616ec05")?;
         self.read_policy(&mut cache)
     }
     fn persist(
@@ -117,32 +117,32 @@ impl Host {
     ) -> Result<(), String> {
         // Any ambiguous failure forces a fresh disk read next time.
         *cache = None;
-        let directory = self.path.parent().ok_or("电源偏好路径无效")?;
-        std::fs::create_dir_all(directory).map_err(|_| "电源偏好目录不可写入")?;
+        let directory = self.path.parent().ok_or("backendText.m06060183")?;
+        std::fs::create_dir_all(directory).map_err(|_| "backendText.mbdce3936")?;
         let mut file =
-            tempfile::NamedTempFile::new_in(directory).map_err(|_| "电源偏好不可写入")?;
-        serde_json::to_writer(&mut file, policy).map_err(|_| "电源偏好不可写入")?;
+            tempfile::NamedTempFile::new_in(directory).map_err(|_| "backendText.m238d0a0d")?;
+        serde_json::to_writer(&mut file, policy).map_err(|_| "backendText.m238d0a0d")?;
         file.flush()
             .and_then(|()| file.as_file_mut().sync_all())
-            .map_err(|_| "电源偏好保存结果待核实")?;
+            .map_err(|_| "backendText.m0fe96f73")?;
         file.persist(&self.path)
-            .map_err(|_| "电源偏好保存结果待核实")?;
+            .map_err(|_| "backendText.m0fe96f73")?;
         #[cfg(unix)]
         std::fs::File::open(directory)
             .and_then(|f| f.sync_all())
-            .map_err(|_| "电源偏好保存结果待核实，请重新读取")?;
+            .map_err(|_| "backendText.mef7d2334")?;
         *cache = Some(Ok(policy.clone()));
         Ok(())
     }
     fn snapshot(&self, policy: &Policy) -> Result<Value, String> {
-        let status = self.status.lock().map_err(|_| "电源状态不可用")?;
+        let status = self.status.lock().map_err(|_| "backendText.m529b0164")?;
         Ok(json!({"enabled":policy.enabled,"active":status.0,"error":status.1}))
     }
     pub(super) async fn call(self: &Arc<Self>, method: &str, args: Value) -> Result<Value, String> {
         let host = self.clone();
         let method = method.to_string();
         tokio::task::spawn_blocking(move || {
-            let mut cache = host.policy.lock().map_err(|_| "电源偏好不可用")?;
+            let mut cache = host.policy.lock().map_err(|_| "backendText.m5616ec05")?;
             let mut policy = host.read_policy(&mut cache)?;
             match method.as_str() {
                 "power_preferences" => host.snapshot(&policy),
@@ -214,7 +214,7 @@ impl Host {
             });
         if spawned.is_err() {
             if let Ok(mut status) = self.status.lock() {
-                *status = (false, Some("无法启动电源管理线程".into()));
+                *status = (false, Some("backendText.m916f4340".into()));
             }
             return;
         }

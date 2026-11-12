@@ -20,7 +20,7 @@ impl ReviewStore {
         changes: &[FileChange],
     ) -> ReviewResult<FileBatchResult> {
         if changes.is_empty() || changes.len() > 2000 {
-            return Err("请选择 1 至 2000 个文件".into());
+            return Err("backendText.m7b62ad72".into());
         }
         let root = root.canonicalize().map_err(|_| "backendText.workspaceUnavailable")?;
         let root_text = root.to_str().ok_or("backendText.workspaceEncoding")?;
@@ -29,7 +29,7 @@ impl ReviewStore {
             for path in std::iter::once(&change.path).chain(change.previous_path.iter()) {
                 validate_relative(path)?;
                 if !paths.insert(path.clone()) {
-                    return Err("选择包含重叠路径，请分开处理".into());
+                    return Err("backendText.mc1b26d4c".into());
                 }
             }
             if change
@@ -38,7 +38,7 @@ impl ReviewStore {
                 .chain(change.after.iter())
                 .any(|version| version.kind == FileKind::Gitlink)
             {
-                return Err("子模块不支持丢弃工作文件".into());
+                return Err("backendText.m30d0802c".into());
             }
         }
         for path in &paths {
@@ -46,18 +46,18 @@ impl ReviewStore {
                 .iter()
                 .any(|other| path != other && path.starts_with(&format!("{other}/")))
             {
-                return Err("选择包含文件与目录互换，请分开处理".into());
+                return Err("backendText.mf553a852".into());
             }
         }
         let check = || -> ReviewResult<()> {
             for change in changes {
                 if transaction::current_version(self, root_text, &change.path)? != change.after {
-                    return Err(format!("{} 在预览后有修改，请刷新后重试", change.path));
+                    return Err(format!("backendText.m72c22b6c\u{1e}{}", serde_json::to_string(&[change.path.to_string()]).unwrap_or_else(|_| "[]".into())));
                 }
                 if let Some(previous) = &change.previous_path
                     && transaction::current_version(self, root_text, previous)?.is_some()
                 {
-                    return Err(format!("{previous} 在预览后有修改，请刷新后重试"));
+                    return Err(format!("backendText.md48e9a88\u{1e}{}", serde_json::to_string(&[previous.to_string()]).unwrap_or_else(|_| "[]".into())));
                 }
             }
             Ok(())
@@ -92,9 +92,7 @@ impl ReviewStore {
                 self.apply_recovery(task, &id)
             };
             if let Err(error) = outcome {
-                result.error = Some(format!(
-                    "{path}：{error}。该文件可能已部分处理，请刷新检查；备份记录 {id}"
-                ));
+                result.error = Some(format!("backendText.m01b66617\u{1e}{}", serde_json::to_string(&[path.to_string(), error.to_string(), id.to_string()]).unwrap_or_else(|_| "[]".into())));
                 break;
             }
             result.completed.push(path);

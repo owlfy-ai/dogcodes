@@ -51,7 +51,7 @@ async fn proxy(
 ) -> Result<Proxy<'static>> {
     Proxy::new(connection, DEST, path, interface)
         .await
-        .map_err(|_| "Wayland 桌面门户不可用，请检查 xdg-desktop-portal 及桌面后端".into())
+        .map_err(|_| "backendText.m7811fe58".into())
 }
 async fn root(connection: &Connection, interface: &'static str) -> Result<Proxy<'static>> {
     proxy(
@@ -70,33 +70,33 @@ async fn request<T: serde::Serialize + zbus::zvariant::DynamicType>(
 ) -> Result<Reply> {
     let unique = connection
         .unique_name()
-        .ok_or("Wayland 消息总线身份不可用")?
+        .ok_or("backendText.m759947de")?
         .as_str()
         .trim_start_matches(':')
         .replace('.', "_");
     let path = OwnedObjectPath::try_from(format!("{ROOT}/request/{unique}/{handle}"))
-        .map_err(|_| "Wayland 请求身份无效")?;
+        .map_err(|_| "backendText.m3d117ed3")?;
     let receiver = proxy(connection, "org.freedesktop.portal.Request", path.clone()).await?;
     let mut replies = receiver
         .receive_signal("Response")
         .await
-        .map_err(|_| "无法监听 Wayland 授权结果")?;
+        .map_err(|_| "backendText.m8e5f0e5d")?;
     let returned: OwnedObjectPath = service
         .call(method, body)
         .await
-        .map_err(|_| format!("Wayland {method} 接口不可用，请检查系统桌面权限"))?;
+        .map_err(|_| format!("backendText.m5913cede\u{1e}{}", serde_json::to_string(&[method.to_string()]).unwrap_or_else(|_| "[]".into())))?;
     if returned != path {
-        return Err("Wayland 授权回复身份不匹配".into());
+        return Err("backendText.m21d5d9c2".into());
     }
-    let signal = replies.next().await.ok_or("Wayland 授权连接中断")?;
+    let signal = replies.next().await.ok_or("backendText.m9310d285")?;
     let (code, response): (u32, Reply) = signal
         .body()
         .deserialize()
-        .map_err(|_| "Wayland 授权回复无效")?;
+        .map_err(|_| "backendText.mb2fe3edb")?;
     match code {
         0 => Ok(response),
-        1 => Err("已在电脑上取消屏幕共享授权，可重新连接后重试".into()),
-        _ => Err("Wayland 屏幕共享授权失败，请检查桌面门户".into()),
+        1 => Err("backendText.mb50c2e04".into()),
+        _ => Err("backendText.m6ba95f5b".into()),
     }
 }
 struct Portal {
@@ -112,7 +112,7 @@ struct Portal {
 impl Portal {
     async fn notify(&self, event: &Event) -> Result<()> {
         if self.eis.is_some() {
-            return Err("EIS 输入连接禁止混用 D-Bus 输入".into());
+            return Err("backendText.m1c06090f".into());
         }
         let service = root(&self.connection, REMOTE).await?;
         let empty = options();
@@ -144,7 +144,7 @@ impl Portal {
                     .await
             }
         };
-        result.map_err(|_| "Wayland 键鼠接口中断，已结束本次远控".into())
+        result.map_err(|_| "backendText.meec3eb55".into())
     }
     async fn close(&self) {
         if let Ok(service) = proxy(&self.connection, SESSION, self.path.clone()).await {
@@ -166,26 +166,26 @@ fn token_path(store: &TokenStore, control: bool) -> std::path::PathBuf {
 fn take_token(store: &TokenStore, generation: u64, control: bool) -> Result<Option<String>> {
     let active = store.generation.lock().unwrap_or_else(|e| e.into_inner());
     if *active != generation {
-        return Err("Wayland 授权已被替换".into());
+        return Err("backendText.mbb51692f".into());
     }
     let path = token_path(store, control);
     let mut file = match fs::File::open(&path) {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err("无法读取 Wayland 授权恢复信息".into()),
+        Err(_) => return Err("backendText.m43c8a40b".into()),
     };
     let mut value = String::new();
     std::io::Read::by_ref(&mut file)
         .take(4097)
         .read_to_string(&mut value)
-        .map_err(|_| "Wayland 授权恢复信息无效")?;
+        .map_err(|_| "backendText.mba6d8bd6")?;
     // A restore token is single-use. Consume on disk before exposing it to D-Bus.
-    fs::remove_file(path).map_err(|_| "无法更新 Wayland 授权恢复信息")?;
+    fs::remove_file(path).map_err(|_| "backendText.me0a31551")?;
     fs::File::open(&store.directory)
         .and_then(|f| f.sync_all())
-        .map_err(|_| "无法保存 Wayland 授权恢复状态")?;
+        .map_err(|_| "backendText.m11e31dcf")?;
     if value.len() > 4096 || value.is_empty() {
-        return Err("Wayland 授权恢复信息无效".into());
+        return Err("backendText.mba6d8bd6".into());
     }
     Ok(Some(value))
 }
@@ -202,11 +202,11 @@ fn save_token(
         return Ok(());
     }
     if value.is_empty() || value.len() > 4096 {
-        return Err("Wayland 授权恢复信息无效".into());
+        return Err("backendText.mba6d8bd6".into());
     }
-    fs::create_dir_all(&store.directory).map_err(|_| "无法保存 Wayland 授权恢复信息")?;
+    fs::create_dir_all(&store.directory).map_err(|_| "backendText.m3800c9d0")?;
     fs::set_permissions(&store.directory, fs::Permissions::from_mode(0o700))
-        .map_err(|_| "无法保护 Wayland 授权恢复信息")?;
+        .map_err(|_| "backendText.m73908494")?;
     let temporary = store.directory.join(token());
     let result = (|| {
         let mut file = OpenOptions::new()
@@ -214,15 +214,15 @@ fn save_token(
             .create_new(true)
             .mode(0o600)
             .open(&temporary)
-            .map_err(|_| "无法保存 Wayland 授权恢复信息")?;
+            .map_err(|_| "backendText.m3800c9d0")?;
         file.write_all(value.as_bytes())
             .and_then(|()| file.sync_all())
-            .map_err(|_| "无法保存 Wayland 授权恢复信息")?;
+            .map_err(|_| "backendText.m3800c9d0")?;
         fs::rename(&temporary, token_path(store, control))
-            .map_err(|_| "无法更新 Wayland 授权恢复信息")?;
+            .map_err(|_| "backendText.me0a31551")?;
         fs::File::open(&store.directory)
             .and_then(|f| f.sync_all())
-            .map_err(|_| "无法保存 Wayland 授权恢复状态")?;
+            .map_err(|_| "backendText.m11e31dcf")?;
         Ok(())
     })();
     let _ = fs::remove_file(&temporary);
@@ -237,7 +237,7 @@ async fn authorize(
 ) -> Result<Portal> {
     let connection = Connection::session()
         .await
-        .map_err(|_| "无法连接 Wayland 用户消息总线")?;
+        .map_err(|_| "backendText.ma2db1345")?;
     let cast = root(&connection, CAST).await?;
     let service = if control {
         root(&connection, REMOTE).await?
@@ -247,7 +247,7 @@ async fn authorize(
     let version: u32 = service
         .get_property("version")
         .await
-        .map_err(|_| "Wayland 远控门户不可用")?;
+        .map_err(|_| "backendText.m6ac4a3ba")?;
     let persistent = version >= if control { 2 } else { 4 };
     let restore = if persistent {
         let token = take_token(store, generation, control)?;
@@ -261,8 +261,8 @@ async fn authorize(
     create.insert("handle_token", Value::from(handle.clone()));
     create.insert("session_handle_token", Value::from(session_token.clone()));
     let response = request(&connection, &service, "CreateSession", &handle, &(create,)).await?;
-    let path = OwnedObjectPath::try_from(response.session_handle.ok_or("Wayland 会话身份缺失")?)
-        .map_err(|_| "Wayland 会话身份无效")?;
+    let path = OwnedObjectPath::try_from(response.session_handle.ok_or("backendText.m0b5fe964")?)
+        .map_err(|_| "backendText.mb3099de7")?;
     let unique = connection
         .unique_name()
         .unwrap()
@@ -270,7 +270,7 @@ async fn authorize(
         .trim_start_matches(':')
         .replace('.', "_");
     if path.as_str() != format!("{ROOT}/session/{unique}/{session_token}") {
-        return Err("Wayland 会话身份不匹配".into());
+        return Err("backendText.m2dab6b12".into());
     }
     // Keep a guard on every failure after creation. This private bus is also
     // disconnected on cancellation, so even a late grant cannot leave a session.
@@ -288,10 +288,10 @@ async fn authorize(
     let mut closed = session_proxy
         .receive_signal("Closed")
         .await
-        .map_err(|_| "无法监听 Wayland 授权撤销")?;
+        .map_err(|_| "backendText.m8434006a")?;
     let result = tokio::select! {
         biased;
-        _=closed.next()=>Err("电脑已结束屏幕共享授权".into()),
+        _=closed.next()=>Err("backendText.m9c8b6cac".into()),
         result=authorize_session(&mut portal, &cast, &service, persistent, restore, state)=>result,
     };
     portal.closed = Some(closed);
@@ -388,30 +388,30 @@ async fn authorize_session(
         portal.clipboard = None;
     }
     if portal.control && reply.devices.unwrap_or(0) & 3 != 3 {
-        return Err("电脑没有授权完整键鼠权限，请重新连接并允许".into());
+        return Err("backendText.m5361ae98".into());
     }
-    let streams = reply.streams.ok_or("Wayland 没有返回授权屏幕")?;
+    let streams = reply.streams.ok_or("backendText.me1a6bc9a")?;
     if streams.is_empty() || streams.len() > 16 {
-        return Err("Wayland 授权屏幕数量无效".into());
+        return Err("backendText.m27b44a75".into());
     }
     let mut nodes = HashSet::new();
     let mut mappings = HashSet::new();
     for (index, (node, props)) in streams.into_iter().enumerate() {
         if !nodes.insert(node) || props.source_type.is_some_and(|v| v != 1) {
-            return Err("Wayland 返回的屏幕来源不匹配".into());
+            return Err("backendText.mf6ad0fc6".into());
         }
         let (width, height) = props
             .logical_size
             .or(props.size)
-            .ok_or("Wayland 未提供屏幕逻辑尺寸，无法可靠映射键鼠")?;
+            .ok_or("backendText.m00504bdc")?;
         if width <= 0 || height <= 0 || width > 32768 || height > 32768 {
-            return Err("Wayland 屏幕逻辑尺寸无效".into());
+            return Err("backendText.m5bb0fa3f".into());
         }
         let (x, y) = props.position.unwrap_or((0, 0));
         if let Some(mapping) = props.mapping_id.as_ref()
             && (mapping.is_empty() || mapping.len() > 1024 || !mappings.insert(mapping.clone()))
         {
-            return Err("Wayland 屏幕输入映射身份无效或重复".into());
+            return Err("backendText.mf4bdb86a".into());
         }
         portal.streams.push(StreamInfo {
             node,
@@ -422,7 +422,7 @@ async fn authorize_session(
                 name: props
                     .id
                     .filter(|s| !s.is_empty() && s.len() < 128)
-                    .unwrap_or_else(|| format!("屏幕 {}", index + 1)),
+                    .unwrap_or_else(|| format!("backendText.m3471f294\u{1e}{}", serde_json::to_string(&[index + 1.to_string()]).unwrap_or_else(|_| "[]".into()))),
                 x,
                 y,
                 width: width as u32,
@@ -439,11 +439,11 @@ async fn authorize_session(
         let fd: OwnedFd = service
             .call("ConnectToEIS", &(&portal.path, options()))
             .await
-            .map_err(|_| "无法连接 Wayland EIS 输入接口，请重新连接并授权")?;
+            .map_err(|_| "backendText.mc0e35f08")?;
         portal.eis = Some(
             tokio::time::timeout(Duration::from_secs(10), super::eis::Sender::open(fd.into()))
                 .await
-                .map_err(|_| "Wayland EIS 输入握手超时，请重新连接")??,
+                .map_err(|_| "backendText.mf057c644")??,
         );
         tokio::time::timeout(
             Duration::from_secs(10),
@@ -454,7 +454,7 @@ async fn authorize_session(
                 .initialize(state, &portal.streams),
         )
         .await
-        .map_err(|_| "Wayland 输入设备未就绪，请重新连接并授权")??;
+        .map_err(|_| "backendText.m75a25a6e")??;
     }
     Ok(reply.restore_token)
 }
@@ -477,14 +477,14 @@ pub(super) async fn run(
      result=tokio::time::timeout(Duration::from_secs(120),authorize(&state,&store,generation,control,fresh))=>match result {
       Ok(Ok(portal))=>portal,
       Ok(Err(error))=>{state.fail(error);return;},
-      Err(_)=>{state.fail("等待电脑屏幕共享授权超时，请重新连接后重试".into());return;}
+      Err(_)=>{state.fail("backendText.me776dcad".into());return;}
      }
     };
     state
         .eis_active
         .store(portal.eis.is_some(), Ordering::Release);
     let Some(mut closed) = portal.closed.take() else {
-        state.fail("无法监听 Wayland 授权撤销".into());
+        state.fail("backendText.m8434006a".into());
         portal.close().await;
         return;
     };
@@ -496,7 +496,7 @@ pub(super) async fn run(
             biased;
             _ = cancelled(&state) => break,
             _ = closed.next() => {
-                state.fail("电脑已结束屏幕共享，请重新连接并授权".into());
+                state.fail("backendText.mfe9bb877".into());
                 break;
             },
             event = async {
@@ -517,7 +517,7 @@ pub(super) async fn run(
                     biased;
                     _ = cancelled(&state) => break,
                     _ = closed.next() => {
-                        state.fail("电脑已结束屏幕共享，请重新连接并授权".into());
+                        state.fail("backendText.mfe9bb877".into());
                         break;
                     },
                     result = tokio::time::timeout(Duration::from_secs(3), execute(&mut portal, &state, &mut held, command)) => result,
@@ -526,7 +526,7 @@ pub(super) async fn run(
                     Ok(Ok(())) => {},
                     Ok(Err(error)) => { state.fail(error); break; },
                     Err(_) => {
-                        state.fail("Wayland 系统操作超时，已结束本次远控，禁止重放".into());
+                        state.fail("backendText.m1150db1c".into());
                         break;
                     },
                 }
@@ -560,11 +560,11 @@ async fn execute(
                         .call::<_, _, OwnedFd>("OpenPipeWireRemote", &(&portal.path, options()))
                         .await
                         .map(std::os::fd::OwnedFd::from)
-                        .map_err(|_| "Wayland 已授权，但无法连接屏幕流".into()),
+                        .map_err(|_| "backendText.mf103ffd7".into()),
                     Err(error) => Err(error),
                 }
             } else {
-                Err("屏幕不在授权范围内".into())
+                Err("backendText.mcef03f9e".into())
             };
             let _ = reply.send(result);
             Ok(())
@@ -597,7 +597,7 @@ async fn execute(
                 let failed = result.is_err();
                 let _ = reply.send(result);
                 return if failed {
-                    Err("Wayland EIS 输入中断，已结束本次远控，禁止重放".into())
+                    Err("backendText.mb95b3f2b".into())
                 } else {
                     Ok(())
                 };
@@ -610,11 +610,11 @@ async fn execute(
             }
             let result = async {
                 if !portal.control {
-                    return Err("当前连接为仅查看模式".into());
+                    return Err("backendText.mb84743f5".into());
                 }
                 for event in events {
                     if !state.active() {
-                        return Err("远控已结束，禁止执行旧输入".into());
+                        return Err("backendText.ma2a1f92c".into());
                     }
                     state.check_input_geometry(std::slice::from_ref(&event))?;
                     portal.notify(&event).await?;
@@ -640,7 +640,7 @@ async fn execute(
             let failed = result.is_err();
             let _ = reply.send(result);
             if failed {
-                Err("Wayland 键鼠操作中断，已结束本次远控".into())
+                Err("backendText.m4bfc2f65".into())
             } else {
                 Ok(())
             }

@@ -17,11 +17,11 @@ const allData = [
   { providerId: "opencode", version: "2.1.2", plan: null, windows: [windowFor("opencode-go-rolling", 12.5, 300, "OpenCode Go"), windowFor("opencode-go-weekly", 46, 10080, "OpenCode Go"), windowFor("opencode-go-monthly", 47, 0, "OpenCode Go")] },
   { providerId: "pi", version: "0.87.0", plan: null, windows: [] },
   { providerId: "deepseek-harness", version: "1.0.0", plan: null, windows: [] },
-  { providerId: "antigravity", version: "1.2.14", plan: "订阅额度", windows: [windowFor("gemini5", .1, 300, "Gemini Models"), windowFor("claude5", 0, 300, "Claude and GPT models"), windowFor("gemini7", 1.2, 10080, "Gemini Models"), windowFor("claude7", 0, 10080, "Claude and GPT models")] },
+  { providerId: "antigravity", version: "1.2.14", plan: null, windows: [windowFor("gemini5", .1, 300, "Gemini Models"), windowFor("claude5", 0, 300, "Claude and GPT models"), windowFor("gemini7", 1.2, 10080, "Gemini Models"), windowFor("claude7", 0, 10080, "Claude and GPT models")] },
   { providerId: "codex", version: "0.158.0-alpha.2.1", plan: "Pro", windows: [windowFor("weekly", 7, 10080)] },
-  { providerId: "cursor", version: "2026.9.23-86fc751", plan: "Pro · 按量付费关闭", windows: [windowFor("cursor-models", 20, 0, "Cursor Models"), windowFor("cursor-other-models", 100, 0, "Other Models")] },
+  { providerId: "cursor", version: "2026.9.23-86fc751", plan: "Pro", onDemand: false, windows: [windowFor("cursor-models", 20, 0, "Cursor Models"), windowFor("cursor-other-models", 100, 0, "Other Models")] },
   { providerId: "grok", version: "1.0.46", plan: "SuperGrok", windows: [windowFor("weekly", 2, 10080)] },
-  { providerId: "kimi", version: "2.1.1", plan: "订阅额度", windows: [windowFor("5h", 0, 300), windowFor("weekly", 4.1, 10080)] },
+  { providerId: "kimi", version: "2.1.1", plan: null, windows: [windowFor("5h", 0, 300), windowFor("weekly", 4.1, 10080)] },
   { providerId: "claude-code", version: "2.1.266", plan: null, windows: null },
 ];
 const data = new URLSearchParams(location.search).has("providerAccounts") ? allData.filter(agent => ["opencode", "pi", "deepseek-harness"].includes(agent.providerId)) : allData;
@@ -30,7 +30,7 @@ const balances: Record<string, Array<{ label: string; amount: number; currency: 
   "deepseek-harness": [{ label: "DeepSeek API", amount: 0, currency: "USD" }, { label: "DeepSeek API", amount: 25.5, currency: "CNY" }],
 };
 const installations: InstallationSummary[] = data.map(agent => ({ installationId: `ins_${agent.providerId}`, providerId: agent.providerId, executable: "fixture", fingerprint: "fixture", status: "ready", version: agent.version, versionText: agent.version, diagnostic: null, probeElapsedMillis: 0, probedAt: new Date(now).toISOString() }));
-const views: QuotaSnapshotView[] = data.map(agent => ({ installationId: `ins_${agent.providerId}`, providerId: agent.providerId, quota: agent.windows ? { windows: agent.windows, balances: balances[agent.providerId], context: null, planType: agent.plan, source: "native_pull", confidence: "provider_reported", collectedAtUnixMs: now, staleAfterUnixMs: now + 3600000, parserVersion: "fixture" } : null, diagnostic: agent.windows ? null : "claude_quota_login_required" }));
+const views: QuotaSnapshotView[] = data.map(agent => ({ installationId: `ins_${agent.providerId}`, providerId: agent.providerId, quota: agent.windows ? { windows: agent.windows, balances: balances[agent.providerId], context: null, planType: agent.plan, onDemand: "onDemand" in agent ? agent.onDemand : undefined, source: "native_pull", confidence: "provider_reported", collectedAtUnixMs: now, staleAfterUnixMs: now + 3600000, parserVersion: "fixture" } : null, diagnostic: agent.windows ? null : "claude_quota_login_required" }));
 const welcomeClient = { bootstrap: async () => ({ installations }), scanAgent: async () => ({ installations }), quotaSnapshots: async () => views } as unknown as CoreClient;
 const update = (id: string, status: AgentUpdate["status"], latestVersion: string, desktopVersion?: string): AgentUpdate => ({ installationId: `ins_${id}`, status, currentVersion: allData.find(agent => agent.providerId === id)!.version, latestVersion, desktopVersion, message: null, source: "fixture", canUpgrade: status === "available", checkedAt: now });
 document.documentElement.dataset.theme = "light";

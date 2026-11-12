@@ -39,7 +39,7 @@ impl Recovery {
             || s.began
                 .is_some_and(|at| now.saturating_duration_since(at) >= DEADLINE)
         {
-            return Err("视频恢复未成功，已停止自动重试".into());
+            return Err("backendText.m11d157c6".into());
         }
         s.attempts.push_back(now);
         s.total += 1;
@@ -60,7 +60,7 @@ impl Recovery {
         self.state()
             .began
             .filter(|at| at.elapsed() >= DEADLINE)
-            .map(|_| "视频恢复等待超时，请重新连接".into())
+            .map(|_| "backendText.m70d217e1".into())
     }
     pub fn describe(&self) -> Value {
         let s = self.state();
@@ -103,7 +103,7 @@ pub(super) fn rebuild<T>(
     drop(original);
     let live = || {
         if publication.stop.load(Ordering::Acquire) || sender.closed() {
-            Err("视频请求已结束".to_owned())
+            Err("backendText.mfd71fbae".to_owned())
         } else {
             Ok(())
         }

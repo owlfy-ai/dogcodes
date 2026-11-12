@@ -237,7 +237,7 @@ mod tests {
         assert!(!text.contains("alice"));
         assert!(!text.contains("user@example.com"));
         for _ in 0..40 {
-            log.record("phase", &"中文 diagnostic ".repeat(1400))
+            log.record("phase", &"backendText.m363c767b".repeat(1400))
                 .unwrap();
         }
         assert!(log.path.metadata().unwrap().len() <= MAX_LOG_BYTES);

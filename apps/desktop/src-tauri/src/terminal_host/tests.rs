@@ -527,7 +527,7 @@ async fn terminal_host_rejects_inconsistent_recipe_binding_before_recording_or_s
         host.start_resolved(resolved.clone(), None)
             .await
             .unwrap_err()
-            .contains("不一致")
+            .contains("backendText.ma2e8f0c5")
     );
     assert!(host.list(&resolved.project_id).unwrap().is_empty());
     assert_eq!(
@@ -576,7 +576,7 @@ async fn terminal_host_unbound_old_record_is_queryable_but_not_replayed_as_a_rec
         reopened
             .existing_project_launch(&request)
             .unwrap_err()
-            .contains("未绑定")
+            .contains("backendText.m6cf6eaf4")
     );
     assert_eq!(std::fs::read(root.path().join("count")).unwrap(), b"x");
 }

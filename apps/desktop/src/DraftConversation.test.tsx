@@ -5,6 +5,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { setAgentEnabled } from "./agentPreferences";
 import { App } from "./App";
 import { DemoCoreClient } from "./demoClient";
+import { SCRATCH_PROJECT_NAME, UNTITLED_TASK_TITLE } from "./displayNames";
 import { createHash, webcrypto } from "node:crypto";
 import type { ArtifactChunk, ArtifactMetadata, TimelineItem } from "@dogcodes/protocol";
 import { loadTurnArtifact } from "./turnArtifactCache";
@@ -97,17 +98,17 @@ it("keeps repeated new conversations and project choices local until the first m
   expect(client.createTask).not.toHaveBeenCalled();
   expect((await client.bootstrap()).tasks).toHaveLength(original);
   await typePrompt("开始项目任务"); await send();
-  expect(client.createTask).toHaveBeenCalledExactlyOnceWith(project.projectId, "新对话", expect.any(Object), expect.objectContaining({ operationId: expect.any(String), taskId: expect.any(String) }));
+  expect(client.createTask).toHaveBeenCalledExactlyOnceWith(project.projectId, UNTITLED_TASK_TITLE, expect.any(Object), expect.objectContaining({ operationId: expect.any(String), taskId: expect.any(String) }));
   expect(client.submitTurn).toHaveBeenCalledWith(expect.objectContaining({ projectId: project.projectId }), "开始项目任务", null, null, null, [], expect.any(String));
   expect((await client.bootstrap()).tasks).toHaveLength(original + 1);
 });
 
 it("creates an unassigned conversation only on send and retries a failed send in that conversation", async () => {
-  const scratch = (await client.bootstrap()).projects.find(p => p.displayName === "快速对话")!;
+  const scratch = (await client.bootstrap()).projects.find(p => p.displayName === SCRATCH_PROJECT_NAME)!;
   vi.mocked(client.submitTurn).mockRejectedValueOnce(new Error("发送失败测试"));
   await click(button("新建对话"));
   await typePrompt("无项目消息"); await send();
-  expect(client.createTask).toHaveBeenCalledExactlyOnceWith(scratch.projectId, "新对话", expect.any(Object), expect.objectContaining({ operationId: expect.any(String), taskId: expect.any(String) }));
+  expect(client.createTask).toHaveBeenCalledExactlyOnceWith(scratch.projectId, UNTITLED_TASK_TITLE, expect.any(Object), expect.objectContaining({ operationId: expect.any(String), taskId: expect.any(String) }));
   expect(element.querySelector("textarea")?.value).toBe("无项目消息");
   expect(element.querySelector("form.composer [role=alert]")?.textContent).toContain("发送失败测试");
   expect(element.textContent).not.toContain("核实发送结果");
@@ -357,13 +358,13 @@ it("removes the optimistic prompt and retains the original send after task creat
 });
 it("starts an empty draft in the project selected by the sidebar plus button", async () => {
   await typePrompt("旧会话的输入");
-  const project = (await client.bootstrap()).projects.find(project => project.displayName !== "快速对话")!;
+  const project = (await client.bootstrap()).projects.find(project => project.displayName !== SCRATCH_PROJECT_NAME)!;
   await click(element.querySelector(`[aria-label="在 ${project.displayName} 中新建会话"]`)!);
   expect(element.querySelector("textarea")?.value).toBe("");
   expect(client.createTask).not.toHaveBeenCalled();
   await typePrompt("项目的新会话");
   await send();
-  expect(client.createTask).toHaveBeenCalledExactlyOnceWith(project.projectId, "新对话", expect.any(Object), expect.objectContaining({ operationId: expect.any(String), taskId: expect.any(String) }));
+  expect(client.createTask).toHaveBeenCalledExactlyOnceWith(project.projectId, UNTITLED_TASK_TITLE, expect.any(Object), expect.objectContaining({ operationId: expect.any(String), taskId: expect.any(String) }));
 });
 
 it("blocks new submissions when every installed Agent is disabled", async () => {

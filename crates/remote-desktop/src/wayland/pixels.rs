@@ -39,21 +39,21 @@ pub(super) fn unpack(
         || height > 16384
         || u64::from(width) * u64::from(height) > 64 * 1024 * 1024
     {
-        return Err("Wayland 画面尺寸超出支持范围".into());
+        return Err("backendText.mb394733a".into());
     }
     let components = layout.components();
     let row = usize::try_from(width)
-        .map_err(|_| "画面宽度无效")?
+        .map_err(|_| "backendText.m8b46e0f6")?
         .checked_mul(components)
-        .ok_or("画面过大")?;
-    let pitch = usize::try_from(stride.unsigned_abs()).map_err(|_| "画面行跨度无效")?;
+        .ok_or("backendText.m51967b8a")?;
+    let pitch = usize::try_from(stride.unsigned_abs()).map_err(|_| "backendText.m0a4d8b8f")?;
     let needed = pitch
         .checked_mul(height as usize - 1)
         .and_then(|v| v.checked_add(row))
-        .ok_or("画面过大")?;
-    let end = offset.checked_add(length).ok_or("画面偏移无效")?;
+        .ok_or("backendText.m51967b8a")?;
+    let end = offset.checked_add(length).ok_or("backendText.mdd0090f3")?;
     if pitch < row || needed > length || end > bytes.len() {
-        return Err("Wayland 画面缓冲区不完整".into());
+        return Err("backendText.m2ca9fecb".into());
     }
     let data = &bytes[offset..end];
     let mut out = RgbaImage::new(width, height);
@@ -99,11 +99,11 @@ impl Plane<'_> {
     /// clamped to it. Only wrapped chunks require a copy; ordinary frames borrow.
     pub fn chunk(&self, length: usize) -> Result<Cow<'_, [u8]>> {
         if self.bytes.is_empty() || self.length == 0 {
-            return Err("Wayland 画面缓冲区为空".into());
+            return Err("backendText.m514e61b5".into());
         }
         let offset = self.offset as usize % self.bytes.len();
         if length > (self.length as usize).min(self.bytes.len()) {
-            return Err("Wayland 画面缓冲区不完整".into());
+            return Err("backendText.m2ca9fecb".into());
         }
         if length <= self.bytes.len() - offset {
             return Ok(Cow::Borrowed(&self.bytes[offset..offset + length]));
@@ -121,7 +121,7 @@ impl Plane<'_> {
             .and_then(|rows| pitch.checked_mul(rows))
             .and_then(|n| n.checked_add(row_bytes))
             .filter(|_| pitch >= row_bytes)
-            .ok_or("Wayland 画面行跨度无效")?;
+            .ok_or("backendText.m850d3889")?;
         self.chunk(needed)
     }
 }
@@ -154,7 +154,7 @@ pub(super) fn unpack_nv12(
         || !height.is_multiple_of(2)
         || u64::from(width) * u64::from(height) > 64 * 1024 * 1024
     {
-        return Err("Wayland NV12 画面尺寸无效".into());
+        return Err("backendText.m5854be83".into());
     }
     let convert = |y: &[u8], y_stride: i32, uv: &[u8], uv_stride: i32| {
         let y_pitch = y_stride.unsigned_abs() as usize;
@@ -169,7 +169,7 @@ pub(super) fn unpack_nv12(
             || needed(y_pitch, height).is_none_or(|n| n > y.len())
             || needed(uv_pitch, height / 2).is_none_or(|n| n > uv.len())
         {
-            return Err("Wayland NV12 画面缓冲区不完整".into());
+            return Err("backendText.m430f51d1".into());
         }
         let (gain, bias, rv, gu, gv, bu) = match (matrix, range) {
             (Matrix::Bt601, Range::Limited) => (298, 16, 409, -100, -208, 516),
@@ -214,13 +214,13 @@ pub(super) fn unpack_nv12(
         [plane] => {
             let split = (plane.stride.unsigned_abs() as usize)
                 .checked_mul(height as usize)
-                .ok_or("Wayland NV12 色度平面缺失")?;
+                .ok_or("backendText.m8b31d609")?;
             let needed = (plane.stride.unsigned_abs() as usize)
                 .checked_mul(height as usize / 2 - 1)
                 .and_then(|n| n.checked_add(width as usize))
                 .and_then(|n| n.checked_add(split))
                 .filter(|_| plane.stride.unsigned_abs() >= width)
-                .ok_or("Wayland NV12 画面行跨度无效")?;
+                .ok_or("backendText.m686c43da")?;
             let bytes = plane.chunk(needed)?;
             convert(&bytes[..split], plane.stride, &bytes[split..], plane.stride)
         }
@@ -230,7 +230,7 @@ pub(super) fn unpack_nv12(
             &uv.rows(width as usize, height as usize / 2)?,
             uv.stride,
         ),
-        _ => Err("Wayland NV12 数据平面数量无效".into()),
+        _ => Err("backendText.m26cfe4f9".into()),
     }
 }
 #[cfg(test)]

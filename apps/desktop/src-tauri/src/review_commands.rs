@@ -193,7 +193,7 @@ pub async fn core_workspace_file_applications(
     let icon_path = path.clone();
     let applications = tokio::task::spawn_blocking(move || open_with::applications(&icon_path))
         .await
-        .unwrap_or_else(|_| Err("查询打开方式失败".into()));
+        .unwrap_or_else(|_| Err("backendText.mbfbddb23".into()));
     // Discovery and copying share one authorized resolution. A discovery error
     // must not discard the resolved file path or disable the fixed footer.
     Ok(WorkspaceFileApplications::from_result(path, applications))
@@ -214,7 +214,7 @@ pub async fn core_open_workspace_file(
     if let Some(id) = application_id {
         return tokio::task::spawn_blocking(move || open_with::open_with(&candidate, &id))
             .await
-            .map_err(|_| "打开文件失败")?;
+            .map_err(|_| "backendText.m756f4b8e")?;
     }
     #[cfg(target_os = "macos")]
     let mut command = tokio::process::Command::new("/usr/bin/open");
@@ -229,12 +229,12 @@ pub async fn core_open_workspace_file(
     command.arg(candidate).kill_on_drop(true);
     let status = tokio::time::timeout(std::time::Duration::from_secs(10), command.status())
         .await
-        .map_err(|_| "打开文件超时")?
-        .map_err(|_| "无法打开文件")?;
+        .map_err(|_| "backendText.mf43e009d")?
+        .map_err(|_| "backendText.mf29cbf1a")?;
     if status.success() {
         Ok(())
     } else {
-        Err("无法打开文件，请检查此文件类型的默认应用设置".into())
+        Err("backendText.mb4208011".into())
     }
 }
 
@@ -572,7 +572,7 @@ pub async fn core_review_watch(
     changes: tauri::ipc::Channel<WatchMessage>,
 ) -> Result<(), String> {
     require_task_window(window.label(), &task_id)?;
-    uuid::Uuid::parse_str(&id).map_err(|_| "无效的状态订阅标识")?;
+    uuid::Uuid::parse_str(&id).map_err(|_| "backendText.m835a5438")?;
     let core = state.core.clone();
     let (ready, accepted) = tokio::sync::oneshot::channel();
     watchers.start(
@@ -603,7 +603,7 @@ pub async fn core_review_watch(
             }
         },
     )?;
-    accepted.await.map_err(|_| "状态订阅已取消")?
+    accepted.await.map_err(|_| "backendText.m692358a7")?
 }
 
 #[tauri::command]
@@ -660,7 +660,7 @@ mod tests {
     #[test]
     fn file_options_keep_the_resolved_path_when_application_discovery_fails() {
         let path = PathBuf::from("/workspace/history/report.html");
-        for result in [Ok(Vec::new()), Err("应用查询暂时失败".into())] {
+        for result in [Ok(Vec::new()), Err("backendText.ma3db119c".into())] {
             let failed = result.is_err();
             let options = WorkspaceFileApplications::from_result(path.clone(), result);
             let json = serde_json::to_value(options).unwrap();

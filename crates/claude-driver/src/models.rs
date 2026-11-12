@@ -92,7 +92,7 @@ pub(super) async fn read_with_auto(
                 "Claude catalog worker ended unexpectedly".into(),
             )))
         })
-        .map_err(|_| DriverError::Disconnected("Claude 模型目录读取超时".into()))
+        .map_err(|_| DriverError::Disconnected("backendText.m5b7ea04d".into()))
         .and_then(std::convert::identity) } => result,
         };
         if keep_ready && result.is_ok() && owner.has_changed().is_ok() && !connection.native.stopping() {
@@ -149,7 +149,7 @@ pub(super) fn catalog(value: &Value) -> Result<(ModelCatalog, bool), DriverError
     let rows = value
         .get("models")
         .and_then(Value::as_array)
-        .ok_or_else(|| DriverError::CapabilityUnavailable("Claude 未返回模型目录".into()))?;
+        .ok_or_else(|| DriverError::CapabilityUnavailable("backendText.mb1a5d447".into()))?;
     let mut catalog = ModelCatalog::default();
     for row in rows {
         let Some(id) = row["value"].as_str().filter(|s| !s.is_empty()) else {
@@ -171,7 +171,7 @@ pub(super) fn catalog(value: &Value) -> Result<(ModelCatalog, bool), DriverError
     }
     if catalog.models.is_empty() {
         return Err(DriverError::CapabilityUnavailable(
-            "Claude 未返回可用模型".into(),
+            "backendText.mb4bec615".into(),
         ));
     }
     catalog.default_model = catalog.models.first().map(|model| model.id.clone());

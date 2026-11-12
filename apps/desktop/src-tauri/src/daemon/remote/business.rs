@@ -153,15 +153,15 @@ async fn attachment(
     use sha2::{Digest, Sha256};
     use std::io::Read;
     let request: Import = serde_json::from_value(args).map_err(failure)?;
-    uuid::Uuid::parse_str(&request.upload_id).map_err(|_| "附件操作标识无效")?;
+    uuid::Uuid::parse_str(&request.upload_id).map_err(|_| "backendText.mbdb89cd8")?;
     let base = crate::workspace_service::directory_base(core, &request.source).await?;
     let store = control.attachments.clone();
     let import = method == "workspace_attachment_import";
     tokio::task::spawn_blocking(move || {
         if import {
-            let expected = request.request.as_ref().ok_or("缺少已核实的附件身份")?;
+            let expected = request.request.as_ref().ok_or("backendText.m385390ec")?;
             if expected.upload_id != request.upload_id {
-                return Err("附件操作标识冲突".into());
+                return Err("backendText.m8ce85845".into());
             }
             if let Some(receipt) = store.receipt(expected)? {
                 return Ok(json!(receipt));
@@ -169,21 +169,21 @@ async fn attachment(
         }
         let target = crate::workspace_service::resolve(&base, &request.source.path)?;
         if !target.is_file() {
-            return Err("不是普通项目文件".into());
+            return Err("backendText.m2d1ef089".into());
         }
         let mut bytes = Vec::new();
         std::fs::File::open(&target)
-            .map_err(|_| "无法读取项目文件")?
+            .map_err(|_| "backendText.m349877b2")?
             .take(crate::attachment_service::MAX_BYTES as u64 + 1)
             .read_to_end(&mut bytes)
-            .map_err(|_| "无法读取项目文件")?;
+            .map_err(|_| "backendText.m349877b2")?;
         if bytes.len() > crate::attachment_service::MAX_BYTES {
-            return Err("附件超过 25 MB".into());
+            return Err("backendText.m962d0a69".into());
         }
         let name = target
             .file_name()
             .and_then(|v| v.to_str())
-            .ok_or("文件名无效")?
+            .ok_or("backendText.mccc4460b")?
             .to_string();
         let mime = match target
             .extension()
@@ -212,7 +212,7 @@ async fn attachment(
             return Ok(json!(identity));
         }
         if request.request.as_ref() != Some(&identity) {
-            return Err("项目文件已改变，请重新核实后添加附件".into());
+            return Err("backendText.m025e05d2".into());
         }
         Ok(json!(store.save(
             &identity,
@@ -293,11 +293,11 @@ fn tail(
     }
     let position = |key: &str| order.iter().position(|k| k == key);
     let end = match before {
-        Some(key) => position(key).ok_or("更早的内容已变化，请刷新会话后重试")?,
+        Some(key) => position(key).ok_or("backendText.mf7deaef7")?,
         None => order.len(),
     };
     let target = match until {
-        Some(key) => Some(position(key).ok_or("找不到这一轮对话，它可能已被删除")?),
+        Some(key) => Some(position(key).ok_or("backendText.m3a2e9f0a")?),
         None => None,
     };
     let (mut start, mut bytes) = (end, 0);
@@ -335,11 +335,11 @@ fn timeline_item(snapshot: Value, item_id: &str, limit: usize) -> Result<Value, 
     let mut item = snapshot["items"]
         .as_array()
         .and_then(|items| items.iter().find(|item| item["itemId"] == item_id))
-        .ok_or("这条内容已不存在，请刷新会话")?
+        .ok_or("backendText.mb2ae9665")?
         .clone();
     compact_tool(&mut item);
     if serde_json::to_vec(&item).map_err(failure)?.len() > limit {
-        return Err("内容过大，无法在手机上完整显示，请在电脑上查看".into());
+        return Err("backendText.m5dd36e0e".into());
     }
     Ok(item)
 }
@@ -505,14 +505,14 @@ fn directories(args: Value) -> Result<Value, String> {
             .unwrap_or_else(|| "/".into()),
     };
     if !path.is_absolute() {
-        return Err("目录路径必须为绝对路径".into());
+        return Err("backendText.m13d3f902".into());
     }
     let path = crate::project_registry::plain_path(
         path.canonicalize()
-            .map_err(|_| "无法读取目录，请检查系统权限")?,
+            .map_err(|_| "backendText.me6b8beae")?,
     );
     let mut entries = Vec::new();
-    for entry in std::fs::read_dir(&path).map_err(|_| "无法读取目录，请检查系统权限")?
+    for entry in std::fs::read_dir(&path).map_err(|_| "backendText.me6b8beae")?
     {
         // One unreadable entry (a vanished file, a broken link) must not hide
         // the rest of the directory.
@@ -527,7 +527,7 @@ fn directories(args: Value) -> Result<Value, String> {
             entries.push(json!({"name":entry.file_name().to_string_lossy(),"path":entry.path()}));
         }
         if entries.len() > 20_000 {
-            return Err("目录过大，请输入更具体的目录路径".into());
+            return Err("backendText.ma5780a9d".into());
         }
     }
     // As Finder and Explorer show it: case-insensitive, then exact.

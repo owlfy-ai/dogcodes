@@ -73,13 +73,13 @@ async fn mark_drafts(drafts: &Path) -> Result<(), CoreError> {
         "Each folder here is one dogcodes conversation's own working folder.\n",
     )
     .await
-    .map_err(|_| CoreError::Internal("会话的临时工作目录无法创建".into()))
+    .map_err(|_| CoreError::Internal("backendText.m111ce303".into()))
 }
 
 async fn create(directory: &Path) -> Result<(), CoreError> {
     tokio::fs::create_dir_all(directory)
         .await
-        .map_err(|_| CoreError::Internal("会话的临时工作目录无法创建".into()))
+        .map_err(|_| CoreError::Internal("backendText.m111ce303".into()))
 }
 
 #[cfg(test)]

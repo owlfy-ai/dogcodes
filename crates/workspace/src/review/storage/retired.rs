@@ -89,7 +89,7 @@ fn insert_with_capacity(
         .pragma_update_and_check(None, "max_page_count", pages, |row| row.get(0))
         .map_err(|_| "cannot limit retired snapshot index capacity")?;
     if applied > pages {
-        return Err("失效快照索引已超过容量上限；保留所有旧记录，未清理元数据".into());
+        return Err("backendText.m0a9d1576".into());
     }
     if created {
         db.execute_batch("CREATE TABLE retired(id BLOB PRIMARY KEY NOT NULL CHECK(length(id)=32)) WITHOUT ROWID;")
@@ -104,7 +104,7 @@ fn insert_with_capacity(
     for id in ids {
         transaction
             .execute("INSERT OR IGNORE INTO retired(id) VALUES (?1)", [id])
-            .map_err(|_| "无法写入失效快照索引（容量已满或存储错误）；旧标记不会删除")?;
+            .map_err(|_| "backendText.m7254cf93")?;
     }
     transaction
         .commit()

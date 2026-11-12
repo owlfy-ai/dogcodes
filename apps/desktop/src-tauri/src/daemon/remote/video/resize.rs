@@ -40,7 +40,7 @@ impl Resize {
     }
     pub fn request(&self, instance: &str, seq: u64, width: u32) -> Result<(), String> {
         if !(320..=3840).contains(&width) {
-            return Err("视频尺寸超出支持范围".into());
+            return Err("backendText.m51bbe803".into());
         }
         // A late request from the previous monitor cannot resize its successor.
         if instance != self.id {
@@ -54,7 +54,7 @@ impl Resize {
             return if width == state.desired.width {
                 Ok(())
             } else {
-                Err("视频清晰度请求身份冲突".into())
+                Err("backendText.m4ddcda6d".into())
             };
         }
         state.desired = Request { seq, width };
@@ -102,7 +102,7 @@ impl Resize {
         self.state()
             .working
             .filter(|at| at.elapsed() > Duration::from_secs(10))
-            .map(|_| "视频清晰度调整超时".into())
+            .map(|_| "backendText.m3ce5866b".into())
     }
 }
 #[cfg(test)]

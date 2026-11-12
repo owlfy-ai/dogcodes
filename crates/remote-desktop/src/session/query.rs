@@ -34,7 +34,7 @@ impl Probe {
                     }
                 }
             })
-            .map_err(|_| "无法启动桌面状态检查")?;
+            .map_err(|_| "backendText.m65c2f267")?;
         Ok(Self { sender, budget })
     }
     pub fn read(&self) -> Result<bool> {
@@ -42,12 +42,12 @@ impl Probe {
         let (reply, response) = mpsc::sync_channel(1);
         self.sender
             .try_send(Request { deadline, reply })
-            .map_err(|_| "桌面状态检查繁忙，请重新连接")?;
+            .map_err(|_| "backendText.m624aa847")?;
         let result = response
             .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-            .map_err(|_| "检查系统桌面状态超时")?;
+            .map_err(|_| "backendText.m2ea94fde")?;
         if Instant::now() >= deadline {
-            return Err("检查系统桌面状态超时".into());
+            return Err("backendText.m2ea94fde".into());
         }
         result
     }
@@ -118,7 +118,7 @@ mod tests {
                     .is_ok()
             );
         }
-        assert!(probe.read().unwrap_err().contains("繁忙"));
+        assert!(probe.read().unwrap_err().contains("backendText.mf4556f0c"));
         release.send(()).unwrap();
         let until = Instant::now() + Duration::from_secs(1);
         loop {

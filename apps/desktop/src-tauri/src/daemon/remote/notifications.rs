@@ -35,7 +35,7 @@ impl RemoteHost {
                     // Raw vendor responses, tokens and event contents never enter diagnostics.
                     crate::service_diagnostics::record(
                         "mobile_notification_pending",
-                        "手机提醒尚未同步，将从原事件继续",
+                        "backendText.m03549c55",
                     );
                     tokio::time::sleep(Duration::from_secs(10)).await;
                 } else {
@@ -58,13 +58,13 @@ impl RemoteHost {
         if cursor.is_none() {
             let initial = match std::fs::read(&path) {
                 Ok(bytes) => serde_json::from_slice::<String>(&bytes)
-                    .map_err(|_| "通知同步位置损坏")?
+                    .map_err(|_| "backendText.mbc5227b8")?
                     .parse::<u64>()
-                    .map_err(|_| "通知同步位置损坏")?,
+                    .map_err(|_| "backendText.mbc5227b8")?,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                     core.bootstrap().await.map_err(failure)?.last_sequence
                 }
-                Err(_) => return Err("通知同步位置不可读取".into()),
+                Err(_) => return Err("backendText.md549f93d".into()),
             };
             save_cursor(path.clone(), initial).await?;
             *cursor = Some(initial);
@@ -110,9 +110,9 @@ impl RemoteHost {
                         .json(&payload)
                         .send()
                         .await
-                        .map_err(|_| "通知接入暂时不可用")?
+                        .map_err(|_| "backendText.m0678c4db")?
                         .error_for_status()
-                        .map_err(|_| "通知接入尚未受理")?;
+                        .map_err(|_| "backendText.mcf4f953d")?;
                 }
             }
             accepted = event.sequence;
@@ -129,7 +129,7 @@ impl RemoteHost {
 async fn save_cursor(path: PathBuf, sequence: u64) -> Result<(), String> {
     tokio::task::spawn_blocking(move || write_cursor(&path, sequence))
         .await
-        .map_err(|_| "通知同步位置保存失败")?
+        .map_err(|_| "backendText.mf41851c5")?
 }
 fn notification(event: &EventEnvelope) -> Option<Value> {
     if event.stream.stream_type != StreamType::Task {
@@ -147,21 +147,21 @@ fn notification(event: &EventEnvelope) -> Option<Value> {
     Some(json!({"eventId":event.event_id,"taskId":event.stream.stream_id,"kind":kind}))
 }
 fn write_cursor(path: &std::path::Path, sequence: u64) -> Result<(), String> {
-    let directory = path.parent().ok_or("通知同步目录无效")?;
-    std::fs::create_dir_all(directory).map_err(|_| "通知同步目录不可写入")?;
+    let directory = path.parent().ok_or("backendText.m38487631")?;
+    std::fs::create_dir_all(directory).map_err(|_| "backendText.mc6f321ed")?;
     let mut file =
-        tempfile::NamedTempFile::new_in(directory).map_err(|_| "通知同步位置不可写入")?;
+        tempfile::NamedTempFile::new_in(directory).map_err(|_| "backendText.m3a8b07b3")?;
     file.write_all(
         serde_json::to_string(&sequence.to_string())
             .map_err(failure)?
             .as_bytes(),
     )
     .and_then(|()| file.as_file_mut().sync_all())
-    .map_err(|_| "通知同步位置保存失败")?;
-    file.persist(path).map_err(|_| "通知同步位置保存失败")?;
+    .map_err(|_| "backendText.mf41851c5")?;
+    file.persist(path).map_err(|_| "backendText.mf41851c5")?;
     #[cfg(unix)]
     std::fs::File::open(directory)
         .and_then(|file| file.sync_all())
-        .map_err(|_| "通知同步位置保存结果待核实")?;
+        .map_err(|_| "backendText.m7e7e566d")?;
     Ok(())
 }

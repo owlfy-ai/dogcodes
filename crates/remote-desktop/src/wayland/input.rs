@@ -13,7 +13,7 @@ pub(super) fn plan(stream: u32, size: (u32, u32), events: Vec<Input>) -> Result<
         "press" => Ok(&[1][..]),
         "release" => Ok(&[0][..]),
         "click" => Ok(&[1, 0][..]),
-        _ => Err("输入方向无效".to_string()),
+        _ => Err("backendText.mc450a670".to_string()),
     };
     for event in events {
         match event {
@@ -27,7 +27,7 @@ pub(super) fn plan(stream: u32, size: (u32, u32), events: Vec<Input>) -> Result<
                     "left" => 0x110,
                     "right" => 0x111,
                     "middle" => 0x112,
-                    _ => return Err("鼠标按钮无效".into()),
+                    _ => return Err("backendText.mb989ee05".into()),
                 };
                 for s in state(&direction)? {
                     out.push(Event::Button(code, *s));
@@ -41,7 +41,7 @@ pub(super) fn plan(stream: u32, size: (u32, u32), events: Vec<Input>) -> Result<
             }
             Input::Text { text } => {
                 if text.len() > 64 * 1024 {
-                    return Err("键入文字过长".into());
+                    return Err("backendText.m0db6ca33".into());
                 }
                 for c in text.chars() {
                     let code = unicode(c);
@@ -59,7 +59,7 @@ pub(super) fn plan(stream: u32, size: (u32, u32), events: Vec<Input>) -> Result<
             }
         }
         if out.len() > 32768 {
-            return Err("单次键鼠操作过多".into());
+            return Err("backendText.m7cb23c19".into());
         }
     }
     Ok(out)
@@ -106,7 +106,7 @@ pub(super) fn keysym(key: &str) -> Result<i32> {
                 let mut chars = key.chars();
                 match (chars.next(), chars.next()) {
                     (Some(c), None) => unicode(c),
-                    _ => return Err("不支持的按键".into()),
+                    _ => return Err("backendText.me1a95947".into()),
                 }
             }
         }

@@ -466,6 +466,7 @@ fn parse(value: &Value, now: i64, plan: Option<String>) -> Option<QuotaSnapshot>
         source: "native_pull".into(),
         confidence: "provider_reported".into(),
         parser_version: "claude-oauth-usage-v1".into(),
+        ..Default::default()
     })
 }
 

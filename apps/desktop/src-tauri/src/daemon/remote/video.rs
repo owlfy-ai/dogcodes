@@ -194,7 +194,7 @@ impl RelayVideo {
     pub(super) fn activate(&self, generation: u64) -> Result<(), String> {
         let mut state = self.state();
         if generation != state.generation {
-            return Err("视频代次已变化，请重新打开画面".into());
+            return Err("backendText.me0dcd2fd".into());
         }
         if !state.ready {
             state.ready = true;
@@ -501,7 +501,7 @@ impl WorkerSlot {
                 (n < 2).then_some(n + 1)
             })
             .map(|_| Self)
-            .map_err(|_| "旧视频会话仍在停止，暂时使用图片模式".into())
+            .map_err(|_| "backendText.m2d7f3fdf".into())
     }
 }
 impl Drop for WorkerSlot {
@@ -561,11 +561,11 @@ impl Session {
                     let _slot = slot;
                     run(spec, &sender, &stats, &ready, publication, &resize);
                 })
-                .map_err(|_| "无法启动视频线程".to_string())?
+                .map_err(|_| "backendText.mb1780d75".to_string())?
         };
         let size = started
             .recv_timeout(Duration::from_secs(10))
-            .map_err(|_| "视频启动超时".to_string())
+            .map_err(|_| "backendText.m378874b4".to_string())
             .and_then(|r| r);
         match size {
             Ok(_) => Ok(Self {
@@ -850,7 +850,7 @@ fn run(
                     .error
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner) =
-                    Some("显示器尺寸持续变化，请稳定显示设置后重试".into());
+                    Some("backendText.me28265cb".into());
                 break;
             }
             geometry_rebuilds.push_back(now);

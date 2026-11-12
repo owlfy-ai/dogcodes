@@ -823,7 +823,7 @@ async fn owned_portal_fixture_verifies_rotation_grants_input_and_disconnect() {
                 shared.logind_locked.store(true, Ordering::Release);
                 stream.request_keyframe();
                 wait_for(|| stream.error().is_some()).await;
-                assert!(stream.error().unwrap().contains("锁定"));
+                assert!(stream.error().unwrap().contains("backendText.m6f25892a"));
                 let count = encoded.lock().unwrap().len();
                 shared.logind_locked.store(false, Ordering::Release);
                 stream.request_keyframe();
@@ -885,7 +885,7 @@ async fn owned_portal_fixture_verifies_rotation_grants_input_and_disconnect() {
             result.is_err(),
             "JPEG pixels were returned after the lock transition"
         );
-        assert!(result.unwrap_err().contains("锁定"));
+        assert!(result.unwrap_err().contains("backendText.m6f25892a"));
         shared.logind_lock_after.store(0, Ordering::SeqCst);
         shared.logind_locked.store(false, Ordering::Release);
         *shared.revoke.lock().unwrap() = Some(session.clone());
@@ -996,7 +996,7 @@ async fn owned_portal_fixture_verifies_rotation_grants_input_and_disconnect() {
         std::fs::write(&force, b"owned-fixture").unwrap();
         wait_for(|| corrupt.exists()).await;
         wait_for(|| source.check_active().is_err()).await;
-        assert!(source.check_active().unwrap_err().contains("恢复超时"));
+        assert!(source.check_active().unwrap_err().contains("backendText.m3f7fc78e"));
         assert!(checking.status().is_err());
         std::fs::remove_file(&force).unwrap();
         drop(source);
@@ -1016,7 +1016,7 @@ async fn owned_portal_fixture_verifies_rotation_grants_input_and_disconnect() {
         std::fs::write(&force, b"owned-fixture").unwrap();
         wait_for(|| root.join(".corrupt-chunk-written").exists()).await;
         wait_for(|| source.check_active().is_err()).await;
-        assert!(source.check_active().unwrap_err().contains("恢复超时"));
+        assert!(source.check_active().unwrap_err().contains("backendText.m3f7fc78e"));
         assert!(checking.status().is_err());
         std::fs::remove_file(&force).unwrap();
         drop(source);
@@ -1118,7 +1118,7 @@ async fn owned_portal_fixture_verifies_rotation_grants_input_and_disconnect() {
     shared.start_mode.store(1, Ordering::Release);
     let denied = Session::start(store.clone(), true).unwrap();
     wait_for(|| denied.status() != Ok(false)).await;
-    assert!(denied.status().unwrap_err().contains("取消"));
+    assert!(denied.status().unwrap_err().contains("backendText.mb50c2e04"));
     drop(denied);
     wait_for(|| ACTORS.load(Ordering::Acquire) == 0).await;
     shared.start_mode.store(3, Ordering::Release);
@@ -1479,7 +1479,7 @@ async fn clipboard_input_fixture(
         .paste_shift
         .store(true, Ordering::Release);
     let error = send_text(&changed, "焦点切换🟢").await.unwrap_err();
-    assert!(error.contains("焦点已变化"), "{error}");
+    assert!(error.contains("backendText.ma6c98df5"), "{error}");
     assert!(clip.pasted.lock().unwrap().is_empty());
     assert!(
         !shared

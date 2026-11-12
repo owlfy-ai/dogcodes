@@ -70,7 +70,7 @@ fn insert_with_capacity(
         return Ok(());
     }
     if existing.len() as u64 + added.len() as u64 > capacity {
-        return Err("失效快照索引已超过容量上限；保留所有旧记录，未写入新记录".into());
+        return Err("backendText.mf523d9b1".into());
     }
     let mut options = fs::OpenOptions::new();
     options.append(true).create(true);

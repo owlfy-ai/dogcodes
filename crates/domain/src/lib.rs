@@ -405,6 +405,12 @@ pub struct AttachmentIntegrity {
     pub byte_length: u64,
 }
 
+/// Stored name of the scratch project. The desktop translates it when displaying.
+pub const SCRATCH_PROJECT_NAME: &str = "dogcodes:scratch";
+
+/// Stored title of a conversation that has not been named yet. The desktop translates it.
+pub const UNTITLED_TASK_TITLE: &str = "dogcodes:untitled";
+
 /// A user-facing message id. Optional parameters follow U+001E as a JSON string
 /// array, so the UI translates the code instead of matching Chinese text.
 #[must_use]

@@ -114,7 +114,7 @@ impl ReviewStore {
                 .enumerate()
             {
                 if count >= 100_000 || Instant::now() >= deadline {
-                    return Err("Diff 容量检查超出预算，请先回收旧缓存".into());
+                    return Err("backendText.m365f336f".into());
                 }
                 let entry = entry.map_err(|_| "cannot inspect Diff capacity")?;
                 let metadata = fs::symlink_metadata(entry.path())
@@ -132,13 +132,13 @@ impl ReviewStore {
             .checked_add(incoming_count)
             .is_none_or(|count| count > 100_000)
         {
-            return Err("Diff 内容对象数量达到上限，请先回收旧缓存".into());
+            return Err("backendText.mcaf28816".into());
         }
         if used
             .checked_add(incoming)
             .is_none_or(|total| total > capacity)
         {
-            return Err("Diff 内容存储已达到容量上限。请在本地 Diff 存储中预览并回收未引用旧缓存；不会自动删除会话基线或恢复备份。".into());
+            return Err("backendText.m3c99adb7".into());
         }
         // Publish a new epoch before the blob. A crash or failed write leaves
         // all other handles with a mismatched epoch and forces a disk recount.
@@ -164,7 +164,7 @@ impl ReviewStore {
 
 fn validate_capacity(bytes: u64) -> ReviewResult<()> {
     if !(256 * 1024 * 1024..=64 * 1024 * 1024 * 1024).contains(&bytes) {
-        return Err("Diff 容量上限必须在 256 MiB 到 64 GiB 之间".into());
+        return Err("backendText.m3087f7fa".into());
     }
     Ok(())
 }
@@ -202,7 +202,7 @@ mod tests {
             let result = result_rx.recv_timeout(Duration::from_secs(5)).unwrap();
             if capacity == 3 {
                 let error = result.unwrap_err();
-                assert!(error.contains("容量上限"), "{error}");
+                assert!(error.contains("backendText.m3276c0f6"), "{error}");
             } else {
                 assert_eq!(first.read_blob(&result.unwrap()).unwrap(), b"bb");
             }
@@ -247,7 +247,7 @@ mod tests {
             first
                 .put_blob_with_capacity(b"cc", 4)
                 .unwrap_err()
-                .contains("容量上限")
+                .contains("backendText.m3276c0f6")
         );
         let reservation = second.reserve_blob_capacity(1, 4).unwrap();
         drop(reservation); // Simulate failure after epoch publication, before blob publication.
@@ -290,7 +290,7 @@ mod tests {
             store
                 .put_blob_with_capacity(b"x", 4)
                 .unwrap_err()
-                .contains("容量上限")
+                .contains("backendText.m3276c0f6")
         );
         assert_eq!(store.put_blob_with_capacity(b"1234", 1).unwrap(), hash);
         assert_eq!(store.read_blob(&hash).unwrap(), b"1234");

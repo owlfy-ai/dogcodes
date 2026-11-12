@@ -25,18 +25,18 @@ pub struct ReviewWorkspace {
 }
 
 pub async fn list(core: &dyn ReviewFacts, task_id: &str) -> Result<Vec<ReviewWorkspace>, String> {
-    let id = TaskId::parse(task_id).map_err(|_| "会话标识无效")?;
+    let id = TaskId::parse(task_id).map_err(|_| "backendText.m3e3f3b0f")?;
     let snapshot = core.bootstrap().await?;
     let source = snapshot
         .tasks
         .iter()
         .find(|t| t.task_id == id)
-        .ok_or("会话已不存在")?;
+        .ok_or("backendText.m1600e8a6")?;
     let project = snapshot
         .projects
         .iter()
         .find(|p| p.project_id == source.project_id)
-        .ok_or("项目已不存在")?;
+        .ok_or("backendText.meb325c2a")?;
     if project.target_id.is_some() && core.on_hub() {
         return Err("backendText.projectOnOtherMachine".into());
     }

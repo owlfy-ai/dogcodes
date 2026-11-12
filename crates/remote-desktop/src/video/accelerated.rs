@@ -39,7 +39,7 @@ impl Encoder {
             || width.max(height) > 3840
             || width.min(height) > 2160
         {
-            return Err("系统视频尺寸无效".into());
+            return Err("backendText.mfaad45be".into());
         }
         let size = (width, height);
         let rate = profile.rate(bitrate, fps);
@@ -48,7 +48,7 @@ impl Encoder {
         #[cfg(target_os = "linux")]
         let hardware = super::linux::hardware_attempt(size, rate, profile);
         #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-        let hardware = Err("当前平台未使用此系统编码器".into());
+        let hardware = Err("backendText.mc035ed0a".into());
         Self::from_attempt(size, rate, sink, profile, hardware)
     }
     pub(super) fn from_attempt(
@@ -122,7 +122,7 @@ impl Encoder {
     }
     pub fn encode(&mut self, frame: &Frame, captured: Instant, force: bool) -> Result<bool> {
         if frame.size() != self.size {
-            return Err("显示器尺寸变化，请重新建立视频连接".into());
+            return Err("backendText.ma2b8d5c2".into());
         }
         if let Some(hardware) = &mut self.hardware {
             match hardware.run((frame.clone(), captured, force, self.rate)) {
@@ -141,7 +141,7 @@ impl Encoder {
         // SPS/PPS/IDR. No timed-out worker owns this sink or can send old frames.
         self.software
             .as_mut()
-            .ok_or("视频编码器未就绪")?
+            .ok_or("backendText.m76ea66d2")?
             .encode(frame, captured, force)
     }
 }

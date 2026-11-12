@@ -84,16 +84,16 @@ impl Sender {
     }
     pub(super) async fn open(fd: OwnedFd) -> Result<Self> {
         let context = ei::Context::new(std::os::unix::net::UnixStream::from(fd))
-            .map_err(|_| "无法连接已授权的 Wayland EIS 输入服务")?;
+            .map_err(|_| "backendText.m86172266")?;
         let mut events = reis::tokio::EiEventStream::new(context.clone())
-            .map_err(|_| "无法监听 EIS 输入服务")?;
+            .map_err(|_| "backendText.mbab81afb")?;
         let handshake = reis::tokio::ei_handshake(
             &mut events,
             "DogCodes remote desktop",
             ei::handshake::ContextType::Sender,
         )
         .await
-        .map_err(|_| "Wayland EIS 握手失败，请重新连接并授权")?;
+        .map_err(|_| "backendText.md164c310")?;
         let converter = reis::event::EiEventConverter::new(&context, handshake);
         let connection = converter.connection().clone();
         Ok(Self {
@@ -133,10 +133,10 @@ impl Sender {
         event: Option<std::result::Result<EiEvent, reis::Error>>,
     ) -> Result<()> {
         let event = event
-            .ok_or("Wayland EIS 连接已关闭，请重新连接并授权")?
-            .map_err(|_| "Wayland EIS 协议中断，请重新连接并授权")?;
+            .ok_or("backendText.m878f34e2")?
+            .map_err(|_| "backendText.m4b6235c6")?;
         match event {
-            EiEvent::Disconnected(_) => return Err("电脑已断开 EIS 输入授权，请重新连接".into()),
+            EiEvent::Disconnected(_) => return Err("backendText.m2f1e9e65".into()),
             EiEvent::SeatAdded(e) => {
                 e.seat.bind_capabilities(
                     Cap::PointerAbsolute | Cap::Button | Cap::Scroll | Cap::Keyboard | Cap::Text,
@@ -148,7 +148,7 @@ impl Sender {
             }
             EiEvent::DeviceAdded(e) => {
                 if self.devices.len() >= 64 {
-                    return Err("Wayland 输入设备数量超出限制".into());
+                    return Err("backendText.mea6569cf".into());
                 }
                 let keyboard = e.device.keymap().map(keyboard::Map::read).transpose()?;
                 if e.device.device().version() >= 3 {
@@ -178,7 +178,7 @@ impl Sender {
             EiEvent::DeviceResumed(e) => {
                 if let Some(d) = self.devices.iter_mut().find(|d| d.device == e.device) {
                     if d.resumed {
-                        return Err("Wayland 输入设备重复恢复，已结束远控".into());
+                        return Err("backendText.md76847ba".into());
                     }
                     self.sequence = self.sequence.wrapping_add(1);
                     d.device
@@ -217,18 +217,18 @@ impl Sender {
                 None => return Ok(()),
             }
         }
-        Err("Wayland 输入设备变化过于频繁，请重新连接".into())
+        Err("backendText.mc37bb8b2".into())
     }
     fn flush(&self) -> Result<()> {
         self.connection
             .flush()
-            .map_err(|_| "Wayland EIS 发送失败，结果未知，禁止重放".into())
+            .map_err(|_| "backendText.m224fda47".into())
     }
     fn pointer(&self, stream: &StreamInfo) -> Result<(&DeviceState, &reis::event::Region)> {
         let mapping = stream
             .mapping_id
             .as_deref()
-            .ok_or("屏幕缺少可信输入区域，请重新授权")?;
+            .ok_or("backendText.m1abde968")?;
         let mut found = None;
         for d in &self.devices {
             if d.device.device_type() != ei::device::DeviceType::Virtual
@@ -243,13 +243,13 @@ impl Sender {
                 .filter(|r| r.mapping_id.as_deref() == Some(mapping))
             {
                 if found.is_some() {
-                    return Err("屏幕对应多个输入区域，无法安全控制".into());
+                    return Err("backendText.m86f40bb0".into());
                 }
                 validate_region(region)?;
                 found = Some((d, region));
             }
         }
-        found.ok_or_else(|| "屏幕输入区域正在更新，请稍后重试".into())
+        found.ok_or_else(|| "backendText.m5f46e51d".into())
     }
     fn capability(&self, pointer: &DeviceState, cap: Cap) -> Result<&DeviceState> {
         if pointer.resumed && pointer.device.has_capability(cap) {
@@ -258,16 +258,16 @@ impl Sender {
                 .devices
                 .iter()
                 .find(|d| d.device == pointer.device)
-                .ok_or_else(|| "Wayland 输入设备已替换".into());
+                .ok_or_else(|| "backendText.m6c23f1ec".into());
         }
         let mut candidates = self.devices.iter().filter(|d| {
             d.resumed && d.device.seat() == pointer.device.seat() && d.device.has_capability(cap)
         });
         let device = candidates
             .next()
-            .ok_or("Wayland 输入设备尚未就绪，请稍后重试")?;
+            .ok_or("backendText.m902631c8")?;
         if candidates.next().is_some() {
-            return Err("Wayland 同一座席存在多个输入设备，无法安全选择".into());
+            return Err("backendText.m5b9dbfa9".into());
         }
         Ok(device)
     }
@@ -290,7 +290,7 @@ impl Sender {
         clipboard: bool,
     ) -> Result<Prepared> {
         if state.input_generation.load(Ordering::Acquire) != generation {
-            return Err("屏幕或键盘配置已变化，本次输入未执行，请重试".into());
+            return Err("backendText.m88f9f98b".into());
         }
         let mut actions = Vec::new();
         let mut held = self.held.clone();
@@ -304,7 +304,7 @@ impl Sender {
                 Input::Move { x, y } => {
                     let (d, r) = self.pointer(stream)?;
                     if !d.resumed {
-                        return Err("屏幕输入已暂停，请稍后重试".into());
+                        return Err("backendText.mfa3a2cd7".into());
                     }
                     actions.push(Action {
                         device: d.device.clone(),
@@ -319,10 +319,10 @@ impl Sender {
                         "left" => 0x110,
                         "right" => 0x111,
                         "middle" => 0x112,
-                        _ => return Err("鼠标按钮无效".into()),
+                        _ => return Err("backendText.mb989ee05".into()),
                     };
                     if direction == "click" && held.buttons.contains_key(&code) {
-                        return Err("请先松开已按下的鼠标按钮，再点击".into());
+                        return Err("backendText.m29463bba".into());
                     }
                     for down in directions(&direction)? {
                         if down {
@@ -348,7 +348,7 @@ impl Sender {
                     shortcut_before_text = true;
                     let sym = input::keysym(&key)?;
                     if direction == "click" && held.keys.contains_key(&sym) {
-                        return Err("请先松开已按下的按键，再点击".into());
+                        return Err("backendText.m5fc8fbb3".into());
                     }
                     for down in directions(&direction)? {
                         if down {
@@ -382,7 +382,7 @@ impl Sender {
                 }
                 Input::Text { text } => {
                     if text.len() > 64 * 1024 || text.contains('\0') {
-                        return Err("键入文字过长或包含不支持的空字符".into());
+                        return Err("backendText.mf0ce5434".into());
                     }
                     if text.is_empty() {
                         continue;
@@ -406,9 +406,9 @@ impl Sender {
                         let d = self.capability(pointer, Cap::Keyboard)?;
                         let map = self
                             .planning_map(&d.device, &mut maps)
-                            .ok_or("系统没有提供键盘布局，无法输入文字")?;
+                            .ok_or("backendText.m7ccdaf43")?;
                         if !held.keys.is_empty() {
-                            return Err("请先松开快捷键，再输入文字".into());
+                            return Err("backendText.ma49c100c".into());
                         }
                         let planned = match map.plan_text(&text) {
                             Ok(events) => events,
@@ -448,7 +448,7 @@ impl Sender {
                 }
             }
             if actions.len() > 32768 {
-                return Err("单次键鼠操作过多".into());
+                return Err("backendText.m7cb23c19".into());
             }
         }
         Ok(Prepared {
@@ -506,7 +506,7 @@ impl Sender {
         let d = self.capability(pointer, Cap::Keyboard)?;
         let code = self
             .planning_map(&d.device, maps)
-            .ok_or("系统没有提供键盘布局，无法映射按键")?
+            .ok_or("backendText.md16a928f")?
             .key(sym)?;
         Ok(Key {
             device: d.device.clone(),
@@ -529,11 +529,11 @@ impl Sender {
             if !state.active()
                 || state.input_generation.load(Ordering::Acquire) != prepared.generation
             {
-                return Err("输入期间授权或设备配置已变化，已结束本次远控，禁止重放".into());
+                return Err("backendText.mddc38a0e".into());
             }
             let d = &action.device;
             if !self.devices.iter().any(|v| v.resumed && &v.device == d) || !d.device().is_alive() {
-                return Err("Wayland 输入设备已暂停或移除".into());
+                return Err("backendText.m9892e49e".into());
             }
             match action.kind {
                 Kind::Paste {
@@ -542,23 +542,23 @@ impl Sender {
                     v,
                     shift,
                 } => {
-                    let clipboard = clipboard.ok_or("当前连接没有剪贴板权限，未执行粘贴")?;
+                    let clipboard = clipboard.ok_or("backendText.m1bbc2c96")?;
                     let focus = self.focus.resolve().await;
                     let terminal = focus.as_ref().is_some_and(|f| f.terminal());
                     if terminal && shift.is_none() {
-                        return Err("当前键盘布局无法执行终端粘贴，未执行输入".into());
+                        return Err("backendText.mafa4020a".into());
                     }
                     let temporary = clipboard.begin(text).await?;
                     if let Some(focus) = &focus
                         && !focus.current().await
                     {
-                        return Err("输入焦点已变化，未执行粘贴，请重新输入".into());
+                        return Err("backendText.ma6c98df5".into());
                     }
                     self.drain(state)?;
                     if !state.active()
                         || state.input_generation.load(Ordering::Acquire) != prepared.generation
                     {
-                        return Err("粘贴前键盘配置已变化，未执行粘贴".into());
+                        return Err("backendText.mda67ab13".into());
                     }
                     temporary.arm()?;
                     let mut keys = vec![(ctrl, true)];
@@ -590,7 +590,7 @@ impl Sender {
                     .await?;
                     tokio::time::timeout(std::time::Duration::from_secs(1), temporary.delivered())
                         .await
-                        .map_err(|_| "未确认粘贴数据交付，结果未知，禁止重放")??;
+                        .map_err(|_| "backendText.m0400b59d")??;
                     drop(temporary);
                     continue;
                 }
@@ -600,17 +600,17 @@ impl Sender {
                         || state.input_generation.load(Ordering::Acquire) != prepared.generation
                     {
                         return Err(
-                            "快捷键后的键盘配置发生变化，后续文字未执行，禁止重放整批输入".into(),
+                            "backendText.maba8f830".into(),
                         );
                     }
                     continue;
                 }
                 Kind::Move(x, y) => d
                     .interface::<ei::PointerAbsolute>()
-                    .ok_or("鼠标设备已移除")?
+                    .ok_or("backendText.m290fbb5f")?
                     .motion_absolute(x, y),
                 Kind::Button(code, down) => {
-                    d.interface::<ei::Button>().ok_or("鼠标按钮已移除")?.button(
+                    d.interface::<ei::Button>().ok_or("backendText.m3222bd0d")?.button(
                         code,
                         if down {
                             ei::button::ButtonState::Press
@@ -632,21 +632,21 @@ impl Sender {
                             map.note_key(code, down);
                         }
                         d.interface::<ei::Keyboard>()
-                            .ok_or("键盘设备已移除")?
+                            .ok_or("backendText.mdd64a5b6")?
                             .key(code, s);
                     } else {
                         d.interface::<ei::Text>()
-                            .ok_or("文字设备已移除")?
+                            .ok_or("backendText.me2b2b617")?
                             .keysym(code, s);
                     }
                 }
                 Kind::Scroll(x, y) => d
                     .interface::<ei::Scroll>()
-                    .ok_or("滚轮设备已移除")?
+                    .ok_or("backendText.m205a6bb7")?
                     .scroll_discrete(x, y),
                 Kind::Text(text) => d
                     .interface::<ei::Text>()
-                    .ok_or("文字设备已移除")?
+                    .ok_or("backendText.me2b2b617")?
                     .utf8(&text),
             }
             // A press/release (or UTF-8 chunk) always gets its own frame. The
@@ -657,7 +657,7 @@ impl Sender {
         self.synchronize(state).await?;
         if !state.active() || state.input_generation.load(Ordering::Acquire) != prepared.generation
         {
-            return Err("输入确认期间授权或设备配置已变化，已结束远控，禁止重放".into());
+            return Err("backendText.mbb290cae".into());
         }
         self.held = prepared.held;
         Ok(())
@@ -673,7 +673,7 @@ impl Sender {
             tokio::select! {
                 biased;
                 result = &mut rx => {
-                    result.map_err(|_| "Wayland EIS 同步中断")?;
+                    result.map_err(|_| "backendText.m960aea0f")?;
                     for d in &mut self.devices { if let Some(map) = d.keyboard.as_mut() { map.synchronized(); } }
                     return Ok(());
                 },
@@ -712,7 +712,7 @@ fn directions(direction: &str) -> Result<Vec<bool>> {
         "press" => Ok(vec![true]),
         "release" => Ok(vec![false]),
         "click" => Ok(vec![true, false]),
-        _ => Err("输入方向无效".into()),
+        _ => Err("backendText.mc450a670".into()),
     }
 }
 fn validate_region(r: &reis::event::Region) -> Result<()> {
@@ -726,7 +726,7 @@ fn validate_region(r: &reis::event::Region) -> Result<()> {
         || !r.scale.is_finite()
         || r.scale <= 0.
     {
-        return Err("Wayland 输入区域坐标无效".into());
+        return Err("backendText.m4cdda895".into());
     }
     Ok(())
 }
@@ -749,7 +749,7 @@ fn monotonic_us() -> Result<u64> {
     };
     // SAFETY: the pointer refers to a writable, initialized timespec.
     if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) } != 0 || time.tv_sec < 0 {
-        return Err("无法读取 Wayland 输入时钟".into());
+        return Err("backendText.md37992b5".into());
     }
     Ok((time.tv_sec as u64).saturating_mul(1_000_000) + time.tv_nsec as u64 / 1000)
 }

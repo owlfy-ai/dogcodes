@@ -517,7 +517,7 @@ async fn review_rpc_builds_project_packet_in_service_and_replays_without_gui_sna
             .start_project_review(denied.clone())
             .await
             .unwrap_err()
-            .contains("已禁用")
+            .contains("backendText.m12a3f699")
     );
     let mut enable = CommandEnvelope::local(CoreCommand::SetAgentPreferences(
         agent_protocol::AgentPreferences::default(),
@@ -534,7 +534,7 @@ async fn review_rpc_builds_project_packet_in_service_and_replays_without_gui_sna
             .start_project_review(denied)
             .await
             .unwrap_err()
-            .contains("尚未就绪")
+            .contains("backendText.m83f9c5d0")
     );
     assert_eq!(
         remote
@@ -558,7 +558,7 @@ async fn review_rpc_builds_project_packet_in_service_and_replays_without_gui_sna
             .start_project_review(fresh)
             .await
             .unwrap_err()
-            .contains("比较结果已过期")
+            .contains("backendText.m463dcdc7")
     );
     assert!(
         f.client
@@ -1147,7 +1147,7 @@ async fn review_rpc_git_commit_success_is_preserved_when_push_target_cannot_be_b
         receipt["outcome"]["targetError"]
             .as_str()
             .unwrap()
-            .contains("上游")
+            .contains("backendText.mb208c591")
     );
     let result = rpc(
         &f.client,
@@ -1161,7 +1161,7 @@ async fn review_rpc_git_commit_success_is_preserved_when_push_target_cannot_be_b
         result["outcome"]["message"]
             .as_str()
             .unwrap()
-            .contains("提交已完成")
+            .contains("backendText.m4c12cb65")
     );
     assert_eq!(git(&path, &["rev-list", "--count", "HEAD"]).trim(), "2");
 }

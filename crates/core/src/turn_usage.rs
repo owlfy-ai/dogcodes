@@ -134,7 +134,7 @@ pub(crate) fn freeze(
         summarize(input.before, input.after, input.new_session).unwrap_or_else(|| TurnUsage {
             scope: "unknown".into(),
             completeness: Some("unknown".into()),
-            incomplete_reason: Some("未取得可确认归属本轮的用量".into()),
+            incomplete_reason: Some("backendText.m6eedbb0d".into()),
             ..TurnUsage::default()
         })
     } else {
@@ -295,9 +295,9 @@ fn summarize(
                     completeness: Some("partial".into()),
                     incomplete_reason: Some(
                         if report.truncated {
-                            "已达到采集上限"
+                            "backendText.m5f487bdc"
                         } else {
-                            "已记录请求；原生协议未证明覆盖全部请求"
+                            "backendText.m30de7e9b"
                         }
                         .into(),
                     ),

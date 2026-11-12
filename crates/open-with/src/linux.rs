@@ -9,8 +9,8 @@ fn handlers(path: &Path) -> Result<(Vec<gio::AppInfo>, Option<gio::AppInfo>), St
             gio::FileQueryInfoFlags::NONE,
             gio::Cancellable::NONE,
         )
-        .map_err(|_| "无法识别文件类型")?;
-    let content_type = info.content_type().ok_or("无法识别文件类型")?;
+        .map_err(|_| "backendText.ma5fc405d")?;
+    let content_type = info.content_type().ok_or("backendText.ma5fc405d")?;
     Ok((
         gio::AppInfo::recommended_for_type(&content_type),
         gio::AppInfo::default_for_type(&content_type, false),
@@ -86,7 +86,7 @@ pub fn launch(path: &Path, candidate: &Candidate) -> Result<(), String> {
     let app = apps
         .into_iter()
         .find(|app| app.id().as_deref() == Some(candidate.app.id.as_str()))
-        .ok_or("此应用已不可用")?;
+        .ok_or("backendText.maf388132")?;
     app.launch(&[gio::File::for_path(path)], gio::AppLaunchContext::NONE)
-        .map_err(|_| "应用无法打开此文件".into())
+        .map_err(|_| "backendText.ma01ddfae".into())
 }

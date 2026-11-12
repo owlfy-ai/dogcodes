@@ -63,7 +63,7 @@ impl State {
                 )
             })
         {
-            return Err("屏幕尺寸已变化，鼠标坐标需要重新授权，请重新连接远程桌面".into());
+            return Err("backendText.m65473fae".into());
         }
         Ok(())
     }
@@ -95,7 +95,7 @@ impl Slot {
                 (n < 2).then_some(n + 1)
             })
             .map(|_| Self)
-            .map_err(|_| "旧 Wayland 授权仍在结束，请稍后重试".into())
+            .map_err(|_| "backendText.mca954e8c".into())
     }
 }
 impl Drop for Slot {
@@ -143,7 +143,7 @@ impl Session {
         let slot = Slot::take()?;
         let generation = {
             let mut n = store.generation.lock().unwrap_or_else(|e| e.into_inner());
-            *n = n.checked_add(1).ok_or("授权次数已耗尽，请重启应用")?;
+            *n = n.checked_add(1).ok_or("backendText.m7bb57f43")?;
             *n
         };
         let state = Arc::new(State {
@@ -166,7 +166,7 @@ impl Session {
                 {
                     Ok(r) => r,
                     Err(_) => {
-                        shared.fail("无法启动 Wayland 授权线程".into());
+                        shared.fail("backendText.m04b5b0f1".into());
                         return;
                     }
                 };
@@ -174,7 +174,7 @@ impl Session {
                     shared, receiver, store, generation, control, fresh,
                 ));
             })
-            .map_err(|_| "无法启动 Wayland 授权线程")?;
+            .map_err(|_| "backendText.m04b5b0f1")?;
         Ok(Self {
             inner: Arc::new(Client { state, sender }),
         })
@@ -190,13 +190,13 @@ impl Session {
             return Err(error.clone());
         }
         if !self.inner.state.active() {
-            return Err("Wayland 授权会话已结束".into());
+            return Err("backendText.mde8d770a".into());
         }
         Ok(matches!(&*phase, Phase::Ready(..)))
     }
     fn streams(&self) -> Result<Vec<StreamInfo>> {
         if !self.status()? {
-            return Err("请在电脑上完成 Wayland 屏幕共享授权".into());
+            return Err("backendText.m03be7721".into());
         }
         match &*self
             .inner
@@ -206,7 +206,7 @@ impl Session {
             .unwrap_or_else(|e| e.into_inner())
         {
             Phase::Ready(streams, _) => Ok(streams.clone()),
-            _ => Err("Wayland 授权会话已结束".into()),
+            _ => Err("backendText.mde8d770a".into()),
         }
     }
     pub fn displays(&self) -> Result<Vec<Display>> {
@@ -216,7 +216,7 @@ impl Session {
         self.streams()?
             .into_iter()
             .find(|s| s.display.id == id)
-            .ok_or_else(|| "该屏幕不在本次 Wayland 授权中".into())
+            .ok_or_else(|| "backendText.m6ff4b34e".into())
     }
     fn cursor_mode(&self) -> u32 {
         match &*self
@@ -250,10 +250,10 @@ impl Session {
         self.inner
             .sender
             .try_send(Command::Open { display: id, reply })
-            .map_err(|_| "Wayland 系统接口繁忙")?;
+            .map_err(|_| "backendText.m5fb5c81c")?;
         let fd = rx
             .recv_timeout(Duration::from_secs(4))
-            .map_err(|_| "Wayland 屏幕连接超时")??;
+            .map_err(|_| "backendText.m8c48739a")??;
         capture::start(self.clone(), stream, fd)
     }
     pub fn send(&self, id: u32, events: Vec<Input>) -> Result<()> {
@@ -275,12 +275,12 @@ impl Session {
                 events: planned,
                 reply,
             })
-            .map_err(|_| "Wayland 键鼠队列繁忙")?;
+            .map_err(|_| "backendText.m19950aaf")?;
         match rx.recv_timeout(Duration::from_secs(4)) {
             Ok(result) => result,
             Err(_) => {
                 self.close();
-                Err("Wayland 键鼠操作结果未知，已结束远控，禁止重放".into())
+                Err("backendText.mf457bd90".into())
             }
         }
     }

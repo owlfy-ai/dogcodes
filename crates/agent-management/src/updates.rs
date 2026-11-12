@@ -160,7 +160,7 @@ pub fn plan(i: &InstallationSummary) -> Plan {
     // Kiro CLI's own updater replaces its signed CLI app bundle. This is not
     // a bundled CLI that must defer to a separate IDE updater.
     if i.provider_id == "kiro" && kiro::bundle(&real).is_some() {
-        return Plan::Native("Kiro CLI 原生更新器");
+        return Plan::Native("Kiro CLI {agentUi.nativeUpdater}");
     }
     // Bundled packages belong to their host, even when they contain node_modules.
     if let Some(app) = host_app(&i.provider_id, &real) {
@@ -172,10 +172,10 @@ pub fn plan(i: &InstallationSummary) -> Plan {
         return plan;
     }
     if i.provider_id == "kiro" && kiro::standalone(&real) {
-        return Plan::Native("Kiro 原生更新器");
+        return Plan::Native("Kiro {agentUi.nativeUpdater}");
     }
     if i.provider_id == "pi" && new_agents::pi_managed_root(&real).is_some() {
-        return Plan::Native("Pi 原生更新器");
+        return Plan::Native("Pi {agentUi.nativeUpdater}");
     }
     // Homebrew owns its bundled npm packages; do not mutate their private prefix.
     let real_text = real.to_string_lossy();
@@ -247,7 +247,7 @@ pub fn plan(i: &InstallationSummary) -> Plan {
     }
     match i.provider_id.as_str() {
         "cursor" => Plan::Native("Cursor CLI"),
-        "grok" => Plan::Native("Grok 原生更新器"),
+        "grok" => Plan::Native("Grok {agentUi.nativeUpdater}"),
         "antigravity" => Plan::Native("Antigravity CLI"),
         "claude-code"
             if real
@@ -256,7 +256,7 @@ pub fn plan(i: &InstallationSummary) -> Plan {
                 .any(|p| p.ends_with("claude/versions"))
                 || (cfg!(windows) && real.ends_with(".local/bin/claude.exe")) =>
         {
-            Plan::Native("Claude 原生更新器")
+            Plan::Native("Claude {agentUi.nativeUpdater}")
         }
         "kimi"
             if real
@@ -264,9 +264,11 @@ pub fn plan(i: &InstallationSummary) -> Plan {
                 .skip(1)
                 .any(|p| p.ends_with(".kimi-code/bin")) =>
         {
-            Plan::Native("Kimi 原生更新器")
+            Plan::Native("Kimi {agentUi.nativeUpdater}")
         }
-        "opencode" if new_agents::is_opencode_native(&real) => Plan::Native("OpenCode 原生更新器"),
+        "opencode" if new_agents::is_opencode_native(&real) => {
+            Plan::Native("OpenCode {agentUi.nativeUpdater}")
+        }
         _ => Plan::Unsupported,
     }
 }
@@ -476,10 +478,11 @@ pub fn command_failure(code: Option<i32>, stdout: &str, stderr: &str) -> String 
     {
         return "backendText.updateDownloadInterrupted".into();
     }
-    format!(
-        "更新命令未成功（退出码 {}），请检查网络和安装权限后重试",
-        code.map_or("未知".into(), |v| v.to_string())
-    )
+    let exit = code.map_or_else(
+        || "backendText.updateExitUnknown".to_string(),
+        |value| value.to_string(),
+    );
+    user_text("backendText.updateCommandFailed", &[&exit])
 }
 pub use crate::http::get;
 pub fn json(s: &str) -> Result<Value, String> {
@@ -511,7 +514,7 @@ pub async fn inspect_external(
 ) -> Result<AgentUpdate, String> {
     let mut out = base(i);
     out.status = "unsupported".into();
-    out.source = "外部安装".into();
+    out.source = "{agentUi.externalInstall}".into();
     let (url, is_json) = match i.provider_id.as_str() {
         "claude-code" => (
             format!(
@@ -566,7 +569,7 @@ pub async fn inspect(i: &InstallationSummary, p: &Plan) -> Result<AgentUpdate, S
         }
         Plan::Host(app) => {
             out.status = "managed".into();
-            out.source = "桌面应用".into();
+            out.source = "{agentUi.desktopApp}".into();
             out.current_version = out.desktop_version.clone();
             out.message = Some("backendText.updateCliWithHost".into());
             if i.provider_id == "codex" {
@@ -593,7 +596,7 @@ pub async fn inspect(i: &InstallationSummary, p: &Plan) -> Result<AgentUpdate, S
                 if out.current_version.is_none() {
                     return Err("backendText.zcodeVersionUnreadable".into());
                 }
-                out.source = "ZCode 桌面应用".into();
+                out.source = "ZCode {agentUi.desktopApp}".into();
                 // The desktop's update API uses host versions, never compare against zcode-cli versions.
                 let arch = if cfg!(target_arch = "aarch64") {
                     "aarch64"
@@ -618,13 +621,13 @@ pub async fn inspect(i: &InstallationSummary, p: &Plan) -> Result<AgentUpdate, S
                 )? {
                     out.message = Some(user_text("backendText.zcodeAppUpgrade", &[&latest]));
                 } else {
-                    out.message = Some("桌面应用已是最新版本".into());
+                    out.message = Some("agentUi.latest".into());
                 }
             }
             return Ok(out);
         }
         Plan::Unsupported if i.provider_id == "kiro" => {
-            out.source = "Kiro 原生更新器".into();
+            out.source = "Kiro {agentUi.nativeUpdater}".into();
             let output = command(spec(
                 Path::new(&i.executable),
                 vec!["update".into(), "--check".into()],
@@ -638,7 +641,7 @@ pub async fn inspect(i: &InstallationSummary, p: &Plan) -> Result<AgentUpdate, S
         }
         Plan::Npm { package, .. } | Plan::NpmLocal { package, .. } => {
             out.source = if matches!(p, Plan::NpmLocal { .. }) {
-                "npm（当前 npx 安装）"
+                "npm {agentUi.npxInstall}"
             } else {
                 "npm"
             }

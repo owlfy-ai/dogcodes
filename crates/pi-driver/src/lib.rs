@@ -60,8 +60,8 @@ fn permissions() -> PermissionCatalog {
         "native",
         &[(
             "native",
-            "Pi 原生权限",
-            "Pi 不内置逐工具审批或沙箱；工具直接执行，扩展发起的询问会显示在对话中。",
+            "backendText.m0406c17d",
+            "backendText.mb667b333",
             true,
         )],
     )

@@ -77,11 +77,11 @@ impl ScreenSource for Source {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
-            .ok_or_else(|| "等待 Wayland 屏幕首帧".into())
+            .ok_or_else(|| "backendText.m3a3f4795".into())
     }
     fn check_active(&self) -> Result<()> {
         if self.frames.stopped.load(Ordering::Acquire) {
-            return Err("Wayland 屏幕来源已结束".into());
+            return Err("backendText.me1ec8fff".into());
         }
         if self
             .frames
@@ -91,7 +91,7 @@ impl ScreenSource for Source {
             .is_some_and(|until| Instant::now() >= until)
         {
             self.frames
-                .fail("Wayland 屏幕画面恢复超时，请重新连接".into());
+                .fail("backendText.m3f7fc78e".into());
             self.session.close();
         }
         if let Some(error) = self
@@ -104,7 +104,7 @@ impl ScreenSource for Source {
             return Err(error);
         }
         if !self.session.status()? {
-            return Err("Wayland 屏幕授权尚未就绪".into());
+            return Err("backendText.m3117a4c3".into());
         }
         Ok(())
     }
@@ -135,7 +135,7 @@ pub(super) fn start(
         .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
             (n < 2).then_some(n + 1)
         })
-        .map_err(|_| "旧 Wayland 屏幕流仍在退出")?;
+        .map_err(|_| "backendText.mafb16021")?;
     let slot = Slot;
     let frames = Arc::new(Frames {
         value: Mutex::new(None),
@@ -155,7 +155,7 @@ pub(super) fn start(
                 worker.fail(error);
             }
         })
-        .map_err(|_| "无法启动 Wayland 屏幕流")?;
+        .map_err(|_| "backendText.mc07dd1c6")?;
     let source = Arc::new(Source {
         session,
         frames: frames.clone(),
@@ -174,7 +174,7 @@ pub(super) fn start(
         }
         let remaining = until.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            return Err("Wayland 屏幕首帧超时，请重新连接".into());
+            return Err("backendText.m5f9b1656".into());
         }
         image = frames
             .changed
@@ -210,7 +210,7 @@ fn layout(info: VideoInfoRaw) -> Result<Layout> {
         VideoFormat::BGR => Ok(Layout::Bgr),
         VideoFormat::ARGB | VideoFormat::xRGB => Ok(Layout::Argb),
         VideoFormat::ABGR | VideoFormat::xBGR => Ok(Layout::Abgr),
-        _ => Err("Wayland 屏幕像素格式不支持".into()),
+        _ => Err("backendText.mae91d2b1".into()),
     }
 }
 
@@ -221,12 +221,12 @@ fn colors(info: VideoInfoRaw) -> Result<(Matrix, Range)> {
         // explicit metadata always wins. Do not infer a matrix from resolution.
         sys::SPA_VIDEO_COLOR_MATRIX_UNKNOWN | sys::SPA_VIDEO_COLOR_MATRIX_BT601 => Matrix::Bt601,
         sys::SPA_VIDEO_COLOR_MATRIX_BT709 => Matrix::Bt709,
-        _ => return Err("Wayland NV12 来源未提供受支持的颜色矩阵".into()),
+        _ => return Err("backendText.m8a990ab0".into()),
     };
     let range = match info.color_range() {
         sys::SPA_VIDEO_COLOR_RANGE_0_255 => Range::Full,
         sys::SPA_VIDEO_COLOR_RANGE_UNKNOWN | sys::SPA_VIDEO_COLOR_RANGE_16_235 => Range::Limited,
-        _ => return Err("Wayland NV12 来源未提供受支持的颜色范围".into()),
+        _ => return Err("backendText.m7b93f34e".into()),
     };
     Ok((matrix, range))
 }
@@ -238,13 +238,13 @@ fn set_format(format: &mut Format, param: Option<&Pod>) -> Result<()> {
     format.cursor = super::cursor::Cursor::default();
     let Some(param) = param else {
         return if was_ready {
-            Err("Wayland 屏幕格式已撤销，请重新连接".into())
+            Err("backendText.mbf9491da".into())
         } else {
             Ok(())
         };
     };
     let mut info = VideoInfoRaw::default();
-    info.parse(param).map_err(|_| "Wayland 视频格式协商失败")?;
+    info.parse(param).map_err(|_| "backendText.m37fd828c")?;
     let size = info.size();
     if size.width == 0
         || size.height == 0
@@ -252,18 +252,18 @@ fn set_format(format: &mut Format, param: Option<&Pod>) -> Result<()> {
         || size.height > 16384
         || u64::from(size.width) * u64::from(size.height) > 64 * 1024 * 1024
     {
-        return Err("Wayland 画面尺寸超出支持范围".into());
+        return Err("backendText.mb394733a".into());
     }
     if info.as_raw().flags & pw::spa::sys::SPA_VIDEO_FLAG_MODIFIER != 0
         && !format
             .gpu
             .supports(info.format(), info.modifier(), (size.width, size.height))
     {
-        return Err("当前显卡不支持所选屏幕共享格式".into());
+        return Err("backendText.mc373e6e0".into());
     }
     if info.format() == VideoFormat::NV12 {
         if !size.width.is_multiple_of(2) || !size.height.is_multiple_of(2) {
-            return Err("Wayland NV12 画面尺寸无效".into());
+            return Err("backendText.m5854be83".into());
         }
         colors(info)?;
     } else {
@@ -277,7 +277,7 @@ fn chunks_corrupted(data: &[pw::spa::buffer::Data]) -> Result<bool> {
     for data in data {
         let chunk = data.as_raw().chunk;
         if chunk.is_null() {
-            return Err("Wayland 画面分块信息缺失".into());
+            return Err("backendText.m60673b68".into());
         }
         // SAFETY: the exclusive native buffer loan owns every chunk throughout
         // this callback. Check flags before accessing CPU memory or GPU FDs.
@@ -296,13 +296,13 @@ fn read_frame(info: VideoInfoRaw, data: &[pw::spa::buffer::Data]) -> Result<Opti
     if (info.format() == VideoFormat::NV12 && data.len() > 2)
         || (info.format() != VideoFormat::NV12 && data.len() != 1)
     {
-        return Err("Wayland 画面数据平面数量无效".into());
+        return Err("backendText.m0f22cef8".into());
     }
     let mut mappings = Vec::with_capacity(data.len());
     for data in data {
         let raw = data.as_raw();
         if raw.chunk.is_null() {
-            return Err("Wayland 画面分块信息缺失".into());
+            return Err("backendText.m60673b68".into());
         }
         // SAFETY: The dequeued PipeWire buffer owns its chunk and mapped data until the
         // process callback returns. Only immutable slices escape this block.
@@ -315,13 +315,13 @@ fn read_frame(info: VideoInfoRaw, data: &[pw::spa::buffer::Data]) -> Result<Opti
             || raw.maxsize == 0
             || raw.maxsize > 512 * 1024 * 1024
         {
-            return Err("Wayland 未提供可读取的线性屏幕缓冲区".into());
+            return Err("backendText.mdd4369ba".into());
         }
         mappings.push(if data.type_() == DataType::MemFd {
             Some(super::memory::Mapping::new(raw, false)?)
         } else {
             if raw.data.is_null() || raw.data as usize == usize::MAX {
-                return Err("Wayland 屏幕映射地址无效".into());
+                return Err("backendText.m9a42da5f".into());
             }
             None
         });
@@ -384,7 +384,7 @@ fn buffer_params(gpu: bool) -> Result<Vec<u8>> {
     );
     PodSerializer::serialize(Cursor::new(Vec::new()), &pod::Value::Object(buffers))
         .map(|serialized| serialized.0.into_inner())
-        .map_err(|_| "Wayland 缓冲区协商失败".into())
+        .map_err(|_| "backendText.ma64b236c".into())
 }
 fn format_parameters(caps: Vec<gpu::Capability>) -> Result<Vec<Vec<u8>>> {
     let format = pod::object!(
@@ -490,18 +490,18 @@ fn format_parameters(caps: Vec<gpu::Capability>) -> Result<Vec<Vec<u8>>> {
         .map(|object| {
             PodSerializer::serialize(Cursor::new(Vec::new()), &pod::Value::Object(object))
                 .map(|v| v.0.into_inner())
-                .map_err(|_| "Wayland 视频格式协商失败".into())
+                .map_err(|_| "backendText.m37fd828c".into())
         })
         .collect()
 }
 fn apply_parameters(stream: &pw::stream::Stream, bytes: Vec<Vec<u8>>) -> Result<()> {
     let mut params = bytes
         .iter()
-        .map(|b| Pod::from_bytes(b).ok_or("Wayland 视频格式无效"))
+        .map(|b| Pod::from_bytes(b).ok_or("backendText.m35838097"))
         .collect::<std::result::Result<Vec<_>, _>>()?;
     stream
         .update_params(&mut params)
-        .map_err(|_| "Wayland 视频格式重新协商失败".into())
+        .map_err(|_| "backendText.mf06fe9cc".into())
 }
 
 fn fixate_modifier(param: &Pod, caps: &[gpu::Capability]) -> Result<Option<Vec<u8>>> {
@@ -510,15 +510,15 @@ fn fixate_modifier(param: &Pod, caps: &[gpu::Capability]) -> Result<Option<Vec<u
         utils::ChoiceEnum,
     };
     if param.as_bytes().len() > 64 * 1024 {
-        return Err("Wayland 视频格式描述过大".into());
+        return Err("backendText.ma0c66fe2".into());
     }
     let (_, value) = PodDeserializer::deserialize_any_from(param.as_bytes())
-        .map_err(|_| "Wayland 视频格式描述无效")?;
+        .map_err(|_| "backendText.m7b7f9029")?;
     let Value::Object(mut object) = value else {
         return Ok(None);
     };
     let mut info = VideoInfoRaw::default();
-    info.parse(param).map_err(|_| "Wayland 视频格式协商失败")?;
+    info.parse(param).map_err(|_| "backendText.m37fd828c")?;
     let Some(property) = object
         .properties
         .iter_mut()
@@ -535,7 +535,7 @@ fn fixate_modifier(param: &Pod, caps: &[gpu::Capability]) -> Result<Option<Vec<u
                 .chain(alternatives.iter().copied())
                 .collect::<Vec<_>>(),
             ChoiceEnum::None(value) => vec![*value],
-            _ => return Err("Wayland GPU modifier 选择无效".into()),
+            _ => return Err("backendText.mcefef3e6".into()),
         },
         Value::Long(value)
             if property.flags.bits() & pw::spa::sys::SPA_POD_PROP_FLAG_DONT_FIXATE != 0 =>
@@ -543,7 +543,7 @@ fn fixate_modifier(param: &Pod, caps: &[gpu::Capability]) -> Result<Option<Vec<u
             vec![*value]
         }
         Value::Long(_) => return Ok(None),
-        _ => return Err("Wayland GPU modifier 类型无效".into()),
+        _ => return Err("backendText.m7056a0fc".into()),
     };
     let size = info.size();
     let modifier = candidates
@@ -556,13 +556,13 @@ fn fixate_modifier(param: &Pod, caps: &[gpu::Capability]) -> Result<Option<Vec<u
                     && cap.modifiers.contains(&(*value as u64))
             })
         })
-        .ok_or("显卡没有可用的屏幕共享 modifier")?;
+        .ok_or("backendText.m43af48ce")?;
     property.value = Value::Long(modifier);
     property.flags = pod::PropertyFlags::MANDATORY;
     object.id = ParamType::Format.as_raw();
     PodSerializer::serialize(Cursor::new(Vec::new()), &Value::Object(object))
         .map(|v| Some(v.0.into_inner()))
-        .map_err(|_| "Wayland GPU 格式固定失败".into())
+        .map_err(|_| "backendText.mf19b69f4".into())
 }
 
 fn process_frame(
@@ -744,11 +744,11 @@ fn run(
     stop: channel::Receiver<()>,
 ) -> Result<()> {
     pw::init();
-    let main_loop = MainLoopRc::new(None).map_err(|_| "无法创建 Wayland 视频循环")?;
-    let context = ContextRc::new(&main_loop, None).map_err(|_| "无法创建 Wayland 视频上下文")?;
+    let main_loop = MainLoopRc::new(None).map_err(|_| "backendText.m6fafdf10")?;
+    let context = ContextRc::new(&main_loop, None).map_err(|_| "backendText.mf97313b8")?;
     let core = context
         .connect_fd_rc(fd, None)
-        .map_err(|_| "无法连接已授权的 Wayland 屏幕流")?;
+        .map_err(|_| "backendText.maa7e9886")?;
     let mut properties = properties::properties! {*pw::keys::MEDIA_TYPE=>"Video",*pw::keys::MEDIA_CATEGORY=>"Capture",*pw::keys::MEDIA_ROLE=>"Screen"};
     properties.insert("node.target", stream_info.node.to_string());
     properties.insert("node.dont-reconnect", "true");
@@ -756,7 +756,7 @@ fn run(
         properties.insert("target.object", serial.to_string());
     }
     let stream = StreamRc::new(core.clone(), "DogCodes remote screen", properties)
-        .map_err(|_| "无法创建 Wayland 屏幕订阅")?;
+        .map_err(|_| "backendText.m418ea28d")?;
     let gpu = gpu::Importer::discover();
     let gpu_caps = gpu.capabilities();
     let (reconfigure, changes) = channel::channel::<Vec<Vec<u8>>>();
@@ -800,7 +800,7 @@ fn run(
                     || (matches!(new, StreamState::Unconnected)
                         && !matches!(old, StreamState::Unconnected)))
             {
-                on_state.fail("Wayland 屏幕流已断开，请重新连接".into());
+                on_state.fail("backendText.m7da6ff05".into());
                 state_portal.close();
                 quitting.quit();
             }
@@ -816,7 +816,7 @@ fn run(
                     && let Some(fixed) = fixate_modifier(param, &format.gpu.capabilities())?
                 {
                     if format.retries >= 16 {
-                        return Err("Wayland GPU 格式协商次数超限".into());
+                        return Err("backendText.mf58493a4".into());
                     }
                     format.retries += 1;
                     format.info = None;
@@ -827,7 +827,7 @@ fn run(
                         .get_or_insert_with(|| Instant::now() + Duration::from_secs(3));
                     return fixating
                         .send(vec![fixed])
-                        .map_err(|_| "Wayland GPU 格式固定失败".into());
+                        .map_err(|_| "backendText.mf19b69f4".into());
                 }
                 set_format(format, param)?;
                 let Some(info) = format.info else {
@@ -842,7 +842,7 @@ fn run(
                 )?);
                 fixating
                     .send(params)
-                    .map_err(|_| "Wayland 缓冲区协商失败".into())
+                    .map_err(|_| "backendText.ma64b236c".into())
             })();
             if let Err(error) = result {
                 format.info = None;
@@ -862,12 +862,12 @@ fn run(
             );
         })
         .register()
-        .map_err(|_| "无法监听 Wayland 屏幕流")?;
+        .map_err(|_| "backendText.mc5dbea7b")?;
     let mut bytes = format_parameters(gpu_caps)?;
     bytes.extend(metadata::parameters_for_cursor(session.cursor_mode() == 4)?);
     let mut params = bytes
         .iter()
-        .map(|b| Pod::from_bytes(b).ok_or("Wayland 视频格式无效"))
+        .map(|b| Pod::from_bytes(b).ok_or("backendText.m35838097"))
         .collect::<std::result::Result<Vec<_>, _>>()?;
     // Identity is checked before publication; disable automatic routing to a
     // replacement node. The numeric target also works with early WirePlumber 0.4.
@@ -878,7 +878,7 @@ fn run(
             StreamFlags::AUTOCONNECT | StreamFlags::DONT_RECONNECT,
             &mut params,
         )
-        .map_err(|_| "无法订阅已授权的 Wayland 屏幕")?;
+        .map_err(|_| "backendText.m8d0efb20")?;
     let changing = stream.clone();
     let change_frames = frames.clone();
     let change_portal = session.clone();
@@ -908,7 +908,7 @@ fn run(
             .unwrap_or_else(|e| e.into_inner())
             .is_some_and(|until| Instant::now() >= until);
         if expired {
-            timeout_frames.fail("Wayland 屏幕画面恢复超时，请重新连接".into());
+            timeout_frames.fail("backendText.m3f7fc78e".into());
             timeout_portal.close();
         }
         if expired
@@ -935,7 +935,7 @@ fn run(
             Some(Duration::from_millis(100)),
         )
         .into_result()
-        .map_err(|_| "Wayland 视频超时检测不可用")?;
+        .map_err(|_| "backendText.mb15c2dc6")?;
     let quitting = main_loop.clone();
     let _stop = stop.attach(main_loop.loop_(), move |()| quitting.quit());
     main_loop.run();

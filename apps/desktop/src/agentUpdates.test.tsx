@@ -181,7 +181,7 @@ it("only shows the host update action when a newer host version is confirmed", a
 it("shows Codex desktop updates using host versions while leaving the bundled CLI alone", async () => {
   const openUpdater = vi.fn(); const upgrade = vi.fn();
   await mount(<AgentUpdateControl id="codex-bundled" actions={{
-    updates: { "codex-bundled": { ...available, installationId: "codex-bundled", status: "managed", currentVersion: "26.911.61220", latestVersion: "26.915.31945", source: "Codex 桌面应用 · 官方更新源", canUpgrade: false } },
+    updates: { "codex-bundled": { ...available, installationId: "codex-bundled", status: "managed", currentVersion: "26.911.61220", latestVersion: "26.915.31945", source: "Codex {agentUi.desktopApp} · {agentUi.officialSource}", canUpgrade: false } },
     check: vi.fn(), upgrade, openUpdater,
   }} />);
   expect(element.textContent).toContain("桌面应用有新版本 26.915.31945");
@@ -231,12 +231,11 @@ it("does not offer a desktop updater until a newer desktop version is known, inc
 it("describes updater failures as upgrade failures in English and retains the exit code", async () => {
   const upgrade = vi.fn();
   await mount(<I18nProvider language="en"><AgentUpdateControl id={i.installationId} actions={{
-    updates: { [i.installationId]: { ...available, status: "error", message: "更新命令未成功（退出码 1），请检查网络和安装权限后重试" } },
+    updates: { [i.installationId]: { ...available, status: "error", message: "backendText.updateCommandFailed\u001e[\"1\"]" } },
     check: vi.fn(), upgrade,
   }} /></I18nProvider>);
   const button = element.querySelector("button")!;
-  expect(button.getAttribute("aria-label")).toContain("Upgrade failed");
-  expect(button.getAttribute("aria-label")).toContain("(1)");
+  expect(button.getAttribute("aria-label")).toContain("The update command failed (exit code 1)");
   expect(button.dataset.tooltip).not.toContain("Version check failed");
   await act(async () => button.click());
   expect(upgrade).toHaveBeenCalledExactlyOnceWith(i.installationId);

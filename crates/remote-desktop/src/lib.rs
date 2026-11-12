@@ -11,7 +11,7 @@ pub mod escape;
 
 pub type Result<T> = std::result::Result<T, String>;
 fn native(error: impl std::fmt::Display) -> String {
-    format!("系统远控接口不可用，请检查屏幕录制、辅助功能及桌面权限：{error}")
+    format!("backendText.m97df8092\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -92,11 +92,11 @@ impl Capturer {
             .map_err(native)?
             .into_iter()
             .find(|m| m.id().is_ok_and(|value| value == id))
-            .ok_or("显示器已断开，请刷新屏幕列表")?;
+            .ok_or("backendText.m80d90e2b")?;
         let display = displays()?
             .into_iter()
             .find(|d| d.id == id)
-            .ok_or("显示器已断开，请刷新屏幕列表")?;
+            .ok_or("backendText.m80d90e2b")?;
         #[cfg(target_os = "macos")]
         let picture = video::Picture::new(id, std::sync::Arc::new(|| true));
         #[cfg(target_os = "windows")]
@@ -136,7 +136,7 @@ impl Capturer {
             .displays()?
             .into_iter()
             .find(|d| d.id == id)
-            .ok_or("屏幕不在 Wayland 授权范围内")?;
+            .ok_or("backendText.m3fde9b4f")?;
         let source = session.capture(id)?;
         display.scale = source.size()?.0 as f32 / display.width as f32;
         Ok(Self {
@@ -178,14 +178,14 @@ impl Capturer {
     pub fn frame(&mut self, max_width: u32, quality: u8, known: Option<&str>) -> Result<Value> {
         self.check_current()?;
         if !(320..=2560).contains(&max_width) || !(30..=90).contains(&quality) {
-            return Err("画面尺寸或质量无效".into());
+            return Err("backendText.m43825dff".into());
         }
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         {
             let current = displays()?
                 .into_iter()
                 .find(|d| d.id == self.display.id)
-                .ok_or("显示器已断开，请刷新屏幕列表")?;
+                .ok_or("backendText.m80d90e2b")?;
             if (
                 current.x,
                 current.y,
@@ -253,7 +253,7 @@ impl Capturer {
             .encode_image(&image)
             .map_err(native)?;
         if bytes.len() > 4 * 1024 * 1024 {
-            return Err("画面过大，请降低画质".into());
+            return Err("backendText.mf8bc0bd9".into());
         }
         let bytes = STANDARD.encode(bytes);
         // JPEG/base64 work may outlive the previous check just like a native
@@ -271,7 +271,7 @@ impl Capturer {
 fn picture_thumbnail(pixels: &image::RgbaImage, max_width: u32) -> Result<image::RgbImage> {
     let (width, height) = pixels.dimensions();
     if width == 0 || height == 0 {
-        return Err("屏幕图像尺寸无效".into());
+        return Err("backendText.mc5c72371".into());
     }
     let ratio = (f64::from(max_width) / f64::from(width)).min(1440.0 / f64::from(height));
     let size = (
@@ -347,7 +347,7 @@ impl NativeController {
         input_geometry::batch_guarded(
             display,
             events,
-            |_| current.unwrap_or_else(|| Err("缺少当前屏幕坐标".into())),
+            |_| current.unwrap_or_else(|| Err("backendText.mca506e3a".into())),
             active,
             |display, event| self.apply(display, event, active),
         )
@@ -365,7 +365,7 @@ impl NativeController {
             "press" => Ok(enigo::Direction::Press),
             "release" => Ok(enigo::Direction::Release),
             "click" => Ok(enigo::Direction::Click),
-            _ => Err("输入方向无效".to_string()),
+            _ => Err("backendText.mc450a670".to_string()),
         };
         match event {
             Input::Move { x, y } => {
@@ -383,14 +383,14 @@ impl NativeController {
                     "left" => enigo::Button::Left,
                     "right" => enigo::Button::Right,
                     "middle" => enigo::Button::Middle,
-                    _ => return Err("鼠标按钮无效".into()),
+                    _ => return Err("backendText.mb989ee05".into()),
                 };
                 let dir = direction(&raw)?;
                 if dir != enigo::Direction::Release {
                     self.reproject(display)?;
                 }
                 if !active() {
-                    return Err("输入请求已结束".into());
+                    return Err("backendText.meea125cf".into());
                 }
                 self.input.button(button, dir).map_err(native)?;
                 if dir == enigo::Direction::Press {
@@ -437,31 +437,31 @@ impl NativeController {
                     "f11" => enigo::Key::F11,
                     "f12" => enigo::Key::F12,
                     raw if raw.chars().count() == 1 => {
-                        enigo::Key::Unicode(raw.chars().next().ok_or("按键无效")?)
+                        enigo::Key::Unicode(raw.chars().next().ok_or("backendText.mb3acbe6e")?)
                     }
-                    _ => return Err("按键无效".into()),
+                    _ => return Err("backendText.mb3acbe6e".into()),
                 };
                 self.input.key(key, direction(&raw)?).map_err(native)
             }
             Input::Text { text } => {
                 if text.len() > 16384 {
-                    return Err("输入文本过长".into());
+                    return Err("backendText.m7e2d7a15".into());
                 }
                 self.input.text(&text).map_err(native)
             }
             Input::Scroll { x, y } => {
                 if x.unsigned_abs() > 100 || y.unsigned_abs() > 100 {
-                    return Err("滚动距离过大".into());
+                    return Err("backendText.mac61e038".into());
                 }
                 self.reproject(display)?;
                 if !active() {
-                    return Err("输入请求已结束".into());
+                    return Err("backendText.meea125cf".into());
                 }
                 self.input
                     .scroll(i32::from(x), enigo::Axis::Horizontal)
                     .map_err(native)?;
                 if !active() {
-                    return Err("输入请求已结束".into());
+                    return Err("backendText.meea125cf".into());
                 }
                 self.input
                     .scroll(i32::from(y), enigo::Axis::Vertical)
@@ -518,7 +518,7 @@ impl Controller {
         active: impl Fn() -> bool,
     ) -> Result<()> {
         if !active() {
-            return Err("输入请求已结束".into());
+            return Err("backendText.meea125cf".into());
         }
         match &mut self.backend {
             InputBackend::Native(input) => input.send_batch(display, events, &active),
@@ -557,13 +557,13 @@ fn encode_clipboard_image(image: arboard::ImageData<'_>) -> Result<Vec<u8>> {
     let height = u32::try_from(image.height).map_err(native)?;
     image_dimensions(width, height)?;
     let image = image::RgbaImage::from_raw(width, height, image.bytes.into_owned())
-        .ok_or("剪贴板图片格式无效")?;
+        .ok_or("backendText.m25b98206")?;
     let mut out = Cursor::new(Vec::new());
     image::DynamicImage::ImageRgba8(image)
         .write_to(&mut out, image::ImageFormat::Png)
         .map_err(native)?;
     if out.get_ref().len() > MAX_CLIPBOARD_IMAGE_BYTES {
-        return Err("剪贴板图片超过 16 MB，请缩小图片后重试".into());
+        return Err("backendText.mb4443cce".into());
     }
     Ok(out.into_inner())
 }
@@ -596,14 +596,14 @@ fn image_dimensions(width: u32, height: u32) -> Result<()> {
         || height == 0
         || u64::from(width) * u64::from(height) > MAX_CLIPBOARD_IMAGE_PIXELS
     {
-        return Err("剪贴板图片超过 800 万像素，请缩小图片后重试".into());
+        return Err("backendText.m90c38d13".into());
     }
     Ok(())
 }
 /// Validate the encoded size and dimensions before allocating decoded pixels.
 pub fn decode_clipboard_png(bytes: &[u8]) -> Result<image::RgbaImage> {
     if bytes.len() > MAX_CLIPBOARD_IMAGE_BYTES || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        return Err("剪贴板图片格式或大小无效".into());
+        return Err("backendText.m0e384e60".into());
     }
     let (width, height) =
         image::ImageReader::with_format(Cursor::new(bytes), image::ImageFormat::Png)
@@ -627,14 +627,14 @@ pub fn clipboard_image_set_png_if_current(
     current: &dyn Fn() -> bool,
 ) -> Result<arboard::Clipboard> {
     if !current() {
-        return Err("剪贴板传输已取消，未写入图片".into());
+        return Err("backendText.mbf63964d".into());
     }
     require_unlocked()?;
     let image = decode_clipboard_png(bytes)?;
     let mut clipboard = arboard::Clipboard::new().map_err(native)?;
     require_unlocked()?;
     if !current() {
-        return Err("剪贴板传输已取消，未写入图片".into());
+        return Err("backendText.mbf63964d".into());
     }
     clipboard
         .set_image(arboard::ImageData {
@@ -653,33 +653,33 @@ pub fn clipboard_get(kind: &str) -> Result<Value> {
         "text" => {
             let text = clipboard.get_text().map_err(native)?;
             if text.len() > 1024 * 1024 {
-                return Err("剪贴板文本超过 1 MB".into());
+                return Err("backendText.m49deac5e".into());
             }
             Ok(json!({"kind":"text","text":text}))
         }
         "image" => {
             let image = clipboard.get_image().map_err(native)?;
             if image.bytes.len() > 32 * 1024 * 1024 {
-                return Err("剪贴板图片过大".into());
+                return Err("backendText.m821d6def".into());
             }
             let image = image::RgbaImage::from_raw(
                 u32::try_from(image.width).map_err(native)?,
                 u32::try_from(image.height).map_err(native)?,
                 image.bytes.into_owned(),
             )
-            .ok_or("剪贴板图片格式无效")?;
+            .ok_or("backendText.m25b98206")?;
             let mut bytes = Cursor::new(Vec::new());
             image::DynamicImage::ImageRgba8(image)
                 .write_to(&mut bytes, image::ImageFormat::Png)
                 .map_err(native)?;
             if bytes.get_ref().len() > 4 * 1024 * 1024 {
-                return Err("剪贴板图片超过传输限制".into());
+                return Err("backendText.m97d0fe2b".into());
             }
             Ok(
                 json!({"kind":"image","mimeType":"image/png","bytes":STANDARD.encode(bytes.into_inner())}),
             )
         }
-        _ => Err("剪贴板类型无效".into()),
+        _ => Err("backendText.mdad19e1f".into()),
     }
 }
 pub fn clipboard_set(value: Value) -> Result<arboard::Clipboard> {
@@ -687,16 +687,16 @@ pub fn clipboard_set(value: Value) -> Result<arboard::Clipboard> {
     let mut clipboard = arboard::Clipboard::new().map_err(native)?;
     match value["kind"].as_str() {
         Some("text") => {
-            let text = value["text"].as_str().ok_or("缺少剪贴板文本")?;
+            let text = value["text"].as_str().ok_or("backendText.ma799f25a")?;
             if text.len() > 1024 * 1024 {
-                return Err("剪贴板文本超过 1 MB".into());
+                return Err("backendText.m49deac5e".into());
             }
             clipboard.set_text(text).map_err(native)
         }
         Some("image") => {
-            let encoded = value["bytes"].as_str().ok_or("缺少剪贴板图片")?;
+            let encoded = value["bytes"].as_str().ok_or("backendText.m1556c89f")?;
             if encoded.len() > 6 * 1024 * 1024 {
-                return Err("剪贴板图片过大".into());
+                return Err("backendText.m821d6def".into());
             }
             let bytes = STANDARD.decode(encoded).map_err(native)?;
             let mut reader = image::ImageReader::new(Cursor::new(bytes))
@@ -714,7 +714,7 @@ pub fn clipboard_set(value: Value) -> Result<arboard::Clipboard> {
                 })
                 .map_err(native)
         }
-        _ => Err("剪贴板类型无效".into()),
+        _ => Err("backendText.mdad19e1f".into()),
     }?;
     Ok(clipboard)
 }
@@ -737,7 +737,7 @@ pub mod video;
 pub use session::locked;
 pub fn require_unlocked() -> Result<()> {
     if locked()? {
-        Err("电脑已锁定，Agent 操作仍可用".into())
+        Err("backendText.m6f25892a".into())
     } else {
         Ok(())
     }
@@ -806,7 +806,7 @@ mod clipboard_image_tests {
             clipboard_image_set_png_if_current(b"not decoded", &|| false)
                 .err()
                 .unwrap()
-                .contains("已取消")
+                .contains("backendText.ma37778f1")
         );
     }
     #[test]

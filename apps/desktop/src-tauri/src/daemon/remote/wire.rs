@@ -67,7 +67,7 @@ where
             Self::Direct(socket) => tokio::time::timeout(Duration::from_secs(2), socket.route())
                 .await
                 .map(|route| json!({"transport":"webrtc-datachannel","route":route}))
-                .map_err(|_| "连接诊断暂时不可用".into()),
+                .map_err(|_| "backendText.m6534fe1b".into()),
         }
     }
 }

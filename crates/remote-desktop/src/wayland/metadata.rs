@@ -17,7 +17,7 @@ unsafe fn one<T: Copy>(metas: &[sys::spa_meta], kind: u32) -> Result<Option<T>> 
         return Ok(None);
     };
     if values.next().is_some() || meta.data.is_null() || (meta.size as usize) < size_of::<T>() {
-        return Err("Wayland 画面元数据不完整或重复".into());
+        return Err("backendText.mcc90bb57".into());
     }
     // SAFETY: caller restricts T to SPA PODs valid for all bit patterns; the
     // loan owns this payload, and its declared extent was checked above.
@@ -29,7 +29,7 @@ unsafe fn one<T: Copy>(metas: &[sys::spa_meta], kind: u32) -> Result<Option<T>> 
 /// Descriptor pointers must belong to the still-dequeued native buffer.
 pub(super) unsafe fn read(buffer: &sys::spa_buffer) -> Result<Option<Presentation>> {
     if buffer.n_metas > 64 || (buffer.n_metas > 0 && buffer.metas.is_null()) {
-        return Err("Wayland 画面元数据描述符无效".into());
+        return Err("backendText.m9191cc2a".into());
     }
     let metas = if buffer.n_metas == 0 {
         &[]
@@ -40,7 +40,7 @@ pub(super) unsafe fn read(buffer: &sys::spa_buffer) -> Result<Option<Presentatio
     // SyncTimeline (type 9, introduced after our baseline SDK) requires explicit
     // acquire/release handling and must not be mistaken for implicit sync.
     if metas.iter().any(|m| m.type_ == 9) {
-        return Err("Wayland 显式同步来源暂不支持".into());
+        return Err("backendText.m34c968cb".into());
     }
     // SAFETY: the tag matches its integer-only SPA header and the payload is
     // checked by one. Corrupt frames are dropped before reading other payloads.
@@ -67,7 +67,7 @@ pub(super) unsafe fn read(buffer: &sys::spa_buffer) -> Result<Option<Presentatio
     });
     let transform = transform.map_or(0, |m| m.transform);
     if transform > 7 {
-        return Err("Wayland 画面方向元数据无效".into());
+        return Err("backendText.m6e2e6085".into());
     }
     Ok(Some(Presentation { crop, transform }))
 }
@@ -97,7 +97,7 @@ pub(super) fn parameters_for_cursor(cursor: bool) -> Result<Vec<Vec<u8>>> {
             );
             PodSerializer::serialize(Cursor::new(Vec::new()), &pod::Value::Object(object))
                 .map(|v| v.0.into_inner())
-                .map_err(|_| "Wayland 元数据协商失败".into())
+                .map_err(|_| "backendText.m201149ea".into())
         })
         .collect()
 }

@@ -1,10 +1,9 @@
 import { translate } from "./i18n";
 
-// The core stores these Chinese sentinels as data: the scratch project's name and
-// the title of a conversation that has not been named yet. Match them as data and
-// translate only when displaying.
-export const SCRATCH_PROJECT_NAME = "快速对话";
-export const UNTITLED_TASK_TITLE = "新对话";
+// Stored sentinels, kept identical to `SCRATCH_PROJECT_NAME` and `UNTITLED_TASK_TITLE`
+// in the domain crate. Match them as data and translate only when displaying.
+export const SCRATCH_PROJECT_NAME = "dogcodes:scratch";
+export const UNTITLED_TASK_TITLE = "dogcodes:untitled";
 
 export function projectDisplayName(name: string): string {
   return name === SCRATCH_PROJECT_NAME ? translate("app.noProject") : name;

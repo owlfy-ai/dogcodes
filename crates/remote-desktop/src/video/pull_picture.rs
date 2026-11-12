@@ -40,14 +40,14 @@ impl Picture {
     pub fn check_owner(&self) -> Result<()> {
         if !(self.alive)() || self.retired.load(Ordering::Acquire) {
             self.retired.store(true, Ordering::Release);
-            return Err("远控租约已结束，请重新连接".into());
+            return Err("backendText.m93667b73".into());
         }
         Ok(())
     }
     pub fn check_current(&self) -> Result<()> {
         self.check_owner()?;
         if self.source.is_none() {
-            return Err("图片采集尚未就绪".into());
+            return Err("backendText.m042d50a4".into());
         }
         Ok(())
     }
@@ -59,7 +59,7 @@ impl Picture {
             ));
         }
         self.check_owner()?;
-        let result = self.source.as_mut().ok_or("图片采集尚未就绪")?();
+        let result = self.source.as_mut().ok_or("backendText.m042d50a4")?();
         self.check_owner()?;
         result.map(|frame| (frame.image, frame.cursor_embedded))
     }

@@ -15,7 +15,7 @@ pub fn native_form(provider: &str, params: &Value) -> Result<QuestionForm, Strin
         return Ok(QuestionForm {
             title: params["message"]
                 .as_str()
-                .unwrap_or("请回答以下问题")
+                .unwrap_or("backendText.m4151119a")
                 .into(),
             schema,
         });
@@ -77,7 +77,7 @@ pub fn native_form(provider: &str, params: &Value) -> Result<QuestionForm, Strin
         title: params["title"]
             .as_str()
             .or_else(|| params["prompt"].as_str())
-            .unwrap_or("请回答以下问题")
+            .unwrap_or("backendText.m4151119a")
             .into(),
         schema: json!({"type":"object","properties":props,"required":required}),
     })

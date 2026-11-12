@@ -40,11 +40,11 @@ impl Resolver {
     }
     fn move_root(&self, x: i32, y: i32) -> Result<()> {
         if x < 0 || y < 0 {
-            return Err("X11 坐标超出根窗口范围".into());
+            return Err("backendText.m0afbfe2f".into());
         }
         let native = self.native()?;
-        let x = i16::try_from(x).map_err(|_| "X11 横坐标超出协议范围")?;
-        let y = i16::try_from(y).map_err(|_| "X11 纵坐标超出协议范围")?;
+        let x = i16::try_from(x).map_err(|_| "backendText.mb72a8a84")?;
+        let y = i16::try_from(y).map_err(|_| "backendText.m39a6207b")?;
         // Specify this DISPLAY's root instead of the pointer's previous root.
         // Root-window pixels match the CRTC snapshot and ignore Xft DPI scaling.
         native
@@ -56,7 +56,7 @@ impl Resolver {
     }
     pub fn current(&self, display: &Display) -> Result<Display> {
         if crate::wayland::available() {
-            return Err("Wayland 输入必须使用原授权会话".into());
+            return Err("backendText.m8f18d5c5".into());
         }
         self.read(display)
     }
@@ -71,10 +71,10 @@ impl Resolver {
             || output.connection != OutputConnection::CONNECTED
             || output.crtc == 0
         {
-            return Err("显示器已断开或正在重新配置".into());
+            return Err("backendText.m8edbbc0c".into());
         }
         if String::from_utf8_lossy(&output.name) != display.name {
-            return Err("显示器身份已变化，请重新选择屏幕".into());
+            return Err("backendText.m7c74d19f".into());
         }
         let crtc = connection
             .randr_get_crtc_info(output.crtc, x11rb::CURRENT_TIME)
@@ -82,7 +82,7 @@ impl Resolver {
             .reply()
             .map_err(crate::native)?;
         if crtc.status != SetConfig::SUCCESS || !crtc.outputs.contains(&display.id) {
-            return Err("显示器配置已变化，请重试".into());
+            return Err("backendText.mfce7f331".into());
         }
         // XTest and cursor locations use root-window pixels, never Xft logical
         // coordinates. CRTC bounds already incorporate the active rotation.

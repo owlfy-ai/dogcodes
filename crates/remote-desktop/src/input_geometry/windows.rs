@@ -19,7 +19,7 @@ impl Context {
         let old =
             unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
         if old.0.is_null() {
-            Err("无法确认输入线程的屏幕坐标单位".into())
+            Err("backendText.mc1bbbf8a".into())
         } else {
             Ok(Self(old))
         }
@@ -40,10 +40,10 @@ impl Resolver {
             .map_err(crate::native)?
             .into_iter()
             .find(|m| m.id().is_ok_and(|id| id == display.id))
-            .ok_or("显示器已断开")?;
+            .ok_or("backendText.m88561e63")?;
         let name = monitor.name().map_err(crate::native)?;
         if name != display.name {
-            return Err("显示器身份已变化，请重新选择屏幕".into());
+            return Err("backendText.m7c74d19f".into());
         }
         let name: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
         let mut mode = DEVMODEW {
@@ -60,7 +60,7 @@ impl Resolver {
         }
         .as_bool()
         {
-            return Err("无法读取当前显示器配置".into());
+            return Err("backendText.m1cf21871".into());
         }
         // SAFETY: ENUM_CURRENT_SETTINGS supplies the display-position union.
         let p = unsafe { mode.Anonymous1.Anonymous2.dmPosition };

@@ -140,7 +140,7 @@ mod tests {
     }
     #[test]
     fn lock_or_unknown_state_ends_the_stream_and_does_not_resume_on_a_later_grant() {
-        for reason in ["电脑已锁定", "状态未知"] {
+        for reason in ["电脑已锁定", "backendText.m93e474c6"] {
             let calls = Arc::new(AtomicUsize::new(0));
             let checking = calls.clone();
             let output = Arc::new(AtomicUsize::new(0));

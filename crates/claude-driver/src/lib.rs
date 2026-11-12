@@ -232,10 +232,7 @@ fn classify(line: &str) -> Option<Classified> {
                         .and_then(Value::as_str)
                         .unwrap_or_default()
                         .to_owned(),
-                    summary: format!(
-                        "正在使用 {}",
-                        block.get("name").and_then(Value::as_str).unwrap_or("工具")
-                    ),
+                    summary: format!("backendText.m5741826f\u{1e}{}", serde_json::to_string(&[block.get("name").and_then(Value::as_str).unwrap_or("backendText.m5ca6730d").to_string()]).unwrap_or_else(|_| "[]".into())),
                 })
                 .collect::<Vec<_>>();
             Some(if frames.is_empty() {
@@ -268,9 +265,9 @@ fn classify(line: &str) -> Option<Classified> {
                         .and_then(Value::as_bool)
                         .unwrap_or(false)
                     {
-                        "工具调用失败".into()
+                        "backendText.md98de4d1".into()
                     } else {
-                        "工具调用已完成".into()
+                        "backendText.m5ce35278".into()
                     },
                     success: !block
                         .get("is_error")
@@ -2055,6 +2052,7 @@ impl QuotaProvider for ClaudeDriver {
             source: "native_push".into(),
             confidence: "provider_reported".into(),
             parser_version: "claude-rate-limit-event-v1".into(),
+            ..Default::default()
         })
     }
 }

@@ -49,7 +49,7 @@ fn read_text(store: &ReviewStore, change: &FileChange) -> Result<(String, String
             .as_ref()
             .map(|v| {
                 String::from_utf8(store.read_blob(&v.hash)?)
-                    .map_err(|_| "文件不是 UTF-8 文本".into())
+                    .map_err(|_| "backendText.m8d0294c0".into())
             })
             .transpose()
             .map(Option::unwrap_or_default)
@@ -69,7 +69,7 @@ fn prepare_statistics(root: &mut RootChanges, store: &ReviewStore) {
         };
         if !binary {
             let result = if std::time::Instant::now() >= deadline {
-                Err("目录统计超过时间预算".into())
+                Err("backendText.me2f56d98".into())
             } else {
                 read_text(store, change).and_then(|(before, after)| {
                     if root.root.git {
@@ -173,14 +173,14 @@ impl ReviewHost {
         let snapshot = cache
             .get(snapshot_id)
             .filter(|s| s.task_id == task_id)
-            .ok_or("比较结果已过期，请刷新")?;
+            .ok_or("backendText.md9b1193f")?;
         snapshot
             .roots
             .iter()
             .find(|r| r.root.id == root_id)
             .and_then(|r| r.files.iter().find(|f| f.path == path))
             .cloned()
-            .ok_or_else(|| "文件不属于此比较结果".into())
+            .ok_or_else(|| "backendText.m978c6287".into())
     }
 }
 
@@ -341,31 +341,31 @@ fn select_query_roots(
 ) -> Result<Vec<ReviewRoot>, String> {
     if query.root_id.is_none() && matches!(query.mode, CompareMode::Committed | CompareMode::Branch)
     {
-        return Err("请先选择一个 Git 目录".into());
+        return Err("backendText.m5d8e854b".into());
     }
     let selected: Vec<_> = all
         .into_iter()
         .filter(|r| query.root_id.as_ref().is_none_or(|id| id == &r.id))
         .collect();
     if selected.is_empty() {
-        return Err("项目目录不存在".into());
+        return Err("backendText.m3149b9e1".into());
     }
     let git_only = matches!(
         query.mode,
         CompareMode::Unstaged | CompareMode::Staged | CompareMode::Committed | CompareMode::Branch
     );
     if query.root_id.is_some() && git_only && selected.iter().any(|r| !r.git) {
-        return Err("此目录未使用 Git，仅支持会话变更".into());
+        return Err("backendText.m8a34f77b".into());
     }
     if query.mode == CompareMode::Session && selected.iter().any(|r| r.git) {
-        return Err("Git 目录请使用 Git 比较方式".into());
+        return Err("backendText.m976b4fb6".into());
     }
     let selected: Vec<_> = selected
         .into_iter()
         .filter(|r| !git_only || r.git)
         .collect();
     if selected.is_empty() {
-        return Err("当前项目没有可比较的 Git 目录".into());
+        return Err("backendText.m8f247f82".into());
     }
     Ok(selected)
 }
@@ -382,7 +382,7 @@ fn publish_snapshot(
             .keys()
             .find(|id| !leases.protected(id, now))
             .cloned()
-            .ok_or("打开的比较过多，请先关闭不再阅读的 Review")?;
+            .ok_or("backendText.md6f5edbd")?;
         cache.remove(&victim);
         leases.remove(&victim);
         Some(victim)
@@ -823,15 +823,15 @@ async fn run_commit_command_tagged(
     drop(askpass);
     output
 }
-const UNKNOWN_GIT_EFFECT: &str = "Git 操作结果未知：";
+const UNKNOWN_GIT_EFFECT: &str = "backendText.mf64b0f53";
 async fn collect_git_output(
     child: tokio::process::Child,
     timeout: std::time::Duration,
 ) -> Result<std::process::Output, String> {
     tokio::time::timeout(timeout, child.wait_with_output())
         .await
-        .map_err(|_| format!("{UNKNOWN_GIT_EFFECT}等待超时，请先核实仓库，未自动重发"))?
-        .map_err(|e| format!("{UNKNOWN_GIT_EFFECT}无法读取进程结果：{e}，请先核实仓库"))
+        .map_err(|_| format!("backendText.mabc79b63\u{1e}{}", serde_json::to_string(&[UNKNOWN_GIT_EFFECT.to_string()]).unwrap_or_else(|_| "[]".into())))?
+        .map_err(|e| format!("backendText.ma5bce326\u{1e}{}", serde_json::to_string(&[UNKNOWN_GIT_EFFECT.to_string(), e.to_string()]).unwrap_or_else(|_| "[]".into())))
 }
 fn require_git_success(output: std::process::Output) -> Result<(), String> {
     if output.status.success() {
@@ -891,7 +891,7 @@ async fn validate_commit_preview(
     expected: &agent_workspace::review::git::GitComparison,
     store: &ReviewStore,
 ) -> Result<(), String> {
-    const STALE: &str = "REVIEW_STALE_COMMIT: Git 状态已变化，请刷新后重新确认提交";
+    const STALE: &str = "backendText.m5659c1af";
     if root.path != expected.root.path
         || root.scopes != expected.root.scopes
         || root.git != expected.root.git
@@ -911,7 +911,7 @@ async fn validate_commit_preview(
         return Err(STALE.into());
     }
     if current.changes.is_empty() {
-        return Err("REVIEW_NO_CHANGES: 当前没有可提交的更改".into());
+        return Err("backendText.mec1c88c2".into());
     }
     Ok(())
 }

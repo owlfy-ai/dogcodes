@@ -73,7 +73,7 @@ impl Importer {
     pub fn read(&mut self, frame: &Frame<'_>) -> Result<RgbaImage> {
         let modifier = frame
             .modifier
-            .ok_or("Wayland GPU 来源未提供格式 modifier")?;
+            .ok_or("backendText.mdb505c7b")?;
         let attrs = attributes(frame)?;
         for device in &mut self.devices {
             if device.supports(frame.format, modifier, frame.size)
@@ -82,7 +82,7 @@ impl Importer {
                 return Ok(image);
             }
         }
-        Err("显卡无法读取当前屏幕共享格式".into())
+        Err("backendText.me363b9ba".into())
     }
 }
 
@@ -110,17 +110,17 @@ fn attributes(frame: &Frame<'_>) -> Result<Vec<i32>> {
         || frame.planes.is_empty()
         || frame.planes.len() > 4
     {
-        return Err("Wayland GPU 画面尺寸或平面数量无效".into());
+        return Err("backendText.m1580451f".into());
     }
     let fourcc = FORMATS
         .iter()
         .find(|(format, _)| *format == frame.format)
-        .ok_or("Wayland GPU 像素格式不支持")?
+        .ok_or("backendText.m4af19e03")?
         .1;
     let mut attrs = vec![0x3057, w as i32, 0x3056, h as i32, 0x3271, fourcc as i32];
     for (i, plane) in frame.planes.iter().enumerate() {
         if plane.pitch <= 0 || plane.offset > i32::MAX as u32 {
-            return Err("Wayland GPU 平面偏移或行跨度无效".into());
+            return Err("backendText.me7d29109".into());
         }
         let base = if i == 3 {
             0x3440
@@ -146,9 +146,9 @@ fn attributes(frame: &Frame<'_>) -> Result<Vec<i32>> {
     }
     if frame.format == VideoFormat::NV12 {
         if !w.is_multiple_of(2) || !h.is_multiple_of(2) || frame.planes.len() < 2 {
-            return Err("Wayland GPU NV12 平面布局无效".into());
+            return Err("backendText.m86b33550".into());
         }
-        let (matrix, range) = frame.colors.ok_or("Wayland GPU NV12 色彩信息缺失")?;
+        let (matrix, range) = frame.colors.ok_or("backendText.m70ff3401")?;
         attrs.extend_from_slice(&[
             0x327B,
             match matrix {
@@ -170,7 +170,7 @@ fn attributes(frame: &Frame<'_>) -> Result<Vec<i32>> {
 /// SHM's modulo offsets; these offsets are relative to the file descriptor.
 pub(super) fn planes(data: &[pipewire::spa::buffer::Data]) -> Result<Option<Vec<Plane<'_>>>> {
     if data.is_empty() || data.len() > 4 {
-        return Err("Wayland GPU 平面数量不支持".into());
+        return Err("backendText.mc17198cd".into());
     }
     let mut planes = Vec::with_capacity(data.len());
     for data in data {
@@ -180,7 +180,7 @@ pub(super) fn planes(data: &[pipewire::spa::buffer::Data]) -> Result<Option<Vec<
             || raw.fd > i32::MAX as i64
             || raw.chunk.is_null()
         {
-            return Err("Wayland GPU 平面或同步方式不支持".into());
+            return Err("backendText.m600239f8".into());
         }
         // SAFETY: the dequeued PipeWire buffer keeps its chunk and borrowed fd
         // valid until the synchronous import/readback and its image cleanup finish.
@@ -191,7 +191,7 @@ pub(super) fn planes(data: &[pipewire::spa::buffer::Data]) -> Result<Option<Vec<
         let offset = raw
             .mapoffset
             .checked_add(chunk.offset)
-            .ok_or("Wayland GPU 平面偏移溢出")?;
+            .ok_or("backendText.md4f78a51")?;
         // SAFETY: PipeWire retains ownership of this fd throughout the buffer loan.
         let fd = unsafe { BorrowedFd::borrow_raw(raw.fd as i32) };
         planes.push(Plane {

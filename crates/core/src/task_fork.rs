@@ -96,16 +96,16 @@ impl Core {
         let sequence = ack
             .first_sequence
             .filter(|seq| *seq > 0 && Some(*seq) == ack.last_sequence)
-            .ok_or_else(|| CoreError::Internal("Fork 原请求范围损坏".into()))?;
+            .ok_or_else(|| CoreError::Internal("backendText.mcdfb878c".into()))?;
         let events = self.repository.sync_events(sequence - 1, 1).await?;
         let event = events
             .first()
             .filter(|event| event.sequence == sequence && event.event_type == "task.fork_requested")
-            .ok_or_else(|| CoreError::NotFound("Fork 原请求记录不可用，未重试".into()))?;
+            .ok_or_else(|| CoreError::NotFound("backendText.mda0bd1c9".into()))?;
         let request: ForkRequest = serde_json::from_value(event.payload["request"].clone())
-            .map_err(|_| CoreError::Internal("Fork 原请求记录损坏".into()))?;
+            .map_err(|_| CoreError::Internal("backendText.mccc755b5".into()))?;
         if &request.new_task_id != target || event.stream.stream_id != request.task_id.as_str() {
-            return Err(CoreError::Conflict("Fork 原请求归属不匹配".into()));
+            return Err(CoreError::Conflict("backendText.m19b91554".into()));
         }
         Ok(Some(request))
     }
@@ -123,7 +123,7 @@ impl Core {
             .as_ref()
             .is_some_and(|request| &request.task_id != source)
         {
-            return Err(CoreError::Conflict("Fork 回执不属于此会话".into()));
+            return Err(CoreError::Conflict("backendText.mdf6e00c0".into()));
         }
         let Some(ack) = self
             .repository
@@ -154,7 +154,7 @@ impl Core {
             let active = self
                 .active_forks
                 .lock()
-                .map_err(|_| CoreError::Internal("Fork 状态不可用".into()))?
+                .map_err(|_| CoreError::Internal("backendText.m2850d1c4".into()))?
                 .contains_key(target);
             let failed = progress.as_ref().is_some_and(|p| p["status"] == "failed");
             return Ok(Some(ForkReceipt {
@@ -179,19 +179,19 @@ impl Core {
                 } else if active {
                     None
                 } else {
-                    Some("原 Fork 已中断，未自动重新创建；可以核实后接续原请求".into())
+                    Some("backendText.m01fee491".into())
                 },
             }));
         };
         let first = ack
             .first_sequence
             .filter(|seq| *seq > 0)
-            .ok_or_else(|| CoreError::Internal("Fork 回执缺少事件范围".into()))?;
+            .ok_or_else(|| CoreError::Internal("backendText.mee18e090".into()))?;
         let last = ack
             .last_sequence
-            .ok_or_else(|| CoreError::Internal("Fork 回执缺少事件范围".into()))?;
+            .ok_or_else(|| CoreError::Internal("backendText.mee18e090".into()))?;
         if last < first || last - first > 1 {
-            return Err(CoreError::Internal("Fork 回执事件范围无效".into()));
+            return Err(CoreError::Internal("backendText.m86f257e2".into()));
         }
         let events = self.repository.sync_events(first - 1, 2).await?;
         let event = events
@@ -202,23 +202,23 @@ impl Core {
                     && event.stream.stream_id == target.as_str()
             })
             .ok_or_else(|| {
-                CoreError::NotFound("原 Fork 已受理，但创建记录不可用；未重新创建".into())
+                CoreError::NotFound("backendText.mabc4cfb0".into())
             })?;
         let request = ForkRequest {
             task_id: serde_json::from_value(event.payload["sourceTaskId"].clone())
-                .map_err(|_| CoreError::Internal("Fork 来源记录损坏".into()))?,
+                .map_err(|_| CoreError::Internal("backendText.m5c378324".into()))?,
             turn_id: serde_json::from_value(event.payload["sourceTurnId"].clone())
-                .map_err(|_| CoreError::Internal("Fork 轮次记录损坏".into()))?,
+                .map_err(|_| CoreError::Internal("backendText.mf837a336".into()))?,
             new_task_id: serde_json::from_value(event.payload["taskId"].clone())
-                .map_err(|_| CoreError::Internal("Fork 目标记录损坏".into()))?,
+                .map_err(|_| CoreError::Internal("backendText.m1248daa4".into()))?,
             environment: serde_json::from_value(event.payload["environment"].clone())
-                .map_err(|_| CoreError::Internal("Fork 环境记录损坏".into()))?,
+                .map_err(|_| CoreError::Internal("backendText.m944d3582".into()))?,
         };
         if &request.task_id != source || &request.new_task_id != target {
-            return Err(CoreError::Conflict("Fork 回执不属于此会话".into()));
+            return Err(CoreError::Conflict("backendText.mdf6e00c0".into()));
         }
         if intent.as_ref().is_some_and(|original| original != &request) {
-            return Err(CoreError::Conflict("Fork 原请求与结果不匹配".into()));
+            return Err(CoreError::Conflict("backendText.m06bdb4b7".into()));
         }
         let task_available = self.repository.task_summary(target).await?.is_some();
         Ok(Some(ForkReceipt {
@@ -244,7 +244,7 @@ impl Core {
                     SNAPSHOT_MEDIA,
                 )
                 .await
-                .map_err(|_| "轮末文件快照保存失败".to_owned()),
+                .map_err(|_| "backendText.m20de39b2".to_owned()),
             Err(error) => Err(error),
         };
         if let Err(message) = result {
@@ -304,15 +304,15 @@ impl Core {
         }
         let metadata: ArtifactMetadata = serde_json::from_value(selected.ok_or_else(|| {
             CoreError::InvalidArgument(failure.map_or_else(
-                || "本轮没有可恢复的文件快照，无法从本轮成果创建 worktree。旧版轮次无法补录当时的文件；仍可在当前工作区 Fork。".into(),
-                |reason| format!("本轮文件快照不可用：{reason}。仍可在当前工作区 Fork。"),
+                || "backendText.m6d777a78".into(),
+                |reason| format!("backendText.m6ff5a4c8\u{1e}{}", serde_json::to_string(&[reason.to_string()]).unwrap_or_else(|_| "[]".into())),
             ))
-        })?).map_err(|_| CoreError::Internal("轮末快照元数据无效".into()))?;
+        })?).map_err(|_| CoreError::Internal("backendText.m8573011b".into()))?;
         let artifact = self
             .repository
             .artifact(&metadata.artifact_id)
             .await?
-            .ok_or_else(|| CoreError::NotFound("轮末文件快照已不可用".into()))?;
+            .ok_or_else(|| CoreError::NotFound("backendText.ma511efcc".into()))?;
         if metadata.media_type != SNAPSHOT_MEDIA
             || artifact.metadata.media_type != SNAPSHOT_MEDIA
             || artifact.metadata.payload_sha256 != metadata.payload_sha256
@@ -320,11 +320,11 @@ impl Core {
             || artifact.content.len() > 1_048_576
             || hex::encode(Sha256::digest(&artifact.content)) != metadata.payload_sha256
         {
-            return Err(CoreError::Internal("轮末文件快照校验失败".into()));
+            return Err(CoreError::Internal("backendText.m94e74d11".into()));
         }
         serde_json::from_slice(&artifact.content)
             .map(Some)
-            .map_err(|_| CoreError::Internal("轮末文件快照格式无效".into()))
+            .map_err(|_| CoreError::Internal("backendText.m25f13f5f".into()))
     }
 
     pub async fn fork_task(&self, request: ForkRequest) -> Result<TaskId, CoreError> {
@@ -334,7 +334,7 @@ impl Core {
         let key = format!("fork:{}", request.new_task_id);
         let intent = self.fork_intent(&request.new_task_id).await?;
         if intent.as_ref().is_some_and(|original| original != &request) {
-            return Err(CoreError::Conflict("Fork 标识已用于不同的原请求".into()));
+            return Err(CoreError::Conflict("backendText.m7c87dfac".into()));
         }
         if self.repository.command_ack(&key).await?.is_some() {
             self.require_task(&request.new_task_id).await?;
@@ -353,7 +353,7 @@ impl Core {
                     && event.payload["sourceTurnId"] == json!(request.turn_id)
                     && event.payload["environment"] == json!(request.environment)
             }) {
-                return Err(CoreError::Conflict("Fork 请求与已创建的会话不一致".into()));
+                return Err(CoreError::Conflict("backendText.ma2edfad9".into()));
             }
             return Ok(request.new_task_id);
         }
@@ -365,7 +365,7 @@ impl Core {
                 .is_some()
         {
             return Err(CoreError::Conflict(
-                "旧 Fork 已创建部分项目但缺少原请求，无法安全重试；请保留 Worktree 并核实".into(),
+                "backendText.m5227b3c4".into(),
             ));
         }
         let plan = if intent.is_some() {
@@ -373,10 +373,10 @@ impl Core {
                 .repository
                 .command_ack(&format!("{key}:intent"))
                 .await?
-                .ok_or_else(|| CoreError::Internal("Fork 原请求不可用".into()))?;
+                .ok_or_else(|| CoreError::Internal("backendText.ma6e6390c".into()))?;
             let sequence = ack
                 .first_sequence
-                .ok_or_else(|| CoreError::Internal("Fork 原请求范围损坏".into()))?;
+                .ok_or_else(|| CoreError::Internal("backendText.mcdfb878c".into()))?;
             let events = self
                 .repository
                 .sync_events(sequence.saturating_sub(1), 1)
@@ -387,15 +387,15 @@ impl Core {
                 .and_then(|e| e.payload.get("plan"))
                 .ok_or_else(|| {
                     CoreError::Conflict(
-                        "旧 Fork 缺少完整恢复计划，请保留已有 Worktree 并核实；未重新创建".into(),
+                        "backendText.m44f0bde4".into(),
                     )
                 })?;
             let mut plan: ForkPlan = serde_json::from_value(value.clone())
-                .map_err(|_| CoreError::Internal("Fork 恢复计划损坏，未继续".into()))?;
+                .map_err(|_| CoreError::Internal("backendText.m727f567e".into()))?;
             plan.upgrade_legacy_non_git();
             self.require_task(&request.task_id).await?;
             if plan.source.task_id != request.task_id {
-                return Err(CoreError::Conflict("Fork 恢复计划归属不匹配".into()));
+                return Err(CoreError::Conflict("backendText.md33abac5".into()));
             }
             plan
         } else {
@@ -424,7 +424,7 @@ impl Core {
         }
         self.active_forks
             .lock()
-            .map_err(|_| CoreError::Internal("Fork 状态不可用".into()))?
+            .map_err(|_| CoreError::Internal("backendText.m2850d1c4".into()))?
             .insert(request.new_task_id.clone(), request.task_id.clone());
         let _active = ActiveFork(self.active_forks.clone(), request.new_task_id.clone());
         drop(source_guard);
@@ -490,7 +490,7 @@ impl Core {
             .as_ref()
             .is_some_and(|run| run.turn_id == request.turn_id)
         {
-            return Err(CoreError::Conflict("请等待本轮对话结束后再 fork".into()));
+            return Err(CoreError::Conflict("backendText.m16340d2d".into()));
         }
         if self
             .repository
@@ -498,7 +498,7 @@ impl Core {
             .await?
             .is_some()
         {
-            return Err(CoreError::Conflict("目标会话已存在".into()));
+            return Err(CoreError::Conflict("backendText.mecd59762".into()));
         }
         let head = self.repository.event_head().await?;
         let mut cursor = 0;
@@ -532,7 +532,7 @@ impl Core {
             cursor = last.sequence;
         }
         let through =
-            through.ok_or_else(|| CoreError::InvalidArgument("找不到已结束的源轮次".into()))?;
+            through.ok_or_else(|| CoreError::InvalidArgument("backendText.m5510ca0d".into()))?;
         let mut messages: Vec<Value> = Vec::new();
         let mut bytes = 0;
         cursor = 0;
@@ -549,7 +549,7 @@ impl Core {
                 bytes += message.text.len();
                 if bytes > 16 * 1024 * 1024 {
                     return Err(CoreError::InvalidArgument(
-                        "对话上下文过大，无法完整 fork".into(),
+                        "backendText.m93ebc6e9".into(),
                     ));
                 }
                 if message.kind == "task.forked" {
@@ -557,7 +557,7 @@ impl Core {
                         .map_err(|e| CoreError::Internal(e.to_string()))?;
                     let inherited: Vec<Value> =
                         serde_json::from_str(payload["text"].as_str().ok_or_else(|| {
-                            CoreError::Internal("继承的 fork 上下文不可用".into())
+                            CoreError::Internal("backendText.ma9f70493".into())
                         })?)
                         .map_err(|e| CoreError::Internal(e.to_string()))?;
                     messages.extend(inherited);
@@ -571,7 +571,7 @@ impl Core {
             .projects
             .iter()
             .find(|p| p.project_id == source.project_id)
-            .ok_or_else(|| CoreError::NotFound("源项目不存在".into()))?;
+            .ok_or_else(|| CoreError::NotFound("backendText.me2f80243".into()))?;
         let (snapshot, snapshot_error, context_only) =
             if request.environment == ForkEnvironment::Worktree {
                 match self.fork_snapshot(request, through).await {
@@ -609,7 +609,7 @@ impl Core {
                     CoreError::InvalidArgument(
                         plan.snapshot_error
                             .clone()
-                            .unwrap_or_else(|| "Fork 恢复计划缺少文件快照".into()),
+                            .unwrap_or_else(|| "backendText.m8212f7b5".into()),
                     )
                 })?;
                 self.record_fork_progress(request, "restoring_worktrees", None)
@@ -621,7 +621,7 @@ impl Core {
                     .map_err(CoreError::InvalidArgument)?;
                 let (path, directories) = paths
                     .split_first()
-                    .ok_or_else(|| CoreError::Internal("快照中没有项目目录".into()))?;
+                    .ok_or_else(|| CoreError::Internal("backendText.m59e42e2d".into()))?;
                 let event = NewEvent::hub(
                     StreamRef {
                         stream_type: StreamType::Project,
@@ -650,15 +650,15 @@ impl Core {
                 .projects
                 .into_iter()
                 .find(|project| project.project_id == id)
-                .ok_or_else(|| CoreError::Conflict("Fork 中间项目已不可用，未重新创建".into()))?;
+                .ok_or_else(|| CoreError::Conflict("backendText.md33e6a90".into()))?;
             let ack = self
                 .repository
                 .command_ack(&project_key)
                 .await?
-                .ok_or_else(|| CoreError::Internal("Fork 项目回执不可用".into()))?;
+                .ok_or_else(|| CoreError::Internal("backendText.m404dcf2a".into()))?;
             let sequence = ack
                 .first_sequence
-                .ok_or_else(|| CoreError::Internal("Fork 项目回执缺少范围".into()))?;
+                .ok_or_else(|| CoreError::Internal("backendText.m5415f2df".into()))?;
             let events = self
                 .repository
                 .sync_events(sequence.saturating_sub(1), 1)
@@ -666,13 +666,13 @@ impl Core {
             let original = events
                 .first()
                 .filter(|e| e.sequence == sequence && e.event_type == "project.registered")
-                .ok_or_else(|| CoreError::Conflict("Fork 中间项目记录不可用，未继续".into()))?;
+                .ok_or_else(|| CoreError::Conflict("backendText.m91e26dca".into()))?;
             if original.payload["path"] != json!(current.path)
                 || original.payload["additionalDirectories"]
                     != json!(current.additional_directories)
             {
                 return Err(CoreError::Conflict(
-                    "Fork 中间项目目录已更改，请核实原 Worktree；未继续创建会话".into(),
+                    "backendText.m84762382".into(),
                 ));
             }
             id

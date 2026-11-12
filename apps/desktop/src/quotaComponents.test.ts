@@ -106,7 +106,7 @@ describe("quota components", () => {
     expect(authentication).toContain("当前会话上下文");
   });
   it("labels the Cursor overview pool and displays both separate allowances", () => {
-    const split = { ...quota, context: null, planType: "Pro · 重置 Oct 4（原生日期）", staleAfterUnixMs: Date.now() + 60_000,
+    const split = { ...quota, context: null, planType: "Pro", nativeResetOn: "Oct 4", staleAfterUnixMs: Date.now() + 60_000,
       windows: [
         { id: "cursor-models", scope: "Cursor Models", windowMinutes: 0, usedPercent: 20 },
         { id: "cursor-other-models", scope: "Other Models", windowMinutes: 0, usedPercent: 100 },

@@ -26,13 +26,13 @@ async fn target(
         .await?
         .into_iter()
         .find(|root| root.id == root_id)
-        .ok_or("项目目录已改变，请刷新")?;
+        .ok_or("backendText.mb3a29250")?;
     for file_path in std::iter::once(path).chain(change.previous_path.as_deref()) {
         validate_relative(file_path)?;
         if !root.scopes.iter().any(|scope| {
             scope.is_empty() || file_path == scope || file_path.starts_with(&format!("{scope}/"))
         }) {
-            return Err("文件超出当前项目范围".into());
+            return Err("backendText.m24e5ef97".into());
         }
     }
     Ok((root, change))
@@ -44,9 +44,9 @@ fn resolve_file(root: &str, path: &str) -> Result<PathBuf, String> {
     let target = base
         .join(path)
         .canonicalize()
-        .map_err(|_| "文件不存在或无法访问")?;
+        .map_err(|_| "backendText.m534a8de1")?;
     if !target.starts_with(base) {
-        return Err("文件位于项目目录之外".into());
+        return Err("backendText.m7e1feb0a".into());
     }
     Ok(target)
 }
@@ -71,7 +71,7 @@ pub async fn preview(
         PreviewVersion::Working => tokio::task::spawn_blocking(move || {
             let target = resolve_file(&root.path, &path)?;
             if !target.is_file() {
-                return Err("不是普通文件，无法预览".into());
+                return Err("backendText.m9abd3f91".into());
             }
             let mut bytes = Vec::new();
             std::fs::File::open(target)
@@ -85,14 +85,14 @@ pub async fn preview(
         .map_err(|e| e.to_string())?,
         PreviewVersion::Head => {
             if !root.git {
-                return Err("当前目录未受 Git 管理".into());
+                return Err("backendText.m41c79dda".into());
             }
             let git = GitReview::default();
             let head_path = change.previous_path.as_deref().unwrap_or(&path);
             let bytes = git
                 .head_file(&root, head_path)
                 .await
-                .map_err(|_| "HEAD 中没有此文件，或文件无法读取")?;
+                .map_err(|_| "backendText.m95ebf63e")?;
             preview_bytes(bytes, head_path)
         }
     }
@@ -127,18 +127,18 @@ pub async fn reveal_file(target: PathBuf) -> Result<(), String> {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let mut command = {
         let mut command = tokio::process::Command::new("xdg-open");
-        command.arg(target.parent().ok_or("没有父目录")?);
+        command.arg(target.parent().ok_or("backendText.m7a22c7f5")?);
         command
     };
     command.kill_on_drop(true);
     let status = tokio::time::timeout(std::time::Duration::from_secs(10), command.status())
         .await
-        .map_err(|_| "打开文件管理器超时")?
+        .map_err(|_| "backendText.m151d7b6a")?
         .map_err(|e| e.to_string())?;
     if status.success() {
         Ok(())
     } else {
-        Err("无法在文件管理器中显示文件".into())
+        Err("backendText.m9350695d".into())
     }
 }
 
@@ -152,7 +152,7 @@ pub async fn ignore(
     let _access = state.core.try_workspace_mutation().await?;
     let (root, _) = target(state, &task_id, &snapshot_id, &root_id, &path).await?;
     if !root.git {
-        return Err("当前目录未受 Git 管理".into());
+        return Err("backendText.m41c79dda".into());
     }
     let snapshot = state.core.bootstrap().await?;
     if snapshot
@@ -160,7 +160,7 @@ pub async fn ignore(
         .iter()
         .any(|task| task.task_id.to_string() == task_id && task.active_primary_run.is_some())
     {
-        return Err("Agent 正在运行，请等待结束后操作".into());
+        return Err("backendText.maceaefab".into());
     }
     GitReview::default().ignore_file(&root, &path).await
 }

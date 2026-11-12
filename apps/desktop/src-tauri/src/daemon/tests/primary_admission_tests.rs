@@ -65,7 +65,7 @@ async fn primary_admission_rpc_rejects_disabled_work_and_replays_accepted_work()
             .execute(request.clone())
             .await
             .unwrap_err()
-            .contains("已禁用")
+            .contains("backendText.mbc5a87a7")
     );
     assert!(
         f.repository
@@ -123,7 +123,7 @@ async fn primary_admission_rpc_rejects_disabled_work_and_replays_accepted_work()
             .execute(overridden.clone())
             .await
             .unwrap_err()
-            .contains("已禁用")
+            .contains("backendText.mbc5a87a7")
     );
     assert!(
         f.repository
@@ -244,7 +244,7 @@ async fn primary_admission_rpc_requires_ready_explicit_current_installation() {
                 .execute(command.clone())
                 .await
                 .unwrap_err()
-                .contains("尚未就绪或已更换")
+                .contains("backendText.m83f9c5d0")
         );
         assert!(
             f.repository
@@ -264,7 +264,7 @@ async fn primary_admission_rpc_requires_ready_explicit_current_installation() {
                 .execute(command.clone())
                 .await
                 .unwrap_err()
-                .contains("尚未就绪或已更换")
+                .contains("backendText.m83f9c5d0")
         );
         assert!(
             f.repository
@@ -283,7 +283,7 @@ async fn primary_admission_rpc_requires_ready_explicit_current_installation() {
             .execute(command)
             .await
             .unwrap_err()
-            .contains("尚未就绪或已更换")
+            .contains("backendText.m83f9c5d0")
     );
     // A late re-registration cannot resurrect a removed or deselected installation.
     for selected in [None, Some("fixture:replacement".into())] {
@@ -295,7 +295,7 @@ async fn primary_admission_rpc_requires_ready_explicit_current_installation() {
                 .execute(command.clone())
                 .await
                 .unwrap_err()
-                .contains("尚未就绪或已更换")
+                .contains("backendText.m83f9c5d0")
         );
         assert!(
             f.repository

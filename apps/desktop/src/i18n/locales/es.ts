@@ -195,6 +195,7 @@ export const es: TranslationDict = {
     "diskFull": "Disco lleno. Libera espacio.",
     "activeConversation": "Espera a que termine la conversación antes de detectar agentes de nuevo.",
       "nativeUpdater": "Actualizador nativo",
+    "npxInstall": "(npx)",
     "onDemandOn": "Facturación por uso activada",
     "onDemandOff": "Facturación por uso desactivada",
     "bonusQuota": "Cuota adicional disponible",

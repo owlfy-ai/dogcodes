@@ -194,21 +194,21 @@ impl Core {
                 event.event_type == "review.started"
                     && event.payload["review"]["request"]["runId"] == json!(run_id)
             })
-            .ok_or_else(|| CoreError::NotFound("审查来源不存在".into()))?;
+            .ok_or_else(|| CoreError::NotFound("backendText.mfadddb40".into()))?;
         let packet = event.payload["packet"]
             .as_str()
-            .ok_or_else(|| CoreError::NotFound("审查材料不可用".into()))?;
+            .ok_or_else(|| CoreError::NotFound("backendText.m3de0c500".into()))?;
         if event.payload["review"]["inputSha256"].as_str()
             != Some(hex::encode(Sha256::digest(packet.as_bytes())).as_str())
         {
-            return Err(CoreError::Internal("审查材料校验失败".into()));
+            return Err(CoreError::Internal("backendText.m04021b74".into()));
         }
         let packet =
-            serde_json::from_str(packet).map_err(|_| CoreError::Internal("审查材料损坏".into()))?;
+            serde_json::from_str(packet).map_err(|_| CoreError::Internal("backendText.mb47503e7".into()))?;
         crate::review_analysis::workflow::corpus(&packet)
             .into_iter()
             .find(|file| file.file_id == file_id)
-            .ok_or_else(|| CoreError::NotFound("文件不在审查材料中".into()))
+            .ok_or_else(|| CoreError::NotFound("backendText.mc2766aac".into()))
     }
     async fn save_review(&self, run: &ReviewRun, packet: Option<&str>) -> Result<(), CoreError> {
         self.append_runtime_event(&run.request.task_id,
@@ -226,7 +226,7 @@ impl Core {
                 .await?
                 .into_iter()
                 .find(|r| &r.request.run_id == retry)
-                .ok_or_else(|| CoreError::NotFound("原审查不存在".into()))?;
+                .ok_or_else(|| CoreError::NotFound("backendText.m2f7029fe".into()))?;
             if previous.status.active()
                 || previous.request.turn_id != request.turn_id
                 || previous.request.kind != request.kind
@@ -234,7 +234,7 @@ impl Core {
                 || previous.request.recheck_of != request.recheck_of
             {
                 return Err(CoreError::InvalidArgument(
-                    "只能重试同一来源已结束的同类审查".into(),
+                    "backendText.m0f49886b".into(),
                 ));
             }
             let packet = events
@@ -244,14 +244,14 @@ impl Core {
                         && e.payload["review"]["request"]["runId"] == json!(retry)
                 })
                 .and_then(|e| e.payload["packet"].as_str())
-                .ok_or_else(|| CoreError::NotFound("原审查材料不可用".into()))?
+                .ok_or_else(|| CoreError::NotFound("backendText.m05f2f944".into()))?
                 .to_owned();
             if hex::encode(Sha256::digest(packet.as_bytes())) != previous.input_sha256 {
-                return Err(CoreError::Internal("审查材料校验失败".into()));
+                return Err(CoreError::Internal("backendText.m04021b74".into()));
             }
             if !previous.workspace_review {
                 return Err(CoreError::InvalidArgument(
-                    "旧快照审查不再重放，请从审查图标发起新检查".into(),
+                    "backendText.m083817e3".into(),
                 ));
             }
             return Ok((
@@ -266,7 +266,7 @@ impl Core {
             .find(|e| {
                 e.event_type == "turn.completed" && e.payload["turnId"] == json!(request.turn_id)
             })
-            .ok_or_else(|| CoreError::InvalidArgument("只能检查已完成的轮次".into()))?;
+            .ok_or_else(|| CoreError::InvalidArgument("backendText.mb087486d".into()))?;
         let source = events.iter().rfind(|e| {
             e.sequence <= completion.sequence
                 && e.payload["turnId"] == json!(request.turn_id)
@@ -338,7 +338,7 @@ impl Core {
         request: ReviewRequest,
     ) -> Result<ReviewRun, CoreError> {
         if request.turn_id.is_none() || request.source_snapshot.is_some() {
-            return Err(CoreError::InvalidArgument("逐轮审查必须指定轮次".into()));
+            return Err(CoreError::InvalidArgument("backendText.m0470b6ef".into()));
         }
         self.start_review(request, None).await
     }
@@ -356,7 +356,7 @@ impl Core {
                 .is_none_or(String::is_empty)
         {
             return Err(CoreError::InvalidArgument(
-                "项目审查必须指定 Diff 比较范围".into(),
+                "backendText.mf964f5c6".into(),
             ));
         }
         self.start_review(request, input).await
@@ -377,17 +377,17 @@ impl Core {
             return if run.request == request {
                 Ok(run)
             } else {
-                Err(CoreError::Conflict("审查请求标识已被使用".into()))
+                Err(CoreError::Conflict("backendText.m029f2446".into()))
             };
         }
         if request.kind.instruction().is_none() {
             return Err(CoreError::InvalidArgument(
-                "该检查类型已移除，仅支持代码审查、安全检查和性能分析".into(),
+                "backendText.m6d77242b".into(),
             ));
         }
         if active.len() >= 8 {
             return Err(CoreError::ResourceExhausted(
-                "同时运行的审查已达上限，请等待已有审查完成".into(),
+                "backendText.m5fab3908".into(),
             ));
         }
         // Existing receipts above remain usable after disable/removal. New work
@@ -401,7 +401,7 @@ impl Core {
             .get(&request.executor)
             .cloned()
             .ok_or_else(|| {
-                CoreError::CapabilityUnavailable("所选 Agent 尚未连接，请重新检测".into())
+                CoreError::CapabilityUnavailable("backendText.m1f1725c6".into())
             })?;
         let driver = driver.independent_session_driver()?.unwrap_or(driver);
         let (mut packet, source_sequence, source_artifact, coverage) = if request
@@ -410,11 +410,11 @@ impl Core {
             && request.retry_of.is_none()
         {
             let mut input =
-                input.ok_or_else(|| CoreError::InvalidArgument("项目审查材料不可用".into()))?;
+                input.ok_or_else(|| CoreError::InvalidArgument("backendText.m6b339741".into()))?;
             if input["snapshotId"].as_str() != request.source_snapshot.as_deref()
                 || input["taskId"] != json!(request.task_id)
             {
-                return Err(CoreError::InvalidArgument("项目审查来源不匹配".into()));
+                return Err(CoreError::InvalidArgument("backendText.ma7d39297".into()));
             }
             let coverage = format!(
                 "The agent reads the code itself and checks the selected comparison scope: {}. Working-tree comparisons use the code as of review time.",
@@ -433,7 +433,7 @@ impl Core {
             packet = self.recheck_packet(&request, &packet).await?;
         }
         let mut value: Value = serde_json::from_str(&packet)
-            .map_err(|_| CoreError::Internal("审查范围损坏".into()))?;
+            .map_err(|_| CoreError::Internal("backendText.mf0de62b1".into()))?;
         workspace::bind_directories(
             &mut value,
             &self.review_directories(&request.task_id).await?,
@@ -483,7 +483,7 @@ impl Core {
             .await?
             .into_iter()
             .find(|r| &r.request.run_id == run_id)
-            .ok_or_else(|| CoreError::NotFound("审查不存在".into()))?;
+            .ok_or_else(|| CoreError::NotFound("backendText.mce93934e".into()))?;
         if !run.status.active() {
             return Ok(());
         }
@@ -494,7 +494,7 @@ impl Core {
         } else {
             run.status = ReviewStatus::Interrupted;
             run.finished_at = Some(Utc::now());
-            run.error = Some("执行连接已中断，可重试".into());
+            run.error = Some("backendText.m582ca949".into());
             self.save_review(&run, None).await?;
         }
         Ok(())
@@ -511,13 +511,13 @@ impl Core {
                             if matches!(group.status.as_str(), "queued" | "reviewing" | "verifying")
                             {
                                 group.status = "interrupted".into();
-                                group.error = Some("服务重启，执行已中断；已完成结果保留".into());
+                                group.error = Some("backendText.m6c534c61".into());
                             }
                         }
                     }
                     run.status = ReviewStatus::Interrupted;
                     run.finished_at = Some(Utc::now());
-                    run.error = Some("服务已重启，审查执行连接已中断；可按原比较范围重试".into());
+                    run.error = Some("backendText.m1d65669d".into());
                     self.save_review(&run, None).await?;
                 }
             }
@@ -581,17 +581,17 @@ fn project_review_runs(events: &[EventEnvelope]) -> Result<Vec<ReviewRun>, CoreE
             "review.started" | "review.updated"
         ) {
             let run: ReviewRun = serde_json::from_value(event.payload["review"].clone())
-                .map_err(|_| CoreError::Internal("审查记录损坏".into()))?;
+                .map_err(|_| CoreError::Internal("backendText.ma00e4370".into()))?;
             runs.insert(run.request.run_id.clone(), run);
         } else if event.event_type == "review.activity" {
             let id: RunId = serde_json::from_value(event.payload["runId"].clone())
-                .map_err(|_| CoreError::Internal("审查记录损坏".into()))?;
+                .map_err(|_| CoreError::Internal("backendText.ma00e4370".into()))?;
             if let Some(run) = runs.get_mut(&id) {
                 let revision = event.payload["revision"].as_u64().unwrap_or(0);
                 if revision > run.activity_revision {
                     let updates: Vec<ReviewActivity> =
                         serde_json::from_value(event.payload["activities"].clone())
-                            .map_err(|_| CoreError::Internal("审查输出记录损坏".into()))?;
+                            .map_err(|_| CoreError::Internal("backendText.md8597d23".into()))?;
                     activity::apply(&mut run.activities, updates);
                     run.activity_revision = revision;
                 }

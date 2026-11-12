@@ -208,7 +208,7 @@ fn exhausted_runtime_rebuilds_stop_after_three_attempts() {
             Err::<Opened<()>, _>("native still unavailable".into())
         },
     );
-    assert!(result.err().unwrap().contains("停止自动重试"));
+    assert!(result.err().unwrap().contains("backendText.m11d157c6"));
     assert_eq!(attempts, 3);
     assert_eq!(f.stats.recovery.describe()["attempts"], 3);
 }
@@ -282,7 +282,7 @@ fn recovery_deadline_survives_repeated_warmup_failures_and_cannot_spawn_more_wor
         || Ok(()),
         |_, _| panic!("expired recovery reopened native state"),
     );
-    assert!(result.err().unwrap().contains("停止自动重试"));
+    assert!(result.err().unwrap().contains("backendText.m11d157c6"));
 }
 
 #[test]

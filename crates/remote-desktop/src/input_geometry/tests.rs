@@ -188,7 +188,7 @@ fn another_displays_snapshot_cannot_be_used_for_this_input_batch() {
         |d| Ok(Display { id: 8, ..d.clone() }),
         |_, _| panic!("different display input escaped"),
     );
-    assert!(result.unwrap_err().contains("显示器身份"));
+    assert!(result.unwrap_err().contains("backendText.mf5cd0f7e"));
 }
 
 #[test]

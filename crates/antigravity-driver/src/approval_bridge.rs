@@ -578,12 +578,12 @@ async fn serve(
                         options: vec![
                             ApprovalOption {
                                 option_id: "allow_once".into(),
-                                label: "允许一次".into(),
+                                label: "approvalOptions.approveOnce".into(),
                                 semantic_role: ApprovalSemanticRole::ApproveOnce,
                             },
                             ApprovalOption {
                                 option_id: "deny".into(),
-                                label: "拒绝".into(),
+                                label: "approvalOptions.reject".into(),
                                 semantic_role: ApprovalSemanticRole::Reject,
                             },
                         ],

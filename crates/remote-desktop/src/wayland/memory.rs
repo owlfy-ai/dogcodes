@@ -22,13 +22,13 @@ impl<'a> Mapping<'a> {
             || data.flags & DataFlags::READABLE.bits() == 0
             || (writable && data.flags & DataFlags::WRITABLE.bits() == 0)
         {
-            return Err("Wayland MemFd 平面无效或不可读取".into());
+            return Err("backendText.m53c77951".into());
         }
         // SAFETY: fstat initializes this POD on success; sysconf needs no pointers.
         let (size, page) = unsafe {
             let mut stat: libc::stat = std::mem::zeroed();
             if libc::fstat(data.fd as i32, &mut stat) != 0 {
-                return Err("无法读取 Wayland 缓冲区长度".into());
+                return Err("backendText.md7334835".into());
             }
             (stat.st_size, libc::sysconf(libc::_SC_PAGESIZE))
         };
@@ -36,14 +36,14 @@ impl<'a> Mapping<'a> {
             || size < 0
             || u64::from(data.mapoffset) + u64::from(data.maxsize) > size as u64
         {
-            return Err("Wayland MemFd 平面超出文件边界".into());
+            return Err("backendText.mef9f0de7".into());
         }
         let page = page as usize;
         let offset = data.mapoffset as usize / page * page;
         let delta = data.mapoffset as usize - offset;
         let mapped = delta
             .checked_add(data.maxsize as usize)
-            .ok_or("Wayland 映射长度无效")?;
+            .ok_or("backendText.m61885813")?;
         let protection = libc::PROT_READ | if writable { libc::PROT_WRITE } else { 0 };
         // SAFETY: valid borrowed fd, page-aligned offset and checked file extent.
         // The mapping is released before the original PipeWire buffer loan ends.
@@ -58,7 +58,7 @@ impl<'a> Mapping<'a> {
             )
         };
         if address == libc::MAP_FAILED {
-            return Err("无法映射 Wayland 屏幕平面".into());
+            return Err("backendText.m7824131c".into());
         }
         let Some(address) = NonNull::new(address) else {
             // SAFETY: even a valid zero-address mapping must be unmapped; no
@@ -66,7 +66,7 @@ impl<'a> Mapping<'a> {
             unsafe {
                 libc::munmap(address, mapped);
             }
-            return Err("Wayland 屏幕映射地址无效".into());
+            return Err("backendText.m9a42da5f".into());
         };
         Ok(Self {
             address,
@@ -90,7 +90,7 @@ impl<'a> Mapping<'a> {
     #[cfg(test)]
     pub fn bytes_mut(&mut self) -> Result<&mut [u8]> {
         if !self.writable {
-            return Err("Wayland 映射为只读".into());
+            return Err("backendText.m56fad4b7".into());
         }
         // SAFETY: writable mapping, exclusive Rust access for this synthetic
         // producer's loan, and no outstanding references to its bytes.

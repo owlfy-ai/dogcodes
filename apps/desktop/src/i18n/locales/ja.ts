@@ -195,6 +195,7 @@ export const ja: TranslationDict = {
     "diskFull": "ディスク容量が不足しています。空きを増やしてください。",
     "activeConversation": "現在の会話が終了してから Agent を再検出してください。",
       "nativeUpdater": "ネイティブ更新ツール",
+    "npxInstall": "（現在の npx）",
     "onDemandOn": "従量課金が有効",
     "onDemandOff": "従量課金が無効",
     "bonusQuota": "ボーナス枠あり",

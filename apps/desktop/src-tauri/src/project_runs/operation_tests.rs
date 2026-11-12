@@ -112,7 +112,7 @@ async fn project_runs_analysis_receipt_prevents_duplicate_jobs_and_binds_payload
             .await
             .unwrap_err()
             .to_string()
-            .contains("不同请求")
+            .contains("backendText.m977d0b53")
     );
     let stale = AnalyzeRequest {
         operation_id: uuid::Uuid::new_v4().to_string(),
@@ -123,7 +123,7 @@ async fn project_runs_analysis_receipt_prevents_duplicate_jobs_and_binds_payload
             .await
             .unwrap_err()
             .to_string()
-            .contains("配置已更新")
+            .contains("backendText.mda8c9bfd")
     );
     drop(pause);
     tokio::time::timeout(std::time::Duration::from_secs(3), async {

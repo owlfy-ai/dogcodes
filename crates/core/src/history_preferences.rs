@@ -23,7 +23,7 @@ pub(crate) fn validate(
     ) || envelope.expected_stream_version.is_none()
     {
         return Err(CoreError::InvalidArgument(
-            "修改历史列表需要已认证用户或配对设备和当前版本，请重新读取设置".into(),
+            "backendText.m8621c5b2".into(),
         ));
     }
     let key_valid =
@@ -52,7 +52,7 @@ pub(crate) fn validate(
             > 4 * 1024 * 1024
     {
         return Err(CoreError::InvalidArgument(
-            "历史列表设置包含无效、重复或过多的内容".into(),
+            "backendText.m240cba6f".into(),
         ));
     }
     Ok(())

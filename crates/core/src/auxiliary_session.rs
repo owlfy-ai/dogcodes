@@ -56,18 +56,18 @@ pub(super) enum Purpose {
 impl Purpose {
     fn startup_pending(self) -> &'static str {
         match self {
-            Self::Analysis => "分析 Agent 启动尚未确认，后台仍在等待原请求；本项目暂不启动新的分析",
-            Self::Summary => "总结 Agent 启动尚未确认，后台仍在等待并清理原请求",
-            Self::Review => "审查 Agent 启动尚未确认，后台仍在等待并清理原请求",
+            Self::Analysis => "backendText.m6c20f455",
+            Self::Summary => "backendText.me2a0e2e6",
+            Self::Review => "backendText.m45163784",
         }
     }
     fn cleanup_pending(self) -> &'static str {
         match self {
             Self::Analysis => {
-                "分析 Agent 会话关闭尚未确认，后台仍在观察原请求；本项目暂不启动新的分析"
+                "backendText.mfd1e8505"
             }
-            Self::Summary => "总结 Agent 会话关闭尚未确认，后台仍在观察原请求",
-            Self::Review => "审查 Agent 会话关闭尚未确认，后台仍在观察原请求",
+            Self::Summary => "backendText.m8bf8f125",
+            Self::Review => "backendText.m419073f0",
         }
     }
 }
@@ -144,7 +144,7 @@ impl Start {
     /// admitted native request stays owned; cancellation never drops it.
     pub fn check(&self) -> Result<(), String> {
         if self.stopped.load(Ordering::Acquire) {
-            Err("临时任务已取消，未创建新会话".into())
+            Err("backendText.mb5018f3a".into())
         } else {
             Ok(())
         }

@@ -111,7 +111,7 @@ pub(super) async fn summarize_with_driver(
                     match data["type"].as_str() {
                         Some("message") => text.push_message(item_id, &data)?,
                         Some("tool") => {
-                            return Err("总结 Agent 尝试调用工具，请重试或选择其他 Agent".into());
+                            return Err("backendText.m8d6fff46".into());
                         }
                         _ => {}
                     }
@@ -119,21 +119,21 @@ pub(super) async fn summarize_with_driver(
                 DriverEvent::TurnCompleted { .. } => return text.finish(),
                 DriverEvent::TurnFailed { reason } => return Err(reason),
                 DriverEvent::ApprovalRequested { .. } | DriverEvent::ToolStarted { .. } => {
-                    return Err("总结 Agent 尝试调用工具，请重试或选择其他 Agent".into());
+                    return Err("backendText.m8d6fff46".into());
                 }
-                DriverEvent::TurnQuotaExhausted { .. } => return Err("Agent 额度已耗尽".into()),
-                DriverEvent::TurnInterrupted { .. } => return Err("总结已中断".into()),
+                DriverEvent::TurnQuotaExhausted { .. } => return Err("backendText.m51c64e3f".into()),
+                DriverEvent::TurnInterrupted { .. } => return Err("backendText.m3a5af778".into()),
                 _ => {}
             }
         }
-        Err("Agent 未完成总结，请重试".into())
+        Err("backendText.m71dc68c9".into())
     })
     .await
-    .unwrap_or_else(|_| Err("AI 总结超时，请重试".into()));
+    .unwrap_or_else(|_| Err("backendText.m51d71498".into()));
     if let Some(cleanup) = session.cleanup(result.is_err()) {
         cleanup
             .await
-            .map_err(|_| "临时 Agent 清理任务已中断，退出状态待核实")??;
+            .map_err(|_| "backendText.m2f36e562")??;
     }
     result
 }
@@ -176,7 +176,7 @@ impl SummaryText {
             .max(self.messages.values().map(String::len).sum())
             > 16000
         {
-            Err("Agent 输出过长，请重试".into())
+            Err("backendText.me22caa1a".into())
         } else {
             Ok(())
         }
@@ -193,7 +193,7 @@ impl SummaryText {
             self.legacy
         };
         if text.trim().is_empty() {
-            Err("Agent 未返回提交备注".into())
+            Err("backendText.m534cad54".into())
         } else {
             Ok(text.trim().to_owned())
         }
@@ -460,7 +460,7 @@ mod tests {
             summarize_with_driver(driver.clone(), "diff", None, None)
                 .await
                 .unwrap_err()
-                .contains("尝试调用工具")
+                .contains("backendText.m8d6fff46")
         );
         assert!(driver.stopped.load(std::sync::atomic::Ordering::SeqCst));
     }

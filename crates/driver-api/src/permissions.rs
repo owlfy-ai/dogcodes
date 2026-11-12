@@ -140,17 +140,22 @@ pub fn codex() -> PermissionCatalog {
         &[
             (
                 "read-only",
-                "只读",
-                "只读沙箱；需要扩大权限时请求审批。",
+                "permissionPicker.mode.read",
+                "permissionPicker.description.codexReadOnly",
                 false,
             ),
             (
                 "default",
-                "默认",
-                "工作区写入沙箱；需要越出沙箱时请求审批。",
+                "permissionPicker.mode.onRequest",
+                "permissionPicker.description.codexDefault",
                 false,
             ),
-            ("full-access", "完全访问", "关闭沙箱并跳过审批。", true),
+            (
+                "full-access",
+                "permissionPicker.mode.full",
+                "permissionPicker.description.codexFullAccess",
+                true,
+            ),
         ],
     )
 }
@@ -161,32 +166,32 @@ pub fn claude() -> PermissionCatalog {
         &[
             (
                 "plan",
-                "计划模式",
-                "探索并制定计划；使用 Claude 原生计划模式。",
+                "permissionPicker.mode.plan",
+                "permissionPicker.description.claudePlan",
                 false,
             ),
             (
                 "default",
-                "默认",
-                "编辑文件和其他受保护操作前请求审批。",
+                "permissionPicker.mode.ask",
+                "permissionPicker.description.claudeDefault",
                 false,
             ),
             (
                 "acceptEdits",
-                "接受编辑",
-                "允许文件编辑；其他受保护操作仍需审批。",
+                "permissionPicker.mode.edit",
+                "permissionPicker.description.claudeAcceptEdits",
                 false,
             ),
             (
                 "dontAsk",
-                "不询问",
-                "只运行预先允许的工具，其余直接拒绝，不请求审批。",
+                "permissionPicker.mode.deny",
+                "permissionPicker.description.claudeDontAsk",
                 false,
             ),
             (
                 "bypassPermissions",
-                "跳过权限检查",
-                "跳过 Claude Code 工具权限检查。",
+                "permissionPicker.mode.bypass",
+                "permissionPicker.description.claudeBypass",
                 true,
             ),
         ],
@@ -199,20 +204,20 @@ pub fn antigravity() -> PermissionCatalog {
         &[
             (
                 "desktop-approvals",
-                "桌面审批",
-                "每次工具执行前在此审批；审批桥不可用时拒绝执行。",
+                "permissionPicker.mode.ask",
+                "permissionPicker.description.antigravityApprovals",
                 false,
             ),
             (
                 "plan",
-                "计划模式",
-                "使用 Antigravity 原生计划模式；工具执行仍在此审批。",
+                "permissionPicker.mode.plan",
+                "permissionPicker.description.antigravityPlan",
                 false,
             ),
             (
                 "dangerously-skip-permissions",
-                "跳过权限检查",
-                "自动允许 Antigravity 工具操作。",
+                "permissionPicker.mode.bypass",
+                "permissionPicker.description.antigravitySkip",
                 true,
             ),
         ],
@@ -243,17 +248,22 @@ pub fn grok() -> PermissionCatalog {
     PermissionCatalog::new(
         "ask",
         &[
-            ("ask", "询问", "受保护的工具操作前请求审批。", false),
+            (
+                "ask",
+                "permissionPicker.mode.ask",
+                "permissionPicker.description.grokAsk",
+                false,
+            ),
             (
                 "auto",
-                "自动判断",
-                "由 Grok 判断哪些工具操作可自动执行。",
+                "permissionPicker.mode.auto",
+                "permissionPicker.description.grokAuto",
                 false,
             ),
             (
                 "always-approve",
-                "始终允许",
-                "允许所有工具操作，无需审批。",
+                "permissionPicker.mode.bypass",
+                "permissionPicker.description.grokAlwaysApprove",
                 true,
             ),
         ],
@@ -264,16 +274,36 @@ pub fn zcode() -> PermissionCatalog {
     PermissionCatalog::new(
         "build",
         &[
-            ("build", "变更前确认", "改文件前先问我。", false),
-            ("edit", "自动编辑", "自动编辑文件。", false),
-            ("plan", "计划模式", "编辑前先出计划。", false),
             (
-                "auto",
-                "自动判断",
-                "由 ZCode 判断哪些操作可直接执行。",
+                "build",
+                "permissionPicker.mode.ask",
+                "permissionPicker.description.zcodeBuild",
                 false,
             ),
-            ("yolo", "完全访问", "减少确认次数。", true),
+            (
+                "edit",
+                "permissionPicker.mode.edit",
+                "permissionPicker.description.zcodeEdit",
+                false,
+            ),
+            (
+                "plan",
+                "permissionPicker.mode.plan",
+                "permissionPicker.description.zcodePlan",
+                false,
+            ),
+            (
+                "auto",
+                "permissionPicker.mode.auto",
+                "permissionPicker.description.zcodeAuto",
+                false,
+            ),
+            (
+                "yolo",
+                "permissionPicker.mode.bypass",
+                "permissionPicker.description.zcodeYolo",
+                true,
+            ),
         ],
     )
 }
@@ -296,8 +326,8 @@ pub fn claude_for(auto: bool, bypass: bool) -> PermissionCatalog {
             3,
             PermissionMode {
                 id: "auto".into(),
-                label: "自动判断".into(),
-                description: "由 Claude 自动分类权限请求。".into(),
+                label: "permissionPicker.mode.auto".into(),
+                description: "permissionPicker.description.claudeAuto".into(),
                 dangerous: false,
             },
         );

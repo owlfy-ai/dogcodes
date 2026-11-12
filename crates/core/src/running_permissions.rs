@@ -85,23 +85,23 @@ impl Core {
     ) -> Result<(), CoreError> {
         if executor.provider_id.as_str() != "cursor" || !matches!(mode, "default" | "full-access") {
             return Err(CoreError::CapabilityUnavailable(
-                "此 Agent 暂不支持运行中修改权限策略".into(),
+                "backendText.md2bcb0d7".into(),
             ));
         }
         let entry = self
             .running_permissions
             .get(run_id)
-            .ok_or_else(|| CoreError::Conflict("当前运行已结束或尚未就绪".into()))?;
+            .ok_or_else(|| CoreError::Conflict("backendText.m3ff23090".into()))?;
         // Serialize picker changes and automatic decisions for this run.
         let mut policy = entry.lock().await;
         if &policy.task_id != task_id || &policy.executor != executor {
-            return Err(CoreError::Conflict("运行与当前 Agent 不匹配".into()));
+            return Err(CoreError::Conflict("backendText.m256653ab".into()));
         }
         self.require_permission_run(task_id, run_id, executor)
             .await?;
         if mode == "default" && policy.native_full_access {
             return Err(CoreError::CapabilityUnavailable(
-                "本轮以完全访问启动，请停止后再收紧权限".into(),
+                "backendText.m6cab5e93".into(),
             ));
         }
         let previous = std::mem::replace(&mut policy.mode, mode.to_owned());
@@ -136,7 +136,7 @@ impl Core {
             .contains_key(run_id);
         if !valid {
             return Err(CoreError::Conflict(
-                "当前运行已结束、正在停止或已被替换".into(),
+                "backendText.mae76c0bb".into(),
             ));
         }
         Ok(task)

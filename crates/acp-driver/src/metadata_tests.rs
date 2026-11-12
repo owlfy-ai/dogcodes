@@ -174,7 +174,7 @@ async fn probe_deadline_owns_cleanup_even_without_a_core_or_caller_timeout() {
     let preserved = present(original);
     clean(root.path(), &driver, session).await;
     assert!(
-        matches!(result,Err(DriverError::Disconnected(message)) if message.contains("查询超时"))
+        matches!(result,Err(DriverError::Disconnected(message)) if message.contains("backendText.m10d1691f"))
     );
     assert_ne!(helper, original);
     assert!(exited);

@@ -157,12 +157,12 @@ async fn real_process_path_accepts_large_handoff_and_streams_a_turn() {
     assert!(events.iter().any(|event| matches!(
         event,
         DriverEvent::ToolStarted { item_id, tool_name, summary }
-            if item_id == "search-1" && tool_name == "web_search" && summary == "搜索网页"
+            if item_id == "search-1" && tool_name == "web_search" && summary == "backendText.m01aeaf3f"
     )));
     assert!(events.iter().any(|event| matches!(
         event,
         DriverEvent::ToolCompleted { item_id, tool_name, summary, success }
-            if item_id == "search-1" && tool_name == "web_search" && summary == "搜索网页" && *success
+            if item_id == "search-1" && tool_name == "web_search" && summary == "backendText.m01aeaf3f" && *success
     )));
     assert!(matches!(
         events.last(),

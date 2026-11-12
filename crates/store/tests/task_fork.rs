@@ -485,7 +485,7 @@ async fn historical_turn_without_snapshot_rejects_worktree_but_keeps_workspace_f
         .await
         .unwrap_err();
     assert!(
-        error.to_string().contains("没有可恢复的文件快照"),
+        error.to_string().contains("backendText.m6d777a78"),
         "{error}"
     );
     assert_eq!(core.bootstrap().await.unwrap().projects.len(), 1);
@@ -575,7 +575,7 @@ async fn incomplete_fork_retains_original_request_and_rejects_changed_retry_afte
             .await
             .unwrap_err()
             .to_string()
-            .contains("不同的原请求")
+            .contains("backendText.m7c87dfac")
     );
     assert_eq!(
         restored

@@ -13,7 +13,7 @@ pub async fn project_paths(core: &dyn ReviewFacts, task_id: &str) -> Result<Vec<
         .tasks
         .iter()
         .find(|t| t.task_id == id)
-        .ok_or("任务不存在")?;
+        .ok_or("backendText.md1817495")?;
     let project = snapshot
         .projects
         .iter()
@@ -36,12 +36,12 @@ pub fn resolve(base: &Path, path: &str) -> Result<PathBuf, String> {
         .components()
         .any(|c| !matches!(c, std::path::Component::Normal(_)))
     {
-        return Err("无效路径".into());
+        return Err("backendText.m419e02ff".into());
     }
     let base = base.canonicalize().map_err(|e| e.to_string())?;
     let target = base.join(path).canonicalize().map_err(|e| e.to_string())?;
     if !target.starts_with(base) {
-        return Err("文件位于项目目录之外".into());
+        return Err("backendText.m7e1feb0a".into());
     }
     Ok(target)
 }
@@ -55,7 +55,7 @@ pub struct Entry {
 fn list_directory(base: &Path, path: &str) -> Result<Vec<Entry>, String> {
     let target = resolve(base, path)?;
     if !target.is_dir() {
-        return Err("不是目录".into());
+        return Err("backendText.m53660bdc".into());
     }
     let mut entries = Vec::new();
     for entry in std::fs::read_dir(&target).map_err(|e| e.to_string())? {
@@ -77,7 +77,7 @@ fn list_directory(base: &Path, path: &str) -> Result<Vec<Entry>, String> {
             directory: kind.is_dir(),
         });
         if entries.len() > 20000 {
-            return Err("此目录文件过多，暂无法展开".into());
+            return Err("backendText.mdb0b864f".into());
         }
     }
     entries.sort_by(|a, b| {
@@ -96,7 +96,7 @@ pub struct Preview {
 fn read_preview(base: &Path, path: &str) -> Result<Preview, String> {
     let target = resolve(base, path)?;
     if !target.is_file() {
-        return Err("不是普通文件".into());
+        return Err("backendText.mc9faeca8".into());
     }
     let mut bytes = Vec::new();
     std::fs::File::open(target)
@@ -109,12 +109,12 @@ fn read_preview(base: &Path, path: &str) -> Result<Preview, String> {
 
 pub fn preview_bytes(bytes: Vec<u8>, path: &str) -> Result<Preview, String> {
     if bytes.len() > 20 * 1024 * 1024 {
-        return Err("文件超过 20 MB，暂不支持预览".into());
+        return Err("backendText.mafd651ae".into());
     }
     let image = crate::review::image_data_url(&bytes, path);
     let text = if image.is_none() && !bytes.contains(&0) {
         if bytes.len() > 1024 * 1024 {
-            return Err("文本超过 1 MB，暂不支持预览".into());
+            return Err("backendText.ma542d41d".into());
         }
         String::from_utf8(bytes).ok()
     } else {
@@ -207,7 +207,7 @@ fn find_files(roots: &[PathBuf], query: &str, hide_noise: bool) -> Result<FileMa
                 .literal_separator(true)
                 .backslash_escape(false)
                 .build()
-                .map_err(|_| "通配符格式不正确，请检查括号是否配对".to_owned())?
+                .map_err(|_| "backendText.m4447160f".to_owned())?
                 .compile_matcher(),
         )
     } else {
@@ -408,7 +408,7 @@ pub async fn directory_base(
         .await?
         .get(request.root)
         .cloned()
-        .ok_or("目录不存在".into())
+        .ok_or("backendText.m85c01696".into())
 }
 pub async fn dispatch(
     core: &dyn ReviewFacts,

@@ -666,7 +666,7 @@ impl Core {
             driver.permission_catalog(workspace),
         )
         .await
-        .map_err(|_| CoreError::CapabilityUnavailable("权限策略读取超时".into()))?
+        .map_err(|_| CoreError::CapabilityUnavailable("backendText.mbabf1442".into()))?
         .map_err(CoreError::from)?
         .preferring_most_permissive();
         if let Some(task_id) = task_id
@@ -731,7 +731,7 @@ impl Core {
             driver.model_catalog_in_workspace(model, workspace),
         )
         .await
-        .map_err(|_| CoreError::CapabilityUnavailable("读取模型目录超时".into()))?
+        .map_err(|_| CoreError::CapabilityUnavailable("backendText.m1de24946".into()))?
         .map_err(Into::into)
     }
     #[must_use]
@@ -1046,12 +1046,12 @@ impl Core {
                     || command.additional_directories.len() > 31
                 {
                     return Err(CoreError::InvalidArgument(
-                        "项目名称最多 120 个字符，目录最多 32 个".into(),
+                        "backendText.mb82c7b22".into(),
                     ));
                 }
                 if envelope.expected_stream_version.is_none() {
                     return Err(CoreError::InvalidArgument(
-                        "编辑项目需要版本号，请重新打开编辑窗口".into(),
+                        "backendText.mfeb36b78".into(),
                     ));
                 }
                 let snapshot = self.repository.bootstrap().await?;
@@ -1061,7 +1061,7 @@ impl Core {
                     .find(|project| project.project_id == command.project_id)
                     .ok_or_else(|| CoreError::NotFound("backendText.projectMissing".into()))?;
                 if project.target_id != command.target_id {
-                    return Err(CoreError::InvalidArgument("项目不能更换所在的机器".into()));
+                    return Err(CoreError::InvalidArgument("backendText.me61dfe56".into()));
                 }
                 let roots_changed = project.path != command.path
                     || project.additional_directories != command.additional_directories;
@@ -1073,7 +1073,7 @@ impl Core {
                             && (!std::path::Path::new(directory).is_absolute()
                                 || !std::path::Path::new(directory).is_dir())
                         {
-                            return Err(CoreError::InvalidArgument("请选择存在的本地目录".into()));
+                            return Err(CoreError::InvalidArgument("backendText.m848c2f15".into()));
                         }
                     }
                     for task in snapshot
@@ -1097,7 +1097,7 @@ impl Core {
                                 })
                         {
                             return Err(CoreError::Conflict(
-                                "请等待 Fork 完成或停止正在运行的任务和审查，再修改目录".into(),
+                                "backendText.m89b41da2".into(),
                             ));
                         }
                     }
@@ -1140,7 +1140,7 @@ impl Core {
                         })
                 {
                     return Err(CoreError::Conflict(
-                        "请等待 Fork 完成或停止主任务和审查，再删除会话".into(),
+                        "backendText.m7e1ffec1".into(),
                     ));
                 }
                 if envelope.expected_stream_version.is_none() {
@@ -1150,7 +1150,7 @@ impl Core {
                 }
             }
             CoreCommand::RestoreTask(_) => {
-                return Err(CoreError::InvalidArgument("会话删除后无法恢复".into()));
+                return Err(CoreError::InvalidArgument("backendText.m669f8e40".into()));
             }
             CoreCommand::RenameTask(command) => {
                 self.require_task(&command.task_id).await?;
@@ -1326,7 +1326,7 @@ impl Core {
                         .or(catalog.default_model.as_ref())
                         .and_then(|id| catalog.models.iter().find(|m| &m.id == id))
                         .ok_or_else(|| {
-                            CoreError::InvalidArgument("模型不在原生 Agent 返回的目录中".into())
+                            CoreError::InvalidArgument("backendText.m567f64e3".into())
                         })?;
                     if command
                         .thinking
@@ -1334,7 +1334,7 @@ impl Core {
                         .is_some_and(|id| !selected.thinking_options.iter().any(|o| &o.id == id))
                     {
                         return Err(CoreError::InvalidArgument(
-                            "当前模型不支持此思考强度".into(),
+                            "backendText.m3fbb689d".into(),
                         ));
                     }
                 }
@@ -1373,7 +1373,7 @@ impl Core {
                     || approval.requested_at_sequence != command.requested_at_sequence
                 {
                     return Err(CoreError::Conflict(
-                        "审批请求已变化，请重新查看当前请求；未应用旧的决定".into(),
+                        "backendText.m619ed3de".into(),
                     ));
                 }
                 let active = task.active_primary_run.as_ref().ok_or_else(|| {
@@ -1804,7 +1804,7 @@ impl Core {
             && project != installation
         {
             return Err(CoreError::InvalidArgument(
-                "所选 Agent 不在这个项目所在的机器上".into(),
+                "backendText.m341339e8".into(),
             ));
         }
         Ok(())
@@ -1832,7 +1832,7 @@ impl Core {
     ) -> Result<Vec<Value>, CoreError> {
         self.require_task(task_id).await?;
         let unavailable =
-            || CoreError::CapabilityUnavailable("无法确认子 Agent 所属的执行实例".into());
+            || CoreError::CapabilityUnavailable("backendText.mc626934b".into());
         let (id, turn, provider, through) = {
             let items = self.repository.task_timeline(task_id).await?;
             let item = items

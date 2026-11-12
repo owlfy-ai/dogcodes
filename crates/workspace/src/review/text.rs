@@ -54,16 +54,16 @@ fn compare_with_budget(
     budget: Duration,
 ) -> ReviewResult<TextComparison> {
     if before.len().saturating_add(after.len()) > MAX_TEXT_BYTES {
-        return Err("文本超过 8 MiB 比较预算".into());
+        return Err("backendText.mbf71ac30".into());
     }
     if before.contains('\0') || after.contains('\0') {
-        return Err("二进制文件不支持文本比较".into());
+        return Err("backendText.m1b2f3ac8".into());
     }
     let deadline = Instant::now() + budget;
     let old: Vec<_> = before.split_inclusive('\n').collect();
     let new: Vec<_> = after.split_inclusive('\n').collect();
     if old.len().saturating_add(new.len()) > MAX_LINES {
-        return Err("文本超过 100000 行比较预算".into());
+        return Err("backendText.mec73f753".into());
     }
     // Only the comparison keys are normalized. Never replace displayed content.
     // A missing final newline remains significant in Git comparisons.
@@ -83,7 +83,7 @@ fn compare_with_budget(
     let ops = capture_diff_slices_deadline(Algorithm::Myers, &old_keys, &new_keys, Some(deadline));
     // The library can approximate on timeout; do not present that as exact stats.
     if Instant::now() >= deadline {
-        return Err("文本差异计算超时，请缩小比较范围".into());
+        return Err("backendText.mc871d030".into());
     }
     let mut additions = 0;
     let mut deletions = 0;

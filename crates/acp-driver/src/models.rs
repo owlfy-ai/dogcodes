@@ -39,8 +39,8 @@ pub(super) async fn raw(
         connection.send_request(message).block_task(),
     )
     .await
-    .map_err(|_| DriverError::Disconnected("模型请求超时".into()))?
-    .map_err(|error| map_session_error(&error, "Agent 未提供可用的模型配置接口", None))
+    .map_err(|_| DriverError::Disconnected("backendText.m0a40fe47".into()))?
+    .map_err(|error| map_session_error(&error, "backendText.mec66fec6", None))
 }
 fn flatten_options(value: &Value) -> Vec<&Value> {
     value
@@ -151,18 +151,18 @@ pub(super) async fn select(
                     && m.thinking_options.iter().any(|o| o.id == thinking)
             }) {
                 return Err(DriverError::CapabilityUnavailable(
-                    "此模型不支持所选思考强度".into(),
+                    "backendText.mc2cd92d7".into(),
                 ));
             }
             let thought = config(&updated, "thought_level").ok_or_else(|| {
-                DriverError::CapabilityUnavailable("此模型没有思考强度选项".into())
+                DriverError::CapabilityUnavailable("backendText.m4b882133".into())
             })?;
             if !flatten_options(&thought["options"])
                 .iter()
                 .any(|o| o["value"] == thinking)
             {
                 return Err(DriverError::CapabilityUnavailable(
-                    "此模型不支持所选思考强度".into(),
+                    "backendText.mc2cd92d7".into(),
                 ));
             }
             let result = raw(
@@ -182,7 +182,7 @@ pub(super) async fn select(
         let catalog = catalog(state);
         let model = model
             .or(catalog.default_model.as_deref())
-            .ok_or_else(|| DriverError::CapabilityUnavailable("模型目录不可用".into()))?;
+            .ok_or_else(|| DriverError::CapabilityUnavailable("backendText.mf2afa820".into()))?;
         let mut params = json!({"sessionId":session_id,"modelId":model});
         if let Some(effort) = thinking {
             params["reasoningEffort"] = json!(effort);
@@ -225,14 +225,14 @@ pub(super) async fn session_request(
     .map_err(|_| {
         DriverError::Disconnected(
             if method == "session/load" {
-                "会话恢复超时"
+                "backendText.m245dab56"
             } else {
-                "会话初始化超时"
+                "backendText.m2f0ff214"
             }
             .into(),
         )
     })?
-    .map_err(|e| map_session_error(&e, "Agent 无法创建或恢复会话", stderr.as_ref()))
+    .map_err(|e| map_session_error(&e, "backendText.medaa6b1f", stderr.as_ref()))
 }
 
 #[cfg(test)]

@@ -28,7 +28,7 @@ pub(super) trait Clipboard {
         current: &dyn Fn() -> bool,
     ) -> Result<(), String> {
         if !current() {
-            return Err("剪贴板连接已关闭".into());
+            return Err("backendText.mf4a53ffb".into());
         }
         self.set(kind, bytes)
     }
@@ -41,7 +41,7 @@ impl Clipboard for SystemClipboard {
         } else {
             Ok(os::clipboard_get("text")?["text"]
                 .as_str()
-                .ok_or("剪贴板没有文字")?
+                .ok_or("backendText.mc9a2882c")?
                 .as_bytes()
                 .to_vec())
         }
@@ -56,13 +56,13 @@ impl Clipboard for SystemClipboard {
         current: &dyn Fn() -> bool,
     ) -> Result<(), String> {
         if !current() {
-            return Err("剪贴板连接已关闭".into());
+            return Err("backendText.mf4a53ffb".into());
         }
         self.0 = Some(if kind == "image" {
             os::clipboard_image_set_png_if_current(bytes, current)?
         } else {
             os::clipboard_set(
-                json!({"kind":"text","text":std::str::from_utf8(bytes).map_err(|_|"剪贴板文字编码无效")?}),
+                json!({"kind":"text","text":std::str::from_utf8(bytes).map_err(|_|"backendText.m2b16e035")?}),
             )?
         });
         Ok(())
@@ -109,7 +109,7 @@ impl Host {
         args: Value,
     ) -> Result<Value, String> {
         if method != "clipboard_transfer" {
-            return Err("剪贴板接口不可用".into());
+            return Err("backendText.mc2c2402c".into());
         }
         let sender = self
             .sender
@@ -117,9 +117,9 @@ impl Host {
                 let factory = self
                     .factory
                     .lock()
-                    .map_err(|_| "剪贴板线程不可用")?
+                    .map_err(|_| "backendText.m5d432c58")?
                     .take()
-                    .ok_or("剪贴板线程已启动")?;
+                    .ok_or("backendText.mde67c737")?;
                 let unlocked = self.unlocked;
                 let (tx, rx) = sync_channel::<Request>(8);
                 std::thread::Builder::new()
@@ -147,7 +147,7 @@ impl Host {
                             }
                         }
                     })
-                    .map_err(|_| "无法启动剪贴板线程")?;
+                    .map_err(|_| "backendText.m40fdf8d9")?;
                 Ok(tx)
             })
             .as_ref()
@@ -155,11 +155,11 @@ impl Host {
         let (reply, result) = tokio::sync::oneshot::channel();
         sender
             .try_send(Request { owner, args, reply })
-            .map_err(|_| "电脑剪贴板繁忙，请稍后重试")?;
+            .map_err(|_| "backendText.m00968721")?;
         tokio::time::timeout(Duration::from_secs(15), result)
             .await
-            .map_err(|_| "电脑剪贴板响应超时，请先核实复制结果；不会自动重发")?
-            .map_err(|_| "电脑剪贴板线程已结束")?
+            .map_err(|_| "backendText.ma1819f9b")?
+            .map_err(|_| "backendText.m23259b37")?
     }
 }
 struct Transfer {
@@ -198,9 +198,9 @@ impl Transfers {
     ) -> Result<Value, String> {
         self.expire();
         if !owner.alive() {
-            return Err("剪贴板连接已关闭，不会重发复制操作".into());
+            return Err("backendText.md41267cc".into());
         }
-        let op = args["operation"].as_str().ok_or("剪贴板操作无效")?;
+        let op = args["operation"].as_str().ok_or("backendText.m1872fc67")?;
         if op == "begin_upload" || op == "begin_download" {
             if self.values.len() >= MAX_TRANSFERS
                 || self
@@ -210,12 +210,12 @@ impl Transfers {
                     .count()
                     >= PER_CONNECTION
             {
-                return Err("剪贴板传输繁忙，请结束当前传输后重试".into());
+                return Err("backendText.m81db0ce4".into());
             }
             let kind = args["kind"]
                 .as_str()
                 .filter(|k| matches!(*k, "text" | "image"))
-                .ok_or("剪贴板类型无效")?;
+                .ok_or("backendText.mdad19e1f")?;
             let download = op == "begin_download";
             let (bytes, size, sha256) = if download {
                 let bytes = clipboard.get(kind)?;
@@ -224,19 +224,19 @@ impl Transfers {
                 (bytes, size, hash)
             } else {
                 let size = number(&args, "size")?;
-                let hash = args["sha256"].as_str().ok_or("缺少图片校验信息")?;
+                let hash = args["sha256"].as_str().ok_or("backendText.m6b81c49c")?;
                 if args["mimeType"] != mime(kind)
                     || hash.len() != 64
                     || !hash
                         .bytes()
                         .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
                 {
-                    return Err("图片校验信息无效".into());
+                    return Err("backendText.mffbf347d".into());
                 }
                 (Vec::new(), size, hash.to_string())
             };
             if size == 0 && kind == "text" {
-                return Err("剪贴板没有文字".into());
+                return Err("backendText.mc9a2882c".into());
             }
             if size == 0
                 || size
@@ -246,7 +246,7 @@ impl Transfers {
                         1024 * 1024
                     }
             {
-                return Err("剪贴板内容为空或过大（图片限 16 MB，文字限 1 MB）".into());
+                return Err("backendText.m0f9038e5".into());
             }
             let transfer = Transfer {
                 owner: Arc::downgrade(owner),
@@ -263,12 +263,12 @@ impl Transfers {
             self.values.insert(id, transfer);
             return Ok(result);
         }
-        let id = args["transferId"].as_str().ok_or("缺少剪贴板传输标识")?;
+        let id = args["transferId"].as_str().ok_or("backendText.m8fec7689")?;
         let Some(transfer) = self.values.get_mut(id) else {
-            return Err("剪贴板传输已结束或过期，请重新选择操作；不会自动重发".into());
+            return Err("backendText.m78146161".into());
         };
         if !transfer.owner.ptr_eq(&Arc::downgrade(owner)) {
-            return Err("剪贴板传输不属于当前连接".into());
+            return Err("backendText.m14e77644".into());
         }
         transfer.expires = Instant::now() + IDLE_TTL;
         match op {
@@ -279,11 +279,11 @@ impl Transfers {
             }
             "read" => {
                 if !transfer.download {
-                    return Err("剪贴板传输方向无效".into());
+                    return Err("backendText.m81b3d253".into());
                 }
                 let offset = number(&args, "offset")?;
                 if offset >= transfer.bytes.len() {
-                    return Err("图片读取位置无效".into());
+                    return Err("backendText.m9647677e".into());
                 }
                 let end = offset.saturating_add(CHUNK).min(transfer.bytes.len());
                 Ok(json!({"transferId":id,"offset":offset,"nextOffset":end,
@@ -291,39 +291,39 @@ impl Transfers {
             }
             "append" => {
                 if transfer.download || transfer.applied {
-                    return Err("图片传输已结束或方向无效".into());
+                    return Err("backendText.m0da4835b".into());
                 }
                 let offset = number(&args, "offset")?;
-                let encoded = args["bytes"].as_str().ok_or("缺少图片数据")?;
+                let encoded = args["bytes"].as_str().ok_or("backendText.mbf76108a")?;
                 if encoded.len() > CHUNK.div_ceil(3) * 4 {
-                    return Err("图片数据块过大".into());
+                    return Err("backendText.mbc2c300b".into());
                 }
-                let bytes = STANDARD.decode(encoded).map_err(|_| "图片数据块编码无效")?;
-                let end = offset.checked_add(bytes.len()).ok_or("图片位置无效")?;
+                let bytes = STANDARD.decode(encoded).map_err(|_| "backendText.m01358b79")?;
+                let end = offset.checked_add(bytes.len()).ok_or("backendText.m9ab8fe46")?;
                 if bytes.is_empty() || bytes.len() > CHUNK || end > transfer.size {
-                    return Err("图片数据块大小无效".into());
+                    return Err("backendText.m5f279749".into());
                 }
                 if offset == transfer.bytes.len() {
                     transfer.bytes.extend_from_slice(&bytes);
                 } else if end > transfer.bytes.len()
                     || transfer.bytes.get(offset..end) != Some(bytes.as_slice())
                 {
-                    return Err("图片数据块顺序或内容不匹配".into());
+                    return Err("backendText.me1c72864".into());
                 }
                 Ok(json!({"transferId":id,"offset":transfer.bytes.len()}))
             }
             "commit" => {
                 if transfer.download {
-                    return Err("剪贴板传输方向无效".into());
+                    return Err("backendText.m81b3d253".into());
                 }
                 if !transfer.applied {
                     if transfer.bytes.len() != transfer.size
                         || format!("{:x}", Sha256::digest(&transfer.bytes)) != transfer.sha256
                     {
-                        return Err("图片不完整或校验失败".into());
+                        return Err("backendText.mafaaca8a".into());
                     }
                     if !owner.alive() {
-                        return Err("剪贴板连接已关闭，不会重发复制操作".into());
+                        return Err("backendText.md41267cc".into());
                     }
                     clipboard.set_current(&transfer.kind, &transfer.bytes, &|| owner.alive())?;
                     transfer.applied = true;
@@ -333,7 +333,7 @@ impl Transfers {
                 }
                 Ok(transfer.description(id))
             }
-            _ => Err("剪贴板操作无效".into()),
+            _ => Err("backendText.m1872fc67".into()),
         }
     }
 }
@@ -341,7 +341,7 @@ fn number(args: &Value, key: &str) -> Result<usize, String> {
     args[key]
         .as_u64()
         .and_then(|v| usize::try_from(v).ok())
-        .ok_or_else(|| "图片大小或位置无效".into())
+        .ok_or_else(|| "backendText.mb988b58a".into())
 }
 
 fn mime(kind: &str) -> &str {

@@ -17,34 +17,34 @@ impl Channel {
         let mut stat: libc::stat = unsafe { std::mem::zeroed() };
         // SAFETY: both arguments identify live storage.
         if unsafe { libc::fstat(fd.as_raw_fd(), &mut stat) } != 0 {
-            return Err("剪贴板数据通道无效".into());
+            return Err("backendText.mc4e2ea11".into());
         }
         let kind = stat.st_mode & libc::S_IFMT;
         if kind != libc::S_IFIFO && kind != libc::S_IFSOCK {
-            return Err("系统返回了不支持的剪贴板数据通道".into());
+            return Err("backendText.m05b14266".into());
         }
         // SAFETY: fcntl reads/sets flags on the live owned FD, without pointers.
         let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) };
         if flags < 0 {
-            return Err("无法读取剪贴板通道标志".into());
+            return Err("backendText.m8fe07124".into());
         }
         // SAFETY: this only adds nonblocking mode to a live FD, preserving flags.
         let changed =
             unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) };
         if changed < 0 {
-            return Err("无法设置剪贴板非阻塞传输".into());
+            return Err("backendText.m55040ed7".into());
         }
         Ok(Self {
-            fd: AsyncFd::new(fd).map_err(|_| "无法监听剪贴板数据通道")?,
+            fd: AsyncFd::new(fd).map_err(|_| "backendText.md2812a38")?,
             socket: kind == libc::S_IFSOCK,
         })
     }
     pub(super) async fn write(&self, mut bytes: &[u8], active: impl Fn() -> bool) -> Result<()> {
         while !bytes.is_empty() {
             if !active() {
-                return Err("剪贴板授权已结束".into());
+                return Err("backendText.m036e7521".into());
             }
-            let mut ready = self.fd.writable().await.map_err(|_| "剪贴板写入中断")?;
+            let mut ready = self.fd.writable().await.map_err(|_| "backendText.mf4aacb76")?;
             let result = ready.try_io(|fd| {
                 if !active() {
                     return Err(io::Error::from(io::ErrorKind::PermissionDenied));
@@ -64,10 +64,10 @@ impl Channel {
                 }
             });
             match result {
-                Ok(Ok(0)) => return Err("剪贴板接收端已关闭".into()),
+                Ok(Ok(0)) => return Err("backendText.mebd0a7a9".into()),
                 Ok(Ok(n)) => bytes = &bytes[n..],
                 Ok(Err(e)) if e.kind() == io::ErrorKind::Interrupted => continue,
-                Ok(Err(_)) => return Err("剪贴板写入失败".into()),
+                Ok(Err(_)) => return Err("backendText.ma0f576b4".into()),
                 Err(_) => {}
             }
         }

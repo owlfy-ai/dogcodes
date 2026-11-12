@@ -56,9 +56,9 @@ impl JournalOutcome for MutationOutcome {
         match self {
             Self::Succeeded { result } => Ok(result),
             Self::Failed { message } => Err(message),
-            Self::Running => Err("文件操作仍在执行，请核实原操作".into()),
+            Self::Running => Err("backendText.m06ac3af2".into()),
             Self::Unknown => {
-                Err("文件操作曾中断，结果未知；请核实文件及恢复记录，未自动重发".into())
+                Err("backendText.mcc4888d9".into())
             }
         }
     }

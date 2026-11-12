@@ -112,7 +112,7 @@ pub fn check_recovery_source(source: &Source) -> Result<()> {
         }
         // SAFETY: read-only, parameterless system permission check; no prompt.
         if !unsafe { CGPreflightScreenCaptureAccess() } {
-            return Err("屏幕录制权限已失效，请在电脑上重新授权".into());
+            return Err("backendText.m9ab33b7d".into());
         }
     }
     if let Some(source) = source {
@@ -134,19 +134,19 @@ pub type EncodeGate = Arc<dyn Fn() -> EncodeAdmission + Send + Sync>;
 /// Length-prefixed NAL units (AVCC, as VideoToolbox emits them) → Annex-B.
 pub fn avcc_to_annexb(avcc: &[u8], length_size: usize, out: &mut Vec<u8>) -> Result<()> {
     if !(1..=4).contains(&length_size) {
-        return Err("H.264 长度字段无效".into());
+        return Err("backendText.m974f54ad".into());
     }
     let mut rest = avcc;
     while !rest.is_empty() {
         if rest.len() < length_size {
-            return Err("H.264 数据截断".into());
+            return Err("backendText.m57fe0da7".into());
         }
         let (head, tail) = rest.split_at(length_size);
         let length = head
             .iter()
             .fold(0usize, |acc, byte| (acc << 8) | usize::from(*byte));
         if length == 0 || tail.len() < length {
-            return Err("H.264 数据截断".into());
+            return Err("backendText.m57fe0da7".into());
         }
         out.extend_from_slice(&[0, 0, 0, 1]);
         out.extend_from_slice(&tail[..length]);
@@ -193,7 +193,7 @@ pub fn profile_size(
         return Ok(size);
     }
     if !fits(stream_size(width, height, 2)) {
-        return Err("显示器比例超过视频接收能力".into());
+        return Err("backendText.m7be06963".into());
     }
     let (mut low, mut high) = (1, size.0 / 2);
     while low < high {
@@ -226,11 +226,11 @@ fn validate_profile(frame: &EncodedFrame, profile: VideoProfile) -> Result<()> {
             || sps[6] & 0x40 == 0
             || !matches!(sps[7], 10 | 11 | 12 | 13 | 20 | 21 | 22 | 30 | 31)
         {
-            return Err("编码器输出超过手机协商的视频能力，已使用图片模式".into());
+            return Err("backendText.m64e49fdb".into());
         }
     }
     if frame.keyframe && !found {
-        return Err("视频关键帧缺少编码参数".into());
+        return Err("backendText.m51399f31".into());
     }
     Ok(())
 }
@@ -266,7 +266,7 @@ impl Shared {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone()
-                .unwrap_or_else(|| "视频连接已结束".into()));
+                .unwrap_or_else(|| "backendText.m91e40492".into()));
         }
         if encoder.is_none() {
             *encoder = Some(platform::Encoder::with_profile(
@@ -587,7 +587,7 @@ impl VideoStream {
         parent_stop: Arc<AtomicBool>,
     ) -> Result<Self> {
         if parent_stop.load(Ordering::Acquire) {
-            return Err("视频请求已结束".into());
+            return Err("backendText.mfd71fbae".into());
         }
         crate::require_unlocked()?;
         #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -625,7 +625,7 @@ impl VideoStream {
             move || !geometry_gate.load(Ordering::Acquire) && !pending_gate.load(Ordering::Acquire),
             move || {
                 if parent_check.load(Ordering::Acquire) {
-                    return Err("视频请求已结束".into());
+                    return Err("backendText.mfd71fbae".into());
                 }
                 crate::require_unlocked()?;
                 if let Some(source) = &authorized_source {
@@ -669,7 +669,7 @@ impl VideoStream {
         };
         #[cfg(not(target_os = "linux"))]
         if source.is_some() {
-            return Err("此平台不支持指定的屏幕来源".into());
+            return Err("backendText.mc241c7e6".into());
         }
         #[cfg(target_os = "windows")]
         let capture = platform::Capture::start_windows(
@@ -716,9 +716,9 @@ impl VideoStream {
             }
         };
         if parent_stop.load(Ordering::Acquire) {
-            shared.fail("视频请求已结束".into());
+            shared.fail("backendText.mfd71fbae".into());
             capture.stop();
-            return Err("视频请求已结束".into());
+            return Err("backendText.mfd71fbae".into());
         }
         // Capture readiness alone does not prove that an encoder is available.
         if let Err(error) = shared.initialize(size) {
@@ -727,9 +727,9 @@ impl VideoStream {
             return Err(error);
         }
         if parent_stop.load(Ordering::Acquire) {
-            shared.fail("视频请求已结束".into());
+            shared.fail("backendText.mfd71fbae".into());
             capture.stop();
-            return Err("视频请求已结束".into());
+            return Err("backendText.mfd71fbae".into());
         }
         let ticker = {
             let shared = shared.clone();
@@ -747,7 +747,7 @@ impl VideoStream {
             Err(_) => {
                 shared.stopped.store(true, Ordering::Release);
                 capture.stop();
-                return Err("无法启动视频线程".into());
+                return Err("backendText.mb1780d75".into());
             }
         };
         Ok(Self {
@@ -953,10 +953,10 @@ mod platform {
                     NonNull::from(&mut raw),
                 );
                 if status != 0 {
-                    return Err(failure("无法创建测试画面", status));
+                    return Err(failure("backendText.m7aa92b55", status));
                 }
                 let buffer: CFRetained<CVPixelBuffer> =
-                    CFRetained::from_raw(NonNull::new(raw).ok_or("无法创建测试画面")?);
+                    CFRetained::from_raw(NonNull::new(raw).ok_or("backendText.m7aa92b55")?);
                 CVPixelBufferLockBaseAddress(&buffer, CVPixelBufferLockFlags::empty());
                 let luma = CVPixelBufferGetBaseAddressOfPlane(&buffer, 0).cast::<u8>();
                 let stride = CVPixelBufferGetBytesPerRowOfPlane(&buffer, 0);
@@ -1025,7 +1025,7 @@ mod platform {
                     .error
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .get_or_insert_with(|| "视频输出未能交付".into());
+                    .get_or_insert_with(|| "backendText.m6c980606".into());
             }
         }
     }
@@ -1065,10 +1065,10 @@ mod platform {
         let result = if status == 0 && flags.contains(VTEncodeInfoFlags::FrameDropped) {
             Ok(None)
         } else if status != 0 {
-            Err(failure("视频编码回调失败", status))
+            Err(failure("backendText.m27acd3cd", status))
         } else {
             sample
-                .ok_or_else(|| "视频编码未返回画面".to_owned())
+                .ok_or_else(|| "backendText.m450664ee".to_owned())
                 .and_then(annexb)
                 .and_then(|frame| {
                     super::validate_profile(&frame, callback.profile)?;
@@ -1105,19 +1105,19 @@ mod platform {
                 .and_then(|attachments| attachments.get(kCMSampleAttachmentKey_NotSync))
                 .and_then(|value| value.downcast_ref::<CFBoolean>().map(CFBoolean::as_bool))
                 .is_none_or(|not_sync| !not_sync);
-            let block = sample.data_buffer().ok_or("H.264 输出为空")?;
+            let block = sample.data_buffer().ok_or("backendText.m610a18cc")?;
             let length = block.data_length();
             let mut avcc = vec![0u8; length];
             let status =
                 block.copy_data_bytes(0, length, NonNull::new_unchecked(avcc.as_mut_ptr().cast()));
             if status != 0 {
-                return Err(failure("读取 H.264 输出失败", status));
+                return Err(failure("backendText.mabaae581", status));
             }
             let mut data = Vec::with_capacity(length + 64);
             let mut length_size = 4usize;
             if keyframe {
                 let format: CFRetained<CMFormatDescription> =
-                    sample.format_description().ok_or("缺少 H.264 参数集")?;
+                    sample.format_description().ok_or("backendText.mfae71231")?;
                 let mut count = 0usize;
                 let mut header: i32 = 4;
                 for index in 0..2usize {
@@ -1131,7 +1131,7 @@ mod platform {
                         &mut header,
                     );
                     if status != 0 || pointer.is_null() {
-                        return Err(failure("读取 H.264 参数集失败", status));
+                        return Err(failure("backendText.m2be7bba7", status));
                     }
                     data.extend_from_slice(&[0, 0, 0, 1]);
                     data.extend_from_slice(std::slice::from_raw_parts(pointer, size));
@@ -1188,7 +1188,7 @@ mod platform {
             profile: VideoProfile,
         ) -> Result<Self> {
             if profile_size(width, height, width, profile)? != (width, height) {
-                return Err("画面尺寸超过视频协商等级".into());
+                return Err("backendText.mb284d240".into());
             }
             let (bitrate, fps) = profile.rate(bitrate, fps);
             let (sender, completed) = mpsc::sync_channel(1);
@@ -1211,8 +1211,8 @@ mod platform {
                 );
                 let status = VTCompressionSession::create(
                     None,
-                    i32::try_from(width).map_err(|_| "画面尺寸无效")?,
-                    i32::try_from(height).map_err(|_| "画面尺寸无效")?,
+                    i32::try_from(width).map_err(|_| "backendText.m72356188")?,
+                    i32::try_from(height).map_err(|_| "backendText.m72356188")?,
                     kCMVideoCodecType_H264,
                     Some(low_latency.as_opaque()),
                     None,
@@ -1222,9 +1222,9 @@ mod platform {
                     NonNull::from(&mut raw),
                 );
                 if status != 0 {
-                    return Err(failure("硬件编码器不可用", status));
+                    return Err(failure("backendText.m081fdd12", status));
                 }
-                CFRetained::from_raw(NonNull::new(raw).ok_or("硬件编码器不可用")?)
+                CFRetained::from_raw(NonNull::new(raw).ok_or("backendText.m081fdd12")?)
             };
             // Loss recovery is by keyframe request; a periodic IDR only bounds
             // how long a receiver that never asks can stay broken.
@@ -1239,7 +1239,7 @@ mod platform {
                 level.as_ref(),
             );
             if status != 0 {
-                return Err(failure("无法设置协商的视频编码等级", status));
+                return Err(failure("backendText.m9f59b84d", status));
             }
             // SAFETY: VideoToolbox's key and value constants are immutable CFStrings.
             let fixed: [(&CFString, &CFType); 4] = unsafe {
@@ -1277,7 +1277,7 @@ mod platform {
             // SAFETY: valid, thread-owned session.
             let status = unsafe { encoder.session.prepare_to_encode_frames() };
             if status != 0 {
-                return Err(failure("系统编码器准备失败", status));
+                return Err(failure("backendText.m1d6452c2", status));
             }
             Ok(encoder)
         }
@@ -1358,7 +1358,7 @@ mod platform {
             if status == 0 {
                 self.error().map_or(Ok(true), Err)
             } else {
-                Err(failure("视频编码失败", status))
+                Err(failure("backendText.m54c7b19b", status))
             }
         }
     }
@@ -1397,20 +1397,20 @@ mod platform {
             profile: VideoProfile,
         ) -> Result<Self> {
             if profile_size(width, height, width, profile)? != (width, height) {
-                return Err("画面尺寸超过视频协商等级".into());
+                return Err("backendText.mb284d240".into());
             }
             let worker = super::worker::Worker::start_with_deadlines(
                 move || Native::with_profile(width, height, fps, bitrate, profile),
                 |native, (frame, captured, keyframe, rate): Input| {
                     if !native.can_encode() {
-                        return Err("系统编码器的上一帧尚未结束".into());
+                        return Err("backendText.meebcfbcb".into());
                     }
                     native.set_rate(rate.0, rate.1);
                     native.encode(&frame, captured, keyframe)?;
                     native
                         .completed
                         .recv_timeout(Duration::from_secs(2))
-                        .map_err(|_| "系统编码未及时交付画面".to_owned())?
+                        .map_err(|_| "backendText.m59577209".to_owned())?
                 },
                 Duration::from_secs(5),
                 Duration::from_secs(2),
@@ -1446,7 +1446,7 @@ mod platform {
                 return Err(error.clone());
             }
             if frame.size() != self.size {
-                return Err("显示器尺寸变化，请重新建立视频连接".into());
+                return Err("backendText.ma2b8d5c2".into());
             }
             match self
                 .worker
@@ -1810,10 +1810,7 @@ mod platform {
         unsafe impl SCStreamDelegate for Output {
             #[unsafe(method(stream:didStopWithError:))]
             fn stream_did_stop(&self, _stream: &SCStream, error: &NSError) {
-                self.ivars().delivery.stopped(Some(format!(
-                    "屏幕采集已结束：{}",
-                    error.localizedDescription()
-                )));
+                self.ivars().delivery.stopped(Some(format!("backendText.m19d5d82a\u{1e}{}", serde_json::to_string(&[error.localizedDescription().to_string()]).unwrap_or_else(|_| "[]".into()))));
             }
         }
     );
@@ -1855,10 +1852,10 @@ mod platform {
         };
         // These calls stay on the bounded native worker, never the OS callback.
         if !CGDisplayIsOnline(display) {
-            return Err("视频显示器已断开，请重新选择屏幕".into());
+            return Err("backendText.m5ed0b6fa".into());
         }
         if !CGDisplayIsActive(display) {
-            return Err("视频显示器已停用，请重新选择屏幕".into());
+            return Err("backendText.m9b32d293".into());
         }
         let rect = CGDisplayBounds(display);
         let pixels = (CGDisplayPixelsWide(display), CGDisplayPixelsHigh(display));
@@ -1876,7 +1873,7 @@ mod platform {
             || pixels.1 == 0
             || !rotation.is_finite()
         {
-            return Err("无法核实视频显示器配置".into());
+            return Err("backendText.m655a3e8a".into());
         }
         Ok(DisplayGeometry {
             bounds: bounds.map(f64::to_bits),
@@ -1886,7 +1883,7 @@ mod platform {
     }
 
     fn wait<T>(rx: &mpsc::Receiver<std::result::Result<T, String>>, what: &str) -> Result<T> {
-        rx.recv().map_err(|_| format!("{what}未返回结果"))?
+        rx.recv().map_err(|_| format!("backendText.m0a6e11ea\u{1e}{}", serde_json::to_string(&[what.to_string()]).unwrap_or_else(|_| "[]".into())))?
     }
 
     fn error_text(error: *mut NSError) -> String {
@@ -1965,13 +1962,13 @@ mod platform {
                         .map(|c| unsafe { Retained::retain(std::ptr::from_ref(c).cast_mut()) });
                     let _ = tx.send(match content.flatten() {
                         Some(content) => Ok(content),
-                        None => Err(format!("无法读取可录制的屏幕：{}", error_text(error))),
+                        None => Err(format!("backendText.m6548eaf7\u{1e}{}", serde_json::to_string(&[error_text(error).to_string()]).unwrap_or_else(|_| "[]".into()))),
                     });
                 },
             );
             // SAFETY: the block is retained by ScreenCaptureKit until called.
             unsafe { SCShareableContent::getShareableContentWithCompletionHandler(&handler) };
-            wait(&rx, "读取屏幕")
+            wait(&rx, "backendText.me74143bd")
         }
         fn from_content(
             config: VideoConfig,
@@ -1988,7 +1985,7 @@ mod platform {
                     .displays()
                     .iter()
                     .find(|d| d.displayID() == config.display)
-                    .ok_or("显示器已断开，请刷新屏幕列表")?
+                    .ok_or("backendText.m80d90e2b")?
             };
             let native = crate::displays()?
                 .into_iter()
@@ -1999,7 +1996,7 @@ mod platform {
                         (d.height as f32 * d.scale).round() as u32,
                     )
                 })
-                .ok_or("显示器已断开，请刷新屏幕列表")?;
+                .ok_or("backendText.m80d90e2b")?;
             let size = profile_size(native.0, native.1, config.max_width, config.profile)?;
             delivery.check_active()?;
             let output = Output::new(delivery.clone());
@@ -2025,7 +2022,7 @@ mod platform {
                         SCStreamOutputType::Screen,
                         Some(&queue),
                     )
-                    .map_err(|e| format!("无法开始录屏：{}", e.localizedDescription()))?;
+                    .map_err(|e| format!("backendText.m99776573\u{1e}{}", serde_json::to_string(&[e.localizedDescription().to_string()]).unwrap_or_else(|_| "[]".into())))?;
                 stream
             };
             let mut capture = Self {
@@ -2049,10 +2046,7 @@ mod platform {
                 starting.started(if error.is_null() {
                     Ok(())
                 } else {
-                    Err(format!(
-                        "无法开始录屏，请检查屏幕录制权限：{}",
-                        error_text(error)
-                    ))
+                    Err(format!("backendText.m11af9e72\u{1e}{}", serde_json::to_string(&[error_text(error).to_string()]).unwrap_or_else(|_| "[]".into())))
                 });
             });
             capture.requested = true;
@@ -2084,7 +2078,7 @@ mod platform {
                 let _ = sender.send(if error.is_null() {
                     Ok(())
                 } else {
-                    Err(format!("无法更新屏幕采集：{}", error_text(error)))
+                    Err(format!("backendText.m6d9ea42c\u{1e}{}", serde_json::to_string(&[error_text(error).to_string()]).unwrap_or_else(|_| "[]".into())))
                 });
             });
             // SAFETY: valid stream/configuration, block retained by framework.
@@ -2094,7 +2088,7 @@ mod platform {
                     Some(&applied),
                 );
             }
-            wait(&reply, "更新屏幕采集")?;
+            wait(&reply, "backendText.m79bb81e5")?;
             self.fps = fps;
             Ok(())
         }
@@ -2115,7 +2109,7 @@ mod platform {
                 if error.is_null() {
                     delivery.stopped(None);
                 } else {
-                    delivery.fail(format!("屏幕采集未确认停止：{}", error_text(error)));
+                    delivery.fail(format!("backendText.m4bf401e5\u{1e}{}", serde_json::to_string(&[error_text(error).to_string()]).unwrap_or_else(|_| "[]".into())));
                 }
             });
             // SAFETY: the native stream and delegate remain alive on this
@@ -2264,7 +2258,7 @@ mod platform {
         }
     }
     pub struct Capture;
-    const UNSUPPORTED: &str = "此系统暂不支持视频画面，已使用图片模式";
+    const UNSUPPORTED: &str = "backendText.mf08bcfd2";
     impl Capture {
         pub fn error(&self) -> Option<String> {
             None
@@ -2315,7 +2309,7 @@ mod tests {
         );
         assert_eq!(
             result.err().expect("cancelled startup succeeded"),
-            "视频请求已结束"
+            "backendText.mfd71fbae"
         );
         assert_eq!(delivered.load(Ordering::Acquire), 0);
     }

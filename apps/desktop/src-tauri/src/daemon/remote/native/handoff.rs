@@ -59,7 +59,7 @@ fn ready(lease: &Lease) -> Result<(), String> {
         .as_ref()
         .is_some_and(super::super::video::Session::migration_ready)
     {
-        return Err("当前视频正在调整或不支持原地迁移".into());
+        return Err("backendText.mbe0c6397".into());
     }
     #[cfg(target_os = "linux")]
     if let Some(portal) = &lease.portal {
@@ -129,32 +129,32 @@ pub(super) fn call(
 fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Result<Value, String> {
     expire(lease);
     if args["leaseId"] != lease.id || !connection.alive() {
-        return Err("远控租约已结束，请重新连接".into());
+        return Err("backendText.m93667b73".into());
     }
     let id = args["ticket"]
         .as_str()
-        .ok_or("缺少迁移请求身份")?
+        .ok_or("backendText.md124c5fc")?
         .to_owned();
-    let parsed = uuid::Uuid::parse_str(&id).map_err(|_| "迁移请求身份无效")?;
+    let parsed = uuid::Uuid::parse_str(&id).map_err(|_| "backendText.m8c9a32ee")?;
     if parsed.get_version_num() != 4 {
-        return Err("迁移请求身份无效".into());
+        return Err("backendText.m8c9a32ee".into());
     }
-    let peer = connection.peer.ok_or("迁移需要已认证的手机连接")?;
-    let phase = args["phase"].as_str().ok_or("缺少迁移阶段")?.to_owned();
+    let peer = connection.peer.ok_or("backendText.mec057f7a")?;
+    let phase = args["phase"].as_str().ok_or("backendText.m1f79471c")?.to_owned();
     if !["offer", "stage", "claim", "status", "cancel"].contains(&phase.as_str()) {
-        return Err("迁移阶段无效".into());
+        return Err("backendText.m5bca5f4e".into());
     }
     if phase == "offer" {
         if lease.owner.id != connection.id {
-            return Err("远控租约不属于当前连接".into());
+            return Err("backendText.m4e10a927".into());
         }
         super::super::parse_sequence(args.get_mut("expectedRevision"))?;
-        let expected = args["expectedRevision"].as_u64().ok_or("缺少迁移版本")?;
+        let expected = args["expectedRevision"].as_u64().ok_or("backendText.m68964f64")?;
         if let Some(ticket) = &lease.handoff
             && ticket.id == id
         {
             if ticket.from_revision != expected {
-                return Err("迁移请求身份冲突".into());
+                return Err("backendText.m96f091b6".into());
             }
             return Ok(describe(
                 lease,
@@ -168,25 +168,25 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
             ));
         }
         if expected != lease.handoff_revision {
-            return Err("迁移版本已变化，旧请求不能重新生效".into());
+            return Err("backendText.m78f006a5".into());
         }
         ready(lease)?;
         if lease.handoff.as_ref().is_some_and(|t| !t.applied) {
-            return Err("已有视频连接正在迁移".into());
+            return Err("backendText.m4f108b6a".into());
         }
         let revision = lease
             .handoff_revision
             .checked_add(1)
-            .ok_or("请重新开启远控租约")?;
+            .ok_or("backendText.m033cd575")?;
         lease.handoff = Some(Ticket {
             id,
             offered_by: connection.id.clone(),
             from_revision: expected,
             source_instance:
-                lease.video.as_ref().ok_or("视频画面未开启")?.describe()["resize"]["instanceId"]
+                lease.video.as_ref().ok_or("backendText.m1cfa78dc")?.describe()["resize"]["instanceId"]
                     .clone(),
             source_revision:
-                lease.video.as_ref().ok_or("视频画面未开启")?.describe()["resize"]["applied"]
+                lease.video.as_ref().ok_or("backendText.m1cfa78dc")?.describe()["resize"]["applied"]
                     .clone(),
             peer,
             until: Instant::now() + Duration::from_secs(20),
@@ -206,15 +206,15 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
     {
         if phase == "cancel" {
             super::super::parse_sequence(args.get_mut("expectedRevision"))?;
-            let expected = args["expectedRevision"].as_u64().ok_or("缺少迁移版本")?;
+            let expected = args["expectedRevision"].as_u64().ok_or("backendText.m68964f64")?;
             if expected > lease.handoff_revision {
-                return Err("迁移版本无效".into());
+                return Err("backendText.m55c69fa9".into());
             }
             if expected == lease.handoff_revision {
                 if lease.owner.id != connection.id {
-                    return Err("请从当前 owner 结束尚未受理的迁移".into());
+                    return Err("backendText.mf1239fb2".into());
                 }
-                lease.handoff_revision = expected.checked_add(1).ok_or("请重新开启远控租约")?;
+                lease.handoff_revision = expected.checked_add(1).ok_or("backendText.m033cd575")?;
             }
         }
         return Ok(describe(lease, "retired"));
@@ -223,7 +223,7 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
         .handoff
         .as_ref()
         .filter(|t| t.id == id && t.peer == peer)
-        .ok_or("迁移请求已结束或不属于当前手机")?;
+        .ok_or("backendText.mf8efa172")?;
     let offered_by = ticket.offered_by == connection.id;
     let candidate = ticket
         .staged
@@ -233,26 +233,26 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
         return if offered_by || candidate {
             Ok(describe(lease, "applied"))
         } else {
-            Err("迁移请求不属于当前连接".into())
+            Err("backendText.m0f7308e9".into())
         };
     }
     if matches!(phase.as_str(), "stage" | "claim") {
-        let description = lease.video.as_ref().ok_or("视频画面未开启")?.describe();
+        let description = lease.video.as_ref().ok_or("backendText.m1cfa78dc")?.describe();
         if description["resize"]["instanceId"] != ticket.source_instance
             || description["resize"]["applied"] != ticket.source_revision
         {
-            return Err("屏幕或视频配置已变化，请重新准备迁移".into());
+            return Err("backendText.m26a6e277".into());
         }
     }
     if phase == "stage" {
         if offered_by {
-            return Err("迁移需要新的认证连接".into());
+            return Err("backendText.m4322f498".into());
         }
         if ticket.staged.is_some() && !candidate {
-            return Err("另一条连接已准备本次迁移".into());
+            return Err("backendText.mc63eccd5".into());
         }
         if args["chunkedMessages"] != true {
-            return Err("新连接未声明分片接收能力".into());
+            return Err("backendText.m5301622d".into());
         }
         let transport = args["videoTransport"]
             .as_str()
@@ -262,24 +262,24 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
                 "webrtc"
             });
         if !matches!(transport, "binary" | "webrtc") {
-            return Err("不支持的视频传输类型".into());
+            return Err("backendText.m2636ba44".into());
         }
         if ticket
             .transport
             .as_deref()
             .is_some_and(|saved| saved != transport)
         {
-            return Err("迁移目标类型不可更换".into());
+            return Err("backendText.m1cde7327".into());
         }
         if transport == "webrtc" && connection.video.is_none() {
-            return Err("新连接未协商兼容的视频轨道".into());
+            return Err("backendText.mcd0b7930".into());
         }
         let target_transport = transport.to_owned();
         ready(lease)?;
         let until = ticket.until;
         connection.chunked.store(true, Ordering::Release);
         lease.liveness.stage(&connection, until);
-        let ticket = lease.handoff.as_mut().ok_or("迁移请求已结束")?;
+        let ticket = lease.handoff.as_mut().ok_or("backendText.ma9e039be")?;
         ticket.staged = Some(connection);
         ticket.transport = Some(target_transport);
         if let Some(relay) = &lease.relay {
@@ -292,7 +292,7 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
         return Ok(describe(lease, "staged"));
     }
     if !offered_by && !candidate {
-        return Err("迁移请求不属于当前连接".into());
+        return Err("backendText.m0f7308e9".into());
     }
     match phase.as_str() {
         "status" => Ok(describe(
@@ -316,23 +316,23 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
         }
         "claim" => {
             if !candidate {
-                return Err("请先在新连接准备迁移".into());
+                return Err("backendText.m6b2b8e7a".into());
             }
             super::super::parse_sequence(args.get_mut("expectedInputSequence"))?;
             if args["expectedInputSequence"].as_u64() != Some(lease.sequence) {
-                return Err("旧连接仍有输入尚未确认，不能迁移".into());
+                return Err("backendText.m32c3ff30".into());
             }
             ready(lease)?;
             // All validation precedes effects. Native worker serializes this
             // swap against every input and all later requests on the old wire.
-            let video = lease.video.as_ref().ok_or("视频画面未开启")?;
+            let video = lease.video.as_ref().ok_or("backendText.m1cfa78dc")?;
             let target = lease
                 .handoff
                 .as_ref()
                 .and_then(|t| t.transport.as_deref())
-                .ok_or("迁移目标尚未准备")?;
+                .ok_or("backendText.ma01295ab")?;
             if target == "binary" && lease.relay.is_some() {
-                let relay = lease.relay.as_ref().ok_or("视频输出不可用")?;
+                let relay = lease.relay.as_ref().ok_or("backendText.m5e175e1f")?;
                 let generation =
                     relay.rebind(connection.binary.clone(), connection.video_epoch.clone());
                 let _ = video.hold(None);
@@ -340,7 +340,7 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
             } else if target == "binary" {
                 let generation = video.describe()["generation"]
                     .as_u64()
-                    .ok_or("视频代次不可用")?;
+                    .ok_or("backendText.m60a1e394")?;
                 connection
                     .video_epoch
                     .fetch_max(generation, Ordering::AcqRel);
@@ -353,17 +353,17 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
                 video.replace_output(relay.clone())?;
                 lease.relay = Some(relay);
             } else {
-                let sender = connection.video.clone().ok_or("新连接未协商视频轨道")?;
+                let sender = connection.video.clone().ok_or("backendText.mfcfdf76c")?;
                 video.replace_output(Arc::new(sender))?;
                 lease.relay = None;
             }
             lease.liveness.adopt(&connection);
             lease.owner = connection;
             lease.expires = Instant::now() + Duration::from_secs(15);
-            lease.handoff.as_mut().ok_or("迁移请求已结束")?.applied = true;
+            lease.handoff.as_mut().ok_or("backendText.ma9e039be")?.applied = true;
             Ok(describe(lease, "applied"))
         }
-        _ => Err("迁移阶段无效".into()),
+        _ => Err("backendText.m5bca5f4e".into()),
     }
 }
 

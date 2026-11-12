@@ -83,7 +83,7 @@ pub(super) fn read_native(provider: &str, cwd: &Path, id: &str) -> Option<Sessio
 }
 fn snapshot(mut report: RequestUsageReport) -> SessionUsageSnapshot {
     if report.records.is_empty() && report.unavailable_reason.is_none() {
-        report.unavailable_reason = Some("原生会话尚无可确认的请求用量".into());
+        report.unavailable_reason = Some("backendText.m944f37b6".into());
     }
     SessionUsageSnapshot {
         request_usage: Some(report),
@@ -157,7 +157,7 @@ fn kimi(cwd: &Path, id: &str) -> Option<SessionUsageSnapshot> {
         cache_write_tokens: u["inputCacheCreation"].as_u64(),
         totals_scope: Some("turn".into()),
         request_usage: Some(RequestUsageReport::unavailable(
-            "Kimi 提供本轮摘要，未提供可确认的逐请求身份",
+            "backendText.mfb43011e",
         )),
         ..SessionUsageSnapshot::new()
     })
@@ -207,7 +207,7 @@ fn grok(cwd: &Path, id: &str) -> Option<SessionUsageSnapshot> {
         return None;
     }
     let text = read(&dir.join("updates.jsonl"))?;
-    let mut report = RequestUsageReport::unavailable("Grok 本轮摘要未能拆分为单次模型请求");
+    let mut report = RequestUsageReport::unavailable("backendText.m596c4757");
     let mut latest = None;
     let mut costs = std::collections::BTreeMap::new();
     for row in records(&text) {

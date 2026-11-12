@@ -146,7 +146,7 @@ pub(super) async fn query(
                             || {
                                 args["paths"]
                                     .as_array()
-                                    .map(|paths| format!("{} 个文件", paths.len()))
+                                    .map(|paths| format!("backendText.m21db75dc\u{1e}{}", serde_json::to_string(&[paths.len().to_string()]).unwrap_or_else(|_| "[]".into())))
                                     .unwrap_or_default()
                             },
                             |path| compact(path, 240),
@@ -186,5 +186,5 @@ pub(super) async fn query(
         })
     })
     .await
-    .map_err(|_| "操作记录读取中断，请重新查询")?
+    .map_err(|_| "backendText.mc1b31520")?
 }

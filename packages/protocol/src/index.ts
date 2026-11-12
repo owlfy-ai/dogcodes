@@ -495,6 +495,12 @@ export interface QuotaSnapshot {
   collectedAtUnixMs: number;
   staleAfterUnixMs: number;
   planType?: string | null;
+  /** Date-only vendor reset. Display only; it has no time of day. */
+  nativeResetOn?: string | null;
+  /** Vendor on-demand billing, when reported. */
+  onDemand?: boolean | null;
+  bonusQuota?: boolean;
+  purchasedQuota?: boolean;
   source: string;
   confidence: string;
   parserVersion: string;

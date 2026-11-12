@@ -34,7 +34,7 @@ impl TargetFacts {
         if task == &self.task {
             Ok(())
         } else {
-            Err("这项操作不能访问其他会话".into())
+            Err("backendText.m3f9b8dd9".into())
         }
     }
 
@@ -47,7 +47,7 @@ impl TargetFacts {
         if here {
             Ok(())
         } else {
-            Err("所选 Agent 不在这个项目所在的机器上".into())
+            Err("backendText.m341339e8".into())
         }
     }
 }
@@ -127,7 +127,7 @@ impl ReviewFacts for TargetFacts {
         let task = request["taskId"]
             .as_str()
             .and_then(|id| TaskId::parse(id).ok());
-        self.require_task(task.as_ref().ok_or("无效的会话标识")?)?;
+        self.require_task(task.as_ref().ok_or("backendText.mcb03be95")?)?;
         let executor: ExecutorRef =
             serde_json::from_value(request["executor"].clone()).map_err(|e| e.to_string())?;
         self.require_executor(&executor).await?;
@@ -139,7 +139,7 @@ impl ReviewFacts for TargetFacts {
         prompt: &str,
     ) -> Result<Option<String>, String> {
         self.require_task(task)?;
-        let prompts = self.prompts.as_ref().ok_or("这项操作不能询问凭据")?;
+        let prompts = self.prompts.as_ref().ok_or("backendText.m144f414e")?;
         Ok(prompts.ask(task.as_str(), prompt).await)
     }
 }
@@ -150,7 +150,7 @@ async fn task_target(
     targets: &TargetHost,
     task: &str,
 ) -> Result<Option<(SharedTarget, TargetFacts)>, String> {
-    let task = TaskId::parse(task).map_err(|_| "无效的会话标识")?;
+    let task = TaskId::parse(task).map_err(|_| "backendText.mcb03be95")?;
     let snapshot = ReviewFacts::bootstrap(core).await?;
     let target = snapshot
         .tasks

@@ -235,9 +235,7 @@ impl Core {
             {
                 Ok(()) => self.repository.complete_task_cleanup(&task).await?,
                 Err(error) => {
-                    failure = Some(CoreError::Internal(format!(
-                        "会话已永久删除，快照清理未完成，重启后将重试：{error}"
-                    )));
+                    failure = Some(CoreError::Internal(format!("backendText.m4c61a265\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))));
                 }
             }
         }

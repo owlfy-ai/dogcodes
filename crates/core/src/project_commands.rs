@@ -8,7 +8,7 @@ impl Core {
         packet: String,
     ) -> Result<String, String> {
         if packet.len() > 180_000 {
-            return Err("项目分析内容过长".into());
+            return Err("backendText.m7e8b8b08".into());
         }
         let admitted = self
             .admit_execution(&executor)
@@ -23,7 +23,7 @@ impl Core {
 impl crate::AcceptedExecution {
     pub async fn analyze_project_commands(&self, packet: String) -> Result<String, String> {
         if packet.len() > 180_000 {
-            return Err("项目分析内容过长".into());
+            return Err("backendText.m7e8b8b08".into());
         }
         analyze_with_driver(
             self.driver.clone(),
@@ -40,7 +40,7 @@ impl crate::AcceptedExecution {
         lifetime: std::sync::Arc<dyn AnalysisLifetime>,
     ) -> Result<String, String> {
         if packet.len() > 180_000 {
-            return Err("项目分析内容过长".into());
+            return Err("backendText.m7e8b8b08".into());
         }
         analyze_with_driver(
             self.driver.clone(),
@@ -86,7 +86,7 @@ async fn analyze_with_driver(
             let mut seen = std::collections::HashSet::new();
             while let Some(event) = stream.next().await {
                 match event.map_err(|e| e.to_string())? {
-                    DriverEvent::TextDelta { text: delta, .. } => { text.push_str(&delta); if text.len() > 48_000 { return Err("分析结果过长".into()); } }
+                    DriverEvent::TextDelta { text: delta, .. } => { text.push_str(&delta); if text.len() > 48_000 { return Err("backendText.m29a273b4".into()); } }
                     DriverEvent::Presentation { item_id, data } if data["type"] == "message" && data["parentId"].as_str().is_none_or(str::is_empty) => {
                         if data["sessionId"].as_str().is_some_and(|id| !id.is_empty() && id != handle.native_session_id) { continue; }
                         if let Some(id) = data["sourceEventId"].as_str() && !seen.insert(id.to_owned()) { continue; }
@@ -94,22 +94,22 @@ async fn analyze_with_driver(
                         let message = messages.entry(item_id).or_default();
                         if let Some(value) = data["text"].as_str() { value.clone_into(message); }
                         else if let Some(delta) = data["textDelta"].as_str() { message.push_str(delta); }
-                        if messages.values().map(String::len).sum::<usize>() > 48_000 { return Err("分析结果过长".into()); }
+                        if messages.values().map(String::len).sum::<usize>() > 48_000 { return Err("backendText.m29a273b4".into()); }
                     }
                     DriverEvent::TurnCompleted { .. } => return Ok(if text.is_empty() { order.iter().filter_map(|id| messages.get(id)).cloned().collect::<Vec<_>>().join("\n") } else { text }),
                     DriverEvent::TurnFailed { reason } => return Err(reason),
-                    DriverEvent::ApprovalRequested { .. } | DriverEvent::ToolStarted { .. } => return Err("分析需要仅阅读提供的资料，请换用其他 Agent 重试".into()),
-                    DriverEvent::TurnQuotaExhausted { .. } => return Err("Agent 额度已耗尽".into()),
-                    DriverEvent::TurnInterrupted { .. } => return Err("分析已中断".into()),
+                    DriverEvent::ApprovalRequested { .. } | DriverEvent::ToolStarted { .. } => return Err("backendText.m9d4bbd36".into()),
+                    DriverEvent::TurnQuotaExhausted { .. } => return Err("backendText.m51c64e3f".into()),
+                    DriverEvent::TurnInterrupted { .. } => return Err("backendText.me03a836b".into()),
                     _ => {}
                 }
             }
-            Err("Agent 未完成分析".into())
-        }).await.unwrap_or_else(|_| Err("项目分析超时，请重试".into()));
+            Err("backendText.mc181efe5".into())
+        }).await.unwrap_or_else(|_| Err("backendText.m34d4eb52".into()));
     if let Some(cleanup) = session.cleanup(result.is_err()) {
         cleanup
             .await
-            .map_err(|_| "临时 Agent 清理任务已中断，退出状态待核实")??;
+            .map_err(|_| "backendText.m2f36e562")??;
     }
     result
 }
@@ -397,7 +397,7 @@ mod tests {
             pending: pending.clone(),
         });
         let result = analyze_with_driver(driver.clone(), "macos".into(), Some(lifetime)).await;
-        assert!(result.unwrap_err().contains("关闭尚未确认"));
+        assert!(result.unwrap_err().contains("backendText.mfd1e8505"));
         assert!(pending.load(Ordering::SeqCst));
         assert!(!released.load(Ordering::SeqCst));
         assert!(!driver.stopped.load(Ordering::SeqCst));

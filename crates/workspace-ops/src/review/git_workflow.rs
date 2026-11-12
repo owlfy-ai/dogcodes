@@ -58,13 +58,13 @@ fn workflow_root(journal: &GitOperations, receipt: &GitReceipt) -> Result<GitRec
         };
         let parent = journal
             .get(&current.request.task_id, id)?
-            .ok_or("Git 上一步记录缺失，无法核实工作流")?;
+            .ok_or("backendText.mfcd2b6bd")?;
         if !is_child(&parent, &current.request) {
-            return Err("Git 工作流关联损坏，请核实原记录".into());
+            return Err("backendText.m1ccc5750".into());
         }
         current = parent;
     }
-    Err("Git 工作流关联过长或循环，请核实原记录".into())
+    Err("backendText.m370b4fe7".into())
 }
 pub(super) fn with_closure(
     journal: &GitOperations,
@@ -84,7 +84,7 @@ pub(super) async fn close(
         .review
         .git_operations
         .get(&task, &operation)?
-        .ok_or("原操作记录不存在，请先核实")?;
+        .ok_or("backendText.mfab7b848")?;
     let root = workflow_root(&state.review.git_operations, &receipt)?;
     state
         .review
@@ -105,7 +105,7 @@ pub(super) fn validate(state: &ReviewContext<'_>, request: &GitRequest) -> Resul
     if flow.next_operation_id == request.operation_id
         || flow.parent_operation_id.as_ref() == Some(&flow.next_operation_id)
     {
-        return Err("Git 接续标识不能复用当前或上一步标识".into());
+        return Err("backendText.m7a506128".into());
     }
     match flow.parent_operation_id.as_deref() {
         None if request.action == "commit" => Ok(()),
@@ -114,16 +114,16 @@ pub(super) fn validate(state: &ReviewContext<'_>, request: &GitRequest) -> Resul
                 .review
                 .git_operations
                 .get(&request.task_id, id)?
-                .ok_or("Git 上一步记录不存在，请先核实原操作")?;
+                .ok_or("backendText.m1c2e6c64")?;
             if workflow_root(&state.review.git_operations, &parent)?.closed {
-                return Err("Git 工作流已结束，未执行推送".into());
+                return Err("backendText.m7b17395d".into());
             }
             if !may_advance(&parent) || !is_child(&parent, request) {
-                return Err("Git 上一步未完成或接续请求不匹配，未执行推送".into());
+                return Err("backendText.m1eb0a42c".into());
             }
             Ok(())
         }
-        _ => Err("只有提交并推送可以创建组合操作".into()),
+        _ => Err("backendText.m2324582b".into()),
     }
 }
 /// Caller holds the review gate across validation, execution and receipt publish.
@@ -183,7 +183,7 @@ async fn perform_action(
                 .await?
                 .into_iter()
                 .find(|root| root.git && root.id == action.root_id)
-                .ok_or("原 Git 目录不在当前项目范围内")?,
+                .ok_or("backendText.m0f12ec28")?,
         )
     } else {
         None
@@ -193,12 +193,12 @@ async fn perform_action(
             .workflow
             .as_ref()
             .and_then(|flow| flow.parent_operation_id.as_deref())
-            .ok_or("原组合操作不存在")?;
+            .ok_or("backendText.m32e8ab7e")?;
         let parent = state
             .review
             .git_operations
             .get(&action.task_id, parent_id)?
-            .ok_or("原提交记录不存在")?;
+            .ok_or("backendText.m4a34c6a1")?;
         let origin = workflow_root(&state.review.git_operations, &parent)?;
         let target = match origin.outcome {
             GitOutcome::Succeeded {
@@ -206,12 +206,9 @@ async fn perform_action(
                 ..
             } => target,
             GitOutcome::Succeeded { target_error, .. } => {
-                return Err(format!(
-                    "提交已完成，但未绑定推送目标：{}",
-                    target_error.unwrap_or_else(|| "请核实仓库后使用独立推送入口".into())
-                ));
+                return Err(format!("backendText.m4c12cb65\u{1e}{}", serde_json::to_string(&[target_error.unwrap_or_else(|| "backendText.m3d9b6a65".into()).to_string()]).unwrap_or_else(|_| "[]".into())));
             }
-            _ => return Err("原提交结果尚未核实，未执行推送".into()),
+            _ => return Err("backendText.ma4273db4".into()),
         };
         super::git_push_target::push(std::path::Path::new(&root.as_ref().unwrap().path), &target)
             .await?;
@@ -265,17 +262,17 @@ pub(super) async fn advance(
         .review
         .git_operations
         .get(&task, &operation)?
-        .ok_or("Git 原操作记录不存在，请先核实")?;
+        .ok_or("backendText.md9f985a2")?;
     let flow = parent
         .request
         .workflow
         .as_ref()
-        .ok_or("原操作没有提交并推送意图，未执行推送")?;
+        .ok_or("backendText.mc2aa903c")?;
     if !may_advance(&parent) {
-        return Err("Git 原操作尚不允许接续，请先核实结果；未自动重发".into());
+        return Err("backendText.ma0e018ba".into());
     }
     if workflow_root(&state.review.git_operations, &parent)?.closed {
-        return Err("Git 工作流已结束，未执行推送".into());
+        return Err("backendText.m7b17395d".into());
     }
     // Return the original step even when it failed; a fresh retry requires
     // explicitly advancing that failed child's own reserved next identity.
@@ -285,7 +282,7 @@ pub(super) async fn advance(
         .get(&task, &flow.next_operation_id)?
     {
         if !is_child(&parent, &child.request) {
-            return Err("Git 接续标识已被其他请求占用，未执行推送".into());
+            return Err("backendText.mba501389".into());
         }
         return Ok(child);
     }
@@ -311,5 +308,5 @@ pub(super) async fn advance(
         return Ok(receipt);
     }
     result?;
-    Err("Git 接续结果尚未核实，请查询原操作记录".into())
+    Err("backendText.m73b1835f".into())
 }

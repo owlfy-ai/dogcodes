@@ -93,7 +93,7 @@ impl Turn {
                                 }
                             } else {
                                 DriverEvent::TurnFailed {
-                                    reason: "Pi 模型调用失败，请检查原生客户端的模型授权与网络。"
+                                    reason: "backendText.m546c5770"
                                         .into(),
                                 }
                             },
@@ -105,15 +105,15 @@ impl Turn {
             "tool_execution_start" => self.emit(DriverEvent::ToolStarted {
                 item_id: value["toolCallId"].as_str().unwrap_or("pi-tool").into(),
                 tool_name: value["toolName"].as_str().unwrap_or("tool").into(),
-                summary: format!("正在使用 {}", value["toolName"].as_str().unwrap_or("工具")),
+                summary: format!("backendText.m5741826f\u{1e}{}", serde_json::to_string(&[value["toolName"].as_str().unwrap_or("backendText.m5ca6730d").to_string()]).unwrap_or_else(|_| "[]".into())),
             }),
             "tool_execution_end" => self.emit(DriverEvent::ToolCompleted {
                 item_id: value["toolCallId"].as_str().unwrap_or("pi-tool").into(),
                 tool_name: value["toolName"].as_str().unwrap_or("tool").into(),
                 summary: if value["isError"] == true {
-                    "工具执行失败"
+                    "backendText.mbd8394d9"
                 } else {
-                    "工具执行完成"
+                    "backendText.mb8351ba4"
                 }
                 .into(),
                 success: value["isError"] != true,
@@ -135,11 +135,11 @@ impl Turn {
                 }
                 let terminal = if self.interrupted {
                     DriverEvent::TurnInterrupted {
-                        summary: "已停止".into(),
+                        summary: "backendText.mf006455e".into(),
                     }
                 } else {
                     self.failure.take().unwrap_or(DriverEvent::TurnCompleted {
-                        summary: "完成".into(),
+                        summary: "backendText.mc0b3fbff".into(),
                     })
                 };
                 self.emit(terminal);
@@ -169,7 +169,7 @@ fn dialog(value: &Value) -> Option<(String, Dialog)> {
         Dialog {
             method: method.into(),
             form: QuestionForm {
-                title: value["title"].as_str().unwrap_or("Pi 请求输入").into(),
+                title: value["title"].as_str().unwrap_or("backendText.med7804a7").into(),
                 schema: json!({"type":"object","properties":{"answer":property},"required":["answer"]}),
             },
         },

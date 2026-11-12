@@ -9,7 +9,7 @@ import { formatResetCountdown } from "./quotaPresentation";
 
 const NOW = Date.parse("2026-11-07T12:00:00Z");
 const inSeconds = (seconds: number) => NOW / 1000 + seconds;
-const quota = (windows: unknown[], planType?: string) => ({ windows, planType, confidence: "provider_reported", staleAfterUnixMs: NOW + 1e9 }) as unknown as QuotaSnapshotView["quota"];
+const quota = (windows: unknown[], extra: Record<string, unknown> = {}) => ({ windows, ...extra, confidence: "provider_reported", staleAfterUnixMs: NOW + 1e9 }) as unknown as QuotaSnapshotView["quota"];
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
   vi.useFakeTimers({ now: NOW });
@@ -82,7 +82,7 @@ it("names the columns once, only when a window is showing", async () => {
 it("says when a reset is due, keeps a date-only reset as a date, and leaves unknown blank", async () => {
   await act(async () => root.render(<AgentQuotaRing providerId="codex" quota={quota([{ id: "primary", windowMinutes: 300, usedPercent: 22, resetsAtUnix: inSeconds(-60) }])} />));
   expect(cells()).toEqual(["等待刷新"]);
-  await act(async () => root.render(<AgentQuotaRing providerId="kiro" quota={quota([{ id: "kiro-included", windowMinutes: 43_200, usedPercent: 10 }], "订阅额度 · 重置 2026-12-01（原生日期）")} />));
+  await act(async () => root.render(<AgentQuotaRing providerId="kiro" quota={quota([{ id: "kiro-included", windowMinutes: 43_200, usedPercent: 10 }], { nativeResetOn: "2026-12-01" })} />));
   expect(cells()[0]).toContain("12");
   expect(cells()[0]).not.toContain("天");
   await act(async () => root.render(<AgentQuotaRing providerId="codex" quota={quota([{ id: "primary", windowMinutes: 300, usedPercent: 22 }])} />));

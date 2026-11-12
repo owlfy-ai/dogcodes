@@ -51,7 +51,7 @@ impl CoreClient {
             Ok(WorkspaceWatchStream::Remote(stream))
         })
         .await
-        .map_err(|_| "目录订阅连接超时".to_owned())?
+        .map_err(|_| "backendText.m8cb7377e".to_owned())?
     }
 }
 pub enum WorkspaceWatchStream {
@@ -65,7 +65,7 @@ impl WorkspaceWatchStream {
             Self::Remote(stream) => {
                 tokio::time::timeout(Duration::from_secs(45), read_frame(stream))
                     .await
-                    .map_err(|_| "目录监听连接超时，正在重新连接".to_owned())?
+                    .map_err(|_| "backendText.mc1f9da1d".to_owned())?
             }
             #[cfg(any(test, feature = "review-acceptance"))]
             Self::Local(subscription) => subscription.next().await,

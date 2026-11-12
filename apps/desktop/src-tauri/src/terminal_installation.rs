@@ -282,7 +282,7 @@ fn select_executable(
         return Ok(Some(
             managed
                 .canonicalize()
-                .map_err(|_| "CLI 安装路径已变化，请重新检测")?,
+                .map_err(|_| "backendText.mcee0fad9")?,
         ));
     }
     Ok(selected)

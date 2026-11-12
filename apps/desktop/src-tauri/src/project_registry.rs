@@ -66,21 +66,21 @@ fn same_root(stored: &str, canonical: &str) -> bool {
 fn canonical_directory(raw: &str) -> Result<String, String> {
     let requested = std::path::Path::new(raw);
     if !requested.is_absolute() {
-        return Err("请输入完整的本地目录路径".to_owned());
+        return Err("backendText.m7a4b40b1".to_owned());
     }
     let canonical = plain_path(
         requested
             .canonicalize()
-            .map_err(|error| format!("无法打开项目目录：{error}"))?,
+            .map_err(|error| format!("backendText.mfa196fad\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?,
     );
     if !canonical.is_dir() {
-        return Err("所选路径不是目录".to_owned());
+        return Err("backendText.mb64c7d94".to_owned());
     }
-    std::fs::read_dir(&canonical).map_err(|error| format!("无法读取项目目录：{error}"))?;
+    std::fs::read_dir(&canonical).map_err(|error| format!("backendText.m274efe8f\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?;
     canonical
         .to_str()
         .map(str::to_owned)
-        .ok_or_else(|| "目录路径不是有效的 UTF-8".to_owned())
+        .ok_or_else(|| "backendText.m6d00d2cb".to_owned())
 }
 
 /// Returns the canonical primary root and the deduplicated additional roots.
@@ -89,7 +89,7 @@ pub async fn validate_directories(
     additional_directories: Vec<String>,
 ) -> Result<(String, Vec<String>), String> {
     if additional_directories.len() > MAX_ADDITIONAL_DIRECTORIES {
-        return Err("每个项目最多添加 32 个目录".into());
+        return Err("backendText.m3fa0da5d".into());
     }
     tokio::task::spawn_blocking(move || {
         let mut roots = Vec::new();
@@ -222,7 +222,7 @@ async fn update_inner(
     core.execute(envelope).await.map(|_| ()).map_err(|error| {
         let error = error.to_string();
         if error.contains("stream version conflict") {
-            "项目已被修改，请重新打开编辑窗口后再保存".into()
+            "backendText.mbd1d34ba".into()
         } else {
             error
         }

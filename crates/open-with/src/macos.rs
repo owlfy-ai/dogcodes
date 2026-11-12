@@ -6,7 +6,7 @@ use objc2_foundation::{NSDictionary, NSFileManager, NSPoint, NSRect, NSSize, NSS
 pub fn candidates(path: &Path) -> Result<Vec<Candidate>, String> {
     let workspace = NSWorkspace::sharedWorkspace();
     let url = NSURL::fileURLWithPath(&NSString::from_str(
-        path.to_str().ok_or("文件路径编码不可用")?,
+        path.to_str().ok_or("backendText.mf32a0a27")?,
     ));
     let default_path = workspace
         .URLForApplicationToOpenURL(&url)
@@ -106,10 +106,10 @@ pub fn launch(path: &Path, candidate: &Candidate) -> Result<(), String> {
         .arg(&candidate.location)
         .arg(path)
         .status()
-        .map_err(|_| "无法启动应用")?;
+        .map_err(|_| "backendText.m53206b35")?;
     if status.success() {
         Ok(())
     } else {
-        Err("应用无法打开此文件".into())
+        Err("backendText.ma01ddfae".into())
     }
 }

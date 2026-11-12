@@ -120,7 +120,7 @@ pub async fn inspect(app: &Path, mut out: AgentUpdate) -> Result<AgentUpdate, St
     } else {
         user_text("backendText.codexAppLatest", &[&current])
     });
-    out.source = "Codex 桌面应用 · 官方更新源".into();
+    out.source = "Codex {agentUi.desktopApp} · {agentUi.officialSource}".into();
     out.current_version = Some(current);
     out.latest_version = Some(latest);
     // Sparkle owns installation/signature validation. Never overwrite a bundled CLI.

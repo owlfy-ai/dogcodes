@@ -72,7 +72,7 @@ impl Core {
         let task = self.require_task(&query.task_id).await?;
         if task.stream_version < original_version {
             return Err(CoreError::Conflict(
-                "后台版本早于原审批版本，无法安全作废".into(),
+                "backendText.m74a814dc".into(),
             ));
         }
         // Fence the observed CURRENT version, never rely on a caller-supplied
@@ -107,7 +107,7 @@ impl Core {
                 return match self.approval_receipt(query).await? {
                     Some(receipt) => Ok(ApprovalInvalidation::Accepted { receipt }),
                     None => Err(CoreError::Conflict(
-                        "会话状态已变化，请核实原审批结果后再修改决定".into(),
+                        "backendText.m5359979d".into(),
                     )),
                 };
             }
@@ -172,13 +172,13 @@ impl Core {
         let sequence = ack
             .first_sequence
             .filter(|value| *value > 0 && Some(*value) == ack.last_sequence)
-            .ok_or_else(|| CoreError::Conflict("审批回执的事件范围无法核实".into()))?;
+            .ok_or_else(|| CoreError::Conflict("backendText.m099db465".into()))?;
         let events = self
             .repository
             .task_events(&query.task_id, sequence - 1, sequence, 1)
             .await?;
         let event = events.first().ok_or_else(|| {
-            CoreError::NotFound("原审批已受理，但记录已不可用；未重复发送".into())
+            CoreError::NotFound("backendText.mdef71f90".into())
         })?;
         if event.sequence != sequence
             || event.event_type != "approval.resolved"
@@ -190,7 +190,7 @@ impl Core {
             || event.payload["requestedAtSequence"].as_u64() != Some(query.requested_at_sequence)
         {
             return Err(CoreError::Conflict(
-                "审批回执不属于原请求，未重复发送".into(),
+                "backendText.m46aa13d1".into(),
             ));
         }
         let through = self.repository.event_head().await?;
@@ -220,7 +220,7 @@ impl Core {
                     || event.payload["requestedAtSequence"].as_u64()
                         != Some(query.requested_at_sequence)
                 {
-                    return Err(CoreError::Conflict("审批投递记录的归属无法核实".into()));
+                    return Err(CoreError::Conflict("backendText.m414d3fc5".into()));
                 }
                 let status = if event.event_type == "approval.delivery_sent" {
                     ApprovalDelivery::Sent
@@ -229,7 +229,7 @@ impl Core {
                 };
                 if delivery.is_some_and(|old| old != status) {
                     return Err(CoreError::Conflict(
-                        "审批投递记录存在冲突，请检查原任务".into(),
+                        "backendText.mc4b8f10d".into(),
                     ));
                 }
                 delivery = Some(status);

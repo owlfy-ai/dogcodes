@@ -16,17 +16,17 @@ fn login_target(
         "codex" | "cursor" | "grok" | "kimi" | "kiro" => &["login"],
         "claude-code" | "opencode" => &["auth", "login"],
         "antigravity" | "zcode" | "codebuddy" | "pi" | "deepseek-harness" => &[],
-        _ => return Err("此 Agent 暂不支持快捷登录".into()),
+        _ => return Err("backendText.mb577082e".into()),
     };
     if !executable.is_absolute() || !executable.is_file() {
-        return Err("此 Agent 的安装位置已失效，请重新检测".into());
+        return Err("backendText.m6142282c".into());
     }
     // Only GUI providers should open their app bundle. Codex/OpenCode can ship
     // a CLI inside an app but still need to authenticate that exact CLI.
     if matches!(provider, "zcode" | "antigravity") {
         let canonical = executable
             .canonicalize()
-            .map_err(|_| "无法读取客户端安装位置")?;
+            .map_err(|_| "backendText.mfc624e76")?;
         if let Some(bundle) = canonical
             .ancestors()
             .find(|p| p.extension().is_some_and(|e| e == "app"))
@@ -53,11 +53,11 @@ fn shell_quote(value: &str) -> String {
 
 #[cfg(unix)]
 fn cli_command(executable: &Path, args: &[&str]) -> Result<String, String> {
-    let path = executable.to_str().ok_or("客户端安装路径编码无效")?;
+    let path = executable.to_str().ok_or("backendText.ma627abbe")?;
     // Terminal commands may be entered in different shells; reject control
     // characters and quote every argument, including spaces and shell syntax.
     if path.chars().any(char::is_control) {
-        return Err("客户端安装路径包含无效字符".into());
+        return Err("backendText.m8a8abc7a".into());
     }
     Ok(std::iter::once(path)
         .chain(args.iter().copied())
@@ -72,12 +72,12 @@ async fn launch(mut command: tokio::process::Command) -> Result<(), String> {
     command.kill_on_drop(true);
     let status = tokio::time::timeout(std::time::Duration::from_secs(15), command.status())
         .await
-        .map_err(|_| "打开登录入口超时，请重试")?
-        .map_err(|_| "无法打开登录入口，请检查终端或客户端是否可用")?;
+        .map_err(|_| "backendText.m9b9bea62")?
+        .map_err(|_| "backendText.m13537f48")?;
     if status.success() {
         Ok(())
     } else {
-        Err("无法打开登录入口，请手动打开客户端或重试".into())
+        Err("backendText.m8e99e9a6".into())
     }
 }
 
@@ -109,15 +109,15 @@ async fn open_target(target: LoginTarget) -> Result<(), String> {
                 .prefix("dogcodes-login-")
                 .suffix(".command")
                 .tempfile()
-                .map_err(|_| "无法创建登录启动文件")?;
-            writeln!(script, "#!/bin/sh\n/bin/rm -f -- \"$0\"\ncd \"$HOME\" || exit 1\n{} -lic {}\nprintf '\\n登录操作结束，请返回 dog.codes 重新检测。\\n'",
+                .map_err(|_| "backendText.m18b6ac8c")?;
+            writeln!(script, "#!/bin/sh\n/bin/rm -f -- \"$0\"\ncd \"$HOME\" || exit 1\n{} -lic {}\nprintf '\\nLogin finished. Return to dog.codes and detect again.\\n'",
                 shell_quote(&shell.to_string_lossy()), shell_quote(&command))
-                .map_err(|_| "无法写入登录启动文件")?;
+                .map_err(|_| "backendText.m94803045")?;
             script
                 .as_file()
                 .set_permissions(std::fs::Permissions::from_mode(0o700))
-                .map_err(|_| "无法设置登录启动文件权限")?;
-            let (_, path) = script.keep().map_err(|_| "无法保存登录启动文件")?;
+                .map_err(|_| "backendText.mdc9f649a")?;
+            let (_, path) = script.keep().map_err(|_| "backendText.m1c64d5bb")?;
             open.arg("-a").arg("Terminal").arg(&path);
             let result = launch(open).await;
             if result.is_err() {
@@ -133,11 +133,11 @@ async fn open_target(target: LoginTarget) -> Result<(), String> {
 #[allow(clippy::unused_async)]
 async fn open_target(target: LoginTarget) -> Result<(), String> {
     let LoginTarget::Cli(executable, args) = target else {
-        return Err("此客户端需要在 macOS 中打开".into());
+        return Err("backendText.m63ce5eae".into());
     };
     let command = cli_command(&executable, args)?;
     let script = format!(
-        "cd \"$HOME\" && {command}; printf '\\n登录操作结束，请返回 dog.codes 重新检测。按回车关闭。'; read reply"
+        "cd \"$HOME\" && {command}; printf '\\nLogin finished. Return to dog.codes and detect again. Press Enter to close.'; read reply"
     );
     for (terminal, flag) in [
         ("x-terminal-emulator", "-e"),
@@ -151,7 +151,7 @@ async fn open_target(target: LoginTarget) -> Result<(), String> {
             return Ok(());
         }
     }
-    Err("未找到可用终端，请手动打开客户端登录".into())
+    Err("backendText.m5ab1e7dc".into())
 }
 
 #[cfg(windows)]
@@ -172,7 +172,7 @@ fn windows_cli_command(executable: &Path, args: &[&str]) -> String {
 async fn open_target(target: LoginTarget) -> Result<(), String> {
     use base64::Engine;
     let LoginTarget::Cli(executable, args) = target else {
-        return Err("此客户端需要在 macOS 中打开".into());
+        return Err("backendText.m63ce5eae".into());
     };
     let command = windows_cli_command(&executable, args);
     let script = format!("Set-Location $HOME; & {command}");
@@ -212,7 +212,7 @@ pub async fn open_agent_login(
         .find(|i| i.installation_id.to_string() == installation_id && i.target_id.is_none())
         .ok_or("backendText.updateInstallationGone")?;
     if installation.version.as_deref() == Some("demo") {
-        return Err("演示 Agent 不支持本机登录".into());
+        return Err("backendText.me015b290".into());
     }
     let context = agent_registry::DiscoveryContext::from_current_process();
     let target = login_target(

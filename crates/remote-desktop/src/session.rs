@@ -12,8 +12,8 @@ fn output(program: &str, args: &[&str]) -> Result<Vec<u8>> {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|_| "无法检查系统锁屏状态")?;
-    let stdout = child.stdout.take().ok_or("无法读取锁屏状态")?;
+        .map_err(|_| "backendText.m07442bb3")?;
+    let stdout = child.stdout.take().ok_or("backendText.me3cd80f8")?;
     let reader = std::thread::spawn(move || {
         let mut bytes = Vec::new();
         stdout
@@ -23,24 +23,24 @@ fn output(program: &str, args: &[&str]) -> Result<Vec<u8>> {
     });
     let start = Instant::now();
     loop {
-        match child.try_wait().map_err(|_| "无法检查系统锁屏状态")? {
+        match child.try_wait().map_err(|_| "backendText.m07442bb3")? {
             Some(status) => {
                 if !status.success() {
-                    return Err("无法检查系统锁屏状态".into());
+                    return Err("backendText.m07442bb3".into());
                 }
                 let bytes = reader
                     .join()
-                    .map_err(|_| "无法读取锁屏状态")?
-                    .map_err(|_| "无法读取锁屏状态")?;
+                    .map_err(|_| "backendText.me3cd80f8")?
+                    .map_err(|_| "backendText.me3cd80f8")?;
                 if bytes.len() > 256 * 1024 {
-                    return Err("锁屏状态数据过大".into());
+                    return Err("backendText.mdc4210c1".into());
                 }
                 return Ok(bytes);
             }
             None if start.elapsed() > Duration::from_secs(2) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err("检查系统锁屏状态超时".into());
+                return Err("backendText.m3a1f59bd".into());
             }
             None => std::thread::sleep(Duration::from_millis(10)),
         }
@@ -92,7 +92,7 @@ pub fn locked() -> Result<bool> {
     }
     let bytes = output("/usr/sbin/ioreg", &["-n", "Root", "-d1", "-a"])?;
     let value =
-        plist::Value::from_reader(std::io::Cursor::new(bytes)).map_err(|_| "无法解析锁屏状态")?;
+        plist::Value::from_reader(std::io::Cursor::new(bytes)).map_err(|_| "backendText.m3a0c2ef1")?;
     let root = value.as_dictionary().or_else(|| {
         value
             .as_array()
@@ -102,7 +102,7 @@ pub fn locked() -> Result<bool> {
     let sessions = root
         .and_then(|d| d.get("IOConsoleUsers"))
         .and_then(plist::Value::as_array)
-        .ok_or("无法确认当前桌面状态")?;
+        .ok_or("backendText.mcc7385e4")?;
     for session in sessions {
         if let Some(session) = session.as_dictionary()
             && session
@@ -115,11 +115,11 @@ pub fn locked() -> Result<bool> {
                 None => Ok(false),
                 Some(value) => value
                     .as_boolean()
-                    .ok_or_else(|| "无法确认当前桌面锁屏状态".into()),
+                    .ok_or_else(|| "backendText.ma77f32d6".into()),
             };
         }
     }
-    Err("当前没有已登录桌面".into())
+    Err("backendText.me3b44c94".into())
 }
 #[cfg(target_os = "linux")]
 mod linux;
@@ -155,20 +155,20 @@ pub fn locked() -> Result<bool> {
             &mut buffer,
             &mut bytes,
         )
-        .map_err(|_| "无法检查系统锁屏状态")?;
+        .map_err(|_| "backendText.m07442bb3")?;
         let result = if !buffer.is_null() && bytes as usize >= std::mem::size_of::<WTSINFOEXW>() {
             let info = &*buffer.0.cast::<WTSINFOEXW>();
             if info.Level != 1 {
-                Err("无法确认当前桌面锁屏状态".into())
+                Err("backendText.ma77f32d6".into())
             } else {
                 match info.Data.WTSInfoExLevel1.SessionFlags {
                     0 => Ok(true),
                     1 => Ok(false),
-                    _ => Err("无法确认当前桌面锁屏状态".into()),
+                    _ => Err("backendText.ma77f32d6".into()),
                 }
             }
         } else {
-            Err("无法确认当前桌面锁屏状态".into())
+            Err("backendText.ma77f32d6".into())
         };
         if !buffer.is_null() {
             WTSFreeMemory(buffer.0.cast());

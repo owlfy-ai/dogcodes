@@ -519,7 +519,7 @@ impl Core {
             .any(|control| control.task().as_ref() == Some(task) && control.cleanup_pending())
         {
             return Err(CoreError::CapabilityUnavailable(
-                "上次任务的原生资源仍在确认结束，请稍后重试".into(),
+                "backendText.mb0aec393".into(),
             ));
         }
         Ok(())

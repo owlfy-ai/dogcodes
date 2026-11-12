@@ -16,6 +16,8 @@ const codeParams: Record<string, string[]> = {
   "backendText.agentRunsOneTaskAtATime": ["agent"],
   "backendText.quotaExhaustedReset": ["time"],
   "backendText.zcodeAppUpgrade": ["latest"],
+  "backendText.updateCommandFailed": ["code"],
+  "backendText.missingSymbol": ["name"],
   "phone.connectionFailed": ["detail"],
   "phone.httpError": ["code"],
   "shell.exitUnverified": ["error"],
@@ -40,15 +42,25 @@ export function localizeBackendText(text: string, lang: ResolvedLanguage = getGl
     }
   }
   const params: Record<string, string> = {};
-  for (const [index, name] of (codeParams[code] ?? []).entries()) {
+  const names = codeParams[code]?.length ? codeParams[code] : values.map((_, index) => String(index));
+  for (const [index, name] of names.entries()) {
     const value = values[index] ?? "";
-    params[name] = name === "message" || name === "recovery" ? localizeBackendText(value, lang) ?? value : value;
+    const nested = codePattern.test(value.split("\u001e")[0] ?? "") ? localizeBackendText(value, lang) : null;
+    params[name] = nested ?? localizeEmbedded(value, lang);
   }
   const translated = translate(code, Object.keys(params).length ? params : undefined, lang);
   return translated === code ? null : translated;
 }
 
+/** A code sitting inside a larger error, such as a redacted URL or a driver prefix. */
+function localizeEmbedded(text: string, lang: ResolvedLanguage): string {
+  return text.replace(/backendText\.[A-Za-z0-9]+/g, (token: string, offset: number) => {
+    if (text[offset + token.length] === "\u001e") return token;
+    return localizeBackendText(token, lang) ?? token;
+  });
+}
+
 /** Display text for a backend message code. Unknown text is left unchanged. */
 export function displayBackendText(text: string, lang: ResolvedLanguage = getGlobalResolvedLanguage()): string {
-  return localizeBackendText(text, lang) ?? text;
+  return localizeBackendText(text, lang) ?? localizeEmbedded(text, lang);
 }

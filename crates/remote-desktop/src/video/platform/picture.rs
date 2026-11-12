@@ -68,17 +68,17 @@ impl Picture {
         if (self.alive)() {
             Ok(())
         } else {
-            Err("远控租约已结束，请重新连接".into())
+            Err("backendText.m93667b73".into())
         }
     }
     pub fn check_current(&self) -> Result<()> {
         self.check_owner()?;
         if self.pending.load(Ordering::Acquire) || self.changed.load(Ordering::Acquire) {
-            return Err("显示器配置已改变，请重新读取画面".into());
+            return Err("backendText.m30c6e69e".into());
         }
         match &self.state {
             State::Running(capture) => capture.error().map_or(Ok(()), Err),
-            _ => Err("图片采集尚未就绪".into()),
+            _ => Err("backendText.m042d50a4".into()),
         }
     }
     /// A backend failure leaves the independent xcap fallback available. Do
@@ -164,12 +164,12 @@ fn rgba(frame: &Frame) -> Result<image::RgbaImage> {
         || u64::from(width) * u64::from(height) > 3840 * 2160
         || CVPixelBufferGetPixelFormatType(buffer) != kCVPixelFormatType_32BGRA
     {
-        return Err("图片采集格式或尺寸无效".into());
+        return Err("backendText.me2290123".into());
     }
     // SAFETY: the retained pixel buffer stays alive through the matching guard.
     let status = unsafe { CVPixelBufferLockBaseAddress(buffer, CVPixelBufferLockFlags::ReadOnly) };
     if status != 0 {
-        return Err(format!("无法读取图片采集像素（{status}）"));
+        return Err(format!("backendText.ma2ac1fd9\u{1e}{}", serde_json::to_string(&[status.to_string()]).unwrap_or_else(|_| "[]".into())));
     }
     let _locked = ReadPixels(buffer);
     let base = CVPixelBufferGetBaseAddress(buffer).cast::<u8>();
@@ -182,7 +182,7 @@ fn rgba(frame: &Frame) -> Result<image::RgbaImage> {
         || stride < row
         || required.is_none_or(|n| n > CVPixelBufferGetDataSize(buffer))
     {
-        return Err("图片采集像素布局无效".into());
+        return Err("backendText.m45f4eb58".into());
     }
     let mut pixels = image::RgbaImage::new(width, height);
     for (y, output) in pixels.as_mut().chunks_exact_mut(row).enumerate() {

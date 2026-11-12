@@ -72,7 +72,7 @@ it("switches every welcome card and its accessible text across all languages wit
 it("localizes management cards, missing agents, native update messages and tooltips", async () => {
   setup();
   const updateActions: AgentUpdateActions = { updates: { ins_opencode: { installationId: "ins_opencode", status: "managed", currentVersion: "1.2.3", latestVersion: "1.3.0", canUpgrade: false,
-    source: "桌面应用 · 官方更新源", message: "此 CLI 随宿主应用更新，请在应用内检查更新", checkedAt: Date.now() } }, check: vi.fn(), upgrade: vi.fn(), openUpdater: vi.fn() };
+    source: "{agentUi.desktopApp} · {agentUi.officialSource}", message: "此 CLI 随宿主应用更新，请在应用内检查更新", checkedAt: Date.now() } }, check: vi.fn(), upgrade: vi.fn(), openUpdater: vi.fn() };
   for (const lang of ["en", "ja", "fr", "de"] as ResolvedLanguage[]) {
     await act(async () => root!.render(<QuotaCenter views={views()} installations={installations} agentUpdates={updateActions}
       lang={lang} refreshProgress={{ running: false, total: 3, completed: 3, unavailable: 1, failed: false }} onRefresh={() => {}} onDetect={async () => {}} />));

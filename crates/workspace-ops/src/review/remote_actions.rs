@@ -9,7 +9,7 @@ async fn git_text(path: &Path, args: &[&str]) -> Result<String, String> {
     }
     String::from_utf8(output.stdout)
         .map(|text| text.trim().to_owned())
-        .map_err(|_| "Git 输出编码无效".into())
+        .map_err(|_| "backendText.mb9201265".into())
 }
 
 pub(super) async fn pull_or_sync(path: &Path, sync: bool) -> Result<(), String> {
@@ -30,7 +30,7 @@ pub(super) async fn pull_or_sync(path: &Path, sync: bool) -> Result<(), String> 
     )
     .await?;
     if remote.is_empty() || !merge.starts_with("refs/heads/") {
-        return Err("REVIEW_NO_UPSTREAM: 上游配置不可用".into());
+        return Err("backendText.m8d1774a8".into());
     }
     // Keep Git's configured merge/rebase policy. A failed pull (including a
     // conflict) returns immediately, so sync never pushes a partial integration.
@@ -42,7 +42,7 @@ pub(super) async fn pull_or_sync(path: &Path, sync: bool) -> Result<(), String> 
     }
     let current = git_text(path, &["symbolic-ref", "--quiet", "--short", "HEAD"]).await?;
     if current != branch {
-        return Err("同步期间当前分支已改变，请检查后重试".into());
+        return Err("backendText.m2b42e7ee".into());
     }
     let outgoing = git_text(
         path,

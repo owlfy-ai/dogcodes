@@ -7,7 +7,7 @@ pub fn require_task_window(label: &str, task_id: &str) -> Result<(), String> {
     if label == "main" || label == format!("review-{task_id}") {
         Ok(())
     } else {
-        Err("此窗口不能访问其他任务的 Diff".into())
+        Err("backendText.m63d5cdf5".into())
     }
 }
 
@@ -27,7 +27,7 @@ pub async fn core_review_window_open(
         .tasks
         .into_iter()
         .find(|t| t.task_id.to_string() == task_id)
-        .ok_or("任务不存在")?;
+        .ok_or("backendText.md1817495")?;
     let label = format!("review-{task_id}");
     if let Some(existing) = window.app_handle().get_webview_window(&label) {
         existing.unminimize().map_err(|e| e.to_string())?;
@@ -103,7 +103,7 @@ pub async fn core_review_window_running(
         .tasks
         .iter()
         .find(|t| t.task_id.to_string() == task_id)
-        .ok_or("任务不存在")?;
+        .ok_or("backendText.md1817495")?;
     Ok(task.active_primary_run.is_some())
 }
 

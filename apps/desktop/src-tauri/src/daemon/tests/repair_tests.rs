@@ -322,7 +322,7 @@ async fn repair_is_driven_by_the_service_and_a_retried_start_does_not_resubmit()
         call(&other, changed)
             .await
             .unwrap_err()
-            .contains("不同的修复内容")
+            .contains("backendText.mcad618c6")
     );
 }
 
@@ -352,7 +352,7 @@ async fn frozen_agent_switch_is_visible_to_other_clients_and_resumed_once() {
         call(&other, start(&s, &CommandId::new(), None))
             .await
             .unwrap_err()
-            .contains("请先核实原修复请求")
+            .contains("backendText.m319336cc")
     );
     let resumed = call(
         &other,
@@ -409,7 +409,7 @@ async fn busy_task_is_rejected_before_recording_and_abandon_fences_the_original_
         call(&s.f.client, start(&s, &CommandId::new(), None))
             .await
             .unwrap_err()
-            .contains("请等待主对话")
+            .contains("backendText.m88567d2e")
     );
     assert_eq!(call(&s.f.client, get(&s)).await.unwrap(), None);
     drop(preparation);

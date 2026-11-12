@@ -140,7 +140,7 @@ pub fn check_opencode(mut out: AgentUpdate, body: &str) -> Result<AgentUpdate, S
         .ok_or("backendText.opencodeVersionUnreadable")?;
     let available = newer(&current, latest)?;
     out.status = "managed".into();
-    out.source = "桌面应用".into();
+    out.source = "{agentUi.desktopApp}".into();
     out.current_version = Some(current);
     out.latest_version = Some(latest.into());
     out.can_upgrade = false;
@@ -148,7 +148,7 @@ pub fn check_opencode(mut out: AgentUpdate, body: &str) -> Result<AgentUpdate, S
     out.message = if available {
         None
     } else {
-        Some("桌面应用已是最新版本".into())
+        Some("agentUi.latest".into())
     };
     Ok(out)
 }

@@ -195,6 +195,7 @@ export const zhTW: TranslationDict = {
     "diskFull": "磁碟空間不足，請釋放空間後重試。",
     "activeConversation": "請等待目前對話完成後重新偵測 Agent。",
       "nativeUpdater": "原生更新程式",
+    "npxInstall": "（目前 npx 安裝）",
     "onDemandOn": "用量計費已開啟",
     "onDemandOff": "用量計費已關閉",
     "bonusQuota": "另有贈送額度",

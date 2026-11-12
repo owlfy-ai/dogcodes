@@ -158,7 +158,7 @@ impl Account {
             .filter(|_| !*original.borrow() && original.has_changed().is_ok())
             .unwrap_or_else(|| {
                 json!({"headersApplied":false,
-            "errorMessage":"ZCode 账号验证未完成，请检查原生登录状态后重试。"})
+            "errorMessage":"backendText.m6a2d8745"})
             })
     }
 
@@ -210,7 +210,7 @@ impl Account {
     ) -> Result<Value, DriverError> {
         let fail = || {
             DriverError::NotConfigured(
-                "ZCode 账号信息暂时不可用，请检查原生登录状态后重试。".into(),
+                "backendText.m6b4973d1".into(),
             )
         };
         let mut command = agent_runtime::agent_command(
@@ -378,7 +378,7 @@ impl Connection {
             }
             Err(error) => Err(error),
             _ => Err(DriverError::Protocol(
-                "ZCode 未确认账号配置，请重新检测 Agent。".into(),
+                "backendText.m4c645091".into(),
             )),
         }
     }
@@ -387,7 +387,7 @@ impl Connection {
         match &self.account {
             Some(account) => account.runtime(request, self.native.closing()).await,
             None => {
-                json!({"headersApplied":false,"errorMessage":"请在 ZCode 中登录并重新检测 Agent。"})
+                json!({"headersApplied":false,"errorMessage":"backendText.mfb3ccb90"})
             }
         }
     }

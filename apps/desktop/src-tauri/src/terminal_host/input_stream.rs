@@ -63,9 +63,9 @@ enum Call {
 }
 fn number(value: &str) -> Result<u64, String> {
     if value.is_empty() || value.len() > 20 || !value.bytes().all(|b| b.is_ascii_digit()) {
-        return Err("无效的输入序号".into());
+        return Err("backendText.mf53158f0".into());
     }
-    value.parse().map_err(|_| "输入序号超出范围".into())
+    value.parse().map_err(|_| "backendText.m4ff3c023".into())
 }
 impl State {
     fn snapshot(&self, session: &Session, owner: &str) -> Result<Value, String> {
@@ -82,7 +82,7 @@ impl State {
 }
 impl TerminalHost {
     pub async fn input_operation(&self, owner: &str, args: Value) -> Result<Value, String> {
-        let call: Call = serde_json::from_value(args).map_err(|_| "无效的终端输入请求")?;
+        let call: Call = serde_json::from_value(args).map_err(|_| "backendText.m6f71fd02")?;
         let (id, epoch) = match &call {
             Call::Inspect { terminal, epoch }
             | Call::Open {
@@ -95,13 +95,13 @@ impl TerminalHost {
         let session = self.session(id)?;
         let info = session.info()?;
         if info.epoch != *epoch || self.epoch != *epoch {
-            return Err("终端后台已改变，未发送输入，请重新打开终端".into());
+            return Err("backendText.m64305afe".into());
         }
         match call {
             Call::Inspect { .. } => session
                 .input_stream
                 .lock()
-                .map_err(|_| "输入状态不可用")?
+                .map_err(|_| "backendText.m906123c7")?
                 .snapshot(&session, owner),
             Call::Open {
                 revision,
@@ -109,22 +109,22 @@ impl TerminalHost {
                 acknowledge,
                 ..
             } => {
-                uuid::Uuid::parse_str(&stream).map_err(|_| "无效的输入通道标识")?;
+                uuid::Uuid::parse_str(&stream).map_err(|_| "backendText.ma88bf82f")?;
                 let revision = number(&revision)?;
                 let start_drain = {
-                    let mut state = session.input_stream.lock().map_err(|_| "输入状态不可用")?;
+                    let mut state = session.input_stream.lock().map_err(|_| "backendText.m906123c7")?;
                     if let Some(lease) = &state.lease
                         && lease.id == stream
                         && lease.owner == owner
-                        && state.revision == revision.checked_add(1).ok_or("输入版本已耗尽")?
+                        && state.revision == revision.checked_add(1).ok_or("backendText.m02f04e3c")?
                     {
                         return state.snapshot(&session, owner);
                     }
                     if state.revision != revision {
-                        return Err("输入通道已更新，请核实原输入，未重放".into());
+                        return Err("backendText.m5a475c85".into());
                     }
                     if info.status != TerminalStatus::Running {
-                        return Err("终端未运行，未发送输入".into());
+                        return Err("backendText.m5f03aa0a".into());
                     }
                     if let Some(old) = &state.lease {
                         old.valid.store(false, Ordering::Release);
@@ -132,7 +132,7 @@ impl TerminalHost {
                             state.uncertain = true;
                         }
                     }
-                    state.revision = state.revision.checked_add(1).ok_or("输入版本已耗尽")?;
+                    state.revision = state.revision.checked_add(1).ok_or("backendText.m02f04e3c")?;
                     state.lease = Some(Lease {
                         id: stream.clone(),
                         owner: owner.into(),
@@ -153,31 +153,31 @@ impl TerminalHost {
                         // One drain worker per terminal. New CAS reservations
                         // replace the pending target without adding blocked
                         // threads if a Windows writer is still in the OS.
-                        let input = opening.input.lock().map_err(|_| "终端输入不可用")?;
+                        let input = opening.input.lock().map_err(|_| "backendText.m82e48394")?;
                         let mut state =
-                            opening.input_stream.lock().map_err(|_| "输入状态不可用")?;
+                            opening.input_stream.lock().map_err(|_| "backendText.m906123c7")?;
                         state.draining = false;
                         if opening.info()?.status != TerminalStatus::Running || input.is_none() {
-                            return Err("终端已停止，未发送输入".into());
+                            return Err("backendText.m72d2b1d2".into());
                         }
-                        let acknowledge = state.lease.as_ref().ok_or("输入通道已关闭")?.acknowledge;
+                        let acknowledge = state.lease.as_ref().ok_or("backendText.m0f7fab99")?.acknowledge;
                         let blocked = state.uncertain && !acknowledge;
                         if acknowledge {
                             state.uncertain = false;
                         }
-                        let lease = state.lease.as_mut().ok_or("输入通道已关闭")?;
+                        let lease = state.lease.as_mut().ok_or("backendText.m0f7fab99")?;
                         lease.phase = if blocked { "blocked" } else { "ready" };
                         lease.valid.store(!blocked, Ordering::Release);
                         Ok(())
                     });
                     if let Ok(result) = tokio::time::timeout(Duration::from_secs(2), drain).await {
-                        result.map_err(|_| "输入通道切换失败")??;
+                        result.map_err(|_| "backendText.m0ab260b2")??;
                     }
                 }
                 session
                     .input_stream
                     .lock()
-                    .map_err(|_| "输入状态不可用")?
+                    .map_err(|_| "backendText.m906123c7")?
                     .snapshot(&session, owner)
             }
             Call::Write {
@@ -188,38 +188,38 @@ impl TerminalHost {
                 ..
             } => {
                 if data.len() > LIMIT.div_ceil(3) * 4 {
-                    return Err("单次输入过长，未发送".into());
+                    return Err("backendText.m687c7909".into());
                 }
-                let bytes = STANDARD.decode(data).map_err(|_| "输入编码无效")?;
+                let bytes = STANDARD.decode(data).map_err(|_| "backendText.m4828b4c2")?;
                 if bytes.is_empty() || bytes.len() > LIMIT {
-                    return Err("单次输入长度无效，未发送".into());
+                    return Err("backendText.m556f2d92".into());
                 }
                 let revision = number(&revision)?;
                 let sequence = number(&sequence)?;
                 let digest = format!("{:x}", Sha256::digest(&bytes));
                 let valid = {
-                    let mut state = session.input_stream.lock().map_err(|_| "输入状态不可用")?;
+                    let mut state = session.input_stream.lock().map_err(|_| "backendText.m906123c7")?;
                     if state.revision != revision {
-                        return Err("输入代次已失效，未重放".into());
+                        return Err("backendText.md272b6e1".into());
                     }
                     let uncertain = state.uncertain;
                     let lease = state
                         .lease
                         .as_mut()
                         .filter(|l| l.id == stream && l.owner == owner)
-                        .ok_or("输入通道已失效，未重放")?;
+                        .ok_or("backendText.m4efc40f3")?;
                     if sequence > 0 && sequence == lease.sequence {
                         if lease.digest.as_deref() != Some(&digest) {
-                            return Err("同一输入序号对应不同内容，未重放".into());
+                            return Err("backendText.m19283dc4".into());
                         }
                         return state.snapshot(&session, owner);
                     }
                     if uncertain
                         || !lease.valid.load(Ordering::Acquire)
                         || !matches!(lease.phase, "ready" | "applied")
-                        || sequence != lease.sequence.checked_add(1).ok_or("输入序号已耗尽")?
+                        || sequence != lease.sequence.checked_add(1).ok_or("backendText.mb9165b0e")?
                     {
-                        return Err("输入顺序或状态已改变，请核实后继续，未重放".into());
+                        return Err("backendText.ma270fd9e".into());
                     }
                     lease.sequence = sequence;
                     lease.digest = Some(digest);
@@ -230,33 +230,33 @@ impl TerminalHost {
                 let owner = owner.to_owned();
                 let writing = session.clone();
                 tokio::task::spawn_blocking(move || {
-                    let mut input = writing.input.lock().map_err(|_| "终端输入不可用")?;
+                    let mut input = writing.input.lock().map_err(|_| "backendText.m82e48394")?;
                     let start = Instant::now();
                     let mut written = 0;
                     let result = (|| -> Result<(), String> {
-                        let writer = input.as_mut().ok_or("终端输入已关闭")?;
+                        let writer = input.as_mut().ok_or("backendText.m892b1bec")?;
                         while written < bytes.len() {
                             if !valid.load(Ordering::Acquire)
                                 || writing.info()?.status != TerminalStatus::Running
                             {
-                                return Err("输入通道已失效".into());
+                                return Err("backendText.mf52aff83".into());
                             }
                             if start.elapsed() > Duration::from_secs(5) {
-                                return Err("终端输入等待超时".into());
+                                return Err("backendText.m4a572aae".into());
                             }
                             match writer.write(&bytes[written..]) {
-                                Ok(0) => return Err("输入未完成".into()),
+                                Ok(0) => return Err("backendText.mde02200f".into()),
                                 Ok(count) => written += count,
                                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
                                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                                     std::thread::sleep(Duration::from_millis(5));
                                 }
-                                Err(_) => return Err("终端输入未完成".into()),
+                                Err(_) => return Err("backendText.m7f039774".into()),
                             }
                         }
-                        writer.flush().map_err(|_| "终端输入刷新失败".into())
+                        writer.flush().map_err(|_| "backendText.maa38c28c".into())
                     })();
-                    let mut state = writing.input_stream.lock().map_err(|_| "输入状态不可用")?;
+                    let mut state = writing.input_stream.lock().map_err(|_| "backendText.m906123c7")?;
                     if result.is_err() && written > 0 {
                         state.uncertain = true;
                     }
@@ -264,7 +264,7 @@ impl TerminalHost {
                         .lease
                         .as_mut()
                         .filter(|l| l.id == stream && l.owner == owner)
-                        .ok_or("原输入通道已失效，结果待核实，未重放")?;
+                        .ok_or("backendText.mf7b4a6f1")?;
                     lease.written = written;
                     lease.phase = if result.is_ok() {
                         "applied"
@@ -279,7 +279,7 @@ impl TerminalHost {
                     state.snapshot(&writing, &owner)
                 })
                 .await
-                .map_err(|_| "输入结果待核实，未重放")?
+                .map_err(|_| "backendText.m93c965c6")?
             }
         }
     }

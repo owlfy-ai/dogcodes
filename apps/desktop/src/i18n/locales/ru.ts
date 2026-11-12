@@ -195,6 +195,7 @@ export const ru: TranslationDict = {
     "diskFull": "Диск заполнен. Освободите место.",
     "activeConversation": "Дождитесь завершения текущего разговора и повторите поиск агентов.",
       "nativeUpdater": "Встроенное обновление",
+    "npxInstall": "(npx)",
     "onDemandOn": "Оплата по использованию включена",
     "onDemandOff": "Оплата по использованию выключена",
     "bonusQuota": "Доступен бонусный лимит",
