@@ -114,8 +114,18 @@ async function applyLanguage(next) {
     if (!EN.has(key)) EN.set(key, el.alt);
     el.alt = t(key);
   });
-  document.title = (next !== 'en' && pack.ui['meta.title']) || EN_META.title;
-  document.querySelector('meta[name="description"]').content = (next !== 'en' && pack.ui['meta.desc']) || EN_META.desc;
+  const title = (next !== 'en' && pack.ui['meta.title']) || EN_META.title;
+  const desc = (next !== 'en' && pack.ui['meta.desc']) || EN_META.desc;
+  const locales = { en: 'en_US', 'zh-CN': 'zh_CN', 'zh-TW': 'zh_TW', ja: 'ja_JP', ko: 'ko_KR', es: 'es_ES', fr: 'fr_FR', de: 'de_DE', 'pt-BR': 'pt_BR' };
+  document.title = title;
+  document.querySelector('meta[name="description"]').content = desc;
+  for (const [selector, attr, value] of [
+    ['meta[property="og:title"]', 'content', title],
+    ['meta[property="og:description"]', 'content', desc],
+    ['meta[property="og:locale"]', 'content', locales[next] || 'en_US'],
+    ['meta[name="twitter:title"]', 'content', title],
+    ['meta[name="twitter:description"]', 'content', desc],
+  ]) document.querySelector(selector)?.setAttribute(attr, value);
   $('#lang-cur').textContent = entry[2];
   document.querySelectorAll('#lang-list button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.lang === next)));
   try { localStorage.setItem('dogcodes.site.lang', next); } catch { /* storage is optional */ }
