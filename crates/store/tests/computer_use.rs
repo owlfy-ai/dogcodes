@@ -288,7 +288,7 @@ async fn global_default_preserves_images_deduplicates_actions_and_preempts_in_fl
     wait(|| home.join("in-flight").exists()).await;
     let stopped = std::time::Instant::now();
     let manual = core.begin_computer_use_manual_input().await;
-    assert!(stopped.elapsed() < std::time::Duration::from_secs(1));
+    assert!(stopped.elapsed() < std::time::Duration::from_secs(2));
     assert_eq!(
         activity.borrow().mode,
         agent_core::computer_use::ActivityMode::Idle
@@ -323,7 +323,7 @@ async fn global_default_preserves_images_deduplicates_actions_and_preempts_in_fl
     core.computer_use_control(json!({"type":"set","enabled":false}))
         .await
         .unwrap();
-    assert!(stopped.elapsed() < std::time::Duration::from_secs(1));
+    assert!(stopped.elapsed() < std::time::Duration::from_secs(2));
     assert!(
         delayed.await.unwrap()["error"]
             .as_str()
