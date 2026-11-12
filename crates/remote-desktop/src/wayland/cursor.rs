@@ -166,9 +166,7 @@ fn pod<T: Copy>(bytes: &[u8], offset: usize) -> Result<T> {
     let extent = offset
         .checked_add(size_of::<T>())
         .ok_or("backendText.mf57dbe44")?;
-    let raw = bytes
-        .get(offset..extent)
-        .ok_or("backendText.m94e86a96")?;
+    let raw = bytes.get(offset..extent).ok_or("backendText.m94e86a96")?;
     // SAFETY: callers request integer-only SPA PODs; bounded read may be unaligned.
     Ok(unsafe { std::ptr::read_unaligned(raw.as_ptr().cast::<T>()) })
 }

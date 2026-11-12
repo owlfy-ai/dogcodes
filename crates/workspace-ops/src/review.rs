@@ -830,8 +830,20 @@ async fn collect_git_output(
 ) -> Result<std::process::Output, String> {
     tokio::time::timeout(timeout, child.wait_with_output())
         .await
-        .map_err(|_| format!("backendText.mabc79b63\u{1e}{}", serde_json::to_string(&[UNKNOWN_GIT_EFFECT.to_string()]).unwrap_or_else(|_| "[]".into())))?
-        .map_err(|e| format!("backendText.ma5bce326\u{1e}{}", serde_json::to_string(&[UNKNOWN_GIT_EFFECT.to_string(), e.to_string()]).unwrap_or_else(|_| "[]".into())))
+        .map_err(|_| {
+            format!(
+                "backendText.mabc79b63\u{1e}{}",
+                serde_json::to_string(&[UNKNOWN_GIT_EFFECT.to_string()])
+                    .unwrap_or_else(|_| "[]".into())
+            )
+        })?
+        .map_err(|e| {
+            format!(
+                "backendText.ma5bce326\u{1e}{}",
+                serde_json::to_string(&[UNKNOWN_GIT_EFFECT.to_string(), e.to_string()])
+                    .unwrap_or_else(|_| "[]".into())
+            )
+        })
 }
 fn require_git_success(output: std::process::Output) -> Result<(), String> {
     if output.status.success() {

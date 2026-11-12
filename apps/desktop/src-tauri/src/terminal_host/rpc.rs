@@ -146,7 +146,9 @@ pub(crate) async fn dispatch(
             Ok(json!({ "released": true }))
         }
         "terminal_launch_intents" => {
-            let id = args["operationId"].as_str().ok_or("backendText.mb89dee96")?;
+            let id = args["operationId"]
+                .as_str()
+                .ok_or("backendText.mb89dee96")?;
             match args["type"].as_str() {
                 Some("get") => Ok(json!(terminals.launch_receipt(id)?)),
                 Some("retire") => terminals.retire_launch(id).await,

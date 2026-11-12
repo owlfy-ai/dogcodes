@@ -234,6 +234,8 @@ pub struct ProviderBalance {
     pub currency: String,
 }
 
+// serde's skip_serializing_if always passes a reference.
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_false(value: &bool) -> bool {
     !*value
 }

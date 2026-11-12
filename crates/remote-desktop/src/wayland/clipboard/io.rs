@@ -44,7 +44,11 @@ impl Channel {
             if !active() {
                 return Err("backendText.m036e7521".into());
             }
-            let mut ready = self.fd.writable().await.map_err(|_| "backendText.mf4aacb76")?;
+            let mut ready = self
+                .fd
+                .writable()
+                .await
+                .map_err(|_| "backendText.mf4aacb76")?;
             let result = ready.try_io(|fd| {
                 if !active() {
                     return Err(io::Error::from(io::ErrorKind::PermissionDenied));

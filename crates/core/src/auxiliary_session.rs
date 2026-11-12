@@ -63,9 +63,7 @@ impl Purpose {
     }
     fn cleanup_pending(self) -> &'static str {
         match self {
-            Self::Analysis => {
-                "backendText.mfd1e8505"
-            }
+            Self::Analysis => "backendText.mfd1e8505",
             Self::Summary => "backendText.m8bf8f125",
             Self::Review => "backendText.m419073f0",
         }

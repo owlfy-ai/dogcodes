@@ -144,9 +144,10 @@ impl RemoteHost {
         }
         let path = self.directory.join("config.json");
         let (config, secrets) = if path.exists() {
-            let config: Config =
-                serde_json::from_slice(&std::fs::read(&path).map_err(|_| "phone.configUnreadable")?)
-                    .map_err(|_| "phone.configCorrupt")?;
+            let config: Config = serde_json::from_slice(
+                &std::fs::read(&path).map_err(|_| "phone.configUnreadable")?,
+            )
+            .map_err(|_| "phone.configCorrupt")?;
             if service.is_some_and(|s| s.trim_end_matches('/') != config.service) {
                 return Err("phone.serviceMismatch".into());
             }
@@ -154,9 +155,7 @@ impl RemoteHost {
             let secrets = tokio::task::spawn_blocking(move || {
                 let entry = keyring::Entry::new("ai.owlfy.dogcodes.remote", &id)
                     .map_err(|_| "phone.keystoreUnavailable")?;
-                let raw = entry
-                    .get_password()
-                    .map_err(|_| "phone.identityLocked")?;
+                let raw = entry.get_password().map_err(|_| "phone.identityLocked")?;
                 serde_json::from_str::<Secrets>(&raw).map_err(|_| "phone.identityCorrupt")
             })
             .await
@@ -247,9 +246,15 @@ impl RemoteHost {
                     .as_str()
                     .ok_or("phone.invitationInvalid")?
                     .to_owned();
-                let expires = grant["expiresAt"].as_u64().ok_or("phone.invitationInvalid")?;
-                let key = dogcodes_endpoint::keypair().map_err(|_| "phone.pairingCredentialGenerateFailed")?;
-                let secret: [u8; 32] = key.private.try_into().map_err(|_| "phone.pairingCredentialInvalid")?;
+                let expires = grant["expiresAt"]
+                    .as_u64()
+                    .ok_or("phone.invitationInvalid")?;
+                let key = dogcodes_endpoint::keypair()
+                    .map_err(|_| "phone.pairingCredentialGenerateFailed")?;
+                let secret: [u8; 32] = key
+                    .private
+                    .try_into()
+                    .map_err(|_| "phone.pairingCredentialInvalid")?;
                 let context = serde_json::to_vec(&json!([
                     "dogcodes-pairing",
                     1,
@@ -266,8 +271,9 @@ impl RemoteHost {
                 let qr = json!({"version":1,"service":ready.config.service,"hostId":ready.config.host_id,"hostKey":base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hex::decode(&ready.config.public_key).map_err(|_|"phone.hostKeyInvalid")?),"invitationId":id,"secret":base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(secret),"expiresAt":expires.to_string(),"phoneTicket":grant["phoneTicket"]});
                 let qr = format!(
                     "dogcodes://pair#{}",
-                    base64::engine::general_purpose::URL_SAFE_NO_PAD
-                        .encode(serde_json::to_vec(&qr).map_err(|_| "phone.invitationCreateFailed")?)
+                    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+                        serde_json::to_vec(&qr).map_err(|_| "phone.invitationCreateFailed")?
+                    )
                 );
                 state.invitation_owner = Some(dialog);
                 state.error = None;
@@ -407,8 +413,7 @@ impl RemoteHost {
                 } else {
                     let mut state = host.state.lock().await;
                     if current_registration(&state, &config) {
-                        state.error =
-                            Some("phone.reconnecting".into());
+                        state.error = Some("phone.reconnecting".into());
                     }
                 }
                 {
@@ -981,12 +986,18 @@ async fn decode_http(response: reqwest::Response) -> Result<Value, String> {
         return Err("phone.registrationExpired".into());
     }
     if !status.is_success() {
-        return Err(user_text("phone.httpError", &[&status.as_u16().to_string()]));
+        return Err(user_text(
+            "phone.httpError",
+            &[&status.as_u16().to_string()],
+        ));
     }
     if status == reqwest::StatusCode::NO_CONTENT {
         Ok(Value::Null)
     } else {
-        response.json().await.map_err(|_| "phone.serviceResponseInvalid".into())
+        response
+            .json()
+            .await
+            .map_err(|_| "phone.serviceResponseInvalid".into())
     }
 }
 fn initialize_tls_provider() {
@@ -1201,7 +1212,9 @@ fn http_client(service: &str) -> Result<reqwest::Client, String> {
     {
         builder = builder.no_proxy();
     }
-    builder.build().map_err(|_| "phone.connectionConfigFailed".into())
+    builder
+        .build()
+        .map_err(|_| "phone.connectionConfigFailed".into())
 }
 
 fn wire_json(value: &Value) -> Value {

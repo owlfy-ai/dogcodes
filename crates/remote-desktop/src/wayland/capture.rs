@@ -90,8 +90,7 @@ impl ScreenSource for Source {
             .unwrap_or_else(|e| e.into_inner())
             .is_some_and(|until| Instant::now() >= until)
         {
-            self.frames
-                .fail("backendText.m3f7fc78e".into());
+            self.frames.fail("backendText.m3f7fc78e".into());
             self.session.close();
         }
         if let Some(error) = self

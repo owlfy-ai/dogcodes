@@ -91,8 +91,8 @@ pub fn locked() -> Result<bool> {
         return Ok(locked);
     }
     let bytes = output("/usr/sbin/ioreg", &["-n", "Root", "-d1", "-a"])?;
-    let value =
-        plist::Value::from_reader(std::io::Cursor::new(bytes)).map_err(|_| "backendText.m3a0c2ef1")?;
+    let value = plist::Value::from_reader(std::io::Cursor::new(bytes))
+        .map_err(|_| "backendText.m3a0c2ef1")?;
     let root = value.as_dictionary().or_else(|| {
         value
             .as_array()

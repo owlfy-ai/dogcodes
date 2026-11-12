@@ -17,9 +17,12 @@ type DestroyImage = unsafe extern "system" fn(Ptr, Ptr) -> u32;
 
 macro_rules! function {
     ($api:expr, $name:expr, $ty:ty) => {{
-        let address = $api
-            .get_proc_address($name)
-            .ok_or_else(|| format!("backendText.m6c73f17c\u{1e}{}", serde_json::to_string(&[$name.to_string()]).unwrap_or_else(|_| "[]".into())))?;
+        let address = $api.get_proc_address($name).ok_or_else(|| {
+            format!(
+                "backendText.m6c73f17c\u{1e}{}",
+                serde_json::to_string(&[$name.to_string()]).unwrap_or_else(|_| "[]".into())
+            )
+        })?;
         // SAFETY: each private call site supplies the exact Khronos ABI for this
         // symbol. Its EGL library remains owned by the context using the pointer.
         unsafe { std::mem::transmute::<extern "system" fn(), $ty>(address) }
@@ -75,7 +78,10 @@ gl_api! {
 }
 
 fn error(error: impl std::fmt::Display) -> String {
-    format!("backendText.m35f16576\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))
+    format!(
+        "backendText.m35f16576\u{1e}{}",
+        serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+    )
 }
 fn extension(value: &CStr, name: &str) -> bool {
     value

@@ -22,7 +22,10 @@ pub const MAX_MESSAGE: usize = 16_384;
 pub const PLAINTEXT_CHUNK: usize = 16_000;
 type Result<T> = std::result::Result<T, String>;
 fn failure(error: impl std::fmt::Display) -> String {
-    format!("backendText.mc6547b5b\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))
+    format!(
+        "backendText.mc6547b5b\u{1e}{}",
+        serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+    )
 }
 struct NegotiationGuard(Option<Arc<dyn PeerConnection>>);
 impl Drop for NegotiationGuard {
@@ -218,7 +221,10 @@ async fn gathered_description(
     gathered: &Notify,
 ) -> Result<Description> {
     let _ = tokio::time::timeout(Duration::from_secs(8), gathered.notified()).await;
-    let description = peer.local_description().await.ok_or("backendText.m61622fce")?;
+    let description = peer
+        .local_description()
+        .await
+        .ok_or("backendText.m61622fce")?;
     if !description.sdp.contains("a=candidate:") {
         return Err("backendText.m869986af".into());
     }

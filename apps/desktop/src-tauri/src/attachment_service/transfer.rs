@@ -14,7 +14,8 @@ impl AttachmentStore {
         if create {
             fs::create_dir_all(&uploads).map_err(|_| "backendText.m2647bcd8")?;
         }
-        let uploads = Self::checked_child(&root, Path::new("transfers"))?.ok_or("backendText.m95eeb5e5")?;
+        let uploads =
+            Self::checked_child(&root, Path::new("transfers"))?.ok_or("backendText.m95eeb5e5")?;
         let directory = uploads.join(&request.upload_id);
         if create && !directory.exists() {
             let mut count = 0;
@@ -22,12 +23,20 @@ impl AttachmentStore {
             for entry in fs::read_dir(&uploads).map_err(|_| "backendText.meae6c73c")? {
                 let entry = entry.map_err(|_| "backendText.meae6c73c")?;
                 if entry.file_name().to_string_lossy().starts_with(".pending-") {
-                    if entry.file_type().map_err(|_| "backendText.meae6c73c")?.is_dir() {
+                    if entry
+                        .file_type()
+                        .map_err(|_| "backendText.meae6c73c")?
+                        .is_dir()
+                    {
                         let _ = fs::remove_dir_all(entry.path());
                     }
                     continue;
                 }
-                if entry.file_type().map_err(|_| "backendText.meae6c73c")?.is_dir() {
+                if entry
+                    .file_type()
+                    .map_err(|_| "backendText.meae6c73c")?
+                    .is_dir()
+                {
                     count += 1;
                     let bytes = Self::read_file(&entry.path().join("manifest.json"), 4096)?;
                     let manifest: Manifest =
@@ -86,8 +95,11 @@ impl AttachmentStore {
             );
         }
         let directory = self.staging(request, create)?;
-        let path = Self::checked_child(&directory, Path::new("bytes"))?.ok_or("backendText.m0341967e")?;
-        let size = fs::metadata(path).map_err(|_| "backendText.m006a307a")?.len();
+        let path =
+            Self::checked_child(&directory, Path::new("bytes"))?.ok_or("backendText.m0341967e")?;
+        let size = fs::metadata(path)
+            .map_err(|_| "backendText.m006a307a")?
+            .len();
         if size > request.byte_length {
             return Err("backendText.mbdfa4c97".into());
         }
@@ -103,13 +115,16 @@ impl AttachmentStore {
         if encoded.len() > CHUNK_BYTES.div_ceil(3) * 4 {
             return Err("backendText.m4a36501c".into());
         }
-        let bytes = STANDARD.decode(encoded).map_err(|_| "backendText.m3e7c8aa9")?;
+        let bytes = STANDARD
+            .decode(encoded)
+            .map_err(|_| "backendText.m3e7c8aa9")?;
         if bytes.is_empty() || bytes.len() > CHUNK_BYTES {
             return Err("backendText.me7c0f6ce".into());
         }
         let _guard = self.gate.lock().map_err(|_| "backendText.mf6348b90")?;
         let directory = self.staging(request, false)?;
-        let path = Self::checked_child(&directory, Path::new("bytes"))?.ok_or("backendText.m0341967e")?;
+        let path =
+            Self::checked_child(&directory, Path::new("bytes"))?.ok_or("backendText.m0341967e")?;
         let mut file = fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -152,8 +167,8 @@ impl AttachmentStore {
         let (directory, bytes) = {
             let _guard = self.gate.lock().map_err(|_| "backendText.mf6348b90")?;
             let directory = self.staging(request, false)?;
-            let path =
-                Self::checked_child(&directory, Path::new("bytes"))?.ok_or("backendText.m0341967e")?;
+            let path = Self::checked_child(&directory, Path::new("bytes"))?
+                .ok_or("backendText.m0341967e")?;
             let bytes = Self::read_file(&path, MAX_BYTES)?;
             (directory, bytes)
         };

@@ -169,7 +169,10 @@ fn rgba(frame: &Frame) -> Result<image::RgbaImage> {
     // SAFETY: the retained pixel buffer stays alive through the matching guard.
     let status = unsafe { CVPixelBufferLockBaseAddress(buffer, CVPixelBufferLockFlags::ReadOnly) };
     if status != 0 {
-        return Err(format!("backendText.ma2ac1fd9\u{1e}{}", serde_json::to_string(&[status.to_string()]).unwrap_or_else(|_| "[]".into())));
+        return Err(format!(
+            "backendText.ma2ac1fd9\u{1e}{}",
+            serde_json::to_string(&[status.to_string()]).unwrap_or_else(|_| "[]".into())
+        ));
     }
     let _locked = ReadPixels(buffer);
     let base = CVPixelBufferGetBaseAddress(buffer).cast::<u8>();

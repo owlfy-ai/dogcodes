@@ -121,7 +121,9 @@ pub(super) async fn summarize_with_driver(
                 DriverEvent::ApprovalRequested { .. } | DriverEvent::ToolStarted { .. } => {
                     return Err("backendText.m8d6fff46".into());
                 }
-                DriverEvent::TurnQuotaExhausted { .. } => return Err("backendText.m51c64e3f".into()),
+                DriverEvent::TurnQuotaExhausted { .. } => {
+                    return Err("backendText.m51c64e3f".into());
+                }
                 DriverEvent::TurnInterrupted { .. } => return Err("backendText.m3a5af778".into()),
                 _ => {}
             }
@@ -131,9 +133,7 @@ pub(super) async fn summarize_with_driver(
     .await
     .unwrap_or_else(|_| Err("backendText.m51d71498".into()));
     if let Some(cleanup) = session.cleanup(result.is_err()) {
-        cleanup
-            .await
-            .map_err(|_| "backendText.m2f36e562")??;
+        cleanup.await.map_err(|_| "backendText.m2f36e562")??;
     }
     result
 }

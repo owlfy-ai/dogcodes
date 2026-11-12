@@ -206,7 +206,13 @@ async fn perform_action(
                 ..
             } => target,
             GitOutcome::Succeeded { target_error, .. } => {
-                return Err(format!("backendText.m4c12cb65\u{1e}{}", serde_json::to_string(&[target_error.unwrap_or_else(|| "backendText.m3d9b6a65".into()).to_string()]).unwrap_or_else(|_| "[]".into())));
+                return Err(format!(
+                    "backendText.m4c12cb65\u{1e}{}",
+                    serde_json::to_string(&[target_error
+                        .unwrap_or_else(|| "backendText.m3d9b6a65".into())
+                        .clone()])
+                    .unwrap_or_else(|_| "[]".into())
+                ));
             }
             _ => return Err("backendText.ma4273db4".into()),
         };

@@ -2248,7 +2248,11 @@ fn map_session_update(notification: &SessionNotification) -> Vec<DriverEvent> {
         SessionUpdate::ToolCall(call) => events.push(DriverEvent::ToolStarted {
             item_id: call.tool_call_id.0.to_string(),
             tool_name: call.title.clone(),
-            summary: format!("backendText.m5741826f\u{1e}{}", serde_json::to_string(&[call.title.to_string()]).unwrap_or_else(|_| "[]".into())),
+            summary: format!(
+                "backendText.m5741826f\u{1e}{}",
+                serde_json::to_string(std::slice::from_ref(&call.title))
+                    .unwrap_or_else(|_| "[]".into())
+            ),
         }),
         SessionUpdate::ToolCallUpdate(update) => {
             if let Some(event) = map_tool_update(
@@ -2917,21 +2921,35 @@ impl AgentDriver for AcpDriver {
         });
         let opencode = self.executor.provider_id.as_str() == "opencode";
         let mut observed_progress = false;
-        let stream: DriverEventStream = Box::pin(UnboundedReceiverStream::new(event_rx).map(move |event| {
-            observed_progress |= match &event {
-                DriverEvent::TextDelta { text, .. } => !text.is_empty(),
-                DriverEvent::Presentation { data, .. } => data["type"] == "tool"
-                    || data["textDelta"].as_str().is_some_and(|s| !s.is_empty())
-                    || data["delta"].as_str().is_some_and(|s| !s.is_empty()),
-                DriverEvent::ToolStarted { .. } | DriverEvent::ApprovalRequested { .. } | DriverEvent::QuestionRequested { .. } => true,
-                _ => false,
-            };
-            Ok(if opencode && !observed_progress && matches!(event, DriverEvent::TurnCompleted { .. }) {
-                // OpenCode 1.15 can swallow native startup/database errors and
-                // return end_turn without a single agent event. Do not claim success.
-                DriverEvent::TurnFailed { reason: "backendText.m62852aaf".into() }
-            } else { event })
-        }));
+        let stream: DriverEventStream =
+            Box::pin(UnboundedReceiverStream::new(event_rx).map(move |event| {
+                observed_progress |= match &event {
+                    DriverEvent::TextDelta { text, .. } => !text.is_empty(),
+                    DriverEvent::Presentation { data, .. } => {
+                        data["type"] == "tool"
+                            || data["textDelta"].as_str().is_some_and(|s| !s.is_empty())
+                            || data["delta"].as_str().is_some_and(|s| !s.is_empty())
+                    }
+                    DriverEvent::ToolStarted { .. }
+                    | DriverEvent::ApprovalRequested { .. }
+                    | DriverEvent::QuestionRequested { .. } => true,
+                    _ => false,
+                };
+                Ok(
+                    if opencode
+                        && !observed_progress
+                        && matches!(event, DriverEvent::TurnCompleted { .. })
+                    {
+                        // OpenCode 1.15 can swallow native startup/database errors and
+                        // return end_turn without a single agent event. Do not claim success.
+                        DriverEvent::TurnFailed {
+                            reason: "backendText.m62852aaf".into(),
+                        }
+                    } else {
+                        event
+                    },
+                )
+            }));
         Ok(stream)
     }
 
@@ -3330,9 +3348,7 @@ impl AcpDriver {
             self.shared.metadata.clone().lock_owned(),
         )
         .await
-        .map_err(|_| {
-            DriverError::CapabilityUnavailable("backendText.m0cbc0eba".into())
-        })?;
+        .map_err(|_| DriverError::CapabilityUnavailable("backendText.m0cbc0eba".into()))?;
         let executable = &self.shared.launch.executable;
         let payload = if executable.target.is_local() {
             read_kimi_web_usage(executable, permit).await?
@@ -3506,8 +3522,8 @@ impl QuotaProvider for AcpDriver {
         let result = tokio::time::timeout(std::time::Duration::from_secs(27), async {
             if self.executor.provider_id.as_str() == "kiro" {
                 let payload = self
-                    .isolated_query("backendText.m3c8ac36b", None, |reply| Command::ReadKiroUsage {
-                        reply,
+                    .isolated_query("backendText.m3c8ac36b", None, |reply| {
+                        Command::ReadKiroUsage { reply }
                     })
                     .await?;
                 return kiro_quota::parse(&payload);

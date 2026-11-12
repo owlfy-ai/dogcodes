@@ -1,9 +1,7 @@
 //! Immutable submission intent and read-only resolution from existing Core receipts.
 //! This is not a second task projection; the host service drives the commands.
 use crate::{Core, CoreError, command_invalidation::CommandInvalidation};
-use agent_domain::{
-    CommandId, ExecutorRef, ProjectId, TaskId, TurnId, UNTITLED_TASK_TITLE,
-};
+use agent_domain::{CommandId, ExecutorRef, ProjectId, TaskId, TurnId, UNTITLED_TASK_TITLE};
 use agent_protocol::{
     CommandAck, CommandEnvelope, ConfirmContextPackage, ContextStrength, CoreCommand, CreateTask,
     EventEnvelope, StreamType, SubmitTurn,

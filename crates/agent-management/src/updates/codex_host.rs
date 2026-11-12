@@ -57,7 +57,8 @@ fn system_version(value: &str) -> Option<Vec<u64>> {
 }
 
 fn latest_release(xml: &str, arch: &str, os: &str) -> Result<String, String> {
-    let feed: Appcast = quick_xml::de::from_str(xml).map_err(|_| "backendText.codexSourceInvalid")?;
+    let feed: Appcast =
+        quick_xml::de::from_str(xml).map_err(|_| "backendText.codexSourceInvalid")?;
     let os = system_version(os).ok_or("backendText.macosVersionUnrecognized")?;
     feed.channel
         .items

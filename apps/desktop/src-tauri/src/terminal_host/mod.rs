@@ -208,7 +208,12 @@ impl Session {
             writer
                 .write_all(b"\x1b[1;1R")
                 .and_then(|()| writer.flush())
-                .map_err(|error| format!("backendText.ma211ea8c\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?;
+                .map_err(|error| {
+                    format!(
+                        "backendText.ma211ea8c\u{1e}{}",
+                        serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+                    )
+                })?;
         }
         let mut output = self.output.lock().map_err(|_| "backendText.m0e61b774")?;
         if output.info.status == TerminalStatus::Starting {
@@ -376,8 +381,10 @@ impl TerminalHost {
         let mut host = Self::default();
         host.directory = Some(directory.clone());
         if let Err(error) = host.recover(&directory) {
-            host.recovery_error =
-                Some(format!("backendText.mb202ac56\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
+            host.recovery_error = Some(format!(
+                "backendText.mb202ac56\u{1e}{}",
+                serde_json::to_string(std::slice::from_ref(&error)).unwrap_or_else(|_| "[]".into())
+            ));
         }
         host
     }
@@ -422,9 +429,7 @@ impl TerminalHost {
             record.intent.validate_binding()?;
             if record.info.status.active() {
                 record.info.status = TerminalStatus::Unknown;
-                record.info.error = Some(
-                    "shell.restartedUnknown".into(),
-                );
+                record.info.error = Some("shell.restartedUnknown".into());
             }
             let session = Arc::new(Session {
                 intent: record.intent,
@@ -579,8 +584,12 @@ impl TerminalHost {
         }
         let cwd = match &place {
             Place::Here { .. } => {
-                let cwd = std::fs::canonicalize(&intent.cwd)
-                    .map_err(|e| format!("backendText.mdc5f0200\u{1e}{}", serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())))?;
+                let cwd = std::fs::canonicalize(&intent.cwd).map_err(|e| {
+                    format!(
+                        "backendText.mdc5f0200\u{1e}{}",
+                        serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())
+                    )
+                })?;
                 if !cwd.is_dir() {
                     return Err("backendText.m3149b9e1".into());
                 }
@@ -638,10 +647,7 @@ impl TerminalHost {
         let failure = match result {
             Ok(Ok(())) => None,
             Ok(Err(error)) => Some((TerminalStatus::Failed, error)),
-            Err(_) => Some((
-                TerminalStatus::Unknown,
-                "backendText.m0ec5dc47".into(),
-            )),
+            Err(_) => Some((TerminalStatus::Unknown, "backendText.m0ec5dc47".into())),
         };
         if let Some((status, error)) = failure {
             let mut output = session.output.lock().map_err(|_| "backendText.m0e61b774")?;
@@ -692,12 +698,21 @@ impl TerminalHost {
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         std::thread::sleep(Duration::from_millis(5));
                     }
-                    Err(error) => return Err(format!("backendText.m095dd247\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))),
+                    Err(error) => {
+                        return Err(format!(
+                            "backendText.m095dd247\u{1e}{}",
+                            serde_json::to_string(&[error.to_string()])
+                                .unwrap_or_else(|_| "[]".into())
+                        ));
+                    }
                 }
             }
-            writer
-                .flush()
-                .map_err(|error| format!("backendText.m095dd247\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))
+            writer.flush().map_err(|error| {
+                format!(
+                    "backendText.m095dd247\u{1e}{}",
+                    serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+                )
+            })
         })
         .await
         .map_err(|_| "backendText.m2c9eafa3")?
@@ -762,7 +777,10 @@ impl TerminalHost {
         }
         let stopping = session.clone();
         tokio::task::spawn_blocking(move || -> Result<(), String> {
-            let mut process = stopping.process.lock().map_err(|_| "backendText.m4bad70b7")?;
+            let mut process = stopping
+                .process
+                .lock()
+                .map_err(|_| "backendText.m4bad70b7")?;
             // A concurrent reaper may have removed the process after the status
             // query. Never overwrite its terminal status with Stopping.
             if let Some(process) = process.as_mut() {
@@ -945,7 +963,10 @@ fn spawn(
         return Err(error);
     }
     *session.input.lock().map_err(|_| "backendText.m82e48394")? = Some(writer);
-    *session.process.lock().map_err(|_| "backendText.m0e61b774")? = Some(process);
+    *session
+        .process
+        .lock()
+        .map_err(|_| "backendText.m0e61b774")? = Some(process);
     session.state_changes.changed();
     let reading = session.clone();
     #[cfg(windows)]
@@ -1010,11 +1031,12 @@ fn spawn(
                     Ok(status) => output.info.exit_code = Some(status.exit_code()),
                     Err(error) => {
                         output.info.status = TerminalStatus::Unknown;
-                        output.info.error = Some(user_text("shell.exitUnverified", &[&error.to_string()]));
+                        output.info.error =
+                            Some(user_text("shell.exitUnverified", &[&error.to_string()]));
                     }
                 }
                 if let Err(error) = save(directory.as_deref(), &session.intent, &output.info) {
-                    output.info.error = Some(user_text("shell.exitSaveFailed", &[&error.to_string()]));
+                    output.info.error = Some(user_text("shell.exitSaveFailed", &[&error]));
                 }
             }
             // Publish exit before waiting for input: a nonblocking writer must
@@ -1043,7 +1065,10 @@ fn spawn(
         if let Ok(mut input) = session.input.lock() {
             input.take();
         }
-        return Err(format!("backendText.m82100f78\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
+        return Err(format!(
+            "backendText.m82100f78\u{1e}{}",
+            serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+        ));
     }
     #[cfg(windows)]
     {

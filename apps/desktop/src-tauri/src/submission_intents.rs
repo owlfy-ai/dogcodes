@@ -72,8 +72,7 @@ impl Store {
         if bytes.len() > MAX_INTENT_BYTES + 4096 {
             return Err("backendText.m4556d503".into());
         }
-        let stored: Stored =
-            serde_json::from_slice(&bytes).map_err(|_| "backendText.mde686dd2")?;
+        let stored: Stored = serde_json::from_slice(&bytes).map_err(|_| "backendText.mde686dd2")?;
         if stored.schema_version != 1 || stored.operation_id != *id {
             return Err("backendText.me95871a2".into());
         }
@@ -415,10 +414,7 @@ impl SubmissionIntents {
             }
         }
         if incomplete {
-            Err(
-                "backendText.m8f3c1afc"
-                    .into(),
-            )
+            Err("backendText.m8f3c1afc".into())
         } else {
             Ok(())
         }

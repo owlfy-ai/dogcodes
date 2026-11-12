@@ -30,9 +30,7 @@ pub(crate) fn validate(
         ));
     }
     if envelope.expected_stream_version.is_none() {
-        return Err(CoreError::InvalidArgument(
-            "backendText.md7650991".into(),
-        ));
+        return Err(CoreError::InvalidArgument("backendText.md7650991".into()));
     }
     if value.targets.len() > MAX_TARGETS {
         return Err(CoreError::InvalidArgument("backendText.mc4cd1638".into()));
@@ -78,9 +76,7 @@ pub fn validate_connection(connection: &SshConnection) -> Result<(), CoreError> 
             return Err(CoreError::InvalidArgument("backendText.maa510224".into()));
         }
         (SshAuth::System | SshAuth::Password, Some(_)) => {
-            return Err(CoreError::InvalidArgument(
-                "backendText.mfe119ca4".into(),
-            ));
+            return Err(CoreError::InvalidArgument("backendText.mfe119ca4".into()));
         }
         _ => {}
     }
@@ -89,14 +85,14 @@ pub fn validate_connection(connection: &SshConnection) -> Result<(), CoreError> 
         .as_deref()
         .is_some_and(|path| !valid_install_directory(path))
     {
-        return Err(CoreError::InvalidArgument(
-            "backendText.mda05d7b6".into(),
-        ));
+        return Err(CoreError::InvalidArgument("backendText.mda05d7b6".into()));
     }
     if let Some(agent_protocol::SshProxy::Custom { host, port, .. }) = &connection.proxy
         && (*port == 0 || !valid_proxy_host(host))
     {
-        return Err(CoreError::InvalidArgument("backendText.invalidProxyAddress".into()));
+        return Err(CoreError::InvalidArgument(
+            "backendText.invalidProxyAddress".into(),
+        ));
     }
     Ok(())
 }

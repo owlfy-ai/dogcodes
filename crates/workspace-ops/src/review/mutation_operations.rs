@@ -57,9 +57,7 @@ impl JournalOutcome for MutationOutcome {
             Self::Succeeded { result } => Ok(result),
             Self::Failed { message } => Err(message),
             Self::Running => Err("backendText.m06ac3af2".into()),
-            Self::Unknown => {
-                Err("backendText.mcc4888d9".into())
-            }
+            Self::Unknown => Err("backendText.mcc4888d9".into()),
         }
     }
 }

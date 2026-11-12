@@ -41,7 +41,10 @@ impl ReviewOutput {
                         .find_map(|message| driver_api::failure::reported_transport_error(message))
                 })
             {
-                return Err(format!("backendText.m42b3c757\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
+                return Err(format!(
+                    "backendText.m42b3c757\u{1e}{}",
+                    serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+                ));
             }
             return Err("backendText.m4307c54b".into());
         }
@@ -115,7 +118,12 @@ pub(super) fn recover_incomplete_review(run: &mut ReviewRun) {
                 .filter_map(|item| item.data["text"].as_str())
                 .find_map(driver_api::failure::reported_transport_error)
         })
-        .map(|error| format!("backendText.m42b3c757\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
+        .map(|error| {
+            format!(
+                "backendText.m42b3c757\u{1e}{}",
+                serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+            )
+        });
     if let Some(error) = error {
         run.status = ReviewStatus::Failed;
         run.error = Some(error);
@@ -285,7 +293,7 @@ impl Core {
                                 .map_err(|error| format!("backendText.m1f3dd881\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?;
                         }
                         DriverEvent::QuestionRequested { .. } => return Err("backendText.m11c87ba5".into()),
-                        DriverEvent::TurnFailed { reason } => return Err(format!("backendText.m535822e9\u{1e}{}", serde_json::to_string(&[reason.to_string()]).unwrap_or_else(|_| "[]".into()))),
+                        DriverEvent::TurnFailed { reason } => return Err(format!("backendText.m535822e9\u{1e}{}", serde_json::to_string(std::slice::from_ref(&reason)).unwrap_or_else(|_| "[]".into()))),
                         DriverEvent::TurnInterrupted { .. } => return Err("backendText.m3c13b6e8".into()),
                         DriverEvent::TurnQuotaExhausted { .. } => return Err("backendText.mbcdf4295".into()),
                         _ => {}
@@ -449,7 +457,12 @@ mod tests {
         let old = run.clone();
         recover_incomplete_review(&mut run);
         assert_eq!(run.status, super::ReviewStatus::Failed);
-        assert!(run.error.as_ref().unwrap().contains("backendText.m16896af4"));
+        assert!(
+            run.error
+                .as_ref()
+                .unwrap()
+                .contains("backendText.m16896af4")
+        );
         assert_eq!(run.result, original);
         let mut legacy = old.clone();
         legacy.workspace_review = false;

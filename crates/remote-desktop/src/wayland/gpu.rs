@@ -71,9 +71,7 @@ impl Importer {
         }
     }
     pub fn read(&mut self, frame: &Frame<'_>) -> Result<RgbaImage> {
-        let modifier = frame
-            .modifier
-            .ok_or("backendText.mdb505c7b")?;
+        let modifier = frame.modifier.ok_or("backendText.mdb505c7b")?;
         let attrs = attributes(frame)?;
         for device in &mut self.devices {
             if device.supports(frame.format, modifier, frame.size)

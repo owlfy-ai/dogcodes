@@ -10,7 +10,8 @@ impl AcpDriver {
         workspace: Option<String>,
         command: impl FnOnce(oneshot::Sender<Result<T, DriverError>>) -> Command + Send + 'static,
     ) -> Result<T, DriverError> {
-        self.isolated_query("backendText.mec834e6f", workspace, command).await
+        self.isolated_query("backendText.mec834e6f", workspace, command)
+            .await
     }
     pub(super) async fn isolated_query<T: Send + 'static>(
         &self,
@@ -26,7 +27,10 @@ impl AcpDriver {
         )
         .await
         .map_err(|_| {
-            DriverError::CapabilityUnavailable(format!("backendText.m32dd7a58\u{1e}{}", serde_json::to_string(&[label.to_string()]).unwrap_or_else(|_| "[]".into())))
+            DriverError::CapabilityUnavailable(format!(
+                "backendText.m32dd7a58\u{1e}{}",
+                serde_json::to_string(&[label.to_string()]).unwrap_or_else(|_| "[]".into())
+            ))
         })?;
         let driver = Self::new(
             self.executor.provider_id.as_str(),
@@ -86,7 +90,10 @@ impl AcpDriver {
                     .await
                     .is_err()
                 {
-                    let _ = reply.send(Err(DriverError::Disconnected(format!("backendText.m179437ef\u{1e}{}", serde_json::to_string(&[label.to_string()]).unwrap_or_else(|_| "[]".into())))));
+                    let _ = reply.send(Err(DriverError::Disconnected(format!(
+                        "backendText.m179437ef\u{1e}{}",
+                        serde_json::to_string(&[label.to_string()]).unwrap_or_else(|_| "[]".into())
+                    ))));
                     // Cleanup is still owned. Do not release admission merely
                     // because our caller has received an unconfirmed result.
                     while !finished.load(Ordering::Acquire) {

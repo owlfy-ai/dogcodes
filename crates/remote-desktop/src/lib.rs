@@ -11,7 +11,10 @@ pub mod escape;
 
 pub type Result<T> = std::result::Result<T, String>;
 fn native(error: impl std::fmt::Display) -> String {
-    format!("backendText.m97df8092\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))
+    format!(
+        "backendText.m97df8092\u{1e}{}",
+        serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+    )
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -208,11 +208,7 @@ impl Account {
         owner: Option<tokio::sync::watch::Receiver<bool>>,
         permit: Option<std::sync::Arc<tokio::sync::OwnedMutexGuard<()>>>,
     ) -> Result<Value, DriverError> {
-        let fail = || {
-            DriverError::NotConfigured(
-                "backendText.m6b4973d1".into(),
-            )
-        };
+        let fail = || DriverError::NotConfigured("backendText.m6b4973d1".into());
         let mut command = agent_runtime::agent_command(
             agent_runtime::electron_node_executable(&self.launch.app_binary).map_err(|_| fail())?,
         );
@@ -377,9 +373,7 @@ impl Connection {
                 Ok(())
             }
             Err(error) => Err(error),
-            _ => Err(DriverError::Protocol(
-                "backendText.m4c645091".into(),
-            )),
+            _ => Err(DriverError::Protocol("backendText.m4c645091".into())),
         }
     }
 

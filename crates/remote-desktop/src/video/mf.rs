@@ -50,7 +50,10 @@ struct Api {
     _library: Library,
 }
 fn error(e: impl std::fmt::Display) -> String {
-    format!("backendText.m1e65d465\u{1e}{}", serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into()))
+    format!(
+        "backendText.m1e65d465\u{1e}{}",
+        serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())
+    )
 }
 impl Api {
     fn load() -> Result<Self> {

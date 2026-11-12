@@ -41,7 +41,11 @@ pub async fn core_terminal_open(
     if window.label() != "main" {
         return Err("backendText.m4eb7494b".into());
     }
-    let snapshot = state.core.bootstrap().await.map_err(|_| "backendText.m50891e4c")?;
+    let snapshot = state
+        .core
+        .bootstrap()
+        .await
+        .map_err(|_| "backendText.m50891e4c")?;
     let project = snapshot
         .projects
         .iter()
@@ -145,7 +149,9 @@ pub async fn core_terminal_input(
     state: tauri::State<'_, DesktopState>,
     request: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let id = request["terminalId"].as_str().ok_or("backendText.m833d6e18")?;
+    let id = request["terminalId"]
+        .as_str()
+        .ok_or("backendText.m833d6e18")?;
     authorize_resource(window.label(), &state, id).await?;
     state.core.terminal_input(window.label(), request).await
 }

@@ -133,11 +133,7 @@ async fn enter_spawn_slot(lock: &SpawnLock) -> Result<SpawnSlot, DriverError> {
     let started = std::time::Instant::now();
     let guard = tokio::time::timeout(std::time::Duration::from_secs(8), acquire_spawn_slot(lock))
         .await
-        .map_err(|_| {
-            DriverError::CapabilityUnavailable(
-                "backendText.mfa29bf87".into(),
-            )
-        })?;
+        .map_err(|_| DriverError::CapabilityUnavailable("backendText.mfa29bf87".into()))?;
     eprintln!(
         "antigravity timing stage=spawn_lock elapsed_ms={}",
         started.elapsed().as_millis()
@@ -1103,7 +1099,9 @@ async fn stream_session(stdout: agent_runtime::ProcessStream, process: Arc<Sessi
                     && !has_answer
                     && matches!(driver_event, DriverEvent::TurnCompleted { .. })
                 {
-                    DriverEvent::TurnFailed {reason:"backendText.md98b990e".into()}
+                    DriverEvent::TurnFailed {
+                        reason: "backendText.md98b990e".into(),
+                    }
                 } else {
                     driver_event
                 };
@@ -1279,11 +1277,12 @@ impl AgentDriver for AntigravityDriver {
         if !cache.is_empty() {
             return Ok(cache.iter().map(|(id, _)| id.clone()).collect());
         }
-        let slot = SpawnSlot {
-            _guard: self.spawn.clone().try_lock_owned().map_err(|_| {
-                DriverError::CapabilityUnavailable("backendText.m6b7ac4c4".into())
-            })?,
-        };
+        let slot =
+            SpawnSlot {
+                _guard: self.spawn.clone().try_lock_owned().map_err(|_| {
+                    DriverError::CapabilityUnavailable("backendText.m6b7ac4c4".into())
+                })?,
+            };
         let result = catalog::read(self.executable.clone(), slot).await?;
         *cache = result;
         Ok(cache.iter().map(|(id, _)| id.clone()).collect())

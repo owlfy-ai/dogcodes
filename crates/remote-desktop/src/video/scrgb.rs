@@ -38,7 +38,9 @@ impl Converter {
         pitch: usize,
         rotation: u32,
     ) -> Result<RgbaImage> {
-        let row = (width as usize).checked_mul(8).ok_or("backendText.m577d9a5d")?;
+        let row = (width as usize)
+            .checked_mul(8)
+            .ok_or("backendText.m577d9a5d")?;
         let length = pitch
             .checked_mul(height.saturating_sub(1) as usize)
             .and_then(|n| n.checked_add(row))

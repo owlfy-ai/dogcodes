@@ -126,7 +126,11 @@ impl Worker {
                         sender.send_modify(|signal| {
                             signal.revision = signal.revision.wrapping_add(1);
                             if let Err(error) = event {
-                                signal.error = Some(format!("backendText.ma3fcbbc1\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
+                                signal.error = Some(format!(
+                                    "backendText.ma3fcbbc1\u{1e}{}",
+                                    serde_json::to_string(&[error.to_string()])
+                                        .unwrap_or_else(|_| "[]".into())
+                                ));
                             }
                         });
                     };

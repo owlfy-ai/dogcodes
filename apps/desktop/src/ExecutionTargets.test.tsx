@@ -677,7 +677,7 @@ describe("connections page", () => {
 
       it("shows why an install failed in the interface's language", async () => {
         const api = withAgents(connected, { agentInstalls: vi.fn(async () => [
-          { providerId: "kiro", status: "failed" as const, message: "需要先在这台主机上安装 unzip" },
+          { providerId: "kiro", status: "failed" as const, message: "backendText.installNeedUnzip" },
           { providerId: "grok", status: "failed" as const, message: "某个没有翻译的后端错误" },
         ]) });
         await page(api);

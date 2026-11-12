@@ -19,10 +19,7 @@ pub(super) enum TextError {
 impl TextError {
     pub(super) fn message(self) -> String {
         match self {
-            Self::Unmappable => {
-                "backendText.mbc3f5a58"
-                    .into()
-            }
+            Self::Unmappable => "backendText.mbc3f5a58".into(),
             Self::Invalid(message) => message,
         }
     }
@@ -35,12 +32,7 @@ impl Map {
         {
             return Err("backendText.m3b2659ee".into());
         }
-        let file = File::from(
-            keymap
-                .fd
-                .try_clone()
-                .map_err(|_| "backendText.m02433004")?,
-        );
+        let file = File::from(keymap.fd.try_clone().map_err(|_| "backendText.m02433004")?);
         let meta = file.metadata().map_err(|_| "backendText.mcd60369d")?;
         // Do not read pipes/sockets (which can block the actor) or mmap a short
         // compositor FD (which can SIGBUS). read_at leaves the shared offset alone.
@@ -207,9 +199,7 @@ impl Map {
     }
     pub(super) fn plan_text(&self, text: &str) -> std::result::Result<Vec<(u32, bool)>, TextError> {
         if self.modifiers.0 != 0 || self.modifiers.1 != 0 {
-            return Err(TextError::Invalid(
-                "backendText.mcffed46f".into(),
-            ));
+            return Err(TextError::Invalid("backendText.mcffed46f".into()));
         }
         let modifier = |name: &str, sym: u32| {
             self.keymap

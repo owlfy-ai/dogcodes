@@ -94,9 +94,7 @@ impl Core {
             .find(|r| r.request.run_id == reference.run_id)
             .ok_or_else(|| CoreError::InvalidArgument("backendText.m3c97f7a2".into()))?;
         if run.status.active() || run.input_sha256 != reference.input_sha256 {
-            return Err(CoreError::Conflict(
-                "backendText.me00adf36".into(),
-            ));
+            return Err(CoreError::Conflict("backendText.me00adf36".into()));
         }
         let report = run
             .report
@@ -109,15 +107,11 @@ impl Core {
             || indices.len() > 100
             || indices.iter().any(|i| *i >= report.findings.len())
         {
-            return Err(CoreError::InvalidArgument(
-                "backendText.mdbd03b2f".into(),
-            ));
+            return Err(CoreError::InvalidArgument("backendText.mdbd03b2f".into()));
         }
         let material = json!({"runId":reference.run_id,"sourceTurnId":run.request.turn_id,"sourceSnapshot":run.request.source_snapshot,"inputSha256":run.input_sha256,"kind":run.request.kind,"findings":indices.iter().map(|i|json!({"index":i,"finding":report.findings[*i]})).collect::<Vec<_>>()});
         if material.to_string().len() > 128_000 {
-            return Err(CoreError::ResourceExhausted(
-                "backendText.m50e0c92a".into(),
-            ));
+            return Err(CoreError::ResourceExhausted("backendText.m50e0c92a".into()));
         }
         Ok(material)
     }
@@ -160,9 +154,7 @@ impl Core {
         if request.turn_id.as_ref() != Some(&link.repair_turn_id)
             || request.source_snapshot.is_some()
         {
-            return Err(CoreError::InvalidArgument(
-                "backendText.mb19cd8b1".into(),
-            ));
+            return Err(CoreError::InvalidArgument("backendText.mb19cd8b1".into()));
         }
         let events = self.review_events(&request.task_id).await?;
         let queued = events
@@ -181,18 +173,14 @@ impl Core {
             .review_fix_material(&request.task_id, &reference)
             .await?;
         if material["kind"] != json!(request.kind) {
-            return Err(CoreError::InvalidArgument(
-                "backendText.me8a363e4".into(),
-            ));
+            return Err(CoreError::InvalidArgument("backendText.me8a363e4".into()));
         }
-        let mut value: Value =
-            serde_json::from_str(packet).map_err(|_| CoreError::Internal("backendText.m77b117bd".into()))?;
+        let mut value: Value = serde_json::from_str(packet)
+            .map_err(|_| CoreError::Internal("backendText.m77b117bd".into()))?;
         value["repairReview"] = material;
         let packet = value.to_string();
         if packet.len() > 768_000 {
-            return Err(CoreError::ResourceExhausted(
-                "backendText.m95582122".into(),
-            ));
+            return Err(CoreError::ResourceExhausted("backendText.m95582122".into()));
         }
         Ok(packet)
     }

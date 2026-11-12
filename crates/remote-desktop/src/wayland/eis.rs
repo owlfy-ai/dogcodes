@@ -263,9 +263,7 @@ impl Sender {
         let mut candidates = self.devices.iter().filter(|d| {
             d.resumed && d.device.seat() == pointer.device.seat() && d.device.has_capability(cap)
         });
-        let device = candidates
-            .next()
-            .ok_or("backendText.m902631c8")?;
+        let device = candidates.next().ok_or("backendText.m902631c8")?;
         if candidates.next().is_some() {
             return Err("backendText.m5b9dbfa9".into());
         }
@@ -599,9 +597,7 @@ impl Sender {
                     if !state.active()
                         || state.input_generation.load(Ordering::Acquire) != prepared.generation
                     {
-                        return Err(
-                            "backendText.maba8f830".into(),
-                        );
+                        return Err("backendText.maba8f830".into());
                     }
                     continue;
                 }
@@ -609,16 +605,17 @@ impl Sender {
                     .interface::<ei::PointerAbsolute>()
                     .ok_or("backendText.m290fbb5f")?
                     .motion_absolute(x, y),
-                Kind::Button(code, down) => {
-                    d.interface::<ei::Button>().ok_or("backendText.m3222bd0d")?.button(
+                Kind::Button(code, down) => d
+                    .interface::<ei::Button>()
+                    .ok_or("backendText.m3222bd0d")?
+                    .button(
                         code,
                         if down {
                             ei::button::ButtonState::Press
                         } else {
                             ei::button::ButtonState::Released
                         },
-                    )
-                }
+                    ),
                 Kind::Key(code, physical, down) => {
                     let s = if down {
                         ei::keyboard::KeyState::Press

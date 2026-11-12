@@ -76,8 +76,7 @@ impl ReviewStore {
         let id = digest(task.as_bytes());
         let path = plans.join(&id);
         let marker = tombstones.join(&id);
-        let plan: DeletionPlan = if path.try_exists().map_err(|_| "backendText.m50f208f8")?
-        {
+        let plan: DeletionPlan = if path.try_exists().map_err(|_| "backendText.m50f208f8")? {
             serde_json::from_slice(&read_manifest(&path, 32 * 1024 * 1024)?)
                 .map_err(|_| "backendText.mbd360aff")?
         } else {

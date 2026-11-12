@@ -100,12 +100,22 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
         let file = match std::fs::File::open(file) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(format!("backendText.m343bd1c8\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))),
+            Err(error) => {
+                return Err(format!(
+                    "backendText.m343bd1c8\u{1e}{}",
+                    serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+                ));
+            }
         };
         let mut bytes = Vec::new();
         file.take(limit.map_or(u64::MAX, |limit| limit as u64 + 1))
             .read_to_end(&mut bytes)
-            .map_err(|error| format!("backendText.m343bd1c8\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?;
+            .map_err(|error| {
+                format!(
+                    "backendText.m343bd1c8\u{1e}{}",
+                    serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+                )
+            })?;
         if limit.is_some_and(|limit| bytes.len() > limit) {
             return Err("backendText.m43fa3a33".into());
         }
@@ -177,9 +187,7 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
     /// Idempotent tracking closure. It never changes the recorded action result.
     pub fn close(&self, task: &str, operation: &str) -> Result<OperationReceipt<R, O>, String> {
         let _gate = self.gate.lock().map_err(|_| "backendText.m11b36aed")?;
-        let mut receipt = self
-            .read(task, operation)?
-            .ok_or("backendText.mfab7b848")?;
+        let mut receipt = self.read(task, operation)?.ok_or("backendText.mfab7b848")?;
         if !receipt.closed {
             receipt.closed = true;
             self.persist(&receipt)?;
@@ -210,19 +218,28 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
                     next_cursor: None,
                 });
             }
-            Err(error) => return Err(format!("backendText.m30d3294c\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))),
+            Err(error) => {
+                return Err(format!(
+                    "backendText.m30d3294c\u{1e}{}",
+                    serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+                ));
+            }
         };
         let mut ids = BTreeSet::new();
         for entry in directory {
-            let entry = entry.map_err(|error| format!("backendText.mf200ec05\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?;
+            let entry = entry.map_err(|error| {
+                format!(
+                    "backendText.mf200ec05\u{1e}{}",
+                    serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+                )
+            })?;
             let name = entry.file_name();
             let Some(id) = name.to_str().and_then(|name| name.strip_suffix(".json")) else {
                 continue;
             };
             // Temporary files are not published operation records. Invalid JSON
             // record names indicate storage damage rather than an empty history.
-            self.file(task, id)
-                .map_err(|_| "backendText.m63983086")?;
+            self.file(task, id).map_err(|_| "backendText.m63983086")?;
             if after.is_some_and(|cursor| id <= cursor) {
                 continue;
             }
@@ -294,7 +311,11 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
             }
             // Never start an action if the durable intent cannot be confirmed.
             if let Err(error) = self.persist(&receipt) {
-                return Err(format!("backendText.mc3d6a2e2\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
+                return Err(format!(
+                    "backendText.mc3d6a2e2\u{1e}{}",
+                    serde_json::to_string(std::slice::from_ref(&error))
+                        .unwrap_or_else(|_| "[]".into())
+                ));
             }
             let id = format!(
                 "{}/{}",
@@ -320,7 +341,11 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
                         receipt.request.task_id(),
                         receipt.request.operation_id()
                     ));
-                return Err(format!("backendText.mefdff2d9\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
+                return Err(format!(
+                    "backendText.mefdff2d9\u{1e}{}",
+                    serde_json::to_string(std::slice::from_ref(&error))
+                        .unwrap_or_else(|_| "[]".into())
+                ));
             }
         }
         drop(active);
@@ -332,7 +357,10 @@ impl<R: JournalRequest, O: JournalOutcome> OperationJournal<R, O> {
         match std::fs::remove_dir_all(self.directory.join(task)) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(format!("backendText.m0f5bda63\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))),
+            Err(error) => Err(format!(
+                "backendText.m0f5bda63\u{1e}{}",
+                serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+            )),
         }
     }
 }

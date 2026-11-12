@@ -198,8 +198,7 @@ impl Bridge {
         if cancelled.try_recv() == Err(oneshot::error::TryRecvError::Closed) {
             return Err(abandoned());
         }
-        let fail =
-            || DriverError::CapabilityUnavailable("backendText.agyHookFailed".into());
+        let fail = || DriverError::CapabilityUnavailable("backendText.agyHookFailed".into());
         let started = std::time::Instant::now();
         // What invalidates a verification is on the machine `agy` runs on. Another
         // machine's files can't be watched from here, so it's verified every time.

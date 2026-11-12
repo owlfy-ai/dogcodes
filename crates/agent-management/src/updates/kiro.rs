@@ -84,7 +84,9 @@ fn latest_from_index(index: &Value) -> Result<String, String> {
 pub fn latest_from_check(output: &str) -> Result<String, String> {
     for line in output.lines().map(str::trim) {
         let latest = if let Some(release) = line.strip_prefix("Update available: ") {
-            let (current, latest) = release.split_once('→').ok_or("backendText.kiroCheckInvalid")?;
+            let (current, latest) = release
+                .split_once('→')
+                .ok_or("backendText.kiroCheckInvalid")?;
             semver::Version::parse(current.trim()).map_err(|_| "backendText.kiroCheckInvalid")?;
             Some(latest.trim())
         } else {
@@ -297,7 +299,12 @@ pub mod tests {
             .unwrap();
         assert_eq!(std::fs::read_to_string(marker).unwrap(), "2.25.0");
         std::fs::write(executable.with_extension("beta"), "true").unwrap();
-        assert!(inspect(&i, &p).await.unwrap_err().contains("backendText.kiroTestChannelManual"));
+        assert!(
+            inspect(&i, &p)
+                .await
+                .unwrap_err()
+                .contains("backendText.kiroTestChannelManual")
+        );
     }
 
     #[cfg(unix)]

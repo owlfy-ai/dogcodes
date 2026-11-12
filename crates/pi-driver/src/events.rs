@@ -93,8 +93,7 @@ impl Turn {
                                 }
                             } else {
                                 DriverEvent::TurnFailed {
-                                    reason: "backendText.m546c5770"
-                                        .into(),
+                                    reason: "backendText.m546c5770".into(),
                                 }
                             },
                         );
@@ -105,7 +104,14 @@ impl Turn {
             "tool_execution_start" => self.emit(DriverEvent::ToolStarted {
                 item_id: value["toolCallId"].as_str().unwrap_or("pi-tool").into(),
                 tool_name: value["toolName"].as_str().unwrap_or("tool").into(),
-                summary: format!("backendText.m5741826f\u{1e}{}", serde_json::to_string(&[value["toolName"].as_str().unwrap_or("backendText.m5ca6730d").to_string()]).unwrap_or_else(|_| "[]".into())),
+                summary: format!(
+                    "backendText.m5741826f\u{1e}{}",
+                    serde_json::to_string(&[value["toolName"]
+                        .as_str()
+                        .unwrap_or("backendText.m5ca6730d")
+                        .to_string()])
+                    .unwrap_or_else(|_| "[]".into())
+                ),
             }),
             "tool_execution_end" => self.emit(DriverEvent::ToolCompleted {
                 item_id: value["toolCallId"].as_str().unwrap_or("pi-tool").into(),
@@ -169,7 +175,10 @@ fn dialog(value: &Value) -> Option<(String, Dialog)> {
         Dialog {
             method: method.into(),
             form: QuestionForm {
-                title: value["title"].as_str().unwrap_or("backendText.med7804a7").into(),
+                title: value["title"]
+                    .as_str()
+                    .unwrap_or("backendText.med7804a7")
+                    .into(),
                 schema: json!({"type":"object","properties":{"answer":property},"required":["answer"]}),
             },
         },

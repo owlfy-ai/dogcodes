@@ -185,7 +185,12 @@ mod tests {
             drop(held);
             tokio::time::timeout(std::time::Duration::from_secs(3), async {
                 update.await.unwrap();
-                assert!(send.await.unwrap_err().to_string().contains("backendText.mbc5a87a7"));
+                assert!(
+                    send.await
+                        .unwrap_err()
+                        .to_string()
+                        .contains("backendText.mbc5a87a7")
+                );
             })
             .await
             .unwrap();

@@ -9,7 +9,7 @@ use agent_core::{
     PendingReconciliationOptOut, RepositoryError, StoredArtifact,
 };
 use agent_domain::{
-    user_text, ArtifactId, ExecutorRef, InstallationId, ProviderId, RunState, TargetId, TaskId,
+    ArtifactId, ExecutorRef, InstallationId, ProviderId, RunState, TargetId, TaskId, user_text,
 };
 use agent_protocol::{
     ActiveRunSummary, AgentSessionMapSummary, ArtifactCursor, ArtifactMetadata, BootstrapSnapshot,
@@ -3425,7 +3425,10 @@ mod tests {
             .unwrap();
         connection.execute("INSERT INTO tasks(task_id, project_id, title, preferred_executor_json, stream_version) VALUES (?1, ?2, ?3, ?4, 1)",
             params![task_id, project_id, agent_domain::UNTITLED_TASK_TITLE, serde_json::to_string(&executor("fake")).unwrap()]).unwrap();
-        assert_eq!(load_tasks(&connection, None).unwrap()[0].title, agent_domain::UNTITLED_TASK_TITLE);
+        assert_eq!(
+            load_tasks(&connection, None).unwrap()[0].title,
+            agent_domain::UNTITLED_TASK_TITLE
+        );
         for (sequence, kind, text) in [
             (1, "user_message", "第一条提示词"),
             (2, "assistant_message", "模型回复"),

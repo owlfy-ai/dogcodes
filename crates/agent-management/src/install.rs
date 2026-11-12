@@ -151,12 +151,9 @@ pub async fn install(provider: &str) -> Result<(), Failure> {
     );
     spec.stdout_limit = 256 * 1024;
     spec.stderr_limit = 256 * 1024;
-    let output = run_bounded(&spec).await.map_err(|_| {
-        Failure::new(
-            "other",
-            "backendText.installTimedOut",
-        )
-    })?;
+    let output = run_bounded(&spec)
+        .await
+        .map_err(|_| Failure::new("other", "backendText.installTimedOut"))?;
     if output.success {
         Ok(())
     } else {
@@ -187,8 +184,16 @@ mod tests {
         let secret = "https://user:hunter2@proxy";
         for (code, stderr, expected) in [
             (Some(1), "sh: npm: not found", "backendText.installNeedNode"),
-            (Some(1), "dogcodes-node-required: v22.1.0", "backendText.installNodeTooOld"),
-            (Some(1), "dogcodes-node-required: none", "backendText.installNodeMissing"),
+            (
+                Some(1),
+                "dogcodes-node-required: v22.1.0",
+                "backendText.installNodeTooOld",
+            ),
+            (
+                Some(1),
+                "dogcodes-node-required: none",
+                "backendText.installNodeMissing",
+            ),
             (
                 Some(1),
                 "dogcodes-node-required: $(hunter2 x)",
@@ -200,11 +205,31 @@ mod tests {
                 "curl: (22) The requested URL returned error: 404",
                 "backendText.installUnreachable",
             ),
-            (Some(1), "npm error code ENOTFOUND", "backendText.installUnreachable"),
-            (Some(1), "version `GLIBC_2.28' not found", "backendText.installUnsupported"),
-            (Some(1), "Error: unzip is required", "backendText.installNeedUnzip"),
-            (Some(6), "curl: (6) Could not resolve host", "backendText.installUnreachable"),
-            (Some(1), "EACCES: permission denied", "backendText.installNoPermission"),
+            (
+                Some(1),
+                "npm error code ENOTFOUND",
+                "backendText.installUnreachable",
+            ),
+            (
+                Some(1),
+                "version `GLIBC_2.28' not found",
+                "backendText.installUnsupported",
+            ),
+            (
+                Some(1),
+                "Error: unzip is required",
+                "backendText.installNeedUnzip",
+            ),
+            (
+                Some(6),
+                "curl: (6) Could not resolve host",
+                "backendText.installUnreachable",
+            ),
+            (
+                Some(1),
+                "EACCES: permission denied",
+                "backendText.installNoPermission",
+            ),
             (Some(3), "something else", "backendText.installFailedCode"),
         ] {
             let message = explain(code, secret, stderr);

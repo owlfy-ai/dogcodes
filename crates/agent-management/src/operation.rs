@@ -117,9 +117,7 @@ async fn upgrade(mut i: InstallationSummary) -> Result<Upgraded, Failure> {
         .await
         .map_err(Failure::other)?;
         if !help.contains("--manual") {
-            return Err(Failure::other(
-                "backendText.updateKimiManual",
-            ));
+            return Err(Failure::other("backendText.updateKimiManual"));
         }
     }
     updates::command(install).await.map_err(Failure::other)?;

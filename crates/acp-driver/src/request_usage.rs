@@ -156,9 +156,7 @@ fn kimi(cwd: &Path, id: &str) -> Option<SessionUsageSnapshot> {
         cache_read_tokens: u["inputCacheRead"].as_u64(),
         cache_write_tokens: u["inputCacheCreation"].as_u64(),
         totals_scope: Some("turn".into()),
-        request_usage: Some(RequestUsageReport::unavailable(
-            "backendText.mfb43011e",
-        )),
+        request_usage: Some(RequestUsageReport::unavailable("backendText.mfb43011e")),
         ..SessionUsageSnapshot::new()
     })
 }

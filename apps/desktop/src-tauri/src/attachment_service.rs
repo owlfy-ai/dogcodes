@@ -109,7 +109,8 @@ impl AttachmentStore {
         Ok(Some(path))
     }
     fn read_file(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
-        let metadata = fs::symlink_metadata(path).map_err(|_| "backendText.attachmentUnreadable")?;
+        let metadata =
+            fs::symlink_metadata(path).map_err(|_| "backendText.attachmentUnreadable")?;
         if !metadata.is_file() || metadata.len() > limit as u64 {
             return Err("backendText.meed11491".into());
         }
@@ -164,7 +165,9 @@ impl AttachmentStore {
         if encoded.len() > MAX_BASE64 {
             return Err("backendText.m962d0a69".into());
         }
-        let bytes = STANDARD.decode(encoded).map_err(|_| "backendText.m3e7c8aa9")?;
+        let bytes = STANDARD
+            .decode(encoded)
+            .map_err(|_| "backendText.m3e7c8aa9")?;
         let reference = Self::reference(Path::new("unused"), request);
         driver_api::attachments::verify_bytes(&reference, &bytes)
             .map_err(|error| error.to_string())?;
@@ -175,7 +178,8 @@ impl AttachmentStore {
         }
         let uploads = root.join("uploads");
         fs::create_dir_all(&uploads).map_err(|_| "backendText.m2647bcd8")?;
-        let uploads = Self::checked_child(&root, Path::new("uploads"))?.ok_or("backendText.mcbcccc18")?;
+        let uploads =
+            Self::checked_child(&root, Path::new("uploads"))?.ok_or("backendText.mcbcccc18")?;
         // Only a fully written and synced directory is published. Error paths
         // remove the staging directory; a process crash may leave an unreferenced
         // .pending directory, never a successful receipt or partially sent file.
@@ -225,7 +229,9 @@ impl AttachmentStore {
     }
     pub fn read(&self, path: &str) -> Result<String, String> {
         let _guard = self.gate.lock().map_err(|_| "backendText.mf6348b90")?;
-        let root = self.root(false)?.ok_or("backendText.attachmentUnreadable")?;
+        let root = self
+            .root(false)?
+            .ok_or("backendText.attachmentUnreadable")?;
         let candidate = Path::new(path);
         if !candidate.is_absolute() {
             return Err("backendText.m6a586e00".into());
@@ -237,7 +243,8 @@ impl AttachmentStore {
         {
             return Err("backendText.mdd354e76".into());
         }
-        let canonical = fs::canonicalize(candidate).map_err(|_| "backendText.attachmentUnreadable")?;
+        let canonical =
+            fs::canonicalize(candidate).map_err(|_| "backendText.attachmentUnreadable")?;
         if !canonical.starts_with(&root) {
             return Err("backendText.mbae669e0".into());
         }
@@ -264,7 +271,8 @@ impl AttachmentStore {
             )?)
             .map_err(|_| "backendText.mda6b5ce9")?;
             Self::validate(&manifest.request)?;
-            let reference = Self::receipt_at(&root, &manifest.request)?.ok_or("backendText.meac45010")?;
+            let reference =
+                Self::receipt_at(&root, &manifest.request)?.ok_or("backendText.meac45010")?;
             if Path::new(&reference.path) != canonical {
                 return Err("backendText.mccb5a3a1".into());
             }

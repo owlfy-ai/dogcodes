@@ -37,11 +37,7 @@ pub fn fingerprint(envelope: &CommandEnvelope<CoreCommand>) -> Result<String, Co
 pub fn verify(ack: &CommandAck, fingerprint: &str) -> Result<(), CoreError> {
     match ack.request_fingerprint.as_deref() {
         Some(original) if original == fingerprint => Ok(()),
-        Some(_) => Err(CoreError::Conflict(
-            "backendText.requestIdConflict".into(),
-        )),
-        None => Err(CoreError::Conflict(
-            "backendText.m1a98db4b".into(),
-        )),
+        Some(_) => Err(CoreError::Conflict("backendText.requestIdConflict".into())),
+        None => Err(CoreError::Conflict("backendText.m1a98db4b".into())),
     }
 }

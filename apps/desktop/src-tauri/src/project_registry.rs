@@ -68,15 +68,21 @@ fn canonical_directory(raw: &str) -> Result<String, String> {
     if !requested.is_absolute() {
         return Err("backendText.m7a4b40b1".to_owned());
     }
-    let canonical = plain_path(
-        requested
-            .canonicalize()
-            .map_err(|error| format!("backendText.mfa196fad\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?,
-    );
+    let canonical = plain_path(requested.canonicalize().map_err(|error| {
+        format!(
+            "backendText.mfa196fad\u{1e}{}",
+            serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+        )
+    })?);
     if !canonical.is_dir() {
         return Err("backendText.mb64c7d94".to_owned());
     }
-    std::fs::read_dir(&canonical).map_err(|error| format!("backendText.m274efe8f\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?;
+    std::fs::read_dir(&canonical).map_err(|error| {
+        format!(
+            "backendText.m274efe8f\u{1e}{}",
+            serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+        )
+    })?;
     canonical
         .to_str()
         .map(str::to_owned)

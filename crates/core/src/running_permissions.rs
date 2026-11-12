@@ -135,9 +135,7 @@ impl Core {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .contains_key(run_id);
         if !valid {
-            return Err(CoreError::Conflict(
-                "backendText.mae76c0bb".into(),
-            ));
+            return Err(CoreError::Conflict("backendText.mae76c0bb".into()));
         }
         Ok(task)
     }

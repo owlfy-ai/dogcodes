@@ -81,10 +81,12 @@ async fn request<T: serde::Serialize + zbus::zvariant::DynamicType>(
         .receive_signal("Response")
         .await
         .map_err(|_| "backendText.m8e5f0e5d")?;
-    let returned: OwnedObjectPath = service
-        .call(method, body)
-        .await
-        .map_err(|_| format!("backendText.m5913cede\u{1e}{}", serde_json::to_string(&[method.to_string()]).unwrap_or_else(|_| "[]".into())))?;
+    let returned: OwnedObjectPath = service.call(method, body).await.map_err(|_| {
+        format!(
+            "backendText.m5913cede\u{1e}{}",
+            serde_json::to_string(&[method.to_string()]).unwrap_or_else(|_| "[]".into())
+        )
+    })?;
     if returned != path {
         return Err("backendText.m21d5d9c2".into());
     }
@@ -218,8 +220,7 @@ fn save_token(
         file.write_all(value.as_bytes())
             .and_then(|()| file.sync_all())
             .map_err(|_| "backendText.m3800c9d0")?;
-        fs::rename(&temporary, token_path(store, control))
-            .map_err(|_| "backendText.me0a31551")?;
+        fs::rename(&temporary, token_path(store, control)).map_err(|_| "backendText.me0a31551")?;
         fs::File::open(&store.directory)
             .and_then(|f| f.sync_all())
             .map_err(|_| "backendText.m11e31dcf")?;
@@ -422,7 +423,13 @@ async fn authorize_session(
                 name: props
                     .id
                     .filter(|s| !s.is_empty() && s.len() < 128)
-                    .unwrap_or_else(|| format!("backendText.m3471f294\u{1e}{}", serde_json::to_string(&[index + 1.to_string()]).unwrap_or_else(|_| "[]".into()))),
+                    .unwrap_or_else(|| {
+                        format!(
+                            "backendText.m3471f294\u{1e}{}",
+                            serde_json::to_string(&[index + 1.to_string()])
+                                .unwrap_or_else(|_| "[]".into())
+                        )
+                    }),
                 x,
                 y,
                 width: width as u32,

@@ -426,7 +426,15 @@ impl GitWorkspaceContextProvider {
                 .restore_repository_snapshot(repo, &suffix)
                 .await
                 .map_err(|error| {
-                    format!("backendText.m050c18db\u{1e}{}", serde_json::to_string(&[error.to_string(), suffix.to_string(), destinations.len().to_string()]).unwrap_or_else(|_| "[]".into()))
+                    format!(
+                        "backendText.m050c18db\u{1e}{}",
+                        serde_json::to_string(&[
+                            error.clone(),
+                            suffix.clone(),
+                            destinations.len().to_string()
+                        ])
+                        .unwrap_or_else(|_| "[]".into())
+                    )
                 })?;
             destinations.insert(repo.repository_root.clone(), destination);
         }

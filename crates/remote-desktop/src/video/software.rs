@@ -297,7 +297,10 @@ impl Encoder {
     }
 }
 fn codec_error(error: impl std::fmt::Display) -> String {
-    format!("backendText.m51021f50\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))
+    format!(
+        "backendText.m51021f50\u{1e}{}",
+        serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+    )
 }
 
 /// At most one active source and one retiring OS call. A stuck capture must not

@@ -140,7 +140,10 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
         return Err("backendText.m8c9a32ee".into());
     }
     let peer = connection.peer.ok_or("backendText.mec057f7a")?;
-    let phase = args["phase"].as_str().ok_or("backendText.m1f79471c")?.to_owned();
+    let phase = args["phase"]
+        .as_str()
+        .ok_or("backendText.m1f79471c")?
+        .to_owned();
     if !["offer", "stage", "claim", "status", "cancel"].contains(&phase.as_str()) {
         return Err("backendText.m5bca5f4e".into());
     }
@@ -149,7 +152,9 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
             return Err("backendText.m4e10a927".into());
         }
         super::super::parse_sequence(args.get_mut("expectedRevision"))?;
-        let expected = args["expectedRevision"].as_u64().ok_or("backendText.m68964f64")?;
+        let expected = args["expectedRevision"]
+            .as_u64()
+            .ok_or("backendText.m68964f64")?;
         if let Some(ticket) = &lease.handoff
             && ticket.id == id
         {
@@ -182,12 +187,18 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
             id,
             offered_by: connection.id.clone(),
             from_revision: expected,
-            source_instance:
-                lease.video.as_ref().ok_or("backendText.m1cfa78dc")?.describe()["resize"]["instanceId"]
-                    .clone(),
-            source_revision:
-                lease.video.as_ref().ok_or("backendText.m1cfa78dc")?.describe()["resize"]["applied"]
-                    .clone(),
+            source_instance: lease
+                .video
+                .as_ref()
+                .ok_or("backendText.m1cfa78dc")?
+                .describe()["resize"]["instanceId"]
+                .clone(),
+            source_revision: lease
+                .video
+                .as_ref()
+                .ok_or("backendText.m1cfa78dc")?
+                .describe()["resize"]["applied"]
+                .clone(),
             peer,
             until: Instant::now() + Duration::from_secs(20),
             staged: None,
@@ -206,7 +217,9 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
     {
         if phase == "cancel" {
             super::super::parse_sequence(args.get_mut("expectedRevision"))?;
-            let expected = args["expectedRevision"].as_u64().ok_or("backendText.m68964f64")?;
+            let expected = args["expectedRevision"]
+                .as_u64()
+                .ok_or("backendText.m68964f64")?;
             if expected > lease.handoff_revision {
                 return Err("backendText.m55c69fa9".into());
             }
@@ -237,7 +250,11 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
         };
     }
     if matches!(phase.as_str(), "stage" | "claim") {
-        let description = lease.video.as_ref().ok_or("backendText.m1cfa78dc")?.describe();
+        let description = lease
+            .video
+            .as_ref()
+            .ok_or("backendText.m1cfa78dc")?
+            .describe();
         if description["resize"]["instanceId"] != ticket.source_instance
             || description["resize"]["applied"] != ticket.source_revision
         {
@@ -360,7 +377,11 @@ fn inner(lease: &mut Lease, connection: Arc<Connection>, mut args: Value) -> Res
             lease.liveness.adopt(&connection);
             lease.owner = connection;
             lease.expires = Instant::now() + Duration::from_secs(15);
-            lease.handoff.as_mut().ok_or("backendText.ma9e039be")?.applied = true;
+            lease
+                .handoff
+                .as_mut()
+                .ok_or("backendText.ma9e039be")?
+                .applied = true;
             Ok(describe(lease, "applied"))
         }
         _ => Err("backendText.m5bca5f4e".into()),

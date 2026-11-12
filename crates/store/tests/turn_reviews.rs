@@ -686,7 +686,13 @@ async fn a_panicking_review_stream_preserves_partial_output_and_retires_only_its
     let failed = settled(&f, &f.request.run_id).await;
     assert_eq!(failed.status, ReviewStatus::Failed);
     assert!(failed.result.contains("已核对第一处调用方"));
-    assert!(failed.error.as_deref().unwrap().contains("backendText.m4ea5524e"));
+    assert!(
+        failed
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("backendText.m4ea5524e")
+    );
     assert_eq!(f.core.bootstrap().await.unwrap().session_maps, primary);
     assert_eq!(f.driver.stopped.lock().unwrap().len(), 1);
     assert!(f.driver.stopped.lock().unwrap()[0].starts_with("review-"));

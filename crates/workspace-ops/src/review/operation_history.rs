@@ -146,7 +146,13 @@ pub(super) async fn query(
                             || {
                                 args["paths"]
                                     .as_array()
-                                    .map(|paths| format!("backendText.m21db75dc\u{1e}{}", serde_json::to_string(&[paths.len().to_string()]).unwrap_or_else(|_| "[]".into())))
+                                    .map(|paths| {
+                                        format!(
+                                            "backendText.m21db75dc\u{1e}{}",
+                                            serde_json::to_string(&[paths.len().to_string()])
+                                                .unwrap_or_else(|_| "[]".into())
+                                        )
+                                    })
                                     .unwrap_or_default()
                             },
                             |path| compact(path, 240),

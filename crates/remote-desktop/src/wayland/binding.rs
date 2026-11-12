@@ -118,9 +118,7 @@ impl Identity {
         Ok(())
     }
     fn initialize(&mut self) -> Result<()> {
-        let serial = self
-            .current
-            .ok_or("backendText.mf048b4d1")?;
+        let serial = self.current.ok_or("backendText.mf048b4d1")?;
         self.observe(serial)?;
         self.frozen = Some(serial);
         self.initial = true;

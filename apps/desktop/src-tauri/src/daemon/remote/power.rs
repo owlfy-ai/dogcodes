@@ -98,8 +98,9 @@ impl Host {
             return Ok(value.clone());
         }
         let value = match std::fs::read(&self.path) {
-            Ok(bytes) => serde_json::from_slice::<Policy>(&bytes)
-                .map_err(|_| "backendText.m3f2bed6f".into()),
+            Ok(bytes) => {
+                serde_json::from_slice::<Policy>(&bytes).map_err(|_| "backendText.m3f2bed6f".into())
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Policy::default()),
             Err(_) => Err("backendText.m8ff29dbb".into()),
         };

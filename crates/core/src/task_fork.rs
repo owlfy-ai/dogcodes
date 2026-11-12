@@ -201,9 +201,7 @@ impl Core {
                     && event.event_type == "task.forked"
                     && event.stream.stream_id == target.as_str()
             })
-            .ok_or_else(|| {
-                CoreError::NotFound("backendText.mabc4cfb0".into())
-            })?;
+            .ok_or_else(|| CoreError::NotFound("backendText.mabc4cfb0".into()))?;
         let request = ForkRequest {
             task_id: serde_json::from_value(event.payload["sourceTaskId"].clone())
                 .map_err(|_| CoreError::Internal("backendText.m5c378324".into()))?,
@@ -305,9 +303,16 @@ impl Core {
         let metadata: ArtifactMetadata = serde_json::from_value(selected.ok_or_else(|| {
             CoreError::InvalidArgument(failure.map_or_else(
                 || "backendText.m6d777a78".into(),
-                |reason| format!("backendText.m6ff5a4c8\u{1e}{}", serde_json::to_string(&[reason.to_string()]).unwrap_or_else(|_| "[]".into())),
+                |reason| {
+                    format!(
+                        "backendText.m6ff5a4c8\u{1e}{}",
+                        serde_json::to_string(std::slice::from_ref(&reason))
+                            .unwrap_or_else(|_| "[]".into())
+                    )
+                },
             ))
-        })?).map_err(|_| CoreError::Internal("backendText.m8573011b".into()))?;
+        })?)
+        .map_err(|_| CoreError::Internal("backendText.m8573011b".into()))?;
         let artifact = self
             .repository
             .artifact(&metadata.artifact_id)
@@ -364,9 +369,7 @@ impl Core {
                 .await?
                 .is_some()
         {
-            return Err(CoreError::Conflict(
-                "backendText.m5227b3c4".into(),
-            ));
+            return Err(CoreError::Conflict("backendText.m5227b3c4".into()));
         }
         let plan = if intent.is_some() {
             let ack = self
@@ -385,11 +388,7 @@ impl Core {
                 .first()
                 .filter(|e| e.sequence == sequence)
                 .and_then(|e| e.payload.get("plan"))
-                .ok_or_else(|| {
-                    CoreError::Conflict(
-                        "backendText.m44f0bde4".into(),
-                    )
-                })?;
+                .ok_or_else(|| CoreError::Conflict("backendText.m44f0bde4".into()))?;
             let mut plan: ForkPlan = serde_json::from_value(value.clone())
                 .map_err(|_| CoreError::Internal("backendText.m727f567e".into()))?;
             plan.upgrade_legacy_non_git();
@@ -548,18 +547,17 @@ impl Core {
             for message in page {
                 bytes += message.text.len();
                 if bytes > 16 * 1024 * 1024 {
-                    return Err(CoreError::InvalidArgument(
-                        "backendText.m93ebc6e9".into(),
-                    ));
+                    return Err(CoreError::InvalidArgument("backendText.m93ebc6e9".into()));
                 }
                 if message.kind == "task.forked" {
                     let payload: Value = serde_json::from_str(&message.text)
                         .map_err(|e| CoreError::Internal(e.to_string()))?;
-                    let inherited: Vec<Value> =
-                        serde_json::from_str(payload["text"].as_str().ok_or_else(|| {
-                            CoreError::Internal("backendText.ma9f70493".into())
-                        })?)
-                        .map_err(|e| CoreError::Internal(e.to_string()))?;
+                    let inherited: Vec<Value> = serde_json::from_str(
+                        payload["text"]
+                            .as_str()
+                            .ok_or_else(|| CoreError::Internal("backendText.ma9f70493".into()))?,
+                    )
+                    .map_err(|e| CoreError::Internal(e.to_string()))?;
                     messages.extend(inherited);
                 } else {
                     messages.push(json!({"kind":message.kind,"text":message.text,"sequence":message.sequence,"turnId":message.turn_id}));
@@ -671,9 +669,7 @@ impl Core {
                 || original.payload["additionalDirectories"]
                     != json!(current.additional_directories)
             {
-                return Err(CoreError::Conflict(
-                    "backendText.m84762382".into(),
-                ));
+                return Err(CoreError::Conflict("backendText.m84762382".into()));
             }
             id
         } else {

@@ -203,8 +203,8 @@ impl Core {
         {
             return Err(CoreError::Internal("backendText.m04021b74".into()));
         }
-        let packet =
-            serde_json::from_str(packet).map_err(|_| CoreError::Internal("backendText.mb47503e7".into()))?;
+        let packet = serde_json::from_str(packet)
+            .map_err(|_| CoreError::Internal("backendText.mb47503e7".into()))?;
         crate::review_analysis::workflow::corpus(&packet)
             .into_iter()
             .find(|file| file.file_id == file_id)
@@ -233,9 +233,7 @@ impl Core {
                 || previous.request.source_snapshot != request.source_snapshot
                 || previous.request.recheck_of != request.recheck_of
             {
-                return Err(CoreError::InvalidArgument(
-                    "backendText.m0f49886b".into(),
-                ));
+                return Err(CoreError::InvalidArgument("backendText.m0f49886b".into()));
             }
             let packet = events
                 .iter()
@@ -250,9 +248,7 @@ impl Core {
                 return Err(CoreError::Internal("backendText.m04021b74".into()));
             }
             if !previous.workspace_review {
-                return Err(CoreError::InvalidArgument(
-                    "backendText.m083817e3".into(),
-                ));
+                return Err(CoreError::InvalidArgument("backendText.m083817e3".into()));
             }
             return Ok((
                 packet,
@@ -355,9 +351,7 @@ impl Core {
                 .as_ref()
                 .is_none_or(String::is_empty)
         {
-            return Err(CoreError::InvalidArgument(
-                "backendText.mf964f5c6".into(),
-            ));
+            return Err(CoreError::InvalidArgument("backendText.mf964f5c6".into()));
         }
         self.start_review(request, input).await
     }
@@ -381,14 +375,10 @@ impl Core {
             };
         }
         if request.kind.instruction().is_none() {
-            return Err(CoreError::InvalidArgument(
-                "backendText.m6d77242b".into(),
-            ));
+            return Err(CoreError::InvalidArgument("backendText.m6d77242b".into()));
         }
         if active.len() >= 8 {
-            return Err(CoreError::ResourceExhausted(
-                "backendText.m5fab3908".into(),
-            ));
+            return Err(CoreError::ResourceExhausted("backendText.m5fab3908".into()));
         }
         // Existing receipts above remain usable after disable/removal. New work
         // is ordered with availability writes through persistence and spawn.
@@ -400,9 +390,7 @@ impl Core {
             .await
             .get(&request.executor)
             .cloned()
-            .ok_or_else(|| {
-                CoreError::CapabilityUnavailable("backendText.m1f1725c6".into())
-            })?;
+            .ok_or_else(|| CoreError::CapabilityUnavailable("backendText.m1f1725c6".into()))?;
         let driver = driver.independent_session_driver()?.unwrap_or(driver);
         let (mut packet, source_sequence, source_artifact, coverage) = if request
             .source_snapshot

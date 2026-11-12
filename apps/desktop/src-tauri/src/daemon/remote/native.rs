@@ -633,8 +633,12 @@ impl Worker {
                 if let Some(width) = args.get("targetWidth").and_then(Value::as_u64) {
                     let width = u32::try_from(width).map_err(|_| "backendText.mc168d9c6")?;
                     super::parse_sequence(args.get_mut("viewRequest"))?;
-                    let seq = args["viewRequest"].as_u64().ok_or("backendText.m9d40b39a")?;
-                    let instance = args["videoInstance"].as_str().ok_or("backendText.m0ecc1f2a")?;
+                    let seq = args["viewRequest"]
+                        .as_u64()
+                        .ok_or("backendText.m9d40b39a")?;
+                    let instance = args["videoInstance"]
+                        .as_str()
+                        .ok_or("backendText.m0ecc1f2a")?;
                     video.request_width(instance, seq, width)?;
                 }
                 if args["ready"] == true {
@@ -812,7 +816,8 @@ impl Worker {
                             .ok_or("backendText.m82060f73")?;
                         let events = input_events(&args)?;
                         lease.sequence = sequence; // Consumed even if the OS reports an uncertain effect.
-                        let controller = lease.controller.as_mut().ok_or("backendText.mb84743f5")?;
+                        let controller =
+                            lease.controller.as_mut().ok_or("backendText.mb84743f5")?;
                         let display = match &lease.capturer {
                             Some(capturer) => capturer.display.clone(),
                             None => displays_for(lease.portal.as_ref())?

@@ -48,9 +48,7 @@ pub(super) fn validate_append(
             || !request.artifacts.is_empty()
             || request.expected_stream_version.is_none())
     {
-        return Err(RepositoryError::Unavailable(
-            "backendText.m72c35e74".into(),
-        ));
+        return Err(RepositoryError::Unavailable("backendText.m72c35e74".into()));
     }
     if deleted && event.event_type != "task.restored" {
         return Err(RepositoryError::Unavailable(
@@ -58,7 +56,9 @@ pub(super) fn validate_append(
         ));
     }
     if event.event_type == "task.restored" && !deleted {
-        return Err(RepositoryError::Unavailable("backendText.conversationNotRecentlyDeleted".into()));
+        return Err(RepositoryError::Unavailable(
+            "backendText.conversationNotRecentlyDeleted".into(),
+        ));
     }
     if event.event_type != "task.deleted" {
         return Ok(());

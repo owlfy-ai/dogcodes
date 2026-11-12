@@ -156,7 +156,10 @@ impl Permit {
                 .unwrap_or_else(|e| e.into_inner());
             guard = waiting;
         }
-        Err(format!("backendText.me1536238\u{1e}{}", serde_json::to_string(&[kind.action().to_string()]).unwrap_or_else(|_| "[]".into())))
+        Err(format!(
+            "backendText.me1536238\u{1e}{}",
+            serde_json::to_string(&[kind.action().to_string()]).unwrap_or_else(|_| "[]".into())
+        ))
     }
 }
 impl Drop for Permit {
@@ -224,7 +227,13 @@ impl<I: Send + 'static, O: Send + 'static> Worker<I, O> {
     ) -> Result<Self> {
         let deadline = Instant::now()
             .checked_add(initialize_timeout)
-            .ok_or_else(|| format!("backendText.mb47b9662\u{1e}{}", serde_json::to_string(&[kind.action().to_string()]).unwrap_or_else(|_| "[]".into())))?;
+            .ok_or_else(|| {
+                format!(
+                    "backendText.mb47b9662\u{1e}{}",
+                    serde_json::to_string(&[kind.action().to_string()])
+                        .unwrap_or_else(|_| "[]".into())
+                )
+            })?;
         let permit = Permit::take(kind, deadline)?;
         let (sender, receiver) = mpsc::sync_channel::<Request<I, O>>(1);
         let (ready, initialized) = mpsc::sync_channel(1);
@@ -237,7 +246,11 @@ impl<I: Send + 'static, O: Send + 'static> Worker<I, O> {
                 // Scheduling delay or retirement waiting cannot start a new
                 // native initialization after its original owner has expired.
                 if !active.load(Ordering::Acquire) || Instant::now() >= deadline {
-                    let _ = ready.send(Err(format!("backendText.mc2973251\u{1e}{}", serde_json::to_string(&[kind.action().to_string()]).unwrap_or_else(|_| "[]".into()))));
+                    let _ = ready.send(Err(format!(
+                        "backendText.mc2973251\u{1e}{}",
+                        serde_json::to_string(&[kind.action().to_string()])
+                            .unwrap_or_else(|_| "[]".into())
+                    )));
                     return;
                 }
                 // C may be !Send (COM, GL, ...). It is created, used and dropped on
@@ -269,7 +282,13 @@ impl<I: Send + 'static, O: Send + 'static> Worker<I, O> {
                     }
                 }
             })
-            .map_err(|_| format!("backendText.mfe8bea7c\u{1e}{}", serde_json::to_string(&[kind.action().to_string()]).unwrap_or_else(|_| "[]".into())))?;
+            .map_err(|_| {
+                format!(
+                    "backendText.mfe8bea7c\u{1e}{}",
+                    serde_json::to_string(&[kind.action().to_string()])
+                        .unwrap_or_else(|_| "[]".into())
+                )
+            })?;
         let mut worker = Self {
             sender: Some(sender),
             live,
@@ -284,7 +303,11 @@ impl<I: Send + 'static, O: Send + 'static> Worker<I, O> {
             }
             Err(_) => {
                 worker.retire();
-                Err(format!("backendText.mc2973251\u{1e}{}", serde_json::to_string(&[kind.action().to_string()]).unwrap_or_else(|_| "[]".into())))
+                Err(format!(
+                    "backendText.mc2973251\u{1e}{}",
+                    serde_json::to_string(&[kind.action().to_string()])
+                        .unwrap_or_else(|_| "[]".into())
+                ))
             }
         }
     }
@@ -295,7 +318,11 @@ impl<I: Send + 'static, O: Send + 'static> Worker<I, O> {
         let timeout = self.timeout.min(budget);
         if timeout.is_zero() {
             self.retire();
-            return Err(format!("backendText.m71829b52\u{1e}{}", serde_json::to_string(&[self.kind.action().to_string()]).unwrap_or_else(|_| "[]".into())));
+            return Err(format!(
+                "backendText.m71829b52\u{1e}{}",
+                serde_json::to_string(&[self.kind.action().to_string()])
+                    .unwrap_or_else(|_| "[]".into())
+            ));
         }
         let (reply, response) = mpsc::sync_channel(1);
         let sent = self
@@ -304,7 +331,11 @@ impl<I: Send + 'static, O: Send + 'static> Worker<I, O> {
             .is_some_and(|sender| sender.try_send((input, reply)).is_ok());
         if !sent {
             self.retire();
-            return Err(format!("backendText.ma95c7e30\u{1e}{}", serde_json::to_string(&[self.kind.action().to_string()]).unwrap_or_else(|_| "[]".into())));
+            return Err(format!(
+                "backendText.ma95c7e30\u{1e}{}",
+                serde_json::to_string(&[self.kind.action().to_string()])
+                    .unwrap_or_else(|_| "[]".into())
+            ));
         }
         match response.recv_timeout(timeout) {
             Ok(Ok(output)) => Ok(output),
@@ -314,7 +345,11 @@ impl<I: Send + 'static, O: Send + 'static> Worker<I, O> {
             }
             Err(_) => {
                 self.retire();
-                Err(format!("backendText.m2a1f95a6\u{1e}{}", serde_json::to_string(&[self.kind.action().to_string()]).unwrap_or_else(|_| "[]".into())))
+                Err(format!(
+                    "backendText.m2a1f95a6\u{1e}{}",
+                    serde_json::to_string(&[self.kind.action().to_string()])
+                        .unwrap_or_else(|_| "[]".into())
+                ))
             }
         }
     }

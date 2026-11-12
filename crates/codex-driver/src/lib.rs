@@ -1217,7 +1217,7 @@ impl QuotaProvider for CodexDriver {
             source: "native_pull".into(),
             confidence: "provider_reported".into(),
             parser_version: QUOTA_PARSER_VERSION.into(),
-                            ..Default::default()
+            ..Default::default()
         };
         self.quota.record(snapshot, "native_pull");
         self.quota
@@ -1886,7 +1886,8 @@ fn file_change_approval_summary(params: &serde_json::Value) -> String {
         "itemId": params.get("itemId").and_then(serde_json::Value::as_str),
         "reason": params.get("reason").and_then(serde_json::Value::as_str),
         "grantRoot": params.get("grantRoot").and_then(serde_json::Value::as_str),
-    }).to_string()
+    })
+    .to_string()
 }
 
 fn map_notification(method: &str, params: &Value) -> Option<DriverEvent> {
@@ -1985,14 +1986,26 @@ fn map_tool_item(params: &Value, completed: bool) -> Option<DriverEvent> {
                 .get("tool")
                 .and_then(Value::as_str)
                 .unwrap_or("backendText.m7d7f9135");
-            (name.to_owned(), format!("backendText.m3ca5d89c\u{1e}{}", serde_json::to_string(&[name.to_string()]).unwrap_or_else(|_| "[]".into())))
+            (
+                name.to_owned(),
+                format!(
+                    "backendText.m3ca5d89c\u{1e}{}",
+                    serde_json::to_string(&[name.to_string()]).unwrap_or_else(|_| "[]".into())
+                ),
+            )
         }
         "dynamicToolCall" => {
             let name = item
                 .get("tool")
                 .and_then(Value::as_str)
                 .unwrap_or("backendText.me3cae5c4");
-            (name.to_owned(), format!("backendText.m3ca5d89c\u{1e}{}", serde_json::to_string(&[name.to_string()]).unwrap_or_else(|_| "[]".into())))
+            (
+                name.to_owned(),
+                format!(
+                    "backendText.m3ca5d89c\u{1e}{}",
+                    serde_json::to_string(&[name.to_string()]).unwrap_or_else(|_| "[]".into())
+                ),
+            )
         }
         "collabAgentToolCall" => ("collab_agent".into(), "backendText.m5c0722d5".into()),
         "subAgentActivity" => ("sub_agent".into(), "backendText.m31ba36bc".into()),
@@ -2592,7 +2605,12 @@ mod tests {
         assert_eq!(value["scope"], "unknown");
         assert_eq!(value["grantRoot"], "/temporary");
         assert!(!summary.contains("must not display"));
-        assert!(value["message"].as_str().unwrap().contains("backendText.m756762e2"));
+        assert!(
+            value["message"]
+                .as_str()
+                .unwrap()
+                .contains("backendText.m756762e2")
+        );
         for files in [
             serde_json::json!([]),
             serde_json::json!({}),
@@ -2734,7 +2752,7 @@ mod tests {
                 source: "native_pull".into(),
                 confidence: "provider_reported".into(),
                 parser_version: QUOTA_PARSER_VERSION.into(),
-                            ..Default::default()
+                ..Default::default()
             },
             "native_pull",
         );

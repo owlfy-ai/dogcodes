@@ -37,7 +37,8 @@ pub(super) async fn load(
             let artifact = core
                 .verified_artifact(&task, &metadata.artifact_id, &metadata.payload_sha256)
                 .await?;
-            let data = serde_json::from_slice(&artifact.content).map_err(|_| "backendText.m74279719")?;
+            let data =
+                serde_json::from_slice(&artifact.content).map_err(|_| "backendText.m74279719")?;
             collect(&mut result, &data, roots)?;
         }
         cursor = page.next_cursor;

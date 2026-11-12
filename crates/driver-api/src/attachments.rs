@@ -45,9 +45,7 @@ pub async fn validate(items: &[PromptAttachment]) -> Result<(), DriverError> {
                 "image/png" | "image/jpeg" | "image/gif" | "image/webp"
             )
         {
-            return Err(invalid(
-                "backendText.attachmentImageFormat",
-            ));
+            return Err(invalid("backendText.attachmentImageFormat"));
         }
     }
     Ok(())

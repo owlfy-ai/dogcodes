@@ -89,7 +89,11 @@ impl GitReview {
             for (path, entries) in groups {
                 let rules: Vec<_> = entries.iter().map(|(_, rule)| rule.as_str()).collect();
                 if let Err(error) = append_ignore_rules(&path, &rules) {
-                    result.error = Some(format!("backendText.m50f066ee\u{1e}{}", serde_json::to_string(&[path.display().to_string(), error.to_string()]).unwrap_or_else(|_| "[]".into())));
+                    result.error = Some(format!(
+                        "backendText.m50f066ee\u{1e}{}",
+                        serde_json::to_string(&[path.display().to_string(), error.clone()])
+                            .unwrap_or_else(|_| "[]".into())
+                    ));
                     break;
                 }
                 result

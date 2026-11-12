@@ -788,7 +788,9 @@ impl TargetHost {
         remember: bool,
     ) -> Result<(), String> {
         let connections = self.connections.lock().unwrap();
-        let connection = connections.get(target).ok_or("backendText.targetConnectionMissing")?;
+        let connection = connections
+            .get(target)
+            .ok_or("backendText.targetConnectionMissing")?;
         let waiting = connection
             .waiting
             .lock()

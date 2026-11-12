@@ -49,7 +49,9 @@ impl<T> Delivery<T> {
         if self.active.load(Ordering::Acquire) {
             Ok(())
         } else {
-            Err(self.error().unwrap_or_else(|| "backendText.m939d4c98".into()))
+            Err(self
+                .error()
+                .unwrap_or_else(|| "backendText.m939d4c98".into()))
         }
     }
     pub fn after_prepare<P, C>(
@@ -144,7 +146,10 @@ impl<T> Delivery<T> {
                 return result.clone();
             }
             if phase.stopped {
-                return Err(phase.error.clone().unwrap_or_else(|| "backendText.m5dcc32bb".into()));
+                return Err(phase
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "backendText.m5dcc32bb".into()));
             }
             phase = self.changed.wait(phase).unwrap_or_else(|e| e.into_inner());
         }

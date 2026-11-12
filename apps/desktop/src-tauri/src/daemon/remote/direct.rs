@@ -48,9 +48,8 @@ impl RemoteHost {
             )
         };
         let ice = match http(&config, &secrets, reqwest::Method::GET, "ice").await {
-            Ok(value) => {
-                serde_json::from_value(value["iceServers"].clone()).map_err(|_| "backendText.mbeda4c88")?
-            }
+            Ok(value) => serde_json::from_value(value["iceServers"].clone())
+                .map_err(|_| "backendText.mbeda4c88")?,
             // Older/local service deployments can still use LAN candidates.
             Err(_) => Vec::new(),
         };

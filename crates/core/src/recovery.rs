@@ -235,7 +235,11 @@ impl Core {
             {
                 Ok(()) => self.repository.complete_task_cleanup(&task).await?,
                 Err(error) => {
-                    failure = Some(CoreError::Internal(format!("backendText.m4c61a265\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))));
+                    failure = Some(CoreError::Internal(format!(
+                        "backendText.m4c61a265\u{1e}{}",
+                        serde_json::to_string(std::slice::from_ref(&error))
+                            .unwrap_or_else(|_| "[]".into())
+                    )));
                 }
             }
         }

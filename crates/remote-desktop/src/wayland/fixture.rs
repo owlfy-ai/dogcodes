@@ -996,7 +996,12 @@ async fn owned_portal_fixture_verifies_rotation_grants_input_and_disconnect() {
         std::fs::write(&force, b"owned-fixture").unwrap();
         wait_for(|| corrupt.exists()).await;
         wait_for(|| source.check_active().is_err()).await;
-        assert!(source.check_active().unwrap_err().contains("backendText.m3f7fc78e"));
+        assert!(
+            source
+                .check_active()
+                .unwrap_err()
+                .contains("backendText.m3f7fc78e")
+        );
         assert!(checking.status().is_err());
         std::fs::remove_file(&force).unwrap();
         drop(source);
@@ -1016,7 +1021,12 @@ async fn owned_portal_fixture_verifies_rotation_grants_input_and_disconnect() {
         std::fs::write(&force, b"owned-fixture").unwrap();
         wait_for(|| root.join(".corrupt-chunk-written").exists()).await;
         wait_for(|| source.check_active().is_err()).await;
-        assert!(source.check_active().unwrap_err().contains("backendText.m3f7fc78e"));
+        assert!(
+            source
+                .check_active()
+                .unwrap_err()
+                .contains("backendText.m3f7fc78e")
+        );
         assert!(checking.status().is_err());
         std::fs::remove_file(&force).unwrap();
         drop(source);
@@ -1118,7 +1128,12 @@ async fn owned_portal_fixture_verifies_rotation_grants_input_and_disconnect() {
     shared.start_mode.store(1, Ordering::Release);
     let denied = Session::start(store.clone(), true).unwrap();
     wait_for(|| denied.status() != Ok(false)).await;
-    assert!(denied.status().unwrap_err().contains("backendText.mb50c2e04"));
+    assert!(
+        denied
+            .status()
+            .unwrap_err()
+            .contains("backendText.mb50c2e04")
+    );
     drop(denied);
     wait_for(|| ACTORS.load(Ordering::Acquire) == 0).await;
     shared.start_mode.store(3, Ordering::Release);

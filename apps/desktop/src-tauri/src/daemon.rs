@@ -2742,7 +2742,13 @@ mod tests {
         .unwrap();
         assert!(!cleanup.is_finished());
         release.send(()).unwrap();
-        assert!(cleanup.await.unwrap().unwrap_err().contains("backendText.m8f3c1afc"));
+        assert!(
+            cleanup
+                .await
+                .unwrap()
+                .unwrap_err()
+                .contains("backendText.m8f3c1afc")
+        );
         assert!(!f.control.startup_work.active());
         assert_eq!(
             std::fs::read(root.join("unrecognized.json")).unwrap(),

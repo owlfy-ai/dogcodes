@@ -232,7 +232,15 @@ fn classify(line: &str) -> Option<Classified> {
                         .and_then(Value::as_str)
                         .unwrap_or_default()
                         .to_owned(),
-                    summary: format!("backendText.m5741826f\u{1e}{}", serde_json::to_string(&[block.get("name").and_then(Value::as_str).unwrap_or("backendText.m5ca6730d").to_string()]).unwrap_or_else(|_| "[]".into())),
+                    summary: format!(
+                        "backendText.m5741826f\u{1e}{}",
+                        serde_json::to_string(&[block
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or("backendText.m5ca6730d")
+                            .to_string()])
+                        .unwrap_or_else(|_| "[]".into())
+                    ),
                 })
                 .collect::<Vec<_>>();
             Some(if frames.is_empty() {

@@ -24,9 +24,7 @@ pub(crate) fn validate(
         ));
     }
     if envelope.expected_stream_version.is_none() {
-        return Err(CoreError::InvalidArgument(
-            "backendText.m9ecc624f".into(),
-        ));
+        return Err(CoreError::InvalidArgument("backendText.m9ecc624f".into()));
     }
     for values in [&preferences.order, &preferences.disabled] {
         if values.len() > 256
@@ -39,9 +37,7 @@ pub(crate) fn validate(
             })
             || values.iter().collect::<BTreeSet<_>>().len() != values.len()
         {
-            return Err(CoreError::InvalidArgument(
-                "backendText.mfe516439".into(),
-            ));
+            return Err(CoreError::InvalidArgument("backendText.mfe516439".into()));
         }
     }
     Ok(())

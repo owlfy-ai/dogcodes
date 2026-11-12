@@ -64,10 +64,14 @@ fn persist_registration(
     entry: &keyring::Entry,
 ) -> Result<(), String> {
     std::fs::create_dir_all(directory).map_err(|_| "backendText.m80186537")?;
-    let mut file = tempfile::NamedTempFile::new_in(directory).map_err(|_| "backendText.m80186537")?;
+    let mut file =
+        tempfile::NamedTempFile::new_in(directory).map_err(|_| "backendText.m80186537")?;
     let bytes = serde_json::to_vec(config).map_err(|_| "backendText.m80186537")?;
-    file.write_all(&bytes).map_err(|_| "backendText.m80186537")?;
-    file.as_file().sync_all().map_err(|_| "backendText.m80186537")?;
+    file.write_all(&bytes)
+        .map_err(|_| "backendText.m80186537")?;
+    file.as_file()
+        .sync_all()
+        .map_err(|_| "backendText.m80186537")?;
     entry
         .set_password(&serde_json::to_string(secrets).map_err(|_| "backendText.m70912d34")?)
         .map_err(|_| "backendText.m3af7a6ab")?;
@@ -214,7 +218,10 @@ mod tests {
             let (service, requests) = server(vec![(401, json!({}))]).await;
             let mut ready = ready(directory.path(), service, paired);
             let before = ready.book.grants();
-            let error = ready.invitation(directory.path(), active).await.unwrap_err();
+            let error = ready
+                .invitation(directory.path(), active)
+                .await
+                .unwrap_err();
             assert_eq!(
                 error,
                 if paired {

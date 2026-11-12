@@ -47,7 +47,12 @@ impl WorkspaceWatchers {
         }
     }
     pub(crate) fn stop(&self, key: Key) -> Result<(), String> {
-        if let Some(entry) = self.0.lock().map_err(|_| "backendText.m89dbc51f")?.remove(&key) {
+        if let Some(entry) = self
+            .0
+            .lock()
+            .map_err(|_| "backendText.m89dbc51f")?
+            .remove(&key)
+        {
             entry.abort.abort();
         }
         Ok(())

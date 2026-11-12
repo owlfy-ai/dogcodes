@@ -508,12 +508,10 @@ fn directories(args: Value) -> Result<Value, String> {
         return Err("backendText.m13d3f902".into());
     }
     let path = crate::project_registry::plain_path(
-        path.canonicalize()
-            .map_err(|_| "backendText.me6b8beae")?,
+        path.canonicalize().map_err(|_| "backendText.me6b8beae")?,
     );
     let mut entries = Vec::new();
-    for entry in std::fs::read_dir(&path).map_err(|_| "backendText.me6b8beae")?
-    {
+    for entry in std::fs::read_dir(&path).map_err(|_| "backendText.me6b8beae")? {
         // One unreadable entry (a vanished file, a broken link) must not hide
         // the rest of the directory.
         let Ok(entry) = entry else { continue };

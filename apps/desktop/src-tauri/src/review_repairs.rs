@@ -235,8 +235,8 @@ impl ReviewRepairs {
                 return Ok(None);
             }
             let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-            let stored: Stored = serde_json::from_slice(&bytes)
-                .map_err(|_| "backendText.m7c1c450b".to_string())?;
+            let stored: Stored =
+                serde_json::from_slice(&bytes).map_err(|_| "backendText.m7c1c450b".to_string())?;
             if stored.schema_version != 1 {
                 return Err("backendText.mec18d6a9".into());
             }

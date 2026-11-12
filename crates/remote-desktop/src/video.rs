@@ -1810,7 +1810,11 @@ mod platform {
         unsafe impl SCStreamDelegate for Output {
             #[unsafe(method(stream:didStopWithError:))]
             fn stream_did_stop(&self, _stream: &SCStream, error: &NSError) {
-                self.ivars().delivery.stopped(Some(format!("backendText.m19d5d82a\u{1e}{}", serde_json::to_string(&[error.localizedDescription().to_string()]).unwrap_or_else(|_| "[]".into()))));
+                self.ivars().delivery.stopped(Some(format!(
+                    "backendText.m19d5d82a\u{1e}{}",
+                    serde_json::to_string(&[error.localizedDescription().to_string()])
+                        .unwrap_or_else(|_| "[]".into())
+                )));
             }
         }
     );
@@ -1883,7 +1887,12 @@ mod platform {
     }
 
     fn wait<T>(rx: &mpsc::Receiver<std::result::Result<T, String>>, what: &str) -> Result<T> {
-        rx.recv().map_err(|_| format!("backendText.m0a6e11ea\u{1e}{}", serde_json::to_string(&[what.to_string()]).unwrap_or_else(|_| "[]".into())))?
+        rx.recv().map_err(|_| {
+            format!(
+                "backendText.m0a6e11ea\u{1e}{}",
+                serde_json::to_string(&[what.to_string()]).unwrap_or_else(|_| "[]".into())
+            )
+        })?
     }
 
     fn error_text(error: *mut NSError) -> String {
@@ -1962,7 +1971,11 @@ mod platform {
                         .map(|c| unsafe { Retained::retain(std::ptr::from_ref(c).cast_mut()) });
                     let _ = tx.send(match content.flatten() {
                         Some(content) => Ok(content),
-                        None => Err(format!("backendText.m6548eaf7\u{1e}{}", serde_json::to_string(&[error_text(error).to_string()]).unwrap_or_else(|_| "[]".into()))),
+                        None => Err(format!(
+                            "backendText.m6548eaf7\u{1e}{}",
+                            serde_json::to_string(&[error_text(error).to_string()])
+                                .unwrap_or_else(|_| "[]".into())
+                        )),
                     });
                 },
             );
@@ -2022,7 +2035,13 @@ mod platform {
                         SCStreamOutputType::Screen,
                         Some(&queue),
                     )
-                    .map_err(|e| format!("backendText.m99776573\u{1e}{}", serde_json::to_string(&[e.localizedDescription().to_string()]).unwrap_or_else(|_| "[]".into())))?;
+                    .map_err(|e| {
+                        format!(
+                            "backendText.m99776573\u{1e}{}",
+                            serde_json::to_string(&[e.localizedDescription().to_string()])
+                                .unwrap_or_else(|_| "[]".into())
+                        )
+                    })?;
                 stream
             };
             let mut capture = Self {
@@ -2046,7 +2065,11 @@ mod platform {
                 starting.started(if error.is_null() {
                     Ok(())
                 } else {
-                    Err(format!("backendText.m11af9e72\u{1e}{}", serde_json::to_string(&[error_text(error).to_string()]).unwrap_or_else(|_| "[]".into())))
+                    Err(format!(
+                        "backendText.m11af9e72\u{1e}{}",
+                        serde_json::to_string(&[error_text(error).to_string()])
+                            .unwrap_or_else(|_| "[]".into())
+                    ))
                 });
             });
             capture.requested = true;
@@ -2078,7 +2101,11 @@ mod platform {
                 let _ = sender.send(if error.is_null() {
                     Ok(())
                 } else {
-                    Err(format!("backendText.m6d9ea42c\u{1e}{}", serde_json::to_string(&[error_text(error).to_string()]).unwrap_or_else(|_| "[]".into())))
+                    Err(format!(
+                        "backendText.m6d9ea42c\u{1e}{}",
+                        serde_json::to_string(&[error_text(error).to_string()])
+                            .unwrap_or_else(|_| "[]".into())
+                    ))
                 });
             });
             // SAFETY: valid stream/configuration, block retained by framework.
@@ -2109,7 +2136,11 @@ mod platform {
                 if error.is_null() {
                     delivery.stopped(None);
                 } else {
-                    delivery.fail(format!("backendText.m4bf401e5\u{1e}{}", serde_json::to_string(&[error_text(error).to_string()]).unwrap_or_else(|_| "[]".into())));
+                    delivery.fail(format!(
+                        "backendText.m4bf401e5\u{1e}{}",
+                        serde_json::to_string(&[error_text(error).to_string()])
+                            .unwrap_or_else(|_| "[]".into())
+                    ));
                 }
             });
             // SAFETY: the native stream and delegate remain alive on this

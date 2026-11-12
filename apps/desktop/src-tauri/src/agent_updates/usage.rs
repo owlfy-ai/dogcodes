@@ -214,9 +214,7 @@ async fn scan(i: &InstallationSummary, p: &Plan) -> Result<Vec<Identity>, String
                 break;
             };
             if scope.matches(process) {
-                return Err(
-                    "backendText.m70d8ff22".into(),
-                );
+                return Err("backendText.m70d8ff22".into());
             }
             cursor = process.parent();
         }
@@ -299,9 +297,7 @@ pub(super) async fn prepare(
         .iter()
         .any(|t| t.active_primary_run.is_some() && !target_task(t, i))
     {
-        return Err(
-            "backendText.mc3595315".into(),
-        );
+        return Err("backendText.mc3595315".into());
     }
     let tasks: Vec<_> = snapshot
         .tasks

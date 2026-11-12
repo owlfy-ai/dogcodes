@@ -96,9 +96,7 @@ fn outcome(value: GitOutcome) -> Result<GitCompletion, String> {
         }),
         GitOutcome::Failed { message } => Err(message),
         GitOutcome::Running => Err("backendText.m2b9c81c3".into()),
-        GitOutcome::Unknown => {
-            Err("backendText.mb03761ab".into())
-        }
+        GitOutcome::Unknown => Err("backendText.mb03761ab".into()),
     }
 }
 
@@ -320,7 +318,13 @@ mod tests {
         assert_eq!(next.entries.len(), 1);
         assert!(next.next_cursor.is_none());
         assert!(next.entries[0].receipt.is_none());
-        assert!(next.entries[0].error.as_ref().unwrap().contains("backendText.m5a10fb74"));
+        assert!(
+            next.entries[0]
+                .error
+                .as_ref()
+                .unwrap()
+                .contains("backendText.m5a10fb74")
+        );
         assert!(host.page(&req.task_id, Some("../other"), 2).is_err());
         assert!(host.page(&req.task_id, None, 0).is_err());
         assert!(host.page(&req.task_id, None, 51).is_err());
@@ -338,7 +342,13 @@ mod tests {
         let large = host
             .page(&req.task_id, first.next_cursor.as_deref(), 2)
             .unwrap();
-        assert!(large.entries[0].error.as_ref().unwrap().contains("backendText.m43fa3a33"));
+        assert!(
+            large.entries[0]
+                .error
+                .as_ref()
+                .unwrap()
+                .contains("backendText.m43fa3a33")
+        );
         std::fs::write(temp.path().join(&req.task_id).join("bad-id.json"), "{}").unwrap();
         assert!(host.page(&req.task_id, None, 2).is_err());
     }
@@ -351,7 +361,11 @@ mod tests {
         assert!(
             host.execute(req.clone(), || async {
                 count.fetch_add(1, Ordering::SeqCst);
-                Err(format!("backendText.me3ab01ae\u{1e}{}", serde_json::to_string(&[super::super::UNKNOWN_GIT_EFFECT.to_string()]).unwrap_or_else(|_| "[]".into())))
+                Err(format!(
+                    "backendText.me3ab01ae\u{1e}{}",
+                    serde_json::to_string(&[super::super::UNKNOWN_GIT_EFFECT.to_string()])
+                        .unwrap_or_else(|_| "[]".into())
+                ))
             })
             .await
             .is_err()

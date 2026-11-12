@@ -171,9 +171,7 @@ impl Core {
             Err(RepositoryError::Conflict { .. }) => {
                 return match self.command_receipt(envelope).await? {
                     Some(acknowledgement) => Ok(CommandInvalidation::Accepted { acknowledgement }),
-                    None => Err(CoreError::Conflict(
-                        "backendText.m86b8ee7a".into(),
-                    )),
+                    None => Err(CoreError::Conflict("backendText.m86b8ee7a".into())),
                 };
             }
             Err(error) => return Err(error.into()),

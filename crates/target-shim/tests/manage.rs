@@ -373,7 +373,12 @@ fn a_failed_download_runs_nothing_and_a_failed_installer_says_why() {
     let request = json!({"type":"install","provider":"kiro"});
     let reply = ask(&request, home.path(), bin.path(), &[]);
     assert_eq!(reply["Err"]["kind"], "other");
-    assert!(reply["Err"]["message"].as_str().unwrap().contains("backendText.installUnreachable"));
+    assert!(
+        reply["Err"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("backendText.installUnreachable")
+    );
     assert!(!ran.exists());
 
     std::fs::remove_file(bin.path().join("bash")).unwrap();

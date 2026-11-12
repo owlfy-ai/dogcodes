@@ -22,9 +22,7 @@ pub(crate) fn validate(
         ActorRef::LocalUser | ActorRef::PairedDevice(_)
     ) || envelope.expected_stream_version.is_none()
     {
-        return Err(CoreError::InvalidArgument(
-            "backendText.m8621c5b2".into(),
-        ));
+        return Err(CoreError::InvalidArgument("backendText.m8621c5b2".into()));
     }
     let key_valid =
         |key: &str| !key.is_empty() && key.len() <= 512 && !key.chars().any(char::is_control);
@@ -51,9 +49,7 @@ pub(crate) fn validate(
             .len()
             > 4 * 1024 * 1024
     {
-        return Err(CoreError::InvalidArgument(
-            "backendText.m240cba6f".into(),
-        ));
+        return Err(CoreError::InvalidArgument("backendText.m240cba6f".into()));
     }
     Ok(())
 }

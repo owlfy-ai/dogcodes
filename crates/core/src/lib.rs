@@ -1045,14 +1045,10 @@ impl Core {
                     || command.display_name.chars().any(char::is_control)
                     || command.additional_directories.len() > 31
                 {
-                    return Err(CoreError::InvalidArgument(
-                        "backendText.mb82c7b22".into(),
-                    ));
+                    return Err(CoreError::InvalidArgument("backendText.mb82c7b22".into()));
                 }
                 if envelope.expected_stream_version.is_none() {
-                    return Err(CoreError::InvalidArgument(
-                        "backendText.mfeb36b78".into(),
-                    ));
+                    return Err(CoreError::InvalidArgument("backendText.mfeb36b78".into()));
                 }
                 let snapshot = self.repository.bootstrap().await?;
                 let project = snapshot
@@ -1096,9 +1092,7 @@ impl Core {
                                     )
                                 })
                         {
-                            return Err(CoreError::Conflict(
-                                "backendText.m89b41da2".into(),
-                            ));
+                            return Err(CoreError::Conflict("backendText.m89b41da2".into()));
                         }
                     }
                 }
@@ -1139,9 +1133,7 @@ impl Core {
                             )
                         })
                 {
-                    return Err(CoreError::Conflict(
-                        "backendText.m7e1ffec1".into(),
-                    ));
+                    return Err(CoreError::Conflict("backendText.m7e1ffec1".into()));
                 }
                 if envelope.expected_stream_version.is_none() {
                     return Err(CoreError::InvalidArgument(
@@ -1333,9 +1325,7 @@ impl Core {
                         .as_ref()
                         .is_some_and(|id| !selected.thinking_options.iter().any(|o| &o.id == id))
                     {
-                        return Err(CoreError::InvalidArgument(
-                            "backendText.m3fbb689d".into(),
-                        ));
+                        return Err(CoreError::InvalidArgument("backendText.m3fbb689d".into()));
                     }
                 }
             }
@@ -1372,9 +1362,7 @@ impl Core {
                 if approval.turn_id != command.turn_id
                     || approval.requested_at_sequence != command.requested_at_sequence
                 {
-                    return Err(CoreError::Conflict(
-                        "backendText.m619ed3de".into(),
-                    ));
+                    return Err(CoreError::Conflict("backendText.m619ed3de".into()));
                 }
                 let active = task.active_primary_run.as_ref().ok_or_else(|| {
                     CoreError::Conflict("the approval's turn is no longer active".into())
@@ -1803,9 +1791,7 @@ impl Core {
         if let (Some(project), Some(installation)) = (project_target, installation_target)
             && project != installation
         {
-            return Err(CoreError::InvalidArgument(
-                "backendText.m341339e8".into(),
-            ));
+            return Err(CoreError::InvalidArgument("backendText.m341339e8".into()));
         }
         Ok(())
     }
@@ -1831,8 +1817,7 @@ impl Core {
         item_id: &str,
     ) -> Result<Vec<Value>, CoreError> {
         self.require_task(task_id).await?;
-        let unavailable =
-            || CoreError::CapabilityUnavailable("backendText.mc626934b".into());
+        let unavailable = || CoreError::CapabilityUnavailable("backendText.mc626934b".into());
         let (id, turn, provider, through) = {
             let items = self.repository.task_timeline(task_id).await?;
             let item = items

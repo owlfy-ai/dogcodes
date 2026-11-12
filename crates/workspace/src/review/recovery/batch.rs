@@ -22,7 +22,9 @@ impl ReviewStore {
         if changes.is_empty() || changes.len() > 2000 {
             return Err("backendText.m7b62ad72".into());
         }
-        let root = root.canonicalize().map_err(|_| "backendText.workspaceUnavailable")?;
+        let root = root
+            .canonicalize()
+            .map_err(|_| "backendText.workspaceUnavailable")?;
         let root_text = root.to_str().ok_or("backendText.workspaceEncoding")?;
         let mut paths = BTreeSet::new();
         for change in changes {
@@ -52,12 +54,20 @@ impl ReviewStore {
         let check = || -> ReviewResult<()> {
             for change in changes {
                 if transaction::current_version(self, root_text, &change.path)? != change.after {
-                    return Err(format!("backendText.m72c22b6c\u{1e}{}", serde_json::to_string(&[change.path.to_string()]).unwrap_or_else(|_| "[]".into())));
+                    return Err(format!(
+                        "backendText.m72c22b6c\u{1e}{}",
+                        serde_json::to_string(std::slice::from_ref(&change.path))
+                            .unwrap_or_else(|_| "[]".into())
+                    ));
                 }
                 if let Some(previous) = &change.previous_path
                     && transaction::current_version(self, root_text, previous)?.is_some()
                 {
-                    return Err(format!("backendText.md48e9a88\u{1e}{}", serde_json::to_string(&[previous.to_string()]).unwrap_or_else(|_| "[]".into())));
+                    return Err(format!(
+                        "backendText.md48e9a88\u{1e}{}",
+                        serde_json::to_string(std::slice::from_ref(previous))
+                            .unwrap_or_else(|_| "[]".into())
+                    ));
                 }
             }
             Ok(())
@@ -92,7 +102,11 @@ impl ReviewStore {
                 self.apply_recovery(task, &id)
             };
             if let Err(error) = outcome {
-                result.error = Some(format!("backendText.m01b66617\u{1e}{}", serde_json::to_string(&[path.to_string(), error.to_string(), id.to_string()]).unwrap_or_else(|_| "[]".into())));
+                result.error = Some(format!(
+                    "backendText.m01b66617\u{1e}{}",
+                    serde_json::to_string(&[path.clone(), error.clone(), id.clone()])
+                        .unwrap_or_else(|_| "[]".into())
+                ));
                 break;
             }
             result.completed.push(path);

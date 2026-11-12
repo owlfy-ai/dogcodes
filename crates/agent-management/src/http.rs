@@ -71,7 +71,11 @@ pub async fn get(url: &str) -> Result<String, String> {
         .error_for_status()
         .map_err(|_| "backendText.versionSourceDown")?;
     let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| "backendText.versionReadFailed")? {
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| "backendText.versionReadFailed")?
+    {
         if body.len() + chunk.len() > 1024 * 1024 {
             return Err("backendText.versionTooLarge".into());
         }

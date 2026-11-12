@@ -1,7 +1,7 @@
 //! Whole-turn restoration uses the same guarded, durable file transactions as Review.
 use super::{ReviewStore, digest, private_directory, transaction, write_once};
-use agent_domain::user_text;
 use crate::review::{FileKind, FileVersion, validate_relative};
+use agent_domain::user_text;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -25,7 +25,9 @@ impl ReviewStore {
         before: &std::collections::BTreeMap<String, Value>,
     ) -> Result<Vec<crate::review::FileChange>, String> {
         use crate::review::{ChangeKind, FileChange};
-        let root = root.canonicalize().map_err(|_| "backendText.workspaceUnavailable")?;
+        let root = root
+            .canonicalize()
+            .map_err(|_| "backendText.workspaceUnavailable")?;
         let root = root.to_str().ok_or("backendText.workspaceEncoding")?;
         let mut changes = Vec::new();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -95,16 +97,15 @@ impl ReviewStore {
             };
         }
         if data["sharedWorkspace"] == true {
-            return Err(
-                "backendText.undoSharedWorkspace"
-                    .into(),
-            );
+            return Err("backendText.undoSharedWorkspace".into());
         }
         if data["attribution"] != "workspace_interval" || data["recoveredAfterInterruption"] == true
         {
             return Err("backendText.undoIncompleteTurn".into());
         }
-        let files = data["files"].as_array().ok_or("backendText.snapshotMissing")?;
+        let files = data["files"]
+            .as_array()
+            .ok_or("backendText.snapshotMissing")?;
         if files.is_empty() {
             return Err("backendText.undoNoChanges".into());
         }
@@ -140,8 +141,16 @@ impl ReviewStore {
             if !seen.insert(canonical.join(relative)) {
                 return Err("backendText.snapshotDuplicatePath".into());
             }
-            let before = snapshot_version(self, file.get("before").ok_or("backendText.snapshotBeforeMissing")?)?;
-            let after = snapshot_version(self, file.get("after").ok_or("backendText.snapshotAfterMissing")?)?;
+            let before = snapshot_version(
+                self,
+                file.get("before")
+                    .ok_or("backendText.snapshotBeforeMissing")?,
+            )?;
+            let after = snapshot_version(
+                self,
+                file.get("after")
+                    .ok_or("backendText.snapshotAfterMissing")?,
+            )?;
             if before == after {
                 continue;
             }
@@ -173,7 +182,11 @@ impl ReviewStore {
             );
         }
         // Preserve the complete operation intent before the first file is touched.
-        private_directory(manifest.parent().ok_or("backendText.undoStorageUnavailable")?)?;
+        private_directory(
+            manifest
+                .parent()
+                .ok_or("backendText.undoStorageUnavailable")?,
+        )?;
         write_once(
             &manifest,
             &serde_json::to_vec(&TurnUndo {
@@ -220,8 +233,12 @@ fn snapshot_version(store: &ReviewStore, value: &Value) -> Result<Option<FileVer
     if value["contentOmitted"] == true {
         return Err("backendText.undoIncompleteSnapshot".into());
     }
-    let bytes = hex::decode(value["hex"].as_str().ok_or("backendText.snapshotContentMissing")?)
-        .map_err(|_| "backendText.snapshotEncoding")?;
+    let bytes = hex::decode(
+        value["hex"]
+            .as_str()
+            .ok_or("backendText.snapshotContentMissing")?,
+    )
+    .map_err(|_| "backendText.snapshotEncoding")?;
     let hash = store.put_blob(&bytes)?;
     if value["sha256"].as_str() != Some(&hash) {
         return Err("backendText.snapshotChecksum".into());

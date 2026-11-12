@@ -68,7 +68,12 @@ struct Native {
 }
 impl Native {
     fn new(size: (u32, u32), rate: (u32, u32), profile: VideoProfile) -> Result<Self> {
-        gst::init().map_err(|e| format!("backendText.me3ad7a8a\u{1e}{}", serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())))?;
+        gst::init().map_err(|e| {
+            format!(
+                "backendText.me3ad7a8a\u{1e}{}",
+                serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())
+            )
+        })?;
         let mut failures = Vec::new();
         for spec in CANDIDATES {
             let Some(factory) = gst::ElementFactory::find(spec.factory) else {
@@ -88,7 +93,11 @@ impl Native {
         Err(if failures.is_empty() {
             "backendText.md20814fb".into()
         } else {
-            format!("backendText.m4e2fdb6d\u{1e}{}", serde_json::to_string(&[failures.join("; ").to_string()]).unwrap_or_else(|_| "[]".into()))
+            format!(
+                "backendText.m4e2fdb6d\u{1e}{}",
+                serde_json::to_string(&[failures.join("; ").to_string()])
+                    .unwrap_or_else(|_| "[]".into())
+            )
         })
     }
     fn open(spec: Spec, size: (u32, u32), rate: (u32, u32), profile: VideoProfile) -> Result<Self> {
@@ -213,7 +222,12 @@ impl Stream {
             level,
         );
         let pipeline = gst::parse::launch(&description)
-            .map_err(|e| format!("backendText.m726c32d3\u{1e}{}", serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())))?
+            .map_err(|e| {
+                format!(
+                    "backendText.m726c32d3\u{1e}{}",
+                    serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())
+                )
+            })?
             .downcast::<gst::Pipeline>()
             .map_err(|_| "backendText.m595a419d")?;
         let source = pipeline
@@ -303,9 +317,7 @@ impl Stream {
         if buffer.pts() != Some(pts) || buffer.size() == 0 || buffer.size() > MAX_FRAME {
             return Err("backendText.mae12f0b7".into());
         }
-        let mapped = buffer
-            .map_readable()
-            .map_err(|_| "backendText.mce4409ef")?;
+        let mapped = buffer.map_readable().map_err(|_| "backendText.mce4409ef")?;
         let output = self
             .headers
             .frame(mapped.as_slice(), self.profile, captured)?;
@@ -318,7 +330,10 @@ impl Stream {
         if let Some(message) = self.bus.pop_filtered(&[gst::MessageType::Error])
             && let gst::MessageView::Error(error) = message.view()
         {
-            return format!("backendText.m40a82a9a\u{1e}{}", serde_json::to_string(&[error.error().to_string()]).unwrap_or_else(|_| "[]".into()));
+            return format!(
+                "backendText.m40a82a9a\u{1e}{}",
+                serde_json::to_string(&[error.error().to_string()]).unwrap_or_else(|_| "[]".into())
+            );
         }
         "backendText.m5a136e63".into()
     }

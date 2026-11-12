@@ -266,10 +266,7 @@ impl Host {
                     };
                     call = call.header(name, value);
                 }
-                let mut response = call
-                    .send()
-                    .await
-                    .map_err(|_| "backendText.m4f8d0b4b")?;
+                let mut response = call.send().await.map_err(|_| "backendText.m4f8d0b4b")?;
                 let status = response.status().as_u16();
                 let headers = response
                     .headers()
@@ -391,10 +388,7 @@ impl Host {
             "preview_ws_read" => {
                 let id = args.as_str().ok_or("backendText.mabcd107a")?;
                 let web = self.web(core, id).await?;
-                let mut reader = web
-                    .reader
-                    .try_lock()
-                    .map_err(|_| "backendText.ma5820bfc")?;
+                let mut reader = web.reader.try_lock().map_err(|_| "backendText.ma5820bfc")?;
                 match tokio::time::timeout(Duration::from_secs(5), reader.next()).await {
                     Ok(Some(Ok(Message::Text(text)))) => {
                         Ok(json!({"type":"text","text":text.as_str()}))
@@ -424,7 +418,9 @@ impl Host {
                 let message = match (request.text, request.bytes) {
                     (Some(text), None) if text.len() <= WS_FRAME => Message::Text(text.into()),
                     (None, Some(encoded)) if encoded.len() <= WS_FRAME.div_ceil(3) * 4 => {
-                        let bytes = STANDARD.decode(encoded).map_err(|_| "backendText.mb71d94c3")?;
+                        let bytes = STANDARD
+                            .decode(encoded)
+                            .map_err(|_| "backendText.mb71d94c3")?;
                         if bytes.len() > WS_FRAME {
                             return Err("backendText.me79c424a".into());
                         }

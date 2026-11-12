@@ -616,7 +616,9 @@ pub async fn inspect(i: &InstallationSummary, p: &Plan) -> Result<AgentUpdate, S
                     .ok_or("backendText.zcodeSourceNoVersion")?;
                 out.latest_version = Some(latest.clone());
                 if newer(
-                    out.current_version.as_deref().ok_or("backendText.appVersionUnknown")?,
+                    out.current_version
+                        .as_deref()
+                        .ok_or("backendText.appVersionUnknown")?,
                     &latest,
                 )? {
                     out.message = Some(user_text("backendText.zcodeAppUpgrade", &[&latest]));
@@ -734,7 +736,9 @@ pub fn install_spec(
             let args = match i.provider_id.as_str() {
                 "kimi" => vec![
                     "__update_download".into(),
-                    version(latest).ok_or("backendText.updateVersionInvalid")?.to_string(),
+                    version(latest)
+                        .ok_or("backendText.updateVersionInvalid")?
+                        .to_string(),
                     "--manual".into(),
                 ],
                 "pi" => vec!["update".into(), "--self".into()],
@@ -744,7 +748,9 @@ pub fn install_spec(
                 "cursor" | "grok" | "antigravity" | "claude-code" | "kiro" => vec!["update".into()],
                 "opencode" => vec![
                     "upgrade".into(),
-                    version(latest).ok_or("backendText.updateVersionInvalid")?.to_string(),
+                    version(latest)
+                        .ok_or("backendText.updateVersionInvalid")?
+                        .to_string(),
                     "--method".into(),
                     "curl".into(),
                 ],

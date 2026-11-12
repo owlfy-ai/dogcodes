@@ -107,9 +107,7 @@ async fn analyze_with_driver(
             Err("backendText.mc181efe5".into())
         }).await.unwrap_or_else(|_| Err("backendText.m34d4eb52".into()));
     if let Some(cleanup) = session.cleanup(result.is_err()) {
-        cleanup
-            .await
-            .map_err(|_| "backendText.m2f36e562")??;
+        cleanup.await.map_err(|_| "backendText.m2f36e562")??;
     }
     result
 }

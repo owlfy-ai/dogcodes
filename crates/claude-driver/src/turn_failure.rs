@@ -2,8 +2,7 @@
 use driver_api::DriverEvent;
 use serde_json::Value;
 
-const AUTH_FAILURE: &str =
-    "backendText.me34dd651";
+const AUTH_FAILURE: &str = "backendText.me34dd651";
 const EXECUTION_FAILURE: &str = "Claude Code turn ended with an error result";
 
 fn authentication_code(code: &str) -> bool {

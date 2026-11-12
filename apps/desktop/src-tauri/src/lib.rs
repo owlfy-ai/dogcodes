@@ -43,7 +43,7 @@ use std::{
 
 use agent_core::Core;
 use agent_domain::{
-    ExecutorRef, ProjectId, ProviderId, TaskId, SCRATCH_PROJECT_NAME, UNTITLED_TASK_TITLE,
+    ExecutorRef, ProjectId, ProviderId, SCRATCH_PROJECT_NAME, TaskId, UNTITLED_TASK_TITLE,
 };
 use agent_protocol::{
     ActorRef, BootstrapSnapshot, BuiltContextPackage, CommandAck, CommandEnvelope,
@@ -290,7 +290,10 @@ async fn core_reveal_local_project(
         command.arg(&target);
         command
     };
-    let status = command.status().await.map_err(|_| "backendText.mded4e274")?;
+    let status = command
+        .status()
+        .await
+        .map_err(|_| "backendText.mded4e274")?;
     if !status.success() {
         return Err("backendText.mded4e274".into());
     }

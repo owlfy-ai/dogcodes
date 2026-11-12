@@ -1,7 +1,7 @@
 //! Classify native errors into stable kinds, and carry the agent's own error
 //! text alongside so the user can see what the agent actually reported.
-use agent_domain::user_text;
 use crate::DriverError;
+use agent_domain::user_text;
 
 /// Separates a stable failure kind from the agent's own error text inside a
 /// `TurnFailed` reason, so adapters can keep a precise kind without dropping
@@ -306,53 +306,27 @@ pub fn quota_diagnostic(error: &DriverError) -> &'static str {
 #[must_use]
 pub fn user_message(kind: &str) -> &'static str {
     match kind {
-        "selection_rejected" => {
-            "backendText.selectionRejected"
-        }
-        "selection_unverifiable" => {
-            "backendText.selectionUnverifiable"
-        }
-        "autonomous_turn_busy" => {
-            "backendText.autonomousTurnBusy"
-        }
+        "selection_rejected" => "backendText.selectionRejected",
+        "selection_unverifiable" => "backendText.selectionUnverifiable",
+        "autonomous_turn_busy" => "backendText.autonomousTurnBusy",
         "model_unavailable" => "backendText.modelUnavailable",
-        "authentication_failed" => {
-            "backendText.authenticationFailed"
-        }
-        "subscription_required" => {
-            "backendText.subscriptionRequired"
-        }
-        "access_denied" => {
-            "backendText.accessDenied"
-        }
-        "insufficient_balance" => {
-            "backendText.insufficientBalance"
-        }
+        "authentication_failed" => "backendText.authenticationFailed",
+        "subscription_required" => "backendText.subscriptionRequired",
+        "access_denied" => "backendText.accessDenied",
+        "insufficient_balance" => "backendText.insufficientBalance",
         "agent_rate_limited" => "backendText.rateLimited",
-        "database_incompatible" => {
-            "backendText.databaseIncompatible"
-        }
+        "database_incompatible" => "backendText.databaseIncompatible",
         "agent_timeout" => "backendText.agentTimeout",
         "agent_connection_failed" | "driver_disconnected" | "driver_stream_ended" => {
             "backendText.agentConnectionLost"
         }
-        "agent_no_response" => {
-            "backendText.agentNoResponse"
-        }
-        "driver_not_configured" => {
-            "backendText.driverNotConfigured"
-        }
-        "target_session_missing" => {
-            "backendText.targetSessionMissing"
-        }
+        "agent_no_response" => "backendText.agentNoResponse",
+        "driver_not_configured" => "backendText.driverNotConfigured",
+        "target_session_missing" => "backendText.targetSessionMissing",
         "target_session_incompatible"
         | "driver_capability_unavailable"
-        | "capability_unavailable" => {
-            "backendText.targetSessionIncompatible"
-        }
-        "driver_protocol_error" => {
-            "backendText.driverProtocolError"
-        }
+        | "capability_unavailable" => "backendText.targetSessionIncompatible",
+        "driver_protocol_error" => "backendText.driverProtocolError",
         "driver_unavailable" => "backendText.driverUnavailable",
         "interrupted" => "backendText.interrupted",
         _ => GENERIC_MESSAGE,

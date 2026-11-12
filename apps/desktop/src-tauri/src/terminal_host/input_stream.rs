@@ -112,11 +112,15 @@ impl TerminalHost {
                 uuid::Uuid::parse_str(&stream).map_err(|_| "backendText.ma88bf82f")?;
                 let revision = number(&revision)?;
                 let start_drain = {
-                    let mut state = session.input_stream.lock().map_err(|_| "backendText.m906123c7")?;
+                    let mut state = session
+                        .input_stream
+                        .lock()
+                        .map_err(|_| "backendText.m906123c7")?;
                     if let Some(lease) = &state.lease
                         && lease.id == stream
                         && lease.owner == owner
-                        && state.revision == revision.checked_add(1).ok_or("backendText.m02f04e3c")?
+                        && state.revision
+                            == revision.checked_add(1).ok_or("backendText.m02f04e3c")?
                     {
                         return state.snapshot(&session, owner);
                     }
@@ -132,7 +136,10 @@ impl TerminalHost {
                             state.uncertain = true;
                         }
                     }
-                    state.revision = state.revision.checked_add(1).ok_or("backendText.m02f04e3c")?;
+                    state.revision = state
+                        .revision
+                        .checked_add(1)
+                        .ok_or("backendText.m02f04e3c")?;
                     state.lease = Some(Lease {
                         id: stream.clone(),
                         owner: owner.into(),
@@ -154,13 +161,19 @@ impl TerminalHost {
                         // replace the pending target without adding blocked
                         // threads if a Windows writer is still in the OS.
                         let input = opening.input.lock().map_err(|_| "backendText.m82e48394")?;
-                        let mut state =
-                            opening.input_stream.lock().map_err(|_| "backendText.m906123c7")?;
+                        let mut state = opening
+                            .input_stream
+                            .lock()
+                            .map_err(|_| "backendText.m906123c7")?;
                         state.draining = false;
                         if opening.info()?.status != TerminalStatus::Running || input.is_none() {
                             return Err("backendText.m72d2b1d2".into());
                         }
-                        let acknowledge = state.lease.as_ref().ok_or("backendText.m0f7fab99")?.acknowledge;
+                        let acknowledge = state
+                            .lease
+                            .as_ref()
+                            .ok_or("backendText.m0f7fab99")?
+                            .acknowledge;
                         let blocked = state.uncertain && !acknowledge;
                         if acknowledge {
                             state.uncertain = false;
@@ -198,7 +211,10 @@ impl TerminalHost {
                 let sequence = number(&sequence)?;
                 let digest = format!("{:x}", Sha256::digest(&bytes));
                 let valid = {
-                    let mut state = session.input_stream.lock().map_err(|_| "backendText.m906123c7")?;
+                    let mut state = session
+                        .input_stream
+                        .lock()
+                        .map_err(|_| "backendText.m906123c7")?;
                     if state.revision != revision {
                         return Err("backendText.md272b6e1".into());
                     }
@@ -217,7 +233,11 @@ impl TerminalHost {
                     if uncertain
                         || !lease.valid.load(Ordering::Acquire)
                         || !matches!(lease.phase, "ready" | "applied")
-                        || sequence != lease.sequence.checked_add(1).ok_or("backendText.mb9165b0e")?
+                        || sequence
+                            != lease
+                                .sequence
+                                .checked_add(1)
+                                .ok_or("backendText.mb9165b0e")?
                     {
                         return Err("backendText.ma270fd9e".into());
                     }
@@ -256,7 +276,10 @@ impl TerminalHost {
                         }
                         writer.flush().map_err(|_| "backendText.maa38c28c".into())
                     })();
-                    let mut state = writing.input_stream.lock().map_err(|_| "backendText.m906123c7")?;
+                    let mut state = writing
+                        .input_stream
+                        .lock()
+                        .map_err(|_| "backendText.m906123c7")?;
                     if result.is_err() && written > 0 {
                         state.uncertain = true;
                     }

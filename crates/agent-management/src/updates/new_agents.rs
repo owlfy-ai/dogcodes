@@ -148,9 +148,7 @@ pub async fn install_spec(
     npm_runtime: impl AsyncFn() -> Option<(PathBuf, PathBuf)>,
 ) -> Result<ProcessSpec, String> {
     if let Plan::StandaloneCli { prefix, package } = plan {
-        let (node, npm) = npm_runtime()
-            .await
-            .ok_or("backendText.cliNeedsNpm")?;
+        let (node, npm) = npm_runtime().await.ok_or("backendText.cliNeedsNpm")?;
         let npm_plan = Plan::Npm {
             node: node.clone(),
             npm: npm.clone(),
@@ -176,9 +174,7 @@ pub async fn install_spec(
             .and_then(|p| pi_managed_root(&p))
             .ok_or("backendText.piInstallChanged")?;
         command.executable = pi_launcher(&root);
-        let (node, npm) = npm_runtime()
-            .await
-            .ok_or("backendText.piNeedsNpm")?;
+        let (node, npm) = npm_runtime().await.ok_or("backendText.piNeedsNpm")?;
         command = with_node_path(command, &node, &npm)?;
     }
     Ok(command)

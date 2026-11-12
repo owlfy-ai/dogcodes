@@ -226,7 +226,10 @@ pub async fn core_upgrade_agent(
             value.in_use = Some(confirmation);
             return Ok(value);
         }
-        let target = value.latest_version.clone().ok_or("backendText.updateNoTarget")?;
+        let target = value
+            .latest_version
+            .clone()
+            .ok_or("backendText.updateNoTarget")?;
         let command_spec =
             new_agents::install_spec(&i, &p, &target, crate::terminal_installation::npm_runtime)
                 .await?;
@@ -270,12 +273,13 @@ pub async fn core_upgrade_agent(
                             .is_ok_and(|p| p == resolved)
                 })
                 .ok_or("backendText.updateInstallationLost")?;
-            let now = fresh.version.as_deref().ok_or("backendText.updateVersionUnreadable")?;
+            let now = fresh
+                .version
+                .as_deref()
+                .ok_or("backendText.updateVersionUnreadable")?;
             let verified = verified_version(&i.provider_id, now, &target);
             if !verified {
-                return Err(
-                    "backendText.updateUnconfirmed".into(),
-                );
+                return Err("backendText.updateUnconfirmed".into());
             }
             value.current_version.clone_from(&fresh.version);
             value.status = "updated".into();

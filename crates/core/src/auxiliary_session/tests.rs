@@ -299,7 +299,13 @@ async fn cleanup_uses_the_previously_captured_proof_and_keeps_assets_after_obser
         .unwrap();
     driver.proof_available.store(false, Ordering::Release);
     let cleanup = session.cleanup(false).unwrap();
-    assert!(cleanup.await.unwrap().unwrap_err().contains("backendText.mfd1e8505"));
+    assert!(
+        cleanup
+            .await
+            .unwrap()
+            .unwrap_err()
+            .contains("backendText.mfd1e8505")
+    );
     drop(session);
     assert_eq!(flags.pending.load(Ordering::Acquire), 1);
     assert!(!flags.released.load(Ordering::Acquire));

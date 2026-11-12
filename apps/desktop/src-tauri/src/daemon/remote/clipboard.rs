@@ -298,8 +298,12 @@ impl Transfers {
                 if encoded.len() > CHUNK.div_ceil(3) * 4 {
                     return Err("backendText.mbc2c300b".into());
                 }
-                let bytes = STANDARD.decode(encoded).map_err(|_| "backendText.m01358b79")?;
-                let end = offset.checked_add(bytes.len()).ok_or("backendText.m9ab8fe46")?;
+                let bytes = STANDARD
+                    .decode(encoded)
+                    .map_err(|_| "backendText.m01358b79")?;
+                let end = offset
+                    .checked_add(bytes.len())
+                    .ok_or("backendText.m9ab8fe46")?;
                 if bytes.is_empty() || bytes.len() > CHUNK || end > transfer.size {
                     return Err("backendText.m5f279749".into());
                 }

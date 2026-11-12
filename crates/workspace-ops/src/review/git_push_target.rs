@@ -209,7 +209,15 @@ pub(super) async fn push(path: &Path, target: &PushTarget) -> Result<(), String>
                 let detail = redaction::DeterministicRedactor
                     .redact(&error.replace(url, "backendText.pushAddress"))
                     .text;
-                return Err(format!("backendText.m2b08f8cc\u{1e}{}", serde_json::to_string(&[index.to_string(), observed.urls.len().to_string(), detail.to_string()]).unwrap_or_else(|_| "[]".into())));
+                return Err(format!(
+                    "backendText.m2b08f8cc\u{1e}{}",
+                    serde_json::to_string(&[
+                        index.to_string(),
+                        observed.urls.len().to_string(),
+                        detail.clone()
+                    ])
+                    .unwrap_or_else(|_| "[]".into())
+                ));
             }
         }
     }

@@ -71,9 +71,7 @@ impl Core {
         }
         let task = self.require_task(&query.task_id).await?;
         if task.stream_version < original_version {
-            return Err(CoreError::Conflict(
-                "backendText.m74a814dc".into(),
-            ));
+            return Err(CoreError::Conflict("backendText.m74a814dc".into()));
         }
         // Fence the observed CURRENT version, never rely on a caller-supplied
         // lower version as proof. Every previously observed original version is
@@ -106,9 +104,7 @@ impl Core {
             Err(RepositoryError::Conflict { .. }) => {
                 return match self.approval_receipt(query).await? {
                     Some(receipt) => Ok(ApprovalInvalidation::Accepted { receipt }),
-                    None => Err(CoreError::Conflict(
-                        "backendText.m5359979d".into(),
-                    )),
+                    None => Err(CoreError::Conflict("backendText.m5359979d".into())),
                 };
             }
             Err(error) => return Err(error.into()),
@@ -177,9 +173,9 @@ impl Core {
             .repository
             .task_events(&query.task_id, sequence - 1, sequence, 1)
             .await?;
-        let event = events.first().ok_or_else(|| {
-            CoreError::NotFound("backendText.mdef71f90".into())
-        })?;
+        let event = events
+            .first()
+            .ok_or_else(|| CoreError::NotFound("backendText.mdef71f90".into()))?;
         if event.sequence != sequence
             || event.event_type != "approval.resolved"
             || event.stream.stream_id != query.task_id.as_str()
@@ -189,9 +185,7 @@ impl Core {
             || event.payload["approvalId"].as_str() != Some(&query.approval_id)
             || event.payload["requestedAtSequence"].as_u64() != Some(query.requested_at_sequence)
         {
-            return Err(CoreError::Conflict(
-                "backendText.m46aa13d1".into(),
-            ));
+            return Err(CoreError::Conflict("backendText.m46aa13d1".into()));
         }
         let through = self.repository.event_head().await?;
         let mut after = sequence;
@@ -228,9 +222,7 @@ impl Core {
                     ApprovalDelivery::Failed
                 };
                 if delivery.is_some_and(|old| old != status) {
-                    return Err(CoreError::Conflict(
-                        "backendText.mc4b8f10d".into(),
-                    ));
+                    return Err(CoreError::Conflict("backendText.mc4b8f10d".into()));
                 }
                 delivery = Some(status);
             }

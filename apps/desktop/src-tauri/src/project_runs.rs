@@ -5,7 +5,7 @@ use crate::{
     terminal_host::{LaunchIntent, TerminalInfo},
 };
 use agent_core::Core;
-use agent_domain::{user_text, ExecutorRef, ProjectId};
+use agent_domain::{ExecutorRef, ProjectId, user_text};
 use agent_protocol::ProjectSummary;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -112,21 +112,33 @@ impl ProjectRunHost {
         let bytes = match std::fs::read(self.file(id)) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(format!("backendText.me7e90449\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))),
+            Err(error) => {
+                return Err(format!(
+                    "backendText.me7e90449\u{1e}{}",
+                    serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+                ));
+            }
         };
-        let mut catalog: StoredCatalog = serde_json::from_slice(&bytes)
-            .map_err(|error| format!("backendText.md38255fc\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())))?;
+        let mut catalog: StoredCatalog = serde_json::from_slice(&bytes).map_err(|error| {
+            format!(
+                "backendText.md38255fc\u{1e}{}",
+                serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+            )
+        })?;
         // Whether a server's catalog suits its project is checked where the project is known.
         let this_machine_or_server =
             catalog.platform == std::env::consts::OS || catalog.platform == SERVER_PLATFORM;
         if catalog.project_id != id || !this_machine_or_server {
             return Err("backendText.me6604551".into());
         }
-        let interrupted =
-            catalog.interrupt_analysis("interrupted", "project.analysisRestarted");
+        let interrupted = catalog.interrupt_analysis("interrupted", "project.analysisRestarted");
         if interrupted {
             self.save(&catalog).map_err(|error| {
-                format!("backendText.mda6fd7b2\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))
+                format!(
+                    "backendText.mda6fd7b2\u{1e}{}",
+                    serde_json::to_string(std::slice::from_ref(&error))
+                        .unwrap_or_else(|_| "[]".into())
+                )
             })?;
         }
         cache.insert(id.into(), catalog.clone());
@@ -150,7 +162,11 @@ impl ProjectRunHost {
                 return Err("backendText.mddd3e899".into());
             }
             self.save(finalization).map_err(|error| {
-                format!("backendText.m2ce343c8\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into()))
+                format!(
+                    "backendText.m2ce343c8\u{1e}{}",
+                    serde_json::to_string(std::slice::from_ref(&error))
+                        .unwrap_or_else(|_| "[]".into())
+                )
             })?;
             cache.insert(id.into(), finalization.clone());
             finalizations.remove(id);
@@ -184,7 +200,10 @@ impl ProjectRunHost {
             // in-memory catalog if directory durability could not be confirmed.
             self.uncertain_storage
                 .store(true, std::sync::atomic::Ordering::Release);
-            return Err(format!("backendText.m4e556eeb\u{1e}{}", serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())));
+            return Err(format!(
+                "backendText.m4e556eeb\u{1e}{}",
+                serde_json::to_string(&[error.to_string()]).unwrap_or_else(|_| "[]".into())
+            ));
         }
         Ok(())
     }
@@ -339,10 +358,7 @@ impl ProjectRunHost {
             // terminal state after disk repair, but must never publish the
             // generated commands or silently restart the remaining Agent work.
             let mut failed = original.clone();
-            failed.interrupt_analysis(
-                "failed",
-                &user_text("project.analysisNotSaved", &[&error]),
-            );
+            failed.interrupt_analysis("failed", &user_text("project.analysisNotSaved", &[&error]));
             finalizations.insert(id.into(), failed);
             self.changes.changed();
             return false;
@@ -750,7 +766,9 @@ async fn task_project_for_mutation(
         .tasks
         .iter()
         .find(|task| task.task_id.as_str() == task_id)
-        .ok_or_else(|| MutationError::rejected("task_missing", "backendText.conversationMissing"))?;
+        .ok_or_else(|| {
+            MutationError::rejected("task_missing", "backendText.conversationMissing")
+        })?;
     snapshot
         .projects
         .iter()
@@ -917,7 +935,13 @@ pub async fn dispatch(
         "project_runs_analyze" => {
             let result: Result<RunCatalog, MutationError> = async {
                 let request: AnalyzeRequest = from_value(args).map_err(|e| {
-                    MutationError::rejected("invalid_request", &format!("backendText.md17f2f75\u{1e}{}", serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())))
+                    MutationError::rejected(
+                        "invalid_request",
+                        &format!(
+                            "backendText.md17f2f75\u{1e}{}",
+                            serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())
+                        ),
+                    )
                 })?;
                 analyze_recorded(
                     host.clone(),
@@ -938,7 +962,13 @@ pub async fn dispatch(
         "project_run_edit" => {
             let result: Result<RunCatalog, MutationError> = async {
                 let request: EditRequest = from_value(args).map_err(|e| {
-                    MutationError::rejected("invalid_request", &format!("backendText.me392685a\u{1e}{}", serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())))
+                    MutationError::rejected(
+                        "invalid_request",
+                        &format!(
+                            "backendText.me392685a\u{1e}{}",
+                            serde_json::to_string(&[e.to_string()]).unwrap_or_else(|_| "[]".into())
+                        ),
+                    )
                 })?;
                 let _admission = host.admission.lock().await;
                 let project = task_project_for_mutation(core, &request.task_id).await?;
@@ -1046,8 +1076,7 @@ fn parse_commands(
     } else {
         text
     };
-    let response: Response =
-        serde_json::from_str(text).map_err(|_| "backendText.m67c6f6c7")?;
+    let response: Response = serde_json::from_str(text).map_err(|_| "backendText.m67c6f6c7")?;
     if response.commands.len() > 24 {
         return Err("backendText.m930c81f2".into());
     }
@@ -1430,7 +1459,11 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let host = ProjectRunHost::new(root.path().into());
         std::fs::write(host.file("project"), b"broken").unwrap();
-        assert!(host.load("project").unwrap_err().contains("backendText.me309f226"));
+        assert!(
+            host.load("project")
+                .unwrap_err()
+                .contains("backendText.me309f226")
+        );
         assert_eq!(std::fs::read(host.file("project")).unwrap(), b"broken");
         let blocked = root.path().join("blocked");
         std::fs::write(&blocked, b"keep").unwrap();

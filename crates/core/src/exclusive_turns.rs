@@ -3,8 +3,8 @@
 //! A later turn is accepted at once, tells its conversation that it is waiting,
 //! and starts by itself when the running turn ends. Stopping it while it waits
 //! cancels it without touching the agent.
-use agent_domain::user_text;
 use crate::{AgentDriver, Core, EventSource, ExecutorRef, TaskId, run_control::Control};
+use agent_domain::user_text;
 use agent_protocol::ActiveRunSummary;
 use serde_json::json;
 use std::{
@@ -43,7 +43,10 @@ fn agent_name(provider: &str) -> &str {
 
 /// Stored as an i18n code; the desktop translates `backendText.agentRunsOneTaskAtATime`.
 pub(crate) fn waiting_message(provider: &str) -> String {
-    user_text("backendText.agentRunsOneTaskAtATime", &[agent_name(provider)])
+    user_text(
+        "backendText.agentRunsOneTaskAtATime",
+        &[agent_name(provider)],
+    )
 }
 
 impl Core {

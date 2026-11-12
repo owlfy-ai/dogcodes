@@ -49,9 +49,9 @@ it("keeps conflicts visible in the dialog without marking the turn undone", asyn
   expect(button("撤销结果").disabled).toBe(false);
 });
 it.each([
-  "本轮快照内容不完整，无法撤销全部修改",
-  "此记录不是完整的一轮修改，无法整轮撤销",
-  "file.txt 在本轮结束后又有修改，未撤销任何文件",
+  "backendText.undoIncompleteSnapshot",
+  "backendText.undoIncompleteTurn",
+  `backendText.undoFileChanged\u001e${JSON.stringify(["file.txt"])}`,
 ])("localizes failed undo receipts in both the dialog and recovery status: %s", async message => {
   setGlobalResolvedLanguage("en");
   invoke.mockImplementation(async (name: string) => {
