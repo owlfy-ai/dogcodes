@@ -155,30 +155,33 @@ async function wireLinks() {
   for (const a of document.querySelectorAll('[data-link="release"]')) external(a, await downloadHref(a.dataset.os));
 }
 
+function pageLink(anchor) {
+  anchor.href = '#download';
+  anchor.removeAttribute('target');
+  anchor.removeAttribute('rel');
+}
+
 async function osButton() {
   const ua = navigator.userAgent;
   const label = $('#hero-download span');
-  const button = $('#hero-download');
+  const buttons = [$('#hero-download'), $('#nav-download')];
   // Phones and tablets are not install targets: offer the platform cards instead.
   if (/Android|iPhone|iPad|iPod/i.test(ua)) {
     label.textContent = pack.os.mobile;
-    button.href = '#download';
-    button.removeAttribute('target');
-    button.removeAttribute('rel');
+    buttons.forEach(pageLink);
     return;
   }
   const os = /Windows/i.test(ua) ? 'win' : /Mac/i.test(ua) ? 'mac' : /Linux|X11/i.test(ua) ? 'linux' : 'mac';
   // No Linux package yet: point at the download section, which says so.
   if (os === 'linux') {
     label.textContent = pack.os.linux;
-    button.href = '#download';
-    button.removeAttribute('target');
-    button.removeAttribute('rel');
+    buttons.forEach(pageLink);
     return;
   }
   const names = { mac: 'macOS', win: 'Windows', linux: 'Linux' };
   label.textContent = pack.os.desktop(names[os]);
-  external(button, await downloadHref(os));
+  const href = await downloadHref(os);
+  buttons.forEach(button => external(button, href));
   document.querySelectorAll('.dl a').forEach(a => a.classList.toggle('primary', a.dataset.os === os));
 }
 
