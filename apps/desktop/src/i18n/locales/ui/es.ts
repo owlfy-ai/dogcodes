@@ -1828,6 +1828,7 @@ export const uiEs: UiMessages = {
     undoIncomplete: "No se completó la operación de deshacer: {message} Recuperación: {recovery}",
     undoRolledBack: "Se restauraron los archivos procesados; las copias de seguridad están en los registros de recuperación.",
     undoBackupsRetained: "Se conservaron las copias de seguridad. Resuélvalo en los registros de recuperación de la revisión.",
+    gitCredentialUnattended: "Git pidió un usuario, contraseña o token, pero nadie frente al ordenador podía escribirlo, así que se detuvo. Ejecútalo una vez en DogCodes en el ordenador e introdúcelo allí. Cuando el asistente de credenciales de Git lo recuerde, también funcionará desde el móvil.",
     undoIncompleteSnapshot: "El contenido de la instantánea de este turno está incompleto. No se pueden deshacer todos los cambios.",
     snapshotContentMissing: "Falta el contenido completo del archivo.",
     snapshotEncoding: "La codificación de la instantánea del archivo no es válida.",

@@ -1828,6 +1828,7 @@ export const uiZhCN: UiMessages = {
     undoIncomplete: "撤销未完成：{message}。{recovery}",
     undoRolledBack: "已恢复已处理的文件；备份保存在恢复记录中",
     undoBackupsRetained: "备份已保留，请在审查的恢复记录中处理",
+    gitCredentialUnattended: "Git 需要输入账号、密码或令牌，但电脑前没有人能输入，已停止。请在电脑上的 DogCodes 中执行一次并输入；Git 的凭据助手记住后，手机上也能直接操作。",
     undoIncompleteSnapshot: "本轮快照内容不完整，无法撤销全部修改",
     snapshotContentMissing: "缺少完整文件内容",
     snapshotEncoding: "文件快照编码错误",

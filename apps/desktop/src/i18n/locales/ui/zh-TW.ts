@@ -1828,6 +1828,7 @@ export const uiZhTW: UiMessages = {
     undoIncomplete: "復原未完成：{message}。{recovery}",
     undoRolledBack: "已還原已處理的檔案；備份儲存在還原記錄中",
     undoBackupsRetained: "備份已保留，請在審查的還原記錄中處理",
+    gitCredentialUnattended: "Git 需要輸入帳號、密碼或權杖，但電腦前沒有人能輸入，已停止。請在電腦上的 DogCodes 中執行一次並輸入；Git 的憑證助手記住後，手機上也能直接操作。",
     undoIncompleteSnapshot: "本輪快照內容不完整，無法復原全部修改",
     snapshotContentMissing: "缺少完整檔案內容",
     snapshotEncoding: "檔案快照編碼錯誤",

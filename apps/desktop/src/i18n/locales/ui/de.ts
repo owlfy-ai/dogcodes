@@ -1828,6 +1828,7 @@ export const uiDe: UiMessages = {
     undoIncomplete: "Rückgängigmachen nicht abgeschlossen: {message} Wiederherstellung: {recovery}",
     undoRolledBack: "Bearbeitete Dateien wurden wiederhergestellt; Sicherungen sind in den Wiederherstellungseinträgen gespeichert.",
     undoBackupsRetained: "Sicherungen wurden aufbewahrt. Beheben Sie dies in den Wiederherstellungseinträgen der Überprüfung.",
+    gitCredentialUnattended: "Git hat nach Benutzername, Passwort oder Token gefragt, aber am Computer war niemand, der es eingeben konnte, daher wurde abgebrochen. Führe den Vorgang einmal in DogCodes am Computer aus und gib es dort ein. Sobald der Credential Helper von Git es kennt, klappt es auch vom Handy aus.",
     undoIncompleteSnapshot: "Der Snapshot dieser Runde ist unvollständig. Nicht alle Änderungen können rückgängig gemacht werden.",
     snapshotContentMissing: "Der vollständige Dateiinhalt fehlt.",
     snapshotEncoding: "Die Kodierung des Datei-Snapshots ist ungültig.",

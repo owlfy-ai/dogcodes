@@ -148,16 +148,28 @@ async fn run_action(
     state: &ReviewContext<'_>,
     action: GitRequest,
 ) -> Result<GitCompletion, String> {
-    use super::git_credentials::ASKER;
+    use super::git_credentials::{ASKER, UNATTENDED_CREDENTIAL};
     let task = action.task_id.clone();
+    let prompts = &state.review.prompts;
+    let _ = prompts.take_unattended(&task);
+    // Git's own error ("could not read Username") does not say what to do.
+    let explain = |result: Result<GitCompletion, String>| {
+        result.map_err(|error| {
+            if prompts.take_unattended(&task) {
+                UNATTENDED_CREDENTIAL.to_owned()
+            } else {
+                error
+            }
+        })
+    };
     let (asker, mut questions) = tokio::sync::mpsc::unbounded_channel();
     let work = ASKER.scope(asker, perform_action(state, action));
     tokio::pin!(work);
     loop {
         tokio::select! {
-            result = &mut work => return result,
+            result = &mut work => return explain(result),
             Some((prompt, reply)) = questions.recv() => tokio::select! {
-                result = &mut work => return result,
+                result = &mut work => return explain(result),
                 answer = ask_person(state, &task, &prompt) => {
                     let _ = reply.send(answer);
                 }
@@ -169,8 +181,17 @@ async fn ask_person(state: &ReviewContext<'_>, task: &str, prompt: &str) -> Opti
     if state.core.on_hub() {
         return state.review.prompts.ask(task, prompt).await;
     }
-    let task = agent_domain::TaskId::parse(task).ok()?;
-    state.core.ask_git_credential(&task, prompt).await.ok()?
+    let id = agent_domain::TaskId::parse(task).ok()?;
+    match state.core.ask_git_credential(&id, prompt).await {
+        Ok(answer) => answer,
+        Err(error) => {
+            // The desktop had nobody to type it; say so when Git then fails.
+            if error == super::git_credentials::UNATTENDED_CREDENTIAL {
+                state.review.prompts.mark_unattended(task);
+            }
+            None
+        }
+    }
 }
 async fn perform_action(
     state: &ReviewContext<'_>,

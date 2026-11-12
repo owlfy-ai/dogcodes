@@ -87,8 +87,12 @@ pub(super) async fn call(
                 return Err("remote review operation unavailable".into());
             }
         }
-        return crate::remote_workspace::review(core, &control.targets, &control.review, request)
-            .await;
+        // Nobody at this computer is waiting to answer Git for the phone.
+        // Boxed: the review state machine is large, and this adds to it.
+        return Box::pin(crate::review::git_credentials::for_someone_away(
+            crate::remote_workspace::review(core, &control.targets, &control.review, request),
+        ))
+        .await;
     }
     if method == "terminal_read" {
         parse_sequence(args.get_mut(1))?;

@@ -140,7 +140,12 @@ impl ReviewFacts for TargetFacts {
     ) -> Result<Option<String>, String> {
         self.require_task(task)?;
         let prompts = self.prompts.as_ref().ok_or("backendText.m144f414e")?;
-        Ok(prompts.ask(task.as_str(), prompt).await)
+        let answer = prompts.ask(task.as_str(), prompt).await;
+        // Tell the server why, so its Git error can say what to do.
+        if answer.is_none() && prompts.take_unattended(task.as_str()) {
+            return Err(crate::review::git_credentials::UNATTENDED_CREDENTIAL.into());
+        }
+        Ok(answer)
     }
 }
 

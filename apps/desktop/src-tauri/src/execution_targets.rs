@@ -425,6 +425,43 @@ impl TargetHost {
         }
     }
 
+    /// What a paired phone may know about the servers: their names and how
+    /// their connection is doing. Addresses, accounts, keys, logs and error
+    /// details stay on this computer.
+    pub(crate) async fn phone_list(&self, core: &Core) -> Result<serde_json::Value, String> {
+        let snapshot = core.execution_targets().await.map_err(|e| e.to_string())?;
+        Ok(serde_json::Value::Array(
+            snapshot
+                .targets
+                .targets
+                .into_iter()
+                .map(|target| {
+                    let status = self.status(&target.target_id);
+                    serde_json::json!({
+                        "targetId": target.target_id,
+                        "name": target.display_name,
+                        "phase": status.phase,
+                        "scanning": status.scanning,
+                        // Typing a password or trusting a key happens here only.
+                        "needsInput": status.prompt.is_some(),
+                        "error": status.error.as_ref().map(|error| error.kind),
+                    })
+                })
+                .collect(),
+        ))
+    }
+
+    /// Reconnects a saved server for a paired phone. Nothing typed on the
+    /// phone is used: a server that asks for a password or a new host key
+    /// waits for someone at this computer.
+    pub(crate) async fn phone_reconnect(
+        self: &Arc<Self>,
+        core: &Arc<Core>,
+        target_id: TargetId,
+    ) -> Result<(), String> {
+        self.connect(core, target_id, None).await
+    }
+
     pub(crate) fn has_connecting(&self) -> bool {
         self.connections
             .lock()

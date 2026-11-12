@@ -1828,6 +1828,7 @@ export const uiEn = {
     undoIncomplete: "Undo did not finish: {message} Recovery: {recovery}",
     undoRolledBack: "Processed files were restored; backups are saved in the recovery records.",
     undoBackupsRetained: "Backups were retained. Resolve this in the review recovery records.",
+    gitCredentialUnattended: "Git needed a username, password or token, but nobody at the computer could type it, so it stopped. Run this once in DogCodes on the computer and enter it there. Once Git's credential helper remembers it, this also works from your phone.",
     undoIncompleteSnapshot: "This turn's snapshot content is incomplete. Not all changes can be undone.",
     snapshotContentMissing: "The complete file content is missing.",
     snapshotEncoding: "The file snapshot encoding is invalid.",

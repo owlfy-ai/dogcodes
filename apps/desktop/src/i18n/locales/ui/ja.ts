@@ -1828,6 +1828,7 @@ export const uiJa: UiMessages = {
     undoIncomplete: "取り消しが完了しませんでした：{message} 復元：{recovery}",
     undoRolledBack: "処理済みのファイルを復元しました。バックアップは復元記録に保存されています。",
     undoBackupsRetained: "バックアップは保持されています。レビューの復元記録で対処してください。",
+    gitCredentialUnattended: "Git がユーザー名・パスワード・トークンを求めましたが、コンピュータの前で入力できる人がいないため停止しました。コンピュータの DogCodes で一度実行して入力してください。Git の資格情報ヘルパーが記憶すれば、スマホからも操作できます。",
     undoIncompleteSnapshot: "このターンのスナップショットの内容が不完全なため、すべての変更を取り消せません。",
     snapshotContentMissing: "ファイルの完全な内容がありません。",
     snapshotEncoding: "ファイルのスナップショットの文字コードが無効です。",

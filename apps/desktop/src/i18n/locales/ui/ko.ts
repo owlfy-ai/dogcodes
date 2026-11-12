@@ -1828,6 +1828,7 @@ export const uiKo: UiMessages = {
     undoIncomplete: "실행 취소가 완료되지 않았습니다: {message} 복구: {recovery}",
     undoRolledBack: "처리된 파일을 복원했습니다. 백업은 복구 기록에 저장되어 있습니다.",
     undoBackupsRetained: "백업이 보존되었습니다. 검토의 복구 기록에서 처리하세요.",
+    gitCredentialUnattended: "Git이 사용자 이름, 비밀번호 또는 토큰을 요구했지만 컴퓨터 앞에서 입력할 사람이 없어 중지했습니다. 컴퓨터의 DogCodes에서 한 번 실행해 입력하세요. Git 자격 증명 도우미가 기억하면 휴대폰에서도 바로 할 수 있습니다.",
     undoIncompleteSnapshot: "이 턴의 스냅샷 내용이 불완전하여 모든 변경 사항을 실행 취소할 수 없습니다.",
     snapshotContentMissing: "전체 파일 내용이 없습니다.",
     snapshotEncoding: "파일 스냅샷 인코딩이 잘못되었습니다.",

@@ -5,7 +5,7 @@
 //! and this app does not keep it; remembering one is left to Git's credential helper.
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     net::SocketAddr,
     sync::{
         Arc, Mutex,
@@ -26,6 +26,9 @@ const MAX_MESSAGE: u64 = 64 * 1024;
 /// Written by Git or by a remote, so it is plain text of a bounded size.
 const MAX_PROMPT_CHARS: usize = 1024;
 const ANSWER_LIMIT: Duration = Duration::from_mins(5);
+/// Why Git stopped: it needed a credential and nobody at the computer could
+/// type one. Credentials are never relayed from a phone.
+pub const UNATTENDED_CREDENTIAL: &str = "backendText.gitCredentialUnattended";
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Question {
@@ -89,6 +92,15 @@ pub(super) type Asked = (String, oneshot::Sender<Option<String>>);
 tokio::task_local! {
     /// Set around a Git operation that has someone to ask.
     pub(super) static ASKER: mpsc::UnboundedSender<Asked>;
+    /// Set around work a paired phone asked for: nobody at this computer is
+    /// waiting to type a credential, and none is taken from the phone.
+    static NOBODY_HERE: ();
+}
+
+/// Runs `work` for someone who is not at this computer. Git questions it
+/// raises are declined at once instead of waiting for an answer.
+pub async fn for_someone_away<F: std::future::Future>(work: F) -> F::Output {
+    NOBODY_HERE.scope((), work).await
 }
 
 /// Lives as long as the Git command it serves.
@@ -186,6 +198,8 @@ struct Waiting {
 pub struct GitPrompts {
     waiting: Arc<Mutex<BTreeMap<u64, Waiting>>>,
     next: Arc<AtomicU64>,
+    /// Tasks whose question was declined because nobody was there.
+    unattended: Arc<Mutex<HashSet<String>>>,
 }
 
 /// Dropped when Git stops waiting, so the question leaves the screen with it.
@@ -205,6 +219,10 @@ impl Drop for Asking {
 impl GitPrompts {
     /// `None` when declined or unanswered for too long.
     pub async fn ask(&self, task: &str, text: &str) -> Option<String> {
+        if NOBODY_HERE.try_with(|()| ()).is_ok() {
+            self.mark_unattended(task);
+            return None;
+        }
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let text: String = text.trim().chars().take(MAX_PROMPT_CHARS).collect();
         let lower = text.to_lowercase();
@@ -228,6 +246,22 @@ impl GitPrompts {
             .ok()?
             .ok()
             .flatten()
+    }
+
+    /// Records that the computer that asks for this machine had nobody there.
+    pub fn mark_unattended(&self, task: &str) {
+        if let Ok(mut unattended) = self.unattended.lock() {
+            unattended.insert(task.to_owned());
+        }
+    }
+
+    /// Whether a question for `task` was declined because nobody was there,
+    /// since the last call. Each Git operation starts by clearing it.
+    #[must_use]
+    pub fn take_unattended(&self, task: &str) -> bool {
+        self.unattended
+            .lock()
+            .is_ok_and(|mut unattended| unattended.remove(task))
     }
 
     /// One at a time, oldest first, for this task.
@@ -330,5 +364,16 @@ mod tests {
         abandoned.abort();
         let _ = abandoned.await;
         assert_eq!(prompts.current("task"), None);
+    }
+
+    #[tokio::test]
+    async fn work_for_someone_away_declines_at_once_and_says_why() {
+        let prompts = GitPrompts::default();
+        assert!(!prompts.take_unattended("task"));
+        let asked = for_someone_away(prompts.ask("task", "Password for 'x': ")).await;
+        assert_eq!(asked, None);
+        assert_eq!(prompts.current("task"), None, "nothing was shown");
+        assert!(prompts.take_unattended("task"));
+        assert!(!prompts.take_unattended("task"), "taken once");
     }
 }

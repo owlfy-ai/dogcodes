@@ -1828,6 +1828,7 @@ export const uiPtBR: UiMessages = {
     undoIncomplete: "A operação de desfazer não terminou: {message} Recuperação: {recovery}",
     undoRolledBack: "Os arquivos processados foram restaurados; os backups estão nos registros de recuperação.",
     undoBackupsRetained: "Os backups foram mantidos. Resolva nos registros de recuperação da revisão.",
+    gitCredentialUnattended: "O Git pediu usuário, senha ou token, mas ninguém no computador podia digitá-lo, então parou. Execute uma vez no DogCodes do computador e digite lá. Depois que o auxiliar de credenciais do Git lembrar, também funcionará pelo celular.",
     undoIncompleteSnapshot: "O conteúdo do snapshot deste turno está incompleto. Não é possível desfazer todas as alterações.",
     snapshotContentMissing: "O conteúdo completo do arquivo está ausente.",
     snapshotEncoding: "A codificação do snapshot do arquivo é inválida.",

@@ -1828,6 +1828,7 @@ export const uiIt: UiMessages = {
     undoIncomplete: "L’annullamento non è terminato: {message} Ripristino: {recovery}",
     undoRolledBack: "I file elaborati sono stati ripristinati; i backup sono conservati nei registri di ripristino.",
     undoBackupsRetained: "I backup sono stati conservati. Risolvi il problema nei registri di ripristino della revisione.",
+    gitCredentialUnattended: "Git ha chiesto nome utente, password o token, ma nessuno al computer poteva inserirlo, quindi si è fermato. Esegui l’operazione una volta in DogCodes sul computer e inseriscilo lì. Quando l’helper delle credenziali di Git lo ricorda, funziona anche dal telefono.",
     undoIncompleteSnapshot: "Il contenuto dell’istantanea di questo turno è incompleto. Non è possibile annullare tutte le modifiche.",
     snapshotContentMissing: "Manca il contenuto completo del file.",
     snapshotEncoding: "La codifica dell’istantanea del file non è valida.",

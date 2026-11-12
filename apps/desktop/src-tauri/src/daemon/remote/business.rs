@@ -34,6 +34,10 @@ pub(super) const METHODS: &[&str] = &[
     "attachment_read_chunk",
     "workspace_attachment_info",
     "workspace_attachment_import",
+    "computer_use_status",
+    "computer_use_stop",
+    "remote_hosts",
+    "remote_host_reconnect",
 ];
 pub(super) async fn call(
     core: &Arc<Core>,
@@ -115,6 +119,24 @@ pub(super) async fn call(
             let snapshot =
                 super::super::dispatch(core, "timeline_snapshot", json!([query.task_id])).await?;
             timeline_item(snapshot, &query.item_id, TAIL.hard)
+        }
+        // Only what an agent is doing on the screen, and stopping it. The
+        // notice window's own acknowledgements stay with this computer.
+        "computer_use_status" => core
+            .computer_use_activity(json!({"type": "status"}))
+            .await
+            .map_err(failure),
+        "computer_use_stop" => {
+            let operation: String = serde_json::from_value(args).map_err(failure)?;
+            core.computer_use_activity(json!({"type": "stop", "operationId": operation}))
+                .await
+                .map_err(failure)
+        }
+        "remote_hosts" => control.targets.phone_list(core).await,
+        "remote_host_reconnect" => {
+            let target: agent_domain::TargetId = serde_json::from_value(args).map_err(failure)?;
+            control.targets.phone_reconnect(core, target).await?;
+            Ok(json!({"started": true}))
         }
         "host_directories" => tokio::task::spawn_blocking(move || directories(args))
             .await
