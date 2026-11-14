@@ -1748,12 +1748,14 @@ impl AgentDriver for ZcodeDriver {
             .into_iter()
             .chain(std::iter::once(pending.server_id))
             .try_for_each(|server_id| {
-                sender.send(InteractionDecision {
-                    server_id,
-                    response: response.clone(),
-                })
+                sender
+                    .send(InteractionDecision {
+                        server_id,
+                        response: response.clone(),
+                    })
+                    .map_err(drop)
             })
-            .map_err(|_| DriverError::Disconnected("ZCode closed".into()))
+            .map_err(|()| DriverError::Disconnected("ZCode closed".into()))
     }
 
     async fn respond_to_interaction(

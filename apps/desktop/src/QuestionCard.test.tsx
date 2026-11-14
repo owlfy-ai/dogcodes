@@ -67,3 +67,8 @@ it("retains a custom answer when its editor is collapsed",async()=>{
  await act(async()=>node.querySelector<HTMLButtonElement>('[type="submit"]')!.click());
  expect(answer).toHaveBeenCalledWith({cancelled:false,values:{color:"Purple"}});
 });
+it("shows only the questions, not the form's own title",async()=>{
+ await act(async()=>root.render(<QuestionCard form={{...form,title:"backendText.m4151119a"}} onAnswer={vi.fn()}/>));
+ expect(node.textContent).not.toContain("backendText");
+ expect(node.textContent).toContain("Color");
+});

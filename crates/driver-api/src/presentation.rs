@@ -136,7 +136,8 @@ pub fn presentation_events(provider: &str, method: &str, v: &Value) -> Vec<Drive
                 match s(i,"type") {
                     "commandExecution"=>out.push(tool(id,"terminal",state,i["command"].clone(),i["aggregatedOutput"].clone(),"")),
                     "fileChange"=>out.push(event(id,json!({"type":"tool","name":"edit","status":state,"changes":i["changes"]}))),
-                    "mcpToolCall"|"dynamicToolCall"=>out.push(tool(id,s(i,"tool"),state,i["arguments"].clone(),i["result"].clone(),"")),
+                    // A failed call has no result; its reason is in `error.message`.
+                    "mcpToolCall"|"dynamicToolCall"=>out.push(tool(id,s(i,"tool"),state,i["arguments"].clone(),if i["result"].is_null(){i["error"]["message"].clone()}else{i["result"].clone()},"")),
                     "webSearch"=>out.push(tool(id,"web_search",state,i["query"].clone(),i["action"].clone(),"")),
                     "collabAgentToolCall"=>{
                         out.push(tool(id,s(i,"tool"),state,i["prompt"].clone(),i["agentsStates"].clone(),""));
@@ -246,6 +247,16 @@ mod tests {
         );
         assert_eq!(data(&events[0])["status"], "failed");
         assert_eq!(data(&events[1])["childId"], "child");
+    }
+    #[test]
+    fn codex_failed_mcp_call_keeps_its_reason() {
+        let events = presentation_events(
+            "codex",
+            "item/completed",
+            &json!({"item":{"type":"mcpToolCall","id":"i","tool":"search","status":"failed","arguments":{},"result":null,"error":{"message":"server timed out"}}}),
+        );
+        assert_eq!(data(&events[0])["status"], "failed");
+        assert_eq!(data(&events[0])["output"], "server timed out");
     }
     #[test]
     fn zcode_tool_error_keeps_its_reason() {

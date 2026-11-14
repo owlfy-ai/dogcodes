@@ -1528,7 +1528,14 @@ async fn run_turn(
                                 match driver_api::questions::native_form("codex", &pending["params"]).and_then(|form|form.validate(&answer)) {
                                     Ok(()) => {
                                         let pending=pending_approvals.remove(&native_request_id).expect("pending question");
-                                        connection.transport.send_result(pending["questionId"].clone(),driver_api::questions::native_answer("codex",&pending["params"],&answer)).await
+                                        let native=driver_api::questions::native_answer("codex",&pending["params"],&answer);
+                                        // Answer every native request for this card, the newest last.
+                                        let mut result=Ok(());
+                                        for jsonrpc_id in approval_repeats.answered(&native_request_id,pending["questionId"].clone()) {
+                                            let sent=connection.transport.send_result(jsonrpc_id,native.clone()).await;
+                                            if result.is_ok() { result=sent; }
+                                        }
+                                        result
                                     },
                                     Err(error)=>Err(DriverError::Protocol(error)),
                                 }
@@ -1685,6 +1692,16 @@ impl ApprovalRepeats {
     }
 }
 
+/// Identities of one question request within a turn: the exact questions
+/// asked, and the item they belong to.
+fn question_keys(params: &Value) -> Vec<String> {
+    let mut keys = vec![format!("questions:{}", params["questions"])];
+    if let Some(item) = params.get("itemId").and_then(Value::as_str) {
+        keys.push(format!("question-item:{item}"));
+    }
+    keys
+}
+
 fn approval_keys(params: &Value, tool_name: &str, summary: &str) -> Vec<String> {
     let mut keys = vec![format!("input:{tool_name}\n{summary}")];
     if let Some(item) = params.get("itemId").and_then(Value::as_str) {
@@ -1723,6 +1740,10 @@ async fn handle_frame(
                     .await;
             }
             if method == "serverRequest/resolved" {
+                // A resolved repeat leaves its card open for the other requests.
+                for repeats in approval_repeats.extra.values_mut() {
+                    repeats.retain(|id| Some(id) != params.get("requestId"));
+                }
                 let ids: Vec<_> = pending_approvals
                     .iter()
                     .filter(|(_, v)| {
@@ -1732,6 +1753,14 @@ async fn handle_frame(
                     .map(|(k, _)| k.clone())
                     .collect();
                 for id in ids {
+                    // The card's first request resolved: a repeat takes its place.
+                    if let Some(repeats) = approval_repeats.extra.get_mut(&id)
+                        && !repeats.is_empty()
+                    {
+                        pending_approvals.get_mut(&id).expect("pending question")["questionId"] =
+                            repeats.remove(0);
+                        continue;
+                    }
                     pending_approvals.remove(&id);
                     let _ = events
                         .send(Ok(DriverEvent::QuestionClosed {
@@ -1786,8 +1815,17 @@ async fn handle_frame(
             if method == "item/tool/requestUserInput" {
                 match driver_api::questions::native_form("codex", &params) {
                     Ok(form) => {
+                        // Codex may ask again while a card is unanswered; keep one card.
+                        let keys = question_keys(&params);
+                        if let Some(card) = approval_repeats.open_card(&keys, pending_approvals) {
+                            approval_repeats.extra.entry(card).or_default().push(id);
+                            return false;
+                        }
                         let request_id =
                             format!("codex-question-{}", agent_domain::InstallationId::new());
+                        for key in keys {
+                            approval_repeats.keys.insert(key, request_id.clone());
+                        }
                         pending_approvals
                             .insert(request_id.clone(), json!({"questionId":id,"params":params}));
                         let _ = events
@@ -2573,6 +2611,33 @@ fn stable_error(message: &str) -> DriverError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_repeated_question_reuses_its_open_card() {
+        use serde_json::json;
+        let params = json!({"itemId":"item-1","questions":[{"id":"q","question":"Which platform?"}]});
+        let mut repeats = super::ApprovalRepeats::default();
+        let mut pending = std::collections::HashMap::new();
+        pending.insert("card".to_owned(), json!({"questionId":1,"params":params}));
+        for key in super::question_keys(&params) {
+            repeats.keys.insert(key, "card".into());
+        }
+        // The same questions again, even under another item, find the open card.
+        let again = json!({"itemId":"item-2","questions":[{"id":"q","question":"Which platform?"}]});
+        assert_eq!(
+            repeats.open_card(&super::question_keys(&again), &pending),
+            Some("card".into())
+        );
+        repeats.extra.entry("card".into()).or_default().push(json!(2));
+        // Different questions are a new card.
+        let other = json!({"questions":[{"id":"q","question":"Submit automatically?"}]});
+        assert_eq!(repeats.open_card(&super::question_keys(&other), &pending), None);
+        // One answer goes to every request, the first one first.
+        assert_eq!(repeats.answered("card", json!(1)), vec![json!(1), json!(2)]);
+        // An answered card no longer attracts repeats.
+        pending.remove("card");
+        assert_eq!(repeats.open_card(&super::question_keys(&again), &pending), None);
+    }
+
     #[test]
     fn a_stop_is_confirmed_by_this_turn_or_an_unlabelled_terminal_event() {
         let frame = |params: serde_json::Value| super::IncomingFrame::Notification {
