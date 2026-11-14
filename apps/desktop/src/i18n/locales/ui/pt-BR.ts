@@ -107,6 +107,16 @@ export const uiPtBR: UiMessages = {
     updatesUnavailable: "Não é possível receber atualizações da conversa agora. Reabra o app mais tarde.",
     userMessageTooltip: "Você · {time}",
   },
+  appUpdate: {
+    label: "Atualização do app",
+    ready: "dog.codes {version} está pronto para instalar",
+    detail: "Foi baixado em segundo plano. A instalação reinicia o dog.codes.",
+    install: "Instalar e reiniciar",
+    installing: "Instalando…",
+    later: "Mais tarde",
+    busy: "Ainda há tarefas em execução. Instale quando terminarem.",
+    failed: "Não foi possível instalar a atualização. Tente novamente mais tarde.",
+  },
   approval: {
     category: {
       confirm: "Confirmar ação",

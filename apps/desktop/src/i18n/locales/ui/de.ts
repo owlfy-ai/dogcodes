@@ -107,6 +107,16 @@ export const uiDe: UiMessages = {
     updatesUnavailable: "Aktualisierungen des Gesprächs können derzeit nicht empfangen werden. Bitte die App später erneut öffnen.",
     userMessageTooltip: "Du · {time}",
   },
+  appUpdate: {
+    label: "App-Update",
+    ready: "dog.codes {version} ist bereit zur Installation",
+    detail: "Im Hintergrund heruntergeladen. Die Installation startet dog.codes neu.",
+    install: "Installieren und neu starten",
+    installing: "Wird installiert…",
+    later: "Später",
+    busy: "Es laufen noch Aufgaben. Installiere, sobald sie fertig sind.",
+    failed: "Das Update konnte nicht installiert werden. Versuche es später erneut.",
+  },
   approval: {
     category: {
       confirm: "Aktion bestätigen",

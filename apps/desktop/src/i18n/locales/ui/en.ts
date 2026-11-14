@@ -107,6 +107,16 @@ export const uiEn = {
     updatesUnavailable: "Can't receive conversation updates right now. Please reopen the app later.",
     userMessageTooltip: "You · {time}",
   },
+  appUpdate: {
+    label: "App update",
+    ready: "dog.codes {version} is ready",
+    detail: "It was downloaded in the background. Installing restarts dog.codes.",
+    install: "Install and restart",
+    installing: "Installing…",
+    later: "Later",
+    busy: "Tasks are still running. Install once they finish.",
+    failed: "The update couldn't be installed. Try again later.",
+  },
   approval: {
     category: {
       confirm: "Confirm action",

@@ -107,6 +107,16 @@ export const uiIt: UiMessages = {
     updatesUnavailable: "Impossibile ricevere gli aggiornamenti della conversazione. Riapri l’app più tardi.",
     userMessageTooltip: "Tu · {time}",
   },
+  appUpdate: {
+    label: "Aggiornamento dell'app",
+    ready: "dog.codes {version} è pronto da installare",
+    detail: "Scaricato in background. L'installazione riavvia dog.codes.",
+    install: "Installa e riavvia",
+    installing: "Installazione…",
+    later: "Più tardi",
+    busy: "Ci sono ancora attività in corso. Installa quando sono finite.",
+    failed: "Impossibile installare l'aggiornamento. Riprova più tardi.",
+  },
   approval: {
     category: {
       confirm: "Conferma azione",

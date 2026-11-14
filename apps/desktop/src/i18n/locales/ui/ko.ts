@@ -107,6 +107,16 @@ export const uiKo: UiMessages = {
     updatesUnavailable: "지금은 대화 업데이트를 받을 수 없습니다. 나중에 앱을 다시 여세요.",
     userMessageTooltip: "나 · {time}",
   },
+  appUpdate: {
+    label: "앱 업데이트",
+    ready: "dog.codes {version} 설치 준비 완료",
+    detail: "백그라운드에서 다운로드했습니다. 설치하면 dog.codes가 다시 시작됩니다.",
+    install: "설치 후 다시 시작",
+    installing: "설치 중…",
+    later: "나중에",
+    busy: "실행 중인 작업이 있습니다. 작업이 끝난 뒤 설치하세요.",
+    failed: "업데이트를 설치하지 못했습니다. 나중에 다시 시도하세요.",
+  },
   approval: {
     category: {
       confirm: "작업 확인",

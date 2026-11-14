@@ -3,6 +3,7 @@ import { ComputerUsePreviewOverlay } from "./ComputerUsePreviewOverlay";
 import { ExecutionTargets, HostProjectDialog, TargetOfflineBanner } from "./ExecutionTargets";
 import type { TargetEntry } from "./executionTargetClient";
 import { GitCredentialPrompt } from "./GitCredentialPrompt";
+import { AppUpdateNotice } from "./AppUpdateNotice";
 import { ComputerUseControl } from "./ComputerUseControl";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { AttachmentUploadRecovery } from "./AttachmentUploadRecovery";
@@ -1393,6 +1394,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         </header>
       {activeView === "conversation" && selectedProjectTarget && <TargetOfflineBanner targetId={selectedProjectTarget} autoConnect />}
       {selectedTaskId && <GitCredentialPrompt taskId={selectedTaskId} />}
+      {isTauri() && <AppUpdateNotice running={Boolean(snapshot?.tasks.some(task => task.activePrimaryRun))} />}
       {activeView === "quota" ? (
         <QuotaCenter views={quotaViews} installations={installationsOnTarget(snapshot.installations, null)} agentUpdates={agentUpdates} refreshProgress={quotaRefreshProgress} onRefresh={() => refreshQuotasNow.current()} onDetect={detectAgents} lang={resolvedLang} />
       ) : activeView === "remote" ? <RemoteDevices lang={resolvedLang} /> : activeView === "targets" ? null : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}

@@ -107,6 +107,16 @@ export const uiFr: UiMessages = {
     updatesUnavailable: "Impossible de recevoir les mises à jour de la conversation pour le moment. Rouvrez l’application plus tard.",
     userMessageTooltip: "Vous · {time}",
   },
+  appUpdate: {
+    label: "Mise à jour de l'app",
+    ready: "dog.codes {version} est prêt à être installé",
+    detail: "Téléchargé en arrière-plan. L'installation redémarre dog.codes.",
+    install: "Installer et redémarrer",
+    installing: "Installation…",
+    later: "Plus tard",
+    busy: "Des tâches sont encore en cours. Installez une fois qu'elles sont terminées.",
+    failed: "La mise à jour n'a pas pu être installée. Réessayez plus tard.",
+  },
   approval: {
     category: {
       confirm: "Confirmer l’action",

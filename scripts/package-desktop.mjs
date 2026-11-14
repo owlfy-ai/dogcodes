@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { dirname, isAbsolute, resolve } from 'node:path';
@@ -11,6 +11,7 @@ import { hostWindowsTarget, prepareOpenSsh } from './prepare-openssh.mjs';
 import { prepareShims } from './prepare-shims.mjs';
 import { renameReleaseInstallers } from './release-names.mjs';
 import { runLocalTests } from './test-local.mjs';
+import { configuredUpdaterPubkey, signUpdaterPackage, updaterSigningEnvironment, withoutUpdaterKey, workspaceVersion } from './updater-signing.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const signingVariables = [
@@ -18,7 +19,7 @@ export const signingVariables = [
   'APPLE_API_ISSUER', 'APPLE_API_KEY', 'APPLE_API_KEY_PATH',
   'APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID',
   'APPLE_NOTARY_PROFILE',
-  'TAURI_SIGNING_PRIVATE_KEY', 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD',
+  'TAURI_SIGNING_PRIVATE_KEY', 'TAURI_SIGNING_PRIVATE_KEY_PATH', 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD',
 ];
 
 // Never echo local file contents or credentials, including in parse errors.
@@ -86,6 +87,12 @@ export function prepareBuild({ platform, signed, environment, localEnvironment =
     }
   }
   return { env, config };
+}
+
+/** Signed Windows NSIS installers of this version, which also serve as in-app update packages. */
+export function windowsUpdaterInstallers(directory, version) {
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory).filter(name => name.includes(`-${version}-Windows-`) && name.endsWith('-Setup.exe')).sort();
 }
 
 export function parseArguments(args) {
@@ -159,6 +166,9 @@ async function main() {
     config.bundle.linux = { appimage: { files: linuxAppImageFiles({ env }) } };
   }
   const keychain = signed && process.platform === 'darwin' && env.APPLE_NOTARY_PROFILE;
+  // Release packages also carry in-app update signatures: fail before a long build.
+  const updaterSigning = signed && (keychain || process.platform === 'win32');
+  if (updaterSigning) { updaterSigningEnvironment(env, root); configuredUpdaterPubkey(root); }
   if (keychain) await checkMacKeychain({ root, env, config, target, bundles });
   if (signed && process.platform === 'win32' && !config.bundle.windows.signCommand) {
     await runBuild('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', resolve(root, 'scripts/check-windows-signing.ps1'),
@@ -195,10 +205,20 @@ async function main() {
       await buildMacKeychainPackage({ root, env, config, cli, configArgument,
         target, bundles });
     } else {
-      await runBuild(process.execPath, [cli, 'build', '--config', configArgument, ...forwarded, '--', '--locked'], { cwd: desktop, env });
+      await runBuild(process.execPath, [cli, 'build', '--config', configArgument, ...forwarded, '--', '--locked'], { cwd: desktop, env: withoutUpdaterKey(env) });
     }
     const metadata = JSON.parse(execFileSync('cargo', ['metadata', '--format-version', '1', '--no-deps', '--locked'], { cwd: root, encoding: 'utf8' }));
-    renameReleaseInstallers(resolve(metadata.target_directory, ...(target ? [target] : []), 'release', 'bundle'));
+    const bundleDirectory = resolve(metadata.target_directory, ...(target ? [target] : []), 'release', 'bundle');
+    renameReleaseInstallers(bundleDirectory);
+    if (updaterSigning && process.platform === 'win32' && (!bundles || bundles.split(',').includes('nsis'))) {
+      // Sign the final Authenticode-signed installer; the updater runs this same file.
+      const version = workspaceVersion(root);
+      const installers = windowsUpdaterInstallers(resolve(bundleDirectory, 'nsis'), version);
+      if (!installers.length) throw new Error('No NSIS installer of this version to sign for in-app updates.');
+      for (const name of installers) {
+        await signUpdaterPackage({ root, cli, file: resolve(bundleDirectory, 'nsis', name), version, env, run: runBuild });
+      }
+    }
   } finally {
     if (stage) rmSync(stage, { recursive: true, force: true });
   }

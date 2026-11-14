@@ -107,6 +107,16 @@ export const uiJa: UiMessages = {
     updatesUnavailable: "現在、会話の更新を受信できません。後でアプリを開き直してください。",
     userMessageTooltip: "あなた · {time}",
   },
+  appUpdate: {
+    label: "アプリのアップデート",
+    ready: "dog.codes {version} をインストールできます",
+    detail: "バックグラウンドでダウンロードしました。インストールすると dog.codes が再起動します。",
+    install: "インストールして再起動",
+    installing: "インストール中…",
+    later: "後で",
+    busy: "実行中のタスクがあります。終わってからインストールしてください。",
+    failed: "アップデートをインストールできませんでした。後でもう一度お試しください。",
+  },
   approval: {
     category: {
       confirm: "操作の確認",

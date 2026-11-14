@@ -1,0 +1,5 @@
+.app-update-notice { position: fixed; right: 20px; bottom: 20px; z-index: 40; box-sizing: border-box; display: grid; gap: 12px; width: min(340px, calc(100vw - 32px)); padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: 0 16px 48px #00000047; font-size: calc(13px * var(--ui-scale, 1)); line-height: 1.45; }
+.app-update-notice strong { display: block; font-size: calc(14px * var(--ui-scale, 1)); font-weight: 600; overflow-wrap: anywhere; }
+.app-update-notice p { margin: 4px 0 0; color: var(--muted); }
+.app-update-notice [role="alert"] { margin: 0; color: #df675a; }
+.app-update-notice-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }

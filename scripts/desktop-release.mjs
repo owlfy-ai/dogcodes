@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { runBuild } from './signing-macos.mjs';
 import { prepareBuild } from './package-desktop.mjs';
 import { runLocalTests } from './test-local.mjs';
+import { manifestName, updaterManifest } from './updater-manifest.mjs';
+import { configuredUpdaterPubkey, verifyUpdaterSignature } from './updater-signing.mjs';
 
 const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const lockName = 'RELEASE_UPLOAD_LOCK.json';
@@ -14,6 +16,14 @@ const endMarker = '<!-- dogcodes-signing:end -->';
 const platformTargets = { darwin: ['aarch64-apple-darwin', 'x86_64-apple-darwin'], win32: ['x86_64-pc-windows-msvc'] };
 const markerName = platform => `signing-${platform === 'darwin' ? 'macos' : 'windows'}.json`;
 const installer = name => /\.(dmg|exe|deb|AppImage)$/.test(name);
+// Release files listed in SHA256SUMS: installers plus in-app update archives and signatures.
+const releaseFile = name => installer(name) || /\.app\.tar\.gz$|\.sig$/.test(name);
+// Each signing machine owns these files: per Mac target a DMG, an update archive and its
+// signature; per Windows target the installer (also the update package) and its signature.
+const platformFiles = { darwin: ['.dmg', '.app.tar.gz', '.app.tar.gz.sig'], win32: ['.exe', '.exe.sig'] };
+export const ownedBy = (platform, name) => platformFiles[platform].some(suffix => name.endsWith(suffix))
+  && !(platform === 'darwin' && name.endsWith('.dmg.sig'));
+const receiptSchema = 2;
 const sleep = ms => new Promise(accept => setTimeout(accept, ms));
 
 export function releaseArguments(args) {
@@ -74,6 +84,7 @@ export function githubClient({ root, repo, tag, execute = capture }) {
     return result ? JSON.parse(result) : null;
   };
   return {
+    repo,
     async release() {
       let view;
       try { view = JSON.parse(await gh(['release', 'view', tag, '--repo', repo, '--json', 'databaseId'])); }
@@ -161,13 +172,18 @@ function validateAssetName(name) {
   if (name !== basename(name) || !/^[\w.+-]+$/.test(name)) throw new Error('Unsupported release asset filename.');
 }
 
-export async function refreshChecksums(client, { tag, commit, stage }) {
+export async function refreshChecksums(client, { tag, commit, stage, repo = client.repo }) {
   const release = await client.release();
-  const packages = release.assets.filter(asset => installer(asset.name)).sort((a, b) => a.name.localeCompare(b.name, 'en'));
+  const packages = release.assets.filter(asset => releaseFile(asset.name)).sort((a, b) => a.name.localeCompare(b.name, 'en'));
+  const count = suffix => packages.filter(a => a.name.endsWith(suffix)).length;
   // Linux DEB/AppImage counts stay at zero until real-machine testing. Restore to two of each.
-  if (packages.filter(a => a.name.endsWith('.dmg')).length !== 2 || packages.filter(a => a.name.endsWith('.exe')).length !== 1
-      || packages.filter(a => a.name.endsWith('.deb')).length !== 0 || packages.filter(a => a.name.endsWith('.AppImage')).length !== 0) {
+  if (count('.dmg') !== 2 || count('.exe') !== 1 || count('.deb') !== 0 || count('.AppImage') !== 0) {
     throw new Error('The release must contain exactly two Mac DMGs and one Windows EXE.');
+  }
+  // Unsigned CI drafts have no update files; each signing machine adds its own.
+  const names = new Set(packages.map(asset => asset.name));
+  if (![0, 2].includes(count('.app.tar.gz')) || packages.some(asset => asset.name.endsWith('.sig') && !names.has(asset.name.slice(0, -4)))) {
+    throw new Error('In-app update archives and signatures are incomplete. Retry the affected platform with --upload-only.');
   }
   const hashes = new Map();
   for (const asset of packages) {
@@ -188,8 +204,8 @@ export async function refreshChecksums(client, { tag, commit, stage }) {
     const path = resolve(stage, marker.name);
     await client.download(marker, path);
     const receipt = JSON.parse(readFileSync(path, 'utf8'));
-    const expectedNames = packages.filter(asset => asset.name.endsWith(platform === 'darwin' ? '.dmg' : '.exe')).map(asset => asset.name).sort();
-    if (receipt.schemaVersion !== 1 || receipt.tag !== tag || receipt.commit !== commit || receipt.platform !== platform
+    const expectedNames = packages.filter(asset => ownedBy(platform, asset.name)).map(asset => asset.name).sort();
+    if (receipt.schemaVersion !== receiptSchema || receipt.tag !== tag || receipt.commit !== commit || receipt.platform !== platform
       || !Array.isArray(receipt.assets) || receipt.assets.length !== expectedNames.length
       || receipt.assets.map(asset => asset.name).sort().join('\n') !== expectedNames.join('\n')
       || receipt.assets.some(asset => hashes.get(asset.name) !== asset.sha256 || packages.find(p => p.name === asset.name)?.size !== asset.size)) {
@@ -197,9 +213,19 @@ export async function refreshChecksums(client, { tag, commit, stage }) {
     }
     complete[platform] = true;
   }
+  // latest.json lists every signed update package; the app ignores a release without it.
+  const signatures = new Map();
+  for (const asset of packages.filter(asset => asset.name.endsWith('.sig'))) {
+    const path = resolve(stage, asset.name);
+    await client.download(asset, path);
+    signatures.set(asset.name, readFileSync(path, 'utf8'));
+  }
+  const manifest = updaterManifest({ repo, tag, version: tag.replace(/^v/, ''), assetNames: [...names], signatures });
+  const updatable = ['darwin-aarch64', 'darwin-x86_64', 'windows-x86_64'].every(key => manifest.platforms[key]);
+  if (complete.darwin && complete.win32 && !updatable) throw new Error('Signed packages are missing in-app update signatures. Rebuild them with the updater key.');
   const checksum = resolve(stage, 'SHA256SUMS.txt');
   writeFileSync(checksum, packages.map(asset => `${hashes.get(asset.name)}  ${asset.name}\n`).join(''));
-  const snapshot = release => JSON.stringify(release.assets.filter(asset => installer(asset.name))
+  const snapshot = release => JSON.stringify(release.assets.filter(asset => releaseFile(asset.name))
     .map(({ id, name, size, digest }) => ({ id, name, size, digest })).sort((a, b) => a.name.localeCompare(b.name, 'en')));
   const unchanged = async () => {
     const current = await client.release();
@@ -208,7 +234,12 @@ export async function refreshChecksums(client, { tag, commit, stage }) {
   };
   await unchanged();
   await client.upload(checksum);
-  const section = `${startMarker}\n| Platform | Package status |\n| --- | --- |\n| macOS ARM64 / Intel | ${complete.darwin ? 'Developer ID signed and notarized' : 'Awaiting local signed packages'} |\n| Windows x64 | ${complete.win32 ? 'Authenticode signed and timestamped' : 'Awaiting local signed package'} |\n<!-- Linux packaging paused until real-machine testing\n| Linux x64 | CI-built DEB / AppImage; no additional package signature |\n| Linux ARM64 | CI-built DEB / AppImage; no additional package signature |\n-->\n\nSource commit: \`${commit}\`. Verify downloads with \`SHA256SUMS.txt\`.\n${endMarker}`;
+  if (Object.keys(manifest.platforms).length) {
+    const latest = resolve(stage, manifestName);
+    writeFileSync(latest, `${JSON.stringify(manifest, null, 2)}\n`);
+    await client.upload(latest);
+  }
+  const section = `${startMarker}\n| Platform | Package status |\n| --- | --- |\n| macOS ARM64 / Intel | ${complete.darwin ? 'Developer ID signed and notarized' : 'Awaiting local signed packages'} |\n| Windows x64 | ${complete.win32 ? 'Authenticode signed and timestamped' : 'Awaiting local signed package'} |\n| In-app updates | ${updatable ? 'Signed update packages for macOS ARM64 / Intel and Windows x64' : 'Awaiting signed update packages'} |\n<!-- Linux packaging paused until real-machine testing\n| Linux x64 | CI-built DEB / AppImage; no additional package signature |\n| Linux ARM64 | CI-built DEB / AppImage; no additional package signature |\n-->\n\nSource commit: \`${commit}\`. Verify downloads with \`SHA256SUMS.txt\`.\n${endMarker}`;
   const current = await unchanged();
   const body = current.body ?? '';
   const begin = body.indexOf(startMarker), end = body.indexOf(endMarker);
@@ -216,7 +247,7 @@ export async function refreshChecksums(client, { tag, commit, stage }) {
     ? body.slice(0, begin) + section + body.slice(end + endMarker.length)
     : `${body}\n\n${section}`;
   await client.body(current, nextBody);
-  return complete.darwin && complete.win32;
+  return complete.darwin && complete.win32 && updatable;
 }
 
 export async function uploadSignedPackages(client, receipt, stage, lockOptions) {
@@ -229,7 +260,7 @@ export async function uploadSignedPackages(client, receipt, stage, lockOptions) 
     const release = await client.release();
     const names = new Set(receipt.assets.map(asset => asset.name));
     for (const asset of release.assets) {
-      if (asset.name.endsWith(receipt.platform === 'darwin' ? '.dmg' : '.exe') && !names.has(asset.name)) {
+      if (ownedBy(receipt.platform, asset.name) && !names.has(asset.name)) {
         await client.remove(asset);
       }
     }
@@ -263,12 +294,31 @@ export async function ensureTag({ tag, commit, git, checkOnly = false }) {
   catch (error) { if (await remoteCommit() !== commit) throw error; }
 }
 
-async function verifyPackages({ root, platform, assets }) {
+/** Every update package needs its signature, made with the committed key for this version. */
+export function verifyUpdaterFiles({ root, version, assets }) {
+  const pubkey = configuredUpdaterPubkey(root);
+  const updates = assets.filter(asset => asset.name.endsWith('.app.tar.gz') || asset.name.endsWith('.exe'));
+  const signatures = assets.filter(asset => asset.name.endsWith('.sig'));
+  if (signatures.length !== updates.length) throw new Error('Each in-app update package needs exactly one signature. Build it again.');
+  for (const update of updates) {
+    const signature = signatures.find(asset => asset.name === `${update.name}.sig`);
+    if (!signature) throw new Error('Each in-app update package needs exactly one signature. Build it again.');
+    const signed = verifyUpdaterSignature({ bytes: readFileSync(update.path), signature: readFileSync(signature.path, 'utf8'), pubkey });
+    if (signed !== version) throw new Error(`The in-app update signature is bound to ${signed ?? 'no version'}, not ${version}. Build it again.`);
+  }
+}
+
+async function verifyPackages({ root, platform, assets, tag }) {
   for (const asset of assets) {
     if (!lstatSync(asset.path).isFile() || lstatSync(asset.path).isSymbolicLink()
       || basename(asset.path) !== asset.name || statSync(asset.path).size !== asset.size || await sha256(asset.path) !== asset.sha256) {
       throw new Error('Local package is missing or has changed. Build it again before uploading.');
     }
+  }
+  verifyUpdaterFiles({ root, version: tag.replace(/^v/, ''), assets });
+  for (const asset of assets) {
+    // Archives and signatures are covered above; the archive's app was checked when packaged.
+    if (!installer(asset.name)) continue;
     if (platform === 'darwin') {
       await runBuild('codesign', ['--verify', '--strict', asset.path], { cwd: root });
       await runBuild('xcrun', ['stapler', 'validate', asset.path], { cwd: root });
@@ -322,8 +372,8 @@ export async function releaseDesktop({ root = rootDirectory, platform = process.
   if (options.uploadOnly) {
     if (!existsSync(stateFile)) throw new Error('No completed local build receipt exists. Run pnpm desktop:release first.');
     receipt = JSON.parse(readFileSync(stateFile, 'utf8'));
-    if (receipt.schemaVersion !== 1 || receipt.commit !== commit || receipt.tag !== tag || receipt.platform !== platform
-      || receipt.assets.length !== targets.length) throw new Error('Saved packages belong to another release commit. Rebuild them.');
+    if (receipt.schemaVersion !== receiptSchema || receipt.commit !== commit || receipt.tag !== tag || receipt.platform !== platform
+      || receipt.assets.length !== targets.length * platformFiles[platform].length) throw new Error('Saved packages belong to another release commit or an older release format. Rebuild them.');
   } else {
     const pnpm = process.env.npm_execpath;
     if (!pnpm || !/pnpm\.(?:c?js|mjs)$/.test(pnpm)) throw new Error('Run this entry point using pnpm desktop:release.');
@@ -346,14 +396,16 @@ export async function releaseDesktop({ root = rootDirectory, platform = process.
       const started = Date.now();
       await runBuild(process.execPath, [packageScript, '--signed', '--skip-tests', '--target', target, '--bundles', platform === 'darwin' ? 'dmg' : 'nsis'], { cwd: root });
       const directory = platform === 'darwin' ? resolve(root, 'release/installers', version, target) : join(cargo.target_directory, target, 'release/bundle/nsis');
-      const files = readdirSync(directory).filter(name => name.includes(`-${version}-`) && name.endsWith(platform === 'darwin' ? '.dmg' : '.exe')
-        && statSync(join(directory, name)).mtimeMs >= started - 2000);
-      if (files.length !== 1) throw new Error('Expected exactly one newly built installer for this version and target.');
-      const name = files[0], path = join(directory, name);
-      assets.push({ name, path, size: statSync(path).size, sha256: await sha256(path) });
+      for (const suffix of platformFiles[platform]) {
+        const files = readdirSync(directory).filter(name => name.includes(`-${version}-`) && name.endsWith(suffix) && ownedBy(platform, name)
+          && (suffix !== '.app.tar.gz' || !name.endsWith('.sig')) && statSync(join(directory, name)).mtimeMs >= started - 2000);
+        if (files.length !== 1) throw new Error(`Expected exactly one newly built ${suffix} file for this version and target.`);
+        const name = files[0], path = join(directory, name);
+        assets.push({ name, path, size: statSync(path).size, sha256: await sha256(path) });
+      }
     }
     await unchanged();
-    receipt = { schemaVersion: 1, tag, commit, platform, assets };
+    receipt = { schemaVersion: receiptSchema, tag, commit, platform, assets };
     await verifyPackages({ root, ...receipt });
     writeFileSync(stateFile, JSON.stringify(receipt, null, 2), { mode: 0o600 });
   }

@@ -1,8 +1,10 @@
 import { spawn, execFile } from 'node:child_process';
 import { existsSync, readFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, copyFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { resolve, join } from 'node:path';
+import { resolve, join, dirname, basename } from 'node:path';
 import { macReleaseDmgName } from './release-names.mjs';
+import { macUpdaterArchiveName } from './updater-manifest.mjs';
+import { checkAppArchiveEntries, signUpdaterPackage, withoutUpdaterKey } from './updater-signing.mjs';
 
 // codesign --force leaves Name.cstemp beside a universal Mach-O. Notarization rejects that copy.
 export function removeCodesignTemps(directory) {
@@ -53,7 +55,8 @@ export async function checkMacKeychain({ root, env, config, target, bundles, cap
 }
 
 export async function buildMacKeychainPackage({ root, env, config, cli, configArgument, target, bundles,
-  run = runBuild, capture = captureTool }) {
+  run = runBuild, capture = captureTool,
+  signUpdater = ({ file, version }) => signUpdaterPackage({ root, cli, file, version, env, run }) }) {
   const options = macPackageOptions({ target, bundles });
   const desktop = resolve(root, 'apps/desktop');
   const appConfig = JSON.parse(readFileSync(join(desktop, 'src-tauri/tauri.conf.json'), 'utf8'));
@@ -67,7 +70,8 @@ export async function buildMacKeychainPackage({ root, env, config, cli, configAr
   }
   const identity = config.bundle.macOS.signingIdentity;
   const team = identity.match(/\(([A-Z0-9]+)\)$/)[1];
-  const buildEnv = { ...env };
+  // Only the updater signer receives the update key.
+  const buildEnv = withoutUpdaterKey(env);
   // This module owns notarization; Tauri only builds and signs the application.
   for (const key of ['APPLE_NOTARY_PROFILE', 'APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID',
     'APPLE_API_KEY', 'APPLE_API_ISSUER', 'APPLE_API_KEY_PATH']) delete buildEnv[key];
@@ -78,7 +82,7 @@ export async function buildMacKeychainPackage({ root, env, config, cli, configAr
   const actual = (await capture('lipo', ['-archs', join(app, 'Contents/MacOS', executable)], { cwd: root, env })).trim().split(/\s+/).sort();
   if (actual.join(',') !== [...options.architectures].sort().join(',')) throw new Error('The built application has unexpected CPU architectures.');
   removeCodesignTemps(app);
-  const tool = (command, args) => run(command, args, { cwd: root, env });
+  const tool = (command, args, extra = {}) => run(command, args, { cwd: root, env: { ...withoutUpdaterKey(env), ...extra } });
   await tool('codesign', ['--verify', '--deep', '--strict', app]);
   await tool('codesign', ['--verify', '-R', `=identifier "${appConfig.identifier}" and anchor apple generic and certificate leaf[subject.OU] = "${team}"`, app]);
   const privateRoot = resolve(root, 'release/private');
@@ -90,6 +94,22 @@ export async function buildMacKeychainPackage({ root, env, config, cli, configAr
       '--keychain-profile', env.APPLE_NOTARY_PROFILE, '--wait', '--timeout', '30m', '--output-format', 'json'], { cwd: root, env, timeout: 31 * 60000 }));
     if (result.status !== 'Accepted') throw new Error(`Apple notarization was not accepted (${result.status}); submission ${result.id}. No release artifact was exported.`);
   }
+  async function updaterArchive() {
+    // A universal build has no single updater platform; releases build each architecture.
+    if (options.target === 'universal-apple-darwin') return null;
+    const appName = `${appConfig.productName}.app`;
+    const archive = join(stage, macUpdaterArchiveName(appConfig.productName, version, options.target));
+    // No AppleDouble or extended-attribute entries: the updater unpacks every entry into the bundle.
+    await tool('tar', ['--no-mac-metadata', '-czf', archive, '-C', dirname(app), basename(app)], { COPYFILE_DISABLE: '1' });
+    checkAppArchiveEntries(await capture('tar', ['-tzf', archive], { cwd: root, env: withoutUpdaterKey(env), maxBuffer: 64 * 1024 * 1024 }), appName);
+    const unpacked = join(stage, 'updater-check');
+    mkdirSync(unpacked);
+    await tool('tar', ['-xzf', archive, '-C', unpacked]);
+    await tool('codesign', ['--verify', '--deep', '--strict', join(unpacked, appName)]);
+    await tool('xcrun', ['stapler', 'validate', join(unpacked, appName)]);
+    rmSync(unpacked, { recursive: true, force: true });
+    return { archive, signature: await signUpdater({ file: archive, version }) };
+  }
   try {
     const zip = join(stage, 'application.zip');
     await tool('ditto', ['-c', '-k', '--keepParent', app, zip]);
@@ -97,10 +117,18 @@ export async function buildMacKeychainPackage({ root, env, config, cli, configAr
     await tool('xcrun', ['stapler', 'staple', app]);
     await tool('xcrun', ['stapler', 'validate', app]);
     await tool('spctl', ['--assess', '--type', 'execute', app]);
+    // In-app updates install this archive of the stapled app (see docs/implementation/app-auto-update.md).
+    const updater = await updaterArchive();
     const output = resolve(root, 'release/installers', version, options.target);
+    const exportUpdater = () => {
+      if (!updater) return;
+      copyFileSync(updater.archive, join(output, basename(updater.archive)));
+      copyFileSync(updater.signature, join(output, basename(updater.signature)));
+    };
     if (!options.dmg) {
       mkdirSync(output, { recursive: true });
       await tool('ditto', [app, join(output, `${appConfig.productName}.app`)]);
+      exportUpdater();
       console.log(`Verified notarized application: ${output}`);
       return;
     }
@@ -118,9 +146,10 @@ export async function buildMacKeychainPackage({ root, env, config, cli, configAr
     await tool('xcrun', ['stapler', 'validate', dmg]);
     await tool('spctl', ['--assess', '--type', 'open', '--context', 'context:primary-signature', dmg]);
     mkdirSync(output, { recursive: true });
+    exportUpdater();
     copyFileSync(dmg, join(output, name));
     writeFileSync(join(output, `${name}.sha256`), `${createHash('sha256').update(readFileSync(dmg)).digest('hex')}  ${name}\n`);
-    console.log(`Verified signed and notarized installer: ${join(output, name)}`);
+    console.log(`Verified signed and notarized installer: ${join(output, name)}${updater ? ' and signed update archive' : ''}`);
   } finally {
     rmSync(stage, { recursive: true, force: true });
   }

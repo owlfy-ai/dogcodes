@@ -107,6 +107,16 @@ export const uiZhTW: UiMessages = {
     updatesUnavailable: "暫時無法接收對話更新，請稍後重新打開應用。",
     userMessageTooltip: "你 · {time}",
   },
+  appUpdate: {
+    label: "應用程式更新",
+    ready: "dog.codes {version} 已可安裝",
+    detail: "新版本已在背景下載完成，安裝後 dog.codes 會自動重新啟動。",
+    install: "安裝並重新啟動",
+    installing: "正在安裝…",
+    later: "稍後",
+    busy: "仍有任務在執行，請等它們結束後再安裝。",
+    failed: "更新未能安裝，請稍後再試。",
+  },
   approval: {
     category: {
       confirm: "操作確認",

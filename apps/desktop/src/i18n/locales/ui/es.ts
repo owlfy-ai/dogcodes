@@ -107,6 +107,16 @@ export const uiEs: UiMessages = {
     updatesUnavailable: "No se pueden recibir actualizaciones de la conversación ahora. Vuelve a abrir la app más tarde.",
     userMessageTooltip: "Tú · {time}",
   },
+  appUpdate: {
+    label: "Actualización de la app",
+    ready: "dog.codes {version} está listo para instalar",
+    detail: "Se descargó en segundo plano. Al instalarlo, dog.codes se reinicia.",
+    install: "Instalar y reiniciar",
+    installing: "Instalando…",
+    later: "Más tarde",
+    busy: "Aún hay tareas en curso. Instala cuando terminen.",
+    failed: "No se pudo instalar la actualización. Inténtalo más tarde.",
+  },
   approval: {
     category: {
       confirm: "Confirmar acción",

@@ -32,6 +32,14 @@
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src ipc: http://ipc.localhost"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM3MTFEOThGNDU4MjZDN0QKUldSOWJJSkZqOWtSeHducEdGS1IxazFZWFVUN1ZNL0hlV1phZWJ5cUlRMTRSTGwyVi9MRUxFejcK",
+      "endpoints": ["https://github.com/owlfy-ai/dogcodes/releases/latest/download/latest.json"],
+      "requireSignedVersion": true,
+      "windows": { "installMode": "passive" }
+    }
+  },
   "bundle": {
     "active": true,
     "resources": {
