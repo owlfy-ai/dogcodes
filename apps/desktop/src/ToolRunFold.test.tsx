@@ -50,7 +50,7 @@ it("folds a run of calls to the latest one and counts the whole run", async () =
   expect(host.querySelector(".tool-run-list")).toBeNull();
 });
 
-it("starts a new run after assistant text or a thought", async () => {
+it("starts a new run only after assistant text", async () => {
   await render([
     tool("a", "ls"), tool("b", "pwd"),
     message("m", "接下来检查构建。"),
@@ -58,11 +58,38 @@ it("starts a new run after assistant text or a thought", async () => {
     thought("t"),
     tool("e", "git status"),
   ]);
+  // A thought joins the run around it; only text breaks one.
   expect(toggles()).toHaveLength(2);
-  expect(toggles().map((toggle) => toggle.dataset.hiddenCalls)).toEqual(["1", "1"]);
-  expect(toggles().map((toggle) => toggle.querySelector(".activity-title")!.textContent)).toEqual(["pwd", "npm test"]);
-  expect(titles()).toEqual(["git status"]);
+  expect(toggles().map((toggle) => toggle.dataset.hiddenCalls)).toEqual(["1", "3"]);
+  expect(toggles().map((toggle) => toggle.querySelector(".activity-title")!.textContent)).toEqual(["pwd", "git status"]);
+  // Thoughts are not counted as tool calls.
+  expect(toggles()[1].querySelector(".tool-run-count")!.textContent).toBe("3 次工具调用");
+  expect(titles()).toEqual([]);
   expect(host.textContent).toContain("接下来检查构建。");
+});
+
+it("shows the current thought on the folded row while it runs", async () => {
+  const live = item("t2", "activity", JSON.stringify({ type: "thought", status: "running", startedAt: new Date().toISOString(), liveText: "看看测试" }));
+  await render([thought("t1"), tool("a", "ls"), live]);
+  const [toggle] = toggles();
+  expect(toggle.querySelector(".activity-label")!.textContent).toMatch(/^思考中/);
+  expect(toggle.querySelector(".activity-title")).toBeNull();
+  expect(toggle.classList.contains("activity-running")).toBe(true);
+  expect(toggle.dataset.hiddenCalls).toBe("2");
+  expect(toggle.querySelector(".tool-run-count")!.textContent).toBe("1 次工具调用");
+  // Only the folded row names the step; the live thought text still shows under it.
+  expect(host.querySelector(".thought-line")).toBeNull();
+  expect(host.textContent).toContain("看看测试");
+});
+
+it("folds computer-use actions with the other steps", async () => {
+  const action = item("cu", "computer_use", JSON.stringify({ tool: "click", mode: "background" }));
+  await render([thought("t"), action, tool("a", "ls")], null);
+  const [toggle] = toggles();
+  expect(toggle.dataset.hiddenCalls).toBe("2");
+  expect(toggle.querySelector(".tool-run-count")!.getAttribute("data-tooltip")).toContain("终端 1");
+  await act(async () => toggle.click());
+  expect(host.querySelectorAll(".tool-run-list > *")).toHaveLength(3);
 });
 
 it("does not fold a single call or runs from different turns", async () => {
