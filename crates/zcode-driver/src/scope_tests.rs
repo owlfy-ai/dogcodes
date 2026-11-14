@@ -439,6 +439,43 @@ async fn foreign_session_approval_and_late_labelled_terminal_do_not_affect_the_c
 }
 
 #[tokio::test]
+async fn subagent_session_requests_belong_to_the_current_turn() {
+    let (root, launch) = fixture("normal");
+    edit(&launch, |s| {
+        s.replace("  if r['params']['content']!='slow':",r"  if r['params']['content']=='subagent':
+   turn='turn-'+str(r['id'])
+   out({'id':'subagent-headers','method':'interaction/requestProviderRuntimeHeaders','params':{'sessionId':'sess_subagent_agent_1','turnId':'child-turn','requestId':'child'}})
+   out({'id':'foreign-headers','method':'interaction/requestProviderRuntimeHeaders','params':{'sessionId':'foreign','turnId':turn,'requestId':'foreign'}})
+   out({'method':'turn.completed','params':{'sessionId':id,'turnId':turn,'resultType':'success'}})
+  if r['params']['content'] not in ['slow','subagent']:")
+    });
+    let driver = driver(launch);
+    let handle = session(&driver, root.path()).await;
+    events(
+        driver
+            .prompt(&handle, prompt(root.path(), "subagent"))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let requests = std::fs::read_to_string(root.path().join("requests.jsonl")).unwrap();
+    let reply = |id: &str| {
+        requests
+            .lines()
+            .map(|s| serde_json::from_str::<Value>(s).unwrap())
+            .find(|r| r["id"] == id)
+            .unwrap_or_else(|| panic!("no reply to {id}"))["result"]["errorMessage"]
+            .clone()
+    };
+    let rejected = "Original turn is no longer available";
+    // The subagent's request reaches account handling instead of being turned away.
+    assert_ne!(reply("subagent-headers"), rejected);
+    assert_eq!(reply("foreign-headers"), rejected);
+    driver.shutdown(handle).await.unwrap();
+    stop(driver).await;
+}
+
+#[tokio::test]
 async fn abandoned_startup_before_identity_keeps_original_worker_supervision() {
     let (root, launch) = fixture("normal");
     edit(&launch, |s| {

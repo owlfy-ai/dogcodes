@@ -357,8 +357,9 @@ struct TurnResult {
 
 struct PendingApproval {
     server_id: Value,
-    /// Earlier native requests for the same permission in this turn. `ZCode`
-    /// asks again while a request stays unanswered; one answer settles them all.
+    /// Earlier native requests for the same permission or question in this turn.
+    /// `ZCode` asks again while a request stays unanswered; one answer settles
+    /// them all.
     repeated: Vec<Value>,
     option_ids: Vec<String>,
     responses: HashMap<String, Value>,
@@ -432,9 +433,24 @@ fn permission_keys(native_key: &str, event: &DriverEvent) -> Vec<String> {
     keys
 }
 
+/// Identities of one question request within a turn: `ZCode`'s own request or
+/// tool call id, and the exact questions asked.
+fn question_keys(params: &Value) -> Vec<String> {
+    let mut keys = Vec::with_capacity(2);
+    if let Some(id) = params
+        .get("requestId")
+        .or_else(|| params.get("toolCallId"))
+        .and_then(Value::as_str)
+    {
+        keys.push(format!("id:{id}"));
+    }
+    keys.push(format!("questions:{}", params["questions"]));
+    keys
+}
+
 /// Attaches a repeated native request to the card still open for it in this
 /// turn. Returns false when there is none and a new card is needed.
-fn repeat_open_permission(
+fn repeat_open_request(
     state: &SessionState,
     open: &HashMap<String, String>,
     keys: &[String],
@@ -681,6 +697,8 @@ impl Connection {
         // Open permission cards of this turn, by the native request identity and
         // by tool + input, so a repeated native request reuses its card.
         let mut open_permissions: HashMap<String, String> = HashMap::new();
+        // Open question cards of this turn, likewise.
+        let mut open_questions: HashMap<String, String> = HashMap::new();
         let mut stop_id = None;
         let mut cancel_open = true;
         let mut current_turn_started = false;
@@ -740,7 +758,9 @@ impl Connection {
                             method,
                             params,
                         } => {
-                            let foreign=label_differs(&params,"sessionId",Some(session_id))||label_differs(&params,"turnId",native_turn.as_deref());
+                            // A subagent asks under its own native session and turn. This
+                            // process runs one turn at a time, so it belongs to this turn.
+                            let foreign=!subagent_session(&params)&&(label_differs(&params,"sessionId",Some(session_id))||label_differs(&params,"turnId",native_turn.as_deref()));
                             let current={let _gate=state.close_result.lock().expect("session lifecycle");state.accepts(handle)};
                             if foreign||!current {
                                 let response=match method.as_str(){
@@ -754,9 +774,17 @@ impl Connection {
                             if method == "interaction/requestUserInput" {
                                 match driver_api::questions::native_form("zcode",&params){
                                     Ok(form)=>{
+                                        let keys = question_keys(&params);
+                                        if repeat_open_request(state, &open_questions, &keys, &id) {
+                                            continue;
+                                        }
                                         let request_id=format!("zcode-question-{}",InstallationId::new());
                                         let pending=PendingApproval {server_id:id.clone(),repeated:vec![],option_ids:vec![],responses:HashMap::from([("question".into(),params)])};
-                                        if !state.publish(handle,request_id.clone(),pending,DriverEvent::QuestionRequested {native_request_id:request_id,form},events) {
+                                        if state.publish(handle,request_id.clone(),pending,DriverEvent::QuestionRequested {native_request_id:request_id.clone(),form},events) {
+                                            for key in keys {
+                                                open_questions.insert(key, request_id.clone());
+                                            }
+                                        } else {
                                             self.send(&json!({"id":id,"result":{"action":"cancel"}})).await?;
                                         }
                                     },
@@ -775,7 +803,7 @@ impl Connection {
                                     continue;
                                 };
                                 let keys = permission_keys(&native_key, &event);
-                                if repeat_open_permission(state, &open_permissions, &keys, &id) {
+                                if repeat_open_request(state, &open_permissions, &keys, &id) {
                                     continue;
                                 }
                                 let native_request_id=format!("zcode-approval-{}",InstallationId::new());
@@ -888,6 +916,11 @@ fn native_label<'a>(params: &'a Value, key: &str) -> Option<&'a str> {
             .and_then(|p| p.get(key))
             .and_then(Value::as_str)
     })
+}
+/// Whether a server request comes from a subagent's child session, which
+/// `ZCode` names `sess_subagent_<agent id>`.
+fn subagent_session(params: &Value) -> bool {
+    native_label(params, "sessionId").is_some_and(|id| id.starts_with("sess_subagent_"))
 }
 fn label_differs(params: &Value, key: &str, expected: Option<&str>) -> bool {
     expected.is_some_and(|expected| {
@@ -1703,15 +1736,22 @@ impl AgentDriver for ZcodeDriver {
         };
         let response =
             driver_api::questions::native_answer("zcode", &pending.responses["question"], &answer);
-        state
+        let sender = state
             .interaction_tx
             .lock()
             .expect("sender")
-            .as_ref()
-            .ok_or_else(|| DriverError::Disconnected("ZCode turn ended".into()))?
-            .send(InteractionDecision {
-                server_id: pending.server_id,
-                response,
+            .clone()
+            .ok_or_else(|| DriverError::Disconnected("ZCode turn ended".into()))?;
+        // Answer every native request for this card, the latest last.
+        pending
+            .repeated
+            .into_iter()
+            .chain(std::iter::once(pending.server_id))
+            .try_for_each(|server_id| {
+                sender.send(InteractionDecision {
+                    server_id,
+                    response: response.clone(),
+                })
             })
             .map_err(|_| DriverError::Disconnected("ZCode closed".into()))
     }
@@ -2325,6 +2365,101 @@ mod tests {
             assert_eq!(decision.server_id, server_id);
             assert_eq!(decision.response, json!({"decision":"allow"}));
         }
+    }
+
+    #[tokio::test]
+    async fn repeated_question_reuses_its_card_and_one_answer_settles_all() {
+        let driver = ZcodeDriver::new(
+            "zcode",
+            &agent_domain::InstallationId::new().to_string(),
+            ZcodeLaunch {
+                app_binary: PathBuf::from("/unused/zcode"),
+                cli_script: PathBuf::from("/unused/zcode.cjs"),
+            },
+            None,
+            SessionResumeCapability::Unknown,
+        )
+        .unwrap();
+        let params = json!({"sessionId":"session-1","questions":[
+            {"question":"Which platform?","options":[{"label":"1688"},{"label":"Taobao"}]}
+        ]});
+        let (interaction_tx, mut interaction_rx) = mpsc::unbounded_channel();
+        let state = Arc::new(SessionState {
+            scope: std::sync::Mutex::new(SessionHandle::scoped("session-1".into())),
+            binding: std::sync::Mutex::new(None),
+            workspace: "/tmp".into(),
+            admission: tokio::sync::Mutex::new(()),
+            retired: tokio::sync::watch::channel(false).0,
+            native_catalog: Value::Null,
+            turn_active: AtomicBool::new(true),
+            interrupt_requested: AtomicBool::new(false),
+            cancel_tx: std::sync::Mutex::new(None),
+            interaction_tx: std::sync::Mutex::new(Some(interaction_tx)),
+            pending_approvals: std::sync::Mutex::new(HashMap::from([(
+                "question-1".into(),
+                PendingApproval {
+                    server_id: json!(41),
+                    repeated: vec![],
+                    option_ids: vec![],
+                    responses: HashMap::from([("question".into(), params.clone())]),
+                },
+            )])),
+            closing: AtomicBool::new(false),
+            close_result: std::sync::Mutex::new(None),
+            turn_done: std::sync::Mutex::new(None),
+            native: None,
+        });
+        let open: HashMap<String, String> = question_keys(&params)
+            .into_iter()
+            .map(|key| (key, "question-1".to_owned()))
+            .collect();
+        // ZCode asks the same questions again: no second card.
+        assert!(repeat_open_request(
+            &state,
+            &open,
+            &question_keys(&params),
+            &json!(42)
+        ));
+        // Different questions are a new card.
+        let other = json!({"questions":[{"question":"Submit automatically?"}]});
+        assert!(!repeat_open_request(
+            &state,
+            &open,
+            &question_keys(&other),
+            &json!(43)
+        ));
+        driver
+            .sessions
+            .lock()
+            .expect("sessions")
+            .insert("session-1".into(), state.clone());
+        let handle = driver.current_session_handle("session-1").await.unwrap();
+        driver
+            .respond_to_question(
+                &handle,
+                "question-1",
+                agent_domain::QuestionAnswer {
+                    cancelled: false,
+                    values: json!({"answer_0":"1688"}),
+                },
+            )
+            .await
+            .unwrap();
+        for server_id in [json!(41), json!(42)] {
+            let decision = interaction_rx.recv().await.unwrap();
+            assert_eq!(decision.server_id, server_id);
+            assert_eq!(
+                decision.response,
+                json!({"action":"accept","content":{"answer_0":"1688"}})
+            );
+        }
+        // Once answered, the same questions asked again open a new card.
+        assert!(!repeat_open_request(
+            &state,
+            &open,
+            &question_keys(&params),
+            &json!(44)
+        ));
     }
 
     #[test]

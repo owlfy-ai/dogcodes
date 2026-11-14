@@ -29,7 +29,6 @@ function fakeGitHub({ serverDigests = true } = {}) {
     async release() { return { id: 1, draft, body, assets: [...assets.values()].map(metadata) }; },
     async run() { return { status: 'completed', conclusion: 'success', html_url: 'https://example.invalid/run' }; },
     async upload(file, replace = true) {
-      assert.equal(draft, true);
       const name = basename(file);
       if (assets.has(name) && !replace) throw new Error('Asset already exists');
       changes.push(`upload:${name}`);
@@ -43,7 +42,7 @@ function fakeGitHub({ serverDigests = true } = {}) {
     async remove(asset) {
       if (assets.get(asset.name)?.id === asset.id) { changes.push(`delete:${asset.name}`); assets.delete(asset.name); }
     },
-    async body(release, text) { assert.equal(draft, true); body = text; changes.push('body'); },
+    async body(release, text) { body = text; changes.push('body'); },
   };
   return { client, assets, put, changes, publish: () => { draft = false; } };
 }
@@ -128,10 +127,12 @@ test('tag preflight performs no tag creation or push', async () => {
   assert.equal(calls.length, 2);
 });
 
-test('failed CI and published releases stop the upload flow', async () => {
+test('failed CI stops the upload flow, and a published release remains updatable', async () => {
   await assert.rejects(waitForDraft({ release: async () => ({ draft: true }),
     run: async () => ({ status: 'completed', conclusion: 'failure', html_url: 'https://example.invalid/run' }) }), /Release CI failure/);
-  await assert.rejects(waitForDraft({ release: async () => ({ draft: false }) }), /Published releases/);
+  const published = await waitForDraft({ release: async () => ({ draft: false, id: 7 }),
+    run: async () => ({ status: 'completed', conclusion: 'success', html_url: 'https://example.invalid/run' }) }, commit, { wait: async () => {}, log() {}, attempts: 1 });
+  assert.equal(published.draft, false);
   let rounds = 0;
   const release = await waitForDraft({ release: async () => ({ draft: true }), run: async () => ({ status: ++rounds === 1 ? 'in_progress' : 'completed', conclusion: 'success' }) }, commit,
     { wait: async () => {}, log() {}, attempts: 3 });
@@ -231,11 +232,15 @@ test('lock release between a name collision and ownership read retries normally'
   assert.equal(hub.assets.has(lockName), false);
 }));
 
-test('published releases receive no lock, upload, deletion or notes mutation', async () => fixture(async ({ receipt, stage }) => {
+test('published releases accept signed packages, checksums and notes', async () => fixture(async ({ receipt, stage }) => {
   const hub = fakeGitHub();
   hub.publish();
-  await assert.rejects(uploadSignedPackages(hub.client, await receipt('win32'), stage('published')), /Published releases/);
-  assert.deepEqual(hub.changes, []);
+  const ready = await uploadSignedPackages(hub.client, await receipt('win32'), stage('published'));
+  assert.equal(ready, false);
+  assert.equal((await hub.client.release()).draft, false);
+  assert.equal(hub.assets.get('dog.codes-0.1.0-Windows-x64-Setup.exe').bytes.toString(), 'signed-dog.codes-0.1.0-Windows-x64-Setup.exe');
+  assert.match((await hub.client.release()).body, /Authenticode signed and timestamped/);
+  assert.equal(hub.assets.has(lockName), false);
 }));
 
 test('GitHub CLI adapter reads draft assets by release ID and claims locks without clobber', async () => {
@@ -252,8 +257,8 @@ test('GitHub CLI adapter reads draft assets by release ID and claims locks witho
   assert.equal(calls.at(-1).args.includes('--clobber'), false);
   await client.upload('/private/SHA256SUMS.txt');
   assert.equal(calls.at(-1).args.includes('--clobber'), true);
-  await client.body({ id: 42 }, 'Notes\nwith newlines');
-  assert.deepEqual(JSON.parse(calls.at(-1).options.input), { body: 'Notes\nwith newlines' });
+  await client.body({ id: 42, tag_name: tag, target_commitish: commit }, 'Notes\nwith newlines');
+  assert.deepEqual(JSON.parse(calls.at(-1).options.input), { body: 'Notes\nwith newlines', tag_name: tag, target_commitish: commit });
   assert.equal(calls.at(-1).args.includes('Notes\nwith newlines'), false);
 });
 

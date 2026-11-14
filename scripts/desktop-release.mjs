@@ -91,19 +91,18 @@ export function githubClient({ root, repo, tag, execute = capture }) {
       await gh(['release', 'download', tag, '--repo', repo, '--pattern', asset.name, '--output', file]);
     },
     async remove(asset) { await api(`repos/${repo}/releases/assets/${asset.id}`, 'DELETE'); },
-    async body(release, body) { await api(`repos/${repo}/releases/${release.id}`, 'PATCH', { body }); },
+    async body(release, body) {
+      const payload = { body, tag_name: release.tag_name || tag };
+      if (release.target_commitish) payload.target_commitish = release.target_commitish;
+      await api(`repos/${repo}/releases/${release.id}`, 'PATCH', payload);
+    },
   };
-}
-
-function assertDraft(release) {
-  if (!release?.draft) throw new Error('Only an existing draft Release can be updated. Published releases are not replaced.');
 }
 
 export async function waitForDraft(client, commit, { wait = sleep, attempts = 600, log = console.log } = {}) {
   let previous;
   for (let attempt = 0; attempt < attempts; attempt++) {
     const release = await client.release();
-    if (release) assertDraft(release);
     const run = await client.run(commit);
     if (run?.status === 'completed') {
       if (run.conclusion !== 'success') throw new Error(`Release CI ${run.conclusion}: ${run.html_url}. Re-run the failed CI, then use --upload-only.`);
@@ -131,7 +130,6 @@ export async function withReleaseLock(client, stage, work, { wait = sleep, attem
     return JSON.parse(readFileSync(path, 'utf8')).owner === owner;
   }
   for (let attempt = 0; attempt < attempts; attempt++) {
-    assertDraft(await client.release());
     try { await client.upload(lockFile, false); }
     catch (error) {
       // An upload can have succeeded despite a lost response. Read back ownership.
@@ -146,17 +144,16 @@ export async function withReleaseLock(client, stage, work, { wait = sleep, attem
       }
     }
     const release = await client.release();
-    assertDraft(release);
     const lock = release.assets.find(asset => asset.name === lockName);
     if (lock && await belongsToUs(lock)) { held = lock; break; }
     await wait(5000);
   }
-  if (!held) throw new Error(`Another computer is updating this draft. Retry later. If it crashed, stop that command before manually removing ${lockName}.`);
+  if (!held) throw new Error(`Another computer is updating this release. Retry later. If it crashed, stop that command before manually removing ${lockName}.`);
   try { return await work(); }
   finally {
     // Delete only our own asset ID, never a successor's lock.
     try { await client.remove(held); }
-    catch { console.error(`Could not release ${lockName}. Stop this run before removing that draft attachment manually.`); }
+    catch { console.error(`Could not release ${lockName}. Stop this run before removing that release attachment manually.`); }
   }
 }
 
@@ -166,12 +163,11 @@ function validateAssetName(name) {
 
 export async function refreshChecksums(client, { tag, commit, stage }) {
   const release = await client.release();
-  assertDraft(release);
   const packages = release.assets.filter(asset => installer(asset.name)).sort((a, b) => a.name.localeCompare(b.name, 'en'));
   // Linux DEB/AppImage counts stay at zero until real-machine testing. Restore to two of each.
   if (packages.filter(a => a.name.endsWith('.dmg')).length !== 2 || packages.filter(a => a.name.endsWith('.exe')).length !== 1
       || packages.filter(a => a.name.endsWith('.deb')).length !== 0 || packages.filter(a => a.name.endsWith('.AppImage')).length !== 0) {
-    throw new Error('The draft must contain exactly two Mac DMGs and one Windows EXE.');
+    throw new Error('The release must contain exactly two Mac DMGs and one Windows EXE.');
   }
   const hashes = new Map();
   for (const asset of packages) {
@@ -207,7 +203,6 @@ export async function refreshChecksums(client, { tag, commit, stage }) {
     .map(({ id, name, size, digest }) => ({ id, name, size, digest })).sort((a, b) => a.name.localeCompare(b.name, 'en')));
   const unchanged = async () => {
     const current = await client.release();
-    assertDraft(current);
     if (snapshot(current) !== snapshot(release)) throw new Error('Release installers changed while checksums were being computed. Retry with --upload-only.');
     return current;
   };
@@ -228,16 +223,13 @@ export async function uploadSignedPackages(client, receipt, stage, lockOptions) 
   return withReleaseLock(client, stage, async () => {
     for (const asset of receipt.assets) {
       validateAssetName(asset.name);
-      assertDraft(await client.release());
       await client.upload(asset.path);
     }
     // Remove differently-named CI variants only after all local packages upload.
     const release = await client.release();
-    assertDraft(release);
     const names = new Set(receipt.assets.map(asset => asset.name));
     for (const asset of release.assets) {
       if (asset.name.endsWith(receipt.platform === 'darwin' ? '.dmg' : '.exe') && !names.has(asset.name)) {
-        assertDraft(await client.release());
         await client.remove(asset);
       }
     }
@@ -245,7 +237,6 @@ export async function uploadSignedPackages(client, receipt, stage, lockOptions) 
     const { schemaVersion, tag, commit, platform } = receipt;
     writeFileSync(marker, JSON.stringify({ schemaVersion, tag, commit, platform,
       assets: receipt.assets.map(({ name, sha256, size }) => ({ name, sha256, size })) }, null, 2));
-    assertDraft(await client.release());
     await client.upload(marker);
     return refreshChecksums(client, { tag, commit, stage });
   }, lockOptions);
@@ -313,8 +304,6 @@ export async function releaseDesktop({ root = rootDirectory, platform = process.
   catch (error) { if (missing(error)) throw new Error('Push the source commit to GitHub before releasing.'); throw error; }
   if (remote !== commit) throw new Error('Push the source commit to GitHub before releasing.');
   const client = githubClient({ root, repo, tag });
-  const existingRelease = await client.release();
-  if (existingRelease) assertDraft(existingRelease);
   await ensureTag({ tag, commit, git, checkOnly: true });
   console.log(`Release ${tag}: ${repo} @ ${commit}; ${targets.join(', ')}`);
   const packageScript = resolve(root, 'scripts/package-desktop.mjs');
@@ -377,7 +366,7 @@ export async function releaseDesktop({ root = rootDirectory, platform = process.
   const stage = mkdtempSync(resolve(stateDirectory, 'upload-'));
   try {
     const ready = await uploadSignedPackages(client, receipt, stage);
-    console.log(ready ? 'Both signing platforms are ready; checksums updated. Review installation results and publish the draft. The website macOS and Windows buttons use these installers once the release is public.' : 'This platform is uploaded and checksums updated. Run the same command on the other signing machine.');
+    console.log(ready ? 'Both signing platforms are ready and checksums are updated. Publish the release if it is still a draft. The website macOS and Windows buttons use these installers once the release is public.' : 'This platform is uploaded and checksums updated. Run the same command on the other signing machine.');
     console.log(`https://github.com/${repo}/releases`);
   } finally { rmSync(stage, { recursive: true, force: true }); }
 }

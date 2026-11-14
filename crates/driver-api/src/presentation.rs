@@ -39,6 +39,29 @@ fn event(id: &str, mut data: Value) -> DriverEvent {
         data,
     }
 }
+/// The readable reason of a `ZCode` tool error: its message, then the
+/// underlying cause or detail when that says more. Stack traces stay out.
+fn zcode_error_text(error: &Value) -> Value {
+    let mut lines: Vec<&str> = Vec::new();
+    for key in [
+        "message",
+        "underlyingErrorMessage",
+        "detail",
+        "underlyingErrorDetail",
+    ] {
+        if let Some(text) = error[key].as_str().map(str::trim)
+            && !text.is_empty()
+            && !lines.contains(&text)
+        {
+            lines.push(text);
+        }
+    }
+    if lines.is_empty() {
+        Value::Null
+    } else {
+        json!(lines.join("\n"))
+    }
+}
 fn tool(
     id: &str,
     name: &str,
@@ -135,7 +158,9 @@ pub fn presentation_events(provider: &str, method: &str, v: &Value) -> Vec<Drive
             let parent=s(p,"parentToolCallId");
             if method=="tool.updated" {
                 let state=match s(p,"kind"){"scheduled"=>"pending","started"=>"running","result"|"completed"=>if p.pointer("/result/success")==Some(&Value::Bool(false)){"failed"}else{"completed"},"failed"|"error"=>"failed",_=>""};
-                out.push(tool(s(p,"toolCallId"),s(p,"toolName"),state,p.get("input").or_else(||p.get("args")).cloned().unwrap_or(Value::Null),p["result"].clone(),parent));
+                // A failure without a result carries its reason in `error`.
+                let output=if p["result"].is_null(){zcode_error_text(&p["error"])}else{p["result"].clone()};
+                out.push(tool(s(p,"toolCallId"),s(p,"toolName"),state,p.get("input").or_else(||p.get("args")).cloned().unwrap_or(Value::Null),output,parent));
                 if !parent.is_empty(){out.push(event(parent,json!({"type":"subagent","childId":s(p,"childSessionId"),"title":s(p,"description"),"details":"available"})));}
             }else if method=="stream.delta" && s(p,"kind")=="text_delta" && !parent.is_empty() {
                 out.push(event(&format!("child-message:{parent}"),json!({"type":"message","parentId":parent,"textDelta":s(p,"delta")})));
@@ -221,6 +246,28 @@ mod tests {
         );
         assert_eq!(data(&events[0])["status"], "failed");
         assert_eq!(data(&events[1])["childId"], "child");
+    }
+    #[test]
+    fn zcode_tool_error_keeps_its_reason() {
+        let events = presentation_events(
+            "zcode",
+            "session/event",
+            &json!({"type":"tool.updated","payload":{"kind":"error","toolCallId":"r","toolName":"Agent","error":{
+                "type":"unknown_error","message":"Turn execution failed","stack":"at private",
+                "underlyingErrorMessage":"Original turn is no longer available","detail":"Turn execution failed"}}}),
+        );
+        assert_eq!(data(&events[0])["status"], "failed");
+        assert_eq!(
+            data(&events[0])["output"],
+            "Turn execution failed\nOriginal turn is no longer available"
+        );
+        // An error with nothing readable adds no output.
+        let events = presentation_events(
+            "zcode",
+            "session/event",
+            &json!({"type":"tool.updated","payload":{"kind":"error","toolCallId":"r","error":{"type":"unknown_error"}}}),
+        );
+        assert!(data(&events[0]).get("output").is_none());
     }
     #[test]
     fn acp_preserves_session_scopes_and_partial_updates() {

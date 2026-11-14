@@ -237,7 +237,7 @@ installer and packaged `desktop.exe` signatures and timestamps. The command then
    and leaves the other platforms intact. The two machines can run in either order.
 4. Validates signed-package receipts against the actual uploaded files, updates
    `SHA256SUMS.txt` for **all three installers**, and updates the managed signing
-   status section in the draft notes while preserving your other release notes.
+   status section in the release notes while preserving your other release notes.
 
 Hashing uses the SHA-256 digest GitHub computes for uploaded assets; if it is
 unavailable, the command downloads and hashes the actual file. It does not reuse
@@ -245,11 +245,13 @@ the checksum of an unsigned package. Public `signing-macos.json` and
 `signing-windows.json` receipts record source commit, package names, sizes and
 hashes; local paths and signing credentials are excluded.
 
-The command keeps the Release as a **draft**. Wait for both machines to finish,
-review installation results and the draft, then manually publish it (turn off
-the pre-release option for a stable release). Do not publish while an upload
-command is still running. This command does not replace already-published releases,
-move existing version tags, automatically commit code or push source branches.
+The command updates the Release attached to the tag. A draft stays a draft, and
+an already published Release is updated in place, including its installers,
+checksums and signing notes. Wait for both machines to finish and review the
+installation results. Publish a draft manually, and turn off the pre-release
+option for a stable release. Do not publish while an upload command is still
+running. This command does not move existing version tags, automatically commit
+code or push source branches.
 
 The website reads the latest published Release. Its macOS buttons use the signed
 Apple Silicon or Intel DMG, and its Windows button uses the signed x64 installer.
@@ -288,11 +290,11 @@ Completed build receipts live under the ignored
 workflow first, then use `--upload-only`. If changing source is necessary after
 the tag was pushed, bump `[workspace.package] version` in `Cargo.toml` and release a new tag.
 
-Draft updates use an exclusive `RELEASE_UPLOAD_LOCK.json` asset, acquired without
+Release updates use an exclusive `RELEASE_UPLOAD_LOCK.json` asset, acquired without
 overwriting an existing lock, so simultaneous Mac/Windows uploads cannot race
 their checksums. Normal failures release it. If a process crashes or loses access
 before cleanup, stop that process and verify no other release command is running
-before manually deleting the lock attachment in the draft, then resume. Locks
+before manually deleting the lock attachment on the release, then resume. Locks
 are never automatically stolen based on time alone.
 
 ### Tag-triggered workflow
