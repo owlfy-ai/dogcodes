@@ -4,10 +4,10 @@ dog.codes checks GitHub for a newer published release, downloads it quietly and 
 install it. This covers the app itself; Agent CLI updates are separate
 (`crates/agent-management/src/updates.rs`).
 
-**Status:** the app side is built and tested. It stays switched off until the maintainer
-creates an updater signing key and the release flow publishes signed updater files (see
-[Maintainer setup](#maintainer-setup)). Until then the app logs
-`app updates are off: tauri.conf.json has no updater public key` and does nothing else.
+**Status:** the app side and the release flow are wired up. The public key is committed in
+`plugins.updater.pubkey`, and `pnpm desktop:release` signs and publishes the update files
+together with the installers. The first release that can update itself is the first one
+built with this setup. People on 0.1.3 or earlier install that release by hand once.
 
 ## How it works
 
@@ -45,78 +45,77 @@ creates an updater signing key and the release flow publishes signed updater fil
   Development builds only check when `DOGCODES_APP_UPDATE_ENDPOINT` points at a test server,
   and they never install.
 
-## Maintainer setup
+## Release flow
 
-The first release that can update itself is the first one that ships this code with a public
-key set. People on 0.1.3 or earlier have to install that release by hand once.
+Release work happens in `scripts/`. Details are in [release/README.md](../../release/README.md).
 
-1. **Create the updater key once**, on a trusted machine, with a strong password:
+- **Key.** The updater key was created with `tauri signer generate` and has a password. It
+  lives in the ignored `release/private/updater.key` on each signing machine, with an offline
+  backup. The release-input guard rejects `*.key` files. If the key is lost, installed copies
+  can never auto-update again, and every user has to reinstall by hand.
+- **Settings.** In `release/.env.local` (blank keys in `release/.env.example`) set:
+  - `TAURI_SIGNING_PRIVATE_KEY_PATH`, or `TAURI_SIGNING_PRIVATE_KEY` (exactly one)
+  - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, which is required so the signer never prompts
 
-   ```sh
-   pnpm --filter @dogcodes/desktop tauri signer generate -w release/private/updater.key
-   ```
+  `pnpm desktop:package --signed` (including `--check`) fails before building when these are
+  missing or the public key is empty.
+- **Signing** (`scripts/updater-signing.mjs`). The CLI runs
+  `tauri signer sign --app-version <version> <file>` with `@tauri-apps/cli` 2.12.4. The key
+  and password reach only that process, through its environment. They never go to
+  `tauri build`, argv or other tools. Each `.sig` is then verified in Node against the
+  committed public key and must be bound to exactly this version.
+- **macOS** (`scripts/signing-macos.mjs`). After the app is notarized, stapled and assessed,
+  `dog.codes-<v>-macOS-AppleSilicon|Intel.app.tar.gz` is built from the stapled app with
+  `COPYFILE_DISABLE=1 tar --no-mac-metadata`. The archive must contain only `dog.codes.app`.
+  It is unpacked and checked again with `codesign --verify --deep --strict` and
+  `stapler validate`, then signed. Both files are exported next to the DMG. Universal builds
+  produce no update archive.
+- **Windows** (`scripts/package-desktop.mjs`). After `tauri build` and renaming, the final
+  Authenticode-signed `dog.codes-<v>-Windows-x64-Setup.exe` gets its `.sig`. People download
+  the same file the updater runs.
+- **Upload** (`scripts/desktop-release.mjs`, receipt schema 2). Each machine's receipt holds:
+  - macOS: DMG, archive and `.sig` per architecture
+  - Windows: installer and `.sig`
 
-   `release/private/` is ignored by Git. `check:release-inputs` also rejects `*.key`. Back up
-   the key and its password somewhere safe and offline. **If the key is lost, installed copies
-   can never auto-update again**, and every user has to reinstall by hand.
-
-2. **Commit the public key.** Copy the contents of `release/private/updater.key.pub` into
-   `plugins.updater.pubkey` in `apps/desktop/src-tauri/tauri.conf.json`.
-
-3. **Give both signing machines the private key.** Set these in each machine's ignored
-   `release/.env.local` or in the shell, never on the command line:
-   - `TAURI_SIGNING_PRIVATE_KEY_PATH` (or `TAURI_SIGNING_PRIVATE_KEY`)
-   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
-
-   `release/.env.example` would need these two blank keys, and the `blankEnvironment` guard
-   in `scripts/check-release-inputs.mjs` would need to allow them.
-
-4. **Use Tauri CLI 2.12.4 or later for signing.** The `--app-version` flag of
-   `tauri signer sign` first appeared in that line. The repository currently pins
-   `@tauri-apps/cli` 2.11.4, whose signatures carry no version. The app rejects those, and
-   `updater-manifest.mjs` refuses them at release time. Raise the devDependency in
-   `apps/desktop/package.json` to `^2.12.4`, then confirm with
-   `pnpm desktop:package --unsigned`. The Rust `tauri` crate can stay on 2.11.
-
-5. **Sign the final packages** with
-   `tauri signer sign --app-version <version> <file>`, which writes `<file>.sig`. Sign the
-   finished files, not `bundle.createUpdaterArtifacts`, because the files that get published
-   are the ones changed after `tauri build`:
-   - **macOS** (`scripts/signing-macos.mjs`, after `stapler validate` and `spctl --assess` of
-     the app): build the archive from the stapled app with
-     `COPYFILE_DISABLE=1 tar -czf <name> -C <dir> dog.codes.app`. Get `<name>` from
-     `macUpdaterArchiveName(productName, version, target)`, for example
-     `dog.codes-0.1.4-macOS-AppleSilicon.app.tar.gz`. Sign it, and add both files to the
-     exported files and the signed-package receipt next to the DMG.
-   - **Windows:** after `verify-windows-release.ps1` passes, sign
-     `dog.codes-<v>-Windows-x64-Setup.exe` (the same installer people download). Add the
-     `.sig` to the receipt.
-
-6. **Upload them and `latest.json`.** Proposed changes to `scripts/desktop-release.mjs`:
-   - `installer()` and the receipt checks should also accept `.app.tar.gz`, so the archive is
-     uploaded and listed in `SHA256SUMS.txt`. The `.sig` files are uploaded with their
-     packages.
-   - In `refreshChecksums`, still holding the release lock, call `updaterManifest()` with the
-     release's asset names and `.sig` contents. Upload the result as `latest.json`.
-     Regenerating it on each machine's run is safe: the draft is private until it is
-     published.
-
-   Until that is wired in, run this once both machines have uploaded, and before publishing
-   the draft:
-
-   ```sh
-   node scripts/updater-manifest.mjs owlfy-ai/dogcodes v0.1.4
-   ```
-
-   The command downloads the `.sig` assets, checks that each is bound to the version, writes
-   tag-based URLs (draft assets live under a temporary `untagged-…` path), and uploads
-   `latest.json`.
-
-7. **Publish the draft.** Running apps pick up the update within 6 hours, or 90 seconds after
-   their next launch. A published release without `latest.json` is ignored silently.
+  Before uploading, signatures are verified locally. `refreshChecksums` then runs under the
+  release lock: it adds the archives and signatures to `SHA256SUMS.txt`, refuses orphan
+  signatures or a partial set of archives, writes `latest.json` from the uploaded `.sig`
+  assets (tag-based URLs, version-bound signatures only), and uploads it. A release counts as
+  ready only when `latest.json` lists `darwin-aarch64`, `darwin-x86_64` and
+  `windows-x86_64`. The release notes show the in-app update status.
+- **Publish.** Installed apps read `latest.json` of the latest published release, so
+  publishing the draft rolls the update out. Apps pick it up 90 seconds after their next
+  launch, or within 6 hours. A published release without `latest.json` is ignored silently.
+- **Manual fallback.** `node scripts/updater-manifest.mjs owlfy-ai/dogcodes vX.Y.Z` rebuilds
+  and uploads `latest.json` from the signatures already on a release.
+- **Tauri config.** `app.macOSPrivateApi` is `true` because the computer-use notice windows
+  are transparent. Tauri CLI 2.12 removes the `macos-private-api` crate feature unless this
+  setting is present.
 
 Linux: the plugin can update AppImage installs but not `.deb`. Linux packaging is paused, so
 `latest.json` currently only lists macOS and Windows.
+
+### Checking a real signed release
+
+Run the signing preflight on each machine. Mac:
+
+```sh
+pnpm desktop:package --signed --check --target aarch64-apple-darwin
+```
+
+Windows:
+
+```powershell
+pnpm desktop:package --signed --check
+```
+
+Then run `pnpm desktop:release` on both machines. Before publishing the draft, confirm that
+the release shows `latest.json`, two `.app.tar.gz` files with `.sig`, a `-Setup.exe.sig`,
+and the release-notes row "In-app updates | Signed update packages…". Publish. The release itself
+can only be updated *to* from a build that already contains the updater and this public key,
+so the first full check runs one release later. On a Mac running the previous release,
+launch dog.codes, wait about two minutes for the notice, choose "Install and restart", and
+check the version the app reports.
 
 ## Later improvement
 
@@ -135,6 +134,12 @@ after launch.
   waiting during a running turn, and install errors.
 - `scripts/updater-manifest.test.mjs`: choosing release assets per platform, refusing
   signatures without a version, and the upload.
+- `scripts/updater-signing.test.mjs`: key handling (one source, password required, never in
+  argv), signature verification against Tauri CLI fixtures, archive contents, and a real
+  `tauri signer` run with a temporary password-protected key, including a wrong password.
+- `scripts/desktop-release.test.mjs` and `scripts/package-desktop.test.mjs`: receipts,
+  uploads, `SHA256SUMS.txt`, `latest.json`, readiness, the Mac archive step, and the blank
+  `.env.example` keys.
 
 The fixtures in `src-tauri/src/app_update/fixtures/` use a throwaway test key. Its private
 half was discarded.

@@ -21,8 +21,7 @@ const releaseFile = name => installer(name) || /\.app\.tar\.gz$|\.sig$/.test(nam
 // Each signing machine owns these files: per Mac target a DMG, an update archive and its
 // signature; per Windows target the installer (also the update package) and its signature.
 const platformFiles = { darwin: ['.dmg', '.app.tar.gz', '.app.tar.gz.sig'], win32: ['.exe', '.exe.sig'] };
-export const ownedBy = (platform, name) => platformFiles[platform].some(suffix => name.endsWith(suffix))
-  && !(platform === 'darwin' && name.endsWith('.dmg.sig'));
+export const ownedBy = (platform, name) => platformFiles[platform].some(suffix => name.endsWith(suffix));
 const receiptSchema = 2;
 const sleep = ms => new Promise(accept => setTimeout(accept, ms));
 
@@ -397,8 +396,8 @@ export async function releaseDesktop({ root = rootDirectory, platform = process.
       await runBuild(process.execPath, [packageScript, '--signed', '--skip-tests', '--target', target, '--bundles', platform === 'darwin' ? 'dmg' : 'nsis'], { cwd: root });
       const directory = platform === 'darwin' ? resolve(root, 'release/installers', version, target) : join(cargo.target_directory, target, 'release/bundle/nsis');
       for (const suffix of platformFiles[platform]) {
-        const files = readdirSync(directory).filter(name => name.includes(`-${version}-`) && name.endsWith(suffix) && ownedBy(platform, name)
-          && (suffix !== '.app.tar.gz' || !name.endsWith('.sig')) && statSync(join(directory, name)).mtimeMs >= started - 2000);
+        const files = readdirSync(directory).filter(name => name.includes(`-${version}-`) && name.endsWith(suffix)
+          && statSync(join(directory, name)).mtimeMs >= started - 2000);
         if (files.length !== 1) throw new Error(`Expected exactly one newly built ${suffix} file for this version and target.`);
         const name = files[0], path = join(directory, name);
         assets.push({ name, path, size: statSync(path).size, sha256: await sha256(path) });

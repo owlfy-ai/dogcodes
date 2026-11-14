@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { test } from 'node:test';
 import { prepareBuild, parseArguments, signingVariables, linuxAppImageFiles } from './package-desktop.mjs';
 import { releaseInstallerName, renameReleaseInstallers } from './release-names.mjs';
-import { checkReleaseInputs, privateOrGeneratedPath } from './check-release-inputs.mjs';
+import { blankEnvironment, checkReleaseInputs, privateOrGeneratedPath } from './check-release-inputs.mjs';
 import { buildMacKeychainPackage, checkMacKeychain, macPackageOptions, removeCodesignTemps } from './signing-macos.mjs';
+import { updaterSigningEnvironment, withoutUpdaterKey } from './updater-signing.mjs';
 
 test('release index guard catches force-added secrets and generated directories', () => {
   for (const path of ['.env', '.env.production', 'release/.env.local', 'any/config.local.json',
@@ -171,7 +172,7 @@ test('Keychain preflight rejects missing identity and missing Rust targets witho
 });
 
 test('Mac artifacts are exported only after app and DMG notarization, stapling and assessment succeed', async () => {
-  for (const failure of ['app-rejected', 'dmg-rejected', 'stapler-failed', 'architecture', null]) {
+  for (const failure of ['app-rejected', 'dmg-rejected', 'stapler-failed', 'architecture', 'archive-extra', 'update-signing', null]) {
     const root = mkdtempSync(resolve(tmpdir(), 'dogcodes-signing-'));
     try {
       const tauri = resolve(root, 'apps/desktop/src-tauri');
@@ -179,11 +180,19 @@ test('Mac artifacts are exported only after app and DMG notarization, stapling a
       writeFileSync(resolve(tauri, 'tauri.conf.json'), JSON.stringify({ productName: 'dog.codes', identifier: 'codes.dog.desktop', version: '0.1.0' }));
       const calls = [];
       let submissions = 0;
-      const parameters = { root, env: { APPLE_NOTARY_PROFILE: 'ExampleProfile' },
+      const signed = [];
+      const parameters = { root, env: { APPLE_NOTARY_PROFILE: 'ExampleProfile', TAURI_SIGNING_PRIVATE_KEY_PATH: '/private/updater.key', TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 'private-value' },
         config: { bundle: { macOS: { signingIdentity: 'Developer ID Application: Example (TEAM123)' } } },
         cli: 'tauri.js', configArgument: 'private.json', target: 'aarch64-apple-darwin',
         run: async (command, args, options) => {
           calls.push([command, args]);
+          // Only the updater signer may see the update key.
+          assert.equal(options.env.TAURI_SIGNING_PRIVATE_KEY_PATH, undefined, command);
+          assert.equal(options.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD, undefined, command);
+          if (command === 'tar' && args[0] === '--no-mac-metadata') {
+            assert.equal(options.env.COPYFILE_DISABLE, '1');
+            writeFileSync(args[2], 'update-archive-fixture');
+          }
           if (command === process.execPath) {
             assert.equal(options.env.APPLE_NOTARY_PROFILE, undefined);
             assert.equal(args[args.indexOf('--bundles') + 1], 'app');
@@ -196,12 +205,21 @@ test('Mac artifacts are exported only after app and DMG notarization, stapling a
           if (command === 'cargo') return JSON.stringify({ target_directory: resolve(root, 'target') });
           if (command === '/usr/libexec/PlistBuddy') return 'desktop';
           if (command === 'lipo') return failure === 'architecture' ? 'x86_64' : 'arm64';
+          if (command === 'tar' && args[0] === '-tzf') return `dog.codes.app/\ndog.codes.app/Contents/Info.plist\n${failure === 'archive-extra' ? '._dog.codes.app\n' : ''}`;
           if (command === 'xcrun' && args[1] === 'submit') {
             submissions++;
             const rejected = failure === 'app-rejected' && submissions === 1 || failure === 'dmg-rejected' && submissions === 2;
             return JSON.stringify({ status: rejected ? 'Invalid' : 'Accepted', id: 'example-id' });
           }
           throw new Error(`Unexpected tool ${command}`);
+        },
+        signUpdater: async ({ file, version }) => {
+          if (failure === 'update-signing') throw new Error('wrong password');
+          // The archive is signed after the stapled app inside it passed verification.
+          assert.equal(calls.filter(([command, args]) => command === 'xcrun' && args[1] === 'validate').length, 2);
+          signed.push([basename(file), version]);
+          writeFileSync(`${file}.sig`, 'update-signature-fixture');
+          return `${file}.sig`;
         } };
       const output = resolve(root, 'release/installers/0.1.0/aarch64-apple-darwin');
       if (failure) {
@@ -213,7 +231,11 @@ test('Mac artifacts are exported only after app and DMG notarization, stapling a
         assert.equal(readFileSync(resolve(output, 'dog.codes-0.1.0-macOS-AppleSilicon.dmg'), 'utf8'), 'signed-package-fixture');
         assert.match(readFileSync(resolve(output, 'dog.codes-0.1.0-macOS-AppleSilicon.dmg.sha256'), 'utf8'), /^[a-f0-9]{64}  dog\.codes-0\.1\.0-macOS-AppleSilicon\.dmg/);
         assert.equal(calls.filter(([command]) => command === 'spctl').length, 2);
-        assert.equal(calls.filter(([command, args]) => command === 'xcrun' && args[1] === 'validate').length, 2);
+        // App, unpacked update archive and DMG.
+        assert.equal(calls.filter(([command, args]) => command === 'xcrun' && args[1] === 'validate').length, 3);
+        assert.deepEqual(signed, [['dog.codes-0.1.0-macOS-AppleSilicon.app.tar.gz', '0.1.0']]);
+        assert.equal(readFileSync(resolve(output, 'dog.codes-0.1.0-macOS-AppleSilicon.app.tar.gz'), 'utf8'), 'update-archive-fixture');
+        assert.equal(readFileSync(resolve(output, 'dog.codes-0.1.0-macOS-AppleSilicon.app.tar.gz.sig'), 'utf8'), 'update-signature-fixture');
       }
       const privateRoot = resolve(root, 'release/private');
       if (existsSync(privateRoot)) assert.deepEqual(readdirSync(privateRoot), []);
@@ -363,3 +385,36 @@ test('release guard rejects force-added local exports, schemas and captures with
   assert.throws(() => checkReleaseInputs({ root, log() {} }), error => paths.every(path => error.message.includes(path)) && !error.message.includes('local-data'));
   for (const path of paths) assert.equal(readFileSync(resolve(root, path), 'utf8'), 'local-data');
 }));
+
+test('the public environment example lists the update key settings, blank', () => {
+  const example = readFileSync(new URL('../release/.env.example', import.meta.url), 'utf8');
+  blankEnvironment(example);
+  for (const key of ['TAURI_SIGNING_PRIVATE_KEY_PATH', 'TAURI_SIGNING_PRIVATE_KEY', 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD']) {
+    assert.match(example, new RegExp(`^${key}=$`, 'm'));
+    assert.throws(() => blankEnvironment(`${example}\n${key}=private-value\n`), error => /empty/.test(error.message) && !error.message.includes('private-value'));
+  }
+  assert.throws(() => blankEnvironment(`${example}\nGITHUB_TOKEN=\n`), /unexpected: GITHUB_TOKEN/);
+});
+
+test('signed packaging loads the update key settings from .env.local like the Apple settings', () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'dogcodes-updater-env-'));
+  try {
+    const keyFile = resolve(root, 'updater.key');
+    writeFileSync(keyFile, 'private-value');
+    // Quote passwords containing #, spaces or quotes: an unquoted # starts a comment.
+    const localEnvironment = `APPLE_NOTARY_PROFILE=ExampleProfile\nAPPLE_SIGNING_IDENTITY="Developer ID Application: Example (TEAM123)"\nTAURI_SIGNING_PRIVATE_KEY_PATH=${keyFile}\nTAURI_SIGNING_PRIVATE_KEY_PASSWORD="pass # word"\n`;
+    const { env } = prepareBuild({ platform: 'darwin', signed: true, environment: { PATH: 'tool-path' }, localEnvironment });
+    assert.equal(env.TAURI_SIGNING_PRIVATE_KEY_PATH, keyFile);
+    assert.equal(env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD, 'pass # word');
+    const signer = updaterSigningEnvironment(env, root);
+    assert.equal(signer.TAURI_SIGNING_PRIVATE_KEY_PATH, keyFile);
+    assert.equal(signer.APPLE_NOTARY_PROFILE, 'ExampleProfile');
+    // A non-empty shell value wins over .env.local, as for the Apple settings.
+    assert.equal(prepareBuild({ platform: 'darwin', signed: true, localEnvironment,
+      environment: { TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 'shell-value' } }).env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD, 'shell-value');
+    const windows = prepareBuild({ platform: 'win32', signed: true, environment: {}, localEnvironment: `TAURI_SIGNING_PRIVATE_KEY_PATH=${keyFile}\nTAURI_SIGNING_PRIVATE_KEY_PASSWORD=x\n`,
+      signingConfig: JSON.stringify({ bundle: { windows: { certificateThumbprint: 'EXAMPLE', timestampUrl: 'https://timestamp.example.invalid' } } }) });
+    assert.equal(windows.env.TAURI_SIGNING_PRIVATE_KEY_PATH, keyFile);
+    assert.equal(withoutUpdaterKey(env).TAURI_SIGNING_PRIVATE_KEY_PATH, undefined);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

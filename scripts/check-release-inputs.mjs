@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 import { validateBlankSigningExample } from './signing-config.mjs';
+import { signingVariables } from './package-desktop.mjs';
 import { localArtifactPath, localReleasePath } from './source-release-policy.mjs';
 
 const defaultRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -21,10 +22,13 @@ export function privateOrGeneratedPath(path) {
     || /\.local\.json$|\.(p12|pfx|p8|pem|key|keychain|keychain-db)$/.test(lower)
     || lower.startsWith('release/private/');
 }
-function blankEnvironment(text) {
+// The public example lists only the signing settings packaging reads, all blank.
+export function blankEnvironment(text) {
   let variables;
   try { variables = parseEnv(text); } catch { throw new Error('Invalid public environment example format; contents are not shown.'); }
   if (Object.values(variables).some(value => value.trim())) throw new Error('release/.env.example must keep all credential values empty.');
+  const unknown = Object.keys(variables).filter(key => !signingVariables.includes(key));
+  if (unknown.length) throw new Error(`release/.env.example may only list signing settings; unexpected: ${unknown.join(', ')}.`);
 }
 export function checkReleaseInputs({ root = defaultRoot, log = console.log } = {}) {
   const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });

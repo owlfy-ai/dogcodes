@@ -50,7 +50,8 @@ export function updaterManifest({ repo, tag, version, assetNames, signatures, pu
     if (platforms[key]) throw new Error(`Two updater packages for ${key}.`);
     platforms[key] = { signature: signature.trim(), url: `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(name)}` };
   }
-  return { version, notes: `https://github.com/${repo}/releases/tag/${tag}`, pub_date: publishedAt, platforms };
+  const sorted = Object.fromEntries(Object.entries(platforms).sort(([a], [b]) => a.localeCompare(b, 'en')));
+  return { version, notes: `https://github.com/${repo}/releases/tag/${tag}`, pub_date: publishedAt, platforms: sorted };
 }
 
 /** Writes and uploads `latest.json` for a release whose packages and signatures are uploaded. */
