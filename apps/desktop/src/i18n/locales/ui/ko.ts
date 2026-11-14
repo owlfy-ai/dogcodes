@@ -1847,6 +1847,7 @@ export const uiKo: UiMessages = {
     clipboardImageRead: "클립보드의 이미지를 읽을 수 없습니다. 이미지를 다시 복사하고 클립보드 접근을 허용해 주세요",
     clipboardRead: "클립보드를 읽을 수 없습니다. 다시 복사한 후 시도해 주세요",
     reviewRepairPrompt: "선택한 검토 항목을 처리해 주세요.",
+    quotaContinuePrompt: "중단된 지점부터 작업을 계속해 주세요.",
     selectionRejected: "모델 또는 추론 강도 변경이 적용되지 않아 이전 선택으로 되돌렸습니다. 이 메시지는 아직 전송되지 않았습니다. 선택을 확인한 뒤 다시 시도하세요.",
     selectionUnverifiable: "모델 또는 추론 강도가 적용되었는지 확인할 수 없어 전송을 중단했습니다. 다시 선택한 뒤 재시도하고, 필요하면 네이티브 Agent를 업데이트하세요.",
     autonomousTurnBusy: "Agent가 백그라운드 작업을 계속 처리하고 있습니다. 이 메시지는 아직 전송되지 않았습니다. 완료될 때까지 기다린 뒤 다시 시도하세요.",

@@ -311,6 +311,7 @@ export const ru: TranslationDict = {
     quotaOutUntil: "У {agent} нет квоты до {time}.",
     quotaSwitch: "Продолжить с {agent}",
     quotaSwitchTooltip: "Следующее сообщение уйдёт в {agent} вместе с этой беседой",
+    quotaResumeTooltip: "Переключается на {agent} и продолжает незавершённую задачу вместе с этой беседой",
     enableInManagement: "Включите Agent в разделе «Управление Agents» или выберите доступный",
   },
   turn: {

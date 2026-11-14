@@ -2,6 +2,8 @@ import { getGlobalResolvedLanguage, translate, type ResolvedLanguage } from "./i
 
 /** Prompt the backend sends for review-fix turns (REPAIR_PROMPT in review_repairs.rs); shown as a localized label. */
 export const REVIEW_REPAIR_PROMPT = "Please handle the review findings I selected.";
+/** Message sent to the next agent when a turn ran out of quota and the person continues with it; shown as a localized label. */
+export const QUOTA_CONTINUE_PROMPT = "Continue the task from where it stopped.";
 
 // Parameter names for codes that carry a JSON string array after U+001E.
 const codeParams: Record<string, string[]> = {

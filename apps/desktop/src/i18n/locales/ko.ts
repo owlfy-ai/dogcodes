@@ -311,6 +311,7 @@ export const ko: TranslationDict = {
     quotaOutUntil: "{agent} 할당량은 {time}까지 소진되었습니다.",
     quotaSwitch: "{agent}(으)로 계속",
     quotaSwitchTooltip: "다음 메시지는 이 대화와 함께 {agent}에 전달됩니다",
+    quotaResumeTooltip: "{agent}(으)로 전환하여 이 대화와 함께 중단된 작업을 이어서 진행합니다",
     enableInManagement: "Agent 관리에서 활성화하거나 사용 가능한 다른 Agent로 전환하세요",
   },
   turn: {

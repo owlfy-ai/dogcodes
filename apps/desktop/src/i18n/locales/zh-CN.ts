@@ -113,6 +113,7 @@ export const zhCN: TranslationDict = {
     quotaOutUntil: "{agent} 额度已用尽，预计 {time} 恢复。",
     quotaSwitch: "换 {agent} 继续",
     quotaSwitchTooltip: "下一条消息改由 {agent} 处理，对话内容会一起带过去",
+    quotaResumeTooltip: "改由 {agent} 接着完成未做完的任务，对话内容会一起带过去",
     enableInManagement: "请在 Agent 管理中启用 Agent，或切换到可用的 Agent",
   },
   turn: {

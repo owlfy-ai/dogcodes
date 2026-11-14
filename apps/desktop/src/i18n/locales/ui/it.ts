@@ -1847,6 +1847,7 @@ export const uiIt: UiMessages = {
     clipboardImageRead: "Impossibile leggere l'immagine negli appunti. Copia di nuovo l'immagine e consenti l'accesso agli appunti.",
     clipboardRead: "Impossibile leggere gli appunti. Copia di nuovo e riprova.",
     reviewRepairPrompt: "Gestisci i rilievi della revisione che ho selezionato.",
+    quotaContinuePrompt: "Riprendi l’attività da dove si è interrotta.",
     selectionRejected: "Il cambio di modello o di impegno di ragionamento non ha avuto effetto e la scelta precedente è stata ripristinata. Questo messaggio non è stato inviato; controlla la selezione e riprova.",
     selectionUnverifiable: "Impossibile confermare che il modello o l'impegno di ragionamento abbia avuto effetto; l'invio è stato interrotto. Scegli di nuovo e riprova, aggiornando l'agente nativo se necessario.",
     autonomousTurnBusy: "L'agente sta ancora elaborando un'attività in background. Questo messaggio non è stato inviato; attendi il completamento e riprova.",

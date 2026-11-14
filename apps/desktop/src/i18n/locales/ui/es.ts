@@ -1847,6 +1847,7 @@ export const uiEs: UiMessages = {
     clipboardImageRead: "No se pudo leer la imagen del portapapeles. Vuelve a copiarla y permite el acceso al portapapeles.",
     clipboardRead: "No se pudo leer el portapapeles. Vuelve a copiar e inténtalo de nuevo.",
     reviewRepairPrompt: "Por favor, gestiona los hallazgos de la revisión que seleccioné.",
+    quotaContinuePrompt: "Continúa la tarea desde donde se detuvo.",
     selectionRejected: "El cambio de modelo o de esfuerzo de razonamiento no se aplicó y se restauró la selección anterior. Este mensaje no se ha enviado; revisa la selección e inténtalo de nuevo.",
     selectionUnverifiable: "No se pudo confirmar que el modelo o el esfuerzo de razonamiento se aplicaran, por lo que se detuvo el envío. Vuelve a elegir y reintenta; actualiza el agente nativo si es necesario.",
     autonomousTurnBusy: "El agente sigue procesando una tarea en segundo plano. Este mensaje no se ha enviado; espera a que termine e inténtalo de nuevo.",

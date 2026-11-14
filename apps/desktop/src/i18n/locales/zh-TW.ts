@@ -311,6 +311,7 @@ export const zhTW: TranslationDict = {
     quotaOutUntil: "{agent} 額度已用盡，預計 {time} 恢復。",
     quotaSwitch: "換 {agent} 繼續",
     quotaSwitchTooltip: "下一則訊息改由 {agent} 處理，對話內容會一併帶過去",
+    quotaResumeTooltip: "改由 {agent} 接著完成未做完的任務，對話內容會一併帶過去",
     enableInManagement: "請在 Agent 管理中啟用 Agent，或切換至可用的 Agent",
   },
   turn: {

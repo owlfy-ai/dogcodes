@@ -1847,6 +1847,7 @@ export const uiEn = {
     clipboardImageRead: "Couldn't read the image on the clipboard. Copy the image again and allow clipboard access.",
     clipboardRead: "Couldn't read the clipboard. Copy it again and retry.",
     reviewRepairPrompt: "Please handle the review findings I selected.",
+    quotaContinuePrompt: "Continue the task from where it stopped.",
     selectionRejected: "The model or reasoning effort change did not take effect and your previous choice was restored. This message has not been sent; check the selection and try again.",
     selectionUnverifiable: "Could not confirm that the model or reasoning effort took effect, so sending was stopped. Choose again and retry; update the native agent if needed.",
     autonomousTurnBusy: "The agent is still working on a background task. This message has not been sent; wait for it to finish and try again.",

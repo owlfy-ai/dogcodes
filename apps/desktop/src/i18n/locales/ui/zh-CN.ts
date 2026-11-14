@@ -1847,6 +1847,7 @@ export const uiZhCN: UiMessages = {
     clipboardImageRead: "无法读取电脑剪贴板图片，请重新复制图片并允许剪贴板访问",
     clipboardRead: "无法读取电脑剪贴板，请重新复制后重试",
     reviewRepairPrompt: "请处理我选中的审查问题。",
+    quotaContinuePrompt: "从中断的地方继续完成任务。",
     selectionRejected: "模型或思考强度切换未生效，已恢复原选择。本条消息尚未发送，请确认选择后重试。",
     selectionUnverifiable: "无法确认模型或思考强度是否生效，已停止本次发送。请重新选择后重试，必要时更新原生 Agent。",
     autonomousTurnBusy: "Agent 正在继续处理后台任务。这条消息尚未发送，请等待续答完成后重试。",

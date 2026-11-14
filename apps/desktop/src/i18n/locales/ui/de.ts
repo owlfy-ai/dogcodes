@@ -1847,6 +1847,7 @@ export const uiDe: UiMessages = {
     clipboardImageRead: "Das Bild in der Zwischenablage konnte nicht gelesen werden. Kopiere es erneut und erlaube den Zugriff auf die Zwischenablage.",
     clipboardRead: "Die Zwischenablage konnte nicht gelesen werden. Kopiere es erneut und versuche es noch einmal.",
     reviewRepairPrompt: "Bitte bearbeite die von mir ausgewählten Review-Befunde.",
+    quotaContinuePrompt: "Setze die Aufgabe dort fort, wo sie unterbrochen wurde.",
     selectionRejected: "Die Änderung von Modell oder Denkaufwand wurde nicht übernommen; die vorherige Auswahl wurde wiederhergestellt. Diese Nachricht wurde nicht gesendet. Bitte Auswahl prüfen und erneut versuchen.",
     selectionUnverifiable: "Es konnte nicht bestätigt werden, dass Modell oder Denkaufwand übernommen wurden; das Senden wurde abgebrochen. Bitte erneut auswählen und wiederholen, ggf. den nativen Agent aktualisieren.",
     autonomousTurnBusy: "Der Agent bearbeitet noch eine Hintergrundaufgabe. Diese Nachricht wurde nicht gesendet; bitte warten, bis er fertig ist, und erneut versuchen.",

@@ -311,6 +311,7 @@ export const ja: TranslationDict = {
     quotaOutUntil: "{agent} のクォータは {time} まで使い切っています。",
     quotaSwitch: "{agent} で続行",
     quotaSwitchTooltip: "次のメッセージはこの会話とともに {agent} に送られます",
+    quotaResumeTooltip: "{agent} に切り替え、この会話とともに未完了のタスクを続けます",
     enableInManagement: "Agent 管理で有効にするか、利用可能な Agent に切り替えてください",
   },
   turn: {

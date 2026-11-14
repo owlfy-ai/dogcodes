@@ -1847,6 +1847,7 @@ export const uiPtBR: UiMessages = {
     clipboardImageRead: "Não foi possível ler a imagem da área de transferência. Copie a imagem novamente e permita o acesso.",
     clipboardRead: "Não foi possível ler a área de transferência. Copie novamente e tente de novo.",
     reviewRepairPrompt: "Por favor, trate os achados da revisão que selecionei.",
+    quotaContinuePrompt: "Continue a tarefa de onde parou.",
     selectionRejected: "A troca de modelo ou de esforço de raciocínio não foi aplicada e a seleção anterior foi restaurada. Esta mensagem ainda não foi enviada; confira a seleção e tente novamente.",
     selectionUnverifiable: "Não foi possível confirmar se o modelo ou o esforço de raciocínio foi aplicado; o envio foi interrompido. Escolha novamente e tente de novo; atualize o agente nativo se necessário.",
     autonomousTurnBusy: "O agente ainda está processando uma tarefa em segundo plano. Esta mensagem não foi enviada; aguarde a conclusão e tente novamente.",

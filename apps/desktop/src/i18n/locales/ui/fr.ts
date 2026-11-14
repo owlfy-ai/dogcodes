@@ -1847,6 +1847,7 @@ export const uiFr: UiMessages = {
     clipboardImageRead: "Impossible de lire l'image du presse-papiers. Copiez à nouveau l'image et autorisez l'accès au presse-papiers.",
     clipboardRead: "Impossible de lire le presse-papiers. Copiez à nouveau, puis réessayez.",
     reviewRepairPrompt: "Veuillez traiter les points de revue que j’ai sélectionnés.",
+    quotaContinuePrompt: "Reprends la tâche là où elle s’est arrêtée.",
     selectionRejected: "Le changement de modèle ou d'effort de réflexion n'a pas pris effet et votre choix précédent a été rétabli. Ce message n'a pas été envoyé ; vérifiez la sélection puis réessayez.",
     selectionUnverifiable: "Impossible de confirmer que le modèle ou l'effort de réflexion a pris effet ; l'envoi a été arrêté. Sélectionnez à nouveau puis réessayez, et mettez à jour l'agent natif si nécessaire.",
     autonomousTurnBusy: "L'agent poursuit une tâche en arrière-plan. Ce message n'a pas été envoyé ; attendez la fin puis réessayez.",

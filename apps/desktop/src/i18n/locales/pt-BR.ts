@@ -311,6 +311,7 @@ export const ptBR: TranslationDict = {
     quotaOutUntil: "{agent} está sem cota até {time}.",
     quotaSwitch: "Continuar com {agent}",
     quotaSwitchTooltip: "Sua próxima mensagem irá para {agent}, junto com esta conversa",
+    quotaResumeTooltip: "Muda para {agent} e continua a tarefa inacabada, junto com esta conversa",
     enableInManagement: "Ative um Agent no Gerenciamento de Agents ou mude para um disponível",
   },
   turn: {

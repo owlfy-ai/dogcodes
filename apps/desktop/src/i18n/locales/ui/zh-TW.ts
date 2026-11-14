@@ -1847,6 +1847,7 @@ export const uiZhTW: UiMessages = {
     clipboardImageRead: "無法讀取電腦剪貼簿中的圖片，請重新複製圖片並允許存取剪貼簿",
     clipboardRead: "無法讀取電腦剪貼簿，請重新複製後再試",
     reviewRepairPrompt: "請處理我選取的審查問題。",
+    quotaContinuePrompt: "從中斷的地方繼續完成任務。",
     selectionRejected: "模型或思考強度切換未生效，已恢復原選擇。本則訊息尚未送出，請確認選擇後重試。",
     selectionUnverifiable: "無法確認模型或思考強度是否生效，已停止本次送出。請重新選擇後重試，必要時更新原生 Agent。",
     autonomousTurnBusy: "Agent 正在繼續處理背景任務。這則訊息尚未送出，請等待續答完成後重試。",
