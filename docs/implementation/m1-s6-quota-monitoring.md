@@ -7,7 +7,7 @@
 - Pi 从 `PI_CODING_AGENT_DIR`（默认 `~/.pi/agent`）的 `auth.json` / `models.json` 获取原厂 DeepSeek Key、自定义供应商 Key 和服务地址；DeepSeek Harness 支持 `DSH_HOME/.credentials.yaml` 的 API Key 引用、DeepSeek API Key 记录及继承的 `DEEPSEEK_API_KEY`。托管引用优先于环境；浏览器会话 grant 不作为 API Key。没有 API Key 时，回退到 `deepseek-account-platform/default` 登录 grant：仅当其 issuer 为 `https://platform.deepseek.com` 时，以 `x-dsh-auth-token` 头只读查询该平台 `/api/v0/users/get_user_summary`（与 dsh 自身一致），充值钱包与赠送钱包分别展示；平台以 `code: 40003` 拒绝时视为需重新登录。
 - DeepSeek 官方余额来自 `/user/balance`；Pi 自定义服务仅向配置的服务 origin 查询兼容 sub2api 的 `/v1/usage`。`QuotaSnapshot.balances` 单独携带供应商名称、金额、币种，不换算百分比、不合并不同钱包和币种、不推算订阅金额。零余额与未知、无限额度分别处理。
 - 每请求超时 10 秒、响应上限 1 MiB、禁止重定向。最多查询 8 个不同账户，单个供应商失败不丢弃其他已确认余额。成功缓存 60 秒，失败退避 15 秒，手动刷新绕过缓存；凭据和目的地址变化使缓存失效。账户读数不进入前端按 installationId 保存的旧额度回退，避免凭据切换后显示旧账户。
-- 仅复用本机已有凭据，不执行命令型 Key helper，不自动登录/续期，不记录凭据或上游原始错误。当前不覆盖任意 DSH 插件自定义的认证存储、Pi 的任意 OAuth 订阅或 OpenCode Console 的美元钱包。
+- 这些钱包查询仅复用本机已有凭据，不执行命令型 Key helper，不自动登录/续期，不记录凭据或上游原始错误。Claude 的原生认证处理见文末。当前不覆盖任意 DSH 插件自定义的认证存储、Pi 的任意 OAuth 订阅或 OpenCode Console 的美元钱包。
 
 隔离验证覆盖三窗口解析、币种/零余额、旧版/新版 Go 凭据选择、账户切换、缓存/手动刷新、GET-only 查询、错误隔离、有界响应与会话用量保留。真实只读 DeepSeek Harness 余额查询已通过；本机 OpenCode 未配置 Go 凭据，Pi 未配置受支持的钱包，未声称它们完成了真实余额验收。
 
@@ -36,7 +36,7 @@
 | Agent | 订阅数据来源 | 上下文/缓存 | 边界 |
 |---|---|---|---|
 | Codex | App Server account/rateLimits/read，账户窗口 | 当前 thread token usage 推送 | 沿用既有实现；不混入模型专属 bucket |
-| Claude Code | rate_limit_event 推送，5h/周窗口 | 当前 session 最后 assistant 请求 usage + result 模型窗口；缓存读占比 | 未收到推送/自定义后端可无订阅数字；不主动发 Prompt 刷新 |
+| Claude Code | 原生 get_usage 控制请求及 rate_limit_event 推送，5h/周和模型窗口 | 当前 session 最后 assistant 请求 usage + result 模型窗口；缓存读占比 | 未收到推送/自定义后端可无订阅数字；不主动发 Prompt 刷新 |
 | Kimi | kimi web --port 0 --no-open，GET /api/v1/oauth/usage | 仅已有 ACP UsageUpdate；无缓存命中字段 | 刷新不发送 /usage Prompt；未主动推送上下文时保持未知 |
 | Grok | ACP _x.ai/billing | 已有 ACP UsageUpdate | creditUsagePercent 可选；缺失时保留窗口/reset，百分比 Unknown |
 | Cursor / Antigravity | 尚未接入；Antigravity 原生 /usage 已实测，Cursor CLI /usage 已静态定位 | Cursor 仅 ACP UsageUpdate；Antigravity 无 Provider | 见 quota-source-research.md；模型组作用域需先完善 |
@@ -117,5 +117,14 @@ ignored、fmt/clippy 通过，前端 typecheck/37 tests/production build 通过�
 ## 后续维护
 
 供应商 payload 变更时增加脱敏 fixture 和 parser version；不可把缺失百分比强制当零。
-Claude 无独立拉取、Kimi/Grok 无主动上下文推送时的数据缺失属于公开边界。
+Claude 原生 get_usage 不提供额度或 Kimi/Grok 无主动上下文推送时，不补造缺失数据。
 真实账号 API 暂不可用时保留 stale/Unknown，不把探测成功等同于额度请求成功。
+
+
+## Claude Code 认证与额度读取
+
+Claude 专用启动环境允许原生认证变量（CLAUDE_CONFIG_DIR、CLAUDE_CODE_OAUTH_TOKEN、ANTHROPIC_API_KEY、ANTHROPIC_AUTH_TOKEN、ANTHROPIC_BASE_URL）。连接本机安装时，读取一次用户登录 Shell 补齐缺失变量；显式进程环境优先，输出有标记及大小、时限限制，不持久化或记录凭据。远程执行仍使用远程目标自己的环境，不传本机登录。其他 Agent 的环境策略保持原样。
+
+账号额度由独立原生 Claude 进程的 initialize / get_usage 控制请求获取，关闭模型工具、Hooks、项目设置、MCP 和会话持久化，不发模型 Prompt。凭据选择、访问令牌续期及原生限流交给 CLI；DogCodes 不再读取 Keychain 或凭据文件后自行请求 Claude 额度接口。无真实窗口时返回明确诊断；有旧推送时保留其原始观察时间。取消和超时的查询完成进程树回收后才允许下一次查询。
+
+原生结构化认证错误进一步区分登录达到不可续期期限、组织访问被拒绝、其他认证错误，以及其他进程正在续期的暂时故障。仅识别已标记的原生错误，不根据普通模型文本猜测登录状态，不显示原始凭据或上游响应。已确认的登录拒绝不会被旧额度覆盖；需要登录时显示重新登录入口。失败进程在用户下一次请求时重新创建，成功的真实模型响应才清除该认证拒绝；不会自动重发失败对话。短期令牌过期提示不再保证登录仍有效或必然续期。

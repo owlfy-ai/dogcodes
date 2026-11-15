@@ -21,7 +21,7 @@ export const fr: TranslationDict = {
     "exhaustedHint": "Quota épuisé. Attendez sa réinitialisation ou vérifiez votre offre.",
     "quotaExhaustedHint": "Quota épuisé. Attendez sa réinitialisation ou vérifiez votre offre.",
     "tokenExpired": "Renouvellement du jeton requis",
-    "tokenExpiredHint": "Le jeton Claude Code a expiré, mais la connexion reste valide. Il sera renouvelé à la prochaine conversation.",
+    "tokenExpiredHint": "Le jeton de Claude Code a expiré. Le client natif gère son renouvellement ; si la connexion a expiré, reconnectez-vous.",
     "rateLimited": "Requêtes limitées",
     "rateLimitedHint": "Requêtes limitées. Réessayez plus tard.",
     "quotaRateHint": "Requêtes limitées. Réessayez plus tard.",

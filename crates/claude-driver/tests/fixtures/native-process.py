@@ -17,14 +17,16 @@ if mode=='leader':sys.exit(0)
 if mode=='eof':
  os.close(1);os.close(2)
  while True:time.sleep(60)
-if mode.startswith('catalog-'):
+if mode.startswith('catalog-') or mode.startswith('quota-'):
  previous=[]
  if os.path.exists('previous-pids.json'):
   with open('previous-pids.json') as f:previous=json.load(f)
  def alive(pid):
   try:os.kill(pid,0);return True
   except ProcessLookupError:return False
- with open('catalog-start.json','w') as f:json.dump({'previousAlive':[pid for pid in previous if alive(pid)]},f)
+ with open('quota-start.json' if mode.startswith('quota-') else 'catalog-start.json','w') as f:json.dump({'previousAlive':[pid for pid in previous if alive(pid)]},f)
+if mode.startswith('quota-'):
+ with open('quota-args.json','w') as f:json.dump(sys.argv[1:],f)
 for line in sys.stdin:
  r=json.loads(line)
  with open('requests.jsonl','a') as f:f.write(json.dumps(r)+'\n')
@@ -45,7 +47,33 @@ for line in sys.stdin:
    sys.stderr.write('diagnostic ' * (128 * 1024));sys.stderr.flush()
   models=[] if mode=='catalog-empty' else [{'value':'fixture-model','displayName':'Fixture','supportsAutoMode':True}]
   print(json.dumps({'type':'control_response','response':{'request_id':r['request_id'],'response':{'models':models}}}),flush=True)
+ if mode.startswith('quota-'):
+  subtype=r.get('request',{}).get('subtype')
+  assert r['type']=='control_request' and subtype in ['initialize','get_usage']
+  if subtype=='initialize':
+   print(json.dumps({'type':'control_response','response':{'request_id':r['request_id'],'subtype':'success','response':{}}}),flush=True)
+  else:
+   assert r['request']['skip_behaviors'] is True
+   if mode=='quota-blocked':
+    while True:time.sleep(60)
+   if mode=='quota-expired':
+    print(json.dumps({'type':'assistant','error':'authentication_failed','message':{'content':[{'type':'text','text':'Failed to authenticate: this login reached its time limit and cannot be renewed'}]}}),flush=True)
+   else:
+    value={'subscription_type':'pro','rate_limits_available':True,'rate_limits':None if mode=='quota-empty' else {'five_hour':{'utilization':40},'seven_day':{'utilization':20}}}
+    print(json.dumps({'type':'control_response','response':{'request_id':r['request_id'],'subtype':'error' if mode=='quota-rejected' else 'success','response':value}}),flush=True)
+ if mode=='auth-session':
+  if r.get('type')=='control_request':
+   value={'subscription_type':'pro','rate_limits_available':True,'rate_limits':{'five_hour':{'utilization':10}}} if r.get('request',{}).get('subtype')=='get_usage' else {}
+   print(json.dumps({'type':'control_response','response':{'request_id':r['request_id'],'subtype':'success','response':value}}),flush=True)
+  elif r.get('type')=='user':
+   if '--resume' not in sys.argv:
+    print(json.dumps({'type':'assistant','error':'authentication_failed','message':{'model':'<synthetic>','content':[{'type':'text','text':'Failed to authenticate: this login reached its time limit and cannot be renewed'}]}}),flush=True)
+   else:
+    print(json.dumps({'type':'assistant','message':{'model':'fixture-model','usage':{'input_tokens':1,'output_tokens':1},'content':[{'type':'text','text':'recovered'}]}}),flush=True)
+   print(json.dumps({'type':'result','subtype':'success','result':'finished'}),flush=True)
  if mode in ['configuration','history'] and r.get('type')=='control_request':time.sleep(60)
+if mode.startswith('quota-'):
+ child.kill();child.wait();sys.exit(0)
 if mode.startswith('probe-'):
  with open('probe-eof','w') as f:f.write('stdin closed')
  if mode=='probe-cancel':

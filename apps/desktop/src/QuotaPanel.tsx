@@ -33,8 +33,12 @@ export function quotaDiagnostic(code?: string | null, lang?: ResolvedLanguage): 
     case "quota_rate_limited": return t("agentUi.quotaRateHint", undefined, lang);
     case "opencode_go_not_configured": return t("agentUi.goConfigurationHint", undefined, lang);
     case "claude_quota_custom_provider": return t("agentUi.claudeCustomHint", undefined, lang);
+    case "claude_quota_login_expired": return t("backendText.claudeLoginExpired", undefined, lang);
+    case "claude_quota_refresh_busy": return t("backendText.claudeRefreshBusy", undefined, lang);
+    case "claude_quota_access_denied": return t("backendText.claudeAccessDenied", undefined, lang);
+    case "claude_quota_unavailable": return t("quota.claudeNativeUsageHint", undefined, lang);
     case "claude_quota_login_required": return t("agentUi.claudeLoginHint", undefined, lang);
-    case "claude_quota_transport_unavailable": return t("agentUi.curlMissing", undefined, lang);
+    case "claude_quota_transport_unavailable": return t("quota.claudeNativeUsageHint", undefined, lang);
     case "claude_quota_rate_limited": return t("agentUi.claudeRateHint", undefined, lang);
     case "claude_quota_token_expired": return t("quota.claudeTokenExpiredHint", undefined, lang);
     case "claude_quota_network_error":

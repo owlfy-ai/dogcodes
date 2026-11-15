@@ -280,6 +280,10 @@ pub fn quota_diagnostic(error: &DriverError) -> &'static str {
             "opencode_go_not_configured" => return "opencode_go_not_configured",
             "claude_quota_custom_provider" => return "claude_quota_custom_provider",
             "claude_quota_login_required" => return "claude_quota_login_required",
+            "claude_quota_login_expired" => return "claude_quota_login_expired",
+            "claude_quota_refresh_busy" => return "claude_quota_refresh_busy",
+            "claude_quota_access_denied" => return "claude_quota_access_denied",
+            "claude_quota_unavailable" => return "claude_quota_unavailable",
             "claude_quota_timeout" => return "claude_quota_timeout",
             "claude_quota_transport_unavailable" => return "claude_quota_transport_unavailable",
             "claude_quota_network_error" => return "claude_quota_network_error",
@@ -502,6 +506,17 @@ mod tests {
 
     #[test]
     fn quota_diagnostics_preserve_categories_without_provider_text() {
+        for reason in [
+            "claude_quota_login_expired",
+            "claude_quota_refresh_busy",
+            "claude_quota_access_denied",
+            "claude_quota_unavailable",
+        ] {
+            assert_eq!(
+                quota_diagnostic(&DriverError::CapabilityUnavailable(reason.into())),
+                reason
+            );
+        }
         for (error, expected) in [
             (
                 DriverError::NotConfigured("authentication_failed".into()),

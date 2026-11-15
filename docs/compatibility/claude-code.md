@@ -4,7 +4,16 @@
 > [`../implementation/beta-agent-acceptance.md`](../implementation/beta-agent-acceptance.md) 为准；
 > 本文只记录 Claude 协议细节与历史证据。
 
-更新日期：2026-10-20
+更新日期：2026-11-15
+
+## 桌面客户端与 CLI 登录（2026-11-15）
+
+支持独立 CLI 和桌面客户端下载的原生运行程序。运行时 2.1.325+ 启动时优先使用
+桌面当前账户的有效 Code 凭证；缺失、过期、无法读取或被原生服务拒绝时，后续
+启动回退 CLI 登录。桌面继续负责自己的续期，DogCodes 只在原生 host refresh
+回调中接收同一身份的新令牌，不修改两边登录文件、不自动重放请求。
+平台支持、凭证选择和限制见
+[实现说明](../implementation/claude-desktop-auth-2026-11-15.md)。
 
 ## 后台 Bash 输出（2026-10-20）
 

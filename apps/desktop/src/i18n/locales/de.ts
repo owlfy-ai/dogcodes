@@ -21,7 +21,7 @@ export const de: TranslationDict = {
     "exhaustedHint": "Kontingent aufgebraucht. Rücksetzung abwarten oder Tarif prüfen.",
     "quotaExhaustedHint": "Kontingent aufgebraucht. Rücksetzung abwarten oder Tarif prüfen.",
     "tokenExpired": "Token-Erneuerung ausstehend",
-    "tokenExpiredHint": "Das Claude-Code-Token ist abgelaufen, die Anmeldung bleibt gültig. Das nächste Gespräch erneuert es automatisch.",
+    "tokenExpiredHint": "Das kurzlebige Claude-Code-Token ist abgelaufen. Der native Client verwaltet die Erneuerung. Meldet er eine abgelaufene Anmeldung, melde dich erneut an.",
     "rateLimited": "Abfragen begrenzt",
     "rateLimitedHint": "Abfragen sind begrenzt. Später erneut versuchen.",
     "quotaRateHint": "Abfragen sind begrenzt. Später erneut versuchen.",

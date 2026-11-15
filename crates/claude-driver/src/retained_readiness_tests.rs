@@ -8,7 +8,7 @@ async fn ready(fixture: &Fixture) -> ClaudeDriver {
     ClaudeDriver::connect_ready(
         "claude-code",
         &InstallationId::new().to_string(),
-        fixture.executable.clone(),
+        environment::isolated(&fixture.executable, fixture.root.path()),
         None,
         SessionResumeCapability::Supported,
     )

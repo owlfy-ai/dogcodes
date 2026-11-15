@@ -21,7 +21,7 @@ export const es: TranslationDict = {
     "exhaustedHint": "Cuota agotada. Espera al restablecimiento o revisa tu plan.",
     "quotaExhaustedHint": "Cuota agotada. Espera al restablecimiento o revisa tu plan.",
     "tokenExpired": "Renovación del token pendiente",
-    "tokenExpiredHint": "El token de Claude Code caducó, pero la sesión sigue siendo válida. Se renovará en la próxima conversación.",
+    "tokenExpiredHint": "El token de Claude Code ha caducado. El cliente nativo gestiona la renovación; si indica que la sesión ha caducado, inicia sesión de nuevo.",
     "rateLimited": "Consultas limitadas",
     "rateLimitedHint": "Solicitudes limitadas. Inténtalo más tarde.",
     "quotaRateHint": "Solicitudes limitadas. Inténtalo más tarde.",

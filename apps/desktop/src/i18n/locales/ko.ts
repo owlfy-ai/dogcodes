@@ -21,7 +21,7 @@ export const ko: TranslationDict = {
     "exhaustedHint": "한도가 소진되었습니다. 초기화를 기다리거나 요금제를 확인하세요.",
     "quotaExhaustedHint": "한도가 소진되었습니다. 초기화를 기다리거나 요금제를 확인하세요.",
     "tokenExpired": "토큰 갱신 대기",
-    "tokenExpiredHint": "Claude Code 토큰이 만료되었지만 로그인은 유효합니다. 다음 대화에서 자동 갱신됩니다.",
+    "tokenExpiredHint": "Claude Code 단기 토큰이 만료되었습니다. 갱신은 네이티브 클라이언트가 처리합니다. 로그인 만료가 표시되면 다시 로그인하세요.",
     "rateLimited": "조회 요청 제한",
     "rateLimitedHint": "요청이 제한되었습니다. 잠시 후 다시 시도하세요.",
     "quotaRateHint": "요청이 제한되었습니다. 잠시 후 다시 시도하세요.",

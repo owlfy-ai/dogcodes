@@ -21,7 +21,7 @@ export const ja: TranslationDict = {
     "exhaustedHint": "上限に達しました。リセットを待つか、プランを確認してください。",
     "quotaExhaustedHint": "上限に達しました。リセットを待つか、プランを確認してください。",
     "tokenExpired": "トークン更新待ち",
-    "tokenExpiredHint": "Claude Code のトークンは期限切れですが、ログインは有効です。次の会話で自動更新されます。",
+    "tokenExpiredHint": "Claude Code の短期トークンの期限が切れました。更新はネイティブクライアントが処理します。ログイン期限切れと表示された場合は再ログインしてください。",
     "rateLimited": "照会回数の制限",
     "rateLimitedHint": "照会回数が制限されています。しばらくしてから再試行してください。",
     "quotaRateHint": "照会回数が制限されています。しばらくしてから再試行してください。",

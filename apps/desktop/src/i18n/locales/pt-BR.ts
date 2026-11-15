@@ -21,7 +21,7 @@ export const ptBR: TranslationDict = {
     "exhaustedHint": "Cota esgotada. Aguarde a redefinição ou verifique seu plano.",
     "quotaExhaustedHint": "Cota esgotada. Aguarde a redefinição ou verifique seu plano.",
     "tokenExpired": "Renovação do token pendente",
-    "tokenExpiredHint": "O token do Claude Code expirou, mas o login continua válido. A próxima conversa o renovará.",
+    "tokenExpiredHint": "O token do Claude Code expirou. O cliente nativo gerencia a renovação; se o login tiver expirado, entre novamente.",
     "rateLimited": "Consultas limitadas",
     "rateLimitedHint": "Solicitações limitadas. Tente novamente mais tarde.",
     "quotaRateHint": "Solicitações limitadas. Tente novamente mais tarde.",
