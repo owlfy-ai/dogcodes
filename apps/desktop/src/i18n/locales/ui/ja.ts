@@ -49,6 +49,8 @@ export const uiJa: UiMessages = {
       unknown: "状態未確認",
     },
     toolRun: {
+      fileEdited: "{count} ファイルを編集",
+      filesEdited: "{count} ファイルを編集",
       calls: "ツール呼び出し {count} 件",
       failed: "{count} 件失敗",
     },

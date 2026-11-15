@@ -49,6 +49,8 @@ export const uiZhCN: UiMessages = {
       unknown: "状态未确认",
     },
     toolRun: {
+      fileEdited: "已编辑 {count} 个文件",
+      filesEdited: "已编辑 {count} 个文件",
       calls: "{count} 次工具调用",
       failed: "{count} 次失败",
     },

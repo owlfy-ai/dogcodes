@@ -4,6 +4,7 @@ import { TurnActions } from "./TurnActions";
 import { DeferredDetails } from "./DeferredDetails";
 import { AgentPending, type PendingAgent } from "./AgentPending";
 import { ThinkingTicker } from "./ThinkingTicker";
+import { useToolRunEdits } from "./toolRunEdits";
 import { ActivityIcon } from "./ActivityIcon";
 import { ComputerUseActivity } from "./ComputerUseActivity";
 import { ForkOrigin } from "./ForkOrigin";
@@ -191,10 +192,9 @@ function Thought({ a, active }: { a: Activity; active: boolean }) {
     </div>
   );
 }
-function FileEdits({ taskId, a, running, status }: { taskId: string; a: Activity; running: boolean; status: string }) {
-  const remote = useContext(RemoteConversationContext);
+function activityEdits(a: Activity) {
   const input = a.input as Record<string, unknown> | undefined;
-  const files = a.changes?.length
+  return a.changes?.length
     ? a.changes
     : inputPath(a)
       ? [
@@ -209,6 +209,10 @@ function FileEdits({ taskId, a, running, status }: { taskId: string; a: Activity
           },
         ]
       : [];
+}
+function FileEdits({ taskId, a, running, status }: { taskId: string; a: Activity; running: boolean; status: string }) {
+  const remote = useContext(RemoteConversationContext);
+  const files = activityEdits(a);
   return (
     <>
       {files.map((f, index) => {
@@ -273,6 +277,7 @@ export function ActivityRow({
   if (a.type === "status") return null;
   // A batch/progress notification with no display fields is not a tool row.
   if (a.type === "tool" && !a.name && !a.title && !a.status &&
+      !a.artifact &&
       a.input == null && a.output == null && a.content == null &&
       !a.text && !a.changes?.length) return null;
   if (a.type === "thought") return <Thought a={a} active={active} />;
@@ -371,6 +376,7 @@ const TimelineActivityRow = memo(function TimelineActivityRow(props: Omit<Parame
 });
 
 const emptyTool = (a: Activity) => a.type === "tool" && !a.name && !a.title && !a.status &&
+  !a.artifact &&
   a.input == null && a.output == null && a.content == null && !a.text && !a.changes?.length;
 /** Rows that render nothing; they neither count in nor break a run of tool calls. */
 function silentActivity(item: TimelineItem) {
@@ -381,7 +387,7 @@ function silentActivity(item: TimelineItem) {
 export function foldableCall(item: TimelineItem) {
   if (item.kind.startsWith("tool.")) return true;
   const a = activityOf(item);
-  return !!a && a.type === "tool" && !a.artifact && !isSubagent(a) && !emptyTool(a);
+  return !!a && a.type === "tool" && !isSubagent(a) && !emptyTool(a);
 }
 /**
  * A one-line step of the agent's work: a thought, a tool call, a computer-use
@@ -390,7 +396,7 @@ export function foldableCall(item: TimelineItem) {
 export function foldableStep(item: TimelineItem) {
   if (item.kind === "computer_use" || foldableCall(item)) return true;
   const a = activityOf(item);
-  return !!a && (a.type === "thought" || (isSubagent(a) && !a.artifact));
+  return !!a && (a.type === "thought" || isSubagent(a));
 }
 const approvalStates = ["awaiting_approval", "waiting_approval", "needs_approval", "pending_approval"];
 /** Calls that stay on screen while their run is folded. */
@@ -403,17 +409,23 @@ export function keepCallVisible(item: TimelineItem, active: boolean) {
     (active && ["pending", "running", "started", "in_progress"].includes(status));
 }
 const callFailed = (item: TimelineItem) => item.kind === "tool.failed" || activityOf(item)?.status === "failed";
-function ToolRun({ calls, render, keepVisible, active }: {
+function ToolRun({ calls, render, keepVisible, active, client }: {
   calls: TimelineItem[];
   render: (item: TimelineItem) => React.ReactNode;
   keepVisible: (item: TimelineItem) => boolean;
   active: boolean;
+  client: CoreClient;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const latest = calls[calls.length - 1];
   const pinned = calls.filter((call) => call !== latest && keepVisible(call));
   const { headline, running, liveThought } = useStepHeadline(latest, active);
+  const edits = useToolRunEdits(calls.map(call => {
+    const a = activityOf(call);
+    return { taskId: call.taskId, artifact: a?.artifact,
+      files: a && categoryOf(a) === "edit" && !["failed", "pending", "running", "started", "in_progress", "cancelled", "interrupted"].includes(a.status ?? "") ? activityEdits(a) : [] };
+  }), client);
   // Nothing to hide: every call is one the user must see anyway.
   if (pinned.length === calls.length - 1 && keepVisible(latest)) return <>{calls.map(render)}</>;
   // Thoughts are not tool calls: the count and its breakdown leave them out.
@@ -437,12 +449,16 @@ function ToolRun({ calls, render, keepVisible, active }: {
       </span>
       {headline.title && <span className="activity-title activity-text" data-tooltip={headline.title}>{headline.title}</span>}
       <svg className="tool-run-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+      {!open && liveThought && <ThinkingTicker text={liveThought} embedded />}
       {toolCalls > 0 && <small className="tool-run-count" data-tooltip={breakdown}>
         {failed > 0 && <span className="activity-status-failed">{t("activity.toolRun.failed", { count: failed })} · </span>}
         {t("activity.toolRun.calls", { count: toolCalls })}
+        {edits.files > 0 && <span className="tool-run-edits" data-tooltip={edits.partial ? t("turnFiles.partialStats") : undefined}> · {t(edits.files === 1 ? "activity.toolRun.fileEdited" : "activity.toolRun.filesEdited", { count: edits.files })}
+          {edits.hasDiff && <span className="turn-summary-counts"><span className="additions">+{edits.additions}</span><span className="deletions">−{edits.deletions}</span></span>}
+          {edits.partial && " …"}
+        </span>}
       </small>}
     </button>
-    {!open && liveThought && <ThinkingTicker text={liveThought} />}
     {(open || pinned.length > 0) && <div className="tool-run-list">{(open ? calls : pinned).map(render)}</div>}
   </>;
 }
@@ -537,7 +553,7 @@ export function ConversationContent({
     const a = activityOf(item);
     const response = item.kind === "assistant_message" || item.kind === "computer_use" || (a && a.type !== "status"
       && (a.type !== "tool" || a.name || a.title || a.status || a.input != null
-        || a.output != null || a.content != null || a.text || a.changes?.length));
+        || a.output != null || a.content != null || a.text || a.changes?.length || a.artifact));
     if (response && !firstResponse.has(item.turnId)) firstResponse.set(item.turnId, item.itemId);
   }
   if (pendingAgent?.turnId && !turnProviders.has(pendingAgent.turnId)) {
@@ -584,6 +600,7 @@ export function ConversationContent({
     const calls = group.filter(foldableStep);
     const content = calls.length > 1 ? (
       <ToolRun key={first.itemId} calls={calls} render={render}
+        client={client}
         active={!!activeTurnId && first.turnId === activeTurnId}
         keepVisible={(i) => keepCallVisible(i, !!activeTurnId && i.turnId === activeTurnId)} />
     ) : group.map(render);

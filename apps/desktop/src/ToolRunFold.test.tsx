@@ -50,6 +50,31 @@ it("folds a run of calls to the latest one and counts the whole run", async () =
   expect(host.querySelector(".tool-run-list")).toBeNull();
 });
 
+it("folds edit patches and artifact results into the same run", async () => {
+  const edit = (id: string, before: string, after: string) => item(id, "activity", JSON.stringify({
+    type: "tool", name: "Edit", status: "completed", input: { file_path: "main.ts", old_string: before, new_string: after },
+  }));
+  const captured = item("artifact", "activity", JSON.stringify({ type: "tool", artifact: { artifactId: "art_capture" } }));
+  await render([tool("start", "pwd"), edit("first", "old\n", "new\nextra\n"), captured, edit("again", "other\n", "updated\n"), thought("last")]);
+  expect(toggles()).toHaveLength(1);
+  const [toggle] = toggles();
+  expect(toggle.querySelector(".tool-run-count")?.textContent).toContain("4 次工具调用");
+  expect(toggle.querySelector(".tool-run-edits")?.textContent).toContain("已编辑 1 个文件");
+  expect(toggle.querySelector(".additions")?.textContent).toBe("+3");
+  expect(toggle.querySelector(".deletions")?.textContent).toBe("−2");
+  expect(host.querySelector(".inline-file-edit")).toBeNull();
+  await act(async () => toggle.click());
+  expect(host.querySelectorAll(".inline-file-edit")).toHaveLength(2);
+  expect(host.querySelector('[data-testid="turn-files"]')).not.toBeNull();
+});
+
+it("does not report an attempted failed or running edit as edited files", async () => {
+  await render(["failed", "running"].map((status, index) => item(String(index), "activity", JSON.stringify({
+    type: "tool", name: "Edit", status, input: { path: "a.ts", old_string: "old", new_string: "new" },
+  }))));
+  expect(host.querySelector(".tool-run-edits")).toBeNull();
+});
+
 it("starts a new run only after assistant text", async () => {
   await render([
     tool("a", "ls"), tool("b", "pwd"),
@@ -77,9 +102,15 @@ it("shows the current thought on the folded row while it runs", async () => {
   expect(toggle.classList.contains("activity-running")).toBe(true);
   expect(toggle.dataset.hiddenCalls).toBe("2");
   expect(toggle.querySelector(".tool-run-count")!.textContent).toBe("1 次工具调用");
-  // Only the folded row names the step; the live thought text still shows under it.
+  // The live preview shares the toggle's flex row instead of creating another row.
   expect(host.querySelector(".thought-line")).toBeNull();
-  expect(host.textContent).toContain("看看测试");
+  expect(toggle.querySelector(".thought-marquee")?.textContent).toBe("看看测试");
+  expect(toggle.querySelector("[tabindex]")).toBeNull();
+  await act(async () => toggle.click());
+  expect(toggle.querySelector(".thought-marquee")).toBeNull();
+  expect(host.querySelector(".tool-run-list .thought-line .thought-marquee")?.textContent).toBe("看看测试");
+  await act(async () => toggle.click());
+  expect(toggle.querySelector(".thought-marquee")?.textContent).toBe("看看测试");
 });
 
 it("folds computer-use actions with the other steps", async () => {

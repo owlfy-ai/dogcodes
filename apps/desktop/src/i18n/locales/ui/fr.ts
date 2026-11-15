@@ -49,6 +49,8 @@ export const uiFr: UiMessages = {
       unknown: "État non confirmé",
     },
     toolRun: {
+      fileEdited: "{count} fichier modifié",
+      filesEdited: "{count} fichiers modifiés",
       calls: "{count} appels d'outils",
       failed: "{count} en échec",
     },

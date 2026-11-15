@@ -49,6 +49,8 @@ export const uiEn = {
       unknown: "Status unconfirmed",
     },
     toolRun: {
+      fileEdited: "{count} file edited",
+      filesEdited: "{count} files edited",
       calls: "{count} tool calls",
       failed: "{count} failed",
     },

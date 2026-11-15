@@ -49,6 +49,8 @@ export const uiZhTW: UiMessages = {
       unknown: "狀態未確認",
     },
     toolRun: {
+      fileEdited: "已編輯 {count} 個檔案",
+      filesEdited: "已編輯 {count} 個檔案",
       calls: "{count} 次工具呼叫",
       failed: "{count} 次失敗",
     },

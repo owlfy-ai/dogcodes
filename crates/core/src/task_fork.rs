@@ -246,10 +246,15 @@ impl Core {
             Err(error) => Err(error),
         };
         if let Err(message) = result {
+            let event_type = if message == agent_protocol::FORK_SNAPSHOT_REQUIRES_GIT {
+                "workspace.fork_snapshot_skipped"
+            } else {
+                "workspace.fork_snapshot_failed"
+            };
             let _ = self
                 .append_runtime_event(
                     &scope.task_id,
-                    "workspace.fork_snapshot_failed",
+                    event_type,
                     json!({"taskId":scope.task_id,"turnId":scope.turn_id,"message":message}),
                     EventSource::Hub,
                 )
@@ -276,6 +281,7 @@ impl Core {
                     &[
                         "workspace.fork_snapshot_captured",
                         "workspace.fork_snapshot_failed",
+                        "workspace.fork_snapshot_skipped",
                     ],
                     500,
                 )

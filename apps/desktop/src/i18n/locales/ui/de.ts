@@ -49,6 +49,8 @@ export const uiDe: UiMessages = {
       unknown: "Status unbestätigt",
     },
     toolRun: {
+      fileEdited: "{count} Datei bearbeitet",
+      filesEdited: "{count} Dateien bearbeitet",
       calls: "{count} Tool-Aufrufe",
       failed: "{count} fehlgeschlagen",
     },

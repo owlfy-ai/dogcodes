@@ -49,6 +49,8 @@ export const uiIt: UiMessages = {
       unknown: "Stato non confermato",
     },
     toolRun: {
+      fileEdited: "{count} file modificato",
+      filesEdited: "{count} file modificati",
       calls: "{count} chiamate a strumenti",
       failed: "{count} non riuscite",
     },

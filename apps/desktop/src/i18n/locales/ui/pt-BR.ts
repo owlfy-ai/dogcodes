@@ -49,6 +49,8 @@ export const uiPtBR: UiMessages = {
       unknown: "Status não confirmado",
     },
     toolRun: {
+      fileEdited: "{count} arquivo editado",
+      filesEdited: "{count} arquivos editados",
       calls: "{count} chamadas de ferramenta",
       failed: "{count} com falha",
     },

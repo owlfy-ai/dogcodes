@@ -49,6 +49,8 @@ export const uiRu: UiMessages = {
       unknown: "Статус не подтверждён",
     },
     toolRun: {
+      fileEdited: "Изменён {count} файл",
+      filesEdited: "Изменено файлов: {count}",
       calls: "Вызовов инструментов: {count}",
       failed: "Ошибок: {count}",
     },

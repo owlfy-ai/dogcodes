@@ -49,6 +49,8 @@ export const uiKo: UiMessages = {
       unknown: "상태 미확인",
     },
     toolRun: {
+      fileEdited: "파일 {count}개 편집",
+      filesEdited: "파일 {count}개 편집",
       calls: "도구 호출 {count}회",
       failed: "{count}회 실패",
     },

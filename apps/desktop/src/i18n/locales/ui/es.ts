@@ -49,6 +49,8 @@ export const uiEs: UiMessages = {
       unknown: "Estado sin confirmar",
     },
     toolRun: {
+      fileEdited: "{count} archivo editado",
+      filesEdited: "{count} archivos editados",
       calls: "{count} llamadas a herramientas",
       failed: "{count} con error",
     },
