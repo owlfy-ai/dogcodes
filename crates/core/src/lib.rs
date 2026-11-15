@@ -3528,9 +3528,10 @@ impl Core {
             .into_iter()
             .filter_map(|mcp| driver.prepare_app_mcp(mcp).ok())
             .collect();
-        let prompt = if computer_lease.is_some() {
+        let prompt = if let Some(computer) = app_mcps.iter().find(|mcp| mcp.is_computer()) {
             format!(
-                "[dog.codes computer use enabled]\n{}\n[/dog.codes computer use]\n\n{prompt}",
+                "[dog.codes computer use enabled]\nCurrent computer-use MCP server: {}. Use its currently published tools, not server names copied from earlier conversation history. If a tool is not found, refresh the published tool catalog or report desktop verification as unavailable; do not keep invoking the missing name.\n{}\n[/dog.codes computer use]\n\n{prompt}",
+                computer.name,
                 include_str!("computer_use/workflow.md")
             )
         } else {

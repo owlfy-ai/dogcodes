@@ -1,5 +1,6 @@
 //! Globally enabled host-desktop capability with per-turn leases and cancellation.
 mod activity;
+mod namespace;
 mod preview;
 mod runtime;
 pub use activity::{ActivityMode, ComputerActivity};
@@ -305,7 +306,7 @@ impl Core {
             endpoint.clone()
         } else {
             let endpoint = Endpoint::new(
-                task.clone(),
+                (task.clone(), namespace::for_task(self, task).await?),
                 config.clone(),
                 self.repository.clone(),
                 self.events.clone(),
@@ -377,7 +378,7 @@ struct Endpoint {
 
 impl Endpoint {
     async fn new(
-        task: TaskId,
+        identity: (TaskId, String),
         config: Config,
         repository: Arc<dyn CoreRepository>,
         events: tokio::sync::broadcast::Sender<EventEnvelope>,
@@ -385,16 +386,14 @@ impl Endpoint {
         external_input: Arc<AtomicUsize>,
         activity: Arc<activity::ActivityHub>,
     ) -> Result<Arc<Self>, CoreError> {
+        let (task, name) = identity;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .map_err(|e| CoreError::Internal(e.to_string()))?;
         let token = uuid::Uuid::new_v4().to_string();
         let directory = tempfile::tempdir().map_err(|e| CoreError::Internal(e.to_string()))?;
         let descriptor = AppMcp {
-            name: format!(
-                "dogcodes_cu_{}",
-                &uuid::Uuid::new_v4().simple().to_string()[..12]
-            ),
+            name,
             command: config.proxy.to_string_lossy().into_owned(),
             args: vec![
                 "--computer-mcp".into(),
