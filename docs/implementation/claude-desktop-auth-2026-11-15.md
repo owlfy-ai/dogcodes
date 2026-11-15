@@ -6,6 +6,24 @@ DogCodes 的 Claude Code 原生运行程序可以来自独立 CLI 或桌面客�
 凭证；不可用时保留原先 CLI 配置、Shell 环境及原生登录/续期行为。旧版或版本未知的
 运行时不注入桌面令牌，避免旧版 settings.env 把令牌转发到自定义 API。
 
+## 程序选择优先级与实测
+
+本机 macOS/Windows 安装检测优先选择 Claude Desktop 下载管理的原生运行时，
+按语义版本从新到旧检查可执行性、Claude 产品标识和版本。没有通过检查的桌面
+运行时才使用原有终端/独立 CLI 选择逻辑。可用桌面运行时也优先于 DogCodes
+安装的托管 CLI，且不依赖终端 Shell 能否正常启动。其他 Agent 选择策略不变。
+
+对话、工具、模型目录和额度控制查询均使用所选的同一可执行文件。
+这仍是 DogCodes 独立启动桌面自用引擎，不是连接桌面窗口已有的会话。
+更新后的重新扫描/启动会选中新运行时，不自动重放已有请求。
+
+本机 2.1.325 桌面运行时已通过真实验收：initialize、get_usage 返回两个额度窗口，
+临时工作区内一轮无工具对话成功返回 `DOGCODES_DESKTOP_RUNTIME_OK`，随后正常关闭会话。
+使用的是 `~/Library/Application Support/Claude/claude-code/2.1.325/.../claude.app/Contents/MacOS/claude`。
+可重复验收位于 `crates/claude-driver/tests/desktop_runtime.rs`，默认 ignored，
+仅显式授权并提供 `DOGCODES_TEST_CLAUDE_EXECUTABLE` 和 `DOGCODES_TEST_CLAUDE_VERSION`
+后手动执行；会消耗一轮真实模型额度，不纳入常规测试或 GitHub workflow。
+
 ## 选择和回退
 
 - 仅读取桌面 `config.json` 的 `oauth:tokenCacheV2`，通过当前系统用户的
@@ -18,8 +36,8 @@ DogCodes 的 Claude Code 原生运行程序可以来自独立 CLI 或桌面客�
 - 桌面凭证选中后，以原生 host-managed provider guard 固定官方服务和认证环境，
   隔离 Shell/API key/自定义 endpoint；不更改 CLI 的配置目录和持久登录。
 - 原生模型或额度查询明确拒绝某个桌面 bearer 后，本次 DogCodes 进程记住该拒绝。
-  后续启动回退 CLI；桌面出现新的 bearer 后可再次优先选择桌面。
-  不自动重放用户请求，不在进行中的任务内切换账户或切到 CLI。
+  后续启动回退 CLI 登录凭证；桌面出现新的 bearer 后可再次优先选择桌面凭证。
+  凭证回退不改变已选的运行时。不自动重放用户请求，不在进行中的任务内切换账户。
 
 ## 续期边界
 
@@ -55,7 +73,8 @@ refresh 回调与切换账户后拒绝续接。测试使用私有目录和合成
 凭证，不调用模型。86 个离线测试和 macOS Clippy 通过，Windows MSVC 全目标
 编译检查通过。Linux 交叉检查因本机没有 GLib/sysroot 的 pkg-config 配置而未完成。
 另用隔离 HOME、合成令牌验证了本机原生 2.1.325 的 initialize/get_settings 控制通道；
-没有执行真实账户认证或模型请求。编译检查不能替代系统存储实机验收。
+上述早期隔离验证没有执行真实账户认证或模型请求；后续本机桌面引擎的真实验证
+见“程序选择优先级与实测”。跨平台编译检查不能替代 Windows/Linux 系统存储实机验收。
 
 本实现依据本机 Claude Desktop/Claude Code 2.1.325 的行为；桌面 token cache 和
 host refresh 均为原生内部接口，格式变化时应保守回退 CLI。系统存储格式参考

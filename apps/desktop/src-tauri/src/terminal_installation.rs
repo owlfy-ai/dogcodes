@@ -1,5 +1,6 @@
 //! Resolve user commands in the login + interactive shell.
 //! `OpenCode` may require its desktop-managed runtime for shared database compatibility.
+//! Claude prefers the verified runtime managed by its desktop app over terminal CLIs.
 use agent_registry::{DiscoveryContext, ProviderManifest};
 use agent_runtime::{ProcessSpec, run_bounded};
 use std::{
@@ -348,6 +349,11 @@ fn select_existing_executable(
             context,
         ))
     {
+        // Claude's desktop candidates are version-checked before shell lookup.
+        // Reaching here means none was usable; do not select a rejected file again.
+        if manifest.id.as_str() == "claude-code" {
+            continue;
+        }
         if let Some(path) = canonical_executable(&path) {
             return Ok(Some(path));
         }
@@ -536,10 +542,42 @@ async fn compatible_opencode(
     selected
 }
 
+async fn preferred_claude_desktop(
+    manifest: &ProviderManifest,
+    context: &DiscoveryContext,
+) -> Option<PathBuf> {
+    if manifest.id.as_str() != "claude-code" {
+        return None;
+    }
+    for path in agent_registry::windows_desktop_executables("claude-code", context)
+        .into_iter()
+        .chain(agent_registry::macos_desktop_executables(
+            "claude-code",
+            context,
+        ))
+    {
+        let Some(path) = canonical_executable(&path) else {
+            continue;
+        };
+        if let Ok(report) = agent_registry::probe_installation(manifest, path.clone()).await
+            && report.status == agent_registry::InstallationStatus::Installed
+            && report.version.is_some()
+        {
+            return Some(path);
+        }
+    }
+    None
+}
+
 pub(crate) async fn preferred_executable(
     manifest: &ProviderManifest,
     context: &DiscoveryContext,
 ) -> Result<Option<PathBuf>, String> {
+    // This return also prevents a DogCodes-managed standalone CLI from
+    // replacing a working desktop runtime, and needs no terminal shell startup.
+    if let Some(desktop) = preferred_claude_desktop(manifest, context).await {
+        return Ok(Some(desktop));
+    }
     let commands = shell_commands(context).await;
     #[cfg(unix)]
     if commands.is_none() {
@@ -567,11 +605,6 @@ mod tests {
                 "codex",
                 include_str!("../../../../drivers/manifests/codex.toml"),
                 "AppData/Local/OpenAI/Codex/bin/hash/codex.exe",
-            ),
-            (
-                "claude-code",
-                include_str!("../../../../drivers/manifests/claude-code.toml"),
-                "AppData/Roaming/Claude/claude-code/2.1.309/hash/claude.exe",
             ),
             (
                 "deepseek-harness",
@@ -856,6 +889,77 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn claude_desktop_runtime_precedes_terminal_and_managed_cli_and_skips_broken_payloads() {
+        let manifest = ProviderManifest::parse_toml(include_str!(
+            "../../../../drivers/manifests/claude-code.toml"
+        ))
+        .unwrap();
+        // The Windows layout can be probed with private shell fixtures on Unix,
+        // exercising the same ordering without touching a real installation.
+        for (platform, suffix, prefix) in [
+            (
+                Platform::Macos,
+                "claude.app/Contents/MacOS/claude",
+                "Library/Application Support/Claude/claude-code",
+            ),
+            (
+                Platform::Windows,
+                "claude.exe",
+                "AppData/Roaming/Claude/claude-code",
+            ),
+        ] {
+            let home = tempfile::tempdir().unwrap();
+            let context = DiscoveryContext {
+                platform,
+                home_dir: Some(home.path().into()),
+                path_entries: vec![],
+            };
+            let standalone = home.path().join(".local/bin/claude");
+            executable(&standalone);
+            let _managed = crate::agent_updates::managed_cli::fixtures::verified_fixture(
+                &context,
+                "claude-code",
+            );
+            assert!(
+                crate::agent_updates::managed_cli::candidate(&context, "claude-code").is_some()
+            );
+            let old = home.path().join(prefix).join("2.1.325/hash").join(suffix);
+            let newest = home.path().join(prefix).join("2.1.326/hash").join(suffix);
+            for (path, version) in [(&old, "2.1.325"), (&newest, "2.1.326")] {
+                executable(path);
+                std::fs::write(
+                    path,
+                    format!("#!/bin/sh\nprintf '%s\\n' '{version} (Claude Code)'\n"),
+                )
+                .unwrap();
+            }
+            assert_eq!(
+                preferred_executable(&manifest, &context).await.unwrap(),
+                Some(newest.canonicalize().unwrap())
+            );
+            std::fs::write(&newest, "#!/bin/sh\nexit 1\n").unwrap();
+            assert_eq!(
+                preferred_executable(&manifest, &context).await.unwrap(),
+                Some(old.canonicalize().unwrap())
+            );
+            // A version-looking file with another product marker is not Claude.
+            std::fs::write(&old, "#!/bin/sh\nprintf '2.1.325 (Other Agent)\\n'\n").unwrap();
+            assert!(
+                preferred_claude_desktop(&manifest, &context)
+                    .await
+                    .is_none()
+            );
+            let commands =
+                Commands::from([("claude".into(), Resolution::Executable(standalone.clone()))]);
+            assert_eq!(
+                select_executable(&manifest, &context, Some(&commands)).unwrap(),
+                Some(standalone)
+            );
+        }
+    }
+
     #[test]
     fn windows_deepseek_uses_native_npm_launchers_and_local_appdata_cache() {
         let dir = tempfile::tempdir().unwrap();
@@ -1050,6 +1154,26 @@ mod tests {
         codex_driver::CodexDriver::probe_ready(&executable)
             .await
             .expect("Codex initialize/account-read must succeed");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a local Claude Desktop runtime; version/discovery only, no model turn"]
+    async fn current_claude_desktop_runtime_is_preferred() {
+        let manifest = ProviderManifest::parse_toml(include_str!(
+            "../../../../drivers/manifests/claude-code.toml"
+        ))
+        .unwrap();
+        let context = DiscoveryContext::from_current_process();
+        let selected = preferred_executable(&manifest, &context)
+            .await
+            .unwrap()
+            .expect("Claude runtime");
+        assert!(
+            selected
+                .ancestors()
+                .any(|path| path.ends_with("Claude/claude-code"))
+        );
+        println!("selected desktop Claude runtime: {}", selected.display());
     }
 
     #[test]
