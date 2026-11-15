@@ -1,13 +1,13 @@
 import type { ArtifactMetadata, CoreClient, TaskId } from "@dogcodes/protocol";
 import { acceptArtifactChunk, verifyArtifactBytes } from "./artifactView";
-import { frozenDiff } from "./conversationDiff";
-import type { StructuredDiff } from "./diffView";
+import { frozenDiff, capturedFileDiff, type CapturedFile } from "./conversationDiff";
+import type { StructuredDiff, DiffFile } from "./diffView";
 import { translate as t } from "./i18n";
 
 export interface TurnArtifact {
   data: {
-    files: { path: string; status: string; before?: unknown; after?: unknown }[];
-    patch?: string; attribution?: string; recoveredAfterInterruption?: boolean; sharedWorkspace?: boolean;
+    files: CapturedFile[];
+    patch?: string; patchTruncated?: boolean; attribution?: string; recoveredAfterInterruption?: boolean; sharedWorkspace?: boolean;
     backend?: string; roots?: { workspacePath?: string; changes?: { backend?: string } }[];
   };
   diff: StructuredDiff | null;
@@ -19,7 +19,7 @@ const readQueues = new WeakMap<CoreClient, { active: number; pending: (() => voi
 
 // Cards load independently of the timeline. Keep large histories from issuing
 // every artifact read at once, including reads started by newly opened details.
-function scheduleRead(client: CoreClient, read: () => Promise<TurnArtifact>): Promise<TurnArtifact> {
+function scheduleRead<T>(client: CoreClient, read: () => Promise<T>): Promise<T> {
   let queue = readQueues.get(client);
   if (!queue) { queue = { active: 0, pending: [] }; readQueues.set(client, queue); }
   const state = queue;
@@ -72,4 +72,53 @@ export function loadTurnArtifact(client: CoreClient, taskId: TaskId, metadata: A
   }).catch(error => { if (cache.get(key) === entry) cache.delete(key); throw error; });
   cache.set(key, entry);
   return entry.promise;
+}
+
+/** Fetch only the chosen file's immutable versions; never substitute live files. */
+const fileCaches = new WeakMap<CoreClient, Map<string, { promise: Promise<DiffFile>; size: number; settled: boolean }>>();
+export function loadTurnFile(client: CoreClient, taskId: TaskId, artifact: TurnArtifact, path: string): Promise<DiffFile> {
+  const original = artifact.data.files.find(file => file.path === path);
+  if (!original) return Promise.reject(new Error(t("turnArtifacts.badFormat")));
+  let cache = fileCaches.get(client);
+  if (!cache) { cache = new Map(); fileCaches.set(client, cache); }
+  const key = JSON.stringify([taskId, path, original.before, original.after]);
+  const existing = cache.get(key);
+  if (existing) { cache.delete(key); cache.set(key, existing); return existing.promise; }
+  const promise = scheduleRead(client, async () => {
+    const file: CapturedFile = { ...original };
+    const bodies = new Map<string, Uint8Array>();
+    for (const side of ["before", "after"] as const) {
+      const version = file[side], metadata = version?.contentArtifact;
+      if (!metadata) continue;
+      if (metadata.mediaType !== "application/vnd.dogcodes.workspace-content" || metadata.byteLength > 512 * 1024
+        || metadata.payloadSha256 !== version.sha256) throw new Error(t("turnArtifacts.badFormat"));
+      let bytes = bodies.get(metadata.payloadSha256);
+      if (!bytes) {
+        bytes = new Uint8Array();
+        do {
+          bytes = acceptArtifactChunk(metadata, bytes, await client.readArtifact({ taskId, artifactId: metadata.artifactId,
+            expectedPayloadSha256: metadata.payloadSha256, offset: bytes.length, limit: 32768 }));
+        } while (bytes.length < metadata.byteLength);
+        await verifyArtifactBytes(bytes, metadata.payloadSha256);
+        bodies.set(metadata.payloadSha256, bytes);
+      }
+      file[side] = { ...version, contentArtifact: undefined, hex: Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("") };
+    }
+    return capturedFileDiff(file);
+  });
+  const state = cache;
+  // Include decoded strings and parsed lines in the estimate, not just manifest bytes.
+  const size = [original.before, original.after].reduce((total, version) => total +
+    (version?.contentArtifact?.byteLength ?? (version?.hex?.length ?? 0) / 2) * 8, 0);
+  const entry = { promise, size, settled: false };
+  state.set(key, entry);
+  void promise.then(() => {
+    entry.settled = true;
+    let total = [...state.values()].reduce((sum, item) => sum + item.size, 0);
+    for (const [oldKey, item] of state) {
+      if (state.size <= 128 && total <= 32 * 1024 * 1024) break;
+      if (item.settled) { state.delete(oldKey); total -= item.size; }
+    }
+  }, () => { state.delete(key); });
+  return promise;
 }

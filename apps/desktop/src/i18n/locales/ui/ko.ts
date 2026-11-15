@@ -639,6 +639,13 @@ export const uiKo: UiMessages = {
     unverified: "Git 작업 결과를 아직 확인할 수 없습니다. 두 번 실행되지 않도록 잠시 후 다시 시도하세요.",
   },
   historicalDiff: {
+    rawPartial: "The raw patch includes only some files. Select individual files above for their full diffs.",
+    summary: "{count} changed files · {available} with text diff · {unavailable} unavailable",
+    fileLimit: "Text was not saved: this file exceeds the 512 KiB per-file limit.",
+    snapshotLimit: "Text was not saved: the snapshot reached its 16 MiB content budget.",
+    binary: "This file is binary or is not valid UTF-8 text.",
+    notSaved: "The original or updated file content was not saved.",
+    parseLimit: "This file exceeds the text diff display limits.",
     close: "과거 Diff 닫기",
     empty: "이 턴의 스냅샷에는 파일 변경 사항이 없습니다.",
     loadFailed: "과거 스냅샷을 읽거나 검증하지 못했습니다. 현재 파일로 대체하지 않았습니다.",

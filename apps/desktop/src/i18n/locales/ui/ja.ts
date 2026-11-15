@@ -639,6 +639,13 @@ export const uiJa: UiMessages = {
     unverified: "Git 操作の結果をまだ確認できません。二重に実行しないよう、少し待ってからお試しください。",
   },
   historicalDiff: {
+    rawPartial: "The raw patch includes only some files. Select individual files above for their full diffs.",
+    summary: "{count} changed files · {available} with text diff · {unavailable} unavailable",
+    fileLimit: "Text was not saved: this file exceeds the 512 KiB per-file limit.",
+    snapshotLimit: "Text was not saved: the snapshot reached its 16 MiB content budget.",
+    binary: "This file is binary or is not valid UTF-8 text.",
+    notSaved: "The original or updated file content was not saved.",
+    parseLimit: "This file exceeds the text diff display limits.",
     close: "過去の Diff を閉じる",
     empty: "このターンのスナップショットにはファイルの変更がありません。",
     loadFailed: "過去のスナップショットを読み取れない、または検証できませんでした。現在のファイルでの代用はしていません。",

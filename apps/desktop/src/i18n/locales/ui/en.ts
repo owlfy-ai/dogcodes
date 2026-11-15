@@ -639,6 +639,13 @@ export const uiEn = {
     unverified: "Couldn't confirm the result of the Git operation yet. Try again in a moment so it isn't run twice.",
   },
   historicalDiff: {
+    rawPartial: "The raw patch includes only some files. Select individual files above for their full diffs.",
+    summary: "{count} changed files · {available} with text diff · {unavailable} unavailable",
+    fileLimit: "Text was not saved: this file exceeds the 512 KiB per-file limit.",
+    snapshotLimit: "Text was not saved: the snapshot reached its 16 MiB content budget.",
+    binary: "This file is binary or is not valid UTF-8 text.",
+    notSaved: "The original or updated file content was not saved.",
+    parseLimit: "This file exceeds the text diff display limits.",
     close: "Close historical diff",
     empty: "This turn's snapshot has no file changes.",
     loadFailed: "Couldn't read or verify the historical snapshot; current files weren't used instead.",

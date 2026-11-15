@@ -370,7 +370,11 @@ impl Core {
                 if let Some(artifact) = self.repository.artifact(&id).await?
                     && hex::encode(Sha256::digest(&artifact.content))
                         == artifact.metadata.payload_sha256
-                    && let Ok(value) = serde_json::from_slice(&artifact.content)
+                    && let Ok(mut value) = serde_json::from_slice(&artifact.content)
+                    && self
+                        .hydrate_workspace_contents(&scope.task_id, &mut value)
+                        .await
+                        .is_ok()
                 {
                     result = crate::multi_workspace::recover(
                         scope.workspace.as_ref(),

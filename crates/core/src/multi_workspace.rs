@@ -9,11 +9,23 @@ fn unavailable() -> WorkspaceCollectionDiagnostic {
         kind: WorkspaceDiagnosticKind::WorkspaceUnavailable,
     }
 }
+// Retained versions are detached into task-owned body artifacts before persistence.
+// This is only the temporary in-memory budget, not the 1 MiB manifest limit.
+const MAX_CAPTURE_BYTES: usize =
+    4 * agent_protocol::workspace_content::MAX_WORKSPACE_CONTENT_BYTES + 8 * 1024 * 1024;
 fn bounded(mut value: Value) -> Result<Value, WorkspaceCollectionDiagnostic> {
-    if serde_json::to_vec(&value).map_err(|_| unavailable())?.len() > 1024 * 1024 {
+    let patches = value["roots"].as_array().map_or(0, |roots| {
+        roots.iter().fold(0usize, |sum, root| {
+            sum.saturating_add(root["changes"]["patch"].as_str().map_or(0, str::len))
+        })
+    });
+    if patches >= 1024 * 1024 {
+        return Err(unavailable());
+    }
+    if serde_json::to_vec(&value).map_err(|_| unavailable())?.len() > MAX_CAPTURE_BYTES {
         crate::review_analysis::workflow::discard_context(&mut value);
     }
-    if serde_json::to_vec(&value).map_err(|_| unavailable())?.len() > 1024 * 1024 {
+    if serde_json::to_vec(&value).map_err(|_| unavailable())?.len() > MAX_CAPTURE_BYTES {
         return Err(unavailable());
     }
     Ok(value)

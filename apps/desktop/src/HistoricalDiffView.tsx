@@ -9,6 +9,8 @@ import { ReviewText } from "./ReviewText";
 import { reviewPatchHunk } from "./reviewPatch";
 import { translate as t } from "./i18n";
 import "./historicalDiff.css";
+import { ReviewFileLoading } from "./ReviewFileLoading";
+import { useLoadingVisibility } from "./useLoadingVisibility";
 
 const visiblePath = (path: string) => artifactVisibleText(path).replace(/\n/g, "\\n").replace(/\t/g, "\\t");
 const filePath = (file: DiffFile) => file.newPath || file.oldPath;
@@ -23,7 +25,27 @@ function HistoricalFileText({ file, split }: { file: DiffFile; split: boolean })
   </section>)}</>;
 }
 
-export function HistoricalDiffView({ diff, initialPath }: { diff: StructuredDiff; initialPath?: string }) {
+function HistoricalFileBody({ file, split, loadFile }: { file: DiffFile; split: boolean; loadFile?: (path: string) => Promise<DiffFile> }) {
+  const [loaded, setLoaded] = useState<DiffFile | null>(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    if (!file.pendingContent || !loadFile) return;
+    let active = true;
+    setError("");
+    void loadFile(filePath(file)).then(value => { if (active) setLoaded(value); }, () => { if (active) setError(t("historicalDiff.loadFailed")); });
+    return () => { active = false; };
+  }, [file, loadFile, retry]);
+  const loading = useLoadingVisibility(Boolean(file.pendingContent && !loaded && !error));
+  if (loading.pending) return loading.visible ? <ReviewFileLoading split={split} /> : null;
+  if (error) return <p role="alert">{error} <button type="button" onClick={() => setRetry(n => n + 1)}>{t("common.retry")}</button></p>;
+  const selected = loaded ?? file;
+  if (selected.unavailableReason) return <p className="review-tree-message" role="status">{selected.unavailableReason}</p>;
+  return selected.binary ? <ReviewBinaryPlaceholder /> : !selected.hunks.length ? <p className="review-tree-message">{t("structuredDiff.metadataOnly")}</p>
+    : <HistoricalFileText file={selected} split={split} />;
+}
+
+export function HistoricalDiffView({ diff, initialPath, loadFile }: { diff: StructuredDiff; initialPath?: string; loadFile?: (path: string) => Promise<DiffFile> }) {
   const [selectedIndex, setSelectedIndex] = useState(() => Math.max(0, diff.files.findIndex(file => file.newPath === initialPath || file.oldPath === initialPath)));
   const [split, setSplit] = useState(false);
   const body = useRef<HTMLDivElement>(null);
@@ -44,7 +66,7 @@ export function HistoricalDiffView({ diff, initialPath }: { diff: StructuredDiff
           return <button type="button" className="review-file-entry" key={index} aria-label={path}
             aria-current={index === selectedIndex ? "true" : undefined} data-tooltip={path} onClick={() => setSelectedIndex(index)}>
             <FileIcon path={path} /><span className="review-entry-name">{path.split("/").at(-1)}</span>
-            {!file.binary && <span className="review-entry-counts"><span className="review-add-count">+{file.additions}</span><span className="review-delete-count">−{file.deletions}</span></span>}
+            {!file.binary && !file.countsUnavailable && <span className="review-entry-counts"><span className="review-add-count">+{file.additions}</span><span className="review-delete-count">−{file.deletions}</span></span>}
             <span className={`review-status status-${status}`} aria-label={t(`structuredDiff.change.${file.change}`)}>{status}</span>
           </button>;
         })}
@@ -52,7 +74,7 @@ export function HistoricalDiffView({ diff, initialPath }: { diff: StructuredDiff
     }>
       {selected && <div className="review-file-body" ref={body}>
         <div className="review-file-heading"><strong data-tooltip={visiblePath(filePath(selected))}>{visiblePath(filePath(selected))}</strong>
-          {!selected.binary && <span className="review-entry-counts"><span className="review-add-count">+{selected.additions}</span><span className="review-delete-count">−{selected.deletions}</span></span>}
+          {!selected.binary && !selected.countsUnavailable && <span className="review-entry-counts"><span className="review-add-count">+{selected.additions}</span><span className="review-delete-count">−{selected.deletions}</span></span>}
         </div>
         <details className="historical-diff-metadata" key={`${selectedIndex}:metadata`}>
           <summary>{t(`structuredDiff.change.${selected.change}`)}</summary>
@@ -62,8 +84,7 @@ export function HistoricalDiffView({ diff, initialPath }: { diff: StructuredDiff
             {selected.similarity && <><dt>{t("structuredDiff.similarityCheck")}</dt><dd>{t(selected.dissimilar ? "diff.dissimilarity" : "structuredDiff.similarity", { value: selected.similarity })}</dd></>}
           </dl>
         </details>
-        {selected.binary ? <ReviewBinaryPlaceholder /> : !selected.hunks.length ? <p className="review-tree-message">{t("structuredDiff.metadataOnly")}</p>
-          : <HistoricalFileText key={selectedIndex} file={selected} split={split} />}
+        <HistoricalFileBody key={selectedIndex} file={selected} split={split} loadFile={loadFile} />
       </div>}
     </ReviewFilesSplit>}
   </section>;

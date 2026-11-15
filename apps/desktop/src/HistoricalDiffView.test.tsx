@@ -80,3 +80,18 @@ it("preserves EOF markers on each version and escapes untrusted captured text", 
   expect(host.querySelector("img")).toBeNull();
   expect(host.querySelectorAll(".review-no-newline")).toHaveLength(2);
 });
+
+it("keeps unavailable files selectable and loads immutable text only for the selected file", async () => {
+  const base = parse("diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n");
+  const ready = base.files[0];
+  const pending = { ...ready, pendingContent: true, hunks: [] };
+  const omitted = { ...ready, oldPath: "large.ts", newPath: "large.ts", countsUnavailable: true, unavailableReason: "Per-file size limit", hunks: [] };
+  const loadFile = vi.fn(async () => ready);
+  await act(async () => root.render(<HistoricalDiffView diff={{ ...base, files: [pending, omitted] }} initialPath="large.ts" loadFile={loadFile} />));
+  expect(host.querySelectorAll(".review-file-entry")).toHaveLength(2);
+  expect(host.textContent).toContain("Per-file size limit");
+  expect(loadFile).not.toHaveBeenCalled();
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="a.ts"]')!.click());
+  expect(loadFile).toHaveBeenCalledWith("a.ts");
+  expect(host.querySelector(".review-added code")?.textContent).toBe("new");
+});

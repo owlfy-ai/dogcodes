@@ -1052,7 +1052,7 @@ impl CoreRepository for SqliteStore {
         let mut statement = connection
             .prepare(
                 "SELECT metadata_json, source_sequence, source_kind FROM task_artifacts
-             WHERE task_id = ?1 AND (?2 IS NULL OR source_sequence < ?2
+             WHERE task_id = ?1 AND source_kind NOT LIKE '%.content' AND source_kind <> 'workspace.turn_checkpoint_captured' AND (?2 IS NULL OR source_sequence < ?2
                  OR (source_sequence = ?2 AND artifact_id < ?3))
              ORDER BY source_sequence DESC, artifact_id DESC LIMIT ?4",
             )
@@ -2434,6 +2434,7 @@ fn project_task_artifacts(
         "handoff.package_confirmed"
             | "reconciliation.package_confirmed"
             | "workspace.diff_captured"
+            | "workspace.turn_checkpoint_captured"
             | "workspace.turn_changes_captured"
             | "workspace.operation_changes_captured"
             | "session.rebuild_context_prepared"
@@ -2447,17 +2448,23 @@ fn project_task_artifacts(
             "artifact event does not match its task stream".into(),
         ));
     }
-    for field in ["artifact", "originalArtifact"] {
-        let Some(value) = event.payload.get(field) else {
-            if field == "artifact" {
-                return Err(missing_payload_field(event, field));
-            }
-            continue;
-        };
+    if event.payload.get("artifact").is_none() {
+        return Err(missing_payload_field(event, "artifact"));
+    }
+    let mut referenced: Vec<_> = ["artifact", "originalArtifact"]
+        .into_iter()
+        .filter_map(|field| event.payload.get(field).map(|v| (field, v)))
+        .collect();
+    if let Some(bodies) = event.payload["contentArtifacts"].as_array() {
+        referenced.extend(bodies.iter().map(|v| ("content", v)));
+    }
+    for (field, value) in referenced {
         let metadata: ArtifactMetadata =
             serde_json::from_value(value.clone()).map_err(json_error)?;
         let source_kind = if field == "originalArtifact" {
             format!("{}.original", event.event_type)
+        } else if field == "content" {
+            format!("{}.content", event.event_type)
         } else {
             event.event_type.clone()
         };

@@ -639,6 +639,13 @@ export const uiEs: UiMessages = {
     unverified: "Aún no se pudo confirmar el resultado de la operación de Git. Inténtalo en un momento para no ejecutarla dos veces.",
   },
   historicalDiff: {
+    rawPartial: "The raw patch includes only some files. Select individual files above for their full diffs.",
+    summary: "{count} changed files · {available} with text diff · {unavailable} unavailable",
+    fileLimit: "Text was not saved: this file exceeds the 512 KiB per-file limit.",
+    snapshotLimit: "Text was not saved: the snapshot reached its 16 MiB content budget.",
+    binary: "This file is binary or is not valid UTF-8 text.",
+    notSaved: "The original or updated file content was not saved.",
+    parseLimit: "This file exceeds the text diff display limits.",
     close: "Cerrar diff histórico",
     empty: "La instantánea de este turno no tiene cambios de archivos.",
     loadFailed: "No se pudo leer o verificar la instantánea histórica; no se usaron los archivos actuales en su lugar.",

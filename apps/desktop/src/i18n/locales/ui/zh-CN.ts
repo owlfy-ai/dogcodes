@@ -639,6 +639,13 @@ export const uiZhCN: UiMessages = {
     unverified: "Git 操作的结果暂时无法确认，请稍后再试，以免重复执行。",
   },
   historicalDiff: {
+    rawPartial: "原始补丁仅包含部分文件；完整文件差异请在上方逐个查看。",
+    summary: "{count} 个变更文件 · {available} 个可查看文本差异 · {unavailable} 个无法显示",
+    fileLimit: "正文未保存：文件超过 512 KiB 的单文件限制。",
+    snapshotLimit: "正文未保存：快照达到 16 MiB 的正文预算。",
+    binary: "此文件为二进制文件或不是有效的 UTF-8 文本。",
+    notSaved: "修改前或修改后的文件正文未保存。",
+    parseLimit: "此文件超过文本差异的显示限制。",
     close: "关闭历史 Diff",
     empty: "该轮保存的快照没有文件变化。",
     loadFailed: "历史快照读取或校验失败，未改用当前文件。",

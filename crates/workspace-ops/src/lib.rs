@@ -9,6 +9,7 @@ pub mod review;
 pub mod review_file_actions;
 pub mod state_changes;
 pub mod turn_undo;
+mod workspace_contents;
 pub mod workspace_service;
 
 #[cfg(feature = "core")]

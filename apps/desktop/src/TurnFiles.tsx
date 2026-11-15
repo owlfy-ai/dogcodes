@@ -2,7 +2,7 @@ import { HistoricalTurnDiff } from "./HistoricalTurnDiff";
 import { TurnUndoAction } from "./TurnUndoAction";
 import { TurnCommitAction } from "./TurnCommitAction";
 import { InlineFileEdit } from "./InlineFileEdit";
-import { cachedTurnArtifact, loadTurnArtifact, turnArtifactKey, type TurnArtifact } from "./turnArtifactCache";
+import { cachedTurnArtifact, loadTurnArtifact, loadTurnFile, turnArtifactKey, type TurnArtifact } from "./turnArtifactCache";
 import { useContext, useEffect, useState } from "react";
 import { OpenFileButton } from "./OpenFileButton";
 import { showContextMenu } from "./ContextMenu";
@@ -66,8 +66,8 @@ export function TurnFiles({
   if (operation) return <>
     {recovered && <p className="subagent-notice">{t("turnFiles.recovered")}</p>}
     {shared && <p className="subagent-notice">{t("turnFiles.shared")}</p>}
-    {data.files.map(f => <InlineFileEdit key={f.path} path={f.path}
-      file={diff?.files.find(d => (d.newPath || d.oldPath) === f.path)} truncated={diff?.truncated}
+    {data.files.map(f => <InlineFileEdit key={`${metadata.artifactId}:${f.path}`} path={f.path}
+      file={diff?.files.find(d => (d.newPath || d.oldPath) === f.path)} loadFile={() => loadTurnFile(client, taskId, artifact!, f.path)} truncated={diff?.truncated}
       menu={() => messageFileMenu({ taskId, path: f.path, remote, deleted: f.status === "D" })}
       openControl={f.status === "D" || remote ? undefined : <OpenFileButton taskId={taskId} path={f.path} />} />)}
     {error && <p role="alert">{error}</p>}
@@ -100,14 +100,14 @@ export function TurnFiles({
             <span className={`turn-summary-icon file-${language.toLowerCase()}`} aria-hidden="true">{language}</span>
             <span className="turn-summary-name" data-tooltip={f.path}>{name}</span>
             <span className="turn-summary-directory" data-tooltip={directory}>{directory}</span>
-            {change && !change.binary && <span className="turn-summary-counts"><span className="additions">+{change.additions}</span><span className="deletions">−{change.deletions}</span></span>}
+            {change && !change.binary && !change.countsUnavailable && <span className="turn-summary-counts"><span className="additions">+{change.additions}</span><span className="deletions">−{change.deletions}</span></span>}
             <span className="turn-summary-actions">
               <button type="button" data-tooltip={t("turnFiles.historicalTooltip")} aria-label={t("turnFiles.historicalLabel", { name })} onClick={() => setHistoricalOpen(f.path)}>{t("turnFiles.historical")}</button>
               {!remote && <OpenFileButton taskId={taskId} path={f.path} disabled={f.status === "D"} />}
             </span>
           </div>;
         })}
-        {diff?.truncated && <p className="turn-summary-notice">{t("turnFiles.partialStats")}</p>}
+        {(diff?.truncated || diff?.files.some(file => file.countsUnavailable)) && <p className="turn-summary-notice">{t("turnFiles.partialStats")}</p>}
         {error && <p className="turn-summary-notice" role="alert">{error}</p>}
       </div>
     </details>

@@ -44,3 +44,16 @@ it("renders source as escaped text and gives an explicit fallback for missing pa
   await act(async () => root.render(<InlineFileEdit path="image.png" />));
   expect(host.textContent).toContain("当前操作未提供文本差异");
 });
+it("fetches an immutable operation body on expansion and retains the result", async () => {
+  const parsed = parseGitDiff(new TextEncoder().encode(editPatch("a.ts", "old\n", "new\n")));
+  if (parsed.kind !== "structured") throw new Error(parsed.reason);
+  const ready = parsed.diff.files[0];
+  const loadFile = vi.fn(async () => ready);
+  await act(async () => root.render(<InlineFileEdit path="a.ts" file={{ ...ready, hunks: [], pendingContent: true }} loadFile={loadFile} />));
+  expect(loadFile).not.toHaveBeenCalled();
+  await toggle(true);
+  expect(loadFile).toHaveBeenCalledTimes(1);
+  expect(host.querySelector(".inline-edit-line.addition code")?.textContent).toBe("new");
+  await toggle(false); await toggle(true);
+  expect(loadFile).toHaveBeenCalledTimes(1);
+});

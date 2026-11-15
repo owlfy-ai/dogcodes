@@ -39,7 +39,7 @@ export function useToolRunEdits(sources: EditSource[], client: CoreClient) {
       // Captured artifacts are authoritative; do not also count their reported patch.
       if (value) {
         for (const file of value.data.files) files.add(JSON.stringify([source.taskId, file.path]));
-        if (value.diff) { additions += value.diff.additions; deletions += value.diff.deletions; hasDiff = true; partial ||= value.diff.truncated; }
+        if (value.diff) { additions += value.diff.additions; deletions += value.diff.deletions; hasDiff = true; partial ||= value.diff.truncated || value.diff.files.some(file => file.countsUnavailable); }
         else if (value.data.files.length) partial = true;
       } else partial = true;
       continue;

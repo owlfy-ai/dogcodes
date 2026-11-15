@@ -394,3 +394,72 @@ async fn a_conversation_in_the_scratch_folder_itself_does_not_see_their_folders(
     let change = f.finish(0, 0).await;
     assert_eq!(paths(&change), ["mine.txt"]);
 }
+
+#[tokio::test]
+async fn non_git_turns_split_bodies_into_verified_task_owned_artifacts_and_remain_undoable() {
+    let f = fixture(1).await;
+    let old = "const value = 1;\n".repeat(12_000);
+    std::fs::write(f.folder.path().join("a.ts"), &old).unwrap();
+    std::fs::write(f.folder.path().join("b.ts"), &old).unwrap();
+    f.start(0).await;
+    f.wait_prompted(1).await;
+    let new = format!("{old}export const changed = true;\n");
+    std::fs::write(f.folder.path().join("a.ts"), &new).unwrap();
+    std::fs::write(f.folder.path().join("b.ts"), &new).unwrap();
+    let mut changes = f.finish(0, 0).await;
+    assert!(serde_json::to_vec(&changes).unwrap().len() < 32_768);
+    assert_eq!(changes["files"][0]["additions"], 1);
+    let a = &changes["files"][0];
+    let b = &changes["files"][1];
+    assert!(a["before"].get("hex").is_none());
+    assert_eq!(
+        a["before"]["contentArtifact"],
+        b["before"]["contentArtifact"]
+    );
+    assert_eq!(a["after"]["contentArtifact"], b["after"]["contentArtifact"]);
+    let task = &f.tasks[0];
+    let page = f
+        .core
+        .task_artifacts(&ActorRef::LocalUser, task, None, 100)
+        .await
+        .unwrap();
+    assert!(
+        page.items
+            .iter()
+            .all(|a| a.metadata.media_type != workspace_content::WORKSPACE_CONTENT_TYPE)
+    );
+    workspace_content::hydrate_workspace_contents(&mut changes, |metadata| {
+        let core = &f.core;
+        async move {
+            core.verified_local_artifact(
+                &ActorRef::LocalUser,
+                task,
+                &metadata.artifact_id,
+                &metadata.payload_sha256,
+            )
+            .await
+            .map(|a| a.content)
+            .map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .unwrap();
+    let storage = tempfile::tempdir().unwrap();
+    let store = agent_workspace::review::ReviewStore::open(storage.path().into()).unwrap();
+    store
+        .undo_turn(
+            task.as_str(),
+            "split-content",
+            &changes,
+            &[f.folder.path().to_str().unwrap().into()],
+        )
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(f.folder.path().join("a.ts")).unwrap(),
+        old
+    );
+    assert_eq!(
+        std::fs::read_to_string(f.folder.path().join("b.ts")).unwrap(),
+        old
+    );
+}

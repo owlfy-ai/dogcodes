@@ -51,8 +51,9 @@ pub async fn undo(state: &ReviewContext<'_>, request: UndoRequest) -> Result<(),
     ) {
         return Err("backendText.undoTurnOnly".into());
     }
-    let data =
+    let mut data =
         serde_json::from_slice(&artifact.content).map_err(|_| "backendText.undoSnapshotRead")?;
+    crate::workspace_contents::hydrate(state.core, &request.task_id, &mut data).await?;
     let snapshot = state.core.bootstrap().await?;
     let task = snapshot
         .tasks
