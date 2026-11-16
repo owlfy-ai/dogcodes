@@ -3,6 +3,7 @@ import { InlineError } from "./InlineError";
 import { userFacingError } from "./userFacingError";
 import { FloatingPopover } from "./FloatingPopover";
 import { DropdownChevron } from "./DropdownChevron";
+import { DropdownRefreshIcon } from "./DropdownRefreshIcon";
 import { focusComposerInput } from "./composerFocus";
 import { useEffect, useRef, useState } from "react";
 import type { ActiveRunSummary, CoreClient, ExecutorRef, PermissionCatalog, TaskId } from "@dogcodes/protocol";
@@ -117,9 +118,9 @@ export function PermissionPicker({client,executor,taskId,version,run,disabled,on
       const next=event.key==="Home"?0:event.key==="End"?items.length-1:(index+(event.key==="ArrowUp"?-1:1)+items.length)%items.length;
       items[next]?.focus();
     }}>
-      <div className="permission-menu-header"><span>{t("permissionPicker.title")}</span><button type="button" disabled={catalogLoading||blocked} aria-label={t("activity.refresh")} data-tooltip={t("activity.refresh")} onClick={()=>{force.current=true;setRetry(n=>n+1);}}>↻</button></div>
+      <div className="permission-menu-header"><span>{t("permissionPicker.title")}</span><button type="button" disabled={catalogLoading||blocked} aria-busy={catalogLoading} aria-label={t(catalogLoading?"permissionPicker.loading":"activity.refresh")} data-tooltip={t(catalogLoading?"permissionPicker.loading":"activity.refresh")} onClick={()=>{force.current=true;setRetry(n=>n+1);}}><DropdownRefreshIcon refreshing={catalogLoading} /></button></div>
       {error&&<InlineError className="permission-error" onRetry={()=>{force.current=true;setRetry(n=>n+1);}}>{t(error==="busy"?"permissionPicker.busyError":"permissionPicker.loadError")}</InlineError>}
-      {!catalog?error?null:<LoadingStatus className="permission-empty">{t("permissionPicker.loading")}</LoadingStatus>:!modes.length?<div className="permission-empty">{t("permissionPicker.noModes")}</div>:modes.map(mode=><button type="button" role="menuitemradio" disabled={blocked} aria-checked={selected===mode.id} key={mode.id} onClick={()=>void select(mode.id)}><PermissionIcon providerId={executor.providerId} mode={mode} /><span><strong>{mode.label}</strong>{mode.description&&<small>{mode.description}</small>}</span><span aria-hidden="true">{selected===mode.id?"✓":""}</span></button>)}
+      {catalog&&(!modes.length?<div className="permission-empty">{t("permissionPicker.noModes")}</div>:modes.map(mode=><button type="button" role="menuitemradio" disabled={blocked} aria-checked={selected===mode.id} key={mode.id} onClick={()=>void select(mode.id)}><PermissionIcon providerId={executor.providerId} mode={mode} /><span><strong>{mode.label}</strong>{mode.description&&<small>{mode.description}</small>}</span><span aria-hidden="true">{selected===mode.id?"✓":""}</span></button>))}
       {selectionError&&<InlineError className="permission-error">{t("permissionPicker.notChanged", { reason: selectionError })}</InlineError>}
       <div className="permission-hint">{updating?<LoadingStatus>{t("permissionPicker.applying")}</LoadingStatus>:t(run?"permissionPicker.appliesNow":"permissionPicker.appliesNextTurn")}</div>
     </FloatingPopover>}

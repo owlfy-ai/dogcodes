@@ -1,4 +1,8 @@
 export const agentUiEn = {
+  "cliSupported": "CLI supported",
+  "cliOnlyHint": "For CLI-only agents, install and sign in to the CLI, then scan again. Installing the desktop app alone is not sufficient.",
+  "cliNotDetected": "CLI not detected",
+  "installCli": "Install CLI",
   "notInstalled": "Not installed",
   "installHint": "Install an agent, then scan again to connect it.",
   "demo": "Demo data",
@@ -183,6 +187,7 @@ export const agentUiEn = {
   "updateUnsupported": "Automatic updates are unavailable for this installation. Use its original installation channel.",
   "verifyingVersion": "Detecting and verifying the new version",
   "agentReloaded": "Upgrade complete; agent reloaded",
+  "runtimeCli": "CLI",
   "desktopApp": "Desktop app",
   "officialSource": "Official update source",
   "externalInstall": "External installation",
@@ -202,6 +207,10 @@ export const agentUiEn = {
 export type AgentUiMessages = { [K in keyof typeof agentUiEn]: string };
 
 export const agentUiZh: AgentUiMessages = {
+  "cliSupported": "支持 CLI",
+  "cliOnlyHint": "仅支持 CLI 的 Agent 需单独安装并登录 CLI 后重新检测；仅安装桌面客户端无法使用。",
+  "cliNotDetected": "未检测到 CLI",
+  "installCli": "安装 CLI",
   "notInstalled": "未安装",
   "installHint": "安装后重新检测，即可连接本机 Agent。",
   "demo": "演示数据",
@@ -386,6 +395,7 @@ export const agentUiZh: AgentUiMessages = {
   "updateUnsupported": "暂不支持此安装来源的自动更新，请通过原安装渠道升级",
   "verifyingVersion": "正在重新检测并验证新版本",
   "agentReloaded": "升级完成，已重新加载 Agent",
+  "runtimeCli": "CLI",
   "desktopApp": "桌面应用",
   "officialSource": "官方更新源",
   "externalInstall": "外部安装",

@@ -8,6 +8,8 @@ import { agentDropSlot, moveAgentToSlot, orderAgents, useAgentPreferences } from
 import { AgentIcon, providerLabel } from "./agentPresentation";
 import { AgentUpdateControl, type AgentUpdateActions } from "./agentUpdates";
 import "./agentManagement.css";
+import { AgentCliSupportBadge, AgentRuntimeBadge } from "./AgentRuntimeBadge";
+import { agentRequiresCli } from "./agentRuntimeSource";
 import { quotaShowsLastReading } from "./quotaFallback";
 import { localizedAgentMessage } from "./agentI18n";
 import type { HostAgentInstall } from "./executionTargetClient";
@@ -75,7 +77,7 @@ export function QuotaPanel({
   /** Scans for the given agents again, so ones installed after first launch can be enabled. */
   onDetect?: (providerIds: string[]) => Promise<void>;
   views: QuotaSnapshotView[];
-  installations?: Array<Pick<InstallationSummary, "installationId" | "version"> & Partial<Pick<InstallationSummary, "providerId" | "status" | "diagnostic">>>;
+  installations?: Array<Pick<InstallationSummary, "installationId" | "version"> & Partial<Pick<InstallationSummary, "providerId" | "status" | "diagnostic" | "executable">>>;
   agentUpdates?: AgentUpdateActions;
 }) {
   const { resolvedLanguage: lang } = useI18n();
@@ -166,7 +168,7 @@ export function QuotaPanel({
           {management && !host && <AgentManagementControls providerId={view.providerId} enabled={enabled} order={providerOrder}
             onDragStart={event => startDrag(event, view.providerId)} onDragEnd={endDrag} onMoved={announce} />}
           <AgentIcon providerId={view.providerId} />
-          <div className="agent-card-identity"><h3>{providerLabel(view.providerId, lang)}</h3>
+          <div className="agent-card-identity"><h3><span className="agent-runtime-name">{providerLabel(view.providerId, lang)}</span><AgentRuntimeBadge installation={installation} /></h3>
             {loginRequired ? <span className="agent-card-login-status">{accountIssue!.label}{host
               ? <button type="button" className="agent-login-button" aria-label={t("agentUi.loginAction", { name: loginAgent.name }, lang)} onClick={() => host.login(view.installationId, view.providerId)}>{t("agentUi.login", undefined, lang)}</button>
               : <AgentLogin installationId={view.installationId} name={loginAgent.name} />}</span>
@@ -215,16 +217,17 @@ export function QuotaPanel({
           {detecting && <span className="task-running-spinner" aria-hidden="true" />}{detecting ? t("agentUi.rescanning", undefined, lang) : t("agentUi.rescan", undefined, lang)}
         </button>}
       </header>
+      {uninstalled.some(agent => agentRequiresCli(agent.id)) && <p className="agent-cli-install-hint">{t("agentUi.cliOnlyHint", undefined, lang)}</p>}
       <ul>{uninstalled.map(agent => {
         const install = host?.installs.find(item => item.providerId === agent.id);
         return <li key={agent.id} aria-label={agent.name}>
-        <AgentIcon providerId={agent.id} /><span className="agent-uninstalled-name">{agent.name}</span>
+        <AgentIcon providerId={agent.id} /><span className="agent-uninstalled-name"><span className="agent-runtime-name">{agent.name}</span><AgentCliSupportBadge providerId={agent.id} /></span>
         {host
           ? <button type="button" className="agent-install-link" disabled={install?.status === "installing"} aria-busy={install?.status === "installing"} aria-label={t("agentUi.installOnHost", { name: agent.name }, lang)} onClick={() => host.install(agent.id)}>
               {install?.status === "installing" && <span className="task-running-spinner" aria-hidden="true" />}
               {t(install?.status === "installing" ? "agentUi.installing" : install ? "agentUi.retryInstall" : "agentUi.install", undefined, lang)}
             </button>
-          : <InstallationLink url={agent.installUrl} name={agent.name} className="agent-install-link" errorClassName="agent-install-error" />}
+          : <InstallationLink url={agent.installUrl} name={agent.name} cli={agentRequiresCli(agent.id)} className="agent-install-link" errorClassName="agent-install-error" />}
         {install?.status === "failed" && <span className="agent-install-error" role="alert">{localizedAgentMessage(install.message, "installFailed", lang)}</span>}
       </li>;
       })}</ul>

@@ -1,8 +1,8 @@
-//! Native CLIs downloaded by macOS desktop apps into their application support.
-use super::{DiscoveryContext, Platform, windows::claude_code_payloads};
+//! Agent runtimes bundled with or downloaded by macOS desktop apps.
+use super::{DiscoveryContext, Platform, home_directory, windows::claude_code_payloads};
 use std::path::PathBuf;
 
-/// Candidates are only embedded CLI files, never the desktop GUI executable.
+/// Candidates are agent runtimes; Electron apps require their bundled script in Node mode.
 /// The caller must still run the provider's version and readiness probes.
 #[must_use]
 pub fn macos_desktop_executables(provider: &str, context: &DiscoveryContext) -> Vec<PathBuf> {
@@ -12,13 +12,33 @@ pub fn macos_desktop_executables(provider: &str, context: &DiscoveryContext) -> 
     let Some(home) = context.home_dir.as_deref() else {
         return vec![];
     };
-    match provider {
-        "claude-code" => claude_code_payloads(
+    let mut apps = vec![home.join("Applications")];
+    // A private discovery context must never pick up the machine's real apps.
+    if home_directory().as_deref() == Some(home) {
+        apps.push("/Applications".into());
+    }
+    if provider == "claude-code" {
+        return claude_code_payloads(
             &[home.join("Library/Application Support/Claude/claude-code")],
             "claude.app/Contents/MacOS/claude",
-        ),
-        _ => vec![],
+        );
     }
+    let relative: &[&str] = match provider {
+        "codex" => &[
+            "ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
+            "ChatGPT.app/Contents/Resources/codex",
+            "Codex.app/Contents/Resources/codex-cli/bin/codex",
+            "Codex.app/Contents/Resources/codex",
+        ],
+        "zcode" => &["ZCode.app/Contents/MacOS/ZCode"],
+        "deepseek-harness" => &["DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"],
+        "opencode" => &["OpenCode.app/Contents/Resources/opencode-cli"],
+        _ => &[],
+    };
+    apps.into_iter()
+        .flat_map(|root| relative.iter().map(move |path| root.join(path)))
+        .filter(|path| path.is_file())
+        .collect()
 }
 
 #[cfg(test)]

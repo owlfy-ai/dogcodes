@@ -4,6 +4,11 @@ import type { TranslationDict } from "../types";
 export const zhTW: TranslationDict = {
   ...uiZhTW,
   agentUi: {
+    "cliSupported": "支援 CLI",
+    "cliOnlyHint": "僅支援 CLI 的 Agent 需另行安裝並登入 CLI 後重新偵測；僅安裝桌面用戶端無法使用。",
+    "cliNotDetected": "未偵測到 CLI",
+    "installCli": "安裝 CLI",
+    "runtimeCli": "CLI",
     "notInstalled": "未安裝",
     "installHint": "安裝後重新偵測，即可連線本機 Agent。",
     "demo": "演示資料",

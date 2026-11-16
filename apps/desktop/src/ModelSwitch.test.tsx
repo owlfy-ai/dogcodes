@@ -169,7 +169,8 @@ it.each([false, true])("recovers a replaced installation after delayed registrat
   snapshot.installations = [{ ...snapshot.installations[0], ...executor }];
   await sync();
   await click(element.querySelector('[aria-label="选择模型"]')!);
-  expect(element.querySelector('.model-menu')?.textContent).toContain("正在获取");
+  expect(element.querySelector('.model-menu .model-refresh')?.getAttribute("aria-busy")).toBe("true");
+  expect(element.querySelector('.model-menu .loading-status')).toBeNull();
   registered = [executor];
   await act(async () => { listeners.forEach(callback => callback()); });
   expect(element.querySelector('[aria-label="选择模型"]')?.textContent).toContain("Recovered model");

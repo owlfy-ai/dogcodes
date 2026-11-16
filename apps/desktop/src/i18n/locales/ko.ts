@@ -4,6 +4,11 @@ import type { TranslationDict } from "../types";
 export const ko: TranslationDict = {
   ...uiKo,
   agentUi: {
+    "cliSupported": "CLI 지원",
+    "cliOnlyHint": "CLI만 지원하는 Agent는 CLI를 별도로 설치하고 로그인한 후 다시 검색하세요. 데스크톱 앱만 설치해서는 사용할 수 없습니다.",
+    "cliNotDetected": "CLI를 찾을 수 없음",
+    "installCli": "CLI 설치",
+    "runtimeCli": "CLI",
     "notInstalled": "설치되지 않음",
     "installHint": "설치 후 다시 검색하여 연결하세요.",
     "moreAgentsHint": "설치 후 다시 검색하여 연결하세요.",

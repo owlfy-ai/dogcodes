@@ -1,6 +1,5 @@
 //! Resolve user commands in the login + interactive shell.
-//! `OpenCode` may require its desktop-managed runtime for shared database compatibility.
-//! Claude prefers the verified runtime managed by its desktop app over terminal CLIs.
+//! Prefer verified desktop-managed runtimes, with standalone terminal CLIs as fallback.
 use agent_registry::{DiscoveryContext, ProviderManifest};
 use agent_runtime::{ProcessSpec, run_bounded};
 use std::{
@@ -294,9 +293,19 @@ fn select_existing_executable(
     context: &DiscoveryContext,
     commands: Option<&Commands>,
 ) -> Result<Option<PathBuf>, String> {
+    // Desktop candidates have already failed verification when fallback is needed.
+    // Do not rediscover the rejected runtime through a symlink, user path or PATH.
+    let desktops: std::collections::BTreeSet<_> = desktop_runtime_candidates(manifest, context)
+        .iter()
+        .filter_map(|path| canonical_executable(path))
+        .collect();
+    let standalone =
+        |path: &Path| canonical_executable(path).filter(|path| !desktops.contains(path));
     for name in &manifest.discovery.candidate_executables {
         match commands.and_then(|values| values.get(name)) {
-            Some(Resolution::Executable(path)) => return Ok(Some(path.clone())),
+            Some(Resolution::Executable(path)) if !desktops.contains(path) => {
+                return Ok(Some(path.clone()));
+            }
             Some(Resolution::ShellOverride) => return Err("backendText.shellOverride".into()),
             _ => {}
         }
@@ -310,14 +319,14 @@ fn select_existing_executable(
                     continue;
                 }
                 for path in agent_registry::command_paths(directory, name, context.platform) {
-                    if let Some(path) = canonical_executable(&path) {
+                    if let Some(path) = standalone(&path) {
                         return Ok(Some(path));
                     }
                 }
             }
         }
     }
-    // Some agents (such as ZCode) have a desktop app but no terminal command.
+    // Check conventional standalone paths after terminal command resolution.
     if let Some(home) = &context.home_dir {
         for relative in manifest
             .discovery
@@ -326,7 +335,7 @@ fn select_existing_executable(
             .into_iter()
             .flatten()
         {
-            if let Some(path) = canonical_executable(&home.join(relative)) {
+            if let Some(path) = standalone(&home.join(relative)) {
                 return Ok(Some(path));
             }
         }
@@ -338,7 +347,7 @@ fn select_existing_executable(
         .into_iter()
         .flatten()
     {
-        if let Some(path) = canonical_executable(path) {
+        if let Some(path) = standalone(path) {
             return Ok(Some(path));
         }
     }
@@ -349,12 +358,7 @@ fn select_existing_executable(
             context,
         ))
     {
-        // Claude's desktop candidates are version-checked before shell lookup.
-        // Reaching here means none was usable; do not select a rejected file again.
-        if manifest.id.as_str() == "claude-code" {
-            continue;
-        }
-        if let Some(path) = canonical_executable(&path) {
+        if let Some(path) = standalone(&path) {
             return Ok(Some(path));
         }
     }
@@ -428,9 +432,7 @@ fn cached_deepseek(roots: &[PathBuf], platform: agent_registry::Platform) -> Opt
     candidates.into_iter().next().map(|(_, path)| path)
 }
 
-// OpenCode 2 desktop migrates the shared database beyond the standalone 1.x
-// CLI schema. Only replace the standard home installation, never a custom shell
-// command/wrapper. Other providers retain strict terminal-command precedence.
+// Desktop-managed OpenCode caches supplement the app-bundled runtime.
 fn opencode_desktop_candidates(
     platform: agent_registry::Platform,
     home: &Path,
@@ -487,79 +489,42 @@ fn opencode_desktop_candidates(
 
 pub(crate) use agent_management::user_data_dir;
 
-/// The official 1.x installs the desktop runtime may supersede; never a custom wrapper.
-fn standard_opencode(platform: agent_registry::Platform, home: &Path, path: &Path) -> bool {
-    match platform {
-        agent_registry::Platform::Macos => {
-            canonical_executable(&home.join(".opencode/bin/opencode")).as_deref() == Some(path)
-        }
-        agent_registry::Platform::Windows => {
-            let npm_shim = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.eq_ignore_ascii_case("opencode.cmd"))
-                && path
-                    .parent()
-                    .is_some_and(|dir| dir.join("node_modules/opencode-ai/package.json").is_file());
-            npm_shim
-                || canonical_executable(&home.join(".opencode/bin/opencode.exe")).as_deref()
-                    == Some(path)
-        }
-        agent_registry::Platform::Linux => false,
-    }
-}
-
-async fn compatible_opencode(
+fn desktop_runtime_candidates(
     manifest: &ProviderManifest,
     context: &DiscoveryContext,
-    selected: Option<PathBuf>,
-) -> Option<PathBuf> {
-    if manifest.id.as_str() != "opencode" {
-        return selected;
+) -> Vec<PathBuf> {
+    let provider = manifest.id.as_str();
+    if !matches!(
+        provider,
+        "claude-code" | "codex" | "zcode" | "deepseek-harness" | "opencode"
+    ) {
+        return vec![];
     }
-    let Some(home) = context.home_dir.as_deref() else {
-        return selected;
-    };
-    if let Some(path) = &selected {
-        if !standard_opencode(context.platform, home, path) {
-            return selected;
-        }
-        let Ok(report) = agent_registry::probe_installation(manifest, path.clone()).await else {
-            return selected;
-        };
-        if report.version.is_none_or(|version| version.major != 1) {
-            return selected;
-        }
-    }
-    for (version, path) in opencode_desktop_candidates(context.platform, home) {
-        if let Ok(report) = agent_registry::probe_installation(manifest, path.clone()).await
-            && report.version.as_ref() == Some(&version)
-            && report.status == agent_registry::InstallationStatus::Installed
-        {
-            return Some(path);
-        }
-    }
-    selected
-}
-
-async fn preferred_claude_desktop(
-    manifest: &ProviderManifest,
-    context: &DiscoveryContext,
-) -> Option<PathBuf> {
-    if manifest.id.as_str() != "claude-code" {
-        return None;
-    }
-    for path in agent_registry::windows_desktop_executables("claude-code", context)
-        .into_iter()
-        .chain(agent_registry::macos_desktop_executables(
-            "claude-code",
-            context,
-        ))
+    let mut candidates = agent_registry::windows_desktop_executables(provider, context);
+    candidates.extend(agent_registry::macos_desktop_executables(provider, context));
+    if provider == "opencode"
+        && let Some(home) = &context.home_dir
     {
+        candidates.extend(
+            opencode_desktop_candidates(context.platform, home)
+                .into_iter()
+                .map(|(_, path)| path),
+        );
+    }
+    candidates
+}
+
+async fn preferred_desktop_runtime(
+    manifest: &ProviderManifest,
+    context: &DiscoveryContext,
+) -> Option<PathBuf> {
+    let mut seen = std::collections::BTreeSet::new();
+    for path in desktop_runtime_candidates(manifest, context) {
         let Some(path) = canonical_executable(&path) else {
             continue;
         };
-        if let Ok(report) = agent_registry::probe_installation(manifest, path.clone()).await
+        if seen.insert(path.clone())
+            && let Ok(report) = agent_registry::probe_installation(manifest, path.clone()).await
             && report.status == agent_registry::InstallationStatus::Installed
             && report.version.is_some()
         {
@@ -575,7 +540,7 @@ pub(crate) async fn preferred_executable(
 ) -> Result<Option<PathBuf>, String> {
     // This return also prevents a DogCodes-managed standalone CLI from
     // replacing a working desktop runtime, and needs no terminal shell startup.
-    if let Some(desktop) = preferred_claude_desktop(manifest, context).await {
+    if let Some(desktop) = preferred_desktop_runtime(manifest, context).await {
         return Ok(Some(desktop));
     }
     let commands = shell_commands(context).await;
@@ -583,8 +548,7 @@ pub(crate) async fn preferred_executable(
     if commands.is_none() {
         return Err("backendText.terminalPathUnreadable".into());
     }
-    let selected = select_executable(manifest, context, commands.as_ref())?;
-    Ok(compatible_opencode(manifest, context, selected).await)
+    select_executable(manifest, context, commands.as_ref())
 }
 
 #[cfg(test)]
@@ -593,7 +557,7 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn a_verified_standalone_cli_replaces_only_its_desktop_fallback() {
+    fn rejected_desktop_runtime_falls_back_to_managed_or_custom_cli() {
         let home = tempfile::tempdir().unwrap();
         let context = DiscoveryContext {
             platform: agent_registry::Platform::Windows,
@@ -625,10 +589,7 @@ mod tests {
                 .unwrap();
             }
             let original = original.canonicalize().unwrap();
-            assert_eq!(
-                select_executable(&manifest, &context, None).unwrap(),
-                Some(original.clone())
-            );
+            assert_eq!(select_executable(&manifest, &context, None).unwrap(), None);
             let standalone =
                 crate::agent_updates::managed_cli::fixtures::verified_fixture(&context, provider)
                     .canonicalize()
@@ -726,7 +687,7 @@ mod tests {
     }
     #[tokio::test]
     #[cfg(unix)]
-    async fn opencode_shared_database_uses_compatible_desktop_runtime() {
+    async fn opencode_desktop_cache_precedes_modern_cli_and_rejects_foreign_binaries() {
         let dir = tempfile::tempdir().unwrap();
         let manifest = ProviderManifest::parse_toml(include_str!(
             "../../../../drivers/manifests/opencode.toml"
@@ -737,44 +698,132 @@ mod tests {
             path_entries: vec![],
             home_dir: Some(dir.path().into()),
         };
-        let old = dir.path().join(".opencode/bin/opencode");
-        let new = dir
+        let cli = dir.path().join(".opencode/bin/opencode");
+        let desktop = dir
             .path()
-            .join("Library/Application Support/ai.opencode.desktop/cli/2.0.18/opencode-cli");
-        for (path, version) in [(&old, "1.15.10"), (&new, "2.0.18")] {
+            .join("Library/Application Support/ai.opencode.desktop/cli/2.2.6/opencode-cli");
+        for (path, version) in [(&cli, "2.2.5"), (&desktop, "2.2.6")] {
             executable(path);
             std::fs::write(path, format!("#!/bin/sh\necho 'opencode v{version}'\n")).unwrap();
         }
-        let old = std::fs::canonicalize(old).unwrap();
-        let new = std::fs::canonicalize(new).unwrap();
         assert_eq!(
-            compatible_opencode(&manifest, &context, Some(old.clone())).await,
-            Some(new.clone())
+            preferred_executable(&manifest, &context).await.unwrap(),
+            Some(desktop.canonicalize().unwrap())
         );
-        assert_eq!(
-            compatible_opencode(&manifest, &context, None).await,
-            Some(new.clone())
+        std::fs::write(&desktop, "#!/bin/sh\necho 'unrelated v2.2.6'\n").unwrap();
+        assert!(
+            preferred_desktop_runtime(&manifest, &context)
+                .await
+                .is_none()
         );
-        let custom = dir.path().join("custom-opencode");
-        executable(&custom);
+        let commands = Commands::from([("opencode".into(), Resolution::Executable(cli.clone()))]);
         assert_eq!(
-            compatible_opencode(&manifest, &context, Some(custom.clone())).await,
-            Some(custom)
-        );
-        std::fs::write(&new, "#!/bin/sh\necho 'unrelated v2.0.18'\n").unwrap();
-        assert_eq!(
-            compatible_opencode(&manifest, &context, Some(old.clone())).await,
-            Some(old.clone())
-        );
-        std::fs::write(&old, "#!/bin/sh\necho 'opencode v2.1.0'\n").unwrap();
-        assert_eq!(
-            compatible_opencode(&manifest, &context, Some(old.clone())).await,
-            Some(old)
+            select_executable(&manifest, &context, Some(&commands)).unwrap(),
+            Some(cli)
         );
     }
 
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn all_existing_desktop_adapters_precede_terminal_and_managed_cli() {
+        for (source, mac, windows, output) in [
+            (
+                include_str!("../../../../drivers/manifests/codex.toml"),
+                "Applications/Codex.app/Contents/Resources/codex",
+                "AppData/Local/OpenAI/Codex/bin/hash/codex.exe",
+                "codex-cli 0.60.0",
+            ),
+            (
+                include_str!("../../../../drivers/manifests/zcode.toml"),
+                "Applications/ZCode.app/Contents/MacOS/ZCode",
+                "AppData/Local/Programs/ZCode/ZCode.exe",
+                "zcode-cli 0.16.9",
+            ),
+            (
+                include_str!("../../../../drivers/manifests/deepseek-harness.toml"),
+                "Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh",
+                "AppData/Local/Programs/DeepSeek Harness/resources/runtime/cli/bin/dsh.cmd",
+                "dsh 0.2.2",
+            ),
+            (
+                include_str!("../../../../drivers/manifests/opencode.toml"),
+                "Applications/OpenCode.app/Contents/Resources/opencode-cli",
+                "AppData/Local/Programs/ai.opencode.desktop/resources/opencode-cli.exe",
+                "opencode 2.2.6",
+            ),
+        ] {
+            for (platform, relative) in [(Platform::Macos, mac), (Platform::Windows, windows)] {
+                let home = tempfile::tempdir().unwrap();
+                let context = DiscoveryContext {
+                    platform,
+                    path_entries: vec![],
+                    home_dir: Some(home.path().into()),
+                };
+                let mut manifest = ProviderManifest::parse_toml(source).unwrap();
+                // Fixtures are shell scripts, not Electron binaries. Real runtime probes retain the manifest environment.
+                manifest.discovery.env_overrides.clear();
+                let desktop = home.path().join(relative);
+                executable(&desktop);
+                std::fs::write(&desktop, format!("#!/bin/sh\nprintf '%s\\n' '{output}'\n"))
+                    .unwrap();
+                if platform == Platform::Windows {
+                    let extra = match manifest.id.as_str() {
+                        "zcode" => Some("AppData/Local/Programs/ZCode/resources/glm/zcode.cjs"),
+                        "deepseek-harness" => {
+                            Some("AppData/Local/Programs/DeepSeek Harness/DeepSeek Harness.exe")
+                        }
+                        "opencode" => {
+                            Some("AppData/Local/Programs/ai.opencode.desktop/OpenCode.exe")
+                        }
+                        _ => None,
+                    };
+                    if let Some(extra) = extra {
+                        executable(&home.path().join(extra));
+                    }
+                }
+                let cli = home.path().join("bin/custom-cli");
+                executable(&cli);
+                let _managed =
+                    matches!(manifest.id.as_str(), "codex" | "deepseek-harness").then(|| {
+                        crate::agent_updates::managed_cli::fixtures::verified_fixture(
+                            &context,
+                            manifest.id.as_str(),
+                        )
+                    });
+                assert_eq!(
+                    preferred_executable(&manifest, &context).await.unwrap(),
+                    Some(desktop.canonicalize().unwrap()),
+                    "{} {platform:?}",
+                    manifest.id
+                );
+                std::fs::write(&desktop, "#!/bin/sh\nexit 1\n").unwrap();
+                assert!(
+                    preferred_desktop_runtime(&manifest, &context)
+                        .await
+                        .is_none()
+                );
+                let desktop_alias = Commands::from([(
+                    manifest.discovery.candidate_executables[0].clone(),
+                    Resolution::Executable(desktop.canonicalize().unwrap()),
+                )]);
+                assert_ne!(
+                    select_executable(&manifest, &context, Some(&desktop_alias)).unwrap(),
+                    Some(desktop.canonicalize().unwrap())
+                );
+                let commands = Commands::from([(
+                    manifest.discovery.candidate_executables[0].clone(),
+                    Resolution::Executable(cli.clone()),
+                )]);
+                assert_eq!(
+                    select_executable(&manifest, &context, Some(&commands)).unwrap(),
+                    Some(cli)
+                );
+            }
+        }
+    }
+
     #[test]
-    fn windows_opencode_desktop_runtime_and_standard_npm_install_are_recognized() {
+    fn windows_opencode_bundled_and_cached_runtimes_are_recognized() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let bundled = home.join("AppData/Local/Programs/ai.opencode.desktop/resources");
@@ -808,16 +857,36 @@ mod tests {
             ]
         );
         assert!(opencode_desktop_candidates(Platform::Linux, home).is_empty());
+    }
 
-        let npm = home.join("npm/opencode.cmd");
-        executable(&npm);
-        assert!(!standard_opencode(Platform::Windows, home, &npm));
-        executable(&home.join("npm/node_modules/opencode-ai/package.json"));
-        assert!(standard_opencode(Platform::Windows, home, &npm));
-        assert!(!standard_opencode(Platform::Macos, home, &npm));
-        let custom = home.join("bin/opencode.cmd");
-        executable(&custom);
-        assert!(!standard_opencode(Platform::Windows, home, &custom));
+    #[tokio::test]
+    #[ignore = "checks installed desktop adapters and CLI fallback; no model calls"]
+    async fn current_desktop_adapters_are_preferred() {
+        let context = DiscoveryContext::from_current_process();
+        for source in [
+            include_str!("../../../../drivers/manifests/codex.toml"),
+            include_str!("../../../../drivers/manifests/claude-code.toml"),
+            include_str!("../../../../drivers/manifests/zcode.toml"),
+            include_str!("../../../../drivers/manifests/deepseek-harness.toml"),
+            include_str!("../../../../drivers/manifests/opencode.toml"),
+        ] {
+            let manifest = ProviderManifest::parse_toml(source).unwrap();
+            let desktop = preferred_desktop_runtime(&manifest, &context).await;
+            let selected = preferred_executable(&manifest, &context)
+                .await
+                .unwrap()
+                .unwrap();
+            if let Some(desktop) = desktop {
+                assert_eq!(selected, desktop);
+                println!("{}: desktop {}", manifest.id, selected.display());
+            } else {
+                println!("{}: CLI fallback {}", manifest.id, selected.display());
+            }
+            let report = agent_registry::probe_installation(&manifest, selected)
+                .await
+                .unwrap();
+            assert_eq!(report.status, agent_registry::InstallationStatus::Installed);
+        }
     }
 
     #[tokio::test]
@@ -947,7 +1016,7 @@ mod tests {
             // A version-looking file with another product marker is not Claude.
             std::fs::write(&old, "#!/bin/sh\nprintf '2.1.325 (Other Agent)\\n'\n").unwrap();
             assert!(
-                preferred_claude_desktop(&manifest, &context)
+                preferred_desktop_runtime(&manifest, &context)
                     .await
                     .is_none()
             );
@@ -1093,9 +1162,9 @@ mod tests {
             Some(std::fs::canonicalize(old).unwrap())
         );
     }
-    #[test]
+    #[tokio::test]
     #[cfg(unix)]
-    fn codex_desktop_remains_discoverable_after_bundle_layout_upgrade() {
+    async fn codex_desktop_remains_discoverable_after_bundle_layout_upgrade() {
         for app in ["ChatGPT.app", "Codex.app"] {
             for user_install in [false, true] {
                 let dir = tempfile::tempdir().unwrap();
@@ -1122,15 +1191,25 @@ mod tests {
                 let resources = root.join(format!("Applications/{app}/Contents/Resources"));
                 let legacy = resources.join("codex");
                 executable(&legacy);
+                std::fs::write(&legacy, "#!/bin/sh\necho codex-cli 0.60.0\n").unwrap();
                 assert_eq!(
-                    select_executable(&manifest, &context, Some(&commands)).unwrap(),
+                    preferred_desktop_runtime(&manifest, &context)
+                        .await
+                        .or_else(
+                            || select_executable(&manifest, &context, Some(&commands)).unwrap()
+                        ),
                     Some(std::fs::canonicalize(&legacy).unwrap())
                 );
                 std::fs::remove_file(legacy).unwrap();
                 let current = resources.join("codex-cli/bin/codex");
                 executable(&current);
+                std::fs::write(&current, "#!/bin/sh\necho codex-cli 0.60.0\n").unwrap();
                 assert_eq!(
-                    select_executable(&manifest, &context, Some(&commands)).unwrap(),
+                    preferred_desktop_runtime(&manifest, &context)
+                        .await
+                        .or_else(
+                            || select_executable(&manifest, &context, Some(&commands)).unwrap()
+                        ),
                     Some(std::fs::canonicalize(&current).unwrap())
                 );
             }

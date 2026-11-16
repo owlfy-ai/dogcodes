@@ -4,6 +4,11 @@ import type { TranslationDict } from "../types";
 export const ru: TranslationDict = {
   ...uiRu,
   agentUi: {
+    "cliSupported": "Поддержка CLI",
+    "cliOnlyHint": "Для агентов, поддерживающих только CLI, отдельно установите CLI, войдите в аккаунт и повторите поиск. Одного настольного приложения недостаточно.",
+    "cliNotDetected": "CLI не обнаружен",
+    "installCli": "Установить CLI",
+    "runtimeCli": "CLI",
     "notInstalled": "Не установлен",
     "installHint": "Установите агент и повторите поиск.",
     "moreAgentsHint": "Установите агент и повторите поиск.",

@@ -1,4 +1,4 @@
-import { LoadingStatus } from "./LoadingStatus";
+import { DropdownRefreshIcon } from "./DropdownRefreshIcon";
 import { FloatingPopover } from "./FloatingPopover";
 import { DropdownChevron } from "./DropdownChevron";
 import { focusComposerInput } from "./composerFocus";
@@ -60,13 +60,13 @@ export function ModelPicker({ catalog, model, thinking, loading, refreshing = fa
     </button>}
     {open && <FloatingPopover className="model-menu" role="dialog" aria-label={t(open === "model" ? "modelPicker.model" : "modelPicker.effort.title")}>
       <header><span>{t(open === "model" ? "modelPicker.model" : "modelPicker.effort.title")}</span>
-        <button type="button" className="model-refresh" aria-label={t(open === "model" ? "modelPicker.refreshModels" : "modelPicker.refreshEfforts")}
-          data-tooltip={t(refreshDisabled ? "modelPicker.refreshDisabled" : "modelPicker.refreshTooltip")}
+        <button type="button" className="model-refresh" aria-label={t(loading || refreshing ? "modelPicker.loading" : open === "model" ? "modelPicker.refreshModels" : "modelPicker.refreshEfforts")}
+          aria-busy={loading || refreshing}
+          data-tooltip={t(loading || refreshing ? "modelPicker.loading" : refreshDisabled ? "modelPicker.refreshDisabled" : "modelPicker.refreshTooltip")}
           disabled={loading || refreshing || refreshDisabled} onClick={onRetry}>
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 6a5 5 0 0 0-8.5-2L2 6m0-4v4h4m-3 4a5 5 0 0 0 8.5 2l2.5-2m0 4v-4h-4" /></svg>
+          <DropdownRefreshIcon refreshing={loading || refreshing} />
         </button>
       </header>
-      {(loading || refreshing) && <LoadingStatus className="model-message">{t("modelPicker.loading")}</LoadingStatus>}
       {error && <p className="model-message" role="status">{t(catalog.models.length ? "modelPicker.refreshFailed" : "modelPicker.loadFailed")}</p>}
       {!loading && !refreshing && !error && (missingModel || missingThinking) && <p className="model-message" role="status">
         {t(missingModel ? "modelPicker.modelMissing" : "modelPicker.effortMissing")}

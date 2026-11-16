@@ -4,6 +4,11 @@ import type { TranslationDict } from "../types";
 export const fr: TranslationDict = {
   ...uiFr,
   agentUi: {
+    "cliSupported": "CLI prise en charge",
+    "cliOnlyHint": "Pour les agents disponibles uniquement via CLI, installez la CLI séparément, connectez-vous et relancez la détection. L’application de bureau seule ne suffit pas.",
+    "cliNotDetected": "CLI non détectée",
+    "installCli": "Installer la CLI",
+    "runtimeCli": "CLI",
     "notInstalled": "Non installé",
     "installHint": "Installez un agent, puis relancez la détection.",
     "moreAgentsHint": "Installez un agent, puis relancez la détection.",

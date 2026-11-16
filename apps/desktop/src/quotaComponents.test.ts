@@ -19,6 +19,34 @@ const quota: NonNullable<QuotaSnapshotView["quota"]> = {
 };
 
 describe("quota components", () => {
+  it("identifies CLI-only agents in the uninstalled management list", () => {
+    const html = renderToStaticMarkup(createElement(components.QuotaPanel, { management: true, views: [], installations: [] }));
+    expect(html.match(/data-runtime-support="cli"/g)).toHaveLength(7);
+    expect(html).toContain("仅安装桌面客户端无法使用");
+    for (const name of ["Cursor", "Antigravity", "CodeBuddy", "Kimi Code", "Grok Build", "Pi", "Kiro"]) {
+      const row = html.slice(html.indexOf(`<li aria-label="${name}"`)).split("</li>")[0];
+      expect(row).toContain('data-runtime-support="cli"');
+      expect(row).toContain("安装 CLI");
+    }
+    const desktopRow = html.slice(html.indexOf('<li aria-label="DeepSeek Harness"')).split("</li>")[0];
+    expect(desktopRow).not.toContain('data-runtime-support="cli"');
+  });
+
+  it("labels desktop and CLI executables in local and host management cards", () => {
+    for (const [executable, source, label] of [
+      ["/Applications/Codex.app/Contents/Resources/codex", "desktop", "桌面应用"],
+      ["/usr/local/bin/codex", "cli", "CLI"],
+    ]) {
+      const html = renderToStaticMarkup(createElement(components.QuotaPanel, {
+        management: true, views: [], installations: [{ providerId: "codex", installationId: "ins_runtime", executable, status: "ready", version: "1.0.0" }],
+      }));
+      expect(html).toContain(`data-runtime-source="${source}"`);
+      expect(html).toContain(`class="agent-runtime-name">Codex</span>`);
+      expect(html).toContain(`>${label}</span>`);
+      expect(html).toContain(executable);
+    }
+  });
+
   it("keeps the inline ring visible when quota has not arrived or has no percentage", () => {
     for (const reading of [null, quota]) {
       const html = renderToStaticMarkup(createElement(components.QuotaRing, { inline: true, providerId: "codex", quota: reading }));

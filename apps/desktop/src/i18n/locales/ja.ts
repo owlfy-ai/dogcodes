@@ -4,6 +4,11 @@ import type { TranslationDict } from "../types";
 export const ja: TranslationDict = {
   ...uiJa,
   agentUi: {
+    "cliSupported": "CLI 対応",
+    "cliOnlyHint": "CLI のみに対応する Agent は、CLI を別途インストールしてログイン後、再検出してください。デスクトップアプリだけでは利用できません。",
+    "cliNotDetected": "CLI が見つかりません",
+    "installCli": "CLI をインストール",
+    "runtimeCli": "CLI",
     "notInstalled": "未インストール",
     "installHint": "インストール後、再検出して接続してください。",
     "moreAgentsHint": "インストール後、再検出して接続してください。",
