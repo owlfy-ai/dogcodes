@@ -9,7 +9,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen:vi.fn(async (name:string, callb
 import { ComputerUseNotice, ComputerUseNoticeView } from "./ComputerUseNotice";
 const idle:ComputerUseActivity={operationId:null,taskId:null,tool:null,mode:"idle",preparing:false,foregroundPossible:false};
 
-it("acknowledges the painted foreground glow and shows an Escape hint without controls", async () => {
+it("acknowledges the input notice and preserves Escape and disconnected feedback", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.setItem("dogcodes.ui.language","en");
   const frames=new Map<number,FrameRequestCallback>(); let id=0;
@@ -36,24 +36,27 @@ it("acknowledges the painted foreground glow and shows an Escape hint without co
     await act(async()=>mocks.listeners.get("computer-use-disconnected")!({payload:null}));
     expect(container.textContent).toContain("Input state is unknown");
     await act(async()=>mocks.listeners.get("computer-use-activity")!({payload:idle}));
-    expect(container.querySelector("aside")!.getAttribute("aria-hidden")).toBe("true");
+    expect(container.querySelector("aside")).toBeNull();
     expect(container.querySelector("button")).toBeNull();
   } finally { await act(async()=>root.unmount()); localStorage.clear();vi.unstubAllGlobals(); }
 });
 
-it("uses orange for possible foreground input and green without Escape for background work", async()=>{
+it("keeps the input notice but removes all overlay content for nonintrusive modes", async()=>{
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true);
   const container=document.createElement("div");const root=createRoot(container);
   try {
     await act(async()=>root.render(<ComputerUseNoticeView activity={{...idle,mode:"foreground",foregroundPossible:true}}/>));
     expect(container.textContent).toContain("May use your keyboard and mouse");
-    expect(container.querySelector("aside")!.classList.contains("computer-glow-foreground")).toBe(true);
-    await act(async()=>root.render(<ComputerUseNoticeView activity={{...idle,mode:"background"}}/>));
-    expect(container.textContent).toContain("Verifying your computer in the background");
-    expect(container.querySelector("aside")!.classList.contains("computer-glow-foreground")).toBe(false);
-    expect(container.querySelector("kbd")).toBeNull();
-    expect(container.querySelector(".computer-glow-escape")).toBeNull();
-    expect(container.querySelector("button")).toBeNull();
+    expect(container.querySelector(".computer-glow-edge")).not.toBeNull();
+    expect(container.querySelector(".computer-glow-escape")).not.toBeNull();
+    for (const mode of ["background", "observing", "idle"] as const) {
+      await act(async()=>root.render(<ComputerUseNoticeView activity={{...idle,mode}}/>));
+      expect(container.textContent).toBe("");
+      expect(container.querySelector("aside, .computer-glow-edge, .computer-glow-caption")).toBeNull();
+    }
+    await act(async()=>root.render(<ComputerUseNoticeView activity={{...idle,mode:"foreground"}}/>));
+    expect(container.textContent).toContain("Please pause input");
+    expect(container.querySelector(".computer-glow-edge")).not.toBeNull();
   } finally {await act(async()=>root.unmount());vi.unstubAllGlobals();}
 });
 

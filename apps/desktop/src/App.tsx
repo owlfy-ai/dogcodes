@@ -108,7 +108,7 @@ import { RequestEpoch, changeSelection } from "./requestEpoch";
 import { formatResetTime, formatProviderBalance, quotaScopeLabel, quotaPlanLabel, quotaNativeResetLabel, nativeResetDisplay, antigravityQuotaForModel, ringQuotaWindow, quotaColor, quotaIsExhausted, quotaIsStale, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
 import { createQuotaRefresh, type QuotaRefreshProgress } from "./quotaRefresh";
 import { useLoadingVisibility } from "./useLoadingVisibility";
-import { quotaShowsLastReading } from "./quotaFallback";
+import { accountQuotaReading, quotaShowsLastReading } from "./quotaFallback";
 import { currentAgentExecutor, readyAgentInstallations, installationsOnTarget } from "./agentOptions";
 
 
@@ -464,8 +464,11 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const switchBusy = useRef(false);
   const [nextExecutors, setNextExecutors] = useState<Record<string, ExecutorRef>>({});
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
-  const [quotaViews, setQuotaViews] = useState<QuotaSnapshotView[]>([]);
-  const [quotaTaskId, setQuotaTaskId] = useState<TaskId | null>(null);
+  const [quotaState, setQuotaState] = useState<{ taskId: TaskId | null; views: QuotaSnapshotView[] }>({ taskId: null, views: [] });
+  // Keep account readings visible on the first render after a switch, but never
+  // display the previous conversation's context or token usage in the new one.
+  const quotaViews = useMemo(() => quotaState.taskId === selectedTaskId
+    ? quotaState.views : quotaState.views.map(accountQuotaReading), [quotaState, selectedTaskId]);
   const agentUpdates = useAgentUpdates(client, installationsOnTarget(snapshot?.installations ?? [], null), setSnapshot);
   const [approving, setApproving] = useState<string | null>(null);
   const [approvalError, setApprovalError] = useState<{ taskId: TaskId; approval: PendingApproval; message: string } | null>(null);
@@ -676,14 +679,14 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   // the ring and panel honest without hammering the drivers.
   useEffect(() => {
     let active = true;
-    setQuotaViews([]);
-    setQuotaTaskId(selectedTaskId);
     setQuotaRefreshProgress(null);
     const reader = createQuotaRefresh(client, selectedTaskId, view => {
       if (selectedTaskIdRef.current !== selectedTaskId) return;
-      setQuotaViews(previous => previous.some(old => old.installationId === view.installationId)
-        ? previous.map(old => old.installationId === view.installationId ? view : old)
-        : [...previous, view]);
+      setQuotaState(previous => {
+        const views = previous.taskId === selectedTaskId ? previous.views : previous.views.map(accountQuotaReading);
+        const matches = (old: QuotaSnapshotView) => old.providerId === view.providerId && old.installationId === view.installationId;
+        return { taskId: selectedTaskId, views: views.some(matches) ? views.map(old => matches(old) ? view : old) : [...views, view] };
+      });
     }, setQuotaRefreshProgress);
     refreshQuotasNow.current = () => { void reader.refreshNow().then(() => { if (active) void refresh(); }); };
     refreshSessionUsage.current = (id, provider) => { void reader.refreshInstallation(id, provider); };
@@ -967,7 +970,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     onRetry={modelCatalog.refresh} onOpen={modelCatalog.check} refreshDisabled={!!selectedTask.activePrimaryRun} /> : null;
 
   const selectedQuota = useMemo(() => {
-    if (!selectedTask || quotaTaskId !== selectedTaskId) return null;
+    if (!selectedTask) return null;
     const executor = selectedTask.preferredExecutor;
     const quota = (
       quotaViews.find(
@@ -977,7 +980,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       )?.quota ?? null
     );
     return executor.providerId === "antigravity" ? antigravityQuotaForModel(quota, activeModel) : quota;
-  }, [quotaViews, quotaTaskId, selectedTaskId, selectedTask, activeModel]);
+  }, [quotaViews, selectedTask, activeModel]);
   const antigravityModels = useMemo(() => {
     const models: Record<string, string | null> = {};
     const taskId = selectedTask?.taskId;

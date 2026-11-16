@@ -130,7 +130,7 @@ it("does not fold a single call or runs from different turns", async () => {
   expect(titles()).toEqual(["npm test"]);
 });
 
-it("keeps running and approval-waiting calls on screen and folds failed ones", async () => {
+it("keeps approval-waiting calls on screen and folds running and failed ones", async () => {
   await render([
     tool("a", "ls"),
     tool("b", "rm -rf build", "awaiting_approval"),
@@ -151,9 +151,54 @@ it("keeps running and approval-waiting calls on screen and folds failed ones", a
 });
 
 it("shows no fold when every call must stay visible", async () => {
-  await render([tool("a", "rm -rf build", "awaiting_approval"), tool("b", "npm test", "running")]);
+  await render([tool("a", "rm -rf build", "awaiting_approval"), tool("b", "npm test", "pending_approval")]);
   expect(toggles()).toHaveLength(0);
   expect(titles()).toEqual(["rm -rf build", "npm test"]);
+});
+
+it("folds parallel calls immediately and keeps the same group while results stream in", async () => {
+  const a = tool("a", "lsof -a -p 79338 -d cwd -Fn", "running");
+  const b = item("b", "activity", JSON.stringify({ type: "tool", name: "Read", status: "in_progress", input: { file_path: "electron/main.ts" } }));
+  const c = tool("c", "npm run build", "started");
+  const complete = (call: TimelineItem) => ({ ...call, text: JSON.stringify({ ...JSON.parse(call.text), status: "completed" }) });
+  await render([a, b]);
+  expect(toggles()).toHaveLength(1);
+  const toggle = toggles()[0];
+  expect(toggle.querySelector(".tool-run-count")?.textContent).toBe("2 次工具调用");
+  expect(titles()).toEqual([]);
+  expect(host.querySelector(".tool-run-list")).toBeNull();
+  for (const calls of [[a, b, c], [a, complete(b), complete(c)], [complete(a), complete(b), complete(c)]]) {
+    await render(calls);
+    expect(toggles()).toEqual([toggle]);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.querySelector(".tool-run-count")?.textContent).toBe("3 次工具调用");
+    expect(titles()).toEqual([]);
+    expect(host.querySelector(".tool-run-list")).toBeNull();
+    expect(toggle.classList.contains("activity-running")).toBe(calls.some(call => JSON.parse(call.text).status !== "completed"));
+  }
+  await act(async () => toggle.click());
+  expect(titles()).toEqual(["lsof -a -p 79338 -d cwd -Fn", "electron/main.ts", "npm run build"]);
+});
+
+it("folds legacy tool.started entries before they complete", async () => {
+  await render([item("a", "tool.started", "read a"), item("b", "tool.started", "read b")]);
+  expect(toggles()).toHaveLength(1);
+  expect(toggles()[0].classList.contains("activity-running")).toBe(true);
+  expect(toggles()[0].querySelector(".tool-run-count")?.textContent).toBe("2 次工具调用");
+  expect(host.querySelector(".tool-run-list")).toBeNull();
+  await act(async () => toggles()[0].click());
+  expect(host.querySelectorAll('.tool-run-list [data-kind="tool.started"]')).toHaveLength(2);
+});
+
+it("keeps the latest approval visible when other calls are folded", async () => {
+  await render([tool("a", "pwd", "running"), tool("b", "npm run build", "pending_approval")]);
+  expect(toggles()).toHaveLength(1);
+  expect(toggles()[0].querySelector(".activity-title")?.textContent).toBe("pwd");
+  expect(titles()).toEqual(["npm run build"]);
+  expect(host.querySelector(".tool-run-list .conversation-activity")).not.toBeNull();
+  await render([tool("a", "pwd", "running"), tool("b", "npm run build", "completed")]);
+  expect(host.querySelector(".tool-run-list")).toBeNull();
+  expect(toggles()[0].classList.contains("activity-running")).toBe(true);
 });
 
 it("folds a failed call with the rest of its run", async () => {

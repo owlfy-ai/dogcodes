@@ -399,16 +399,15 @@ export function foldableStep(item: TimelineItem) {
   return !!a && (a.type === "thought" || isSubagent(a));
 }
 const approvalStates = ["awaiting_approval", "waiting_approval", "needs_approval", "pending_approval"];
-/** Calls that stay on screen while their run is folded. */
-// Failed calls fold like the rest; the run's row counts them in red.
-export function keepCallVisible(item: TimelineItem, active: boolean) {
-  if (item.kind.startsWith("tool.")) return active && item.kind === "tool.started";
-  if (item.kind === "computer_use" || activityOf(item)?.type === "thought") return false;
-  const status = activityOf(item)?.status ?? "";
-  return approvalStates.includes(status) ||
-    (active && ["pending", "running", "started", "in_progress"].includes(status));
+/** Only calls waiting for a decision stay outside a collapsed run. */
+export function keepCallVisible(item: TimelineItem) {
+  return approvalStates.includes(activityOf(item)?.status ?? "");
 }
 const callFailed = (item: TimelineItem) => item.kind === "tool.failed" || activityOf(item)?.status === "failed";
+function stepRunning(item: TimelineItem, active: boolean) {
+  const a = activityOf(item);
+  return a ? isRunning(a, active) : active && item.kind === "tool.started";
+}
 function ToolRun({ calls, render, keepVisible, active, client }: {
   calls: TimelineItem[];
   render: (item: TimelineItem) => React.ReactNode;
@@ -418,16 +417,17 @@ function ToolRun({ calls, render, keepVisible, active, client }: {
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const latest = calls[calls.length - 1];
-  const pinned = calls.filter((call) => call !== latest && keepVisible(call));
-  const { headline, running, liveThought } = useStepHeadline(latest, active);
+  const pinned = calls.filter(keepVisible);
+  const latest = calls.filter(call => !keepVisible(call)).at(-1) ?? calls[calls.length - 1];
+  const { headline, liveThought } = useStepHeadline(latest, active);
+  const running = calls.some(call => stepRunning(call, active));
   const edits = useToolRunEdits(calls.map(call => {
     const a = activityOf(call);
     return { taskId: call.taskId, artifact: a?.artifact,
       files: a && categoryOf(a) === "edit" && !["failed", "pending", "running", "started", "in_progress", "cancelled", "interrupted"].includes(a.status ?? "") ? activityEdits(a) : [] };
   }), client);
   // Nothing to hide: every call is one the user must see anyway.
-  if (pinned.length === calls.length - 1 && keepVisible(latest)) return <>{calls.map(render)}</>;
+  if (pinned.length === calls.length) return <>{calls.map(render)}</>;
   // Thoughts are not tool calls: the count and its breakdown leave them out.
   const counts = calls.reduce<Record<string, number>>((all, call) => {
     const a = activityOf(call);
@@ -467,7 +467,7 @@ function useStepHeadline(latest: TimelineItem, active: boolean) {
   const { t } = useI18n();
   const a = activityOf(latest);
   const thought = a?.type === "thought" ? a : null;
-  const running = a ? isRunning(a, active) : active && latest.kind === "tool.started";
+  const running = stepRunning(latest, active);
   // Hooks run on every render; only a thought's label is used.
   const thoughtLabel = useThoughtLabel(thought ?? { type: "thought" }, !!thought && running);
   if (thought) return { headline: { icon: "think", label: thoughtLabel, title: "" }, running, liveThought: running ? thought.liveText : undefined };
@@ -602,7 +602,7 @@ export function ConversationContent({
       <ToolRun key={first.itemId} calls={calls} render={render}
         client={client}
         active={!!activeTurnId && first.turnId === activeTurnId}
-        keepVisible={(i) => keepCallVisible(i, !!activeTurnId && i.turnId === activeTurnId)} />
+        keepVisible={keepCallVisible} />
     ) : group.map(render);
     return (
       <div className={showAgent ? "response-agent-anchor" : "conversation-entry"} key={first.itemId} data-timeline-item={first.itemId}>
