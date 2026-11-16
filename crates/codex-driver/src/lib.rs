@@ -2614,7 +2614,8 @@ mod tests {
     #[test]
     fn a_repeated_question_reuses_its_open_card() {
         use serde_json::json;
-        let params = json!({"itemId":"item-1","questions":[{"id":"q","question":"Which platform?"}]});
+        let params =
+            json!({"itemId":"item-1","questions":[{"id":"q","question":"Which platform?"}]});
         let mut repeats = super::ApprovalRepeats::default();
         let mut pending = std::collections::HashMap::new();
         pending.insert("card".to_owned(), json!({"questionId":1,"params":params}));
@@ -2622,20 +2623,31 @@ mod tests {
             repeats.keys.insert(key, "card".into());
         }
         // The same questions again, even under another item, find the open card.
-        let again = json!({"itemId":"item-2","questions":[{"id":"q","question":"Which platform?"}]});
+        let again =
+            json!({"itemId":"item-2","questions":[{"id":"q","question":"Which platform?"}]});
         assert_eq!(
             repeats.open_card(&super::question_keys(&again), &pending),
             Some("card".into())
         );
-        repeats.extra.entry("card".into()).or_default().push(json!(2));
+        repeats
+            .extra
+            .entry("card".into())
+            .or_default()
+            .push(json!(2));
         // Different questions are a new card.
         let other = json!({"questions":[{"id":"q","question":"Submit automatically?"}]});
-        assert_eq!(repeats.open_card(&super::question_keys(&other), &pending), None);
+        assert_eq!(
+            repeats.open_card(&super::question_keys(&other), &pending),
+            None
+        );
         // One answer goes to every request, the first one first.
         assert_eq!(repeats.answered("card", json!(1)), vec![json!(1), json!(2)]);
         // An answered card no longer attracts repeats.
         pending.remove("card");
-        assert_eq!(repeats.open_card(&super::question_keys(&again), &pending), None);
+        assert_eq!(
+            repeats.open_card(&super::question_keys(&again), &pending),
+            None
+        );
     }
 
     #[test]
