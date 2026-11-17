@@ -301,8 +301,8 @@ export async function releaseDesktop({ root = rootDirectory, platform = process.
   const version = releaseVersion(root), tag = `v${version}`;
   const commit = await git(['rev-parse', 'HEAD']);
   async function unchanged() {
-    if (await git(['rev-parse', 'HEAD']) !== commit || await git(['status', '--porcelain', '--untracked-files=normal'])) {
-      throw new Error('Commit the intended source changes first and keep the worktree clean while releasing. Local signing files stay ignored.');
+    if (await git(['rev-parse', 'HEAD']) !== commit) {
+      throw new Error('The source commit changed while releasing. Restart from the intended commit.');
     }
   }
   await unchanged();

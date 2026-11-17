@@ -79,13 +79,13 @@ test('release version comes from the Cargo workspace, and origin must be a GitHu
   assert.throws(() => releaseArguments(['--publish']));
 }));
 
-test('dirty worktrees stop before any authentication, build or remote mutation', async () => fixture(async ({ root }) => {
+test('a dirty worktree does not stop release before the remote is checked', async () => fixture(async ({ root }) => {
   writeFileSync(resolve(root, 'Cargo.toml'), '[workspace.package]\nversion = "0.1.0"\n');
   const git = args => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
   git(['init', '--quiet']); git(['add', '.']);
   git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgSign=false', 'commit', '--quiet', '-m', 'Fixture']);
   writeFileSync(resolve(root, 'uncommitted.txt'), 'pending');
-  await assert.rejects(releaseDesktop({ root, platform: 'darwin', args: ['--check'] }), /Commit the intended source changes/);
+  await assert.rejects(releaseDesktop({ root, platform: 'darwin', args: ['--check'] }), /git remote failed/);
   assert.equal(git(['tag', '--list']).toString(), '');
   assert.equal(existsSync(resolve(root, 'release')), false);
 }));

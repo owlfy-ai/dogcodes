@@ -259,9 +259,11 @@ upload itself does not change the public website. Linux stays on the Release pag
 One-time prerequisites:
 
 - Commit and push the release scripts and intended product changes first. The
-  command rejects dirty worktrees and unpublished source commits. The product
-  version comes only from `Cargo.toml` `[workspace.package] version`; it does
-  not silently include local edits.
+  command rejects unpublished source commits and a `HEAD` that changes during
+  the run. A dirty worktree does not stop it, so uncommitted files can be
+  compiled into the installer while the receipt still names the committed
+  source. The product version comes only from `Cargo.toml`
+  `[workspace.package] version`.
 - Install Node.js 22, pnpm, the pinned Rust toolchain and platform-native build
   prerequisites. The command installs the required Rust targets and JS
   dependencies with the frozen lockfile, and runs the release-script tests and
