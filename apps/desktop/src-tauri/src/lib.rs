@@ -1,6 +1,7 @@
 mod agent_login;
 mod agent_scan;
 mod agent_updates;
+mod app_update;
 mod artifact_export;
 mod attachment_service;
 mod attachments;
@@ -1111,6 +1112,7 @@ pub fn run() {
     }));
     builder
         .manage(agent_updates::AgentUpdates::default())
+        .manage(app_update::AppUpdates::default())
         .manage(workspace_browser::WorkspaceWatchers::default())
         .on_window_event(|window, event| {
             if window.label() == "main"
@@ -1153,8 +1155,11 @@ pub fn run() {
             }
         })
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             attention::install(app.handle());
+            #[cfg(not(feature = "review-acceptance"))]
+            app_update::start(app.handle());
             if let Some(window) = app.get_webview_window("main") {
                 // Windows draws its own title bar in the web UI.
                 #[cfg(target_os = "windows")]
@@ -1317,6 +1322,8 @@ pub fn run() {
             core_execution_target,
             external_links::open_website,
             agent_login::open_agent_login,
+            app_update::app_update_ready,
+            app_update::app_update_install,
             attachments::core_save_attachment,
             attachments::core_attachment_upload_receipt,
             attachments::core_read_attachment,

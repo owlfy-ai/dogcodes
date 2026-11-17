@@ -4,6 +4,11 @@ import type { TranslationDict } from "../types";
 export const ru: TranslationDict = {
   ...uiRu,
   agentUi: {
+    "cliSupported": "Поддержка CLI",
+    "cliOnlyHint": "Для агентов, поддерживающих только CLI, отдельно установите CLI, войдите в аккаунт и повторите поиск. Одного настольного приложения недостаточно.",
+    "cliNotDetected": "CLI не обнаружен",
+    "installCli": "Установить CLI",
+    "runtimeCli": "CLI",
     "notInstalled": "Не установлен",
     "installHint": "Установите агент и повторите поиск.",
     "moreAgentsHint": "Установите агент и повторите поиск.",
@@ -21,7 +26,7 @@ export const ru: TranslationDict = {
     "exhaustedHint": "Лимит исчерпан. Дождитесь сброса или проверьте тариф.",
     "quotaExhaustedHint": "Лимит исчерпан. Дождитесь сброса или проверьте тариф.",
     "tokenExpired": "Ожидание обновления токена",
-    "tokenExpiredHint": "Токен Claude Code истёк, но вход действителен. Следующий разговор автоматически обновит токен.",
+    "tokenExpiredHint": "Краткосрочный токен Claude Code истёк. Обновление выполняет нативный клиент; если он сообщает об истечении входа, войдите снова.",
     "rateLimited": "Запросы ограничены",
     "rateLimitedHint": "Число запросов ограничено. Повторите позже.",
     "quotaRateHint": "Число запросов ограничено. Повторите позже.",
@@ -311,6 +316,7 @@ export const ru: TranslationDict = {
     quotaOutUntil: "У {agent} нет квоты до {time}.",
     quotaSwitch: "Продолжить с {agent}",
     quotaSwitchTooltip: "Следующее сообщение уйдёт в {agent} вместе с этой беседой",
+    quotaResumeTooltip: "Переключается на {agent} и продолжает незавершённую задачу вместе с этой беседой",
     enableInManagement: "Включите Agent в разделе «Управление Agents» или выберите доступный",
   },
   turn: {

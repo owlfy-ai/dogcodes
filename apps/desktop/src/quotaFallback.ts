@@ -9,6 +9,13 @@ const outdatedBy = new Set(["quota_rate_limited", "claude_quota_rate_limited", "
 
 export const quotaShowsLastReading = (diagnostic?: string | null): boolean => !!diagnostic && outdatedBy.has(diagnostic);
 
+/** Account quota can follow an installation across conversations; session usage cannot. */
+export function accountQuotaReading(view: QuotaSnapshotView): QuotaSnapshotView {
+  return view.quota?.context || view.quota?.sessionUsage
+    ? { ...view, quota: { ...view.quota, context: null, sessionUsage: null } }
+    : view;
+}
+
 function readings(): Record<string, QuotaSnapshot> {
   try { return JSON.parse(localStorage.getItem(storageKey) ?? "{}") ?? {}; } catch { return {}; }
 }

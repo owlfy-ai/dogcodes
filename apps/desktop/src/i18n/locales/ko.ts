@@ -4,6 +4,11 @@ import type { TranslationDict } from "../types";
 export const ko: TranslationDict = {
   ...uiKo,
   agentUi: {
+    "cliSupported": "CLI 지원",
+    "cliOnlyHint": "CLI만 지원하는 Agent는 CLI를 별도로 설치하고 로그인한 후 다시 검색하세요. 데스크톱 앱만 설치해서는 사용할 수 없습니다.",
+    "cliNotDetected": "CLI를 찾을 수 없음",
+    "installCli": "CLI 설치",
+    "runtimeCli": "CLI",
     "notInstalled": "설치되지 않음",
     "installHint": "설치 후 다시 검색하여 연결하세요.",
     "moreAgentsHint": "설치 후 다시 검색하여 연결하세요.",
@@ -21,7 +26,7 @@ export const ko: TranslationDict = {
     "exhaustedHint": "한도가 소진되었습니다. 초기화를 기다리거나 요금제를 확인하세요.",
     "quotaExhaustedHint": "한도가 소진되었습니다. 초기화를 기다리거나 요금제를 확인하세요.",
     "tokenExpired": "토큰 갱신 대기",
-    "tokenExpiredHint": "Claude Code 토큰이 만료되었지만 로그인은 유효합니다. 다음 대화에서 자동 갱신됩니다.",
+    "tokenExpiredHint": "Claude Code 단기 토큰이 만료되었습니다. 갱신은 네이티브 클라이언트가 처리합니다. 로그인 만료가 표시되면 다시 로그인하세요.",
     "rateLimited": "조회 요청 제한",
     "rateLimitedHint": "요청이 제한되었습니다. 잠시 후 다시 시도하세요.",
     "quotaRateHint": "요청이 제한되었습니다. 잠시 후 다시 시도하세요.",
@@ -311,6 +316,7 @@ export const ko: TranslationDict = {
     quotaOutUntil: "{agent} 할당량은 {time}까지 소진되었습니다.",
     quotaSwitch: "{agent}(으)로 계속",
     quotaSwitchTooltip: "다음 메시지는 이 대화와 함께 {agent}에 전달됩니다",
+    quotaResumeTooltip: "{agent}(으)로 전환하여 이 대화와 함께 중단된 작업을 이어서 진행합니다",
     enableInManagement: "Agent 관리에서 활성화하거나 사용 가능한 다른 Agent로 전환하세요",
   },
   turn: {

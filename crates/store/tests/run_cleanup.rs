@@ -1178,14 +1178,14 @@ async fn autonomous_git_checkpoint_recovers_unstaged_baseline_without_changing_u
     let files = change["files"].as_array().unwrap();
     assert_eq!(files.len(), 1);
     assert_eq!(files[0]["path"], "changed.txt");
-    assert_eq!(
-        files[0]["before"]["hex"],
-        hex::encode(b"before continuation\n")
-    );
-    assert_eq!(
-        files[0]["after"]["hex"],
-        hex::encode(b"after continuation\n")
-    );
+    let body = async |version: &serde_json::Value| {
+        assert!(version.get("hex").is_none());
+        let id = ArtifactId::parse(version["contentArtifact"]["artifactId"].as_str().unwrap())
+            .unwrap();
+        store.artifact(&id).await.unwrap().unwrap().content
+    };
+    assert_eq!(body(&files[0]["before"]).await, b"before continuation\n");
+    assert_eq!(body(&files[0]["after"]).await, b"after continuation\n");
     assert_eq!(
         std::fs::read(f.root.path().join(".git/index")).unwrap(),
         index_before

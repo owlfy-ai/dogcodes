@@ -53,6 +53,18 @@ impl AgentDriver for Waiting {
             request.prompt.contains("computer use enabled"),
             self.servers.lock().unwrap().iter().any(AppMcp::is_computer)
         );
+        for computer in self
+            .servers
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|server| server.is_computer())
+        {
+            assert!(request.prompt.contains(&format!(
+                "Current computer-use MCP server: {}.",
+                computer.name
+            )));
+        }
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         *self.sink.lock().unwrap() = Some(tx);
         Ok(Box::pin(futures::stream::unfold(rx, |mut rx| async move {
@@ -90,6 +102,133 @@ async fn wait(mut check: impl FnMut() -> bool) {
     })
     .await
     .unwrap();
+}
+
+#[tokio::test]
+async fn computer_tool_identity_survives_restart_and_migrates_old_history_without_reusing_tokens() {
+    use agent_core::{AppendRequest, CoreRepository};
+    use agent_domain::{CommandId, TurnId};
+    use agent_protocol::{NewEvent, StreamRef, StreamType};
+    for migrate in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(SqliteStore::open(dir.path().join("restart.db")).unwrap());
+        let task = TaskId::new();
+        let mut previous: Option<AppMcp> = None;
+        for generation in 0..2 {
+            let core = Arc::new(Core::new(store.clone()).with_computer_use(
+                std::env::current_exe().unwrap(),
+                env!("CARGO_BIN_EXE_computer-use-mcp-fixture").into(),
+                dir.path().join("driver"),
+            ));
+            let driver = Arc::new(Waiting {
+                executor: installations::executor("codex"),
+                servers: Mutex::new(vec![]),
+                sink: Mutex::new(None),
+            });
+            installations::register(&core, store.as_ref(), driver.clone()).await;
+            if generation == 0 {
+                let project = ProjectId::new();
+                core.execute(CommandEnvelope::local(CoreCommand::RegisterProject(
+                    RegisterProject {
+                        target_id: None,
+                        project_id: project.clone(),
+                        display_name: "restart".into(),
+                        path: dir.path().to_string_lossy().into_owned(),
+                        additional_directories: vec![],
+                    },
+                )))
+                .await
+                .unwrap();
+                core.execute(CommandEnvelope::local(CoreCommand::CreateTask(
+                    CreateTask {
+                        task_id: task.clone(),
+                        project_id: project,
+                        title: "restart".into(),
+                        preferred_executor: driver.executor.clone(),
+                    },
+                )))
+                .await
+                .unwrap();
+                if migrate {
+                    store.append(AppendRequest { request_fingerprint: None, command_id: CommandId::new(), idempotency_key: "legacy-tool".into(),
+                        expected_stream_version: None, artifacts: vec![], events: vec![NewEvent::hub(
+                            StreamRef { stream_type: StreamType::Task, stream_id: task.to_string() }, "activity.updated",
+                            json!({"taskId":task,"turnId":TurnId::new(),"itemId":"legacy-tool", "data":{"type":"tool","name":"mcp__dogcodes_cu_c04b722635ff__list_windows","status":"completed"}}),
+                        )] }).await.unwrap();
+                }
+            }
+            let mut command = CommandEnvelope::local(CoreCommand::SubmitTurn(SubmitTurn {
+                task_id: task.clone(),
+                prompt: "observe".into(),
+                executor_override: None,
+                model: None,
+                thinking: None,
+                permission_mode: None,
+                review_fix: None,
+                attachments: vec![],
+            }));
+            command.expected_stream_version = Some(
+                core.bootstrap()
+                    .await
+                    .unwrap()
+                    .tasks
+                    .iter()
+                    .find(|item| item.task_id == task)
+                    .unwrap()
+                    .stream_version,
+            );
+            core.execute(command).await.unwrap();
+            wait(|| driver.sink.lock().unwrap().is_some()).await;
+            let computer = driver
+                .servers
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|server| server.is_computer())
+                .unwrap()
+                .clone();
+            if migrate {
+                assert_eq!(computer.name, "dogcodes_cu_c04b722635ff");
+            }
+            if let Some(old) = &previous {
+                assert_eq!(computer.name, old.name);
+                assert_ne!(computer.args[2], old.args[2]);
+                let mut stale = computer.clone();
+                stale.args[2] = old.args[2].clone();
+                assert!(query(&stale, 1, "catalog", json!({})).await["error"].is_string());
+            }
+            assert_capture_response(&query(&computer, 2, "get_window_state", json!({})).await);
+            driver
+                .sink
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap()
+                .send(Ok(DriverEvent::TurnCompleted {
+                    summary: "done".into(),
+                }))
+                .unwrap();
+            tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                while !core.bootstrap().await.unwrap().active_runs.is_empty() {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            previous = Some(computer);
+        }
+        let bound = store
+            .task_events_of_types(
+                &task,
+                0,
+                store.event_head().await.unwrap(),
+                &["computer_use.namespace_bound"],
+                10,
+            )
+            .await
+            .unwrap();
+        assert_eq!(bound.len(), 1);
+    }
 }
 
 #[tokio::test]

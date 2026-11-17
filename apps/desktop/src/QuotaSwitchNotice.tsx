@@ -42,7 +42,7 @@ export function QuotaSwitchNotice({ current, quota, turnExhausted, options, runn
       {resumes ? t("composer.quotaOutUntil", { agent, time: formatResetTime(resumes, Date.now(), lang) }, lang) : t("composer.quotaOut", { agent }, lang)}
       {!target && ` ${t("composer.quotaNoOtherAgent", undefined, lang)}`}
     </span>
-    {target && <button type="button" data-tooltip={t("composer.quotaSwitchTooltip", { agent: providerLabel(target.providerId) }, lang)}
+    {target && <button type="button" data-tooltip={t(turnExhausted ? "composer.quotaResumeTooltip" : "composer.quotaSwitchTooltip", { agent: providerLabel(target.providerId) }, lang)}
       onClick={() => { focusComposerInput(host.current); onSwitch(target); }}>
       {t("composer.quotaSwitch", { agent: providerLabel(target.providerId) }, lang)}
     </button>}

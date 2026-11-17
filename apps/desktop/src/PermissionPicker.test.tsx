@@ -128,9 +128,12 @@ it("keeps usable options visible when a manual refresh fails",async()=>{
  await act(async()=>root.render(<PermissionPicker client={client} executor={executor} taskId="tsk_a" disabled={false} onChange={()=>{}}/>));
  await act(async()=>host.querySelector<HTMLButtonElement>("button")!.click());
  await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="刷新"]')!.click());
+ expect(host.querySelector('.permission-menu-header button')?.getAttribute("aria-busy")).toBe("true");
+ expect(host.querySelector('.loading-status')).toBeNull();
  expect(host.querySelectorAll('[role="menuitemradio"]').length).toBe(2);
  expect(read).toHaveBeenLastCalledWith(executor,undefined,true);
  await act(async()=>fail(Error("offline")));
+ expect(host.querySelector('.permission-menu-header button')?.getAttribute("aria-busy")).toBe("false");
  expect(host.querySelector('[role="alert"]')).not.toBeNull();
  expect(host.querySelectorAll('[role="menuitemradio"]').length).toBe(2);
 });

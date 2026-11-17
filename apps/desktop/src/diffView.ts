@@ -28,6 +28,9 @@ export interface DiffFile {
   dissimilar?: boolean;
   binary: boolean;
   hunks: DiffHunk[];
+  pendingContent?: boolean;
+  unavailableReason?: string;
+  countsUnavailable?: boolean;
   additions: number;
   deletions: number;
 }

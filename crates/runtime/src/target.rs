@@ -42,6 +42,8 @@ pub struct ProcessRequest {
     pub stdin: Pipe,
     pub stdout: Pipe,
     pub stderr: Pipe,
+    /// Run in a new session so an interactive shell cannot stop on this terminal.
+    pub without_terminal: bool,
 }
 
 /// A process under a terminal, whose size can change while it runs.
@@ -133,7 +135,11 @@ impl ExecutionTarget for LocalTarget {
         command.envs(&request.env);
         // A proxy set for this machine describes this machine's network.
         apply_proxy_environment(&mut command);
-        OwnedChild::spawn(command)
+        if request.without_terminal {
+            OwnedChild::spawn_without_terminal(command)
+        } else {
+            OwnedChild::spawn(command)
+        }
     }
 }
 
@@ -333,6 +339,11 @@ impl TargetCommand {
     }
     pub fn current_dir(&mut self, directory: impl AsRef<Path>) -> &mut Self {
         self.request.cwd = Some(directory.as_ref().to_owned());
+        self
+    }
+    /// The child must not join the caller's terminal session.
+    pub fn without_terminal(&mut self) -> &mut Self {
+        self.request.without_terminal = true;
         self
     }
     pub fn stdio(&mut self, stdin: Pipe, stdout: Pipe, stderr: Pipe) -> &mut Self {

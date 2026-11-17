@@ -1,6 +1,6 @@
 import type { TurnArtifact } from "./turnArtifactCache";
 
-type CapturedTurn = TurnArtifact["data"];
+type CapturedTurn = Omit<TurnArtifact["data"], "files"> & { files: { before?: unknown; after?: unknown }[] };
 
 /** Captured while another conversation ran in the same folder, so the files
  * may include that conversation's writes. */

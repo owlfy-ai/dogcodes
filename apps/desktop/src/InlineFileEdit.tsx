@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { showContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { DeferredDetails } from "./DeferredDetails";
 import { ActivityIcon } from "./ActivityIcon";
@@ -6,6 +6,8 @@ import { highlightedLines, languageForPath } from "./syntaxHighlight";
 import { artifactVisibleText } from "./artifactView";
 import type { DiffFile, DiffHunk } from "./diffView";
 import "./inlineFileEdit.css";
+import { ReviewFileLoading } from "./ReviewFileLoading";
+import { useLoadingVisibility } from "./useLoadingVisibility";
 import { translate, useI18n } from "./i18n";
 
 function Hunk({ hunk, language }: { hunk: DiffHunk; language?: string }) {
@@ -25,23 +27,33 @@ function Hunk({ hunk, language }: { hunk: DiffHunk; language?: string }) {
   </div>)}</>;
 }
 
-export function InlineFileEdit({ path, file, status, rawPatch, truncated, onOpen, openControl, menu, running = false }: {
-  menu?: () => ContextMenuEntry[]; path: string; file?: DiffFile; status?: string; rawPatch?: string; truncated?: boolean; onOpen?: () => void; openControl?: ReactNode; running?: boolean;
+export function InlineFileEdit({ path, file: captured, loadFile, status, rawPatch, truncated, onOpen, openControl, menu, running = false }: {
+  loadFile?: () => Promise<DiffFile>; menu?: () => ContextMenuEntry[]; path: string; file?: DiffFile; status?: string; rawPatch?: string; truncated?: boolean; onOpen?: () => void; openControl?: ReactNode; running?: boolean;
 }) {
   const { t } = useI18n();
+  const [loaded, setLoaded] = useState<DiffFile | null>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const file = loaded ?? captured;
+  const loading = useLoadingVisibility(pending);
+  const load = () => {
+    if (!loadFile) return;
+    setPending(true); setError("");
+    void loadFile().then(setLoaded, () => setError(t("historicalDiff.loadFailed"))).finally(() => setPending(false));
+  };
   const display = artifactVisibleText(path).replaceAll("\n", "\\n").replaceAll("\t", "\\t");
   const separator = Math.max(display.lastIndexOf("/"), display.lastIndexOf("\\"));
   const name = display.slice(separator + 1), directory = display.slice(0, separator + 1);
   const extension = name.split(".").pop()?.toLowerCase() ?? "";
   const label = t(file?.change === "added" ? "inlineEdit.added" : file?.change === "deleted" ? "inlineEdit.deleted" : file?.change === "renamed" ? "inlineEdit.renamed" : "inlineEdit.edited");
-  return <DeferredDetails className="inline-file-edit" summary={
+  return <DeferredDetails className="inline-file-edit" onFirstOpen={() => { if (file?.pendingContent) load(); }} summary={
     <summary className={`inline-edit-heading${running ? " activity-running" : ""}`} onContextMenu={menu && (event => showContextMenu(event, menu()))}>
       <ActivityIcon kind="edit" />
       <span className="inline-edit-label activity-text">{label}</span>
       <span className={`inline-edit-language lang-${extension}`} aria-hidden="true">{extension === "rs" ? "R" : extension === "java" ? "J" : extension.slice(0, 3).toUpperCase() || "◇"}</span>
       <span className="inline-edit-filename activity-text" data-tooltip={display}>{name}</span>
       <span className="inline-edit-directory activity-text" data-tooltip={directory}>{directory}</span>
-      {file && !file.binary && <span className="inline-edit-counts">{file.additions > 0 && <span className="additions">+{file.additions}</span>}{file.deletions > 0 && <span className="deletions">−{file.deletions}</span>}</span>}
+      {file && !file.binary && !file.countsUnavailable && <span className="inline-edit-counts">{file.additions > 0 && <span className="additions">+{file.additions}</span>}{file.deletions > 0 && <span className="deletions">−{file.deletions}</span>}</span>}
       {status && <span className="inline-edit-status activity-text">{status}</span>}
       <svg className="inline-edit-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
     </summary>}>
@@ -49,7 +61,10 @@ export function InlineFileEdit({ path, file, status, rawPatch, truncated, onOpen
     {file?.oldPath && file.oldPath !== file.newPath && <p className="inline-edit-notice">{artifactVisibleText(file.oldPath)} → {artifactVisibleText(file.newPath)}</p>}
     {truncated && <p className="inline-edit-notice">{t("inlineEdit.truncated")}</p>}
     <div className="inline-edit-code" role="region" aria-label={t("inlineEdit.changesOf", { name })} tabIndex={0}>
-      {file?.binary ? <p className="inline-edit-notice">{t("inlineEdit.binary")}</p>
+      {loading.pending ? (loading.visible ? <ReviewFileLoading /> : null)
+        : error ? <p role="alert">{error} <button type="button" onClick={load}>{t("common.retry")}</button></p>
+        : file?.unavailableReason ? <p className="inline-edit-notice">{file.unavailableReason}</p>
+        : file?.binary ? <p className="inline-edit-notice">{t("inlineEdit.binary")}</p>
         : file?.hunks.length ? <div className="inline-edit-lines">{file.hunks.map((hunk, index) => <div key={index}>
           {index > 0 && <div className="inline-edit-gap" data-tooltip={hunk.header}>···</div>}
           <Hunk hunk={hunk} language={languageForPath(path)} />

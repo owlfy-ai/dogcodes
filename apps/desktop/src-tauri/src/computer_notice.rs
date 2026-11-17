@@ -167,8 +167,14 @@ pub fn start(
 fn publish(app: &tauri::AppHandle, windows: &[tauri::WebviewWindow], next: &ComputerActivity) {
     let _ = app.emit_to("main", "computer-use-activity", next);
     for window in windows {
-        if next.mode != ActivityMode::Idle && window.show().is_err() {
-            continue;
+        if next.mode == ActivityMode::Foreground {
+            if window.show().is_err() {
+                continue;
+            }
+        } else {
+            // Observation and background delivery do not occupy the user's input.
+            // Hide the native overlay as well as its contents when switching modes.
+            let _ = window.hide();
         }
         let _ = window.emit("computer-use-activity", next);
     }

@@ -19,6 +19,7 @@ async-trait.workspace = true
 agent-protocol = { path = "../protocol" }
 agent-runtime = { path = "../runtime", default-features = false }
 hex.workspace = true
+ignore = "0.4"
 sha2.workspace = true
 serde_json.workspace = true
 serde.workspace = true

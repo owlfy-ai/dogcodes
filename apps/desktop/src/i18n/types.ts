@@ -119,6 +119,7 @@ export interface TranslationDict extends UiMessages {
     quotaOutUntil: string;
     quotaSwitch: string;
     quotaSwitchTooltip: string;
+    quotaResumeTooltip: string;
     enableInManagement: string;
   };
   turn: {

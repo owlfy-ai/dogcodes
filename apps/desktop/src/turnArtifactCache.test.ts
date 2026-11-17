@@ -65,3 +65,29 @@ it("bounds independent card reads and releases queued work after failures", asyn
   read.mockImplementation(original);
   expect((await loadTurnArtifact(client, "tsk_failed_0", metadata)).data.files).toHaveLength(1);
 });
+it("loads only the selected file bodies and verifies immutable content before parsing", async () => {
+  const { loadTurnFile } = await import("./turnArtifactCache");
+  const bytes = new TextEncoder().encode("new\n");
+  const body: ArtifactMetadata = { ...fixture().metadata, artifactId: "art_body", mediaType: "application/vnd.dogcodes.workspace-content",
+    payloadSha256: createHash("sha256").update(bytes).digest("hex"), byteLength: bytes.length };
+  const manifest = new TextEncoder().encode(JSON.stringify({ files: ["a.ts", "b.ts"].map(path => ({ path, status: "A", before: null,
+    after: { sha256: body.payloadSha256, contentArtifact: body }, additions: 1, deletions: 0 })) }));
+  const metadata = { ...fixture().metadata, payloadSha256: createHash("sha256").update(manifest).digest("hex"), byteLength: manifest.length };
+  const read = vi.fn(async (request: { artifactId: string }) => ({ metadata: request.artifactId === body.artifactId ? body : metadata,
+    bytes: [...(request.artifactId === body.artifactId ? bytes : manifest)], offset: 0, nextOffset: null }));
+  const client = { readArtifact: read } as unknown as CoreClient;
+  const artifact = await loadTurnArtifact(client, "tsk_one", metadata);
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(artifact.diff?.files.map(f => f.pendingContent)).toEqual([true, true]);
+  expect(artifact.diff?.additions).toBe(2);
+  const file = await loadTurnFile(client, "tsk_one", artifact, "a.ts");
+  expect(file.hunks[0].lines[0].text).toBe("new");
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(await loadTurnFile(client, "tsk_one", artifact, "a.ts")).toBe(file);
+  expect(read).toHaveBeenCalledTimes(2);
+  // A corrupt body is rejected, rather than borrowing the current workspace file.
+  read.mockImplementation(async () => ({ metadata: body, bytes: [0, 0, 0, 0], offset: 0, nextOffset: null }));
+  await expect(loadTurnFile(client, "tsk_one", artifact, "b.ts")).rejects.toThrow();
+  await expect(loadTurnFile(client, "tsk_one", artifact, "b.ts")).rejects.toThrow();
+  expect(read).toHaveBeenCalledTimes(4);
+});

@@ -4,6 +4,11 @@ import type { TranslationDict } from "../types";
 export const de: TranslationDict = {
   ...uiDe,
   agentUi: {
+    "cliSupported": "CLI unterstützt",
+    "cliOnlyHint": "Für Agents mit reiner CLI-Unterstützung die CLI separat installieren, anmelden und erneut suchen. Die Desktop-App allein reicht nicht aus.",
+    "cliNotDetected": "CLI nicht erkannt",
+    "installCli": "CLI installieren",
+    "runtimeCli": "CLI",
     "notInstalled": "Nicht installiert",
     "installHint": "Agent installieren und erneut suchen.",
     "moreAgentsHint": "Agent installieren und erneut suchen.",
@@ -21,7 +26,7 @@ export const de: TranslationDict = {
     "exhaustedHint": "Kontingent aufgebraucht. Rücksetzung abwarten oder Tarif prüfen.",
     "quotaExhaustedHint": "Kontingent aufgebraucht. Rücksetzung abwarten oder Tarif prüfen.",
     "tokenExpired": "Token-Erneuerung ausstehend",
-    "tokenExpiredHint": "Das Claude-Code-Token ist abgelaufen, die Anmeldung bleibt gültig. Das nächste Gespräch erneuert es automatisch.",
+    "tokenExpiredHint": "Das kurzlebige Claude-Code-Token ist abgelaufen. Der native Client verwaltet die Erneuerung. Meldet er eine abgelaufene Anmeldung, melde dich erneut an.",
     "rateLimited": "Abfragen begrenzt",
     "rateLimitedHint": "Abfragen sind begrenzt. Später erneut versuchen.",
     "quotaRateHint": "Abfragen sind begrenzt. Später erneut versuchen.",
@@ -311,6 +316,7 @@ export const de: TranslationDict = {
     quotaOutUntil: "{agent} hat bis {time} kein Kontingent mehr.",
     quotaSwitch: "Mit {agent} fortfahren",
     quotaSwitchTooltip: "Deine nächste Nachricht geht zusammen mit dieser Unterhaltung an {agent}",
+    quotaResumeTooltip: "Wechselt zu {agent} und setzt die unterbrochene Aufgabe mit dieser Unterhaltung fort",
     enableInManagement: "Bitte aktivieren Sie einen Agenten in der Agent-Verwaltung oder wechseln Sie zu einem verfügbaren Agenten",
   },
   turn: {

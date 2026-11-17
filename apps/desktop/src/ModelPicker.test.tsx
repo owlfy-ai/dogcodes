@@ -16,8 +16,8 @@ beforeEach(() => { vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT",true); change.mockRe
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 const click = async (node: Element) => { await act(async () => node.dispatchEvent(new MouseEvent("click",{bubbles:true}))); };
 const button = (name:string) => container.querySelector(`[aria-label="${name}"]`)!;
-async function render(model: string|null="grok", error: string|null=null) {
-  await act(async () => root.render(<ModelPicker catalog={catalog} model={model} thinking={null} loading={false} error={error} disabled={false} onChange={change} onRetry={retry}/>));
+async function render(model: string|null="grok", error: string|null=null, refreshing=false) {
+  await act(async () => root.render(<ModelPicker catalog={catalog} model={model} thinking={null} loading={false} refreshing={refreshing} error={error} disabled={false} onChange={change} onRetry={retry}/>));
 }
 it("keeps model and thinking independent and drops efforts when choosing a model without them",async () => {
   await render(); await click(button("选择思考强度"));
@@ -50,11 +50,22 @@ it("retries on opening an unavailable catalog and keeps only the header refresh 
 it("refreshes either list without changing selection and keeps old options after failure",async()=>{
  await render();await click(button("选择模型"));await click(button("刷新模型列表"));
  expect(retry).toHaveBeenCalledTimes(1);expect(change).not.toHaveBeenCalled();
+ await render("grok",null,true);
+ expect(container.querySelector('.model-refresh')?.getAttribute("aria-busy")).toBe("true");
+ expect(container.querySelector<HTMLButtonElement>('.model-refresh')?.disabled).toBe(true);
+ expect(container.querySelector('.loading-status')).toBeNull();
+ expect(container.querySelector('.model-options')?.textContent).toContain("Grok 4.6");
+ await render();
  await click(button("选择思考强度"));await click(button("刷新思考强度列表"));
  expect(button("刷新思考强度列表").textContent).toBe("");
  expect(button("刷新思考强度列表").querySelector('svg[aria-hidden="true"]')).not.toBeNull();
  expect(retry).toHaveBeenCalledTimes(2);
+ await render("grok",null,true);
+ expect(container.querySelector('.model-refresh')?.getAttribute("aria-busy")).toBe("true");
+ expect(container.querySelector('.loading-status')).toBeNull();
+ expect(container.querySelector('.model-options')?.textContent).toContain("低");
  await render("grok","offline");
+ expect(container.querySelector('.model-refresh')?.getAttribute("aria-busy")).toBe("false");
  expect(container.textContent).toContain("保留上次列表");
  expect(container.querySelector('.model-options')?.textContent).toContain("低");
  expect(change).not.toHaveBeenCalled();

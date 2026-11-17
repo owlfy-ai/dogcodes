@@ -8,8 +8,6 @@ html.computer-notice-page, .computer-notice-page body, .computer-notice-page #ro
   color: #f1fff6; font-family: system-ui, sans-serif;
   opacity: 1; transition: opacity .3s ease;
 }
-.computer-glow-foreground { --glow: 255, 165, 65; color: #fff7ed; }
-.computer-glow-idle { opacity: 0; }
 .computer-glow-edge {
   position: absolute; inset: 0 0 auto; height: 6px;
   background: rgba(var(--glow), .95);
@@ -37,7 +35,7 @@ html.computer-notice-page, .computer-notice-page body, .computer-notice-page #ro
 }
 .computer-glow-logo { display: block; flex: none; width: 18px; height: 18px; color: #fff; }
 .computer-glow-message { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.computer-glow-escape { flex: none; margin-left: 6px; color: rgba(255, 247, 237, .85); font-size: 12px; white-space: nowrap; }
+.computer-glow-escape { flex: none; margin-left: 6px; color: rgba(241, 255, 246, .85); font-size: 12px; white-space: nowrap; }
 .computer-glow-safe-area .computer-glow-caption { border-top: 1px solid rgba(var(--glow), .32); border-radius: 14px; }
 @keyframes computer-glow-ion { to { transform: translateX(420%); } }
 @keyframes computer-glow-breathe { from { opacity: .65; } to { opacity: 1; } }

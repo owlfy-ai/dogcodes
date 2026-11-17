@@ -46,7 +46,9 @@ pub(super) async fn load(
             break;
         }
     }
-    Ok(result)
+    let mut data = serde_json::to_value(&result).map_err(|e| e.to_string())?;
+    crate::workspace_contents::hydrate(core, &task, &mut data).await?;
+    serde_json::from_value(data).map_err(|e| e.to_string())
 }
 
 fn collect(result: &mut RecordedChanges, data: &Value, roots: &[ReviewRoot]) -> Result<(), String> {

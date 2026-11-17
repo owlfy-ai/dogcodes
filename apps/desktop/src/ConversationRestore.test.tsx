@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { TaskSummary } from "@dogcodes/protocol";
+import type { CoreClient, QuotaSnapshotView, TaskSummary } from "@dogcodes/protocol";
 import { App } from "./App";
 import { DemoCoreClient } from "./demoClient";
 
@@ -53,6 +53,63 @@ it("reopens the last viewed conversation and loads only its timeline", async () 
   expect(title()).toBe(second.title);
   expect(timeline).toHaveBeenCalledWith(second.taskId);
   expect(timeline).not.toHaveBeenCalledWith(first.taskId);
+});
+
+it("keeps account quota visible during a switch without carrying over session context", async () => {
+  const initial = (await client.quotaSnapshots())[0];
+  initial.quota!.sessionUsage = { contextUsedPercent: 25, observedAtUnixMs: Date.now() };
+  const pending: Array<(views: QuotaSnapshotView[]) => void> = [];
+  vi.spyOn(client as CoreClient, "quotaSnapshots").mockImplementation(async (taskId, installationId) => {
+    if (installationId && installationId !== initial.installationId) return [];
+    return taskId === second.taskId ? new Promise(resolve => pending.push(resolve)) : [structuredClone(initial)];
+  });
+  await mount();
+  expect(host.querySelector(".composer-controls .quota-ring-value")?.textContent).toBe("61%");
+  expect(host.querySelector(".context-usage-ring")?.textContent).toBe("25%");
+  await open(second);
+  expect(title()).toBe(second.title);
+  expect(pending.length).toBeGreaterThan(0);
+  expect(host.querySelector(".composer-controls .quota-ring-value")?.textContent).toBe("61%");
+  expect(host.querySelector(".context-usage-ring")).toBeNull();
+  const updated = structuredClone(initial);
+  updated.quota!.windows[0].usedPercent = 20;
+  updated.quota!.sessionUsage!.contextUsedPercent = 50;
+  await act(async () => pending.forEach(resolve => resolve([updated])));
+  expect(host.querySelector(".composer-controls .quota-ring-value")?.textContent).toBe("80%");
+  expect(host.querySelector(".context-usage-ring")?.textContent).toBe("50%");
+});
+
+it("ignores a late quota response from the conversation the user left", async () => {
+  const initial = (await client.quotaSnapshots())[0];
+  const pending: Array<(views: QuotaSnapshotView[]) => void> = [];
+  vi.spyOn(client as CoreClient, "quotaSnapshots").mockImplementation(async (taskId, installationId) => {
+    if (installationId && installationId !== initial.installationId) return [];
+    return taskId === second.taskId ? new Promise(resolve => pending.push(resolve)) : [structuredClone(initial)];
+  });
+  await mount();
+  await open(second);
+  await open(first);
+  const late = structuredClone(initial);
+  late.quota!.windows[0].usedPercent = 100;
+  await act(async () => pending.forEach(resolve => resolve([late])));
+  expect(title()).toBe(first.title);
+  expect(host.querySelector(".composer-controls .quota-ring-value")?.textContent).toBe("61%");
+  expect(host.querySelector(".quota-switch-notice")).toBeNull();
+});
+
+it("does not show another installation's quota when the selected agent has no reading", async () => {
+  const initial = (await client.quotaSnapshots())[0];
+  const peer = (await client.bootstrap()).installations.find(installation => installation.providerId === "fake-peer")!;
+  const taskId = await client.createTask(first.projectId, "另一个 Agent 的会话", { providerId: peer.providerId, installationId: peer.installationId });
+  const other = (await client.bootstrap()).tasks.find(task => task.taskId === taskId)!;
+  vi.spyOn(client as CoreClient, "quotaSnapshots").mockImplementation(async (_taskId, installationId) =>
+    !installationId || installationId === initial.installationId ? [structuredClone(initial)] : []);
+  await mount();
+  expect(host.querySelector(".composer-controls .quota-ring-value")?.textContent).toBe("61%");
+  await open(other);
+  expect(host.querySelector(".composer-controls .quota-ring-value")?.textContent).toBe("?");
+  await open(first);
+  expect(host.querySelector(".composer-controls .quota-ring-value")?.textContent).toBe("61%");
 });
 
 it.each(["上一个会话", "下一个会话"])("remembers selection made with %s", async label => {

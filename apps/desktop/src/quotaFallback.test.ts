@@ -54,13 +54,14 @@ it("labels a remembered reading on the welcome page with when it was taken", () 
   expect(status.detail).toContain("的读数");
 });
 
-it("keeps the last reading when Claude Code's token awaits renewal, without asking to log in again", () => {
+it("keeps an old token reading without promising the login can still be renewed", () => {
   withLastReading(view(reading(1_000)));
   const expired = withLastReading(view(null, "claude_quota_token_expired"));
   expect(expired.quota?.collectedAtUnixMs).toBe(1_000);
   const installation = { installationId: "ins_claude", providerId: "claude-code", status: "ready", version: "2.1.0" } as never;
   const status = welcomeStatus({ installation, view: expired });
   expect(status.label).toBe("令牌待续期");
-  expect(status.detail).toContain("自动续期");
-  expect(status.detail).toContain("无需重新登录");
+  expect(status.detail).toContain("原生客户端");
+  expect(status.detail).toContain("如果");
+  expect(status.detail).not.toContain("无需重新登录");
 });

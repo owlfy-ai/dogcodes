@@ -12,6 +12,7 @@ use tokio::{
 };
 
 pub(super) struct ReadyConnection {
+    pub desktop_auth: Option<super::desktop_auth::Lease>,
     pub native: std::sync::Arc<NativeProcess>,
     pub stdin: ProcessInput,
     pub stdout: BufReader<DuplexStream>,
@@ -36,14 +37,18 @@ pub(super) async fn connect(driver: &ClaudeDriver) -> Result<ReadyConnection, Dr
     let child = spawn(
         &ClaudeLaunch {
             executable: driver.executable.clone(),
+            native_version: driver.native_version.clone(),
         },
         &uuid::Uuid::new_v4().to_string(),
         false,
         Some(&driver.executable.target.temp_directory().to_string_lossy()),
-    )?;
-    let (native, stdin, stdout) = NativeProcess::start_with_grace(child, Duration::from_secs(5))?;
+    )
+    .await?;
+    let (native, stdin, stdout) =
+        NativeProcess::start_with_grace(child.child, Duration::from_secs(5))?;
     native.observe_owner(driver.stopping.subscribe());
     let mut connection = ReadyConnection {
+        desktop_auth: child.desktop_auth,
         native,
         stdin,
         stdout: BufReader::new(stdout),
@@ -61,6 +66,9 @@ pub(super) async fn connect(driver: &ClaudeDriver) -> Result<ReadyConnection, Dr
                 .map_err(|_| DriverError::Protocol("Claude readiness response unavailable".into()))? == 0 {
                 return Err(DriverError::Protocol("Claude readiness ended before initialize".into()));
             }
+            if let Ok(raw) = serde_json::from_str(&line)
+                && super::desktop_auth::respond(connection.desktop_auth.as_mut(), &raw, &mut connection.stdin).await
+                    .map_err(|_| DriverError::Disconnected("Claude auth callback unavailable".into()))? { continue; }
             if let Some(Classified::ControlResponse { request_id, success, data }) = super::classify(&line)
                 && request_id == "dogcodes-probe" {
                 if success && let Ok((models, auto)) = super::models::catalog(&data) {
@@ -88,14 +96,14 @@ pub(super) async fn probe(executable: agent_runtime::TargetExecutable) -> Result
         }
         let temp_directory = executable.target.temp_directory();
         let child = spawn(
-            &ClaudeLaunch { executable },
+            &ClaudeLaunch { executable, native_version: None },
             &uuid::Uuid::new_v4().to_string(),
             false,
             Some(&temp_directory.to_string_lossy()),
-        )?;
+        ).await?;
         // The existing supervisor drains stderr without retaining diagnostics,
         // bounds the stdout pipe, and owns physical cleanup independently of UI.
-        let (native, mut stdin, stdout) = NativeProcess::start_with_grace(child, Duration::from_secs(5))?;
+        let (native, mut stdin, stdout) = NativeProcess::start_with_grace(child.child, Duration::from_secs(5))?;
         native.observe_owner(owner);
         let outcome = AssertUnwindSafe(async {
             stdin.write_all(b"{\"type\":\"control_request\",\"request_id\":\"dogcodes-probe\",\"request\":{\"subtype\":\"initialize\",\"hooks\":{}}}\n").await

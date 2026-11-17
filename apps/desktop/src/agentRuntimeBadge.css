@@ -1,0 +1,40 @@
+.agent-runtime-badge {
+  display: inline-block;
+  flex: none;
+  margin-inline-start: 7px;
+  padding: 1px 6px;
+  border: 1px solid var(--line, #8883);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: calc(11px * var(--ui-scale, 1));
+  font-weight: 500;
+  line-height: 1.5;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.welcome-agent-card .agent-runtime-badge {
+  color: var(--w-muted);
+  border-color: var(--w-border-strong);
+}
+
+.welcome-agent-card h2:has(.agent-runtime-name),
+.agent-card-identity h3:has(.agent-runtime-name),
+.agent-uninstalled-name:has(.agent-runtime-name) {
+  display: flex;
+  align-items: center;
+}
+
+.agent-runtime-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-cli-install-hint {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: calc(12px * var(--ui-scale, 1));
+  line-height: 1.6;
+}

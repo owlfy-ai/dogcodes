@@ -113,6 +113,7 @@ export const en: TranslationDict = {
     quotaOutUntil: "{agent} is out of quota until {time}.",
     quotaSwitch: "Continue with {agent}",
     quotaSwitchTooltip: "Your next message goes to {agent}, along with this conversation",
+    quotaResumeTooltip: "Switches to {agent} and continues the unfinished task, with this conversation",
     enableInManagement: "Please enable an Agent in Agent Management or switch to an available Agent",
   },
   turn: {

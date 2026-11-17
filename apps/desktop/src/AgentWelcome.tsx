@@ -8,6 +8,8 @@ import { quotaRequestTimeoutMs } from "./quotaRefresh";
 import { quotaShowsLastReading, withLastReading } from "./quotaFallback";
 import { AgentLogin, agentAccountIssue, needsAgentLogin } from "./AgentLogin";
 import { WelcomeHerd } from "./WelcomeHerd";
+import { AgentCliSupportBadge, AgentRuntimeBadge } from "./AgentRuntimeBadge";
+import { agentRequiresCli } from "./agentRuntimeSource";
 import "./agentWelcome.css";
 
 export const supportedAgents = [
@@ -15,7 +17,7 @@ export const supportedAgents = [
   { id: "claude-code", installUrl: "https://code.claude.com/docs/en/setup", name: "Claude Code" },
   { id: "grok", installUrl: "https://docs.x.ai/build/overview", name: "Grok Build" },
   { id: "cursor", installUrl: "https://cursor.com/docs/cli/overview", name: "Cursor" },
-  { id: "antigravity", installUrl: "https://antigravity.google/download", name: "Antigravity" },
+  { id: "antigravity", installUrl: "https://antigravity.google/docs/cli", name: "Antigravity" },
   { id: "zcode", installUrl: "https://zcode.z.ai/en/docs/install", name: "ZCode" },
   { id: "kimi", installUrl: "https://moonshotai.github.io/kimi-code/", name: "Kimi Code" },
   { id: "codebuddy", installUrl: "https://www.codebuddy.cn/docs/cli/installation", name: "CodeBuddy" },
@@ -113,7 +115,7 @@ function awaitDetection<T>(request: Promise<T>, signal: AbortSignal, timeoutMs: 
   });
 }
 
-export function InstallationLink({ url, name, className = "welcome-install-link", errorClassName = "welcome-error" }: { url: string; name: string; className?: string; errorClassName?: string }) {
+export function InstallationLink({ url, name, className = "welcome-install-link", errorClassName = "welcome-error", cli = false }: { url: string; name: string; className?: string; errorClassName?: string; cli?: boolean }) {
   const { resolvedLanguage: lang } = useI18n();
   const [error, setError] = useState(false);
   return <><a className={className} href={url} target="_blank" rel="noopener noreferrer"
@@ -122,7 +124,7 @@ export function InstallationLink({ url, name, className = "welcome-install-link"
       if (!isTauri()) return;
       event.preventDefault(); setError(false);
       void invoke("open_website", { url }).catch(() => setError(true));
-    }}>{t("agentUi.install", undefined, lang)} <span aria-hidden="true">↗</span></a>
+    }}>{t(cli ? "agentUi.installCli" : "agentUi.install", undefined, lang)} <span aria-hidden="true">↗</span></a>
     {error && <span className={errorClassName} role="alert">{t("agentUi.browserFailed", undefined, lang)}</span>}</>;
 }
 
@@ -254,8 +256,8 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
 
   const renderCard = ({ agent, reading, scanning, failed, uninstalled, state }: typeof cards[number], index: number) => {
     if (uninstalled) return <article className="welcome-agent-card uninstalled" key={agent.id} aria-label={agent.name} style={{ "--stagger": index } as CSSProperties}>
-      <header><span className="welcome-agent-icon">{renderIcon(agent.id)}</span><div><h2>{agent.name}</h2><small>{t("agentUi.notInstalled", undefined, lang)}</small></div></header>
-      <InstallationLink url={agent.installUrl} name={agent.name} />
+      <header><span className="welcome-agent-icon">{renderIcon(agent.id)}</span><div><h2><span className="agent-runtime-name">{agent.name}</span><AgentCliSupportBadge providerId={agent.id} /></h2><small>{t(agentRequiresCli(agent.id) ? "agentUi.cliNotDetected" : "agentUi.notInstalled", undefined, lang)}</small></div></header>
+      <InstallationLink url={agent.installUrl} name={agent.name} cli={agentRequiresCli(agent.id)} />
     </article>;
     const quota = reading?.view?.quota;
     const displayWindows = (quota?.windows ?? []).filter(w => agent.id !== "antigravity"
@@ -273,7 +275,7 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
     return <article className={`welcome-agent-card ${state.tone}${busy ? " busy" : ""}`} key={agent.id} aria-label={agent.name} style={{ "--stagger": index } as CSSProperties}>
       <header>
         <span className="welcome-agent-icon">{renderIcon(agent.id)}</span>
-        <div><h2>{agent.name}</h2><small>{reading ? t("agentUi.installed", undefined, lang) : scanning ? t("agentUi.finding", undefined, lang) : t("agentUi.installationPending", undefined, lang)}{outdated && quota && ` · ${t("agentUi.lastReading", { time: new Date(quota.collectedAtUnixMs).toLocaleString(lang, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) }, lang)}`}</small></div>
+        <div><h2><span className="agent-runtime-name">{agent.name}</span><AgentRuntimeBadge installation={reading?.installation} /></h2><small>{reading ? t("agentUi.installed", undefined, lang) : scanning ? t("agentUi.finding", undefined, lang) : t("agentUi.installationPending", undefined, lang)}{outdated && quota && ` · ${t("agentUi.lastReading", { time: new Date(quota.collectedAtUnixMs).toLocaleString(lang, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) }, lang)}`}</small></div>
         <span className={`welcome-status ${state.tone}`} data-tooltip={failed ? localizedAgentError(failureDetails[agent.id], "agentUi.scanUnavailable", lang) : state.detail} aria-busy={busy}>
           {busy ? <span className="welcome-spinner" aria-hidden="true" /> : <i aria-hidden="true" />}{state.label}
           {!scanning && !failed && reading && needsAgentLogin(reading.installation, reading.view) &&

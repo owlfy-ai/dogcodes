@@ -4,6 +4,11 @@ import type { TranslationDict } from "../types";
 export const ptBR: TranslationDict = {
   ...uiPtBR,
   agentUi: {
+    "cliSupported": "Suporte a CLI",
+    "cliOnlyHint": "Para agentes com suporte apenas a CLI, instale a CLI separadamente, entre na conta e detecte novamente. Apenas o aplicativo desktop não é suficiente.",
+    "cliNotDetected": "CLI não detectada",
+    "installCli": "Instalar CLI",
+    "runtimeCli": "CLI",
     "notInstalled": "Não instalado",
     "installHint": "Instale um agente e detecte novamente.",
     "moreAgentsHint": "Instale um agente e detecte novamente.",
@@ -21,7 +26,7 @@ export const ptBR: TranslationDict = {
     "exhaustedHint": "Cota esgotada. Aguarde a redefinição ou verifique seu plano.",
     "quotaExhaustedHint": "Cota esgotada. Aguarde a redefinição ou verifique seu plano.",
     "tokenExpired": "Renovação do token pendente",
-    "tokenExpiredHint": "O token do Claude Code expirou, mas o login continua válido. A próxima conversa o renovará.",
+    "tokenExpiredHint": "O token do Claude Code expirou. O cliente nativo gerencia a renovação; se o login tiver expirado, entre novamente.",
     "rateLimited": "Consultas limitadas",
     "rateLimitedHint": "Solicitações limitadas. Tente novamente mais tarde.",
     "quotaRateHint": "Solicitações limitadas. Tente novamente mais tarde.",
@@ -311,6 +316,7 @@ export const ptBR: TranslationDict = {
     quotaOutUntil: "{agent} está sem cota até {time}.",
     quotaSwitch: "Continuar com {agent}",
     quotaSwitchTooltip: "Sua próxima mensagem irá para {agent}, junto com esta conversa",
+    quotaResumeTooltip: "Muda para {agent} e continua a tarefa inacabada, junto com esta conversa",
     enableInManagement: "Ative um Agent no Gerenciamento de Agents ou mude para um disponível",
   },
   turn: {

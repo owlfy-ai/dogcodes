@@ -29,7 +29,13 @@ const balances: Record<string, Array<{ label: string; amount: number; currency: 
   pi: [{ label: "DeepSeek API", amount: 25.5, currency: "CNY" }, { label: "Custom API", amount: 3.125, currency: "USD" }],
   "deepseek-harness": [{ label: "DeepSeek API", amount: 0, currency: "USD" }, { label: "DeepSeek API", amount: 25.5, currency: "CNY" }],
 };
-const installations: InstallationSummary[] = data.map(agent => ({ installationId: `ins_${agent.providerId}`, providerId: agent.providerId, executable: "fixture", fingerprint: "fixture", status: "ready", version: agent.version, versionText: agent.version, diagnostic: null, probeElapsedMillis: 0, probedAt: new Date(now).toISOString() }));
+const desktopExecutables: Record<string, string> = {
+  codex: "/Applications/Codex.app/Contents/Resources/codex",
+  "claude-code": "/Users/fixture/Library/Application Support/Claude/claude-code/2.1.325/hash/claude.app/Contents/MacOS/claude",
+  "deepseek-harness": "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh",
+  opencode: "/Applications/OpenCode.app/Contents/Resources/opencode-cli",
+};
+const installations: InstallationSummary[] = data.map(agent => ({ installationId: `ins_${agent.providerId}`, providerId: agent.providerId, executable: desktopExecutables[agent.providerId] ?? `/fixture/bin/${agent.providerId}`, fingerprint: "fixture", status: "ready", version: agent.version, versionText: agent.version, diagnostic: null, probeElapsedMillis: 0, probedAt: new Date(now).toISOString() }));
 const views: QuotaSnapshotView[] = data.map(agent => ({ installationId: `ins_${agent.providerId}`, providerId: agent.providerId, quota: agent.windows ? { windows: agent.windows, balances: balances[agent.providerId], context: null, planType: agent.plan, onDemand: "onDemand" in agent ? agent.onDemand : undefined, source: "native_pull", confidence: "provider_reported", collectedAtUnixMs: now, staleAfterUnixMs: now + 3600000, parserVersion: "fixture" } : null, diagnostic: agent.windows ? null : "claude_quota_login_required" }));
 const welcomeClient = { bootstrap: async () => ({ installations }), scanAgent: async () => ({ installations }), quotaSnapshots: async () => views } as unknown as CoreClient;
 const update = (id: string, status: AgentUpdate["status"], latestVersion: string, desktopVersion?: string): AgentUpdate => ({ installationId: `ins_${id}`, status, currentVersion: allData.find(agent => agent.providerId === id)!.version, latestVersion, desktopVersion, message: null, source: "fixture", canUpgrade: status === "available", checkedAt: now });

@@ -1,4 +1,8 @@
 export const agentUiEn = {
+  "cliSupported": "CLI supported",
+  "cliOnlyHint": "For CLI-only agents, install and sign in to the CLI, then scan again. Installing the desktop app alone is not sufficient.",
+  "cliNotDetected": "CLI not detected",
+  "installCli": "Install CLI",
   "notInstalled": "Not installed",
   "installHint": "Install an agent, then scan again to connect it.",
   "demo": "Demo data",
@@ -12,7 +16,7 @@ export const agentUiEn = {
   "exhausted": "Quota exhausted",
   "exhaustedHint": "The service reports an exhausted quota. Wait for a reset or check your plan, then scan again.",
   "tokenExpired": "Token renewal pending",
-  "tokenExpiredHint": "Claude Code's short-lived token has expired. Your login is still valid; the next Claude Code conversation will renew it automatically.",
+  "tokenExpiredHint": "Claude Code's short-lived token has expired. The native client manages renewal; if it reports that the login has expired, sign in again.",
   "rateLimited": "Quota queries limited",
   "rateLimitedHint": "The quota service is limiting requests. Try again later.",
   "lastReadingHint": "The quota service is limiting requests. Showing the reading from {time}; retrying later.",
@@ -183,6 +187,7 @@ export const agentUiEn = {
   "updateUnsupported": "Automatic updates are unavailable for this installation. Use its original installation channel.",
   "verifyingVersion": "Detecting and verifying the new version",
   "agentReloaded": "Upgrade complete; agent reloaded",
+  "runtimeCli": "CLI",
   "desktopApp": "Desktop app",
   "officialSource": "Official update source",
   "externalInstall": "External installation",
@@ -202,6 +207,10 @@ export const agentUiEn = {
 export type AgentUiMessages = { [K in keyof typeof agentUiEn]: string };
 
 export const agentUiZh: AgentUiMessages = {
+  "cliSupported": "支持 CLI",
+  "cliOnlyHint": "仅支持 CLI 的 Agent 需单独安装并登录 CLI 后重新检测；仅安装桌面客户端无法使用。",
+  "cliNotDetected": "未检测到 CLI",
+  "installCli": "安装 CLI",
   "notInstalled": "未安装",
   "installHint": "安装后重新检测，即可连接本机 Agent。",
   "demo": "演示数据",
@@ -215,7 +224,7 @@ export const agentUiZh: AgentUiMessages = {
   "exhausted": "额度已用尽",
   "exhaustedHint": "原生服务报告额度已用尽，请等待额度重置或检查套餐后重新检测。",
   "tokenExpired": "令牌待续期",
-  "tokenExpiredHint": "Claude Code 的短期访问令牌已到期，登录状态仍有效，无需重新登录。下次在终端或工作台用 Claude Code 对话时会自动续期。",
+  "tokenExpiredHint": "Claude Code 的短期令牌已过期。续期由原生客户端处理；如果提示登录已到期，请重新登录。",
   "rateLimited": "额度查询受限",
   "rateLimitedHint": "原生额度服务暂时限制请求，请稍后重新检测。",
   "lastReadingHint": "原生额度服务暂时限制请求，显示的是 {time} 的读数，稍后自动重试。",
@@ -386,6 +395,7 @@ export const agentUiZh: AgentUiMessages = {
   "updateUnsupported": "暂不支持此安装来源的自动更新，请通过原安装渠道升级",
   "verifyingVersion": "正在重新检测并验证新版本",
   "agentReloaded": "升级完成，已重新加载 Agent",
+  "runtimeCli": "CLI",
   "desktopApp": "桌面应用",
   "officialSource": "官方更新源",
   "externalInstall": "外部安装",

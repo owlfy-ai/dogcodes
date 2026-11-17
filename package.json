@@ -8,7 +8,7 @@
     "desktop:dev": "pnpm --filter @dogcodes/desktop desktop:dev",
     "desktop:package": "node scripts/package-desktop.mjs",
     "desktop:release": "node scripts/desktop-release.mjs",
-    "test:release": "node --test scripts/package-desktop.test.mjs scripts/desktop-release.test.mjs scripts/website-downloads.test.mjs scripts/prepare-computer-use.test.mjs",
+    "test:release": "node --test scripts/package-desktop.test.mjs scripts/desktop-release.test.mjs scripts/website-downloads.test.mjs scripts/prepare-computer-use.test.mjs scripts/updater-manifest.test.mjs scripts/updater-signing.test.mjs",
     "test:desktop-dev": "node --test scripts/desktop-dev.test.mjs",
     "test:local": "node scripts/test-local.mjs",
     "check:release-inputs": "node scripts/check-release-inputs.mjs",

@@ -57,11 +57,10 @@ export function ComputerUseNoticeView({ activity, disconnected = false, captionT
   const { t } = useI18n();
   const logoMask = useId();
   const foreground = activity.mode === "foreground" || disconnected;
-  const idle = activity.mode === "idle" && !disconnected;
-  const message = disconnected ? t("computerUse.glowDisconnected") : foreground
-    ? t(activity.foregroundPossible ? "computerUse.glowPossible" : "computerUse.glowForeground")
-    : t("computerUse.glowBackground");
-  return <aside className={`computer-glow${foreground ? " computer-glow-foreground" : ""}${idle ? " computer-glow-idle" : ""}${captionTop > 0 ? " computer-glow-safe-area" : ""}`} style={{"--computer-caption-top": `${captionTop}px`} as CSSProperties} role={foreground ? "alert" : "status"} aria-hidden={idle}>
+  if (!foreground) return null;
+  const message = disconnected ? t("computerUse.glowDisconnected")
+    : t(activity.foregroundPossible ? "computerUse.glowPossible" : "computerUse.glowForeground");
+  return <aside className={`computer-glow${captionTop > 0 ? " computer-glow-safe-area" : ""}`} style={{"--computer-caption-top": `${captionTop}px`} as CSSProperties} role="alert">
     <div className="computer-glow-haze" aria-hidden="true" />
     <div className="computer-glow-edge" aria-hidden="true" />
     <div className="computer-glow-caption">

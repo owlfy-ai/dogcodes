@@ -14,6 +14,8 @@
 mod autonomous;
 mod background_output;
 mod child_events;
+mod desktop_auth;
+mod environment;
 mod lifecycle;
 #[cfg(test)]
 mod lifecycle_tests;
@@ -63,8 +65,8 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 const FRAME_LIMIT: usize = 2 * 1024 * 1024;
 const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// Environment variables handed to the CLI; everything else is stripped with
-/// `env_clear` so credentials never leak into the agent process. `USER` is not a
+/// Base environment handed to the CLI. Claude-specific authentication variables
+/// are explicitly added by environment.rs; unrelated secrets stay excluded. `USER` is not a
 /// secret: on macOS Claude Code finds its keychain login by account name, and
 /// without it reports "Not logged in" and cannot renew its token.
 const ENV_ALLOWLIST: &[&str] = &[
@@ -106,6 +108,7 @@ fn bypass_permissions_available(target: &agent_runtime::SharedTarget) -> bool {
 
 pub struct ClaudeLaunch {
     pub executable: TargetExecutable,
+    pub native_version: Option<String>,
 }
 
 /// Protocol arguments every session uses; the driver owns them so manifests
@@ -370,8 +373,8 @@ fn claude_result_reports_quota_exhaustion(event: &Value) -> bool {
             .any(explicitly_reports_quota_exhaustion)
 }
 
-/// Push-driven claude quota only refreshes on turns; older readings are
-/// marked stale after an hour so the UI never pretends they are live.
+/// Native get_usage provides account readings. Older CLI push observations
+/// retain their original collection time and become stale after an hour.
 mod quota;
 mod turn_failure;
 const CLAUDE_QUOTA_STALE_MS: i64 = 60 * 60 * 1_000;
@@ -383,14 +386,18 @@ const CLAUDE_QUOTA_STALE_MS: i64 = 60 * 60 * 1_000;
 struct ClaudeQuotaState {
     usage: driver_api::usage::UsageStore,
     pull: tokio::sync::Mutex<quota::Cache>,
+    auth_failure: std::sync::Mutex<Option<&'static str>>,
+    auth_recovered: AtomicBool,
     plan_windows: std::sync::Mutex<Vec<QuotaWindow>>,
     windows_at_unix_ms: std::sync::atomic::AtomicI64,
     context: std::sync::Mutex<HashMap<String, (i64, ContextUsageSnapshot)>>,
 }
 
 struct SessionProcess {
+    desktop_auth: tokio::sync::Mutex<Option<desktop_auth::Lease>>,
     /// False on another machine, where the paths it reports mean nothing here.
     reads_local_files: bool,
+    auth_failed: AtomicBool,
     app_mcps: Vec<driver_api::AppMcp>,
     working_directory: PathBuf,
     quota: std::sync::Arc<ClaudeQuotaState>,
@@ -422,6 +429,26 @@ struct SessionProcess {
 }
 
 impl SessionProcess {
+    async fn respond_to_auth(&self, raw: &Value) -> bool {
+        if !desktop_auth::is_request(raw) {
+            return false;
+        }
+        let response = {
+            let mut lease = self.desktop_auth.lock().await;
+            desktop_auth::response(lease.as_mut(), raw).await
+        };
+        if let Some(response) = response {
+            let mut input = self.stdin.lock().await;
+            if let Some(stdin) = input.as_mut()
+                && (stdin.write_all(response.as_bytes()).await.is_err()
+                    || stdin.flush().await.is_err())
+            {
+                self.native.request_close();
+            }
+        }
+        true
+    }
+
     fn start_autonomous_if_root(&self, raw: &Value) {
         if !autonomous::is_root_output(raw) || !self.autonomous_enabled.load(Ordering::Acquire) {
             return;
@@ -550,7 +577,9 @@ impl ClaudeDriver {
                 {
                     return Err(DriverError::AutonomousTurnBusy);
                 }
-                !process.finished.load(Ordering::Acquire)
+                (!process.auth_failed.load(Ordering::Acquire)
+                    || self.resume_capability != SessionResumeCapability::Supported)
+                    && !process.finished.load(Ordering::Acquire)
                     && !process.closing.load(Ordering::Acquire)
                     && !process.native.stopping()
                     && !process.commands.is_closed()
@@ -605,6 +634,7 @@ impl ClaudeDriver {
         let child = spawn_selected(
             &ClaudeLaunch {
                 executable: self.executable.clone(),
+                native_version: self.native_version.clone(),
             },
             native_session_id,
             true,
@@ -617,7 +647,8 @@ impl ClaudeDriver {
                 permission: workspace.permission_mode.as_deref(),
             },
             workspace.app_mcps.as_slice(),
-        )?;
+        )
+        .await?;
         let process = self
             .install_session(
                 native_session_id,
@@ -647,7 +678,7 @@ impl ClaudeDriver {
     /// Returns [`DriverError::NotConfigured`] when the executable cannot start
     /// and [`DriverError::Protocol`] when the handshake fails or times out.
     pub async fn probe_ready(executable: impl Into<TargetExecutable>) -> Result<(), DriverError> {
-        readiness::probe(executable.into()).await
+        readiness::probe(environment::prepare(executable.into()).await).await
     }
 
     /// Retain the initialized control channel for unscoped catalog
@@ -659,6 +690,7 @@ impl ClaudeDriver {
         native_version: Option<String>,
         resume_capability: SessionResumeCapability,
     ) -> Result<Self, DriverError> {
+        let executable = environment::prepare(executable.into()).await;
         let driver = Self::new(
             provider_id,
             installation_id,
@@ -675,16 +707,18 @@ impl ClaudeDriver {
     async fn install_session(
         &self,
         session_id: &str,
-        child: OwnedChild,
+        started: Started,
         working_directory: PathBuf,
         permission_mode: Option<String>,
         initialize_history: &[driver_api::AppMcp],
     ) -> Result<Arc<SessionProcess>, DriverError> {
-        let (native, stdin, stdout) = native::NativeProcess::start(child)?;
+        let (native, stdin, stdout) = native::NativeProcess::start(started.child)?;
         native.observe_owner(self.stopping.subscribe());
         let (autonomous_tx, autonomous_rx) = mpsc::unbounded_channel();
         let (commands, command_rx) = mpsc::unbounded_channel();
         let process = Arc::new(SessionProcess {
+            desktop_auth: tokio::sync::Mutex::new(started.desktop_auth),
+            auth_failed: AtomicBool::new(false),
             reads_local_files: self.executable.target.is_local(),
             app_mcps: initialize_history.to_vec(),
             working_directory,
@@ -764,22 +798,27 @@ impl ClaudeDriver {
     }
 }
 
-fn spawn(
+struct Started {
+    child: OwnedChild,
+    desktop_auth: Option<desktop_auth::Lease>,
+}
+
+async fn spawn(
     launch: &ClaudeLaunch,
     session_uuid: &str,
     resume: bool,
     working_directory: Option<&str>,
-) -> Result<OwnedChild, DriverError> {
-    spawn_workspace(launch, session_uuid, resume, working_directory, &[])
+) -> Result<Started, DriverError> {
+    spawn_workspace(launch, session_uuid, resume, working_directory, &[]).await
 }
 
-fn spawn_workspace(
+async fn spawn_workspace(
     launch: &ClaudeLaunch,
     session_uuid: &str,
     resume: bool,
     working_directory: Option<&str>,
     additional_directories: &[String],
-) -> Result<OwnedChild, DriverError> {
+) -> Result<Started, DriverError> {
     spawn_selected(
         launch,
         session_uuid,
@@ -789,6 +828,7 @@ fn spawn_workspace(
         SessionSelection::default(),
         &[],
     )
+    .await
 }
 #[derive(Default)]
 struct SessionSelection<'a> {
@@ -798,7 +838,7 @@ struct SessionSelection<'a> {
     permission: Option<&'a str>,
 }
 
-fn spawn_selected(
+async fn spawn_selected(
     launch: &ClaudeLaunch,
     session_uuid: &str,
     resume: bool,
@@ -806,7 +846,7 @@ fn spawn_selected(
     additional_directories: &[String],
     selection: SessionSelection<'_>,
     app_mcps: &[driver_api::AppMcp],
-) -> Result<OwnedChild, DriverError> {
+) -> Result<Started, DriverError> {
     let SessionSelection {
         model,
         thinking,
@@ -890,16 +930,28 @@ fn spawn_selected(
     if let Some(directory) = working_directory {
         command.current_dir(agent_runtime::external_path(directory));
     }
-    for variable in ENV_ALLOWLIST {
+    for variable in ENV_ALLOWLIST.iter().chain(environment::AUTH_VARIABLES) {
         command.inherit(variable);
     }
-    command.spawn().map_err(|error| {
-        if matches!(error.kind(), std::io::ErrorKind::NotFound) {
-            DriverError::NotConfigured("claude executable is missing".into())
-        } else {
-            DriverError::Disconnected(format!("claude process failed to start: {error}"))
-        }
-    })
+    let desktop_auth = desktop_auth::apply(
+        &launch.executable,
+        launch.native_version.as_deref(),
+        &mut command,
+    )
+    .await;
+    command
+        .spawn()
+        .map(|child| Started {
+            child,
+            desktop_auth,
+        })
+        .map_err(|error| {
+            if matches!(error.kind(), std::io::ErrorKind::NotFound) {
+                DriverError::NotConfigured("claude executable is missing".into())
+            } else {
+                DriverError::Disconnected(format!("claude process failed to start: {error}"))
+            }
+        })
 }
 
 async fn run_session(
@@ -1004,6 +1056,34 @@ async fn run_session(
             latest_message = event.get("message").cloned();
         }
         if let Ok(mut raw) = serde_json::from_str::<Value>(&line) {
+            if process.respond_to_auth(&raw).await {
+                continue;
+            }
+            if let Some(reason) = turn_failure::quota_failure(&raw)
+                .filter(|reason| *reason != "claude_quota_refresh_busy")
+            {
+                if let Some(lease) = process.desktop_auth.lock().await.as_ref() {
+                    desktop_auth::reject(lease);
+                }
+                process.auth_failed.store(true, Ordering::Release);
+                *process
+                    .quota
+                    .auth_failure
+                    .lock()
+                    .expect("Claude auth failure") = Some(reason);
+            } else if turn_failure::successful_response(&raw) {
+                process.auth_failed.store(false, Ordering::Release);
+                if process
+                    .quota
+                    .auth_failure
+                    .lock()
+                    .expect("Claude auth failure")
+                    .take()
+                    .is_some()
+                {
+                    process.quota.auth_recovered.store(true, Ordering::Release);
+                }
+            }
             let usage_request =
                 usage_requests.observe(&raw, &process.quota.usage, &process.session_id);
             if !process.turn_active.load(Ordering::Acquire) && autonomous::is_root_output(&raw) {
@@ -1479,6 +1559,7 @@ impl AgentDriver for ClaudeDriver {
         let child = spawn_selected(
             &ClaudeLaunch {
                 executable: self.executable.clone(),
+                native_version: self.native_version.clone(),
             },
             &id,
             false,
@@ -1490,7 +1571,8 @@ impl AgentDriver for ClaudeDriver {
                 ..SessionSelection::default()
             },
             &[],
-        )?;
+        )
+        .await?;
         let process = self
             .install_session(&id, child, directory.into(), Some("plan".into()), &[])
             .await?;
@@ -1512,6 +1594,7 @@ impl AgentDriver for ClaudeDriver {
         let child = spawn_selected(
             &ClaudeLaunch {
                 executable: self.executable.clone(),
+                native_version: self.native_version.clone(),
             },
             &id,
             false,
@@ -1523,7 +1606,8 @@ impl AgentDriver for ClaudeDriver {
                 ..SessionSelection::default()
             },
             &[],
-        )?;
+        )
+        .await?;
         let process = self
             .install_session(
                 &id,
@@ -1646,6 +1730,7 @@ impl AgentDriver for ClaudeDriver {
         let child = spawn_selected(
             &ClaudeLaunch {
                 executable: self.executable.clone(),
+                native_version: self.native_version.clone(),
             },
             &session_uuid,
             false,
@@ -1658,7 +1743,8 @@ impl AgentDriver for ClaudeDriver {
                 permission: request.permission_mode.as_deref(),
             },
             request.app_mcps.as_slice(),
-        )?;
+        )
+        .await?;
         let process = self
             .install_session(
                 &session_uuid,
@@ -1980,20 +2066,23 @@ impl QuotaProvider for ClaudeDriver {
         native_session_id: Option<&str>,
         force: bool,
     ) -> Result<QuotaSnapshot, DriverError> {
+        if let Some(reason) = *self.quota.auth_failure.lock().expect("Claude auth failure") {
+            return Err(DriverError::CapabilityUnavailable(reason.into()));
+        }
         let pulled = {
             let mut cache = self.quota.pull.lock().await;
-            let pulled = cache
-                .read(
-                    force,
-                    self.native_version.as_deref(),
-                    &self.executable.target,
-                )
-                .await;
+            let pulled = cache.read(force, self).await;
             // Account onboarding must not mask a rejected OAuth credential with
             // an earlier stream push. Session context remains independently usable.
-            if (force && cache.failure.is_some())
-                || (native_session_id.is_none()
-                    && cache.failure == Some("claude_quota_login_required"))
+            if ((force || native_session_id.is_none()) && cache.failure.is_some())
+                || matches!(
+                    cache.failure,
+                    Some(
+                        "claude_quota_login_required"
+                            | "claude_quota_login_expired"
+                            | "claude_quota_access_denied"
+                    )
+                )
             {
                 return Err(DriverError::CapabilityUnavailable(
                     cache.failure.unwrap_or("claude_quota_unavailable").into(),
@@ -2003,10 +2092,8 @@ impl QuotaProvider for ClaudeDriver {
             // UI labels its remembered reading as stale instead of presenting it as fresh.
             pulled.filter(|_| !cache.withholds_reading())
         };
-        // Claude's stream-json transport has no on-demand quota pull: windows
-        // arrive only as `rate_limit_event` pushes during turns (absent for
-        // custom-provider backends), and context is observed per result. Both
-        // are account/session-scoped observations, honestly reported as such.
+        // Older native versions may not return limits until a real turn. Keep
+        // their observed pushes, with the original collection time, as fallback.
         let windows = self
             .quota
             .plan_windows
@@ -2106,7 +2193,7 @@ mod tests {
         let driver = ClaudeDriver::new(
             "claude-code",
             &agent_domain::InstallationId::new().to_string(),
-            executable,
+            environment::isolated(&executable, executable.parent().unwrap()),
             Some("2.1.218".into()),
             SessionResumeCapability::Unknown,
         )
@@ -2541,7 +2628,7 @@ done
     async fn probe_ready_accepts_a_compliant_fake_cli() {
         let directory = tempfile::tempdir().unwrap();
         let executable = write_fake_claude(directory.path());
-        ClaudeDriver::probe_ready(&executable)
+        ClaudeDriver::probe_ready(environment::isolated(&executable, directory.path()))
             .await
             .expect("fake cli should pass the control-plane probe");
     }
@@ -2556,7 +2643,11 @@ done
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
-        assert!(ClaudeDriver::probe_ready(&script).await.is_err());
+        assert!(
+            ClaudeDriver::probe_ready(environment::isolated(&script, directory.path()))
+                .await
+                .is_err()
+        );
     }
 
     #[cfg(unix)]

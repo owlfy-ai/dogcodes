@@ -13,7 +13,7 @@ pub(super) fn fixture(mode: &str) -> (tempfile::TempDir, ClaudeDriver) {
     let driver = ClaudeDriver::new(
         "claude-code",
         &InstallationId::new().to_string(),
-        executable,
+        environment::isolated(executable, root.path()),
         None,
         SessionResumeCapability::Supported,
     )
@@ -217,11 +217,13 @@ async fn cancelling_initialization_before_install_still_retires_the_owned_proces
     let child = spawn(
         &ClaudeLaunch {
             executable: driver.executable.clone(),
+            native_version: driver.native_version.clone(),
         },
         "private-initialization",
         false,
         Some(root.path().to_str().unwrap()),
     )
+    .await
     .unwrap();
     let app_mcps = [driver_api::AppMcp {
         name: "fixture".into(),
@@ -330,4 +332,69 @@ async fn native_idle_shutdown_is_confirmed_without_model_requests() {
             .unwrap();
         driver.shutdown(session).await.unwrap();
     }
+}
+
+#[tokio::test]
+async fn login_expiry_requires_an_explicit_retry_and_retires_only_the_failed_process() {
+    let (root, driver) = fixture("auth-session");
+    let session = driver.create_session(workspace(root.path())).await.unwrap();
+    let original = ids(root.path()).await;
+    let prompt = || HubPromptRequest {
+        working_directory: root.path().to_string_lossy().into_owned(),
+        additional_directories: vec![],
+        attachments: vec![],
+        context: vec![],
+        permission_mode: None,
+        prompt: "private fixture prompt".into(),
+    };
+    let first: Vec<_> = driver
+        .prompt(&session, prompt())
+        .await
+        .unwrap()
+        .collect()
+        .await;
+    assert!(first.iter().any(|e| matches!(e,Ok(DriverEvent::TurnFailed {reason}) if reason=="backendText.claudeLoginExpired")));
+    assert!(
+        matches!(driver.read_quota(None).await, Err(DriverError::CapabilityUnavailable(reason)) if reason=="claude_quota_login_expired")
+    );
+    let count_prompts = || {
+        std::fs::read_to_string(root.path().join("requests.jsonl"))
+            .unwrap()
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .filter(|v| v["type"] == "user")
+            .count()
+    };
+    assert_eq!(count_prompts(), 1);
+    {
+        let mut cache = driver.quota.pull.lock().await;
+        cache.failure = Some("claude_quota_login_expired");
+        cache.next_attempt = i64::MAX;
+    }
+    // The fixture represents renewed credentials only in a freshly resumed process.
+    let resumed = driver
+        .resume_selected_session(
+            &session.native_session_id,
+            workspace(root.path()),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(original.iter().all(|pid| !present(*pid)));
+    let second: Vec<_> = driver
+        .prompt(&resumed, prompt())
+        .await
+        .unwrap()
+        .collect()
+        .await;
+    assert!(
+        second
+            .iter()
+            .any(|e| matches!(e, Ok(DriverEvent::TurnCompleted { .. })))
+    );
+    assert!(driver.quota.auth_failure.lock().unwrap().is_none());
+    assert_eq!(count_prompts(), 2);
+    driver.shutdown(resumed).await.unwrap();
+    assert!(driver.read_quota(None).await.is_ok());
 }

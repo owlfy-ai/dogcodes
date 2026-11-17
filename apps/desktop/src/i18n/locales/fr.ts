@@ -4,6 +4,11 @@ import type { TranslationDict } from "../types";
 export const fr: TranslationDict = {
   ...uiFr,
   agentUi: {
+    "cliSupported": "CLI prise en charge",
+    "cliOnlyHint": "Pour les agents disponibles uniquement via CLI, installez la CLI séparément, connectez-vous et relancez la détection. L’application de bureau seule ne suffit pas.",
+    "cliNotDetected": "CLI non détectée",
+    "installCli": "Installer la CLI",
+    "runtimeCli": "CLI",
     "notInstalled": "Non installé",
     "installHint": "Installez un agent, puis relancez la détection.",
     "moreAgentsHint": "Installez un agent, puis relancez la détection.",
@@ -21,7 +26,7 @@ export const fr: TranslationDict = {
     "exhaustedHint": "Quota épuisé. Attendez sa réinitialisation ou vérifiez votre offre.",
     "quotaExhaustedHint": "Quota épuisé. Attendez sa réinitialisation ou vérifiez votre offre.",
     "tokenExpired": "Renouvellement du jeton requis",
-    "tokenExpiredHint": "Le jeton Claude Code a expiré, mais la connexion reste valide. Il sera renouvelé à la prochaine conversation.",
+    "tokenExpiredHint": "Le jeton de Claude Code a expiré. Le client natif gère son renouvellement ; si la connexion a expiré, reconnectez-vous.",
     "rateLimited": "Requêtes limitées",
     "rateLimitedHint": "Requêtes limitées. Réessayez plus tard.",
     "quotaRateHint": "Requêtes limitées. Réessayez plus tard.",
@@ -311,6 +316,7 @@ export const fr: TranslationDict = {
     quotaOutUntil: "{agent} n'a plus de quota jusqu'à {time}.",
     quotaSwitch: "Continuer avec {agent}",
     quotaSwitchTooltip: "Votre prochain message ira à {agent}, avec cette conversation",
+    quotaResumeTooltip: "Passe à {agent} et reprend la tâche inachevée, avec cette conversation",
     enableInManagement: "Veuillez activer un Agent dans la gestion des Agents ou passer à un Agent disponible",
   },
   turn: {

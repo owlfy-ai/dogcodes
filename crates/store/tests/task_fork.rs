@@ -333,6 +333,25 @@ async fn non_git_worktree_fork_carries_context_in_the_source_project() {
     let directory = tempfile::tempdir().unwrap();
     let (core, store, driver, task) = setup(directory.path()).await;
     let first = turn(&core, &store, &task, "non-git-history").await;
+    let events = store
+        .task_events_of_types(
+            &task,
+            0,
+            core.bootstrap().await.unwrap().last_sequence,
+            &[
+                "workspace.fork_snapshot_skipped",
+                "workspace.fork_snapshot_failed",
+            ],
+            10,
+        )
+        .await
+        .unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type, "workspace.fork_snapshot_skipped");
+    assert_eq!(
+        events[0].payload["message"],
+        agent_protocol::FORK_SNAPSHOT_REQUIRES_GIT
+    );
     let request = request(&task, &first, ForkEnvironment::Worktree);
     let fork = core.fork_task(request.clone()).await.unwrap();
     assert_eq!(core.fork_task(request.clone()).await.unwrap(), fork);

@@ -131,6 +131,18 @@ impl OwnedChild {
         command.process_group(0);
         Self::spawn_owned(command)
     }
+    /// Spawn outside the caller's terminal session. Register this before the
+    /// process-group hook so `setsid` still sees a non-leader child.
+    /// Spawn outside the caller's terminal session, without first becoming a
+    /// process-group leader. `setsid` both creates the session and leads its group.
+    pub fn spawn_without_terminal(
+        #[cfg_attr(windows, allow(unused_mut))] mut command: Command,
+    ) -> io::Result<Self> {
+        command.kill_on_drop(true);
+        #[cfg(unix)]
+        unix::detach_terminal(&mut command);
+        Self::spawn_owned(command)
+    }
     /// Start the actual CLI as a controlling-terminal session/group leader.
     /// Unlike a `script` wrapper, this preserves its own PID/group reservation
     /// and the existing host-lifetime guard through all terminal I/O and exit.

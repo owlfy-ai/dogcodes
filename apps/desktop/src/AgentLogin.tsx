@@ -11,6 +11,8 @@ export function agentAccountIssue(installation: AccountInstallation | undefined,
   if (!installation || installation.version === "demo" || view?.quota?.confidence === "demo") return null;
   for (const code of [view?.diagnostic, installation.diagnostic]) {
     switch (code) {
+      case "claude_quota_login_expired": return { label: t("quota.claudeLoginExpiredLabel", undefined, lang), detail: t("backendText.claudeLoginExpired", undefined, lang), loginRequired: true };
+      case "claude_quota_access_denied": return { label: t("agentUi.accessDenied", undefined, lang), detail: t("backendText.claudeAccessDenied", undefined, lang), loginRequired: false };
       case "claude_quota_login_required": return { label: t("agentUi.subscriptionLoginMissing", undefined, lang), detail: t("agentUi.subscriptionLoginHint", undefined, lang), loginRequired: true };
       case "authentication_failed":
       case "quota_login_required": return { label: t("agentUi.loginMissing", undefined, lang), detail: t("agentUi.loginMissingHint", undefined, lang), loginRequired: true };

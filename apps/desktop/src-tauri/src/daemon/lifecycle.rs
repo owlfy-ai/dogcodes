@@ -106,7 +106,7 @@ impl BackgroundService {
         self.closing.store(true, Ordering::Release);
         self.stop_child();
     }
-    async fn busy(&self) -> bool {
+    pub(crate) async fn busy(&self) -> bool {
         match endpoint(&self.directory) {
             Some(_) => probe(&self.directory, "is_idle").await != Ok(Value::Bool(true)),
             None => false,

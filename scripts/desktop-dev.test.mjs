@@ -110,3 +110,14 @@ test('macOS Cargo runner preserves certificate requirements across rebuilds, exe
     assert.equal(failed.stdout, '');
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('development accepts the update key settings in .env.local and never passes the key on', () => {
+  const localEnvironment = `APPLE_SIGNING_IDENTITY="${identity}"\nTAURI_SIGNING_PRIVATE_KEY_PATH=/private/release/updater.key\nTAURI_SIGNING_PRIVATE_KEY_PASSWORD="pass # word"\n`;
+  const environment = { PATH: 'tool-path', TAURI_SIGNING_PRIVATE_KEY: 'private-value', TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 'private-value' };
+  for (const platform of ['darwin', 'win32']) {
+    const plan = prepareDev({ platform, environment, localEnvironment, projectRoot });
+    assert.equal(plan.env.PATH, 'tool-path');
+    for (const key of ['TAURI_SIGNING_PRIVATE_KEY', 'TAURI_SIGNING_PRIVATE_KEY_PATH', 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD']) assert.equal(plan.env[key], undefined, key);
+    if (platform === 'darwin') assert.equal(plan.env.DOGCODES_DEV_SIGNING_IDENTITY, identity);
+  }
+});

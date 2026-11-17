@@ -577,6 +577,30 @@ struct PendingQuestion {
     session_id: String,
     form: agent_domain::QuestionForm,
     reply: oneshot::Sender<agent_domain::QuestionAnswer>,
+    /// Repeated native requests for this card while it stays unanswered.
+    repeated: Vec<oneshot::Sender<agent_domain::QuestionAnswer>>,
+}
+
+/// Attaches a repeated question to the card still open for the same form in
+/// this session; its answer then settles the repeat too. On no match the
+/// sender is handed back for a new card.
+fn repeat_open_question(
+    pending: &PendingQuestions,
+    session_id: &str,
+    form: &agent_domain::QuestionForm,
+    reply: oneshot::Sender<agent_domain::QuestionAnswer>,
+) -> Option<oneshot::Sender<agent_domain::QuestionAnswer>> {
+    let mut pending = pending.lock().expect("questions");
+    match pending
+        .values_mut()
+        .find(|card| card.session_id == session_id && &card.form == form)
+    {
+        Some(card) => {
+            card.repeated.push(reply);
+            None
+        }
+        None => Some(reply),
+    }
 }
 type PendingQuestions = Arc<std::sync::Mutex<HashMap<String, PendingQuestion>>>;
 
@@ -1425,7 +1449,7 @@ async fn run_connection(
                     if let Ok(form)=driver_api::questions::native_form("codebuddy",&params){
                         let id=format!("acp-question-{}",uuid_question_id());
                         let (reply,receiver)=oneshot::channel();
-                        permission_tasks.questions.lock().expect("questions").insert(id.clone(),PendingQuestion{session_id:request.session_id.to_string(),form:form.clone(),reply});
+                        permission_tasks.questions.lock().expect("questions").insert(id.clone(),PendingQuestion{session_id:request.session_id.to_string(),form:form.clone(),reply,repeated:vec![]});
                         let delivered=permission_tasks.updates.lock().expect("updates").as_ref().is_some_and(|u|u.send(DriverEvent::QuestionRequested{native_request_id:id.clone(),form}).is_ok());
                         if !delivered{permission_tasks.questions.lock().expect("questions").remove(&id);}
                         let pending=Arc::clone(&permission_tasks.questions);
@@ -1567,13 +1591,18 @@ async fn run_connection(
                 let request_id=format!("acp-question-{}", uuid_question_id());
                 let session_id=message.params["sessionId"].as_str().unwrap_or("").to_owned();
                 let (reply, receiver)=oneshot::channel();
-                questions.lock().expect("questions").insert(request_id.clone(),PendingQuestion{session_id,form:form.clone(),reply});
-                let delivered=question_updates.lock().expect("updates").as_ref().is_some_and(|updates|updates.send(DriverEvent::QuestionRequested{native_request_id:request_id.clone(),form}).is_ok());
-                if !delivered { questions.lock().expect("questions").remove(&request_id); }
+                // The agent may ask again while a card is unanswered; keep one card.
+                let card=repeat_open_question(&questions,&session_id,&form,reply);
+                let repeat=card.is_none();
+                if let Some(reply)=card {
+                    questions.lock().expect("questions").insert(request_id.clone(),PendingQuestion{session_id,form:form.clone(),reply,repeated:vec![]});
+                    let delivered=question_updates.lock().expect("updates").as_ref().is_some_and(|updates|updates.send(DriverEvent::QuestionRequested{native_request_id:request_id.clone(),form}).is_ok());
+                    if !delivered { questions.lock().expect("questions").remove(&request_id); }
+                }
                 let pending=Arc::clone(&questions);
                 question_background.spawn(async move {
                     let answer=receiver.await.unwrap_or(agent_domain::QuestionAnswer{cancelled:true,values:serde_json::Value::Null});
-                    pending.lock().expect("questions").remove(&request_id);
+                    if !repeat { pending.lock().expect("questions").remove(&request_id); }
                     let _=responder.respond(driver_api::questions::native_answer(provider,&message.params,&answer));
                 });
                 return Ok(agent_client_protocol::Handled::Yes);
@@ -3049,9 +3078,12 @@ impl AgentDriver for AcpDriver {
             .form
             .validate(&answer)
             .map_err(DriverError::Protocol)?;
-        pending
-            .remove(request_id)
-            .expect("checked question")
+        let question = pending.remove(request_id).expect("checked question");
+        // Answer every native request for this card.
+        for repeat in question.repeated {
+            let _ = repeat.send(answer.clone());
+        }
+        question
             .reply
             .send(answer)
             .map_err(|_| DriverError::Disconnected("Question closed".into()))
@@ -3613,6 +3645,46 @@ impl QuotaProvider for AcpDriver {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_repeated_question_reuses_its_open_card_and_shares_its_answer() {
+        let form = |title: &str| agent_domain::QuestionForm {
+            title: title.into(),
+            schema: serde_json::json!({"type":"object","properties":{}}),
+        };
+        let pending: PendingQuestions = Arc::default();
+        let (reply, mut first) = oneshot::channel();
+        pending.lock().unwrap().insert(
+            "card".into(),
+            PendingQuestion {
+                session_id: "s".into(),
+                form: form("Which platform?"),
+                reply,
+                repeated: vec![],
+            },
+        );
+        // The same form in the same session attaches to the open card.
+        let (reply, mut second) = oneshot::channel();
+        assert!(repeat_open_question(&pending, "s", &form("Which platform?"), reply).is_none());
+        // Another form, or another session, needs its own card.
+        let (reply, _) = oneshot::channel();
+        assert!(repeat_open_question(&pending, "s", &form("Submit?"), reply).is_some());
+        let (reply, _) = oneshot::channel();
+        assert!(repeat_open_question(&pending, "other", &form("Which platform?"), reply).is_some());
+        assert_eq!(pending.lock().unwrap().len(), 1);
+        // One answer reaches both native requests.
+        let answer = agent_domain::QuestionAnswer {
+            cancelled: false,
+            values: serde_json::json!({"q":"1688"}),
+        };
+        let card = pending.lock().unwrap().remove("card").unwrap();
+        for repeat in card.repeated {
+            repeat.send(answer.clone()).unwrap();
+        }
+        card.reply.send(answer.clone()).unwrap();
+        assert_eq!(first.try_recv().unwrap(), answer);
+        assert_eq!(second.try_recv().unwrap(), answer);
+    }
+
     #[test]
     fn grok_approval_refusal_is_a_normal_turn_end() {
         for stop in [super::StopReason::Cancelled, super::StopReason::Refusal] {

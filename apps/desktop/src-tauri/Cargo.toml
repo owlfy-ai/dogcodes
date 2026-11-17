@@ -63,18 +63,22 @@ uuid.workspace = true
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tauri = { version = "2.11.5", features = [] }
+tauri = { version = "2.11.5", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2"
 tempfile = "3.27.0"
 tokio = {workspace=true, features= ["signal"] }
 portable-pty = "0.9.0"
 anyhow = "1"
 tauri-plugin-single-instance = "2"
+# 2.13+ needs Tauri 2.12; stay on the 2.12 line until the app moves to Tauri 2.12.
+minisign-verify = "0.2"
+tauri-plugin-updater = { version = "~2.12.0", default-features = false, features = ["rustls-tls", "system-proxy"] }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
+tauri = { version = "2.11.5", features = ["test"] }
 agent-management = { path = "../../../crates/agent-management", features = ["native-http", "test-support"] }
 image = { version = "0.25.9", default-features = false }
 openh264 = "0.9.9"

@@ -23,7 +23,8 @@ fn fixture(mode: &str) -> (tempfile::TempDir, PathBuf) {
 // Start the processing clock only after the private CLI has actually received
 // initialize. Fork/exec setup is observed separately by wait_for's own bound.
 async fn observed_probe(root: &Path, executable: PathBuf) -> Result<(), DriverError> {
-    let mut task = tokio::spawn(async move { ClaudeDriver::probe_ready(&executable).await });
+    let isolated = environment::isolated(&executable, root);
+    let mut task = tokio::spawn(async move { ClaudeDriver::probe_ready(isolated).await });
     wait_for(|| requests(root, "initialize") == 1).await;
     let result = tokio::time::timeout(Duration::from_secs(4), &mut task).await;
     if result.is_err() {
@@ -73,7 +74,8 @@ async fn cancelled_probe_preserves_graceful_finish_and_leaves_an_unrelated_sessi
         .unwrap();
     let peer_ids = ids(peer_root.path()).await;
     let (root, executable) = fixture("probe-cancel");
-    let task = tokio::spawn(async move { ClaudeDriver::probe_ready(&executable).await });
+    let isolated = environment::isolated(&executable, root.path());
+    let task = tokio::spawn(async move { ClaudeDriver::probe_ready(isolated).await });
     wait_for(|| root.path().join("probe-eof").exists()).await;
     let owned = ids(root.path()).await;
     task.abort();

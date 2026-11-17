@@ -4,6 +4,11 @@ import type { TranslationDict } from "../types";
 export const zhTW: TranslationDict = {
   ...uiZhTW,
   agentUi: {
+    "cliSupported": "支援 CLI",
+    "cliOnlyHint": "僅支援 CLI 的 Agent 需另行安裝並登入 CLI 後重新偵測；僅安裝桌面用戶端無法使用。",
+    "cliNotDetected": "未偵測到 CLI",
+    "installCli": "安裝 CLI",
+    "runtimeCli": "CLI",
     "notInstalled": "未安裝",
     "installHint": "安裝後重新偵測，即可連線本機 Agent。",
     "demo": "演示資料",
@@ -17,7 +22,7 @@ export const zhTW: TranslationDict = {
     "exhausted": "額度已用盡",
     "exhaustedHint": "原生服務報告額度已用盡，請等待額度重設或檢查方案後重新偵測。",
     "tokenExpired": "權杖待續期",
-    "tokenExpiredHint": "Claude Code 的短期訪問權杖已到期，登入狀態仍有效，無需重新登入。下次在終端或工作臺用 Claude Code 對話時會自動續期。",
+    "tokenExpiredHint": "Claude Code 的短期權杖已過期。由原生用戶端處理續期；若提示登入已到期，請重新登入。",
     "rateLimited": "額度查詢受限",
     "rateLimitedHint": "原生額度服務暫時限制請求，請稍後重新偵測。",
     "lastReadingHint": "原生額度服務暫時限制請求，顯示的是 {time} 的讀數，稍後自動重試。",
@@ -311,6 +316,7 @@ export const zhTW: TranslationDict = {
     quotaOutUntil: "{agent} 額度已用盡，預計 {time} 恢復。",
     quotaSwitch: "換 {agent} 繼續",
     quotaSwitchTooltip: "下一則訊息改由 {agent} 處理，對話內容會一併帶過去",
+    quotaResumeTooltip: "改由 {agent} 接著完成未做完的任務，對話內容會一併帶過去",
     enableInManagement: "請在 Agent 管理中啟用 Agent，或切換至可用的 Agent",
   },
   turn: {

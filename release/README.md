@@ -133,6 +133,19 @@ Run `pnpm desktop:package --signed` only after filling the required settings:
   See [Tauri Windows signing](https://v2.tauri.app/distribute/sign/windows/).
 - **Linux:** this script builds unsigned packages; repository/package signing can
   be configured separately when the distribution channel is chosen.
+- **In-app updates (macOS and Windows):** signed packages also get an updater
+  signature from the dog.codes updater key, whose public half is
+  `plugins.updater.pubkey` in `apps/desktop/src-tauri/tauri.conf.json`. Set
+  `TAURI_SIGNING_PRIVATE_KEY_PATH` (for example `release/private/updater.key`) or
+  `TAURI_SIGNING_PRIVATE_KEY`, plus `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, in
+  `.env.local`. The key goes only to `tauri signer sign --app-version`, never to
+  `tauri build` or argv. Each signature is checked against the committed public key
+  and bound to the version. On Mac, `dog.codes-<version>-macOS-<arch>.app.tar.gz` is
+  archived from the stapled app, unpacked and verified again, then signed. On
+  Windows the final Authenticode-signed `-Setup.exe` is signed as is. Losing this
+  key means installed copies can no longer update themselves; keep an offline
+  backup of the key and its password. See
+  [automatic app updates](../docs/implementation/app-auto-update.md).
 
 The local JSON accepts only signing-related fields: macOS identity, hardened
 runtime, provider short name and entitlements; Windows certificate thumbprint,
@@ -224,20 +237,27 @@ the **same pushed source commit** on Mac and Windows:
 pnpm desktop:release
 ```
 
-Mac builds both Apple Silicon and Intel DMGs, signs and notarizes them. Windows
+Mac builds both Apple Silicon and Intel DMGs, signs and notarizes them, and adds a
+signed in-app update archive (`.app.tar.gz` and `.sig`) per architecture. Windows
 builds and signs the x64 NSIS installer, extracts it with 7-Zip and verifies the
-installer and packaged `desktop.exe` signatures and timestamps. The command then:
+installer and packaged `desktop.exe` signatures and timestamps, and adds the
+installer's in-app update signature (`.exe.sig`). The command then:
 
 1. Creates and pushes `v<package.json version>` after successful local packaging,
    or reuses that tag if it already points to the same source commit.
 2. Waits for the tag-triggered GitHub workflow to finish and create a draft with
    the three Mac and Windows installers. Linux DEB and AppImage packaging is
    paused until a real machine has been tested.
-3. Uploads this machine's signed installers, replaces their unsigned CI variants,
-   and leaves the other platforms intact. The two machines can run in either order.
+3. Uploads this machine's signed installers and update files, replaces their
+   unsigned CI variants, and leaves the other platforms intact. The two machines
+   can run in either order.
 4. Validates signed-package receipts against the actual uploaded files, updates
-   `SHA256SUMS.txt` for **all three installers**, and updates the managed signing
-   status section in the draft notes while preserving your other release notes.
+   `SHA256SUMS.txt` for **all three installers plus the update archives and
+   signatures**, writes `latest.json` (the in-app updater manifest) from the
+   uploaded signatures, and updates the managed signing status section in the
+   release notes while preserving your other release notes. Both machines are
+   reported ready only when `latest.json` lists macOS ARM64, macOS Intel and
+   Windows x64.
 
 Hashing uses the SHA-256 digest GitHub computes for uploaded assets; if it is
 unavailable, the command downloads and hashes the actual file. It does not reuse
@@ -245,16 +265,22 @@ the checksum of an unsigned package. Public `signing-macos.json` and
 `signing-windows.json` receipts record source commit, package names, sizes and
 hashes; local paths and signing credentials are excluded.
 
-The command keeps the Release as a **draft**. Wait for both machines to finish,
-review installation results and the draft, then manually publish it (turn off
-the pre-release option for a stable release). Do not publish while an upload
-command is still running. This command does not replace already-published releases,
-move existing version tags, automatically commit code or push source branches.
+The command updates the Release attached to the tag. A draft stays a draft, and
+an already published Release is updated in place, including its installers,
+checksums and signing notes. Wait for both machines to finish and review the
+installation results. Publish a draft manually, and turn off the pre-release
+option for a stable release. Do not publish while an upload command is still
+running. This command does not move existing version tags, automatically commit
+code or push source branches.
 
 The website reads the latest published Release. Its macOS buttons use the signed
 Apple Silicon or Intel DMG, and its Windows button uses the signed x64 installer.
 Publishing the draft switches those links. Draft assets stay private, so the
 upload itself does not change the public website. Linux stays on the Release page.
+
+Installed apps read `latest.json` from the latest **published** release, so
+publishing the draft also rolls the update out. They check 90 seconds after launch
+and then every 6 hours.
 
 One-time prerequisites:
 
@@ -271,6 +297,9 @@ One-time prerequisites:
 - Configure the ignored local signing files described above. On Mac this command
   requires a Keychain notarization profile. On Windows it requires a certificate
   thumbprint and a logged-in SimplySign session; PIN prompts can still occur.
+- Copy the in-app updater key to both signing machines (for example
+  `release/private/updater.key`) and set its path and password in `.env.local`.
+  Both machines must use the same key that matches the committed public key.
 - Install full 7-Zip on Windows (or set `SEVEN_ZIP_PATH` to `7z.exe`), plus
   Windows SDK SignTool. The reduced `7za.exe` does not extract NSIS installers.
 - Install GitHub CLI on both machines and run `gh auth login` once with access
@@ -284,17 +313,18 @@ pnpm desktop:release --check
 pnpm desktop:release --upload-only
 ```
 
-Resume requires the same source commit and unchanged verified local packages.
+Resume requires the same source commit and unchanged verified local packages. Build receipts made before in-app update signing
+(schema 1) are rejected; rebuild those packages.
 Completed build receipts live under the ignored
 `release/private/release-state/<tag>/`. If CI fails, inspect and rerun the failed
 workflow first, then use `--upload-only`. If changing source is necessary after
 the tag was pushed, bump `[workspace.package] version` in `Cargo.toml` and release a new tag.
 
-Draft updates use an exclusive `RELEASE_UPLOAD_LOCK.json` asset, acquired without
+Release updates use an exclusive `RELEASE_UPLOAD_LOCK.json` asset, acquired without
 overwriting an existing lock, so simultaneous Mac/Windows uploads cannot race
 their checksums. Normal failures release it. If a process crashes or loses access
 before cleanup, stop that process and verify no other release command is running
-before manually deleting the lock attachment in the draft, then resume. Locks
+before manually deleting the lock attachment on the release, then resume. Locks
 are never automatically stolen based on time alone.
 
 ### Tag-triggered workflow

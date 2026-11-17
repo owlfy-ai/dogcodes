@@ -1,0 +1,4 @@
+.dropdown-refresh-icon { display: block; width: 16px; height: 16px; flex-shrink: 0; }
+.dropdown-refresh-icon.is-refreshing { animation: dropdown-refresh-spin .9s linear infinite; }
+@keyframes dropdown-refresh-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .dropdown-refresh-icon.is-refreshing { animation: none; } }

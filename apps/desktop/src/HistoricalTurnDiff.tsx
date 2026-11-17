@@ -1,7 +1,7 @@
 import { LoadingStatus } from "./LoadingStatus";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { ArtifactMetadata, CoreClient, TaskId } from "@dogcodes/protocol";
-import { loadTurnArtifact, type TurnArtifact } from "./turnArtifactCache";
+import { loadTurnArtifact, loadTurnFile, type TurnArtifact } from "./turnArtifactCache";
 import { HistoricalDiffView } from "./HistoricalDiffView";
 import { focusDialogTitle } from "./dialogFocus";
 import { translate as t } from "./i18n";
@@ -19,16 +19,22 @@ export function HistoricalTurnDiff({ client, taskId, metadata, initialPath, onCl
     void loadTurnArtifact(client, taskId, metadata).then(a => { if (valid) setArtifact(a); }, () => { if (valid) setError(t("historicalDiff.loadFailed")); });
     return () => { valid = false; };
   }, [client, taskId, metadata.artifactId, metadata.payloadSha256, retry]);
-  const rendered = new Set(artifact?.diff?.files.flatMap(f => [f.oldPath, f.newPath]) ?? []);
-  const missing = artifact?.data.files.filter(f => !rendered.has(f.path)) ?? [];
+  const loadFile = useCallback(async (path: string) => {
+    const file = await loadTurnFile(client, taskId, artifact!, path);
+    setArtifact(current => current?.data === artifact?.data && current?.diff ? { ...current,
+      diff: { ...current.diff, files: current.diff.files.map(old => (old.newPath || old.oldPath) === path ? file : old) },
+    } : current);
+    return file;
+  }, [client, taskId, artifact]);
+  const unavailableCount = artifact?.diff?.files.filter(file => file.unavailableReason).length ?? 0;
   return <dialog ref={dialog} className="historical-turn-diff historical-turn-files" onCancel={onClose} aria-labelledby={titleId}>
     <header><h2 id={titleId} tabIndex={-1}>{t("historicalDiff.title")}</h2><button type="button" onClick={onClose} aria-label={t("historicalDiff.close")}>×</button></header>
     <div className="historical-turn-diff-content">{error ? <p role="alert">{error} <button type="button" onClick={() => setRetry(n => n + 1)}>{t("common.retry")}</button></p> : !artifact ? <LoadingStatus layout="panel">{t("historicalDiff.loading")}</LoadingStatus> : <>
       {artifact.data.attribution === "workspace_recovery_interval" && <p role="status">{t("historicalDiff.recoveryInterval")}</p>}
-      {artifact.diff && <HistoricalDiffView key={`${metadata.artifactId}:${initialPath ?? ""}`} diff={artifact.diff} initialPath={initialPath} />}
-      {missing.length > 0 && <div className="turn-review-notice"><p>{t("historicalDiff.missing")}</p><ul>{missing.map(f => <li key={f.path}>{f.path}</li>)}</ul></div>}
+      {artifact.diff && <HistoricalDiffView key={`${metadata.artifactId}:${initialPath ?? ""}`} diff={artifact.diff} initialPath={initialPath} loadFile={loadFile} />}
+      {unavailableCount > 0 && <p className="turn-review-notice">{t("historicalDiff.summary", { count: artifact.data.files.length, available: artifact.data.files.length - unavailableCount, unavailable: unavailableCount })}</p>}
       {!artifact.data.files.length && <p>{t("historicalDiff.empty")}</p>}
-      {artifact.data.patch && <details><summary>{t("historicalDiff.rawPatch")}</summary><pre>{artifact.data.patch}</pre></details>}
+      {artifact.data.patch && <details><summary>{t("historicalDiff.rawPatch")}</summary>{artifact.data.patchTruncated && <p role="status">{t("historicalDiff.rawPartial")}</p>}<pre>{artifact.data.patch}</pre></details>}
     </>}</div>
   </dialog>;
 }

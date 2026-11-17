@@ -29,6 +29,7 @@ pub mod history_bridge;
 pub mod history_delivery;
 mod multi_workspace;
 mod project_commands;
+mod workspace_contents;
 pub use project_commands::AnalysisLifetime;
 pub mod recovery;
 pub mod review_analysis;
@@ -3245,7 +3246,7 @@ impl Core {
     async fn record_workspace_artifact(
         &self,
         scope: &TurnWorkspaceScope,
-        change: Value,
+        mut change: Value,
         event_type: &str,
         media_type: &str,
     ) -> Result<(), CoreError> {
@@ -3258,6 +3259,8 @@ impl Core {
         let operation_id = change.get("operationId").cloned();
         let parent_id = change.get("parentId").cloned();
         let session_id = change.get("sessionId").cloned();
+        let mut bodies = workspace_contents::detach(&mut change)?;
+        let references: Vec<_> = bodies.iter().map(|a| a.metadata.clone()).collect();
         let raw = serde_json::to_string(&change).map_err(|e| CoreError::Internal(e.to_string()))?;
         // Preserve local patch bytes.
         let content = raw.into_bytes();
@@ -3282,8 +3285,9 @@ impl Core {
             },
             event_type,
             json!({"taskId":scope.task_id,"turnId":scope.turn_id,"runId":scope.run_id,
-                "attribution":attribution, "artifact":metadata,"operationId":operation_id,"parentId":parent_id,"sessionId":session_id}),
+                "attribution":attribution, "artifact":metadata,"contentArtifacts":references,"operationId":operation_id,"parentId":parent_id,"sessionId":session_id}),
         );
+        bodies.push(NewArtifact { metadata, content });
         let outcome = self
             .repository
             .append(AppendRequest {
@@ -3291,7 +3295,7 @@ impl Core {
                 command_id: CommandId::new(),
                 idempotency_key: event.event_id.to_string(),
                 expected_stream_version: None,
-                artifacts: vec![NewArtifact { metadata, content }],
+                artifacts: bodies,
                 events: vec![event],
             })
             .await?;
@@ -3528,9 +3532,10 @@ impl Core {
             .into_iter()
             .filter_map(|mcp| driver.prepare_app_mcp(mcp).ok())
             .collect();
-        let prompt = if computer_lease.is_some() {
+        let prompt = if let Some(computer) = app_mcps.iter().find(|mcp| mcp.is_computer()) {
             format!(
-                "[dog.codes computer use enabled]\n{}\n[/dog.codes computer use]\n\n{prompt}",
+                "[dog.codes computer use enabled]\nCurrent computer-use MCP server: {}. Use its currently published tools, not server names copied from earlier conversation history. If a tool is not found, refresh the published tool catalog or report desktop verification as unavailable; do not keep invoking the missing name.\n{}\n[/dog.codes computer use]\n\n{prompt}",
+                computer.name,
                 include_str!("computer_use/workflow.md")
             )
         } else {

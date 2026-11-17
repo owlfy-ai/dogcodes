@@ -70,7 +70,7 @@ jobs:
           cd release-assets
           sha256sum -- *.exe *.dmg > SHA256SUMS.txt
           # sha256sum -- *.exe *.dmg *.deb *.AppImage > SHA256SUMS.txt
-      - name: Create a draft release
+      - name: Create or refresh a draft release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
@@ -92,5 +92,13 @@ jobs:
           -->
           <!-- dogcodes-signing:end -->
           NOTES
-          gh release create "$TAG" --repo "$REPO" --draft --prerelease \
-            --title "dog.codes $TAG" --notes-file notes.md release-assets/*
+          if gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft > release-draft.txt; then
+            if [ "$(cat release-draft.txt)" != true ]; then
+              echo "::error::Refusing to replace assets of a published release: $TAG"
+              exit 1
+            fi
+            gh release upload "$TAG" --repo "$REPO" --clobber release-assets/*
+          else
+            gh release create "$TAG" --repo "$REPO" --draft --prerelease \
+              --title "dog.codes $TAG" --notes-file notes.md release-assets/*
+          fi

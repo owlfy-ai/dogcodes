@@ -771,6 +771,12 @@ impl WorkspaceContextProvider for GitWorkspaceContextProvider {
         workspace_path: &str,
         checkpoint: serde_json::Value,
     ) -> Result<serde_json::Value, WorkspaceCollectionDiagnostic> {
+        if checkpoint["backend"] == "filesystem" {
+            let mut changes = filesystem::recover(Path::new(workspace_path), &checkpoint)?;
+            changes["attribution"] = serde_json::json!("workspace_recovery_interval");
+            changes["recoveredAfterInterruption"] = serde_json::json!(true);
+            return Ok(changes);
+        }
         let capture = self.begin_turn(workspace_path).await?;
         let after = capture
             .checkpoint()

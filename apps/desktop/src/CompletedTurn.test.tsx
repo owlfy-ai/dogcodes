@@ -68,6 +68,9 @@ it("does not mount historical artifact cards inside a collapsed process", async 
   expect(TurnFiles).toHaveBeenCalledTimes(1);
   const details = host.querySelector<HTMLDetailsElement>(".turn-process")!;
   await act(async () => { details.open = true; details.dispatchEvent(new Event("toggle")); });
+  // Operations now share a folded run; its header loads stats without mounting the cards.
+  expect(host.querySelectorAll('[data-testid="turn-files"]')).toHaveLength(1);
+  await act(async () => details.querySelector<HTMLButtonElement>(".tool-run-toggle")!.click());
   expect(host.querySelectorAll('[data-testid="turn-files"]')).toHaveLength(101);
 });
 it("does not hide a completed turn without any final response",async()=>{

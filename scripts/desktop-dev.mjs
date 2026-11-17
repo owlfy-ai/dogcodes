@@ -7,12 +7,14 @@ import { parseEnv } from 'node:util';
 import { parseSigningConfig } from './signing-config.mjs';
 import { prepareComputerUse } from './prepare-computer-use.mjs';
 import { hostWindowsTarget, prepareOpenSsh } from './prepare-openssh.mjs';
+import { withoutUpdaterKey } from './updater-signing.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 export function prepareDev({ platform, environment, args = [], localEnvironment = '', signingConfig = null,
   projectRoot = root, identifier = 'codes.dog.desktop' }) {
-  const env = { ...environment };
+  // The in-app update key is for release signing only; dev builds never see it.
+  const env = withoutUpdaterKey(environment);
   if (platform !== 'darwin') return { env, args: ['dev', ...args], signed: false };
   let local;
   try { local = parseEnv(localEnvironment); }

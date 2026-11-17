@@ -45,3 +45,29 @@ it("lets a conversation move on from an agent that's out of quota, keeping what 
   expect(host.querySelector<HTMLButtonElement>(".composer-submit")!.disabled).toBe(false);
   expect(host.querySelector(".agent-picker summary")?.getAttribute("data-tooltip")).not.toContain("Codex");
 });
+
+it("picks up a turn that ran out of quota on the agent the person switches to", async () => {
+  const { bootstrap } = client;
+  const task = (await bootstrap.call(client)).tasks[0];
+  const { timeline } = client;
+  vi.spyOn(client, "timeline").mockImplementation(async (taskId) => {
+    const items = await timeline.call(client, taskId);
+    return taskId !== task.taskId ? items : [...items, { attachments: [], itemId: "quota", taskId, turnId: "trn_quota",
+      kind: "quota.exhausted", text: "backendText.quotaExhausted", providerId: "codex", sequence: 99, occurredAt: new Date().toISOString() }];
+  });
+  const submitted = vi.spyOn(client, "submitTurn");
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await act(async () => root.render(<App client={client} />));
+  await settle();
+  const button = host.querySelector<HTMLButtonElement>(".quota-switch-notice button")!;
+  expect(button.dataset.tooltip).toContain("未做完的任务");
+  await act(async () => button.click());
+  await settle();
+  expect(submitted).toHaveBeenCalledTimes(1);
+  const [sentTask, prompt] = submitted.mock.calls[0];
+  expect(prompt).toBe("Continue the task from where it stopped.");
+  expect(sentTask.preferredExecutor.providerId).not.toBe("codex");
+  // The timeline shows the request in the person's language.
+  expect(host.textContent).toContain("从中断的地方继续完成任务。");
+});

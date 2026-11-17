@@ -125,6 +125,7 @@ impl Driver {
             .request(method, json!({"name":name,"arguments":args}))
             .await?;
         describe_images(&mut result);
+        describe_recovery(&mut result);
         Ok(result)
     }
 
@@ -164,6 +165,47 @@ impl Driver {
                 }
             }
         }).await.map_err(|_| "computer_driver_timeout; action outcome unknown; observe before retrying".to_owned())?
+    }
+}
+
+/// Keep failed actions failed and incomplete reads incomplete. Recovery is advice,
+/// never an automatic replay of a batch that may already have changed the UI.
+fn describe_recovery(result: &mut Value) {
+    let state = &result["structuredContent"];
+    let observation = &state["observation"]["state"];
+    let incomplete = [state, observation]
+        .iter()
+        .any(|value| value["truncated"] == true || value["elements_complete"] == false);
+    let wait_failed = state["steps"].as_array().is_some_and(|steps| {
+        steps
+            .iter()
+            .any(|step| step["ok"] == false && step["phase"] == "wait_for")
+    });
+    let empty_image = result["content"].as_array().is_some_and(|content| {
+        content
+            .iter()
+            .any(|item| item["type"] == "image" && item["data"].as_str().is_none_or(str::is_empty))
+    });
+    let Some(content) = result.get_mut("content").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for (needed, advice) in [
+        (
+            incomplete,
+            "Accessibility read is incomplete: a missing match does not establish that the element is absent. Narrow the read or increase max_elements within the tool schema; use a fresh screenshot if the control remains unreachable. Do not repeat the same exhausted read unchanged.",
+        ),
+        (
+            wait_failed,
+            "The wait condition did not match within its deadline; this alone does not establish that the application operation failed. Inspect fresh loading/progress/error state. If still running, continue a bounded wait for an observed stable completion indicator. Inspect partial steps before recovery; do not replay clicks, submissions or app restarts automatically.",
+        ),
+        (
+            empty_image,
+            "The driver returned an empty image with no usable pixels. Do not use it for visual grounding or save it as a valid screenshot. Inspect surface/render readiness and capture again after a fresh observation.",
+        ),
+    ] {
+        if needed {
+            content.push(json!({"type":"text","text":advice}));
+        }
     }
 }
 
@@ -320,7 +362,7 @@ fn compact_schema(value: &mut Value) {
     }
     if value["name"] == "run_steps" {
         value["description"] = json!(
-            "Run 1–32 known actions, stopping on failure. Steps: {tool,args} or {click:{...}}; only the listed action tools. Use observe:{} for one final read, include_screenshot:true there for an image. Split at decisions; inspect partial results before retrying."
+            "Run 1–32 known actions or wait_for/expect checks, stopping on failure. Steps: {tool,args}, {click:{...}}, {wait_for:{...}}. Use observe:{} for one final read. Wait for observed completion/loading state, not a guessed title. Inspect partial results and truncated reads before recovery; never replay uncertain actions automatically."
         );
         value["inputSchema"]["properties"]["steps"]["maxItems"] = json!(32);
     }
@@ -329,6 +371,63 @@ fn compact_schema(value: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn incomplete_wait_failure_keeps_raw_evidence_and_gives_recovery_advice() {
+        let mut result = json!({"isError":true,"content":[{"type":"text","text":"wait_for: not_found"}],
+            "structuredContent":{"ok":false,"failed_step":1,
+                "steps":[{"ok":true,"tool":"click"},{"ok":false,"phase":"wait_for","code":"not_found"}],
+                "observation":{"state":{"elements_complete":false,"truncated":true,"snapshot_id":"s2"}}}});
+        let original = result.clone();
+        describe_recovery(&mut result);
+        assert_eq!(result["isError"], original["isError"]);
+        assert_eq!(result["structuredContent"], original["structuredContent"]);
+        assert_eq!(result["content"][0], original["content"][0]);
+        let advice = result["content"].to_string();
+        assert!(advice.contains("missing match does not establish"));
+        assert!(advice.contains("loading/progress/error"));
+        assert!(advice.contains("do not replay"));
+    }
+
+    #[test]
+    fn incomplete_successful_read_is_inconclusive_without_becoming_an_error() {
+        let mut result = json!({"content":[],"structuredContent":{"elements_complete":false}});
+        describe_recovery(&mut result);
+        assert!(result.get("isError").is_none());
+        assert_eq!(result["content"].as_array().unwrap().len(), 1);
+        assert!(
+            result["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("max_elements")
+        );
+        let mut complete = json!({"content":[],"structuredContent":{"elements_complete":true}});
+        let original = complete.clone();
+        describe_recovery(&mut complete);
+        assert_eq!(complete, original);
+    }
+
+    #[test]
+    fn empty_image_cannot_ground_actions_and_other_errors_stay_unchanged() {
+        let mut empty = json!({"content":[{"type":"image","mimeType":"image/png","data":""}]});
+        describe_recovery(&mut empty);
+        assert_eq!(empty["content"][0]["data"], "");
+        assert!(
+            empty["content"][1]["text"]
+                .as_str()
+                .unwrap()
+                .contains("no usable pixels")
+        );
+        for mut result in [
+            json!({"isError":true,"content":[{"type":"text","text":"permission denied"}]}),
+            json!({"content":[{"type":"image","mimeType":"image/png","data":"nonempty"}]}),
+            Value::Null,
+        ] {
+            let original = result.clone();
+            describe_recovery(&mut result);
+            assert_eq!(result, original);
+        }
+    }
+
     #[test]
     fn image_dimensions_are_portable_without_changing_pixels_or_capture_metadata() {
         let mut header = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();

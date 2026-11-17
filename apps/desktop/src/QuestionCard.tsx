@@ -31,8 +31,6 @@ export function QuestionCard({ form, busy = false, disabled = false, onAnswer, c
   const blocked = busy || disabled || !onAnswer;
   const answered = (key: string) => result[key] !== undefined && (!Array.isArray(result[key]) || result[key].length > 0);
   const currentComplete = !required.has(keys[activeIndex]) || answered(keys[activeIndex]);
-  const contextTitle = form.title.trim();
-  const showContext = contextTitle && !/^(请回答以下问题|请确认以下问题|请回答|请选择|questions?|choose)[。.!！：:]*$/i.test(contextTitle) && contextTitle !== properties[keys[activeIndex]]?.title;
   const validateFields = (indices: number[]) => {
     const fields = formRef.current?.querySelectorAll<HTMLFieldSetElement>(".question-field");
     for (const index of indices) {
@@ -55,7 +53,6 @@ export function QuestionCard({ form, busy = false, disabled = false, onAnswer, c
       if (complete && validateFields(keys.map((_, index) => index))) onAnswer?.({ cancelled: false, values: result });
     }}>
     <header className="approval-heading"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-8l-5 3v-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M9.5 8a2.5 2.5 0 1 1 4.6 1.4L12 11v1m0 2v.5"/></svg><span>{t("question.title")}</span><span className="question-progress">{keys.filter(answered).length === keys.length ? t("question.allAnswered") : `${activeIndex + 1} / ${keys.length}`}</span></header>
-    {showContext && <p className="question-context">{contextTitle}</p>}
     {keys.length > 1 && <nav className="question-nav" aria-label={t("question.nav")}>{keys.map((key, index) => <button type="button" key={key} disabled={busy || disabled} aria-current={index === activeIndex ? "step" : undefined} aria-label={t("question.step", { index: index + 1, title: properties[key].title ?? key })} data-tooltip={properties[key].title ?? key} onClick={() => goTo(index)}><span className={`question-step ${answered(key) ? "answered" : ""}`}>{answered(key) ? <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m3 8 3 3 7-7"/></svg> : index + 1}</span><span>{properties[key].title ?? key}</span></button>)}</nav>}
     <div className="question-fields" ref={fieldsRef}>
       {keys.map((key, index) => {

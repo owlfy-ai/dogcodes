@@ -87,7 +87,10 @@ it("allows current-code checks without a saved snapshot", async () => {
 it("keeps distinct root paths when combining saved patches and marks binary snapshots unavailable", () => {
   const diff = frozenDiff({ roots: ["/root/one", "/root/two"].map(workspacePath => ({ workspacePath, changes: { patch: editPatch("a.ts", "before\n", "after\n") } })), files: [{ path: "/root/one/a.ts" }, { path: "/root/two/a.ts" }, { path: "binary", before: { hex: "00" }, after: { hex: "01" } }] });
   expect(diff.kind).toBe("structured");
-  if (diff.kind === "structured") expect(diff.diff.files.map(f => f.newPath)).toEqual(["/root/one/a.ts", "/root/two/a.ts"]);
+  if (diff.kind === "structured") {
+    expect(diff.diff.files.map(f => f.newPath)).toEqual(["/root/one/a.ts", "/root/two/a.ts", "binary"]);
+    expect(diff.diff.files[2].unavailableReason).toBeTruthy();
+  }
 });
 
 it("shows the backend-selected Agent and dispatches Kimi", async () => {

@@ -28,6 +28,7 @@ pub(super) async fn read_with_auto(
     let prepared = driver.ready_connection.lock().await.take();
     let ready_slot = driver.ready_connection.clone();
     let executable = driver.executable.clone();
+    let native_version = driver.native_version.clone();
     let workspace = workspace.map(str::to_owned);
     let (observer, mut owner) = tokio::sync::watch::channel(false);
     let result = tokio::spawn(async move {
@@ -64,15 +65,16 @@ pub(super) async fn read_with_auto(
         } else {
             let temp_directory = executable.target.temp_directory();
             let child = spawn(
-                &ClaudeLaunch { executable },
+                &ClaudeLaunch { executable, native_version },
                 &uuid::Uuid::new_v4().to_string(),
                 false,
                 Some(workspace.as_deref().unwrap_or(&temp_directory.to_string_lossy())),
-            )?;
+            ).await?;
             // Reuse the business-session supervisor: drain both pipes and retain
             // the original OS scope independently of this observer's lifetime.
-            let (native, stdin, stdout) = NativeProcess::start(child)?;
+            let (native, stdin, stdout) = NativeProcess::start(child.child)?;
             super::readiness::ReadyConnection {
+                desktop_auth: child.desktop_auth,
                 native,
                 stdin,
                 stdout: BufReader::new(stdout),
@@ -83,7 +85,7 @@ pub(super) async fn read_with_auto(
             _ = owner.changed() => Err(DriverError::Disconnected("Claude catalog observer ended".into())),
             result = async { AssertUnwindSafe(tokio::time::timeout(
             PROBE_TIMEOUT,
-            read_catalog(&mut connection.stdin, &mut connection.stdout),
+            read_catalog(&mut connection.stdin, &mut connection.stdout, connection.desktop_auth.as_mut()),
         ))
         .catch_unwind()
         .await
@@ -113,6 +115,7 @@ pub(super) async fn read_with_auto(
 async fn read_catalog(
     stdin: &mut agent_runtime::ProcessInput,
     stdout: &mut BufReader<tokio::io::DuplexStream>,
+    mut desktop_auth: Option<&mut super::desktop_auth::Lease>,
 ) -> Result<(ModelCatalog, bool), DriverError> {
     stdin.write_all(b"{\"type\":\"control_request\",\"request_id\":\"model-catalog\",\"request\":{\"subtype\":\"initialize\",\"hooks\":{}}}\n").await.map_err(|_| DriverError::Disconnected("Claude model request failed".into()))?;
     stdin
@@ -134,6 +137,12 @@ async fn read_catalog(
         let Ok(value) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
+        if super::desktop_auth::respond(desktop_auth.as_deref_mut(), &value, stdin)
+            .await
+            .map_err(|_| DriverError::Disconnected("Claude auth callback unavailable".into()))?
+        {
+            continue;
+        }
         if value["type"] != "control_response" || value["response"]["request_id"] != "model-catalog"
         {
             continue;

@@ -70,6 +70,33 @@ async function mount(client: CoreClient) {
   await act(async () => root!.render(<AgentWelcome client={client} onContinue={() => {}} renderIcon={() => null} />));
 }
 describe("welcome scan workflow", () => {
+  it("explains CLI-only support before the agent is installed", async () => {
+    await mount({ scanAgent: async () => ({ installations: [] }), quotaSnapshots: async () => [] } as unknown as CoreClient);
+    for (const name of ["Cursor", "Antigravity", "CodeBuddy", "Kimi Code", "Grok Build", "Pi", "Kiro"]) {
+      const card = container.querySelector(`article[aria-label="${name}"]`)!;
+      expect(card.querySelector('[data-runtime-support="cli"]')?.textContent).toBe("支持 CLI");
+      expect(card.querySelector('[data-runtime-support="cli"]')?.getAttribute("data-tooltip")).toContain("仅安装桌面客户端无法使用");
+      expect(card.textContent).toContain("未检测到 CLI");
+      expect(card.querySelector("a")?.textContent).toContain("安装 CLI");
+    }
+    expect(container.querySelector('article[aria-label="DeepSeek Harness"] [data-runtime-support]')).toBeNull();
+    expect(container.querySelector('article[aria-label="Antigravity"] a')?.getAttribute("href")).toBe("https://antigravity.google/docs/cli");
+  });
+
+  it("labels the selected runtime beside installed agent names", async () => {
+    await mount({
+      scanAgent: async (id: string) => ({ installations: id === "codex" || id === "claude-code"
+        ? [{ ...installation, providerId: id, installationId: `ins_${id}`, executable: id === "codex"
+          ? "/Applications/Codex.app/Contents/Resources/codex" : "/Users/me/.local/bin/claude" }] : [] }),
+      quotaSnapshots: async () => [],
+    } as unknown as CoreClient);
+    const desktop = container.querySelector('h2 [data-runtime-source="desktop"]');
+    expect(desktop?.parentElement?.textContent).toBe("Codex桌面应用");
+    expect(desktop?.getAttribute("data-tooltip")).toContain("/Applications/Codex.app");
+    expect(container.querySelector('h2 [data-runtime-source="cli"]')?.parentElement?.textContent).toBe("Claude CodeCLI");
+    expect(container.querySelectorAll("[data-runtime-source]")).toHaveLength(2);
+  });
+
   it("reads installed account quotas even when a new connection probe fails", async () => {
     const providers = ["codex", "kiro", "zcode"];
     const quotaSnapshots = vi.fn(async (_: unknown, id: string) => [{
@@ -326,9 +353,9 @@ describe("independent native agent detection", () => {
     expect(container.querySelector('[aria-label="Codex"]')?.textContent).toContain("已登录");
     expect(container.querySelector('[aria-label="Codex"]')?.textContent).toContain("75%");
     expect(container.querySelector('[aria-label="Kimi Code"] .welcome-status')?.textContent).toBe("等待检测");
-    expect(container.querySelector('[aria-label="Cursor"]')?.textContent).toContain("未安装");
+    expect(container.querySelector('[aria-label="Cursor"]')?.textContent).toContain("未检测到 CLI");
     await act(async () => release({ installations: [] } as unknown as BootstrapSnapshot));
-    expect(container.querySelector('[aria-label="Kimi Code"]')?.textContent).toContain("未安装");
+    expect(container.querySelector('[aria-label="Kimi Code"]')?.textContent).toContain("未检测到 CLI");
   });
   it("clears all previous readings and performs twelve fresh probes on each retry", async () => {
     let blocked = false;
@@ -352,7 +379,7 @@ describe("independent native agent detection", () => {
     await mount({ scanAgent: async (id: string) => { if (id === "kimi") throw new Error("timeout"); return { installations: id === "codex" ? [installation] : [] }; }, quotaSnapshots: async () => [view()] } as unknown as CoreClient);
     expect(container.querySelector('[aria-label="Codex"]')?.textContent).toContain("已登录");
     expect(container.querySelector('[aria-label="Kimi Code"]')?.textContent).toContain("检测失败");
-    expect(container.querySelector('[aria-label="Kimi Code"]')?.textContent).not.toContain("未安装");
+    expect(container.querySelector('[aria-label="Kimi Code"]')?.textContent).not.toContain("未检测到 CLI");
   });
 });
 
@@ -406,7 +433,7 @@ describe("detection lifecycle recovery", () => {
     expect(button.disabled).toBe(false);
     scanAgent.mockImplementation(async () => ({ installations: [] } as unknown as BootstrapSnapshot));
     await act(async () => button.click());
-    expect(container.querySelector('[aria-label="Cursor"]')?.textContent).toContain("未安装");
+    expect(container.querySelector('[aria-label="Cursor"]')?.textContent).toContain("未检测到 CLI");
     expect(scanAgent).toHaveBeenCalledTimes(24);
   });
   it("bounds an orphaned quota reply without blocking other cards", async () => {

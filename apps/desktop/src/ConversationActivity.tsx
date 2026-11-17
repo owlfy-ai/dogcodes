@@ -4,6 +4,7 @@ import { TurnActions } from "./TurnActions";
 import { DeferredDetails } from "./DeferredDetails";
 import { AgentPending, type PendingAgent } from "./AgentPending";
 import { ThinkingTicker } from "./ThinkingTicker";
+import { useToolRunEdits } from "./toolRunEdits";
 import { ActivityIcon } from "./ActivityIcon";
 import { ComputerUseActivity } from "./ComputerUseActivity";
 import { ForkOrigin } from "./ForkOrigin";
@@ -139,10 +140,10 @@ function statusText(t: (key: string) => string, status: string | undefined): str
   return key ? t(`activity.status.${key}`) : "";
 }
 const isRunning = (a: Activity, active: boolean) => active && ["running", "started", "in_progress"].includes(a.status ?? "");
-function Thought({ a, active }: { a: Activity; active: boolean }) {
+/** "Thinking · about 3s" while it runs, "Thought · took about 4s" after; ticks each second while running. */
+function useThoughtLabel(a: Activity, running: boolean) {
   const { t } = useI18n();
   const [, tick] = useState(0);
-  const running = isRunning(a, active);
   useEffect(() => {
     if (!running) return;
     const timer = setInterval(() => tick((n) => n + 1), 1000);
@@ -154,19 +155,22 @@ function Thought({ a, active }: { a: Activity; active: boolean }) {
       : running && a.startedAt
         ? Math.max(0, Math.floor((Date.now() - Date.parse(a.startedAt)) / 1000))
         : null;
+  return t(running
+    ? "activity.thinking"
+    : a.status === "interrupted"
+      ? "activity.thinkingInterrupted"
+      : "activity.thought") + (seconds !== null
+    ? ` · ${t(running ? "activity.aboutSeconds" : "activity.lastedSeconds", { seconds })}`
+    : ` · ${t("activity.timeNotRecorded")}`);
+}
+function Thought({ a, active }: { a: Activity; active: boolean }) {
+  const { t } = useI18n();
+  const running = isRunning(a, active);
+  const text = useThoughtLabel(a, running);
   const label = (
     <span>
       <ActivityIcon kind="think" />
-      <span className="activity-text">
-      {t(running
-        ? "activity.thinking"
-        : a.status === "interrupted"
-          ? "activity.thinkingInterrupted"
-          : "activity.thought")}
-      {seconds !== null
-        ? ` · ${t(running ? "activity.aboutSeconds" : "activity.lastedSeconds", { seconds })}`
-        : ` · ${t("activity.timeNotRecorded")}`}
-      </span>
+      <span className="activity-text">{text}</span>
     </span>
   );
   // A finished segment keeps its text: collapsed like a tool step, opened on demand.
@@ -188,10 +192,9 @@ function Thought({ a, active }: { a: Activity; active: boolean }) {
     </div>
   );
 }
-function FileEdits({ taskId, a, running, status }: { taskId: string; a: Activity; running: boolean; status: string }) {
-  const remote = useContext(RemoteConversationContext);
+function activityEdits(a: Activity) {
   const input = a.input as Record<string, unknown> | undefined;
-  const files = a.changes?.length
+  return a.changes?.length
     ? a.changes
     : inputPath(a)
       ? [
@@ -206,6 +209,10 @@ function FileEdits({ taskId, a, running, status }: { taskId: string; a: Activity
           },
         ]
       : [];
+}
+function FileEdits({ taskId, a, running, status }: { taskId: string; a: Activity; running: boolean; status: string }) {
+  const remote = useContext(RemoteConversationContext);
+  const files = activityEdits(a);
   return (
     <>
       {files.map((f, index) => {
@@ -270,6 +277,7 @@ export function ActivityRow({
   if (a.type === "status") return null;
   // A batch/progress notification with no display fields is not a tool row.
   if (a.type === "tool" && !a.name && !a.title && !a.status &&
+      !a.artifact &&
       a.input == null && a.output == null && a.content == null &&
       !a.text && !a.changes?.length) return null;
   if (a.type === "thought") return <Thought a={a} active={active} />;
@@ -368,68 +376,109 @@ const TimelineActivityRow = memo(function TimelineActivityRow(props: Omit<Parame
 });
 
 const emptyTool = (a: Activity) => a.type === "tool" && !a.name && !a.title && !a.status &&
+  !a.artifact &&
   a.input == null && a.output == null && a.content == null && !a.text && !a.changes?.length;
 /** Rows that render nothing; they neither count in nor break a run of tool calls. */
 function silentActivity(item: TimelineItem) {
   const a = activityOf(item);
   return !!a && (a.type === "status" || emptyTool(a));
 }
-/** A plain tool-call row that may fold into a run with its neighbours. */
+/** A plain tool-call row: one call to an agent tool, counted in a run's header. */
 export function foldableCall(item: TimelineItem) {
   if (item.kind.startsWith("tool.")) return true;
   const a = activityOf(item);
-  return !!a && a.type === "tool" && !a.artifact && !isSubagent(a) && !emptyTool(a);
+  return !!a && a.type === "tool" && !isSubagent(a) && !emptyTool(a);
+}
+/**
+ * A one-line step of the agent's work: a thought, a tool call, a computer-use
+ * action or a subagent. Steps between two pieces of text fold into one run.
+ */
+export function foldableStep(item: TimelineItem) {
+  if (item.kind === "computer_use" || foldableCall(item)) return true;
+  const a = activityOf(item);
+  return !!a && (a.type === "thought" || isSubagent(a));
 }
 const approvalStates = ["awaiting_approval", "waiting_approval", "needs_approval", "pending_approval"];
-/** Calls that stay on screen while their run is folded. */
-// Failed calls fold like the rest; the run's row counts them in red.
-export function keepCallVisible(item: TimelineItem, active: boolean) {
-  if (item.kind.startsWith("tool.")) return active && item.kind === "tool.started";
-  const status = activityOf(item)?.status ?? "";
-  return approvalStates.includes(status) ||
-    (active && ["pending", "running", "started", "in_progress"].includes(status));
+/** Only calls waiting for a decision stay outside a collapsed run. */
+export function keepCallVisible(item: TimelineItem) {
+  return approvalStates.includes(activityOf(item)?.status ?? "");
 }
 const callFailed = (item: TimelineItem) => item.kind === "tool.failed" || activityOf(item)?.status === "failed";
-function ToolRun({ calls, render, keepVisible, active }: {
+function stepRunning(item: TimelineItem, active: boolean) {
+  const a = activityOf(item);
+  return a ? isRunning(a, active) : active && item.kind === "tool.started";
+}
+function ToolRun({ calls, render, keepVisible, active, client }: {
   calls: TimelineItem[];
   render: (item: TimelineItem) => React.ReactNode;
   keepVisible: (item: TimelineItem) => boolean;
   active: boolean;
+  client: CoreClient;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const latest = calls[calls.length - 1];
-  const pinned = calls.filter((call) => call !== latest && keepVisible(call));
+  const pinned = calls.filter(keepVisible);
+  const latest = calls.filter(call => !keepVisible(call)).at(-1) ?? calls[calls.length - 1];
+  const { headline, liveThought } = useStepHeadline(latest, active);
+  const running = calls.some(call => stepRunning(call, active));
+  const edits = useToolRunEdits(calls.map(call => {
+    const a = activityOf(call);
+    return { taskId: call.taskId, artifact: a?.artifact,
+      files: a && categoryOf(a) === "edit" && !["failed", "pending", "running", "started", "in_progress", "cancelled", "interrupted"].includes(a.status ?? "") ? activityEdits(a) : [] };
+  }), client);
   // Nothing to hide: every call is one the user must see anyway.
-  if (pinned.length === calls.length - 1 && keepVisible(latest)) return <>{calls.map(render)}</>;
+  if (pinned.length === calls.length) return <>{calls.map(render)}</>;
+  // Thoughts are not tool calls: the count and its breakdown leave them out.
   const counts = calls.reduce<Record<string, number>>((all, call) => {
     const a = activityOf(call);
-    const category = a ? categoryOf(a) : "tool";
-    all[category] = (all[category] ?? 0) + 1;
+    if (a?.type === "thought") return all;
+    const label = call.kind === "computer_use" ? t("computerUse.action") : t(`activity.category.${a ? categoryOf(a) : "tool"}`);
+    all[label] = (all[label] ?? 0) + 1;
     return all;
   }, {});
+  const toolCalls = Object.values(counts).reduce((sum, count) => sum + count, 0);
   const failed = calls.filter(callFailed).length;
   const breakdown = Object.entries(counts)
-    .map(([kind, count]) => t("activity.categoryCount", { category: t(`activity.category.${kind}`), count }))
+    .map(([category, count]) => t("activity.categoryCount", { category, count }))
     .join(" · ");
-  const a = activityOf(latest);
-  const headline = a ? activityHeadline(a, t) : { icon: "tool", label: t("activity.category.tool"), title: latest.text };
-  const running = a ? isRunning(a, active) : active && latest.kind === "tool.started";
   return <>
     <button type="button" className={`activity-line tool-run-toggle${running ? " activity-running" : ""}`} aria-expanded={open}
       data-hidden-calls={open ? 0 : calls.length - pinned.length - 1} onClick={() => setOpen((value) => !value)}>
       <span className="activity-label">
         <ActivityIcon kind={headline.icon} /><span className="activity-text">{headline.label}</span>
       </span>
-      <span className="activity-title activity-text" data-tooltip={headline.title}>{headline.title}</span>
+      {headline.title && <span className="activity-title activity-text" data-tooltip={headline.title}>{headline.title}</span>}
       <svg className="tool-run-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
-      <small className="tool-run-count" data-tooltip={breakdown}>
+      {!open && liveThought && <ThinkingTicker text={liveThought} embedded />}
+      {toolCalls > 0 && <small className="tool-run-count" data-tooltip={breakdown}>
         {failed > 0 && <span className="activity-status-failed">{t("activity.toolRun.failed", { count: failed })} · </span>}
-        {t("activity.toolRun.calls", { count: calls.length })}
-      </small>
+        {t("activity.toolRun.calls", { count: toolCalls })}
+        {edits.files > 0 && <span className="tool-run-edits" data-tooltip={edits.partial ? t("turnFiles.partialStats") : undefined}> · {t(edits.files === 1 ? "activity.toolRun.fileEdited" : "activity.toolRun.filesEdited", { count: edits.files })}
+          {edits.hasDiff && <span className="turn-summary-counts"><span className="additions">+{edits.additions}</span><span className="deletions">−{edits.deletions}</span></span>}
+          {edits.partial && " …"}
+        </span>}
+      </small>}
     </button>
     {(open || pinned.length > 0) && <div className="tool-run-list">{(open ? calls : pinned).map(render)}</div>}
   </>;
+}
+/** What the folded row says: the step that is current, as its own row would name it. */
+function useStepHeadline(latest: TimelineItem, active: boolean) {
+  const { t } = useI18n();
+  const a = activityOf(latest);
+  const thought = a?.type === "thought" ? a : null;
+  const running = stepRunning(latest, active);
+  // Hooks run on every render; only a thought's label is used.
+  const thoughtLabel = useThoughtLabel(thought ?? { type: "thought" }, !!thought && running);
+  if (thought) return { headline: { icon: "think", label: thoughtLabel, title: "" }, running, liveThought: running ? thought.liveText : undefined };
+  if (latest.kind === "computer_use") {
+    let tool = "";
+    try { tool = String(JSON.parse(latest.text)?.tool ?? ""); } catch { /* Shown without a tool name. */ }
+    return { headline: { icon: "computer", label: t("computerUse.action"), title: tool ? t(`computerUse.tools.${tool}`) : "" }, running: false };
+  }
+  if (a && isSubagent(a)) return { headline: { icon: "subagent", label: t("activity.category.subagent"),
+    title: a.title || (a.input as { description?: string })?.description || a.name || t("activity.delegatedTask") }, running };
+  return { headline: a ? activityHeadline(a, t) : { icon: "tool", label: t("activity.category.tool"), title: latest.text }, running };
 }
 
 export function belongsTo(item: TimelineItem, parent: TimelineItem) {
@@ -480,12 +529,13 @@ export function ConversationContent({
     return i.kind !== "review_result" && !emptyMessage && !duplicateComputerUse(a) && !parents.some((p) => belongsTo(i, p));
   });
   const groups: TimelineItem[][] = [];
-  // Consecutive tool calls in one turn form a run; any message, thought or
-  // other entry starts a new one. Rows that render nothing ride along.
+  // Consecutive one-line steps in one turn (thoughts, tool calls, computer
+  // use, subagents) form a run; text or any other entry starts a new one.
+  // Rows that render nothing ride along.
   let inRun = false;
   for (const item of visible) {
     const previous = groups.at(-1);
-    const call = foldableCall(item);
+    const call = foldableStep(item);
     if (previous && inRun && previous[0].turnId === item.turnId && (call || silentActivity(item)))
       previous.push(item);
     else {
@@ -503,7 +553,7 @@ export function ConversationContent({
     const a = activityOf(item);
     const response = item.kind === "assistant_message" || item.kind === "computer_use" || (a && a.type !== "status"
       && (a.type !== "tool" || a.name || a.title || a.status || a.input != null
-        || a.output != null || a.content != null || a.text || a.changes?.length));
+        || a.output != null || a.content != null || a.text || a.changes?.length || a.artifact));
     if (response && !firstResponse.has(item.turnId)) firstResponse.set(item.turnId, item.itemId);
   }
   if (pendingAgent?.turnId && !turnProviders.has(pendingAgent.turnId)) {
@@ -547,11 +597,12 @@ export function ConversationContent({
     const first = group[0];
     const provider = first.turnId ? turnProviders.get(first.turnId) : undefined;
     const showAgent = !hideAgent && first.turnId && firstResponse.get(first.turnId) === first.itemId && provider && renderAgent;
-    const calls = group.filter(foldableCall);
+    const calls = group.filter(foldableStep);
     const content = calls.length > 1 ? (
       <ToolRun key={first.itemId} calls={calls} render={render}
+        client={client}
         active={!!activeTurnId && first.turnId === activeTurnId}
-        keepVisible={(i) => keepCallVisible(i, !!activeTurnId && i.turnId === activeTurnId)} />
+        keepVisible={keepCallVisible} />
     ) : group.map(render);
     return (
       <div className={showAgent ? "response-agent-anchor" : "conversation-entry"} key={first.itemId} data-timeline-item={first.itemId}>

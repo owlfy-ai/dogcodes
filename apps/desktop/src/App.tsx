@@ -3,6 +3,7 @@ import { ComputerUsePreviewOverlay } from "./ComputerUsePreviewOverlay";
 import { ExecutionTargets, HostProjectDialog, TargetOfflineBanner } from "./ExecutionTargets";
 import type { TargetEntry } from "./executionTargetClient";
 import { GitCredentialPrompt } from "./GitCredentialPrompt";
+import { AppUpdateNotice } from "./AppUpdateNotice";
 import { ComputerUseControl } from "./ComputerUseControl";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { AttachmentUploadRecovery } from "./AttachmentUploadRecovery";
@@ -101,13 +102,13 @@ import { useConversationAttention } from "./conversationAttention";
 import { ConversationSearch, revealTimelineItem } from "./ConversationSearch";
 import { ConversationHistory } from "./ConversationHistory";
 const MemoConversationHistory = memo(ConversationHistory);
-import { REVIEW_REPAIR_PROMPT, displayBackendText } from "./backendText";
+import { QUOTA_CONTINUE_PROMPT, REVIEW_REPAIR_PROMPT, displayBackendText } from "./backendText";
 import { timelineItemRole } from "./timelinePresentation";
 import { RequestEpoch, changeSelection } from "./requestEpoch";
 import { formatResetTime, formatProviderBalance, quotaScopeLabel, quotaPlanLabel, quotaNativeResetLabel, nativeResetDisplay, antigravityQuotaForModel, ringQuotaWindow, quotaColor, quotaIsExhausted, quotaIsStale, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
 import { createQuotaRefresh, type QuotaRefreshProgress } from "./quotaRefresh";
 import { useLoadingVisibility } from "./useLoadingVisibility";
-import { quotaShowsLastReading } from "./quotaFallback";
+import { accountQuotaReading, quotaShowsLastReading } from "./quotaFallback";
 import { currentAgentExecutor, readyAgentInstallations, installationsOnTarget } from "./agentOptions";
 
 
@@ -155,7 +156,7 @@ const TimelineEntry = memo(function TimelineEntry({ item, active = false }: { it
   if (role === "user") {
     return (
       <article className="message user-message" data-tooltip={t("app.userMessageTooltip", { time })}>
-        {item.text && <p>{item.text === REVIEW_REPAIR_PROMPT ? t("backendText.reviewRepairPrompt") : item.text}</p>}
+        {item.text && <p>{item.text === REVIEW_REPAIR_PROMPT ? t("backendText.reviewRepairPrompt") : item.text === QUOTA_CONTINUE_PROMPT ? t("backendText.quotaContinuePrompt") : item.text}</p>}
         <SentAttachments items={item.attachments} />
       </article>
     );
@@ -463,8 +464,11 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const switchBusy = useRef(false);
   const [nextExecutors, setNextExecutors] = useState<Record<string, ExecutorRef>>({});
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
-  const [quotaViews, setQuotaViews] = useState<QuotaSnapshotView[]>([]);
-  const [quotaTaskId, setQuotaTaskId] = useState<TaskId | null>(null);
+  const [quotaState, setQuotaState] = useState<{ taskId: TaskId | null; views: QuotaSnapshotView[] }>({ taskId: null, views: [] });
+  // Keep account readings visible on the first render after a switch, but never
+  // display the previous conversation's context or token usage in the new one.
+  const quotaViews = useMemo(() => quotaState.taskId === selectedTaskId
+    ? quotaState.views : quotaState.views.map(accountQuotaReading), [quotaState, selectedTaskId]);
   const agentUpdates = useAgentUpdates(client, installationsOnTarget(snapshot?.installations ?? [], null), setSnapshot);
   const [approving, setApproving] = useState<string | null>(null);
   const [approvalError, setApprovalError] = useState<{ taskId: TaskId; approval: PendingApproval; message: string } | null>(null);
@@ -675,14 +679,14 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   // the ring and panel honest without hammering the drivers.
   useEffect(() => {
     let active = true;
-    setQuotaViews([]);
-    setQuotaTaskId(selectedTaskId);
     setQuotaRefreshProgress(null);
     const reader = createQuotaRefresh(client, selectedTaskId, view => {
       if (selectedTaskIdRef.current !== selectedTaskId) return;
-      setQuotaViews(previous => previous.some(old => old.installationId === view.installationId)
-        ? previous.map(old => old.installationId === view.installationId ? view : old)
-        : [...previous, view]);
+      setQuotaState(previous => {
+        const views = previous.taskId === selectedTaskId ? previous.views : previous.views.map(accountQuotaReading);
+        const matches = (old: QuotaSnapshotView) => old.providerId === view.providerId && old.installationId === view.installationId;
+        return { taskId: selectedTaskId, views: views.some(matches) ? views.map(old => matches(old) ? view : old) : [...views, view] };
+      });
     }, setQuotaRefreshProgress);
     refreshQuotasNow.current = () => { void reader.refreshNow().then(() => { if (active) void refresh(); }); };
     refreshSessionUsage.current = (id, provider) => { void reader.refreshInstallation(id, provider); };
@@ -966,7 +970,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     onRetry={modelCatalog.refresh} onOpen={modelCatalog.check} refreshDisabled={!!selectedTask.activePrimaryRun} /> : null;
 
   const selectedQuota = useMemo(() => {
-    if (!selectedTask || quotaTaskId !== selectedTaskId) return null;
+    if (!selectedTask) return null;
     const executor = selectedTask.preferredExecutor;
     const quota = (
       quotaViews.find(
@@ -976,7 +980,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       )?.quota ?? null
     );
     return executor.providerId === "antigravity" ? antigravityQuotaForModel(quota, activeModel) : quota;
-  }, [quotaViews, quotaTaskId, selectedTaskId, selectedTask, activeModel]);
+  }, [quotaViews, selectedTask, activeModel]);
   const antigravityModels = useMemo(() => {
     const models: Record<string, string | null> = {};
     const taskId = selectedTask?.taskId;
@@ -1121,10 +1125,11 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     onError: cause => setError(userFacingError(cause, t("app.sendUnconfirmed"))),
   });
 
-  const submit = async (event: FormEvent) => {
+  /** `fixedPrompt` is sent instead of the composer's text, which then stays as typed. */
+  const submit = async (event: Pick<FormEvent, "preventDefault">, fixedPrompt?: string) => {
     event.preventDefault();
-    if (!selectedTask || submissionPending || (!draft.trim() && !attachments.items.length) || attachments.pending > 0 || modelSelectionBlocked || sending || creatingTask || switchBusy.current || selectedTask.activePrimaryRun || quotaSendingBlocked || agentPreferences.disabled.includes(selectedTask.preferredExecutor.providerId) || (agentPreferences.disabled.length > 0 && !executorOptions.length)) return;
-    const prompt = draft.trim(), attachmentIds = attachments.items.map(item => item.id);
+    const prompt = fixedPrompt ?? draft.trim(), attachmentIds = attachments.items.map(item => item.id);
+    if (!selectedTask || submissionPending || (!prompt && !attachments.items.length) || attachments.pending > 0 || modelSelectionBlocked || sending || creatingTask || switchBusy.current || selectedTask.activePrimaryRun || quotaSendingBlocked || agentPreferences.disabled.includes(selectedTask.preferredExecutor.providerId) || (agentPreferences.disabled.length > 0 && !executorOptions.length)) return;
     const originContext = composerContext.current;
     const scope = selectedTaskId ? `task:${selectedTaskId}` : newDraftScope.current;
     switchBusy.current = true;
@@ -1134,7 +1139,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       message: { itemId: optimisticId, taskId: selectedTask.taskId, turnId: null,
         kind: "user_message", text: prompt, providerId: null, sequence: 0, occurredAt: new Date().toISOString(),
         attachments: attachments.items.map(item => ({ name: item.name, path: item.path ?? "", mimeType: "application/octet-stream" })) } });
-    setDraft("");
+    if (fixedPrompt === undefined) setDraft("");
     const clearedRevision = draftRevision.current;
     setError(null);
     // Set once the service holds the original; recovery then owns its content.
@@ -1200,7 +1205,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       setPendingSubmission(current => current?.message.itemId === optimisticId ? null : current);
       // Failed sends return to the input. While an original may still be accepted,
       // the cleanup owns its content and prevents a fresh resend.
-      if (!durable && composerContext.current === originContext && draftRevision.current === clearedRevision) setDraft(prompt);
+      if (!durable && fixedPrompt === undefined && composerContext.current === originContext && draftRevision.current === clearedRevision) setDraft(prompt);
       if (composerContext.current === activeContext) setError(cause instanceof UnconfirmedSubmissionError
         ? t("app.sendUnknown")
         : userFacingError(cause, t(durable ? "app.sendUnconfirmed" : "app.sendFailed")));
@@ -1265,6 +1270,23 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     if (!selectedTaskId) setDraftExecutor(targetExecutor);
     else setNextExecutors(previous => ({ ...previous, [selectedTask.taskId]: targetExecutor }));
   };
+  // A turn that ran out of quota resumes on the new agent once the switch has rendered.
+  const [quotaResume, setQuotaResume] = useState<{ taskId: string; executor: ExecutorRef } | null>(null);
+  const continueAfterQuota = (targetExecutor: ExecutorRef) => {
+    if (!selectedTask || switchBusy.current || sending) return;
+    switchAgent(targetExecutor);
+    if (selectedTaskId && selectedTurnQuotaExhausted) setQuotaResume({ taskId: selectedTaskId, executor: targetExecutor });
+  };
+  useEffect(() => {
+    if (!quotaResume) return;
+    if (selectedTask?.taskId !== quotaResume.taskId) { setQuotaResume(null); return; }
+    const executor = selectedTask.preferredExecutor;
+    if (executor.providerId !== quotaResume.executor.providerId || executor.installationId !== quotaResume.executor.installationId) return;
+    setQuotaResume(null);
+    // Words the person already typed go out as the continuation; otherwise a plain request to carry on.
+    void submit({ preventDefault() {} }, draft.trim() ? undefined : QUOTA_CONTINUE_PROMPT);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per requested resume.
+  }, [quotaResume, selectedTask?.taskId, selectedTask?.preferredExecutor]);
 
   const toggleSidebar = () => {
     const next = !sidebarCollapsed;
@@ -1375,6 +1397,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         </header>
       {activeView === "conversation" && selectedProjectTarget && <TargetOfflineBanner targetId={selectedProjectTarget} autoConnect />}
       {selectedTaskId && <GitCredentialPrompt taskId={selectedTaskId} />}
+      {isTauri() && <AppUpdateNotice running={Boolean(snapshot?.tasks.some(task => task.activePrimaryRun))} />}
       {activeView === "quota" ? (
         <QuotaCenter views={quotaViews} installations={installationsOnTarget(snapshot.installations, null)} agentUpdates={agentUpdates} refreshProgress={quotaRefreshProgress} onRefresh={() => refreshQuotasNow.current()} onDetect={detectAgents} lang={resolvedLang} />
       ) : activeView === "remote" ? <RemoteDevices lang={resolvedLang} /> : activeView === "targets" ? null : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}
@@ -1415,7 +1438,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
               onOpenFolder={() => void openProjectFolder()}
               onChooseHost={isTauri() ? entry => setHostFlow({ entry }) : undefined} onNewHost={isTauri() ? () => setHostFlow({ entry: null }) : undefined} /></div>}
             <form className="composer" onSubmit={submit}>
-              <QuotaSwitchNotice current={selectedTask.preferredExecutor} quota={selectedQuota} turnExhausted={selectedTurnQuotaExhausted} options={executorOptions} running={Boolean(selectedTask.activePrimaryRun)} lang={resolvedLang} onSwitch={switchAgent} />
+              <QuotaSwitchNotice current={selectedTask.preferredExecutor} quota={selectedQuota} turnExhausted={selectedTurnQuotaExhausted} options={executorOptions} running={Boolean(selectedTask.activePrimaryRun)} lang={resolvedLang} onSwitch={continueAfterQuota} />
             {error && <p className="error" role="alert">{error}</p>}
             <AttachmentPreviews items={attachments.items} remove={attachments.remove} disabled={sending} />
             {attachments.error && <p className="error" role="alert">{attachments.error}</p>}
@@ -1448,7 +1471,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             {timelineError && <p role="alert">{timelineError} <button type="button" onClick={() => void loadConversation(selectedTask.taskId)}>{t("welcome.retry", undefined, resolvedLang)}</button></p>}
             {selectedTask.activePrimaryRun?.state === "disconnected" && <LoadingStatus>{t("app.runDisconnected")}</LoadingStatus>}
             {approvalPanel ?? <form className="composer" onSubmit={submit}>
-   <QuotaSwitchNotice current={selectedTask.preferredExecutor} quota={selectedQuota} turnExhausted={selectedTurnQuotaExhausted} options={executorOptions} running={Boolean(selectedTask.activePrimaryRun)} lang={resolvedLang} onSwitch={switchAgent} />
+   <QuotaSwitchNotice current={selectedTask.preferredExecutor} quota={selectedQuota} turnExhausted={selectedTurnQuotaExhausted} options={executorOptions} running={Boolean(selectedTask.activePrimaryRun)} lang={resolvedLang} onSwitch={continueAfterQuota} />
 
               {error && <p className="error" role="alert">{error}</p>}
               <AttachmentPreviews items={attachments.items} remove={attachments.remove} disabled={sending} />

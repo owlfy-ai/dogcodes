@@ -29,3 +29,17 @@ it("offers login only for explicit authentication failures", () => {
   expect(quotaDiagnostic("quota_login_required")).toContain("授权");
   expect(quotaDiagnostic("quota_rate_limited")).toContain("暂时受限");
 });
+
+it("distinguishes Claude login expiry from a transient refresh and preserves other agents", () => {
+  const installation = { status: "ready" as const };
+  const expired = { providerId: "claude-code", installationId: "ins_claude", quota: null, diagnostic: "claude_quota_login_expired" };
+  expect(needsAgentLogin(installation, expired)).toBe(true);
+  expect(agentAccountIssue(installation, expired)?.label).toBe("重新登录");
+  expect(quotaDiagnostic(expired.diagnostic)).toContain("claude auth login");
+  expect(quotaDiagnostic("claude_quota_refresh_busy")).toContain("一分钟");
+  expect(needsAgentLogin(installation, { ...expired, diagnostic: "claude_quota_refresh_busy" })).toBe(false);
+  expect(needsAgentLogin(installation, { ...expired, diagnostic: "claude_quota_access_denied" })).toBe(false);
+  expect(quotaDiagnostic("claude_quota_unavailable")).not.toContain("curl");
+  expect(quotaDiagnostic("claude_quota_token_expired")).not.toContain("登录状态仍有效");
+  expect(quotaDiagnostic("claude_quota_token_expired")).toContain("如果");
+});
