@@ -34,6 +34,7 @@ test('local suites include script, bridge, Python, relay, frontend and Rust test
     assert.equal(native.command, 'cargo');
     assert.deepEqual(native.args, ['test', '--workspace', '--locked', '--no-fail-fast', '--', '--nocapture']);
     assert.equal(native.options.env.RUST_MIN_STACK, '16777216');
+    assert.equal(native.options.env.CARGO_BUILD_JOBS, platform === 'win32' ? '2' : undefined);
   }
 });
 

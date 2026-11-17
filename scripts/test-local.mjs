@@ -32,7 +32,11 @@ export async function runLocalTests({ projectRoot = root, environment = process.
   console.log('Running local frontend tests…');
   await run(process.execPath, [pnpm, 'test'], options);
   console.log('Running local Rust workspace tests…');
-  await run('cargo', ['test', '--workspace', '--locked', '--no-fail-fast', '--', '--nocapture'], options);
+  // MSVC link.exe runs out of memory when many debug binaries link at once.
+  const cargoEnv = platform === 'win32' && !options.env.CARGO_BUILD_JOBS
+    ? { ...options.env, CARGO_BUILD_JOBS: '2' }
+    : options.env;
+  await run('cargo', ['test', '--workspace', '--locked', '--no-fail-fast', '--', '--nocapture'], { ...options, env: cargoEnv });
   console.log('Local tests passed.');
 }
 
