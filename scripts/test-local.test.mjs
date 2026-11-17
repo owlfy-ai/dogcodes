@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { test } from 'node:test';
-import { runLocalTests } from './test-local.mjs';
+import { runLocalTests, rustFailureReport } from './test-local.mjs';
 import { parseArguments } from './package-desktop.mjs';
 
 test('local packaging tests by default and consumes the CI skip option without forwarding it to Tauri', () => {
@@ -36,6 +36,30 @@ test('local suites include script, bridge, Python, relay, frontend and Rust test
     assert.equal(native.options.env.RUST_MIN_STACK, '16777216');
     assert.equal(native.options.env.CARGO_BUILD_JOBS, platform === 'win32' ? '2' : undefined);
   }
+});
+
+test('Rust failure report keeps real assertions and skips deliberate panics', () => {
+  const report = rustFailureReport(`
+thread '<unnamed>' (1) panicked at crates/remote-desktop/src/video/worker.rs:658:13:
+deliberate fixture failure
+test video::worker::tests::a_panicking_fixture_does_not_fail_the_tests_after_it ... ok
+thread 'environment::shell_tests::private_login_shell_supplies_missing_auth_without_overriding_explicit_credentials' (2) panicked at crates/claude-driver/src/environment.rs:254:22:
+called \`Option::unwrap()\` on a \`None\` value
+note: run with \`RUST_BACKTRACE=1\` environment variable to display a backtrace
+test environment::shell_tests::private_login_shell_supplies_missing_auth_without_overriding_explicit_credentials ... FAILED
+error: test failed, to rerun pass \`-p claude-driver --lib\`
+test other::case ... FAILED
+error: test failed, to rerun pass \`-p antigravity-driver --lib\`
+error: 2 targets failed:
+    \`-p antigravity-driver --lib\`
+    \`-p claude-driver --lib\`
+`);
+  assert.match(report, /private_login_shell_supplies_missing_auth_without_overriding_explicit_credentials/);
+  assert.match(report, /called `Option::unwrap\(\)` on a `None` value/);
+  assert.match(report, /other::case/);
+  assert.match(report, /`-p claude-driver --lib`/);
+  assert.match(report, /`-p antigravity-driver --lib`/);
+  assert.doesNotMatch(report, /deliberate fixture failure/);
 });
 
 test('a failed suite stops the sequence and removes temporary test binaries', async () => {
