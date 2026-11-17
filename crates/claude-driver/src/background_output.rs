@@ -2,8 +2,13 @@
 use crate::child_events::ChildEvents;
 use driver_api::DriverEvent;
 use serde_json::{Value, json};
+use std::io::SeekFrom;
 use std::{collections::HashMap, path::PathBuf};
-use tokio::{fs::File, io::AsyncReadExt, sync::mpsc::UnboundedSender};
+use tokio::{
+    fs::File,
+    io::{AsyncReadExt, AsyncSeekExt},
+    sync::mpsc::UnboundedSender,
+};
 
 // Match the presentation layer's bounded output, without retaining an unbounded log.
 const OUTPUT_LIMIT: usize = 24_000;
@@ -16,6 +21,7 @@ struct FollowedCommand {
     path: Option<PathBuf>,
     sink: UnboundedSender<DriverEvent>,
     file: Option<File>,
+    offset: u64,
     output: String,
     pending: Vec<u8>,
     opened: bool,
@@ -69,6 +75,7 @@ impl BackgroundOutputs {
                 path: output_path(native.unwrap()).or_else(|| path_in_content(&block["content"])),
                 sink,
                 file: None,
+                offset: 0,
                 output: String::new(),
                 pending: vec![],
                 opened: false,
@@ -179,9 +186,24 @@ impl FollowedCommand {
         let mut buffer = [0_u8; 4096];
         for _ in 0..8 {
             let read = match file.read(&mut buffer).await {
-                Ok(0) | Err(_) => break,
+                Ok(0) => {
+                    // A previous read can observe EOF before a concurrent append is visible.
+                    // Seek back to the consumed offset when the file has since grown.
+                    let len = file
+                        .metadata()
+                        .await
+                        .map(|meta| meta.len())
+                        .unwrap_or(self.offset);
+                    if len > self.offset && file.seek(SeekFrom::Start(self.offset)).await.is_ok() {
+                        continue;
+                    }
+                    break;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => break,
                 Ok(n) => n,
             };
+            self.offset += read as u64;
             self.pending.extend_from_slice(&buffer[..read]);
             loop {
                 let (valid, skip) = match std::str::from_utf8(&self.pending) {
@@ -272,11 +294,15 @@ mod tests {
             .await
             .unwrap();
         file.write_all(&[0xa0, b'b']).await.unwrap();
+        // write_all accepts bytes before the blocking write reaches the file.
+        file.flush().await.unwrap();
         let mut done = terminal("shell");
         outputs.settle(&mut done).await;
         children.dispatch(&done, Some(&new));
+        let flushed = old_rx.try_recv().unwrap();
         assert!(
-            matches!(old_rx.try_recv().unwrap(),DriverEvent::Presentation{data,..} if data["output"] == "a你b" && data.get("status").is_none())
+            matches!(&flushed,DriverEvent::Presentation{data,..} if data["output"] == "a你b" && data.get("status").is_none()),
+            "{flushed:?}"
         );
         assert!(
             matches!(old_rx.try_recv().unwrap(),DriverEvent::Presentation{data,..} if data["output"] == "a你b" && data["status"] == "completed")

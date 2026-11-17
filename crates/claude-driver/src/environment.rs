@@ -98,7 +98,10 @@ pub(super) async fn prepare(mut executable: TargetExecutable) -> TargetExecutabl
             "-ilc",
             "printf '\\0DOGCODES_CLAUDE_ENV_V1\\0'; /usr/bin/env -0",
         ])
-        .env("HOME", home);
+        .env("HOME", home)
+        // `-i` makes zsh claim the foreground terminal. From `pnpm test:local`
+        // that stops the shell with SIGTTOU before `.zshrc` can export credentials.
+        .without_terminal();
     for key in super::ENV_ALLOWLIST
         .iter()
         .copied()
@@ -107,8 +110,9 @@ pub(super) async fn prepare(mut executable: TargetExecutable) -> TargetExecutabl
     {
         command.inherit(key);
     }
-    let Ok(mut child) = command.spawn() else {
-        return executable;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(_) => return executable,
     };
     let Some(stdout) = child.stdout.take() else {
         let _ = child.terminate().await;

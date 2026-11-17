@@ -60,6 +60,21 @@ pub(super) fn terminal(
     Ok((input, output))
 }
 
+/// Leave the caller's terminal session. `setsid` must run instead of
+/// `setpgid`: after `setpgid(0, 0)` the child is a group leader and `setsid` fails.
+/// An interactive login shell in that group is stopped by SIGTTOU before `.zshrc`.
+pub(super) fn detach_terminal(command: &mut Command) {
+    // SAFETY: setsid is async-signal-safe and runs only in the forked child.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
 /// Keep the peer in the host; the read end must remain open through spawn.
 pub(super) fn attach(command: &mut Command) -> io::Result<(UnixStream, UnixStream)> {
     let (lifetime, reader) = UnixStream::pair()?;
