@@ -110,9 +110,8 @@ pub(super) async fn prepare(mut executable: TargetExecutable) -> TargetExecutabl
     {
         command.inherit(key);
     }
-    let mut child = match command.spawn() {
-        Ok(child) => child,
-        Err(_) => return executable,
+    let Ok(mut child) = command.spawn() else {
+        return executable;
     };
     let Some(stdout) = child.stdout.take() else {
         let _ = child.terminate().await;

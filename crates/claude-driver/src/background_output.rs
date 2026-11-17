@@ -189,11 +189,7 @@ impl FollowedCommand {
                 Ok(0) => {
                     // A previous read can observe EOF before a concurrent append is visible.
                     // Seek back to the consumed offset when the file has since grown.
-                    let len = file
-                        .metadata()
-                        .await
-                        .map(|meta| meta.len())
-                        .unwrap_or(self.offset);
+                    let len = file.metadata().await.map_or(self.offset, |meta| meta.len());
                     if len > self.offset && file.seek(SeekFrom::Start(self.offset)).await.is_ok() {
                         continue;
                     }
