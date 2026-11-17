@@ -1,0 +1,10 @@
+[package]
+name = "desktop-test-manifest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Embeds the comctl32 v6 manifest into Windows desktop test executables."
+
+[lints]
+workspace = true

@@ -1754,6 +1754,7 @@ dependencies = [
  "chrono",
  "claude-driver",
  "codex-driver",
+ "desktop-test-manifest",
  "dogcodes-endpoint",
  "dogcodes-remote-desktop",
  "dogcodes-remote-transport",
@@ -1801,6 +1802,10 @@ dependencies = [
  "workspace-ops",
  "zcode-driver",
 ]
+
+[[package]]
+name = "desktop-test-manifest"
+version = "0.1.4"
 
 [[package]]
 name = "digest"

@@ -30,6 +30,8 @@ mod terminal_installation;
 mod turn_review;
 mod turn_timing;
 mod window_geometry;
+#[cfg(all(windows, test))]
+mod windows_test_manifest;
 mod workspace_browser;
 
 use agent_protocol::{

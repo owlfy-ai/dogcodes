@@ -85,6 +85,9 @@ openh264 = "0.9.9"
 async-trait.workspace = true
 rusqlite.workspace = true
 
+[target.'cfg(windows)'.dev-dependencies]
+desktop-test-manifest = { path = "../test-manifest" }
+
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.28", features = ["process", "signal", "fs"] }
 
