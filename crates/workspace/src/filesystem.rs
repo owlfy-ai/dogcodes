@@ -514,9 +514,10 @@ mod tests {
         fs::write(root.path().join("skip.ts"), "root file").unwrap();
         fs::write(root.path().join("src/.gitignore"), "/skip.ts\n").unwrap();
         let entries = snapshot(root.path()).unwrap();
-        assert!(entries.contains_key("keep.tmp"));
-        assert!(entries.contains_key("src/a.ts"));
-        assert!(entries.contains_key("skip.ts"));
+        let key = |path: &str| path.replace('/', std::path::MAIN_SEPARATOR_STR);
+        assert!(entries.contains_key(&key("keep.tmp")));
+        assert!(entries.contains_key(&key("src/a.ts")));
+        assert!(entries.contains_key(&key("skip.ts")));
         for path in [
             "dist/app.js",
             "dist-electron/main.js",
@@ -524,7 +525,7 @@ mod tests {
             "app.log",
             "src/skip.ts",
         ] {
-            assert!(!entries.contains_key(path), "{path}");
+            assert!(!entries.contains_key(&key(path)), "{path}");
         }
     }
 
