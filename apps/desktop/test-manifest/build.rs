@@ -57,12 +57,11 @@ fn run(program: &std::path::Path, args: &[String]) {
         .args(args)
         .status()
         .unwrap_or_else(|error| panic!("failed to run {}: {error}", program.display()));
-    if !status.success() {
-        panic!(
-            "{} failed to embed the Windows test manifest",
-            program.display()
-        );
-    }
+    assert!(
+        status.success(),
+        "{} failed to embed the Windows test manifest",
+        program.display()
+    );
 }
 
 fn find_rc() -> std::path::PathBuf {
