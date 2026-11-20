@@ -98,7 +98,8 @@ export function githubClient({ root, repo, tag, execute = capture }) {
       await gh(['release', 'upload', tag, file, '--repo', repo, ...(replace ? ['--clobber'] : [])]);
     },
     async download(asset, file) {
-      await gh(['release', 'download', tag, '--repo', repo, '--pattern', asset.name, '--output', file]);
+      // The stage may already hold the local copy of a marker this run just uploaded.
+      await gh(['release', 'download', tag, '--repo', repo, '--pattern', asset.name, '--output', file, '--clobber']);
     },
     async remove(asset) { await api(`repos/${repo}/releases/assets/${asset.id}`, 'DELETE'); },
     async body(release, body) {
