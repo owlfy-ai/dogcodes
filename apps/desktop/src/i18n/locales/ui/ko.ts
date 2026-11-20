@@ -1653,7 +1653,7 @@ export const uiKo: UiMessages = {
     unverified: "커밋 결과가 확인되지 않았습니다. 변경 사항 패널에서 확인하고 다시 커밋하지 마세요.",
   },
   turnFiles: {
-    changed: "파일 {count}개 변경됨",
+    changed: "이번 턴의 작업 공간 변경 · 파일 {count}개",
     historical: "과거 Diff",
     historicalLabel: "{name}의 과거 Diff 보기",
     historicalTooltip: "이 턴에 저장된 과거 Diff 보기",

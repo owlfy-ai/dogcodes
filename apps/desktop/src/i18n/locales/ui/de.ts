@@ -1653,7 +1653,7 @@ export const uiDe: UiMessages = {
     unverified: "Das Commit-Ergebnis ist ungeprüft. Im Änderungsbereich prüfen und nicht erneut committen.",
   },
   turnFiles: {
-    changed: "{count} Dateien geändert",
+    changed: "Änderungen im Arbeitsbereich in dieser Runde · {count} Dateien",
     historical: "Historischer Diff",
     historicalLabel: "Historischen Diff von {name} anzeigen",
     historicalTooltip: "Den für diesen Durchgang gespeicherten historischen Diff anzeigen",

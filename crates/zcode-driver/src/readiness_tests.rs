@@ -20,6 +20,9 @@ async fn connect(launch: ZcodeLaunch) -> Result<ZcodeDriver, DriverError> {
 async fn retained_readiness_creates_only_a_deferred_probe_with_explicit_close_confirmation() {
     let (root, launch) = fixture("readiness-normal");
     let driver = connect(launch).await.unwrap();
+    let catalog = driver.take_startup_catalogs().models.unwrap();
+    assert!(!catalog.models.is_empty());
+    assert!(driver.take_startup_catalogs().models.is_none());
     let native = driver
         .connection
         .lock()

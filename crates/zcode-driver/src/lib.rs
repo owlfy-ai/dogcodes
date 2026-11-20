@@ -1073,6 +1073,7 @@ fn map_request_error(method: &str, error: &Value) -> DriverError {
 }
 
 pub struct ZcodeDriver {
+    startup_models: std::sync::Mutex<Option<driver_api::ModelCatalog>>,
     quota_cache: tokio::sync::Mutex<quota::Cache>,
     catalog_probe: Arc<tokio::sync::Mutex<()>>,
     executor: ExecutorRef,
@@ -1149,6 +1150,7 @@ impl ZcodeDriver {
         resume_capability: SessionResumeCapability,
     ) -> Result<Self, agent_domain::DomainError> {
         Ok(Self {
+            startup_models: Default::default(),
             quota_cache: tokio::sync::Mutex::new(quota::Cache::default()),
             catalog_probe: Arc::default(),
             executor: ExecutorRef {
@@ -1186,7 +1188,7 @@ impl ZcodeDriver {
     /// Returns [`DriverError::NotConfigured`] when the login/config step is
     /// missing and [`DriverError::Protocol`] for protocol-surface failures.
     pub async fn probe_ready(launch: &ZcodeLaunch) -> Result<(), DriverError> {
-        let connection = Self::ready_connection(launch).await?;
+        let (connection, _) = Self::ready_connection(launch).await?;
         connection.native.close().await
     }
 
@@ -1211,13 +1213,16 @@ impl ZcodeDriver {
             resume_capability,
         )
         .map_err(|_| DriverError::Protocol("invalid ZCode installation identity".into()))?;
-        let mut connection = Self::ready_connection(&driver.launch).await?;
+        let (mut connection, catalog) = Self::ready_connection(&driver.launch).await?;
+        *driver.startup_models.lock().expect("startup catalog") = Some(catalog);
         connection.observe_owner(driver.stopping.subscribe());
         *driver.connection.lock().await = Some(connection);
         Ok(driver)
     }
 
-    async fn ready_connection(launch: &ZcodeLaunch) -> Result<Connection, DriverError> {
+    async fn ready_connection(
+        launch: &ZcodeLaunch,
+    ) -> Result<(Connection, driver_api::ModelCatalog), DriverError> {
         let mut connection = Connection::spawn(launch)?;
         let result = async {
             let list = tokio::time::timeout(
@@ -1280,27 +1285,30 @@ impl ZcodeDriver {
                             "zcode readiness probe did not close its temporary session".into(),
                         ));
                     }
-                    if models::catalog(&created).models.is_empty() {
+                    let catalog = models::catalog(&created);
+                    if catalog.models.is_empty() {
                         return Err(DriverError::NotConfigured(
                             "ZCode has no available model; check its native provider settings"
                                 .into(),
                         ));
                     }
-                    Ok(())
+                    Ok(catalog)
                 }
                 Err(DriverError::NotConfigured(reason)) => Err(DriverError::NotConfigured(reason)),
                 Err(error) => Err(error),
             }
         }
         .await;
-        if let Err(error) = result {
-            // A failed installation probe must not hand an unretired worker
-            // to the next attempt. Cancellation still uses Connection's owned
-            // supervisor; no native command or model task is replayed.
-            connection.native.close().await?;
-            return Err(error);
+        match result {
+            Ok(catalog) => Ok((connection, catalog)),
+            Err(error) => {
+                // A failed installation probe must not hand an unretired worker
+                // to the next attempt. Cancellation still uses Connection's owned
+                // supervisor; no native command or model task is replayed.
+                connection.native.close().await?;
+                Err(error)
+            }
         }
-        Ok(connection)
     }
 
     async fn resume_with_selection(
@@ -1346,6 +1354,13 @@ impl ZcodeDriver {
 
 #[async_trait]
 impl AgentDriver for ZcodeDriver {
+    fn take_startup_catalogs(&self) -> driver_api::models::StartupCatalogs {
+        driver_api::models::StartupCatalogs {
+            models: self.startup_models.lock().expect("startup catalog").take(),
+            ..Default::default()
+        }
+    }
+
     fn independent_session_driver(&self) -> Result<Option<Arc<dyn AgentDriver>>, DriverError> {
         let mut driver = Self::new(
             self.executor.provider_id.as_str(),

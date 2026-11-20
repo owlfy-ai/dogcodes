@@ -144,8 +144,28 @@ impl GitWorkspaceContextProvider {
         stdout_limit: usize,
         input: Option<&[u8]>,
     ) -> Result<Vec<u8>, GitCollectionError> {
+        // These commands inspect repository metadata or serialize the index;
+        // neither reads worktree content through a clean/smudge filter.
+        if !matches!(args, ["rev-parse", ..] | ["write-tree"]) {
+            self.check_content_filters(workspace, &env_overrides)
+                .await?;
+        }
+        let output = self
+            .git_process_input(workspace, args, env_overrides, stdout_limit, input)
+            .await?;
+        if !output.success {
+            return Err(GitCollectionError::CommandFailed);
+        }
+        Ok(output.stdout)
+    }
+
+    async fn check_content_filters(
+        &self,
+        workspace: &Path,
+        env_overrides: &BTreeMap<String, OsString>,
+    ) -> Result<(), GitCollectionError> {
         // A temporary index does not prevent clean/process filters from running.
-        // Inspect effective configuration before each command, without returning
+        // Inspect effective configuration before content operations, without returning
         // configured commands or filter names to the caller. Do not silently
         // disable content conversion and label the resulting patch faithful.
         let filters = self
@@ -168,7 +188,7 @@ impl GitWorkspaceContextProvider {
                 // A configured driver (for example Git LFS installed globally)
                 // only runs for paths whose attributes name it.
                 if self
-                    .filter_attributes_in_effect(workspace, &filters.stdout, &env_overrides)
+                    .filter_attributes_in_effect(workspace, &filters.stdout, env_overrides)
                     .await?
                 {
                     return Err(GitCollectionError::ExternalFilterConfigured);
@@ -176,13 +196,7 @@ impl GitWorkspaceContextProvider {
             }
             _ => return Err(GitCollectionError::CommandFailed),
         }
-        let output = self
-            .git_process_input(workspace, args, env_overrides, stdout_limit, input)
-            .await?;
-        if !output.success {
-            return Err(GitCollectionError::CommandFailed);
-        }
-        Ok(output.stdout)
+        Ok(())
     }
 
     /// Whether any attribute source of this repository names a configured
@@ -489,12 +503,35 @@ impl GitWorkspaceContextProvider {
         Ok(output)
     }
 
-    async fn collect_git(
+    async fn repository_paths(
         &self,
         workspace: &Path,
-    ) -> Result<WorkspaceContextSnapshot, GitCollectionError> {
-        if !workspace.is_absolute() || !workspace.is_dir() {
-            return Err(GitCollectionError::WorkspaceUnavailable);
+    ) -> Result<(String, String), GitCollectionError> {
+        let paths = self
+            .git(
+                workspace,
+                &[
+                    "rev-parse",
+                    "--is-inside-work-tree",
+                    "--show-toplevel",
+                    "--absolute-git-dir",
+                ],
+            )
+            .await;
+        match paths {
+            Ok(output) => {
+                let mut fields = output.split_terminator('\n');
+                if let (Some("true"), Some(root), Some(dir), None) =
+                    (fields.next(), fields.next(), fields.next(), fields.next())
+                    && !root.is_empty()
+                    && !dir.is_empty()
+                {
+                    return Ok((root.to_owned(), dir.to_owned()));
+                }
+                // Separate queries preserve embedded newlines in repository paths.
+            }
+            Err(GitCollectionError::CommandFailed) => {}
+            Err(error) => return Err(error),
         }
         match self
             .git(workspace, &["rev-parse", "--is-inside-work-tree"])
@@ -520,6 +557,17 @@ impl GitWorkspaceContextProvider {
         if repo_root.is_empty() || git_dir.is_empty() {
             return Err(GitCollectionError::InvalidOutput);
         }
+        Ok((repo_root, git_dir.to_owned()))
+    }
+
+    async fn collect_git(
+        &self,
+        workspace: &Path,
+    ) -> Result<WorkspaceContextSnapshot, GitCollectionError> {
+        if !workspace.is_absolute() || !workspace.is_dir() {
+            return Err(GitCollectionError::WorkspaceUnavailable);
+        }
+        let (repo_root, git_dir) = self.repository_paths(workspace).await?;
         let status = self
             .git(
                 workspace,
@@ -1502,6 +1550,22 @@ mod tests {
         assert_eq!(
             parse_status_v2("1 malformed\0"),
             Err(GitCollectionError::InvalidOutput)
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn repository_paths_preserve_embedded_newlines() {
+        let provider = GitWorkspaceContextProvider::discover().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory.path().join("repo\nwith newline");
+        std::fs::create_dir(&workspace).unwrap();
+        run_git(&provider, &workspace, &["init", "--quiet"]);
+        let (root, git_dir) = provider.repository_paths(&workspace).await.unwrap();
+        assert_eq!(Path::new(&root), workspace.canonicalize().unwrap());
+        assert_eq!(
+            Path::new(&git_dir),
+            workspace.join(".git").canonicalize().unwrap()
         );
     }
 

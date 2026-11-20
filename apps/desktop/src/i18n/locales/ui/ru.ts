@@ -1653,7 +1653,7 @@ export const uiRu: UiMessages = {
     unverified: "Результат коммита не проверен. Проверьте его в панели «Изменения» и не коммитьте повторно.",
   },
   turnFiles: {
-    changed: "Изменено файлов: {count}",
+    changed: "Изменения в рабочей области за этот ход · файлов: {count}",
     historical: "Исторический diff",
     historicalLabel: "Показать исторический diff {name}",
     historicalTooltip: "Показать исторический diff, сохранённый для этого хода",

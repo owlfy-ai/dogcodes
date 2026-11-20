@@ -269,6 +269,29 @@ fn selected_request(root: &Path) -> SessionRequest {
 }
 const NEW: &str = r#"{"providerId":"test","modelId":"new"}"#;
 #[tokio::test]
+async fn matching_selection_verifies_the_live_session_without_reapplying_settings() {
+    let (root, launch) = selection_fixture(false, false);
+    let driver = driver(launch);
+    let old = session(&driver, root.path()).await;
+    let reads = count(root.path(), "session/read");
+    let current = driver
+        .resume_selected_session(
+            &old.native_session_id,
+            selected_request(root.path()),
+            Some(r#"{"providerId":"test","modelId":"old"}"#),
+            Some("medium"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(count(root.path(), "session/read"), reads + 1);
+    assert_eq!(count(root.path(), "session/setModel"), 0);
+    assert_eq!(count(root.path(), "session/setThoughtLevel"), 0);
+    assert!(!current.same_scope(&old));
+    driver.shutdown(current).await.unwrap();
+    stop(driver).await;
+}
+
+#[tokio::test]
 async fn failed_partial_selection_rolls_back_before_scope_handoff() {
     let (root, launch) = selection_fixture(false, false);
     let driver = driver(launch);

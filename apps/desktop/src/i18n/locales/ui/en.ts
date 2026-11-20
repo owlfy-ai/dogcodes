@@ -1653,7 +1653,7 @@ export const uiEn = {
     unverified: "The commit result is unverified. Check it in the Changes panel and don't commit again.",
   },
   turnFiles: {
-    changed: "{count} files changed",
+    changed: "Workspace changes this turn · {count} files changed",
     historical: "Historical diff",
     historicalLabel: "View historical diff of {name}",
     historicalTooltip: "View the historical diff saved for this turn",

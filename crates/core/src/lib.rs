@@ -3339,7 +3339,7 @@ impl Core {
                 .await,
         };
         change["workspacePaths"] = json!(scope.project_paths);
-        if scope.shared_since(None) {
+        if scope.shared_during_turn() {
             workspace_occupancy::mark_shared(&mut change);
         }
         self.record_workspace_artifact(
@@ -4063,20 +4063,6 @@ impl Core {
         }
 
         drop(identity_timing);
-        let operation_timing = timing.stage("operation_capture_begin");
-        // Independent interval snapshots preserve per-operation versions even for shell writes.
-        // Parallel/external writes are explicitly attributed to the observed interval.
-        let mut operation_mark = workspace_scope.and_then(TurnWorkspaceScope::operation_mark);
-        let mut operation_capture = if let Some(scope) = workspace_scope {
-            multi_workspace::begin(scope.workspace.as_ref(), &scope.project_paths)
-                .await
-                .ok()
-        } else {
-            None
-        };
-        drop(operation_timing);
-        let mut captured_operations = std::collections::BTreeSet::new();
-
         let mut delivered_facts = Vec::new();
         for delivery in &mut context {
             delivered_facts.extend(
@@ -4408,25 +4394,6 @@ impl Core {
             ) {
                 retire_required = true;
             }
-            let completed_operation = match &event {
-                DriverEvent::Presentation { item_id, data }
-                    if data["type"] == "tool"
-                        && ["completed", "failed"]
-                            .contains(&data["status"].as_str().unwrap_or("")) =>
-                {
-                    Some((
-                        item_id.clone(),
-                        data.get("parentId").cloned().unwrap_or(json!("")),
-                        data.get("sessionId").cloned().unwrap_or(Value::Null),
-                    ))
-                }
-                DriverEvent::ToolCompleted { item_id, .. }
-                    if !captured_operations.contains(item_id) =>
-                {
-                    Some((item_id.clone(), json!(""), Value::Null))
-                }
-                _ => None,
-            };
             let (event_type, payload) = map_driver_event(
                 task_id,
                 &active.turn_id,
@@ -4454,34 +4421,6 @@ impl Core {
             }
             if is_first_text {
                 timing.mark("first_text_published");
-            }
-            if let Some((id, parent, session)) = completed_operation
-                && captured_operations.insert(id.clone())
-                && let (Some(scope), Some(capture)) = (workspace_scope, operation_capture.take())
-            {
-                if let Ok(mut changes) = capture.finish().await
-                    && changes["files"].as_array().is_some_and(|f| !f.is_empty())
-                {
-                    changes["operationId"] = json!(id);
-                    changes["parentId"] = parent;
-                    changes["sessionId"] = session;
-                    if scope.shared_since(operation_mark.as_ref()) {
-                        workspace_occupancy::mark_shared(&mut changes);
-                    }
-                    let _ = self
-                        .record_workspace_artifact(
-                            scope,
-                            changes,
-                            "workspace.operation_changes_captured",
-                            "application/vnd.dogcodes.operation-changes.v1+json",
-                        )
-                        .await;
-                }
-                operation_mark = scope.operation_mark();
-                operation_capture =
-                    multi_workspace::begin(scope.workspace.as_ref(), &scope.project_paths)
-                        .await
-                        .ok();
             }
             if terminal_observed && driver.supports_background_events() {
                 break;
@@ -5047,15 +4986,10 @@ struct TurnWorkspaceScope {
 }
 
 impl TurnWorkspaceScope {
-    /// Whether another conversation ran in this turn's folders since `mark`.
-    fn shared_since(&self, mark: Option<&workspace_occupancy::Mark>) -> bool {
+    fn shared_during_turn(&self) -> bool {
         self.occupancy
             .as_ref()
-            .is_some_and(|(presence, start)| presence.shared_since(mark.unwrap_or(start)))
-    }
-
-    fn operation_mark(&self) -> Option<workspace_occupancy::Mark> {
-        self.occupancy.as_ref().map(|(presence, _)| presence.mark())
+            .is_some_and(|(presence, start)| presence.shared_since(start))
     }
 }
 

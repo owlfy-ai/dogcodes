@@ -75,7 +75,8 @@ impl ZcodeDriver {
             model,
             thinking,
         )
-        .await;
+        .await
+        .map(|_| ());
         if result.is_ok()
             || result
                 .as_ref()
@@ -170,15 +171,18 @@ pub(super) async fn transaction(
     workspace: &str,
     model: Option<&str>,
     thinking: Option<&str>,
-) -> Result<(), DriverError> {
+) -> Result<Option<Value>, DriverError> {
     if model.is_none() && thinking.is_none() {
-        return Ok(());
+        return Ok(None);
     }
     let before = connection
         .request("session/read", json!({"sessionId":id}), None)
         .await?;
     super::resume::validate(&before, id, workspace)?;
     let selection = target(&before, model, thinking)?;
+    if matches(&before, &selection) {
+        return Ok(Some(before));
+    }
     let applied = async {
         apply(connection, id, &selection).await?;
         let after = connection
@@ -186,7 +190,7 @@ pub(super) async fn transaction(
             .await?;
         super::resume::validate(&after, id, workspace)?;
         if matches(&after, &selection) {
-            Ok(())
+            Ok(after)
         } else {
             Err(DriverError::Protocol(
                 "ZCode did not apply the requested selection".into(),
@@ -194,8 +198,8 @@ pub(super) async fn transaction(
         }
     }
     .await;
-    if applied.is_ok() {
-        return Ok(());
+    if let Ok(snapshot) = applied {
+        return Ok(Some(snapshot));
     }
     if let Some(model) = before
         .pointer("/settings/model/current")

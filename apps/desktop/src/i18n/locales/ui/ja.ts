@@ -1653,7 +1653,7 @@ export const uiJa: UiMessages = {
     unverified: "コミットの結果は未確認です。変更パネルで確認し、もう一度コミットしないでください。",
   },
   turnFiles: {
-    changed: "{count} 個のファイルを変更",
+    changed: "このターンのワークスペースの変更 · {count} ファイル",
     historical: "過去の Diff",
     historicalLabel: "{name} の過去の Diff を表示",
     historicalTooltip: "このターンに保存された過去の Diff を表示",

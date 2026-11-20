@@ -83,7 +83,7 @@ impl ZcodeDriver {
                         };
                         drop(guard);
                         match result {
-                            Ok(()) => attempt.committed = true,
+                            Ok(_) => attempt.committed = true,
                             Err(error)
                                 if driver_api::failure::kind(&error) == "selection_rejected" =>
                             {
@@ -202,14 +202,9 @@ impl ZcodeDriver {
                     None,
                 )
                 .await?;
-            models::transaction(connection, native_id, workspace, model, thinking).await?;
-            if model.is_some() || thinking.is_some() {
-                connection
-                    .request("session/read", json!({"sessionId":native_id}), None)
-                    .await
-            } else {
-                Ok(created.clone())
-            }
+            let verified =
+                models::transaction(connection, native_id, workspace, model, thinking).await?;
+            Ok(verified.unwrap_or_else(|| created.clone()))
         }
         .await;
         drop(guard);

@@ -1653,7 +1653,7 @@ export const uiEs: UiMessages = {
     unverified: "El resultado del commit no está verificado. Compruébalo en el panel Cambios y no vuelvas a hacer commit.",
   },
   turnFiles: {
-    changed: "{count} archivos modificados",
+    changed: "Cambios en el espacio de trabajo durante este turno · {count} archivos",
     historical: "Diff histórico",
     historicalLabel: "Ver diff histórico de {name}",
     historicalTooltip: "Ver el diff histórico guardado para este turno",

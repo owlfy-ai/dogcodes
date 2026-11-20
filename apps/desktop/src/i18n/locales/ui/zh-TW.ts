@@ -1653,7 +1653,7 @@ export const uiZhTW: UiMessages = {
     unverified: "提交結果待核實，請在「變更」面板核實，不要重復提交。",
   },
   turnFiles: {
-    changed: "{count} 個檔案已更改",
+    changed: "本輪工作區變更 · {count} 個檔案已更改",
     historical: "歷史 Diff",
     historicalLabel: "查看 {name} 的歷史 Diff",
     historicalTooltip: "查看這一輪儲存的歷史 Diff",

@@ -1653,7 +1653,7 @@ export const uiPtBR: UiMessages = {
     unverified: "O resultado do commit não foi verificado. Confira-o no painel Alterações e não faça commit novamente.",
   },
   turnFiles: {
-    changed: "{count} arquivos alterados",
+    changed: "Alterações no espaço de trabalho neste turno · {count} arquivos",
     historical: "Diff histórico",
     historicalLabel: "Ver diff histórico de {name}",
     historicalTooltip: "Ver o diff histórico salvo para este turno",

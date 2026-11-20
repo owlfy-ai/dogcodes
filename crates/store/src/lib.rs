@@ -4286,6 +4286,7 @@ mod tests {
 
     #[derive(Default)]
     struct RecordingWorkspaceContext {
+        baselines: AtomicUsize,
         calls: AtomicUsize,
         fail: AtomicBool,
     }
@@ -4297,6 +4298,7 @@ mod tests {
             _: &str,
         ) -> Result<Box<dyn agent_core::WorkspaceTurnCapture>, WorkspaceCollectionDiagnostic>
         {
+            self.baselines.fetch_add(1, Ordering::Relaxed);
             if self.fail.load(Ordering::Acquire) {
                 return Err(WorkspaceCollectionDiagnostic {
                     kind: WorkspaceDiagnosticKind::WorkspaceChanged,
@@ -6872,6 +6874,12 @@ mod tests {
         .unwrap();
 
         let events = core.sync_events(0, 10_000).await.unwrap();
+        assert_eq!(workspace.baselines.load(Ordering::Relaxed), 1);
+        assert!(
+            !events
+                .iter()
+                .any(|event| event.event_type == "workspace.operation_changes_captured")
+        );
         let captured = events
             .iter()
             .filter(|event| event.event_type == "workspace.snapshot_captured")

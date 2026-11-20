@@ -1653,7 +1653,7 @@ export const uiFr: UiMessages = {
     unverified: "Le résultat du commit n’est pas vérifié. Vérifiez-le dans le panneau Modifications et ne validez pas à nouveau.",
   },
   turnFiles: {
-    changed: "{count} fichiers modifiés",
+    changed: "Modifications de l’espace de travail pendant ce tour · {count} fichiers",
     historical: "Diff historique",
     historicalLabel: "Voir le diff historique de {name}",
     historicalTooltip: "Voir le diff historique enregistré pour ce tour",

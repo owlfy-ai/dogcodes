@@ -1653,7 +1653,7 @@ export const uiIt: UiMessages = {
     unverified: "L’esito del commit non è verificato. Controllalo nel pannello Modifiche e non eseguire di nuovo il commit.",
   },
   turnFiles: {
-    changed: "{count} file modificati",
+    changed: "Modifiche all’area di lavoro in questo turno · {count} file",
     historical: "Diff storico",
     historicalLabel: "Vedi il diff storico di {name}",
     historicalTooltip: "Vedi il diff storico salvato per questo turno",
