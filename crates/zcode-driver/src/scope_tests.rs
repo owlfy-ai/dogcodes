@@ -444,6 +444,14 @@ async fn subagent_session_requests_belong_to_the_current_turn() {
     edit(&launch, |s| {
         s.replace("  if r['params']['content']!='slow':",r"  if r['params']['content']=='subagent':
    turn='turn-'+str(r['id'])
+   def headers(key,session):
+    out({'id':key,'method':'interaction/requestProviderRuntimeHeaders','params':{'sessionId':session,'turnId':'child-turn','requestId':key}})
+   headers('early',id)
+   out({'method':'tool.updated','params':{'sessionId':id,'turnId':turn,'payload':{'kind':'started','toolCallId':'a','toolName':'Agent'}}})
+   headers('rerouted',id)
+   headers('unrelated','other')
+   out({'method':'tool.updated','params':{'sessionId':id,'turnId':turn,'payload':{'kind':'result','toolCallId':'a'}}})
+   headers('late',id)
    out({'id':'subagent-headers','method':'interaction/requestProviderRuntimeHeaders','params':{'sessionId':'sess_subagent_agent_1','turnId':'child-turn','requestId':'child'}})
    out({'id':'foreign-headers','method':'interaction/requestProviderRuntimeHeaders','params':{'sessionId':'foreign','turnId':turn,'requestId':'foreign'}})
    out({'method':'turn.completed','params':{'sessionId':id,'turnId':turn,'resultType':'success'}})
@@ -470,7 +478,10 @@ async fn subagent_session_requests_belong_to_the_current_turn() {
     let rejected = "Original turn is no longer available";
     // The subagent's request reaches account handling instead of being turned away.
     assert_ne!(reply("subagent-headers"), rejected);
-    assert_eq!(reply("foreign-headers"), rejected);
+    assert_ne!(reply("rerouted"), rejected);
+    for id in ["foreign-headers", "early", "late", "unrelated"] {
+        assert_eq!(reply(id), rejected);
+    }
     driver.shutdown(handle).await.unwrap();
     stop(driver).await;
 }

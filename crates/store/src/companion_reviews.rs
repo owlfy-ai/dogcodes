@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 pub(super) fn load(
     connection: &Connection,
 ) -> Result<BTreeMap<TaskId, Vec<CompanionReview>>, RepositoryError> {
+    // The GROUP BY can make SQLite prefer task stream order and visit every
+    // task event. Restrict the lookup to the two review event types first.
     let mut statement = connection.prepare(
         "SELECT stream_id, json_object(
             'runId', json_extract(payload_json, '$.review.request.runId'),
@@ -19,7 +21,7 @@ pub(super) fn load(
             'completedGroups', (SELECT count(*) FROM json_each(payload_json, '$.review.workflow.groups') WHERE json_extract(value, '$.status') = 'completed'),
             'totalGroups', COALESCE(json_array_length(payload_json, '$.review.workflow.groups'), 0))
          FROM events WHERE sequence IN (
-            SELECT MAX(sequence) FROM events WHERE event_type IN ('review.started', 'review.updated') AND stream_type = 'task'
+            SELECT MAX(sequence) FROM events INDEXED BY events_kind_task_sequence WHERE event_type IN ('review.started', 'review.updated') AND stream_type = 'task'
             GROUP BY stream_id, json_extract(payload_json, '$.review.request.runId'))
          AND (json_extract(payload_json, '$.review.status') IN ('queued', 'running', 'cancelling')
               OR julianday(json_extract(payload_json, '$.review.finishedAt')) >= julianday('now', '-60 seconds'))

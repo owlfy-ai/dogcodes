@@ -10,7 +10,7 @@ pub(super) fn deleted_ids(
 ) -> Result<BTreeMap<TaskId, u64>, RepositoryError> {
     let mut statement = connection.prepare(
         "SELECT stream_id, sequence FROM events WHERE event_type='task.deleted' AND sequence IN (
-            SELECT MAX(sequence) FROM events WHERE stream_type='task' AND event_type IN ('task.deleted','task.restored') GROUP BY stream_id)")
+            SELECT MAX(sequence) FROM events INDEXED BY events_kind_task_sequence WHERE stream_type='task' AND event_type IN ('task.deleted','task.restored') GROUP BY stream_id)")
         .map_err(storage_error)?;
     statement
         .query_map([], |row| Ok((parse_id(row.get(0)?)?, row.get(1)?)))

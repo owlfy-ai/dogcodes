@@ -32,6 +32,10 @@ pub struct WorkspaceDiffCapture {
 
 #[async_trait]
 pub trait WorkspaceTurnCapture: Send + Sync {
+    /// Facts verified when the baseline for this workspace was captured.
+    fn initial_snapshot(&self, _workspace: &str) -> Option<&WorkspaceContextSnapshot> {
+        None
+    }
     async fn checkpoint(&self) -> Result<Option<Value>, WorkspaceCollectionDiagnostic> {
         Ok(None)
     }

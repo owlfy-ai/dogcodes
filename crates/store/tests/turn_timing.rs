@@ -80,6 +80,13 @@ async fn startup_trace_distinguishes_preparation_dispatch_first_text_and_failure
                 .all(|pair| pair[0].elapsed_ms <= pair[1].elapsed_ms)
         );
         for stage in [
+            "submit_executor_availability",
+            "submit_executor_target",
+            "submit_append",
+            "identity_read_state",
+            "sqlite_connection_wait",
+            "sqlite_append_transaction",
+            "sqlite_commit",
             "workspace_capture_begin",
             "workspace_validation",
             "history_bridge",

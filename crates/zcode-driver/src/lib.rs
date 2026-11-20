@@ -35,7 +35,7 @@ mod scopes;
 mod session_usage;
 use agent_runtime::ProcessStream;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::PathBuf,
     process::Stdio,
     sync::{
@@ -693,6 +693,7 @@ impl Connection {
         let mut cancel_open = true;
         let mut current_turn_started = false;
         let mut native_turn: Option<String> = None;
+        let mut agent_calls = HashSet::new();
 
         loop {
             tokio::select! {
@@ -748,9 +749,17 @@ impl Connection {
                             method,
                             params,
                         } => {
-                            // A subagent asks under its own native session and turn. This
-                            // process runs one turn at a time, so it belongs to this turn.
-                            let foreign=!subagent_session(&params)&&(label_differs(&params,"sessionId",Some(session_id))||label_differs(&params,"turnId",native_turn.as_deref()));
+                            // ZCode reroutes child account callbacks to the parent session
+                            // while retaining the child's turn ID.
+                            let headers_for_child = method == "interaction/requestProviderRuntimeHeaders"
+                                && stop_id.is_none()
+                                && !agent_calls.is_empty()
+                                && native_label(&params, "sessionId") == Some(session_id)
+                                && native_label(&params, "turnId").is_some_and(|id|
+                                    !self.seen_turns.get(session_id).is_some_and(|turns| turns.contains(id)));
+                            let foreign = !subagent_session(&params)
+                                && (label_differs(&params, "sessionId", Some(session_id))
+                                    || (!headers_for_child && label_differs(&params, "turnId", native_turn.as_deref())));
                             let current={let _gate=state.close_result.lock().expect("session lifecycle");state.accepts(handle)};
                             if foreign||!current {
                                 let response=match method.as_str(){
@@ -846,6 +855,20 @@ impl Connection {
                                 }
                                 current_turn_started = true;
                             } else if label_differs(&params,"turnId",native_turn.as_deref()) {continue;}
+                            if event_method == "tool.updated" {
+                                let tool = params.get("payload").unwrap_or(&params);
+                                if let Some(id) = tool["toolCallId"].as_str() {
+                                    match tool["kind"].as_str() {
+                                        Some("started") if tool["toolName"] == "Agent" && tool["source"] != "subagent" => {
+                                            agent_calls.insert(id.to_owned());
+                                        }
+                                        Some("result" | "completed" | "failed" | "error") => {
+                                            agent_calls.remove(id);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
                             match event_method {
                                 "turn.completed" => {
                                     if !current_turn_started {

@@ -274,6 +274,31 @@ pub trait CoreRepository: Send + Sync {
     ) -> Result<Option<CommandAck>, RepositoryError>;
     async fn append(&self, request: AppendRequest) -> Result<AppendOutcome, RepositoryError>;
     async fn bootstrap(&self) -> Result<BootstrapSnapshot, RepositoryError>;
+    async fn installations(
+        &self,
+    ) -> Result<Vec<agent_protocol::InstallationSummary>, RepositoryError> {
+        Ok(self.bootstrap().await?.installations)
+    }
+
+    async fn executor_matches_project_target(
+        &self,
+        project_id: &ProjectId,
+        executor: &ExecutorRef,
+    ) -> Result<bool, RepositoryError> {
+        let snapshot = self.bootstrap().await?;
+        let project = snapshot
+            .projects
+            .iter()
+            .find(|p| &p.project_id == project_id);
+        let installation = snapshot
+            .installations
+            .iter()
+            .find(|i| executor.installation_id.as_deref() == Some(i.installation_id.as_str()));
+        Ok(project
+            .zip(installation)
+            .is_none_or(|(p, i)| p.target_id == i.target_id))
+    }
+
     async fn history_preferences(
         &self,
     ) -> Result<agent_protocol::HistoryPreferencesSnapshot, RepositoryError> {
@@ -990,6 +1015,9 @@ impl Core {
                 "idempotencyKey must not be empty".into(),
             ));
         }
+        let receipt = startup_timing
+            .as_ref()
+            .map(|t| t.stage("submit_initial_receipt"));
         let request_fingerprint = command_identity::fingerprint(&envelope)?;
         if let Some(ack) = self
             .repository
@@ -1003,6 +1031,7 @@ impl Core {
             return Ok(ack);
         }
 
+        drop(receipt);
         if let CoreCommand::DeleteTask(command) = &envelope.payload
             && let Some(ack) = self
                 .repository
@@ -1033,11 +1062,15 @@ impl Core {
         };
         // New primary work observes the latest shared enable/disable decision.
         // Keep the gate only through durable acceptance and dispatch, not the run.
+        let gate = startup_timing
+            .as_ref()
+            .map(|t| t.stage("submit_admission_wait"));
         let turn_admission_guard = if matches!(&envelope.payload, CoreCommand::SubmitTurn(_)) {
             Some(self.agent_admission.read().await)
         } else {
             None
         };
+        drop(gate);
         if turn_admission_guard.is_some()
             && let Some(ack) = self
                 .repository
@@ -1285,9 +1318,14 @@ impl Core {
                     .executor_override
                     .as_ref()
                     .unwrap_or(&task.preferred_executor);
+                let stage = |name| startup_timing.as_ref().map(|timing| timing.stage(name));
+                let availability = stage("submit_executor_availability");
                 self.require_available_executor(executor).await?;
+                drop(availability);
+                let target = stage("submit_executor_target");
                 self.require_executor_on_project_target(&task.project_id, executor)
                     .await?;
+                drop(target);
                 if task.active_primary_run.is_some() {
                     return Err(CoreError::Conflict(
                         "task already has an active primary run".into(),
@@ -1318,6 +1356,7 @@ impl Core {
                 }
 
                 if command.model.is_some() || command.thinking.is_some() {
+                    let _catalog = stage("submit_model_selection");
                     let model = command.model.as_ref();
                     let executor = command
                         .executor_override
@@ -1610,17 +1649,20 @@ impl Core {
         } else {
             None
         };
-        let outcome = self
-            .repository
-            .append(AppendRequest {
+        let submit_append = startup_timing.as_ref().map(|t| t.stage("submit_append"));
+        let outcome = turn_timing::scoped(
+            startup_timing.as_ref(),
+            self.repository.append(AppendRequest {
                 request_fingerprint: Some(request_fingerprint),
                 command_id: envelope.command_id.clone(),
                 idempotency_key: envelope.idempotency_key.clone(),
                 expected_stream_version: envelope.expected_stream_version,
                 artifacts,
                 events,
-            })
-            .await?;
+            }),
+        )
+        .await?;
+        drop(submit_append);
         // Install ownership before publishing acceptance to other clients.
         let mut run_ownership = if outcome.duplicate {
             None
@@ -1830,21 +1872,10 @@ impl Core {
         project_id: &ProjectId,
         executor: &ExecutorRef,
     ) -> Result<(), CoreError> {
-        let snapshot = self.repository.bootstrap().await?;
-        let project_target = snapshot
-            .projects
-            .iter()
-            .find(|project| &project.project_id == project_id)
-            .map(|project| project.target_id.clone());
-        let installation_target = snapshot
-            .installations
-            .iter()
-            .find(|installation| {
-                executor.installation_id.as_deref() == Some(installation.installation_id.as_str())
-            })
-            .map(|installation| installation.target_id.clone());
-        if let (Some(project), Some(installation)) = (project_target, installation_target)
-            && project != installation
+        if !self
+            .repository
+            .executor_matches_project_target(project_id, executor)
+            .await?
         {
             return Err(CoreError::InvalidArgument("backendText.m341339e8".into()));
         }
@@ -1853,17 +1884,25 @@ impl Core {
 
     pub async fn bootstrap(&self) -> Result<BootstrapSnapshot, CoreError> {
         let mut snapshot = self.repository.bootstrap().await?;
+        self.retain_selected_installations(&mut snapshot.installations)
+            .await;
+        Ok(snapshot)
+    }
+
+    async fn retain_selected_installations(
+        &self,
+        installations: &mut Vec<agent_protocol::InstallationSummary>,
+    ) {
         let selected = self.selected_installations.read().await;
         // The selection chooses among this machine's installations. Another machine's
         // installation only serves projects there, so it never competes with it.
-        snapshot.installations.retain(|installation| {
+        installations.retain(|installation| {
             installation.target_id.is_some()
                 || match selected.get(&installation.provider_id) {
                     Some(path) => path.as_deref() == Some(installation.executable.as_str()),
                     None => true,
                 }
         });
-        Ok(snapshot)
     }
 
     pub async fn subagent_history(
@@ -3156,7 +3195,12 @@ impl Core {
         {
             let _stage = timing.stage("workspace_snapshot");
             if let Some(scope) = &workspace_scope {
-                self.capture_turn_workspace(scope, "turn_start").await;
+                self.capture_turn_workspace(
+                    scope,
+                    "turn_start",
+                    capture.as_ref().and_then(|c| c.as_deref().ok()),
+                )
+                .await;
             }
         }
         let mut terminal_events = Vec::new();
@@ -3182,7 +3226,7 @@ impl Core {
         if let Some(scope) = &workspace_scope
             && let Some(capture) = capture
         {
-            self.capture_turn_workspace(scope, "turn_end").await;
+            self.capture_turn_workspace(scope, "turn_end", None).await;
             self.record_fork_snapshot(scope).await;
             let change = match capture {
                 Ok(capture) => capture.finish().await,
@@ -3392,9 +3436,18 @@ impl Core {
         })
     }
 
-    async fn capture_turn_workspace(&self, scope: &TurnWorkspaceScope, phase: &'static str) {
+    async fn capture_turn_workspace(
+        &self,
+        scope: &TurnWorkspaceScope,
+        phase: &'static str,
+        capture: Option<&dyn WorkspaceTurnCapture>,
+    ) {
         for workspace_path in &scope.project_paths {
-            let snapshot = scope.workspace.collect(workspace_path).await;
+            let snapshot =
+                match capture.and_then(|capture| capture.initial_snapshot(workspace_path)) {
+                    Some(snapshot) => snapshot.clone(),
+                    None => scope.workspace.collect(workspace_path).await,
+                };
             let (event_type, payload) = if let Some(git) = snapshot.git_snapshot {
                 (
                     "workspace.snapshot_captured",
@@ -3652,6 +3705,7 @@ impl Core {
         drop(context_timing);
         let session_timing = timing.stage("native_session");
         let operation = {
+            let timing = timing.clone();
             let core = self.clone();
             let task_owned = task_id.clone();
             let active = active.clone();
@@ -3685,6 +3739,7 @@ impl Core {
                                 .chain(attachment_directories.iter().cloned())
                                 .collect(),
                         };
+                        let lookup = timing.stage("native_handle_lookup");
                         let previous_handle = driver
                             .current_session_handle(&mapping.native_session_id)
                             .await;
@@ -3694,7 +3749,9 @@ impl Core {
                             }
                             None => None,
                         };
+                        drop(lookup);
                         let resumed = if selection_changed {
+                            let _stage = timing.stage("native_session_reconfigure");
                             driver
                                 .reconfigure_session(
                                     &mapping.native_session_id,
@@ -3704,6 +3761,7 @@ impl Core {
                                 )
                                 .await
                         } else {
+                            let _stage = timing.stage("native_session_resume");
                             driver
                                 .resume_selected_session(
                                     &mapping.native_session_id,
@@ -3761,6 +3819,7 @@ impl Core {
                                         .await?,
                                     );
                                 }
+                                let _stage = timing.stage("native_replacement_create");
                                 let session = driver
                                     .create_selected_session(
                                         SessionRequest {
@@ -3850,6 +3909,7 @@ impl Core {
                                 "reconciliation target session is not resumable".into(),
                             ));
                         }
+                        let _stage = timing.stage("native_session_create");
                         (
                             driver
                                 .create_selected_session(
@@ -3914,35 +3974,43 @@ impl Core {
         let resume_capability = driver.resume_capability();
         drop(session_timing);
         let identity_timing = timing.stage("session_identity_and_context");
-        self.append_session_identity(
-            task_id,
-            &active.run_id,
-            &active.executor,
-            existing_session.as_ref(),
-            session_event_type,
-            json!({
-                "sessionMapId": session_map_id,
-                "taskId": task_id,
-                "executor": active.executor,
-                "nativeSessionId": session.native_session_id,
-                "model": model,
-                "thinking": thinking,
-                "workspaceLocator": project.path,
-                "additionalDirectories": project.additional_directories,
-                "driverVersion": driver.driver_version(),
-                "nativeAgentVersion": driver.native_agent_version(),
-                "resumeCapability": resume_capability,
-                "status": "active",
-                "createdAt": session_created_at,
-                "resumedAt": Utc::now(),
-            }),
+        let persist_timing = timing.stage("session_identity_persist");
+        turn_timing::scoped(
+            Some(timing),
+            self.append_session_identity(
+                task_id,
+                &active.run_id,
+                &active.executor,
+                existing_session.as_ref(),
+                session_event_type,
+                json!({
+                    "sessionMapId": session_map_id,
+                    "taskId": task_id,
+                    "executor": active.executor,
+                    "nativeSessionId": session.native_session_id,
+                    "model": model,
+                    "thinking": thinking,
+                    "workspaceLocator": project.path,
+                    "additionalDirectories": project.additional_directories,
+                    "driverVersion": driver.driver_version(),
+                    "nativeAgentVersion": driver.native_agent_version(),
+                    "resumeCapability": resume_capability,
+                    "status": "active",
+                    "createdAt": session_created_at,
+                    "resumedAt": Utc::now(),
+                }),
+            ),
         )
         .await?;
 
+        drop(persist_timing);
         if let Some(lease) = &history_lease {
             lease.bind_session(session_map_id.clone());
         }
-        if let Some(events) = driver.take_autonomous_events(&session).await {
+        let autonomous = timing.stage("native_autonomous_events");
+        let events = driver.take_autonomous_events(&session).await;
+        drop(autonomous);
+        if let Some(events) = events {
             self.observe_autonomous(
                 events,
                 task_id.clone(),
@@ -4111,12 +4179,17 @@ impl Core {
         drop(prompt_timing);
         timing.mark("prompt_accepted");
         let accepted_timing = timing.stage("prompt_acceptance_bookkeeping");
-        if let Some(steering) = driver.turn_steering(&session).await {
+        let steering_lookup = timing.stage("native_steering_lookup");
+        let steering = driver.turn_steering(&session).await;
+        drop(steering_lookup);
+        if let Some(steering) = steering {
             let _ = control.steering.set(steering);
         }
         control.ready();
-        self.append_runtime_event(task_id, "history.native_prompt_accepted",
-            json!({"taskId":task_id,"turnId":active.turn_id,"sessionMapId":session_map_id,"executor":active.executor,"boundary":"driver_prompt_accepted","contextPayloads":context_payloads,"supportsSteering":control.steering.get().is_some()}), EventSource::Hub).await?;
+        let accepted_append = timing.stage("prompt_accepted_append");
+        turn_timing::scoped(Some(timing), self.append_runtime_event(task_id, "history.native_prompt_accepted",
+            json!({"taskId":task_id,"turnId":active.turn_id,"sessionMapId":session_map_id,"executor":active.executor,"boundary":"driver_prompt_accepted","contextPayloads":context_payloads,"supportsSteering":control.steering.get().is_some()}), EventSource::Hub)).await?;
+        drop(accepted_append);
         if !delivered_facts.is_empty() {
             self.append_runtime_event(task_id, "history.facts_delivered",
                 json!({"taskId":task_id,"turnId":active.turn_id,"sessionMapId":session_map_id,"boundary":"driver_prompt_accepted","facts":delivered_facts}), EventSource::Hub).await?;
@@ -4144,6 +4217,8 @@ impl Core {
         drop(accepted_timing);
         let mut first_event = false;
         let mut first_text = false;
+        // The store replaces provisional IDs when the driver binds its native session.
+        let mut bound_native_id = session.native_session_id.clone();
         let mut terminal_observed = false;
         let mut retire_required = false;
         // Open thinking segments: item id, start, and the redacted text so far
@@ -4155,6 +4230,9 @@ impl Core {
         let mut text_segments = text_segments::TextSegments::default();
         while let Some(event) = stream.next().await {
             let mut event = event?;
+            if let DriverEvent::SessionReady { native_session_id } = &event {
+                bound_native_id.clone_from(native_session_id);
+            }
             self.observe_turn_usage(task_id, &active.turn_id, &mut usage_meter, &event)
                 .await;
             if matches!(
@@ -4433,7 +4511,7 @@ impl Core {
             ));
         }
         let turn_changes = if let (Some(scope), Some(capture)) = (workspace_scope, capture.take()) {
-            self.capture_turn_workspace(scope, "turn_end").await;
+            self.capture_turn_workspace(scope, "turn_end", None).await;
             self.record_fork_snapshot(scope).await;
             Some(match capture {
                 Ok(capture) => capture.finish().await,
@@ -4462,7 +4540,7 @@ impl Core {
                 active.turn_id.clone(),
                 active.executor.clone(),
                 session_map_id.clone(),
-                session.native_session_id.clone(),
+                bound_native_id,
             );
         }
         if !terminal_observed || retire_required {

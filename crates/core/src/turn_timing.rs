@@ -17,6 +17,25 @@ pub struct TurnTimingRecord {
 }
 pub type TurnTimingSink = Arc<dyn Fn(TurnTimingRecord) + Send + Sync>;
 
+tokio::task_local! {
+    static STARTUP_TIMING: TurnStartupTiming;
+}
+
+/// Instruments only operations polled by a traced turn, including its repository calls.
+pub fn startup_stage(name: &'static str) -> Option<impl Drop> {
+    STARTUP_TIMING.try_with(|timing| timing.stage(name)).ok()
+}
+
+pub(crate) async fn scoped<F: std::future::Future>(
+    timing: Option<&TurnStartupTiming>,
+    operation: F,
+) -> F::Output {
+    match timing.filter(|timing| timing.sink.is_some()) {
+        Some(timing) => STARTUP_TIMING.scope(timing.clone(), operation).await,
+        None => operation.await,
+    }
+}
+
 pub(crate) fn has_body_text(event: &driver_api::DriverEvent) -> bool {
     use driver_api::DriverEvent;
     match event {

@@ -48,6 +48,7 @@ mod scratch;
 mod session_open;
 mod session_usage;
 mod sessions;
+mod subagents;
 use sessions::{Startup, stale_scope};
 
 /// Per-line frame cap; `tool_info` payloads can be large but never unbounded.
@@ -1017,19 +1018,32 @@ async fn stream_session(stdout: agent_runtime::ProcessStream, process: Arc<Sessi
                     let _ = updates.send(event);
                 }
             }
-        }
-        if let Ok(raw) = serde_json::from_str::<Value>(line.trim_end())
-            && let Some(children) = raw
+            if let Some(children) = raw
                 .pointer("/step_update/subagent_info/subagents")
                 .and_then(Value::as_array)
-        {
-            let mut known = process.approval_children.lock().expect("children");
-            for child in children.iter().take(64) {
-                if let Some(id) = child["conversation_id"]
-                    .as_str()
-                    .filter(|id| id.len() <= 128)
-                {
-                    known.insert(id.into());
+            {
+                let mut known = process.approval_children.lock().expect("children");
+                for child in children.iter().take(64) {
+                    let Some(id) = child["conversation_id"]
+                        .as_str()
+                        .filter(|id| id.len() <= 128)
+                    else {
+                        continue;
+                    };
+                    if known.insert(id.into())
+                        && child["log_uri"].as_str().is_some_and(|uri| !uri.is_empty())
+                        && let Some(updates) = process.updates.lock().expect("updates sink").clone()
+                    {
+                        let task = tokio::spawn(subagents::observe_completion(
+                            process.target.clone(),
+                            id.into(),
+                            updates,
+                            process.closing.subscribe(),
+                        ));
+                        let mut tasks = process.background.lock().expect("background tasks");
+                        tasks.retain(|task| !task.is_finished());
+                        tasks.push(task);
+                    }
                 }
             }
         }
@@ -1315,41 +1329,12 @@ impl AgentDriver for AntigravityDriver {
         self.resume_capability
     }
 
+    fn supports_background_events(&self) -> bool {
+        true
+    }
+
     async fn read_subagent(&self, id: &str) -> Result<Vec<Value>, DriverError> {
-        if id.len() != 36 || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
-            return Err(DriverError::Protocol("invalid child id".into()));
-        }
-        let target = &self.executable.target;
-        let home = target
-            .inherited("HOME")
-            .ok_or_else(|| DriverError::CapabilityUnavailable("home unavailable".into()))?;
-        let path = std::path::PathBuf::from(home)
-            .join(".gemini/antigravity-cli/brain")
-            .join(id)
-            .join(".system_generated/logs/transcript.jsonl");
-        let bytes = scratch::read_file(target, &path, 1_048_577)
-            .await
-            .ok_or_else(|| DriverError::Protocol("log unavailable".into()))?;
-        if bytes.len() > 1_048_576 {
-            return Err(DriverError::Protocol("log unavailable".into()));
-        }
-        let text = String::from_utf8(bytes)
-            .map_err(|_| DriverError::Protocol("log unavailable".into()))?;
-        let mut output = Vec::new();
-        for line in text.lines() {
-            let Ok(row) = serde_json::from_str::<Value>(line) else {
-                continue;
-            };
-            if let Some(calls) = row["tool_calls"].as_array() {
-                for call in calls {
-                    output.push(serde_json::json!({"type":"tool","name":call["name"],"input":call["args"],"status":"unknown"}));
-                }
-            }
-            if row["type"] == "TOOL_RESULT" {
-                output.push(serde_json::json!({"type":"tool","name":row["tool_name"],"output":row["content"],"status":"unknown"}));
-            }
-        }
-        Ok(output)
+        subagents::history(&self.executable.target, id).await
     }
 
     async fn create_session(&self, request: SessionRequest) -> Result<SessionHandle, DriverError> {

@@ -132,6 +132,18 @@ impl GitWorkspaceContextProvider {
         env_overrides: BTreeMap<String, OsString>,
         stdout_limit: usize,
     ) -> Result<Vec<u8>, GitCollectionError> {
+        self.git_bytes_with_input(workspace, args, env_overrides, stdout_limit, None)
+            .await
+    }
+
+    async fn git_bytes_with_input(
+        &self,
+        workspace: &Path,
+        args: &[&str],
+        env_overrides: BTreeMap<String, OsString>,
+        stdout_limit: usize,
+        input: Option<&[u8]>,
+    ) -> Result<Vec<u8>, GitCollectionError> {
         // A temporary index does not prevent clean/process filters from running.
         // Inspect effective configuration before each command, without returning
         // configured commands or filter names to the caller. Do not silently
@@ -165,7 +177,7 @@ impl GitWorkspaceContextProvider {
             _ => return Err(GitCollectionError::CommandFailed),
         }
         let output = self
-            .git_process(workspace, args, env_overrides, stdout_limit)
+            .git_process_input(workspace, args, env_overrides, stdout_limit, input)
             .await?;
         if !output.success {
             return Err(GitCollectionError::CommandFailed);
@@ -537,8 +549,8 @@ impl GitWorkspaceContextProvider {
             .collect();
         let head = parse_head(&status)?;
         let base = head.clone().unwrap_or_else(|| "unborn".into());
-        let unstaged = self
-            .git(
+        let (unstaged, staged) = tokio::try_join!(
+            self.git(
                 workspace,
                 &[
                     "diff",
@@ -546,12 +558,10 @@ impl GitWorkspaceContextProvider {
                     "--no-ext-diff",
                     "--no-textconv",
                     "--",
-                    ".",
-                ],
-            )
-            .await?;
-        let staged = self
-            .git(
+                    "."
+                ]
+            ),
+            self.git(
                 workspace,
                 &[
                     "diff",
@@ -560,10 +570,10 @@ impl GitWorkspaceContextProvider {
                     "--no-ext-diff",
                     "--no-textconv",
                     "--",
-                    ".",
-                ],
-            )
-            .await?;
+                    "."
+                ]
+            ),
+        )?;
         let diff_stat = [staged.trim(), unstaged.trim()]
             .into_iter()
             .filter(|value| !value.is_empty())
@@ -847,8 +857,9 @@ impl WorkspaceContextProvider for GitWorkspaceContextProvider {
                 environment,
                 _temporary: temporary,
                 before: String::new(),
+                initial_snapshot: facts,
             };
-            capture.before = capture.tree().await?;
+            capture.before = capture.tree(&capture.initial_snapshot).await?;
             Ok::<_, GitCollectionError>(capture)
         }
         .await;
@@ -888,11 +899,87 @@ struct TurnCapture {
     environment: BTreeMap<String, OsString>,
     _temporary: TemporaryGitIndex,
     before: String,
+    initial_snapshot: WorkspaceContextSnapshot,
 }
 
 impl TurnCapture {
-    async fn tree(&self) -> Result<String, GitCollectionError> {
-        let before = self.provider.collect_git(&self.workspace).await?;
+    async fn git_checkpoint(&self) -> Result<serde_json::Value, GitCollectionError> {
+        let listing = self
+            .provider
+            .git_with_options(
+                &self.workspace,
+                &["ls-tree", "-r", "-l", "-z", &self.before, "--", "."],
+                self.environment.clone(),
+                GIT_OUTPUT_LIMIT,
+            )
+            .await?;
+        let mut blobs = Vec::new();
+        let mut budget = 128_000usize;
+        let mut requests = String::new();
+        let mut output_limit = 0;
+        for entry in listing.split_terminator('\0') {
+            let (metadata, path) = entry
+                .split_once('\t')
+                .ok_or(GitCollectionError::InvalidOutput)?;
+            let mut fields = metadata.split_whitespace();
+            let (Some(mode), Some("blob"), Some(oid), Some(size), None) = (
+                fields.next(),
+                fields.next(),
+                fields.next(),
+                fields.next(),
+                fields.next(),
+            ) else {
+                return Err(GitCollectionError::InvalidOutput);
+            };
+            if !matches!(oid.len(), 40 | 64) || !oid.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err(GitCollectionError::InvalidOutput);
+            }
+            let length = size
+                .parse::<usize>()
+                .map_err(|_| GitCollectionError::InvalidOutput)?;
+            if blobs.len() == MAX_RELEVANT_FILES || budget == 0 || length > budget {
+                return Err(GitCollectionError::OutputTruncated);
+            }
+            budget -= length;
+            requests.push_str(oid);
+            requests.push('\n');
+            let header = format!("{oid} blob {length}\n");
+            output_limit += header.len() + length + 1;
+            blobs.push((path, mode, length, header));
+        }
+        let mut entries = BTreeMap::new();
+        if !blobs.is_empty() {
+            let output = self
+                .provider
+                .git_bytes_with_input(
+                    &self.workspace,
+                    &["cat-file", "--batch"],
+                    self.environment.clone(),
+                    output_limit,
+                    Some(requests.as_bytes()),
+                )
+                .await?;
+            let mut remaining = output.as_slice();
+            for (path, mode, length, header) in blobs {
+                let body = remaining
+                    .strip_prefix(header.as_bytes())
+                    .ok_or(GitCollectionError::InvalidOutput)?;
+                let bytes = body
+                    .get(..length)
+                    .ok_or(GitCollectionError::InvalidOutput)?;
+                remaining = body[length..]
+                    .strip_prefix(b"\n")
+                    .ok_or(GitCollectionError::InvalidOutput)?;
+                entries.insert(path.to_owned(), serde_json::json!({"mode":mode,"sha256":hex::encode(Sha256::digest(bytes)),"hex":hex::encode(bytes)}));
+            }
+            if !remaining.is_empty() {
+                return Err(GitCollectionError::InvalidOutput);
+            }
+        }
+        Ok(filesystem::checkpoint("git", &entries))
+    }
+
+    async fn tree(&self, before: &WorkspaceContextSnapshot) -> Result<String, GitCollectionError> {
         self.provider
             .git_with_options(
                 &self.workspace,
@@ -911,7 +998,7 @@ impl TurnCapture {
             )
             .await?;
         let after = self.provider.collect_git(&self.workspace).await?;
-        if before != after {
+        if before != &after {
             return Err(GitCollectionError::WorkspaceChanged);
         }
         Ok(tree.trim().to_string())
@@ -920,27 +1007,20 @@ impl TurnCapture {
 
 #[async_trait]
 impl agent_protocol::workspace_context::WorkspaceTurnCapture for TurnCapture {
+    fn initial_snapshot(&self, workspace: &str) -> Option<&WorkspaceContextSnapshot> {
+        (self.workspace == Path::new(workspace)).then_some(&self.initial_snapshot)
+    }
+
     async fn checkpoint(&self) -> Result<Option<serde_json::Value>, WorkspaceCollectionDiagnostic> {
-        let result = async {
-            let listing = self.provider.git_with_options(&self.workspace, &["ls-tree", "-r", "-z", &self.before, "--", "."], self.environment.clone(), GIT_OUTPUT_LIMIT).await?;
-            let mut entries = BTreeMap::new();
-            let mut budget = 128_000usize;
-            for entry in listing.split('\0').filter(|v| !v.is_empty()) {
-                let (metadata, path) = entry.split_once('\t').ok_or(GitCollectionError::InvalidOutput)?;
-                let fields: Vec<_> = metadata.split_whitespace().collect();
-                if fields.len() != 3 || fields[1] != "blob" { return Err(GitCollectionError::InvalidOutput); }
-                if entries.len() >= MAX_RELEVANT_FILES || budget == 0 { return Err(GitCollectionError::OutputTruncated); }
-                let bytes = self.provider.git_bytes_with_options(&self.workspace, &["cat-file", "blob", fields[2]], self.environment.clone(), budget).await?;
-                budget -= bytes.len();
-                entries.insert(path.to_string(), serde_json::json!({"mode":fields[0],"sha256":hex::encode(Sha256::digest(&bytes)),"hex":hex::encode(bytes)}));
-            }
-            Ok(Some(filesystem::checkpoint("git", &entries)))
-        }.await;
-        result.map_err(|e: GitCollectionError| WorkspaceCollectionDiagnostic { kind: e.into() })
+        self.git_checkpoint()
+            .await
+            .map(Some)
+            .map_err(|e| WorkspaceCollectionDiagnostic { kind: e.into() })
     }
     async fn finish(&self) -> Result<serde_json::Value, WorkspaceCollectionDiagnostic> {
         let result = async {
-            let after = self.tree().await?;
+            let facts = self.provider.collect_git(&self.workspace).await?;
+            let after = self.tree(&facts).await?;
             let diff = self.provider.git_bytes_with_options(&self.workspace,
                 &["-c", "core.quotepath=true", "diff", "--binary", "--full-index", "--no-ext-diff", "--no-textconv", &self.before, &after, "--", "."],
                 self.environment.clone(), MAX_DIFF_BYTES / 2).await?;
@@ -1423,6 +1503,38 @@ mod tests {
             parse_status_v2("1 malformed\0"),
             Err(GitCollectionError::InvalidOutput)
         );
+    }
+
+    #[tokio::test]
+    async fn checkpoint_batches_binary_and_empty_files_and_enforces_total_size() {
+        let provider = GitWorkspaceContextProvider::discover().unwrap();
+        let workspace = temporary_workspace("batch-checkpoint");
+        std::fs::create_dir_all(&workspace).unwrap();
+        run_git(&provider, &workspace, &["init", "--quiet"]);
+        let path = workspace.to_str().unwrap();
+        let binary = vec![0xff; 64_000];
+        for name in ["a.bin", "b duplicate.bin"] {
+            std::fs::write(workspace.join(name), &binary).unwrap();
+        }
+        std::fs::write(workspace.join("0-empty"), []).unwrap();
+        let capture = provider.begin_turn(path).await.unwrap();
+        assert_eq!(
+            capture.initial_snapshot(path),
+            Some(&provider.collect(path).await)
+        );
+        let checkpoint = capture.checkpoint().await.unwrap().unwrap();
+        let entries = &checkpoint["entries"];
+        assert_eq!(entries["0-empty"]["hex"], "");
+        assert_eq!(entries["a.bin"]["hex"], hex::encode(&binary));
+        assert_eq!(entries["a.bin"], entries["b duplicate.bin"]);
+        std::fs::write(workspace.join("b duplicate.bin"), vec![1; 64_001]).unwrap();
+        let op = provider.begin_turn(path).await.unwrap();
+        assert_ne!(op.initial_snapshot(path), capture.initial_snapshot(path));
+        assert_eq!(
+            op.checkpoint().await.unwrap_err().kind,
+            WorkspaceDiagnosticKind::OutputTruncated
+        );
+        std::fs::remove_dir_all(workspace).unwrap();
     }
 
     #[tokio::test]

@@ -196,10 +196,10 @@ pub fn presentation_events(provider: &str, method: &str, v: &Value) -> Vec<Drive
         "cursor"=>out.push(event(s(v,"toolCallId"),json!({"type":"subagent","childId":s(v,"agentId"),"title":s(v,"description"),"details":"unavailable","durationMs":v["durationMs"]}))),
         "antigravity"=>{
             let p=&v["step_update"];
-            if s(p,"step_type")=="tool" {
+            if matches!(s(p,"step_type"), "tool" | "subagent") {
                 out.push(tool(&format!("step:{}:{}",s(p,"conversation_id"),p["step_index"]),s(p,"tool_name"),match s(p,"state"){"DONE"=>"completed","ERROR"|"FAILED"=>"failed",_=>"running"},p.pointer("/tool_info/input").cloned().unwrap_or(Value::Null),p.pointer("/tool_info/output").or_else(||p.pointer("/tool_info/error")).cloned().unwrap_or(Value::Null),""));
             }
-            if let Some(a)=p.pointer("/subagent_info/subagents").and_then(Value::as_array){for child in a {let id=s(child,"conversation_id");if !id.is_empty(){out.push(event(id,json!({"type":"subagent","childId":id,"title":s(child,"role"),"details":if s(child,"log_uri").is_empty(){"unavailable"}else{"history_partial"},"status":"unknown"})));}}}
+            if let Some(a)=p.pointer("/subagent_info/subagents").and_then(Value::as_array){for child in a {let id=s(child,"conversation_id");if !id.is_empty(){out.push(event(id,json!({"type":"subagent","childId":id,"title":s(child,"role"),"details":if s(child,"log_uri").is_empty(){"unavailable"}else{"history_partial"},"status":"running"})));}}}
         }
         _=>{}
     }
@@ -227,6 +227,21 @@ mod tests {
             _ => panic!("display event"),
         }
     }
+    #[test]
+    fn antigravity_launch_finishes_while_its_child_runs() {
+        let events = presentation_events(
+            "antigravity",
+            "",
+            &json!({"step_update":{
+                "step_type":"subagent","conversation_id":"parent","step_index":2,"state":"DONE",
+                "tool_name":"invoke_subagent","subagent_info":{"subagents":[{"conversation_id":"child","role":"reader","log_uri":"log"}]}
+            }}),
+        );
+        assert_eq!(data(&events[0])["status"], "completed");
+        assert_eq!(data(&events[1])["childId"], "child");
+        assert_eq!(data(&events[1])["status"], "running");
+    }
+
     #[test]
     fn claude_child_tools_have_explicit_parent_and_no_signature() {
         let events = presentation_events(

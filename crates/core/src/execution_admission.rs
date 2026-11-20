@@ -118,8 +118,9 @@ impl Core {
         executor: &ExecutorRef,
     ) -> Result<(), CoreError> {
         self.require_enabled_executor(executor).await?;
-        let snapshot = self.bootstrap().await?;
-        if !installation_is_ready(executor, &snapshot.installations) {
+        let mut installations = self.repository.installations().await?;
+        self.retain_selected_installations(&mut installations).await;
+        if !installation_is_ready(executor, &installations) {
             return Err(CoreError::CapabilityUnavailable(
                 "backendText.m83f9c5d0".into(),
             ));

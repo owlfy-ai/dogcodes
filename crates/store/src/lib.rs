@@ -330,7 +330,10 @@ impl CoreRepository for SqliteStore {
     }
 
     async fn append(&self, request: AppendRequest) -> Result<AppendOutcome, RepositoryError> {
+        let lock_wait = agent_core::turn_timing::startup_stage("sqlite_connection_wait");
         let mut connection = self.connection.lock().map_err(poison_error)?;
+        drop(lock_wait);
+        let writes = agent_core::turn_timing::startup_stage("sqlite_append_transaction");
         let transaction = connection.transaction().map_err(storage_error)?;
 
         if let Some(ack_json) = transaction
@@ -378,10 +381,35 @@ impl CoreRepository for SqliteStore {
         if let Some(expected) = request.expected_stream_version
             && expected != actual_version
         {
-            return Err(RepositoryError::Conflict {
-                expected,
-                actual: actual_version,
-            });
+            // Streaming output advances the task version. A stop stays valid only
+            // while its exact run and turn are still active in this transaction.
+            let matching_stop = if let [event] = request.events.as_slice()
+                && expected < actual_version
+                && first_stream.stream_type == StreamType::Task
+                && event.event_type == "turn.cancel_requested"
+                && event.payload["taskId"].as_str() == Some(first_stream.stream_id.as_str())
+            {
+                transaction
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM tasks WHERE task_id=?1 AND active_turn_id=?2
+                     AND active_run_id=?3 AND active_run_state!='interrupting')",
+                        params![
+                            &first_stream.stream_id,
+                            event.payload["turnId"].as_str(),
+                            event.payload["runId"].as_str()
+                        ],
+                        |row| row.get::<_, bool>(0),
+                    )
+                    .map_err(storage_error)?
+            } else {
+                false
+            };
+            if !matching_stop {
+                return Err(RepositoryError::Conflict {
+                    expected,
+                    actual: actual_version,
+                });
+            }
         }
 
         task_lifecycle::validate_append(&transaction, &request)?;
@@ -520,12 +548,38 @@ impl CoreRepository for SqliteStore {
                 ],
             )
             .map_err(storage_error)?;
+        drop(writes);
+        let _commit = agent_core::turn_timing::startup_stage("sqlite_commit");
         transaction.commit().map_err(storage_error)?;
         Ok(AppendOutcome {
             ack,
             events: recorded,
             duplicate: false,
         })
+    }
+
+    async fn installations(&self) -> Result<Vec<InstallationSummary>, RepositoryError> {
+        let connection = self.connection.lock().map_err(poison_error)?;
+        load_installations(&connection)
+    }
+
+    async fn executor_matches_project_target(
+        &self,
+        project_id: &agent_domain::ProjectId,
+        executor: &ExecutorRef,
+    ) -> Result<bool, RepositoryError> {
+        let connection = self.connection.lock().map_err(poison_error)?;
+        // Missing rows are handled by their own availability checks. The installation
+        // projection stores the local target as an empty string.
+        connection
+            .query_row(
+                "SELECT NOT EXISTS (
+            SELECT 1 FROM projects p, installations i WHERE p.project_id=?1 AND i.installation_id=?2
+            AND p.target_id IS NOT NULLIF(i.target_id, ''))",
+                params![project_id.as_str(), executor.installation_id.as_deref()],
+                |row| row.get(0),
+            )
+            .map_err(storage_error)
     }
 
     async fn bootstrap(&self) -> Result<BootstrapSnapshot, RepositoryError> {
@@ -803,7 +857,9 @@ impl CoreRepository for SqliteStore {
         &self,
         task_id: &TaskId,
     ) -> Result<Option<agent_core::TaskExecutionState>, RepositoryError> {
+        let wait = agent_core::turn_timing::startup_stage("state_connection_wait");
         let mut connection = self.connection.lock().map_err(poison_error)?;
+        drop(wait);
         let transaction = connection.transaction().map_err(storage_error)?;
         let state = startup_reads::execution_state(&transaction, task_id)?;
         transaction.commit().map_err(storage_error)?;
@@ -2769,9 +2825,12 @@ fn load_tasks(
                      WHERE timeline_items.task_id = tasks.task_id AND kind = 'user_message'
                      ORDER BY sequence DESC LIMIT 1) END,
                     (SELECT occurred_at FROM events WHERE stream_type='task' AND stream_id=tasks.task_id ORDER BY stream_version DESC LIMIT 1),
-                    (SELECT json_extract(payload_json, '$.executor') FROM events
-                     WHERE stream_type='task' AND stream_id=tasks.task_id AND event_type IN ('turn.queued','turn.autonomous.started')
-                     ORDER BY stream_version DESC LIMIT 1),
+                    -- Seek to the last entry of each type, even after a long stream of message deltas.
+                    (SELECT json_extract(payload_json, '$.executor') FROM events WHERE sequence = MAX(
+                        COALESCE((SELECT MAX(sequence) FROM events WHERE stream_type='task'
+                                  AND stream_id=tasks.task_id AND event_type='turn.queued'), 0),
+                        COALESCE((SELECT MAX(sequence) FROM events WHERE stream_type='task'
+                                  AND stream_id=tasks.task_id AND event_type='turn.autonomous.started'), 0))),
                     (SELECT json_extract(payload_json, '$.sourceTaskId') FROM events
                      WHERE stream_type='task' AND stream_id=tasks.task_id AND event_type='task.forked'
                      ORDER BY sequence LIMIT 1),
@@ -3545,13 +3604,21 @@ mod tests {
         );
         for (version, event_type, provider) in [
             (1, "turn.queued", "codex"),
-            (2, "turn.queued", "cursor"),
+            (2, "turn.autonomous.started", "cursor"),
             (3, "task.preferred_executor_changed", "kimi"),
             (4, "review.started", "claude-code"),
         ] {
             connection.execute("INSERT INTO events(event_id, stream_type, stream_id, stream_version, event_type, schema_version, occurred_at, recorded_at, correlation_id, source_json, payload_json) VALUES (?1, 'task', ?2, ?3, ?4, 1, 0, 0, 'test', '{}', ?5)",
                 params![format!("history-agent-{version}"), task_id, version, event_type, serde_json::json!({"executor": executor(provider)}).to_string()]).unwrap();
         }
+        connection.execute(
+            "WITH RECURSIVE noise(n) AS (VALUES(5) UNION ALL SELECT n+1 FROM noise WHERE n<4005)
+             INSERT INTO events(event_id,stream_type,stream_id,stream_version,event_type,schema_version,
+                                occurred_at,recorded_at,correlation_id,source_json,payload_json)
+             SELECT 'delta-'||n,'task',?1,n,'message.delta',1,0,0,'test','{}','{}' FROM noise",
+            [&task_id],
+        ).unwrap();
+        connection.progress_handler(1000, Some(|| true));
         let task = load_tasks(&connection, None).unwrap().remove(0);
         assert_eq!(task.last_turn_executor, Some(executor("cursor")));
         assert_eq!(task.preferred_executor, executor("kimi"));
@@ -5315,7 +5382,9 @@ mod tests {
             turn_id: active.turn_id,
             run_id: active.run_id,
         }));
-        cancel.expected_stream_version = Some(task.stream_version);
+        // The UI freezes its request for receipt recovery. Intervening stream
+        // events must not invalidate a stop that still targets this exact run.
+        cancel.expected_stream_version = Some(task.stream_version - 1);
         let accepted = core.execute(cancel.clone()).await.unwrap();
         // Resending the same stop after a lost reply returns the original receipt.
         assert_eq!(
@@ -5655,6 +5724,7 @@ mod tests {
             fixture_installations::register(&core, store.as_ref(), Arc::new(ScriptedDriver::new(
             "scripted",
             vec![
+                DriverEvent::SessionReady { native_session_id: "durable-session".into() },
                 DriverEvent::Presentation {
                     item_id: "child".into(),
                     data: json!({"type":kind,"status":"running","background":kind == "tool"}),

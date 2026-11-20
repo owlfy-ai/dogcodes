@@ -18,11 +18,13 @@ impl Core {
         payload: Value,
     ) -> Result<(), CoreError> {
         loop {
+            let lookup = crate::turn_timing::startup_stage("identity_read_state");
             let snapshot = self
                 .repository
                 .task_execution_state(task_id)
                 .await?
                 .ok_or_else(|| CoreError::NotFound("task".into()))?;
+            drop(lookup);
             let task = &snapshot.task;
             if task.active_primary_run.as_ref().map(|r| &r.run_id) != Some(run_id) {
                 return Err(CoreError::Conflict(

@@ -33,6 +33,13 @@ fn bounded(mut value: Value) -> Result<Value, WorkspaceCollectionDiagnostic> {
 struct Capture(Vec<(String, Box<dyn WorkspaceTurnCapture>)>);
 #[async_trait]
 impl WorkspaceTurnCapture for Capture {
+    fn initial_snapshot(&self, workspace: &str) -> Option<&crate::WorkspaceContextSnapshot> {
+        self.0
+            .iter()
+            .find(|(path, _)| path == workspace)?
+            .1
+            .initial_snapshot(workspace)
+    }
     async fn checkpoint(&self) -> Result<Option<Value>, WorkspaceCollectionDiagnostic> {
         let mut roots = Vec::new();
         for (path, capture) in &self.0 {

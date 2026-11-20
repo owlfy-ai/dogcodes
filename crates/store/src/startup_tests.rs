@@ -150,3 +150,75 @@ fn newer_format_is_refused_without_modifying_the_file() {
     assert_eq!(std::fs::read(&path).unwrap(), before);
     assert_eq!(user_version(&path), STORE_FORMAT_VERSION + 1);
 }
+
+#[tokio::test]
+async fn scoped_target_check_preserves_local_remote_and_missing_row_behavior() {
+    let store = SqliteStore::open_in_memory().unwrap();
+    let project = agent_domain::ProjectId::new();
+    let installation = InstallationId::new();
+    let executor = ExecutorRef {
+        provider_id: ProviderId::parse("fake").unwrap(),
+        installation_id: Some(installation.to_string()),
+    };
+    assert!(
+        store
+            .executor_matches_project_target(&project, &executor)
+            .await
+            .unwrap()
+    );
+    {
+        let connection = store.connection.lock().unwrap();
+        connection.execute(
+            "INSERT INTO projects(project_id,display_name,path,additional_directories_json,stream_version) VALUES(?1,'fixture','/tmp','[]',1)",
+            [project.as_str()],
+        ).unwrap();
+        connection.execute(
+            "INSERT INTO installations(installation_id,provider_id,executable,fingerprint,status,probe_elapsed_millis,probed_at,stream_version) VALUES(?1,'fake','fixture','fixture','ready',0,0,1)",
+            [installation.as_str()],
+        ).unwrap();
+    }
+    for (project_target, installation_target, matches) in [
+        (None, "", true),
+        (None, "remote", false),
+        (Some("remote"), "", false),
+        (Some("remote"), "remote", true),
+        (Some("other"), "remote", false),
+    ] {
+        {
+            let connection = store.connection.lock().unwrap();
+            connection
+                .execute("UPDATE projects SET target_id=?1", [project_target])
+                .unwrap();
+            connection
+                .execute(
+                    "UPDATE installations SET target_id=?1",
+                    [installation_target],
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            store
+                .executor_matches_project_target(&project, &executor)
+                .await
+                .unwrap(),
+            matches
+        );
+    }
+}
+
+#[test]
+fn sidebar_review_and_deletion_queries_skip_unrelated_task_history() {
+    let store = SqliteStore::open_in_memory().unwrap();
+    let connection = store.connection.lock().unwrap();
+    connection.execute_batch(
+        "WITH RECURSIVE history(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM history WHERE n<4000)
+         INSERT INTO events(event_id,stream_type,stream_id,stream_version,event_type,schema_version,
+             occurred_at,recorded_at,correlation_id,source_json,payload_json)
+         SELECT 'event-'||n,'task','fixture',n,'message.delta',1,0,0,'fixture','{}','{}' FROM history"
+    ).unwrap();
+    // Both filtered index lookups finish within this VM instruction budget.
+    // A plan that visits each message exceeds it even on a fast machine.
+    connection.progress_handler(1000, Some(|| true));
+    assert!(companion_reviews::load(&connection).unwrap().is_empty());
+    assert!(task_lifecycle::deleted_ids(&connection).unwrap().is_empty());
+}
