@@ -301,6 +301,13 @@ export const zhTW: TranslationDict = {
     selectProject: "選擇專案",
   },
   composer: {
+    steer: "補充到目前回合",
+    steerSuccess: "{name} 已成功插話",
+    followupQueued: "{name} 不支援插話，將於本回合結束後回應",
+    followupFailed: "無法將排隊訊息傳送給 {name}",
+    steerAccepted: "已提交補充訊息",
+    steerRejected: "本回合未接收",
+    steerUnconfirmed: "尚未確認送達",
     placeholder: "輸入需求或指令，按 Enter 送出…",
     addAttachment: "新增附件",
     send: "送出",

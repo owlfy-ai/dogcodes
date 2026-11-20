@@ -641,7 +641,7 @@ export function ConversationContent({
       entry[0].kind !== "user_message" && entry[0].kind !== "turn_files"
       && !(entry.length === 1 && activityOf(entry[0])?.type === "status"));
     const actions = <TurnActions key={`${turnId}-actions`} client={client} items={turnGroups.flat()} turnId={turnId} completedAt={completion.completedAt} startedAt={completion.startedAt} onReviewFile={onReviewFile} onForked={onForked}/>;
-    if (!process.length) return <Fragment key={turnId}>{turnGroups.map(entry => renderGroup(entry))}{actions}</Fragment>;
+    if (!process.length || turnGroups.some(group => group[0].itemId.startsWith("steer-") || group[0].kind.startsWith("followup_"))) return <Fragment key={turnId}>{turnGroups.map(entry => renderGroup(entry))}{actions}</Fragment>;
     const provider = turnProviders.get(turnId);
     return <Fragment key={turnId}>
       {turnGroups.filter(entry => entry[0].kind === "user_message").map(entry => renderGroup(entry))}

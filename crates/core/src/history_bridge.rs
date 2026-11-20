@@ -380,7 +380,7 @@ async fn query_history(
                 ),
                 _ => matches!(
                     event.event_type.as_str(),
-                    "turn.queued" | "message.delta" | "test.completed"
+                    "turn.queued" | "turn.steer_accepted" | "message.delta" | "test.completed"
                 ),
             };
             let source = crate::history_delivery::event_fact(&event);

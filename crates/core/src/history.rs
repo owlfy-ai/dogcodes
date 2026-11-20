@@ -164,7 +164,7 @@ pub struct FrozenFragment {
 #[must_use]
 pub fn message_fact(event: &EventEnvelope) -> Option<(&'static str, String)> {
     match event.event_type.as_str() {
-        "turn.queued" | "message.delta" | "test.completed" => {
+        "turn.queued" | "turn.steer_accepted" | "message.delta" | "test.completed" => {
             crate::history_delivery::event_fact(event)
         }
         "review.updated"

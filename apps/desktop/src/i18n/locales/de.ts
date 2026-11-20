@@ -301,6 +301,13 @@ export const de: TranslationDict = {
     selectProject: "Projekt auswählen",
   },
   composer: {
+    steer: "An laufende Runde senden",
+    steerSuccess: "{name} hat die Nachricht in dieser Runde angenommen",
+    followupQueued: "{name} unterstützt keine Zwischenmeldungen und antwortet nach dieser Runde",
+    followupFailed: "Die vorgemerkte Nachricht konnte nicht an {name} gesendet werden",
+    steerAccepted: "Nachricht übermittelt",
+    steerRejected: "Nachricht abgelehnt",
+    steerUnconfirmed: "Zustellung unbestätigt",
     placeholder: "Geben Sie eine Eingabeaufforderung ein, drücken Sie Enter zum Senden…",
     addAttachment: "Anhang hinzufügen",
     send: "Senden",

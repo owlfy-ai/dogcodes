@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 #[must_use]
 pub fn event_fact(event: &EventEnvelope) -> Option<(&'static str, String)> {
     let field = match event.event_type.as_str() {
-        "turn.queued" => "prompt",
+        "turn.queued" | "turn.steer_accepted" => "prompt",
         "message.delta" => "text",
         "decision.recorded" => "statement",
         "review.updated"
@@ -105,10 +105,12 @@ pub async fn missing_events(
             let Some((field, text)) = event_fact(&event) else {
                 continue;
             };
-            let own = matches!(event.event_type.as_str(), "turn.queued" | "message.delta")
-                && event.payload["turnId"]
-                    .as_str()
-                    .is_some_and(|t| own_turns.contains(t));
+            let own = matches!(
+                event.event_type.as_str(),
+                "turn.queued" | "turn.steer_accepted" | "message.delta"
+            ) && event.payload["turnId"]
+                .as_str()
+                .is_some_and(|t| own_turns.contains(t));
             let key = (
                 event.sequence,
                 field.to_owned(),

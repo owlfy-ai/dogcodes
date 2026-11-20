@@ -301,6 +301,13 @@ export const ru: TranslationDict = {
     selectProject: "Выбрать проект",
   },
   composer: {
+    steer: "Отправить в текущий ход",
+    steerSuccess: "{name} принял сообщение в текущем ходе",
+    followupQueued: "{name} не поддерживает сообщения во время хода и ответит после его завершения",
+    followupFailed: "Не удалось отправить сообщение из очереди в {name}",
+    steerAccepted: "Дополнение отправлено",
+    steerRejected: "Сообщение отклонено",
+    steerUnconfirmed: "Доставка не подтверждена",
     placeholder: "Введите запрос или инструкцию, нажмите Enter для отправки…",
     addAttachment: "Прикрепить файл",
     send: "Отправить",

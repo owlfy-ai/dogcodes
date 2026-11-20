@@ -74,6 +74,7 @@ export type RunState =
   | "reconnecting";
 
 export interface ActiveRunSummary {
+  supportsSteering?: boolean;
   runId: RunId;
   turnId: TurnId;
   executor: ExecutorRef;
@@ -705,6 +706,7 @@ export interface CoreClient {
   submitTurn(task: TaskSummary, prompt: string, model?: string | null, thinking?: string | null, permissionMode?: string | null, attachments?: PromptAttachment[], operationId?: string): Promise<void>;
   setRunningPermissionMode?(taskId: TaskId, runId: RunId, executor: ExecutorRef, mode: string): Promise<void>;
   availableModels?(executor: ExecutorRef, selectedModel?: string | null, taskId?: TaskId, refresh?: boolean): Promise<ModelCatalog>;
+  steerTurn?(task: TaskSummary, text: string, operationId: string): Promise<void>;
   cancelTurn(task: TaskSummary, operationId?: string): Promise<void>;
   cancelTurnReceipt?(task: TaskSummary, operationId: string): Promise<CommandReceipt | null>;
   subscribe(afterSequence: number, listener: (message: EventStreamMessage) => void): Promise<() => void>;

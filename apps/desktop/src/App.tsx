@@ -97,12 +97,13 @@ import { TauriCoreClient } from "./tauriClient";
 import { OrderedEventCursor } from "./orderedEvents";
 import { PendingExecutorContext } from "./automaticContext";
 import { RemoteConversationContext } from "./workspaceFileMenu";
-import { QuotaSwitchNotice, quotaLooksExhausted } from "./QuotaSwitchNotice";
+import { QuotaSwitchNotice, latestTurnQuotaExhausted, quotaLooksExhausted } from "./QuotaSwitchNotice";
 import { useConversationAttention } from "./conversationAttention";
 import { ConversationSearch, revealTimelineItem } from "./ConversationSearch";
 import { ConversationHistory } from "./ConversationHistory";
 const MemoConversationHistory = memo(ConversationHistory);
 import { QUOTA_CONTINUE_PROMPT, REVIEW_REPAIR_PROMPT, displayBackendText } from "./backendText";
+import { sendSteering } from "./steering";
 import { timelineItemRole } from "./timelinePresentation";
 import { RequestEpoch, changeSelection } from "./requestEpoch";
 import { formatResetTime, formatProviderBalance, quotaScopeLabel, quotaPlanLabel, quotaNativeResetLabel, nativeResetDisplay, antigravityQuotaForModel, ringQuotaWindow, quotaColor, quotaIsExhausted, quotaIsStale, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
@@ -154,8 +155,16 @@ const TimelineEntry = memo(function TimelineEntry({ item, active = false }: { it
   const time = new Date(item.occurredAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   if (role === "tool") return <ToolActivity item={item} active={active} />;
   if (role === "user") {
+    const name = item.providerId ? providerLabel(item.providerId, resolvedLanguage) : "Agent";
+    let feedback = "";
+    if (item.kind === "followup_queued") feedback = t("composer.followupQueued", { name });
+    else if (item.kind === "followup_failed") feedback = t("composer.followupFailed", { name });
+    else if (item.kind === "steer_rejected") feedback = t("composer.steerRejected");
+    else if (item.kind === "steer_unconfirmed") feedback = t("composer.steerUnconfirmed");
+    else if (item.itemId.startsWith("steer-")) feedback = item.providerId ? t("composer.steerSuccess", { name }) : t("composer.steerAccepted");
     return (
       <article className="message user-message" data-tooltip={t("app.userMessageTooltip", { time })}>
+        {feedback && <small role="status">{feedback}</small>}
         {item.text && <p>{item.text === REVIEW_REPAIR_PROMPT ? t("backendText.reviewRepairPrompt") : item.text === QUOTA_CONTINUE_PROMPT ? t("backendText.quotaContinuePrompt") : item.text}</p>}
         <SentAttachments items={item.attachments} />
       </article>
@@ -1031,17 +1040,10 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       ? { providerId: selectedSubmission.providerId, turnId: submittedMessage?.turnId ?? undefined, connecting: true }
       : undefined;
   const renderResponseAgent = (providerId: string) => <span role="img" aria-label={t("app.agentResponse", { agent: providerLabel(providerId) })} data-tooltip={providerLabel(providerId)}><AgentIcon providerId={providerId} size="small" /></span>;
-  const selectedTurnQuotaExhausted = useMemo(() => {
-    const providerId = selectedTask?.preferredExecutor.providerId;
-    if (!providerId) return false;
-    for (let index = timeline.length - 1; index >= 0; index -= 1) {
-      const item = timeline[index];
-      if (item.providerId !== providerId) continue;
-      if (item.kind === "quota.exhausted") return true;
-      if (item.kind === "assistant_message") return false;
-    }
-    return false;
-  }, [selectedTask?.preferredExecutor.providerId, timeline]);
+  const selectedTurnQuotaExhausted = useMemo(
+    () => latestTurnQuotaExhausted(timeline, selectedTask?.preferredExecutor.providerId),
+    [selectedTask?.preferredExecutor.providerId, timeline],
+  );
   const quotaSendingBlocked = quotaIsExhausted(selectedQuota);
   const [quotaClock, setQuotaClock] = useState(0);
   useEffect(() => {
@@ -1129,6 +1131,26 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const submit = async (event: Pick<FormEvent, "preventDefault">, fixedPrompt?: string) => {
     event.preventDefault();
     const prompt = fixedPrompt ?? draft.trim(), attachmentIds = attachments.items.map(item => item.id);
+    if (selectedTask?.activePrimaryRun && fixedPrompt === undefined) {
+      const run = selectedTask.activePrimaryRun;
+      if (!client.steerTurn || run.state !== "running" || cancelling ||
+          sending || switchBusy.current || !prompt || attachments.pending || attachments.items.length) return;
+      const task = selectedTask;
+      const context = composerContext.current, revision = draftRevision.current;
+      switchBusy.current = true;
+      setSending(true);
+      setError(null);
+      try {
+        await sendSteering(task.taskId, run.turnId, prompt, (id) => client.steerTurn!(task, prompt, id));
+        if (composerContext.current === context && draftRevision.current === revision) setDraft("");
+      } catch (cause) {
+        if (composerContext.current === context) setError(userFacingError(cause, t("composer.steerUnconfirmed")));
+      } finally {
+        switchBusy.current = false;
+        setSending(false);
+      }
+      return;
+    }
     if (!selectedTask || submissionPending || (!prompt && !attachments.items.length) || attachments.pending > 0 || modelSelectionBlocked || sending || creatingTask || switchBusy.current || selectedTask.activePrimaryRun || quotaSendingBlocked || agentPreferences.disabled.includes(selectedTask.preferredExecutor.providerId) || (agentPreferences.disabled.length > 0 && !executorOptions.length)) return;
     const originContext = composerContext.current;
     const scope = selectedTaskId ? `task:${selectedTaskId}` : newDraftScope.current;
@@ -1313,6 +1335,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     return <StartupRecovery status="unavailable" onRetry={() => { selectTask(null); void refresh(); }} />;
   }
 
+  const runningSendEnabled = Boolean(client.steerTurn && selectedTask.activePrimaryRun?.state === "running");
+
   return (
     <I18nProvider language={uiLanguage}>
       <main className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${activeView === "conversation" && reviewOpen && !reviewWindow.detached ? " review-expanded" : ""}`} style={{ "--sidebar-width": `${sidebarWidth.width}px`, "--review-width": `${reviewWidth.width}px` } as React.CSSProperties}>
@@ -1458,6 +1482,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
               selectedInstallationStatus={selectedInstallation?.status}
               sending={sending || attachments.pending > 0}
               cancelling={cancelling}
+              runningSendEnabled={runningSendEnabled}
+              steerHasAttachments={attachments.items.length > 0}
               draft={draft || (attachments.items.length ? t("app.attachment") : "")}
                 onAddAttachment={() => attachmentInput.current?.click()}
               onSelect={(executor) => void switchAgent(executor)}
@@ -1492,7 +1518,9 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
                 selectedInstallationStatus={selectedInstallation?.status}
                 sending={sending || attachments.pending > 0}
                 cancelling={cancelling}
-                  draft={draft || (attachments.items.length ? t("app.attachment") : "")}
+                runningSendEnabled={runningSendEnabled}
+                steerHasAttachments={attachments.items.length > 0}
+                draft={draft || (attachments.items.length ? t("app.attachment") : "")}
                 onAddAttachment={() => attachmentInput.current?.click()}
                 onSelect={(executor) => void switchAgent(executor)}
                 onCancel={() => void cancelActiveTurn()}
@@ -1758,6 +1786,8 @@ export function ComposerFooter({
   selectedInstallationStatus,
   sending,
   cancelling,
+  runningSendEnabled = false,
+  steerHasAttachments = false,
   draft,
   onSelect,
   onCancel,
@@ -1778,6 +1808,8 @@ export function ComposerFooter({
   selectedInstallationStatus?: InstallationStatus;
   sending: boolean;
   cancelling: boolean;
+  runningSendEnabled?: boolean;
+  steerHasAttachments?: boolean;
   draft: string;
   onSelect: (executor: ExecutorRef) => void;
   onCancel: () => void;
@@ -1786,6 +1818,7 @@ export function ComposerFooter({
   const currentReading = executorOptions.find(option => option.executor.providerId === selectedTask.preferredExecutor.providerId && option.executor.installationId === selectedTask.preferredExecutor.installationId);
   const preferences = useAgentPreferences();
   const agentDisabled = preferences.disabled.includes(selectedTask.preferredExecutor.providerId) || (preferences.disabled.length > 0 && !executorOptions.length);
+  const runningSendLabel = t(selectedTask.activePrimaryRun?.supportsSteering ? "composer.steer" : "composer.send", undefined, lang);
   const footerRef = useComposerLabels();
   return (
     <footer ref={footerRef} className="composer-controls">
@@ -1807,6 +1840,11 @@ export function ComposerFooter({
           turnQuotaExhausted={turnQuotaExhausted}
         />}
       />
+      {runningSendEnabled && <button type="submit" className="send composer-submit"
+        aria-label={runningSendLabel} data-tooltip={runningSendLabel}
+        disabled={sending || cancelling || !draft.trim() || steerHasAttachments}>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4m-5 5 5-5 5 5" /></svg>
+      </button>}
       {selectedTask.activePrimaryRun ? (
         <button
           className="stop composer-submit"

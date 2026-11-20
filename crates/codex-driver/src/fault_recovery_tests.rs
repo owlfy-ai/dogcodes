@@ -126,7 +126,7 @@ async fn refresh_during_execution_does_not_replace_the_active_native_process() {
         driver
             .resume_selected_session("s", workspace(dir.path()), None, None)
             .await,
-        Err(DriverError::CapabilityUnavailable(_))
+        Err(DriverError::AutonomousTurnBusy)
     ));
     assert!(original.same_channel(&driver.command_sender(&session).await.unwrap()));
     assert_eq!(

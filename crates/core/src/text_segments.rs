@@ -10,6 +10,10 @@ pub(crate) struct TextSegments {
 }
 
 impl TextSegments {
+    pub(crate) fn user_input(&mut self) {
+        self.boundary = true;
+    }
+
     pub(crate) fn apply(&mut self, event: &mut DriverEvent) {
         match event {
             DriverEvent::Presentation { item_id, data } => {

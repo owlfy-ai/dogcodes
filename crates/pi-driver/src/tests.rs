@@ -472,3 +472,63 @@ async fn real_pi_turn_resume_and_cancel() {
     driver.shutdown(handle).await.unwrap();
     println!("pi native stream/resume/cancel passed");
 }
+
+#[tokio::test]
+async fn steer_queued_after_settlement_is_rejected_and_cleared_before_reuse() {
+    use driver_api::SteerDelivery;
+    let script = FAKE.replace(
+        "elif t=='abort':",
+        r"elif t=='steer':
+  late = r['message']
+  out({'type':'queue_update','steering':[late]})
+  out({'type':'agent_settled'})
+  reply(r,{'disposition':'queued'})
+ elif t=='clear_queue':
+  reply(r,{'steering':[late],'followUp':[]});late=None
+ elif t=='abort':",
+    );
+    let (root, driver) = fixture_with(&script);
+    let workspace = session_request(root.path().to_str().unwrap());
+    let session = driver.create_session(workspace).await.unwrap();
+    let first = driver
+        .prompt(&session, prompt(root.path(), "slow"))
+        .await
+        .unwrap();
+    let sender = driver.turn_steering(&session).await.unwrap();
+    assert_eq!(
+        sender.send("late", "late").await.unwrap(),
+        SteerDelivery::Rejected
+    );
+    assert!(
+        events(first)
+            .await
+            .iter()
+            .any(|e| matches!(e, Ok(DriverEvent::TurnCompleted { .. })))
+    );
+    let next = driver
+        .prompt(&session, prompt(root.path(), "slow"))
+        .await
+        .unwrap();
+    assert_eq!(
+        sender.send("stale", "stale").await.unwrap(),
+        SteerDelivery::Rejected
+    );
+    driver.interrupt(&session).await.unwrap();
+    drop(next);
+    let records = std::fs::read_to_string(root.path().join("requests.jsonl")).unwrap();
+    let methods: Vec<String> = records
+        .lines()
+        .map(|line| {
+            serde_json::from_str::<Value>(line).unwrap()["type"]
+                .as_str()
+                .unwrap()
+                .into()
+        })
+        .collect();
+    assert_eq!(methods.iter().filter(|m| *m == "steer").count(), 1);
+    assert!(
+        methods.iter().position(|m| m == "clear_queue").unwrap()
+            < methods.iter().rposition(|m| m == "prompt").unwrap()
+    );
+    driver.shutdown(session).await.unwrap();
+}

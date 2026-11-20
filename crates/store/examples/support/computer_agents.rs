@@ -77,7 +77,7 @@ pub async fn connect(
         "zcode" => {
             let resources = agent_runtime::electron_resources_directory(&executable)
                 .ok_or("ZCode resources unavailable")?;
-            let resume = zcode_driver::verified_resume_capability(version.as_deref());
+            let resume = driver_api::SessionResumeCapability::Unknown;
             Arc::new(
                 zcode_driver::ZcodeDriver::connect_ready(
                     provider,

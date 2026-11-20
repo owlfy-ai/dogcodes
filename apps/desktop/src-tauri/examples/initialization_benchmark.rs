@@ -141,7 +141,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 ),
                 app_binary: executable,
             };
-            let resume = zcode_driver::verified_resume_capability(version.as_deref());
+            let resume = driver_api::SessionResumeCapability::Unknown;
             if std::env::var_os("DOGCODES_BENCH_RETAIN_PROBE").is_some() {
                 Box::new(ZcodeDriver::connect_ready(&provider, id, launch, version, resume).await?)
             } else {

@@ -98,6 +98,13 @@ export const zhCN: TranslationDict = {
     selectProject: "选择项目",
   },
   composer: {
+    steer: "补充到当前轮",
+    steerSuccess: "{name} 已成功插话",
+    followupQueued: "{name} 不支持插话，结束本轮后响应",
+    followupFailed: "未能向 {name} 发送排队消息",
+    steerAccepted: "已提交补充消息",
+    steerRejected: "本轮未接收",
+    steerUnconfirmed: "投递未确认",
     placeholder: "输入需求或指令，按 Enter 发送…",
     addAttachment: "添加附件",
     send: "发送",

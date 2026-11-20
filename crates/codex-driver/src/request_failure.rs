@@ -2,6 +2,22 @@
 use driver_api::{DriverError, explicitly_reports_quota_exhaustion, failure};
 use serde_json::Value;
 
+pub(super) fn map_method(method: &str, error: &Value) -> DriverError {
+    if method == "thread/resume" {
+        if error["code"].as_i64() == Some(-32601) {
+            return DriverError::ResumeUnsupported;
+        }
+        if error["message"].as_str().is_some_and(|message| {
+            message.starts_with("no rollout found for thread id")
+                || message.starts_with("thread not found:")
+                || (message.starts_with("thread ") && message.ends_with(" not found"))
+        }) {
+            return DriverError::SessionMissing("codex thread could not be found".into());
+        }
+    }
+    map(error)
+}
+
 pub(super) fn map(error: &Value) -> DriverError {
     // JSON-RPC errors may wrap the typed TurnError in data.
     let candidates = [error, &error["data"], &error["data"]["error"]];
@@ -86,6 +102,28 @@ pub(super) fn map(error: &Value) -> DriverError {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn only_an_explicit_missing_resume_method_disables_cold_restore() {
+        let absent = json!({"code": -32601, "message": "method not found"});
+        assert_eq!(
+            map_method("thread/resume", &absent),
+            DriverError::ResumeUnsupported
+        );
+        assert!(matches!(
+            map_method("thread/start", &absent),
+            DriverError::Protocol(_)
+        ));
+        let missing = json!({"code": -32600, "message": "thread test-id not found"});
+        assert!(matches!(
+            map_method("thread/resume", &missing),
+            DriverError::SessionMissing(_)
+        ));
+        assert!(matches!(
+            map_method("thread/resume", &json!({"code": -32603})),
+            DriverError::Protocol(_)
+        ));
+    }
 
     #[test]
     fn classifies_account_errors_without_retaining_native_text() {

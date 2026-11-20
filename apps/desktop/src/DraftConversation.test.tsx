@@ -325,7 +325,7 @@ it("keeps the sent layout through task creation, empty history, acknowledgement 
   expectSubmittedLayout("立即进入对话布局");
   // The service creates the conversation and sends in one call; the new
   // conversation is selected once that call returns.
-  await act(async () => { finishSubmit(); await vi.advanceTimersByTimeAsync(800); });
+  await act(async () => { finishSubmit(); await vi.advanceTimersByTimeAsync(0); });
   expectSubmittedLayout("立即进入对话布局");
   await act(async () => finishHistory([]));
   expectSubmittedLayout("立即进入对话布局");
@@ -334,9 +334,8 @@ it("keeps the sent layout through task creation, empty history, acknowledgement 
   const canonical = (await DemoCoreClient.prototype.timeline.call(client, task.taskId)).find(item => item.kind === "user_message")!;
   const message: TimelineItem = { taskId: task.taskId, itemId: "canonical-prompt", turnId: canonical.turnId,
     kind: "user_message", text: "立即进入对话布局", providerId: null, attachments: [], sequence: canonical.sequence, occurredAt: new Date().toISOString() };
-  // The create event schedules a projection refresh; deliver the canonical
-  // prompt together with the first streamed response on that next read.
-  await act(async () => { await vi.advanceTimersByTimeAsync(60); });
+  // The demo acknowledges immediately. Its first streamed chunk triggers the next read.
+  await act(async () => { await vi.advanceTimersByTimeAsync(320); });
   await act(async () => finishHistory([message, { ...message, itemId: "first-reply", kind: "assistant_message", text: "正在检查项目", sequence: 101 }]));
   expectSubmittedLayout("立即进入对话布局");
   expect(visible(".agent-pending")).toHaveLength(0);

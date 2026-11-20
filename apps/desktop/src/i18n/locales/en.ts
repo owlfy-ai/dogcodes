@@ -98,6 +98,13 @@ export const en: TranslationDict = {
     selectProject: "Select project",
   },
   composer: {
+    steer: "Send to current turn",
+    steerSuccess: "{name} accepted your message in this turn",
+    followupQueued: "{name} doesn’t support mid-turn messages and will respond after this turn",
+    followupFailed: "Couldn’t send the queued message to {name}",
+    steerAccepted: "Follow-up submitted",
+    steerRejected: "Turn declined message",
+    steerUnconfirmed: "Delivery unconfirmed",
     placeholder: "Type a prompt or instruction, press Enter to send…",
     addAttachment: "Add attachment",
     send: "Send",

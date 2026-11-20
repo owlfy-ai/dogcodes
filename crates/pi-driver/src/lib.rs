@@ -8,6 +8,7 @@ mod request_usage;
 mod retained_readiness_tests;
 mod selection;
 mod sessions;
+mod steering;
 mod transport;
 use agent_domain::{ExecutorRef, ProviderId, QuestionAnswer};
 use agent_runtime::TargetExecutable;
@@ -469,6 +470,7 @@ impl AgentDriver for PiDriver {
             }
         }
         message.push_str(&request.prompt);
+        connection.settle_steering().await?;
         let (turn_id, receiver) = connection.begin_turn(handle)?;
         // Cancellation while queued for stdin must not strand the local turn
         // claim, even if no byte of this prompt has reached the pipe yet.
@@ -504,6 +506,21 @@ impl AgentDriver for PiDriver {
         });
         Ok(Box::pin(UnboundedReceiverStream::new(receiver)))
     }
+    async fn turn_steering(
+        &self,
+        handle: &SessionHandle,
+    ) -> Option<Arc<dyn driver_api::TurnSteering>> {
+        let connection = self.session_for(handle).await.ok()?.connection;
+        let turn = {
+            let state = connection.state.lock().expect("Pi state");
+            if !state.scope.as_ref()?.same_scope(handle) || state.cancelling {
+                return None;
+            }
+            state.turn.as_ref()?.id
+        };
+        Some(Arc::new(steering::Sender { connection, turn }))
+    }
+
     async fn interrupt(&self, handle: &SessionHandle) -> Result<(), DriverError> {
         self.interrupt_with_timeout(handle, std::time::Duration::from_secs(30))
             .await

@@ -818,6 +818,7 @@ pub(super) async fn remote_call(
             if !matches!(
                 envelope.payload,
                 CoreCommand::RespondToApproval(_)
+                    | CoreCommand::SteerTurn(_)
                     | CoreCommand::CancelTurn(_)
                     | CoreCommand::RenameTask(_)
                     | CoreCommand::DeleteTask(_)

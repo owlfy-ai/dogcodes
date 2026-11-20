@@ -195,3 +195,113 @@ async fn real_new_agent_turn() {
     assert!(deltas > 0);
     println!("{provider} stream_deltas={deltas} completed=true");
 }
+
+#[tokio::test]
+#[ignore = "sends two real messages through a locally authenticated agent"]
+async fn real_active_turn_steering() {
+    let provider = std::env::var("DOGCODES_ACP_PROVIDER").unwrap();
+    let args = match provider.as_str() {
+        "codebuddy" => vec!["--acp"],
+        "grok" => vec!["agent", "stdio"],
+        "kiro" => vec!["acp", "--agent-engine", "v3", "--auth-method", "cli"],
+        "opencode" => vec!["acp"],
+        _ => panic!("unsupported provider"),
+    };
+    let driver = AcpDriver::connect_ready(
+        &provider,
+        &agent_domain::InstallationId::new().to_string(),
+        AcpLaunch {
+            executable: std::env::var("DOGCODES_ACP_BINARY").unwrap().into(),
+            args: args.into_iter().map(String::from).collect(),
+        },
+        None,
+    )
+    .await
+    .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().to_string_lossy().into_owned();
+    let handle = driver
+        .create_session(SessionRequest {
+            working_directory: cwd.clone(),
+            additional_directories: vec![],
+            app_mcps: vec![],
+            permission_mode: None,
+        })
+        .await
+        .unwrap();
+    let mut stream = driver.prompt(&handle, HubPromptRequest {
+        working_directory: cwd, additional_directories: vec![], attachments: vec![], context: vec![], permission_mode: None,
+        prompt: "Use the shell tool to run exactly `sleep 7` once. Then reply ORIGINAL unless I send a correction. Do not read or write any files.".into(),
+    }).await.unwrap();
+    let sender = driver
+        .turn_steering(&handle)
+        .await
+        .expect("advertised steering");
+    let marker = format!("STEER_{}", uuid::Uuid::now_v7().simple());
+    let mut answer = String::new();
+    let mut sent = false;
+    tokio::time::timeout(std::time::Duration::from_mins(2), async {
+        while let Some(event) = stream.next().await {
+            let event = event.unwrap();
+            let tool = matches!(
+                &event,
+                DriverEvent::ApprovalRequested { .. } | DriverEvent::ToolStarted { .. }
+            ) || matches!(&event, DriverEvent::Presentation {data,..} if data["type"]=="tool");
+            if tool && !sent {
+                assert_eq!(
+                    sender
+                        .send(
+                            "live-steering",
+                            &format!("After the wait reply exactly {marker}.")
+                        )
+                        .await
+                        .unwrap(),
+                    driver_api::SteerDelivery::Accepted
+                );
+                sent = true;
+            }
+            match event {
+                DriverEvent::ApprovalRequested {
+                    native_request_id,
+                    command_summary,
+                    options,
+                    ..
+                } => {
+                    assert!(
+                        command_summary.contains("sleep 7"),
+                        "unexpected approval {command_summary}"
+                    );
+                    let option = options
+                        .iter()
+                        .find(|o| o.semantic_role == driver_api::ApprovalSemanticRole::ApproveOnce)
+                        .unwrap();
+                    driver
+                        .respond_to_interaction(&handle, &native_request_id, &option.option_id)
+                        .await
+                        .unwrap();
+                }
+                DriverEvent::TextDelta { text, .. } => answer.push_str(&text),
+                DriverEvent::Presentation { data, .. } if data["type"] == "message" => {
+                    answer.push_str(data["textDelta"].as_str().unwrap_or_default());
+                }
+                DriverEvent::TurnCompleted { .. } => break,
+                DriverEvent::TurnFailed { reason } => panic!("native failure {reason}"),
+                _ => {}
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        sender
+            .send("after-completion", "Late message")
+            .await
+            .unwrap(),
+        driver_api::SteerDelivery::Rejected
+    );
+    driver.shutdown(handle).await.unwrap();
+    assert!(
+        sent && answer.contains(&marker),
+        "{provider} final response: {answer}"
+    );
+}

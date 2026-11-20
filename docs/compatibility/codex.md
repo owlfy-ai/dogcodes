@@ -39,6 +39,8 @@
 
 ## 2026-09-03 Product Driver 事实
 
+当前驱动按实际 `thread/resume` 结果判断跨进程恢复能力。新实例初始为 Unknown，首次需要时尝试恢复；成功校验后记为 Supported，明确的 method not found 记为 Unsupported。下表记录历史安装的验收结果。
+
 | 安装 | 版本 | Readiness | 零 Turn 跨进程 resume | 当前能力 |
 |---|---|---|---|---|
 | ChatGPT macOS app resource | `0.153.0-alpha.5` | initialize/account-read 通过（32 ms） | `-32600 / not_found` | Ready；live Session 复用，restart resume Unknown |

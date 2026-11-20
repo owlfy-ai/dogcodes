@@ -41,7 +41,9 @@ async fn installed_native_cold_resume() {
             .output()
             .unwrap();
     assert!(version.status.success());
-    assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "0.16.9");
+    let version = String::from_utf8(version.stdout).unwrap();
+    let version = version.trim();
+    assert!(!version.is_empty());
     if std::env::var_os(CHILD).is_none() {
         let root = tempfile::tempdir().unwrap();
         let recorded = root.path().join("requests.jsonl");
@@ -107,7 +109,7 @@ async fn installed_native_cold_resume() {
         );
         assert!(next["messages"].to_string().contains("fixture-first"));
         println!(
-            "ZCode native cold resume: same session, local provider and historical messages verified"
+            "ZCode {version} native cold resume: same session, local provider and historical messages verified"
         );
         return;
     }
@@ -121,8 +123,8 @@ async fn installed_native_cold_resume() {
             "zcode",
             &InstallationId::new().to_string(),
             launch.clone(),
-            Some("0.16.9".into()),
-            verified_resume_capability(Some("0.16.9")),
+            Some(version.into()),
+            SessionResumeCapability::Unknown,
         )
         .unwrap()
     };
@@ -165,12 +167,15 @@ async fn installed_native_cold_resume() {
     )
     .await;
     second.shutdown(session).await.unwrap();
-    assert!(matches!(
-        second
-            .resume_session("00000000-0000-4000-8000-000000000000", &cwd)
-            .await,
-        Err(DriverError::SessionMissing(_))
-    ));
+    let missing_id = "00000000-0000-4000-8000-000000000000";
+    let missing = second.resume_session(missing_id, &cwd).await;
+    assert!(
+        matches!(
+            missing,
+            Err(DriverError::SessionIncompatible(_) | DriverError::SessionMissing(_))
+        ),
+        "{missing:?}"
+    );
 }
 
 async fn run(driver: &ZcodeDriver, session: &SessionHandle, cwd: &str, prompt: &str) {

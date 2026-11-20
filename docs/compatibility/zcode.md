@@ -190,11 +190,12 @@ Agent 一直在等待 MCP 认证头，不会超时也不会报错，事件流静
   `ApproveOnce / ApprovePersistent / Reject`，挂起反向请求直到 Hub `respond_to_interaction`；
   不接受 Hub 自造 option。MCP auth 请求仍以空对象应答（防 Turn 阻塞）。
 - context：终态后 `session/read` 读取 projection。
-- resume：0.16.9 原生跨进程恢复已通过隔离验收，标记 Supported；其他版本仍为 Unknown。
+- resume：初始能力为 Unknown。首次需要跨进程恢复时尝试原生 `session/resume`，与版本号无关。校验通过后记录 Supported，原生明确返回 method not found 时记录 Unsupported。0.16.9 和 0.17.1 已有隔离验收记录。
   请求带原生 workspace 和历史 MCP，恢复后核对会话身份、规范化工作目录及空闲状态，
   再设置模型/思考强度并订阅。并发恢复复用同一结果，不接管原生正在运行的任务。
   完整模型目录保留自 resume 快照；session/read 只含当前模型时不覆盖目录。
   只有明确的原生 session_not_found 才映射为会话不存在，连接/协议异常保留原分类。
+  0.17.1 对缺失 ID 和工作区不匹配均返回 `project.session-lineage-invalid`，映射为 SessionIncompatible。
   不恢复旧 CLI 配置转换或运行时回填，也不自动迁移已被旧 Core 标记 Detached 的映射。
 
 ## 2026-10-20 原生冷恢复验收

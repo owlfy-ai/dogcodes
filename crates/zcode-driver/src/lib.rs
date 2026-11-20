@@ -59,16 +59,6 @@ use tokio::{
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-/// Versions verified against the installed CLI using an isolated native provider and history.
-#[must_use]
-pub fn verified_resume_capability(version: Option<&str>) -> SessionResumeCapability {
-    if version == Some("0.16.9") {
-        SessionResumeCapability::Supported
-    } else {
-        SessionResumeCapability::Unknown
-    }
-}
-
 const FRAME_LIMIT: usize = 4 * 1024 * 1024;
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
@@ -1008,7 +998,11 @@ fn notification_event(method: &str) -> Option<DriverEvent> {
 /// propagated; known `error` signatures become stable kinds.
 fn map_request_error(method: &str, error: &Value) -> DriverError {
     if error.get("code").and_then(Value::as_i64) == Some(-32601) {
-        return DriverError::CapabilityUnavailable(format!("zcode method unavailable: {method}"));
+        return if method == "session/resume" {
+            DriverError::ResumeUnsupported
+        } else {
+            DriverError::CapabilityUnavailable(format!("zcode method unavailable: {method}"))
+        };
     }
     if error.pointer("/data/code").and_then(Value::as_str)
         == Some("ZCODE_RUNTIME_MODEL_UNAVAILABLE")
@@ -1025,6 +1019,12 @@ fn map_request_error(method: &str, error: &Value) -> DriverError {
         return DriverError::SessionMissing("ZCode session is not active in this worker".into());
     }
 
+    // 0.17.1 uses the same rejection for an unknown ID and a foreign workspace.
+    if method == "session/resume" && message == "project.session-lineage-invalid" {
+        return DriverError::SessionIncompatible(
+            "ZCode could not match the saved session to this workspace".into(),
+        );
+    }
     let data_text = error
         .get("data")
         .map(std::string::ToString::to_string)
@@ -1055,7 +1055,7 @@ pub struct ZcodeDriver {
     executor: ExecutorRef,
     launch: ZcodeLaunch,
     native_version: Option<String>,
-    resume_capability: SessionResumeCapability,
+    resume_capability: Arc<std::sync::Mutex<SessionResumeCapability>>,
     connection: Arc<tokio::sync::Mutex<Option<Connection>>>,
     stopping: tokio::sync::watch::Sender<bool>,
     sessions: Arc<std::sync::Mutex<HashMap<String, Arc<SessionState>>>>,
@@ -1140,7 +1140,7 @@ impl ZcodeDriver {
             },
             launch,
             native_version,
-            resume_capability,
+            resume_capability: Arc::new(std::sync::Mutex::new(resume_capability)),
             connection: Arc::new(tokio::sync::Mutex::new(None)),
             sessions: Arc::new(std::sync::Mutex::new(HashMap::new())),
             retired: Arc::default(),
@@ -1324,14 +1324,15 @@ impl ZcodeDriver {
 #[async_trait]
 impl AgentDriver for ZcodeDriver {
     fn independent_session_driver(&self) -> Result<Option<Arc<dyn AgentDriver>>, DriverError> {
-        let driver = Self::new(
+        let mut driver = Self::new(
             self.executor.provider_id.as_str(),
             self.executor.installation_id.as_deref().unwrap_or(""),
             self.launch.clone(),
             self.native_version.clone(),
-            self.resume_capability,
+            self.resume_capability(),
         )
         .map_err(|_| DriverError::Protocol("cannot recreate ZCode installation".into()))?;
+        driver.resume_capability = self.resume_capability.clone();
         Ok(Some(Arc::new(driver)))
     }
     fn session_usage_provider(self: Arc<Self>) -> Option<Arc<dyn QuotaProvider>> {
@@ -1367,7 +1368,11 @@ impl AgentDriver for ZcodeDriver {
     }
 
     fn resume_capability(&self) -> SessionResumeCapability {
-        self.resume_capability
+        *self.resume_capability.lock().expect("resume capability")
+    }
+
+    fn can_attempt_cold_resume(&self) -> bool {
+        self.resume_capability() != SessionResumeCapability::Unsupported
     }
 
     async fn model_catalog(&self) -> Result<driver_api::ModelCatalog, DriverError> {
@@ -2256,7 +2261,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn live_session_reuse_does_not_require_verified_cold_resume() {
+    async fn live_session_reuse_does_not_require_cold_resume_support() {
         let driver = ZcodeDriver::new(
             "zcode",
             &agent_domain::InstallationId::new().to_string(),
@@ -2265,7 +2270,7 @@ mod tests {
                 cli_script: "/unused/zcode.cjs".into(),
             },
             Some("0.16.9".into()),
-            SessionResumeCapability::Unknown,
+            SessionResumeCapability::Unsupported,
         )
         .unwrap();
         driver.sessions.lock().expect("sessions").insert(
@@ -2298,7 +2303,7 @@ mod tests {
         );
         assert!(matches!(
             driver.resume_session("not-live", "/tmp").await,
-            Err(DriverError::CapabilityUnavailable(_))
+            Err(DriverError::ResumeUnsupported)
         ));
         assert!(driver.connection.lock().await.is_none());
     }
@@ -3215,29 +3220,6 @@ mod cold_resume_errors {
                 DriverError::Protocol(_)
             ));
         }
-    }
-    #[test]
-    fn unverified_native_versions_are_not_promoted() {
-        assert_eq!(
-            verified_resume_capability(Some("0.16.9")),
-            SessionResumeCapability::Supported
-        );
-        assert_eq!(
-            verified_resume_capability(Some("0.16.10")),
-            SessionResumeCapability::Unknown
-        );
-        assert_eq!(
-            verified_resume_capability(Some("0.16.5")),
-            SessionResumeCapability::Unknown
-        );
-        assert_eq!(
-            verified_resume_capability(Some("0.16.6")),
-            SessionResumeCapability::Unknown
-        );
-        assert_eq!(
-            verified_resume_capability(None),
-            SessionResumeCapability::Unknown
-        );
     }
     #[test]
     fn unavailable_runtime_preserves_category_without_vendor_payload() {

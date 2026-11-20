@@ -301,6 +301,13 @@ export const es: TranslationDict = {
     selectProject: "Seleccionar proyecto",
   },
   composer: {
+    steer: "Enviar al turno actual",
+    steerSuccess: "{name} ha recibido el mensaje en este turno",
+    followupQueued: "{name} no admite mensajes durante el turno y responderá cuando termine",
+    followupFailed: "No se pudo enviar el mensaje en espera a {name}",
+    steerAccepted: "Mensaje adicional enviado",
+    steerRejected: "El turno rechazó el mensaje",
+    steerUnconfirmed: "Entrega sin confirmar",
     placeholder: "Escribe tu petición o instrucción, presiona Enter para enviar…",
     addAttachment: "Añadir archivo adjunto",
     send: "Enviar",

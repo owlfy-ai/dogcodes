@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ExecutorRef, QuotaSnapshot } from "@dogcodes/protocol";
-import { QuotaSwitchNotice, quotaLooksExhausted, quotaResumesAt, quotaSwitchTarget } from "./QuotaSwitchNotice";
+import { QuotaSwitchNotice, latestTurnQuotaExhausted, quotaLooksExhausted, quotaResumesAt, quotaSwitchTarget } from "./QuotaSwitchNotice";
 
 const NOW = Date.UTC(2026, 10, 7, 12);
 const now = Math.floor(NOW / 1000);
@@ -79,4 +79,20 @@ it("says so plainly when there's nowhere to switch", async () => {
   await show({ turnExhausted: true, options: [{ executor: codex, quota: null }] });
   expect(host.querySelector('[role="status"]')?.textContent).toBe("Codex 额度已用尽。 没有其他可用的 Agent。");
   expect(host.querySelector("button")).toBeNull();
+});
+
+it("clears a turn's quota error once the agent runs another turn, including ACP replies recorded as activity", () => {
+  const item = (kind: string, turn: string | null, providerId: string | null = "opencode") => ({ kind, turnId: turn ? `trn_${turn}` as const : null, providerId });
+  const exhausted = [item("user_message", "t1", null), item("activity", "t1"), item("quota.exhausted", "t1"), item("turn_files", "t1", null)];
+  expect(latestTurnQuotaExhausted(exhausted, "opencode")).toBe(true);
+  expect(latestTurnQuotaExhausted(exhausted, undefined)).toBe(false);
+  // Late activity from the failed turn itself does not clear it.
+  expect(latestTurnQuotaExhausted([...exhausted, item("activity", "t1")], "opencode")).toBe(true);
+  // Another agent's turn does not speak for this one.
+  expect(latestTurnQuotaExhausted([...exhausted, item("activity", "t2", "codex")], "opencode")).toBe(true);
+  // OpenCode replies as activity; a later successful turn clears the notice.
+  expect(latestTurnQuotaExhausted([...exhausted, item("user_message", "t2", null), item("activity", "t2")], "opencode")).toBe(false);
+  expect(latestTurnQuotaExhausted([...exhausted, item("assistant_message", "t2")], "opencode")).toBe(false);
+  // A second quota error is still reported.
+  expect(latestTurnQuotaExhausted([...exhausted, item("activity", "t2"), item("quota.exhausted", "t2")], "opencode")).toBe(true);
 });

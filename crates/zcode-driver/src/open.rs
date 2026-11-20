@@ -1,7 +1,8 @@
 //! Admission and publication of current-format native sessions.
 use super::{
-    DriverError, SessionHandle, SessionRequest, SessionResumeCapability, SessionState, ZcodeDriver,
-    context_from_snapshot, json, models, resume, scopes, session_id_from_snapshot, session_usage,
+    AgentDriver, DriverError, SessionHandle, SessionRequest, SessionResumeCapability, SessionState,
+    ZcodeDriver, context_from_snapshot, json, models, resume, scopes, session_id_from_snapshot,
+    session_usage,
 };
 use std::sync::{Arc, atomic::Ordering};
 
@@ -18,7 +19,6 @@ impl ZcodeDriver {
             Some(gate) => Some(gate.lock().await),
             None => None,
         };
-        let mut rebind_native = None;
         if let Some(id) = id {
             let resident = self.sessions.lock().expect("sessions").get(id).cloned();
             if let Some(state) = resident {
@@ -50,9 +50,6 @@ impl ZcodeDriver {
                 // MCP changes require reopening this logical session. The shared
                 // native worker and its other tasks remain alive.
                 if closing || binding_changed {
-                    if binding_changed && !closing {
-                        rebind_native = state.native.clone();
-                    }
                     self.retire(&state, &original).await?;
                 } else {
                     if !same_workspace(&state.workspace, &request.working_directory) {
@@ -113,28 +110,13 @@ impl ZcodeDriver {
                     return Ok(handle);
                 }
             }
-            // A live session's configuration refresh stays on the same owned
-            // worker. Cold history restoration remains independently gated.
-            if rebind_native.is_none()
-                && self.resume_capability != SessionResumeCapability::Supported
-            {
-                return Err(DriverError::CapabilityUnavailable(
-                    "zcode session/resume has not been runtime verified".into(),
-                ));
+            // Rebinding and cold restoration both need the native resume RPC.
+            if !self.can_attempt_cold_resume() {
+                return Err(DriverError::ResumeUnsupported);
             }
         }
         let mut guard = self.ensure_connection().await?;
         let connection = guard.as_mut().expect("connection ensured");
-        if id.is_some()
-            && self.resume_capability != SessionResumeCapability::Supported
-            && rebind_native
-                .as_ref()
-                .is_none_or(|native| !Arc::ptr_eq(native, &connection.native))
-        {
-            return Err(DriverError::CapabilityUnavailable(
-                "ZCode original worker ended before configuration refresh; cold resume is unverified".into(),
-            ));
-        }
         let mut native_attempt = scopes::NativeAttempt {
             native: connection.native.clone(),
             committed: false,
@@ -151,12 +133,20 @@ impl ZcodeDriver {
         }
         let created = match connection.request(method, params, None).await {
             Ok(created) => created,
+            Err(DriverError::ResumeUnsupported) if connection.request_confirmed => {
+                *self.resume_capability.lock().expect("resume capability") =
+                    SessionResumeCapability::Unsupported;
+                native_attempt.committed = true;
+                return Err(DriverError::ResumeUnsupported);
+            }
             Err(error)
-                if matches!(error, DriverError::SessionMissing(_))
-                    && connection.request_confirmed =>
+                if matches!(
+                    error,
+                    DriverError::SessionMissing(_) | DriverError::SessionIncompatible(_)
+                ) && connection.request_confirmed =>
             {
-                // An explicit missing-session reply is positive evidence that
-                // nothing was attached. Preserve other sessions on this worker.
+                // Native lookup or workspace validation rejected this ID before
+                // attaching it. Preserve other sessions on this worker.
                 native_attempt.committed = true;
                 return Err(error);
             }
@@ -181,6 +171,10 @@ impl ZcodeDriver {
         // to configure or close it. Do not mutate it on validation rejection.
         native_attempt.committed = true;
         resume::validate(&created, id.unwrap_or(native_id), workspace)?;
+        if id.is_some() {
+            *self.resume_capability.lock().expect("resume capability") =
+                SessionResumeCapability::Supported;
+        }
         let handle = SessionHandle::scoped(native_id.into());
         let state = SessionState::new(
             handle.clone(),

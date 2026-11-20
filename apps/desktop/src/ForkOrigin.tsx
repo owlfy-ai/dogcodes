@@ -32,7 +32,7 @@ export function ForkOrigin({ item, alone, sourceTitle, onOpenTask }: {
   let data: ForkContext, messages: { kind: string; text: string }[];
   try {
     data = JSON.parse(item.text) as ForkContext;
-    messages = (JSON.parse(data.text) as { kind: string; text: string }[]).filter(m => m.kind === "turn.queued" || m.kind === "message.delta");
+    messages = (JSON.parse(data.text) as { kind: string; text: string }[]).filter(m => ["turn.queued", "turn.steer_accepted", "message.delta"].includes(m.kind));
   } catch { return <p className="fork-origin-unavailable">{t("activity.forkUnavailable")}</p>; }
   const source = data.sourceTaskId;
   const title = source ? sourceTitle?.(source) : undefined;
@@ -56,8 +56,8 @@ export function ForkOrigin({ item, alone, sourceTitle, onOpenTask }: {
         {t(open ? "activity.forkHideContext" : "activity.forkShowContext", { count: prompts })}
       </button>
       <ol className="fork-origin-history" id={historyId} hidden={!open}>
-        {messages.map((m, index) => <li key={index} className={m.kind === "turn.queued" ? "from-user" : "from-agent"}>
-          <small>{m.kind === "turn.queued" ? t("activity.you") : t("activity.agent")}</small>
+        {messages.map((m, index) => <li key={index} className={m.kind !== "message.delta" ? "from-user" : "from-agent"}>
+          <small>{m.kind !== "message.delta" ? t("activity.you") : t("activity.agent")}</small>
           {open && <MarkdownMessage text={m.text}/>}
         </li>)}
       </ol>

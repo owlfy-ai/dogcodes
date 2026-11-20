@@ -1251,7 +1251,10 @@ pub fn run() {
                     .with_history_query_program(std::env::current_exe()?)
                     .with_conversation_drafts(scratch_path.clone()),
                 );
-                if tauri::async_runtime::block_on(core.recover_interrupted_turns()).is_err() {
+                if tauri::async_runtime::block_on(async {
+                    core.recover_interrupted_turns().await?;
+                    core.recover_queued_followups().await
+                }).is_err() {
                     app.manage(StartupFailure(Some(
                         StartupFailureCode::HistoryRecoveryFailed,
                     )));
@@ -2182,7 +2185,7 @@ async fn register_ready_zcode_drivers(
             installation.installation_id.as_str(),
             launch.clone(),
             installation.version.clone(),
-            zcode_driver::verified_resume_capability(installation.version.as_deref()),
+            driver_api::SessionResumeCapability::Unknown,
         ) {
             core.register_quota_provider(Arc::new(monitor)).await;
         }
@@ -2191,7 +2194,7 @@ async fn register_ready_zcode_drivers(
             installation.installation_id.as_str(),
             launch,
             installation.version.clone(),
-            zcode_driver::verified_resume_capability(installation.version.as_deref()),
+            driver_api::SessionResumeCapability::Unknown,
         )
         .await;
         record_readiness_error(installation, readiness.as_ref().err());

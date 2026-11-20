@@ -24,6 +24,7 @@ pub(crate) struct State {
     pub request_usage: driver_api::usage::RequestUsageReport,
     pub pending: HashMap<String, Reply>,
     pub turn: Option<Turn>,
+    pub(super) steered: Option<super::steering::Outcome>,
     pub disconnected: bool,
     pub(super) cancelling: bool,
     cancel_settled: bool,

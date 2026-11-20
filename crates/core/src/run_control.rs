@@ -1,6 +1,7 @@
 //! Admission and cancellation of one original Core run. These phases describe
 //! local ownership, never proof that an unknown native operation has finished.
 use agent_domain::RunId;
+use std::sync::{Arc, OnceLock, atomic::AtomicBool};
 use tokio::sync::watch;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -20,6 +21,10 @@ struct State {
 
 pub(super) struct Control {
     pub id: RunId,
+    pub steering: OnceLock<Arc<dyn driver_api::TurnSteering>>,
+    pub followup_settings: OnceLock<crate::followups::Settings>,
+    pub steering_order: Arc<tokio::sync::Mutex<()>>,
+    pub steering_boundary: AtomicBool,
     pub usage_provider: Option<std::sync::Arc<dyn driver_api::QuotaProvider>>,
     state: watch::Sender<State>,
     task: std::sync::Mutex<Option<agent_domain::TaskId>>,
@@ -48,6 +53,10 @@ impl Control {
     ) -> Self {
         Self {
             id,
+            steering: OnceLock::new(),
+            followup_settings: OnceLock::new(),
+            steering_order: Arc::default(),
+            steering_boundary: AtomicBool::new(false),
             usage_provider,
             task: std::sync::Mutex::new(None),
             native_owned: std::sync::atomic::AtomicBool::new(false),
@@ -178,6 +187,18 @@ impl Control {
     /// Native execution has ended; local records still belong to this run.
     pub fn settling(&self) {
         self.state.send_modify(|s| s.phase = Phase::Settling);
+    }
+    /// The UI can observe turn.started during session setup, before the native
+    /// prompt exposes whether it accepts steering.
+    pub async fn ready_for_followup(&self) -> bool {
+        let mut state = self.state.subscribe();
+        let Ok(ready) = state
+            .wait_for(|s| s.stop || !matches!(s.phase, Phase::Preparing | Phase::Dispatching))
+            .await
+        else {
+            return false;
+        };
+        !ready.stop && ready.phase == Phase::Running
     }
     pub fn accepts_interactions(&self) -> bool {
         self.state.borrow().phase == Phase::Running

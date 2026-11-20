@@ -651,24 +651,46 @@ export class DemoCoreClient implements CoreClient {
       throw new Error("任务版本已变化，请刷新后重试");
     }
     if (current.activePrimaryRun) throw new Error("请等待当前回复结束");
+    void this.runDemoTurn(current, { prompt, model, thinking, permissionMode, attachments }, current.preferredExecutor, signature, operationId);
+  }
+
+  async steerTurn(task: TaskSummary, text: string, operationId: string): Promise<void> {
+    const run = task.activePrimaryRun;
+    const signature = JSON.stringify(["followup", task.taskId, run?.turnId, run?.runId, text]);
+    if (this.commandReceipt(operationId, signature)) return;
+    const current = this.tasks.find(item => item.taskId === task.taskId);
+    if (!run || !current?.activePrimaryRun || current.activePrimaryRun.runId !== run.runId ||
+        current.activePrimaryRun.turnId !== run.turnId || current.activePrimaryRun.state !== "running" || !text.trim()) {
+      throw new Error("当前轮已结束");
+    }
+    this.items.get(task.taskId)!.push({ itemId: `followup-${operationId}`, taskId: task.taskId,
+      turnId: run.turnId, kind: "followup_queued", text, providerId: run.executor.providerId,
+      sequence: this.sequence + 1, occurredAt: now(), attachments: [] });
+    current.streamVersion++;
+    this.commandEvent(current, "turn.followup_queued", { taskId: task.taskId, turnId: run.turnId, text }, operationId, signature);
+  }
+
+  private async runDemoTurn(current: TaskSummary, input: TurnSubmission, executor: ExecutorRef, signature: string, operationId?: string, queued?: TimelineItem) {
+    const { prompt, model, thinking, permissionMode, attachments } = input;
     const titleCharacters = Array.from(prompt.trim().replace(/\s+/gu, " "));
-    if (!this.renamedTasks.has(task.taskId)) current.title = titleCharacters.slice(0, 32).join("") + (titleCharacters.length > 32 ? "…" : "");
+    if (!this.renamedTasks.has(current.taskId)) current.title = titleCharacters.slice(0, 32).join("") + (titleCharacters.length > 32 ? "…" : "");
     const taskId = current.taskId;
     const turnId = id<`trn_${string}`>("trn");
     const runId = id<`run_${string}`>("run");
-    current.lastTurnExecutor = structuredClone(current.preferredExecutor);
+    current.lastTurnExecutor = structuredClone(executor);
     current.activePrimaryRun = {
       turnId,
       runId,
-      executor: current.preferredExecutor,
+      executor,
       state: "running",
       startedAt: now(),
     };
     current.updatedAt = now();
     current.streamVersion += 1;
     const timeline = this.items.get(taskId)!;
+    if (queued) timeline.splice(timeline.indexOf(queued), 1);
     timeline.push({attachments: structuredClone(attachments),
-      itemId: `user-${turnId}`,
+      itemId: queued?.itemId ?? `user-${turnId}`,
       taskId,
       turnId,
       kind: "user_message",
@@ -677,7 +699,7 @@ export class DemoCoreClient implements CoreClient {
       sequence: this.sequence + 1,
       occurredAt: now(),
     });
-    this.commandEvent(current, "turn.queued", { taskId, turnId, runId, prompt, executor: task.preferredExecutor, attachments, model, thinking, permissionMode, startedAt: now() }, operationId, signature);
+    this.commandEvent(current, "turn.queued", { taskId, turnId, runId, prompt, executor, attachments, model, thinking, permissionMode, startedAt: now() }, operationId, signature);
 
     const reply: TimelineItem = {attachments: [], 
       itemId: `assistant-${turnId}`,
@@ -699,6 +721,8 @@ export class DemoCoreClient implements CoreClient {
     current.updatedAt = now();
     current.streamVersion += 4;
     this.emit();
+    const next = timeline.find(item => item.kind === "followup_queued");
+    if (next) await this.runDemoTurn(current, { ...input, prompt: next.text, attachments: [] }, executor, "", undefined, next);
   }
 
   private cancelSignature(task: TaskSummary) {

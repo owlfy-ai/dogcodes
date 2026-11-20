@@ -75,7 +75,7 @@ pub(super) fn driver(launch: ZcodeLaunch) -> Arc<ZcodeDriver> {
             &InstallationId::new().to_string(),
             launch,
             None,
-            SessionResumeCapability::Supported,
+            SessionResumeCapability::Unknown,
         )
         .unwrap(),
     )

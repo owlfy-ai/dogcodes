@@ -365,12 +365,11 @@ impl Core {
         }) else {
             return;
         };
-        let (kind, status, timestamp) =
-            if driver.resume_capability() == driver_api::SessionResumeCapability::Supported {
-                ("session.resumable", "resumable", "resumableAt")
-            } else {
-                ("session.detached", "detached", "detachedAt")
-            };
+        let (kind, status, timestamp) = if driver.can_attempt_cold_resume() {
+            ("session.resumable", "resumable", "resumableAt")
+        } else {
+            ("session.detached", "detached", "detachedAt")
+        };
         let _ = self.append_session_identity(&task, &control.id, driver.executor(), Some(mapping), kind, serde_json::json!({
             "sessionMapId":mapping.session_map_id,"taskId":task,"nativeSessionId":handle.native_session_id,
                 "status":status,(timestamp):chrono::Utc::now(),

@@ -607,6 +607,28 @@ impl CoreRepository for SqliteStore {
         })
     }
 
+    async fn pending_followups(
+        &self,
+        task: Option<&TaskId>,
+    ) -> Result<Vec<EventEnvelope>, RepositoryError> {
+        let connection = self.connection.lock().map_err(poison_error)?;
+        let candidates = if task.is_some() {
+            "SELECT sequence FROM timeline_items WHERE task_id=?1 AND kind='followup_queued' ORDER BY sequence LIMIT 1"
+        } else {
+            "SELECT sequence FROM timeline_items WHERE kind='followup_queued' AND ?1 IS NULL"
+        };
+        let mut statement = connection.prepare(&format!(
+            "SELECT sequence, event_id, stream_type, stream_id, stream_version, event_type,
+                    schema_version, occurred_at, recorded_at, correlation_id, causation_id, source_json, payload_json, extensions_json
+             FROM events WHERE sequence IN ({candidates}) ORDER BY sequence"
+        )).map_err(storage_error)?;
+        statement
+            .query_map([task.map(TaskId::as_str)], row_to_event)
+            .map_err(storage_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(storage_error)
+    }
+
     async fn sync_events(
         &self,
         after_sequence: u64,
@@ -640,12 +662,12 @@ impl CoreRepository for SqliteStore {
         let mut statement = connection.prepare(
             "WITH fragments AS (
                 SELECT sequence, occurred_at, event_type, json_extract(payload_json,'$.turnId') AS turn_id,
-                    CASE event_type WHEN 'turn.queued' THEN json_extract(payload_json,'$.prompt')
+                    CASE event_type WHEN 'turn.queued' THEN json_extract(payload_json,'$.prompt') WHEN 'turn.steer_accepted' THEN json_extract(payload_json,'$.prompt')
                         WHEN 'message.delta' THEN json_extract(payload_json,'$.text') ELSE payload_json END AS body,
-                    CASE event_type WHEN 'turn.queued' THEN 'prompt' WHEN 'message.delta' THEN 'text' ELSE 'payload' END AS field,
+                    CASE event_type WHEN 'turn.queued' THEN 'prompt' WHEN 'turn.steer_accepted' THEN 'prompt' WHEN 'message.delta' THEN 'text' ELSE 'payload' END AS field,
                     CASE event_type WHEN 'message.delta' THEN 'message:' || coalesce(json_extract(payload_json,'$.turnId'),'') || ':' || coalesce(json_extract(payload_json,'$.itemId'),'') ELSE 'event:' || sequence END AS group_key
                 FROM events WHERE stream_type='task' AND stream_id=?1 AND sequence<=?3
-                    AND event_type IN ('turn.queued','message.delta','test.completed','activity.updated','tool.started','tool.completed','approval.requested','approval.resolved','workspace.diff_captured','workspace.operation_changes_captured','session.rebuild_context_prepared','handoff.package_confirmed','reconciliation.package_confirmed','handoff.sent','reconciliation.sent','turn.failed','turn.interrupted','review.updated','task.forked')
+                    AND event_type IN ('turn.queued','turn.steer_accepted','message.delta','test.completed','activity.updated','tool.started','tool.completed','approval.requested','approval.resolved','workspace.diff_captured','workspace.operation_changes_captured','session.rebuild_context_prepared','handoff.package_confirmed','reconciliation.package_confirmed','handoff.sent','reconciliation.sent','turn.failed','turn.interrupted','review.updated','task.forked')
              ), messages AS (
                 SELECT min(sequence) AS sequence, min(occurred_at) AS occurred_at, event_type, turn_id,
                     group_concat(body,'' ORDER BY sequence) AS body,
@@ -1715,7 +1737,16 @@ fn apply_projection(
                     ],
                 )
                 .map_err(storage_error)?;
-            if !autonomous {
+            if let Some(id) = event.payload["followupId"].as_str() {
+                let changed = transaction.execute("UPDATE timeline_items SET turn_id=?1,kind='user_message',sequence=?2,occurred_at=?3
+                    WHERE task_id=?4 AND item_id=?5 AND kind='followup_queued'",
+                    params![turn_id,to_i64(event.sequence)?,event.occurred_at.timestamp_millis(),task_id,format!("followup-{id}")]).map_err(storage_error)?;
+                if changed != 1 {
+                    return Err(RepositoryError::Unavailable(
+                        "follow-up is no longer queued".into(),
+                    ));
+                }
+            } else if !autonomous {
                 transaction
                     .execute(
                         "INSERT INTO timeline_items(
@@ -1759,6 +1790,35 @@ fn apply_projection(
                 params![event.event_id.to_string(), payload_string(event,"taskId")?, payload_string(event,"turnId")?,
                     payload_string(event,"message")?, payload_string(event,"providerId")?, to_i64(event.sequence)?, event.occurred_at.timestamp_millis()],
             ).map_err(storage_error)?;
+            update_task_stream_version(transaction, event)?;
+        }
+        "turn.followup_failed" => {
+            transaction.execute("UPDATE timeline_items SET kind='followup_failed' WHERE task_id=?1 AND item_id=?2 AND kind='followup_queued'",
+                params![payload_string(event,"taskId")?,format!("followup-{}",payload_string(event,"messageId")?)]).map_err(storage_error)?;
+            update_task_stream_version(transaction, event)?;
+        }
+        "turn.steer_requested" | "turn.followup_queued" => {
+            let queued = event.event_type == "turn.followup_queued";
+            let prefix = if queued { "followup" } else { "steer" };
+            let task = payload_string(event, "taskId")?;
+            let inserted = transaction.execute("INSERT INTO timeline_items(item_id,task_id,turn_id,kind,text,sequence,occurred_at,provider_id)
+                SELECT ?1,task_id,active_turn_id,?8,?2,?3,?4,json_extract(active_executor_json,'$.providerId') FROM tasks
+                WHERE task_id=?5 AND active_turn_id=?6 AND active_run_id=?7 AND active_run_state='running'",
+                params![format!("{prefix}-{}", payload_string(event,"messageId")?),payload_string(event,"text")?,
+                to_i64(event.sequence)?,event.occurred_at.timestamp_millis(),task,payload_string(event,"turnId")?,payload_string(event,"runId")?, if queued { "followup_queued" } else { "steer_unconfirmed" }]).map_err(storage_error)?;
+            if inserted == 0 {
+                return Err(RepositoryError::Unavailable("backendText.mae76c0bb".into()));
+            }
+            update_task_stream_version(transaction, event)?;
+        }
+        "turn.steer_accepted" | "turn.steer_rejected" => {
+            let kind = if event.event_type == "turn.steer_accepted" {
+                "user_message"
+            } else {
+                "steer_rejected"
+            };
+            transaction.execute("UPDATE timeline_items SET kind=?1 WHERE item_id=?2 AND task_id=?3 AND turn_id=?4 AND kind='steer_unconfirmed'",
+                params![kind,format!("steer-{}",payload_string(event,"messageId")?),payload_string(event,"taskId")?,payload_string(event,"turnId")?]).map_err(storage_error)?;
             update_task_stream_version(transaction, event)?;
         }
         "turn.started" => update_run_state(transaction, event, "running")?,
@@ -2717,7 +2777,12 @@ fn load_tasks(
                      ORDER BY sequence LIMIT 1),
                     (SELECT json_extract(payload_json, '$.workingDirectory') FROM events
                      WHERE stream_type='task' AND stream_id=tasks.task_id AND event_type='task.created'
-                     ORDER BY sequence LIMIT 1)
+                     ORDER BY sequence LIMIT 1),
+                    CASE WHEN active_run_id IS NOT NULL THEN EXISTS(
+                       SELECT 1 FROM events WHERE stream_type='task' AND stream_id=tasks.task_id
+                       AND event_type='history.native_prompt_accepted'
+                       AND json_extract(payload_json,'$.turnId')=tasks.active_turn_id
+                       AND json_extract(payload_json,'$.supportsSteering')=1) ELSE 0 END
              FROM tasks WHERE (?1 IS NULL OR task_id = ?1) ORDER BY rowid",
         )
         .map_err(storage_error)?;
@@ -2727,6 +2792,7 @@ fn load_tasks(
             let active_primary_run = if let Some(run_id) = active_run_id {
                 let executor_json = row.get::<_, String>(6)?;
                 Some(ActiveRunSummary {
+                    supports_steering: row.get(15)?,
                     run_id: parse_id(run_id)?,
                     turn_id: parse_id(row.get::<_, String>(5)?)?,
                     executor: serde_json::from_str(&executor_json).map_err(sql_json_error)?,
@@ -6876,6 +6942,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cold_resume_tries_an_unknown_mapping_and_rebuilds_on_explicit_method_rejection() {
+        let store = Arc::new(SqliteStore::open_in_memory().unwrap());
+        let core = Arc::new(Core::new(store.clone()));
+        let driver = Arc::new(FakeDriver::with_executor(executor("scripted")));
+        fixture_installations::register(&core, store.as_ref(), driver.clone()).await;
+        let task = scripted_task(&core).await;
+        submit_turn(&core, &task, "first prompt in history").await;
+        let original = wait_for_resumable_session(&core, &task, "scripted").await;
+        store
+            .connection
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE agent_session_maps SET resume_capability='unknown' WHERE session_map_id=?1",
+                [original.session_map_id.as_str()],
+            )
+            .unwrap();
+
+        submit_turn(&core, &task, "continue original").await;
+        let resumed = wait_for_resumable_session(&core, &task, "scripted").await;
+        assert_eq!(resumed.native_session_id, original.native_session_id);
+        driver.fail_next_resume(DriverError::ResumeUnsupported);
+        submit_turn(&core, &task, "continue in replacement").await;
+        let replacement = wait_for_resumable_session(&core, &task, "scripted").await;
+        assert_ne!(replacement.native_session_id, original.native_session_id);
+        let requests = driver.received_requests().await;
+        assert_eq!(requests.len(), 3);
+        assert!(requests[1].context.is_empty());
+        assert_eq!(requests[2].context.len(), 1);
+        assert_eq!(requests[2].prompt, "continue in replacement");
+        let package: serde_json::Value =
+            serde_json::from_slice(&requests[2].context[0].content).unwrap();
+        let conversation = package["conversationText"].as_str().unwrap();
+        assert!(conversation.contains("first prompt in history"));
+        assert!(!conversation.contains("continue in replacement"));
+    }
+
+    #[tokio::test]
     async fn resume_failures_persist_stable_states_without_leaking_driver_messages() {
         let store = Arc::new(SqliteStore::open_in_memory().unwrap());
         let core = Arc::new(Core::new(store.clone()));
@@ -7701,6 +7805,9 @@ mod tests {
                 .all(|event| event.event_type != "handoff.sent")
         );
 
+        // The failed dispatch left a target mapping and the confirmed handoff.
+        // An explicit method-not-found must replace that session in this retry.
+        driver_b.fail_next_resume(DriverError::ResumeUnsupported);
         submit_turn(&core, &task_id, "work on B").await;
         wait_for_resumable_session(&core, &task_id, "fake-b").await;
 

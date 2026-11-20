@@ -25,6 +25,37 @@ export const ownedBy = (platform, name) => platformFiles[platform].some(suffix =
 const receiptSchema = 2;
 const sleep = ms => new Promise(accept => setTimeout(accept, ms));
 
+function githubFailureText(stderr) {
+  const text = (stderr ?? '').replace(/gho_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|ghp_[A-Za-z0-9_]+|ghs_[A-Za-z0-9_]+/g, '[redacted]');
+  return text.split('\n').map(line => line.trim()).filter(Boolean).slice(0, 2).join(' ').slice(0, 300);
+}
+
+// Permission and validation failures must surface immediately. Rate limits and
+// gateway errors follow large uploads and succeed on a later attempt.
+export function transientGitHubFailure(error) {
+  const text = `${error?.detail ?? ''} ${error?.message ?? ''} ${error?.code ?? ''}`;
+  return /secondary rate limit|rate limit exceeded|\bHTTP 429\b|\bHTTP 50[0234]\b|please wait a few minutes|ECONNRESET|ETIMEDOUT|EAI_AGAIN|\bENOTFOUND\b|socket hang up|connection reset|temporarily unavailable/i.test(text);
+}
+
+export async function retryGitHub(operation, { wait = sleep, attempts = 6, log = console.error } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try { return await operation(); }
+    catch (error) {
+      if (attempt >= attempts || !transientGitHubFailure(error)) throw error;
+      const delay = Math.min(60_000, 5_000 * 2 ** (attempt - 1));
+      log(`GitHub request failed (${githubFailureText(error.detail) || error.message}); retrying in ${delay / 1000}s.`);
+      await wait(delay);
+    }
+  }
+}
+
+function sameReleaseAsset(release, name, size, checksum) {
+  const remote = release?.assets?.find(asset => asset.name === name);
+  if (!remote || (remote.state && remote.state !== 'uploaded')) return false;
+  const digest = remote.digest?.match(/^sha256:([a-f\d]{64})$/i)?.[1]?.toLowerCase();
+  return remote.size === size && digest === checksum;
+}
+
 export function releaseArguments(args) {
   const options = { check: false, uploadOnly: false };
   for (const arg of args) {
@@ -56,19 +87,27 @@ export async function sha256(file) {
   return hash.digest('hex');
 }
 
-function capture(command, args, { cwd, input } = {}) {
+function captureOnce(command, args, { cwd, input, timeout = 10 * 60000 } = {}) {
   return new Promise((accept, reject) => {
     const env = { ...process.env, GH_PROMPT_DISABLED: '1', GH_HOST: 'github.com' };
     delete env.GH_DEBUG;
-    const child = execFile(command, args, { cwd, env, encoding: 'utf8', timeout: 10 * 60000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
+    const child = execFile(command, args, { cwd, env, encoding: 'utf8', timeout, maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (!error) return accept(stdout.trim());
-      const failure = new Error(`${command} ${args[0] ?? ''} failed. Check authentication, connectivity and the command prerequisites.`);
+      const summary = githubFailureText(stderr);
+      const failure = new Error(summary
+        ? `${command} ${args[0] ?? ''} failed: ${summary}`
+        : `${command} ${args[0] ?? ''} failed. Check authentication, connectivity and the command prerequisites.`);
       failure.exitCode = error.code;
-      failure.detail = stderr; // Used for classification only; never included in displayed errors.
+      failure.detail = stderr;
       reject(failure);
     });
     child.stdin.end(input);
   });
+}
+
+function capture(command, args, options = {}) {
+  const once = () => captureOnce(command, args, options);
+  return command === 'gh' ? retryGitHub(once) : once();
 }
 
 function missing(error) { return /HTTP 404|release not found/i.test(error.detail ?? ''); }
@@ -231,32 +270,53 @@ export async function refreshChecksums(client, { tag, commit, stage, repo = clie
     if (snapshot(current) !== snapshot(release)) throw new Error('Release installers changed while checksums were being computed. Retry with --upload-only.');
     return current;
   };
-  await unchanged();
-  await client.upload(checksum);
+  const current = await unchanged();
+  // --clobber deletes the live asset before the replacement upload. Skip files
+  // whose bytes already match so a retry cannot remove a good checksum.
+  if (!sameReleaseAsset(current, 'SHA256SUMS.txt', statSync(checksum).size, await sha256(checksum))) await client.upload(checksum);
   if (Object.keys(manifest.platforms).length) {
     const latest = resolve(stage, manifestName);
-    writeFileSync(latest, `${JSON.stringify(manifest, null, 2)}\n`);
-    await client.upload(latest);
+    let matches = false;
+    const existing = current.assets.find(asset => asset.name === manifestName);
+    if (existing) {
+      const path = resolve(stage, `existing-${manifestName}`);
+      await client.download(existing, path);
+      try {
+        const saved = JSON.parse(readFileSync(path, 'utf8'));
+        matches = saved.version === manifest.version && JSON.stringify(saved.platforms) === JSON.stringify(manifest.platforms);
+      } catch { matches = false; }
+    }
+    if (!matches) {
+      writeFileSync(latest, `${JSON.stringify(manifest, null, 2)}\n`);
+      await client.upload(latest);
+    }
   }
   const section = `${startMarker}\n| Platform | Package status |\n| --- | --- |\n| macOS ARM64 / Intel | ${complete.darwin ? 'Developer ID signed and notarized' : 'Awaiting local signed packages'} |\n| Windows x64 | ${complete.win32 ? 'Authenticode signed and timestamped' : 'Awaiting local signed package'} |\n| In-app updates | ${updatable ? 'Signed update packages for macOS ARM64 / Intel and Windows x64' : 'Awaiting signed update packages'} |\n<!-- Linux packaging paused until real-machine testing\n| Linux x64 | CI-built DEB / AppImage; no additional package signature |\n| Linux ARM64 | CI-built DEB / AppImage; no additional package signature |\n-->\n\nSource commit: \`${commit}\`. Verify downloads with \`SHA256SUMS.txt\`.\n${endMarker}`;
-  const current = await unchanged();
-  const body = current.body ?? '';
+  const noted = await unchanged();
+  const body = noted.body ?? '';
   const begin = body.indexOf(startMarker), end = body.indexOf(endMarker);
   const nextBody = begin >= 0 && end >= begin
     ? body.slice(0, begin) + section + body.slice(end + endMarker.length)
     : `${body}\n\n${section}`;
-  await client.body(current, nextBody);
+  if (nextBody !== body) await client.body(noted, nextBody);
   return complete.darwin && complete.win32 && updatable;
 }
 
 export async function uploadSignedPackages(client, receipt, stage, lockOptions) {
   return withReleaseLock(client, stage, async () => {
+    // Replacing an identical asset still deletes it first. After a few hundred
+    // megabytes, the following GitHub calls are commonly rate-limited.
+    let release = await client.release();
+    let replaced = false;
     for (const asset of receipt.assets) {
       validateAssetName(asset.name);
+      if (sameReleaseAsset(release, asset.name, asset.size, asset.sha256)) continue;
+      console.log(`Uploading ${asset.name}`);
       await client.upload(asset.path);
+      replaced = true;
     }
+    if (replaced) release = await client.release();
     // Remove differently-named CI variants only after all local packages upload.
-    const release = await client.release();
     const names = new Set(receipt.assets.map(asset => asset.name));
     for (const asset of release.assets) {
       if (ownedBy(receipt.platform, asset.name) && !names.has(asset.name)) {
@@ -267,7 +327,7 @@ export async function uploadSignedPackages(client, receipt, stage, lockOptions) 
     const { schemaVersion, tag, commit, platform } = receipt;
     writeFileSync(marker, JSON.stringify({ schemaVersion, tag, commit, platform,
       assets: receipt.assets.map(({ name, sha256, size }) => ({ name, sha256, size })) }, null, 2));
-    await client.upload(marker);
+    if (!sameReleaseAsset(release, basename(marker), statSync(marker).size, await sha256(marker))) await client.upload(marker);
     return refreshChecksums(client, { tag, commit, stage });
   }, lockOptions);
 }

@@ -699,6 +699,7 @@ async fn explicit_close_refusal_does_not_satisfy_the_original_passive_proof() {
 async fn concurrent_cold_restores_share_one_native_installation_and_return_distinct_authority() {
     let (root, launch) = fixture("normal");
     let driver = driver(launch);
+    assert_eq!(driver.resume_capability(), SessionResumeCapability::Unknown);
     let workspace = root.path().to_str().unwrap();
     let (first, second) = tokio::join!(
         driver.resume_session("cold-native", workspace),
@@ -708,6 +709,10 @@ async fn concurrent_cold_restores_share_one_native_installation_and_return_disti
     let second = second.unwrap();
     assert!(!first.same_scope(&second));
     assert_eq!(count(root.path(), "session/resume"), 1);
+    assert_eq!(
+        driver.resume_capability(),
+        SessionResumeCapability::Supported
+    );
     let current = driver.current_session_handle("cold-native").await.unwrap();
     let old = if current.same_scope(&first) {
         second
@@ -811,10 +816,16 @@ async fn known_old_turn_labels_remain_fenced_after_cold_restore_on_the_same_work
 }
 
 #[tokio::test]
-async fn explicit_missing_restore_preserves_other_sessions_on_the_original_worker() {
+async fn rejected_restore_preserves_other_sessions_on_the_original_worker() {
     let (root, launch) = fixture("normal");
     edit(&launch, |s| {
-        s.replace("  sessions[id]=True;reply(r,snap(id))","  if method=='session/resume' and id=='missing':out({'id':r['id'],'error':{'code':-32000,'message':'Session not found: private','data':{'code':'session_not_found'}}});continue\n  sessions[id]=True;reply(r,snap(id))")
+        s.replace(
+            "  sessions[id]=True;reply(r,snap(id))",
+            r"  if method=='session/resume' and id=='missing':out({'id':r['id'],'error':{'code':-32000,'message':'Session not found: private','data':{'code':'session_not_found'}}});continue
+  if method=='session/resume' and id=='foreign':out({'id':r['id'],'error':{'code':-32603,'message':'project.session-lineage-invalid'}});continue
+  if method=='session/resume' and id=='unsupported':out({'id':r['id'],'error':{'code':-32601}});continue
+  sessions[id]=True;reply(r,snap(id))",
+        )
     });
     let driver = driver(launch);
     let existing = session(&driver, root.path()).await;
@@ -825,6 +836,25 @@ async fn explicit_missing_restore_preserves_other_sessions_on_the_original_worke
             .await,
         Err(DriverError::SessionMissing(_))
     ));
+    assert!(matches!(
+        driver
+            .resume_session("foreign", root.path().to_str().unwrap())
+            .await,
+        Err(DriverError::SessionIncompatible(_))
+    ));
+    for _ in 0..2 {
+        assert!(matches!(
+            driver
+                .resume_session("unsupported", root.path().to_str().unwrap())
+                .await,
+            Err(DriverError::ResumeUnsupported)
+        ));
+    }
+    assert_eq!(
+        driver.resume_capability(),
+        SessionResumeCapability::Unsupported
+    );
+    assert_eq!(count(root.path(), "session/resume"), 3);
     assert!(!worker.stopping());
     assert!(Arc::ptr_eq(&worker, &native(&driver).await));
     finish(&driver, &existing, root.path()).await;

@@ -22,6 +22,7 @@ pub mod context;
 mod conversation_drafts;
 mod exclusive_turns;
 mod execution_admission;
+mod followups;
 pub use execution_admission::{AcceptedExecution, ExecutionAdmission};
 pub mod computer_use;
 pub mod history;
@@ -39,6 +40,7 @@ mod running_permissions;
 mod session_lanes;
 mod session_recovery;
 mod session_startup;
+mod steering;
 pub mod submission_intents;
 pub mod task_fork;
 mod text_segments;
@@ -93,7 +95,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use driver_api::{
     AgentDriver, ContextDelivery, ContextDeliveryKind, DriverError, DriverEvent, PromptRequest,
-    QuotaProvider, SessionHandle, SessionRequest, SessionResumeCapability,
+    QuotaProvider, SessionHandle, SessionRequest,
 };
 use futures::StreamExt;
 use redaction::{PassthroughRedactor, SecretRedactor};
@@ -220,6 +222,40 @@ pub trait CoreRepository: Send + Sync {
         _request_fingerprint: &str,
     ) -> Result<Option<CommandAck>, RepositoryError> {
         Ok(None)
+    }
+
+    async fn pending_followups(
+        &self,
+        task: Option<&TaskId>,
+    ) -> Result<Vec<EventEnvelope>, RepositoryError> {
+        let tasks = match task {
+            Some(id) => vec![id.clone()],
+            None => self
+                .bootstrap()
+                .await?
+                .tasks
+                .into_iter()
+                .map(|t| t.task_id)
+                .collect(),
+        };
+        let mut pending = Vec::new();
+        for id in tasks {
+            for row in self
+                .task_timeline(&id)
+                .await?
+                .into_iter()
+                .filter(|row| row.kind == "followup_queued")
+            {
+                pending.extend(
+                    self.task_events(&id, row.sequence.saturating_sub(1), row.sequence, 1)
+                        .await?,
+                );
+                if task.is_some() {
+                    break;
+                }
+            }
+        }
+        Ok(pending)
     }
 
     async fn pending_task_cleanups(&self) -> Result<Vec<TaskId>, RepositoryError> {
@@ -597,6 +633,7 @@ pub struct Core {
     target_workspaces: std::sync::RwLock<BTreeMap<TargetId, Arc<dyn WorkspaceContextProvider>>>,
     running_permissions: running_permissions::RunningPermissions,
     session_lanes: session_lanes::SessionLanes,
+    followups: followups::Workers,
     exclusive_turns: exclusive_turns::ExclusiveTurns,
 }
 
@@ -800,6 +837,7 @@ impl Core {
             target_workspaces: std::sync::RwLock::new(BTreeMap::new()),
             running_permissions: running_permissions::RunningPermissions::default(),
             session_lanes: session_lanes::SessionLanes::default(),
+            followups: followups::Workers::default(),
             exclusive_turns: exclusive_turns::ExclusiveTurns::default(),
         }
     }
@@ -925,6 +963,14 @@ impl Core {
     pub async fn execute(
         self: &Arc<Self>,
         envelope: CommandEnvelope<CoreCommand>,
+    ) -> Result<CommandAck, CoreError> {
+        self.execute_with_followup(envelope, None).await
+    }
+
+    async fn execute_with_followup(
+        self: &Arc<Self>,
+        envelope: CommandEnvelope<CoreCommand>,
+        followup_id: Option<&str>,
     ) -> Result<CommandAck, CoreError> {
         let mut startup_timing = match &envelope.payload {
             CoreCommand::SubmitTurn(command) => Some(TurnStartupTiming::new(
@@ -1397,6 +1443,11 @@ impl Core {
                     ));
                 }
             }
+            CoreCommand::SteerTurn(command) => {
+                return self
+                    .execute_steer(&envelope, command, request_fingerprint)
+                    .await;
+            }
             CoreCommand::CancelTurn(command) => {
                 if envelope.expected_stream_version.is_none() {
                     return Err(CoreError::InvalidArgument(
@@ -1505,7 +1556,7 @@ impl Core {
             }
         }
 
-        let (artifacts, events) = match &envelope.payload {
+        let (artifacts, mut events) = match &envelope.payload {
             CoreCommand::ConfirmContextPackage(command) => {
                 self.confirmed_context_package(command, &envelope).await?
             }
@@ -1525,9 +1576,12 @@ impl Core {
         // changes are excluded. A replacement registered later cannot own this run.
         let queued_driver = if matches!(&envelope.payload, CoreCommand::SubmitTurn(_)) {
             let queued = events
-                .iter()
+                .iter_mut()
                 .find(|event| event.event_type == "turn.queued")
                 .ok_or_else(|| CoreError::Internal("queued event missing".into()))?;
+            if let Some(id) = followup_id {
+                queued.payload["followupId"] = json!(id);
+            }
             let executor: ExecutorRef = serde_json::from_value(queued.payload["executor"].clone())
                 .map_err(|error| CoreError::Internal(error.to_string()))?;
             let run_id: RunId = serde_json::from_value(queued.payload["runId"].clone())
@@ -2344,6 +2398,11 @@ impl Core {
                     "resolvedAt": Utc::now(),
                 }),
             ),
+            CoreCommand::SteerTurn(_) => {
+                return Err(CoreError::Internal(
+                    "Steering uses its turn-scoped command path".into(),
+                ));
+            }
             CoreCommand::CancelTurn(command) => (
                 StreamRef {
                     stream_type: StreamType::Task,
@@ -3067,6 +3126,11 @@ impl Core {
         timing: TurnStartupTiming,
     ) {
         let control = input.control.clone();
+        let _ = control.followup_settings.set(followups::Settings {
+            model: input.model.clone(),
+            thinking: input.thinking.clone(),
+            permission_mode: input.permission_mode.clone(),
+        });
         let lock_timing = timing.stage("workspace_lock");
         control.hold_workspace(self.workspace_access.clone().read_owned().await);
         drop(lock_timing);
@@ -3545,7 +3609,7 @@ impl Core {
             .session_maps
             .into_iter()
             .find(|mapping| mapping.task_id == *task_id && mapping.executor == active.executor);
-        let resume_capability = driver.resume_capability();
+        let cold_resume = driver.can_attempt_cold_resume();
         let selection_changed = existing_session
             .as_ref()
             .is_some_and(|mapping| mapping.model != model || mapping.thinking != thinking);
@@ -3553,8 +3617,8 @@ impl Core {
         let can_resume = move |mapping: &agent_protocol::AgentSessionMapSummary| {
             (mapping.status == SessionMapStatus::Active && live_reuse)
                 || (mapping.status == SessionMapStatus::Resumable
-                    && mapping.resume_capability == ResumeCapability::Supported
-                    && resume_capability == SessionResumeCapability::Supported)
+                    && mapping.resume_capability != ResumeCapability::Unsupported
+                    && cold_resume)
         };
         let fork_history = existing_session.is_none()
             && pending_transfer.is_none()
@@ -3569,7 +3633,11 @@ impl Core {
                 )
                 .await?
                 .is_empty();
-        let needs_replacement = (selection_changed || pending_transfer.is_none())
+        let has_handoff = pending_transfer
+            .as_ref()
+            .is_some_and(|transfer| transfer.kind == ContextPackageKind::Handoff);
+        let needs_replacement = !has_handoff
+            && (pending_transfer.is_none() || selection_changed)
             && existing_session
                 .as_ref()
                 .is_some_and(|mapping| !can_resume(mapping));
@@ -3654,7 +3722,13 @@ impl Core {
                             Err(DriverError::AutonomousTurnBusy) => {
                                 return Err(DriverError::AutonomousTurnBusy.into());
                             }
-                            Err(DriverError::CapabilityUnavailable(_)) if selection_changed => {
+                            Err(ref error)
+                                if (selection_changed
+                                    && matches!(error, DriverError::CapabilityUnavailable(_)))
+                                    || (matches!(error, DriverError::ResumeUnsupported)
+                                        && pending_opt_out.is_none()
+                                        && (has_handoff || pending_transfer.is_none())) =>
+                            {
                                 if let Some(source) = source {
                                     source
                                         .retire(std::time::Duration::from_secs(10))
@@ -3675,14 +3749,18 @@ impl Core {
                                         "startup cancelled before replacement".into(),
                                     )));
                                 }
-                                replacement_context = Some(
-                                    core.prepare_rebuilt_context(
-                                        task_id,
-                                        &active.turn_id,
-                                        &active.executor,
-                                    )
-                                    .await?,
-                                );
+                                // A confirmed handoff is already the user-approved
+                                // context for a new session. Deliver it exactly once.
+                                if !has_handoff {
+                                    replacement_context = Some(
+                                        core.prepare_rebuilt_context(
+                                            task_id,
+                                            &active.turn_id,
+                                            &active.executor,
+                                        )
+                                        .await?,
+                                    );
+                                }
                                 let session = driver
                                     .create_selected_session(
                                         SessionRequest {
@@ -3833,6 +3911,7 @@ impl Core {
             session,
             (session_map_id, session_created_at, session_event_type, replacement_context),
         ) = acquired?;
+        let resume_capability = driver.resume_capability();
         drop(session_timing);
         let identity_timing = timing.stage("session_identity_and_context");
         self.append_session_identity(
@@ -3897,7 +3976,6 @@ impl Core {
                     driver.as_ref(),
                     session,
                     &session_map_id,
-                    resume_capability,
                     &control,
                 )
                 .await?;
@@ -3968,7 +4046,6 @@ impl Core {
                 driver.as_ref(),
                 session,
                 &session_map_id,
-                resume_capability,
                 &control,
             )
             .await?;
@@ -4025,19 +4102,21 @@ impl Core {
                     driver.as_ref(),
                     session,
                     &session_map_id,
-                    resume_capability,
                     &control,
                 )
                 .await?;
                 return Err(error.into());
             }
         };
-        control.ready();
         drop(prompt_timing);
         timing.mark("prompt_accepted");
         let accepted_timing = timing.stage("prompt_acceptance_bookkeeping");
+        if let Some(steering) = driver.turn_steering(&session).await {
+            let _ = control.steering.set(steering);
+        }
+        control.ready();
         self.append_runtime_event(task_id, "history.native_prompt_accepted",
-            json!({"taskId":task_id,"turnId":active.turn_id,"sessionMapId":session_map_id,"executor":active.executor,"boundary":"driver_prompt_accepted","contextPayloads":context_payloads}), EventSource::Hub).await?;
+            json!({"taskId":task_id,"turnId":active.turn_id,"sessionMapId":session_map_id,"executor":active.executor,"boundary":"driver_prompt_accepted","contextPayloads":context_payloads,"supportsSteering":control.steering.get().is_some()}), EventSource::Hub).await?;
         if !delivered_facts.is_empty() {
             self.append_runtime_event(task_id, "history.facts_delivered",
                 json!({"taskId":task_id,"turnId":active.turn_id,"sessionMapId":session_map_id,"boundary":"driver_prompt_accepted","facts":delivered_facts}), EventSource::Hub).await?;
@@ -4227,6 +4306,12 @@ impl Core {
                     data["startedAt"] = json!(Utc::now());
                 }
             }
+            if control
+                .steering_boundary
+                .swap(false, std::sync::atomic::Ordering::AcqRel)
+            {
+                text_segments.user_input();
+            }
             text_segments.apply(&mut event);
             if matches!(
                 event,
@@ -4386,7 +4471,6 @@ impl Core {
                 driver.as_ref(),
                 session,
                 &session_map_id,
-                resume_capability,
                 &control,
             )
             .await?;
@@ -4396,7 +4480,6 @@ impl Core {
                 driver.as_ref(),
                 session,
                 &session_map_id,
-                resume_capability,
                 &control,
             )
             .await?;
@@ -4424,21 +4507,13 @@ impl Core {
         driver: &dyn AgentDriver,
         session: driver_api::SessionHandle,
         session_map_id: &SessionMapId,
-        resume_capability: SessionResumeCapability,
         control: &Arc<run_control::Control>,
     ) -> Result<(), CoreError> {
         if driver.supports_live_session_reuse() {
             return Ok(());
         }
-        self.retire_native_session(
-            task_id,
-            driver,
-            session,
-            session_map_id,
-            resume_capability,
-            control,
-        )
-        .await
+        self.retire_native_session(task_id, driver, session, session_map_id, control)
+            .await
     }
 
     async fn retire_native_session(
@@ -4447,17 +4522,14 @@ impl Core {
         driver: &dyn AgentDriver,
         session: driver_api::SessionHandle,
         session_map_id: &SessionMapId,
-        resume_capability: SessionResumeCapability,
         control: &Arc<run_control::Control>,
     ) -> Result<(), CoreError> {
         let native_session_id = session.native_session_id.clone();
-        let _ = driver;
         self.wait_run_cleanup(control).await;
-        let (session_event_type, status, timestamp_field) = match resume_capability {
-            SessionResumeCapability::Supported => ("session.resumable", "resumable", "resumableAt"),
-            SessionResumeCapability::Unsupported | SessionResumeCapability::Unknown => {
-                ("session.detached", "detached", "detachedAt")
-            }
+        let (session_event_type, status, timestamp_field) = if driver.can_attempt_cold_resume() {
+            ("session.resumable", "resumable", "resumableAt")
+        } else {
+            ("session.detached", "detached", "detachedAt")
         };
         self.append_runtime_event(
             task_id,
@@ -4931,23 +5003,23 @@ fn classify_resume_failure(error: &DriverError) -> ResumeFailureClassification {
             timestamp_field: "missingAt",
             transfer_reason: "target_session_missing",
         },
-        DriverError::SessionIncompatible(_)
-        | DriverError::Protocol(_)
-        | DriverError::CapabilityUnavailable(_)
-        | DriverError::QuotaExhausted { .. } => ResumeFailureClassification {
+        DriverError::SessionIncompatible(_) => ResumeFailureClassification {
             event_type: "session.incompatible",
             status: "incompatible",
             timestamp_field: "incompatibleAt",
             transfer_reason: "target_session_incompatible",
         },
-        DriverError::NotConfigured(_) | DriverError::Disconnected(_) => {
-            ResumeFailureClassification {
-                event_type: "session.detached",
-                status: "detached",
-                timestamp_field: "detachedAt",
-                transfer_reason: "session_resume_detached",
-            }
-        }
+        DriverError::ResumeUnsupported
+        | DriverError::Protocol(_)
+        | DriverError::CapabilityUnavailable(_)
+        | DriverError::QuotaExhausted { .. }
+        | DriverError::NotConfigured(_)
+        | DriverError::Disconnected(_) => ResumeFailureClassification {
+            event_type: "session.detached",
+            status: "detached",
+            timestamp_field: "detachedAt",
+            transfer_reason: "session_resume_detached",
+        },
     }
 }
 
@@ -5016,7 +5088,9 @@ fn safe_cancel_failure_kind(error: &CoreError) -> &'static str {
         CoreError::Driver(DriverError::NotConfigured(_)) => "driver_not_configured",
         CoreError::Driver(DriverError::Disconnected(_)) => "driver_disconnected",
         CoreError::Driver(DriverError::Protocol(_)) => "driver_protocol_error",
-        CoreError::Driver(DriverError::CapabilityUnavailable(_)) => "driver_capability_unavailable",
+        CoreError::Driver(
+            DriverError::ResumeUnsupported | DriverError::CapabilityUnavailable(_),
+        ) => "driver_capability_unavailable",
         CoreError::Driver(DriverError::SessionMissing(_)) => "target_session_missing",
         CoreError::Driver(DriverError::SessionIncompatible(_)) => "target_session_incompatible",
         CoreError::Driver(DriverError::QuotaExhausted { .. }) => "quota_exhausted",
@@ -5122,9 +5196,9 @@ mod tests {
             ),
             (
                 DriverError::Protocol("private frame".into()),
-                "session.incompatible",
-                "incompatible",
-                "target_session_incompatible",
+                "session.detached",
+                "detached",
+                "session_resume_detached",
             ),
             (
                 DriverError::Disconnected("private transport".into()),
@@ -5499,6 +5573,7 @@ mod tests {
             preferred_executor: ex.clone(),
             stream_version: 1,
             active_primary_run: Some(agent_protocol::ActiveRunSummary {
+                supports_steering: false,
                 run_id: RunId::new(),
                 turn_id: TurnId::new(),
                 executor: ex.clone(),
@@ -5539,6 +5614,7 @@ mod tests {
             preferred_executor: ex.clone(),
             stream_version: 1,
             active_primary_run: Some(agent_protocol::ActiveRunSummary {
+                supports_steering: false,
                 run_id: run.clone(),
                 turn_id: TurnId::new(),
                 executor: ex.clone(),
@@ -5596,6 +5672,7 @@ mod tests {
             preferred_executor: executor.clone(),
             stream_version: 1,
             active_primary_run: Some(agent_protocol::ActiveRunSummary {
+                supports_steering: false,
                 run_id: run_id.clone(),
                 turn_id: TurnId::new(),
                 executor,

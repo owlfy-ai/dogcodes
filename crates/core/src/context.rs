@@ -477,7 +477,10 @@ fn conversation_with_facts(
     type ConversationTurn = (String, String, Vec<SourceSpan>);
     let mut turns: Vec<ConversationTurn> = Vec::new();
     for event in events {
-        if !matches!(event.event_type.as_str(), "turn.queued" | "message.delta") {
+        if !matches!(
+            event.event_type.as_str(),
+            "turn.queued" | "turn.steer_accepted" | "message.delta"
+        ) {
             continue;
         }
         let Some(id) = string_field(event, "turnId") else {

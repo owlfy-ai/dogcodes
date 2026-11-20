@@ -29,6 +29,7 @@ pub fn error_detail(error: &DriverError) -> Option<&str> {
         DriverError::SessionMissing(_)
         | DriverError::SessionIncompatible(_)
         | DriverError::AutonomousTurnBusy
+        | DriverError::ResumeUnsupported
         | DriverError::QuotaExhausted { .. } => None,
     }
     .filter(|reason| !is_canonical(reason))
@@ -248,7 +249,9 @@ pub fn kind(error: &DriverError) -> &'static str {
         DriverError::NotConfigured(reason) => (reason, "driver_not_configured"),
         DriverError::Disconnected(reason) => (reason, "driver_disconnected"),
         DriverError::Protocol(reason) => (reason, "driver_protocol_error"),
-        DriverError::CapabilityUnavailable(_) => return "driver_capability_unavailable",
+        DriverError::ResumeUnsupported | DriverError::CapabilityUnavailable(_) => {
+            return "driver_capability_unavailable";
+        }
         DriverError::SessionMissing(_) => return "target_session_missing",
         DriverError::SessionIncompatible(_) => return "target_session_incompatible",
         DriverError::QuotaExhausted { .. } => return "quota_exhausted",

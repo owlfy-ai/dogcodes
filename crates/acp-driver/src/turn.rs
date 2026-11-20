@@ -13,6 +13,7 @@ pub(super) struct Dispatch {
 }
 pub(super) struct Turn {
     pub session: String,
+    pub codebuddy_request: Option<String>,
     pub epoch: Arc<AtomicBool>,
     pub native: Option<Arc<lifecycle::Control>>,
     pub done: Receipt,
@@ -26,6 +27,7 @@ pub(super) struct Turn {
 impl Turn {
     pub fn new(
         session: String,
+        codebuddy_request: Option<String>,
         epoch: Arc<AtomicBool>,
         native: Option<Arc<lifecycle::Control>>,
         cancels: mpsc::UnboundedSender<Arc<Self>>,
@@ -35,6 +37,7 @@ impl Turn {
         (
             Arc::new(Self {
                 session,
+                codebuddy_request,
                 epoch,
                 native,
                 done,

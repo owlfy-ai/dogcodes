@@ -28,6 +28,7 @@ mod retained_readiness_tests;
 
 mod session_usage;
 mod sessions;
+mod steering;
 #[cfg(all(test, unix))]
 mod target_quota_tests;
 mod turn;
@@ -438,6 +439,7 @@ impl ConnectionHandle {
 }
 
 enum Command {
+    Steer(steering::Request),
     ProbeReady {
         reply: oneshot::Sender<Result<ProbeReport, DriverError>>,
     },
@@ -612,6 +614,7 @@ struct Shared {
     metadata: Arc<tokio::sync::Mutex<()>>,
     setup_in_progress: AtomicBool,
     native_close: AtomicBool,
+    opencode_steering: AtomicBool,
     pending_auxiliary: Arc<std::sync::atomic::AtomicUsize>,
     sessions: std::sync::Mutex<HashMap<String, Arc<sessions::Resident>>>,
     active_session: std::sync::Mutex<Option<String>>,
@@ -883,6 +886,7 @@ impl AcpDriver {
                 metadata: Arc::new(tokio::sync::Mutex::new(())),
                 setup_in_progress: AtomicBool::new(false),
                 native_close: AtomicBool::new(false),
+                opencode_steering: AtomicBool::new(false),
                 pending_auxiliary: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
                 sessions: std::sync::Mutex::new(HashMap::new()),
                 active_session: std::sync::Mutex::new(None),
@@ -1622,10 +1626,11 @@ async fn run_connection(
         .connect_with(transport, async move |connection| {
             let initialized = tokio::time::timeout(std::time::Duration::from_secs(45), initialize(&connection))
                 .await.map_err(|_| AcpError::internal_error())??;
+            let mut initial_models = serde_json::to_value(&initialized).unwrap_or_default();
             if let Some(owner) = command_owner.as_ref().and_then(std::sync::Weak::upgrade) {
+                owner.opencode_steering.store(initial_models["_meta"]["steering"]["supported"] == true, Ordering::Release);
                 owner.native_close.store(initialized.agent_capabilities.session_capabilities.close.is_some(), Ordering::Release);
             }
-            let mut initial_models = serde_json::to_value(&initialized).unwrap_or_default();
             if models::has_kiro_template(&initial_models) {
                 let template = models::kiro_template(&connection).await.map_err(|_| AcpError::internal_error())?;
                 initial_models["configOptions"] = template["configOptions"].clone();
@@ -1635,7 +1640,7 @@ async fn run_connection(
                 tokio::select! {
                     command = commands.recv() => {
                         let Some(command) = command else { break };
-                        if matches!(command, Command::CloseSession { .. } | Command::Prompt { .. } | Command::ReadGrokBilling { .. } | Command::ReadKiroUsage { .. } | Command::ReadKiroContext { .. }) {
+                        if matches!(command, Command::Steer(_) | Command::CloseSession { .. } | Command::Prompt { .. } | Command::ReadGrokBilling { .. } | Command::ReadKiroUsage { .. } | Command::ReadKiroContext { .. }) {
                             // Prompts run on their own task so session/cancel
                             // stays responsive while a turn is in flight.
                             command_background.spawn(handle_command(connection.clone(), target.clone(), command, multi_root, initial_models.clone(), Arc::clone(&session_states), Arc::clone(&command_quota)));
@@ -1727,6 +1732,7 @@ async fn handle_command(
     quota: Arc<AcpQuotaState>,
 ) {
     match command {
+        Command::Steer(request) => request.dispatch(&connection).await,
         Command::CloseSession { session_id, reply } => {
             let result: Result<CloseSessionResponse, _> = connection
                 .send_request(CloseSessionRequest::new(SessionId::new(session_id)))
@@ -2111,11 +2117,16 @@ async fn handle_command(
                 return;
             }
             // Keep vendor usage extensions before deserializing the standard response.
-            let Ok(request) = agent_client_protocol::UntypedMessage::new(
-                "session/prompt",
-                serde_json::to_value(PromptRequest::new(session_id.clone(), blocks))
-                    .unwrap_or_default(),
-            ) else {
+            let mut params = serde_json::to_value(PromptRequest::new(session_id.clone(), blocks))
+                .unwrap_or_default();
+            if let Some(owner) = turn
+                .as_ref()
+                .and_then(|turn| turn.codebuddy_request.as_ref())
+            {
+                params["_meta"] = serde_json::json!({"codebuddy.ai/conversationRequestId":owner});
+            }
+            let Ok(request) = agent_client_protocol::UntypedMessage::new("session/prompt", params)
+            else {
                 let _ = reply.send(Err(driver_error_from_channel()));
                 return;
             };
@@ -2701,6 +2712,13 @@ impl AgentDriver for AcpDriver {
             .map(|r| r.handle.clone())
     }
 
+    async fn turn_steering(
+        &self,
+        handle: &SessionHandle,
+    ) -> Option<Arc<dyn driver_api::TurnSteering>> {
+        steering::capture(self, handle).await
+    }
+
     async fn prompt(
         &self,
         handle: &SessionHandle,
@@ -2811,6 +2829,8 @@ impl AgentDriver for AcpDriver {
                 .store(false, Ordering::Release);
             let (turn, completed) = turn::Turn::new(
                 handle.native_session_id.clone(),
+                (self.executor.provider_id.as_str() == "codebuddy")
+                    .then(|| uuid::Uuid::now_v7().simple().to_string()),
                 connection.finished.clone(),
                 connection.native.clone(),
                 connection.cancels.clone(),

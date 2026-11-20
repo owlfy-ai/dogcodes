@@ -245,6 +245,7 @@ pub enum CoreCommand {
     ConfirmContextPackage(ConfirmContextPackage),
     OptOutReconciliation(OptOutReconciliation),
     SubmitTurn(SubmitTurn),
+    SteerTurn(SteerTurn),
     CancelTurn(CancelTurn),
     RespondToApproval(RespondToApproval),
     CaptureWorkspaceDiff(CaptureWorkspaceDiff),
@@ -483,6 +484,15 @@ pub struct ReviewFixRef {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SteerTurn {
+    pub task_id: TaskId,
+    pub turn_id: TurnId,
+    pub run_id: RunId,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CancelTurn {
     pub task_id: TaskId,
     pub turn_id: TurnId,
@@ -619,6 +629,8 @@ pub struct ProjectSummary {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveRunSummary {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub supports_steering: bool,
     pub run_id: RunId,
     pub turn_id: TurnId,
     pub executor: ExecutorRef,

@@ -12,6 +12,7 @@ pub(crate) struct Turn {
     pub id: uuid::Uuid,
     pub sender: mpsc::UnboundedSender<Result<DriverEvent, DriverError>>,
     pub interrupted: bool,
+    pub delivery: Option<super::steering::Delivery>,
     pub dialogs: HashMap<String, Dialog>,
     message: u64,
     text: HashMap<u64, String>,
@@ -23,6 +24,7 @@ impl Turn {
             id: uuid::Uuid::new_v4(),
             sender,
             interrupted: false,
+            delivery: None,
             dialogs: HashMap::new(),
             message: 0,
             text: HashMap::new(),
@@ -43,6 +45,7 @@ impl Turn {
         });
     }
     pub fn observe(&mut self, value: &Value) -> bool {
+        super::steering::Delivery::observe(&mut self.delivery, value);
         for event in driver_api::presentation::presentation_events("pi", "", value) {
             self.emit(event);
         }

@@ -104,6 +104,13 @@ export interface TranslationDict extends UiMessages {
     selectProject: string;
   };
   composer: {
+    steer: string;
+    steerSuccess: string;
+    followupQueued: string;
+    followupFailed: string;
+    steerAccepted: string;
+    steerRejected: string;
+    steerUnconfirmed: string;
     placeholder: string;
     addAttachment: string;
     send: string;

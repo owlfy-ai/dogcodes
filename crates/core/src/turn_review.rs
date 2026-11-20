@@ -308,7 +308,11 @@ impl Core {
             .filter_map(|m| {
                 if matches!(
                     m.kind.as_str(),
-                    "user_message" | "assistant_message" | "message.delta" | "turn.queued"
+                    "user_message"
+                        | "assistant_message"
+                        | "message.delta"
+                        | "turn.queued"
+                        | "turn.steer_accepted"
                 ) {
                     Some(json!({"kind":m.kind,"text":m.text}))
                 } else if m.kind == "activity.updated" {

@@ -6,7 +6,7 @@ import { resolve, join, basename } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
 import { releaseArguments, releaseVersion, githubRepository, sha256, waitForDraft, withReleaseLock,
-  uploadSignedPackages, refreshChecksums, ensureTag, releaseDesktop, lockName, githubClient, verifyUpdaterFiles, ownedBy } from './desktop-release.mjs';
+  uploadSignedPackages, refreshChecksums, ensureTag, releaseDesktop, lockName, githubClient, verifyUpdaterFiles, ownedBy, retryGitHub } from './desktop-release.mjs';
 import { testUpdaterKey } from './fixtures/updater-key.mjs';
 
 const commit = 'a'.repeat(40), tag = 'v0.1.0';
@@ -315,6 +315,39 @@ test('update signatures for another version or without a package stop the checks
   const orphan = fakeGitHub();
   orphan.put('dog.codes-0.1.0-macOS-Intel.app.tar.gz.sig', updaterKey.signature(Buffer.from('x'), '0.1.0'));
   await assert.rejects(refreshChecksums(orphan.client, { tag, commit, stage: stage('orphan') }), /incomplete/);
+}));
+
+test('GitHub rate limits are retried and credential failures are not', async () => {
+  let calls = 0;
+  const result = await retryGitHub(async () => {
+    calls += 1;
+    if (calls === 1) throw Object.assign(new Error('gh release failed: HTTP 502'), { detail: 'HTTP 502: Bad Gateway' });
+    return 'ok';
+  }, { wait: async () => {}, attempts: 3, log() {} });
+  assert.equal(result, 'ok');
+  assert.equal(calls, 2);
+  calls = 0;
+  const limited = Object.assign(new Error('gh release failed: HTTP 403: secondary rate limit exceeded'), { detail: 'You have exceeded a secondary rate limit. Please wait a few minutes.' });
+  await assert.rejects(retryGitHub(async () => { calls += 1; throw limited; }, { wait: async () => {}, attempts: 3, log() {} }), /secondary rate limit/);
+  assert.equal(calls, 3);
+  calls = 0;
+  const denied = Object.assign(new Error('gh release failed: HTTP 401: Bad credentials'), { detail: 'HTTP 401: Bad credentials' });
+  await assert.rejects(retryGitHub(async () => { calls += 1; throw denied; }, { wait: async () => {}, attempts: 4, log() {} }), /Bad credentials/);
+  assert.equal(calls, 1);
+});
+
+test('a repeated upload keeps matching GitHub assets in place', async () => fixture(async ({ receipt, stage }) => {
+  const hub = fakeGitHub();
+  const mac = await receipt('darwin');
+  await uploadSignedPackages(hub.client, mac, stage('first'));
+  const before = new Map([...hub.assets].map(([name, asset]) => [name, asset.id]));
+  hub.changes.length = 0;
+  await uploadSignedPackages(hub.client, mac, stage('second'));
+  for (const name of [...mac.assets.map(asset => asset.name), 'SHA256SUMS.txt', 'latest.json', 'signing-macos.json']) {
+    assert.equal(hub.assets.get(name).id, before.get(name), name);
+  }
+  assert.equal(hub.changes.some(change => change.startsWith('upload:') && change !== `upload:${lockName}`), false);
+  assert.equal(hub.changes.includes('body'), false);
 }));
 
 test('a Mac upload replaces earlier update files of its own platform only', async () => fixture(async ({ receipt, stage }) => {

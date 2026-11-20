@@ -301,6 +301,13 @@ export const fr: TranslationDict = {
     selectProject: "Sélectionner un projet",
   },
   composer: {
+    steer: "Envoyer au tour en cours",
+    steerSuccess: "{name} a reçu votre message pendant ce tour",
+    followupQueued: "{name} ne prend pas de messages en cours de tour et répondra une fois ce tour terminé",
+    followupFailed: "Impossible d’envoyer le message en attente à {name}",
+    steerAccepted: "Complément transmis",
+    steerRejected: "Message refusé par le tour",
+    steerUnconfirmed: "Remise non confirmée",
     placeholder: "Saisissez votre demande ou instruction, appuyez sur Entrée pour envoyer…",
     addAttachment: "Ajouter une pièce jointe",
     send: "Envoyer",

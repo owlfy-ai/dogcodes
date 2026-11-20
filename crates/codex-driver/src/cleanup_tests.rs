@@ -25,6 +25,8 @@ for line in sys.stdin:
   if mode=='eof':os.close(1);os.close(2);time.sleep(60)
   if mode=='leader':sys.exit(0)
   result={}
+ elif method=='thread/resume' and mode=='no-resume':
+  out({'id':r['id'],'error':{'code':-32601,'message':'method not found'}});continue
  elif method in ['thread/start','thread/resume']:result={'thread':{'id':'s','model':'fixture'}}
  elif method=='turn/start':result={'turn':{'id':'t'}}
  elif method=='account/rateLimits/read':result={'rateLimits':{'primary':{'usedPercent':1,'windowDurationMins':300,'resetsAt':1800000000}}}
@@ -65,6 +67,37 @@ fn prompt(root: &Path, text: &str) -> PromptRequest {
         context: vec![],
         prompt: text.into(),
     }
+}
+
+#[tokio::test]
+async fn cold_resume_discovers_protocol_support_on_an_unlisted_version() {
+    let (root, driver) = fixture("normal");
+    assert_eq!(driver.resume_capability(), SessionResumeCapability::Unknown);
+    let handle = driver
+        .resume_session("s", root.path().to_str().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        driver.resume_capability(),
+        SessionResumeCapability::Supported
+    );
+    driver.shutdown(handle).await.unwrap();
+
+    let (root, driver) = fixture("no-resume");
+    for _ in 0..2 {
+        assert!(matches!(
+            driver
+                .resume_session("s", root.path().to_str().unwrap())
+                .await,
+            Err(DriverError::ResumeUnsupported)
+        ));
+    }
+    assert_eq!(
+        driver.resume_capability(),
+        SessionResumeCapability::Unsupported
+    );
+    let requests = std::fs::read_to_string(root.path().join("requests.jsonl")).unwrap();
+    assert_eq!(requests.matches("thread/resume").count(), 1);
 }
 
 #[tokio::test]
@@ -411,6 +444,7 @@ async fn a_cancelled_queued_prompt_is_not_dispatched_after_admission() {
     let (commands_tx, commands) = mpsc::channel(4);
     let scope = Arc::new(std::sync::Mutex::new(SessionHandle::scoped("s".into())));
     let resident = ResidentSession {
+        steering: steering::Slot::default(),
         app_mcps: vec![],
         commands: commands_tx,
         native: Some(native.clone()),
@@ -431,7 +465,7 @@ async fn a_cancelled_queued_prompt_is_not_dispatched_after_admission() {
         .send(SessionCommand::Shutdown { response })
         .await
         .unwrap();
-    session_actor(connection, commands, scope).await;
+    session_actor(connection, commands, scope, resident.steering.clone()).await;
     ended.await.unwrap().unwrap();
     native.closed().await.unwrap();
     assert_eq!(count(root.path(), "turn/start"), 0);
@@ -448,6 +482,7 @@ async fn a_closed_actor_channel_is_not_a_substitute_for_native_exit_proof() {
     driver.sessions.lock().await.insert(
         "s".into(),
         ResidentSession {
+            steering: steering::Slot::default(),
             app_mcps: vec![],
             commands,
             native: Some(native.clone()),
@@ -473,6 +508,7 @@ async fn restoring_a_closed_actor_waits_for_the_original_scope_before_spawning_a
     driver.sessions.lock().await.insert(
         "s".into(),
         ResidentSession {
+            steering: steering::Slot::default(),
             app_mcps: vec![],
             commands,
             native: Some(native.clone()),

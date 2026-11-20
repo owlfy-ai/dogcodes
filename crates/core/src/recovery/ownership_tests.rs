@@ -143,6 +143,7 @@ async fn cancellation_and_approval_use_original_runtime_handles_not_database_rec
         preferred_executor: executor.clone(),
         stream_version: 1,
         active_primary_run: Some(agent_protocol::ActiveRunSummary {
+            supports_steering: false,
             run_id: run.clone(),
             turn_id: turn.clone(),
             executor: executor.clone(),

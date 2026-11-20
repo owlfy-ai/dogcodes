@@ -14,6 +14,7 @@ mod metadata_tests;
 #[cfg(test)]
 mod retained_readiness_tests;
 mod session_scope;
+mod steering;
 use agent_runtime::ProcessInput;
 use agent_runtime::TargetExecutable;
 use session_scope::{
@@ -306,6 +307,7 @@ pub struct CodexDriver {
     sessions: Arc<Mutex<BTreeMap<String, ResidentSession>>>,
     stopping: watch::Sender<bool>,
     retired_handles: std::sync::Mutex<BTreeMap<String, SessionHandle>>,
+    resume_capability: std::sync::Mutex<SessionResumeCapability>,
     restore_gates: std::sync::Mutex<HashMap<String, Arc<Mutex<()>>>>,
     quota: Arc<QuotaState>,
     catalog_probe: Arc<Mutex<()>>,
@@ -347,6 +349,7 @@ impl CodexDriver {
             sessions: Arc::new(Mutex::new(BTreeMap::new())),
             stopping: watch::channel(false).0,
             retired_handles: std::sync::Mutex::new(BTreeMap::new()),
+            resume_capability: std::sync::Mutex::new(SessionResumeCapability::Unknown),
             restore_gates: std::sync::Mutex::new(HashMap::new()),
             quota: Arc::new(QuotaState::default()),
             catalog_probe: Arc::new(Mutex::new(())),
@@ -551,9 +554,11 @@ impl CodexDriver {
             native.closed().await?;
         }
         connection.native.observe_owner(self.stopping.subscribe());
+        let steering = steering::Slot::default();
         sessions.insert(
             native_session_id,
             ResidentSession {
+                steering: steering.clone(),
                 app_mcps: connection.app_mcps.clone(),
                 commands: sender,
                 native: Some(connection.native.clone()),
@@ -561,7 +566,7 @@ impl CodexDriver {
             },
         );
         drop(sessions);
-        tokio::spawn(session_actor(connection, receiver, scope));
+        tokio::spawn(session_actor(connection, receiver, scope, steering));
         Ok(handle)
     }
 
@@ -664,11 +669,11 @@ impl AgentDriver for CodexDriver {
     }
 
     fn resume_capability(&self) -> SessionResumeCapability {
-        if matches!(self.native_agent_version.as_str(), "0.144.5" | "0.153.4") {
-            SessionResumeCapability::Supported
-        } else {
-            SessionResumeCapability::Unknown
-        }
+        *self.resume_capability.lock().expect("resume capability")
+    }
+
+    fn can_attempt_cold_resume(&self) -> bool {
+        self.resume_capability() != SessionResumeCapability::Unsupported
     }
 
     async fn read_subagent(&self, id: &str) -> Result<Vec<Value>, DriverError> {
@@ -787,8 +792,13 @@ impl AgentDriver for CodexDriver {
         let existing = self.sessions.lock().await.get(native_session_id).cloned();
         if let Some(sender) = existing {
             let lease = sender.sender();
-            let next_scope = SessionHandle::scoped(native_session_id.into());
-            if !sender.is_closed() && sender.app_mcps == request.app_mcps {
+            let reuse = sender.app_mcps == request.app_mcps;
+            let next_scope = if reuse {
+                SessionHandle::scoped(native_session_id.into())
+            } else {
+                sender.handle()
+            };
+            if !sender.is_closed() {
                 let (response, received) = oneshot::channel();
                 if lease
                     .send(SessionCommand::CheckReady {
@@ -799,11 +809,11 @@ impl AgentDriver for CodexDriver {
                     .is_ok()
                 {
                     match timeout(SHUTDOWN_TIMEOUT, received).await {
-                        Ok(Ok(Ok(()))) => {
+                        Ok(Ok(Ok(()))) if reuse => {
                             return Ok(next_scope);
                         }
-                        Ok(Ok(Err(DriverError::CapabilityUnavailable(reason)))) => {
-                            return Err(DriverError::CapabilityUnavailable(reason));
+                        Ok(Ok(Err(DriverError::AutonomousTurnBusy))) => {
+                            return Err(DriverError::AutonomousTurnBusy);
                         }
                         Ok(Ok(Err(error @ DriverError::SessionIncompatible(_)))) => {
                             return Err(error);
@@ -823,6 +833,9 @@ impl AgentDriver for CodexDriver {
             }
             self.remove_closed_session(native_session_id, &sender).await;
         }
+        if !self.can_attempt_cold_resume() {
+            return Err(DriverError::ResumeUnsupported);
+        }
         let mut connection = Connection::spawn_for_apps(
             &self.executable,
             &request.app_mcps,
@@ -834,11 +847,11 @@ impl AgentDriver for CodexDriver {
             .await;
         let exchange = match exchange {
             Ok(exchange) => exchange,
-            Err(DriverError::Protocol(_)) => {
+            Err(DriverError::ResumeUnsupported) => {
+                *self.resume_capability.lock().expect("resume capability") =
+                    SessionResumeCapability::Unsupported;
                 connection.shutdown().await?;
-                return Err(DriverError::SessionMissing(
-                    "codex native session could not be resumed".into(),
-                ));
+                return Err(DriverError::ResumeUnsupported);
             }
             Err(error) => {
                 connection.shutdown().await?;
@@ -863,6 +876,17 @@ impl AgentDriver for CodexDriver {
                 "codex resumed a different native session".into(),
             ));
         }
+        if exchange
+            .result
+            .pointer("/thread/status/type")
+            .and_then(Value::as_str)
+            == Some("active")
+        {
+            connection.shutdown().await?;
+            return Err(DriverError::AutonomousTurnBusy);
+        }
+        *self.resume_capability.lock().expect("resume capability") =
+            SessionResumeCapability::Supported;
         connection.thread_id = native_session_id.into();
         self.quota
             .observe_thread(native_session_id, &exchange.result);
@@ -889,6 +913,20 @@ impl AgentDriver for CodexDriver {
             .await
             .map_err(|_| DriverError::Disconnected("codex session actor stopped".into()))??;
         Ok(Box::pin(ReceiverStream::new(receiver)))
+    }
+
+    async fn turn_steering(
+        &self,
+        handle: &SessionHandle,
+    ) -> Option<Arc<dyn driver_api::TurnSteering>> {
+        let sessions = self.sessions.lock().await;
+        let resident = sessions.get(&handle.native_session_id)?;
+        let scope = resident.scope.lock().expect("Codex session scope");
+        if !scope.same_scope(handle) {
+            return None;
+        }
+        let sender = resident.steering.lock().expect("Codex steering").clone()?;
+        (!sender.0.is_closed()).then(|| Arc::new(sender) as _)
     }
 
     async fn interrupt(&self, handle: &SessionHandle) -> Result<(), DriverError> {
@@ -1269,6 +1307,7 @@ async fn session_actor(
     mut connection: Connection,
     mut commands: mpsc::Receiver<ScopedCommand>,
     scope: Scope,
+    steering: steering::Slot,
 ) {
     let mut shutdown_response = None;
     while let Some(command) = next_command(&mut commands, &scope).await {
@@ -1305,11 +1344,20 @@ async fn session_actor(
                 let (events_tx, events_rx) = mpsc::channel(64);
                 match start_turn(&mut connection, request).await {
                     Ok(started) => {
+                        let (sender, inbox) = mpsc::channel(4);
+                        *steering.lock().expect("Codex steering") = Some(steering::Sender(sender));
                         if response.send(Ok(events_rx)).is_err() {
                             break;
                         }
-                        match run_turn(&mut connection, &mut commands, &scope, &events_tx, started)
-                            .await
+                        match run_turn(
+                            &mut connection,
+                            &mut commands,
+                            &scope,
+                            &events_tx,
+                            started,
+                            inbox,
+                        )
+                        .await
                         {
                             ActorControl::Continue => {}
                             ActorControl::Stop => break,
@@ -1485,10 +1533,12 @@ async fn run_turn(
     scope: &Scope,
     events: &mpsc::Sender<Result<DriverEvent, DriverError>>,
     started: StartedTurn,
+    mut steering: mpsc::Receiver<steering::Request>,
 ) -> ActorControl {
     let mut terminal = false;
     let mut verified_terminal = false;
     let mut interrupts = InterruptWaiters::default();
+    let mut receipts = steering::Pending::default();
     let mut stop_deadline = None;
     #[cfg(test)]
     let stop_timeout = connection.stop_timeout;
@@ -1522,6 +1572,12 @@ async fn run_turn(
     }
     while !terminal {
         tokio::select! {
+                    Some(request) = steering.recv() => {
+                        if let Err(error) = receipts.dispatch(connection, &started.native_turn_id, request, stop_deadline.is_some()).await {
+                            let _ = events.send(Err(error)).await;
+                            return ActorControl::Stop;
+                        }
+                    }
                     command = next_command(commands, scope) => match command {
                         Some(SessionCommand::Answer {native_request_id,answer,response}) => {
                             let result = if let Some(pending)=pending_approvals.get(&native_request_id).filter(|p|p.get("questionId").is_some()) {
@@ -1590,6 +1646,7 @@ async fn run_turn(
                             match result {
                                 Ok(exchange) => {
                                     for frame in exchange.interleaved {
+                                        receipts.observe(&frame, &started.native_turn_id);
                                         verified_terminal |= confirms_turn(&frame,&connection.thread_id,&started.native_turn_id);
                                         terminal |= handle_frame(
                                             connection,
@@ -1614,7 +1671,7 @@ async fn run_turn(
                             let _ = response.send(Err(DriverError::Protocol("cannot configure an active codex turn".into())));
                         }
                         Some(SessionCommand::CheckReady { response, .. }) => {
-                            let _ = response.send(Err(DriverError::CapabilityUnavailable("codex turn is already active".into())));
+                            let _ = response.send(Err(DriverError::AutonomousTurnBusy));
                         }
                         Some(SessionCommand::Shutdown { response }) => {
                             return ActorControl::Shutdown(response);
@@ -1628,6 +1685,7 @@ async fn run_turn(
                     },
                     frame = connection.transport.read_frame() => match frame {
                         Ok(frame) => {
+                            receipts.observe(&frame, &started.native_turn_id);
                             verified_terminal |= confirms_turn(&frame,&connection.thread_id,&started.native_turn_id);
                             terminal |= handle_frame(
                                 connection,
@@ -1905,7 +1963,7 @@ async fn handle_frame(
                 .await;
             false
         }
-        IncomingFrame::Response => false,
+        IncomingFrame::Response(_) => false,
     }
 }
 
@@ -2365,7 +2423,7 @@ struct Exchange {
 }
 
 enum IncomingFrame {
-    Response,
+    Response(Value),
     Notification {
         method: String,
         params: Value,
@@ -2437,11 +2495,16 @@ where
             .map_err(|_| DriverError::Disconnected("codex request timed out".into()))?
     }
 
-    async fn request(&mut self, method: &str, params: Value) -> Result<Exchange, DriverError> {
+    async fn begin_request(&mut self, method: &str, params: Value) -> Result<u64, DriverError> {
         let id = self.next_request_id;
         self.next_request_id = self.next_request_id.saturating_add(1);
         self.send_value(&json!({ "id": id, "method": method, "params": params }))
             .await?;
+        Ok(id)
+    }
+
+    async fn request(&mut self, method: &str, params: Value) -> Result<Exchange, DriverError> {
+        let id = self.begin_request(method, params).await?;
         let mut pending = self.fence();
         let mut interleaved = Vec::new();
         loop {
@@ -2451,7 +2514,7 @@ where
             {
                 pending.complete = true;
                 if let Some(error) = raw.get("error") {
-                    return Err(request_failure::map(error));
+                    return Err(request_failure::map_method(method, error));
                 }
                 return Ok(Exchange {
                     result: raw.get("result").cloned().unwrap_or(Value::Null),
@@ -2586,7 +2649,7 @@ fn classify_frame(raw: Value) -> Result<IncomingFrame, DriverError> {
             })
         }
         (Some(_), None) if object.contains_key("result") || object.contains_key("error") => {
-            Ok(IncomingFrame::Response)
+            Ok(IncomingFrame::Response(raw))
         }
         _ => Err(stable_error("Codex emitted an invalid frame shape")),
     }
@@ -3351,6 +3414,7 @@ mod shutdown_tests {
         let handle = SessionHandle::scoped("fixture-session".into());
         (
             ResidentSession {
+                steering: steering::Slot::default(),
                 app_mcps: vec![],
                 commands,
                 native: None,

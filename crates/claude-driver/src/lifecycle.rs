@@ -6,6 +6,7 @@ use tokio::time::{Duration, Instant};
 
 pub(super) enum Command {
     Begin(driver_api::SessionHandle),
+    Steer(super::steering::Request),
     Cancel {
         handle: driver_api::SessionHandle,
         response: tokio::sync::oneshot::Sender<Result<(), driver_api::DriverError>>,
@@ -235,6 +236,10 @@ impl Lifecycle {
         self.quiet_since = None;
     }
 
+    pub fn accepts_steering(&self) -> bool {
+        self.root_live && self.terminal.is_none() && !self.cancelling()
+    }
+
     pub fn cancelling(&self) -> bool {
         self.cancel_since.is_some()
     }
@@ -290,7 +295,7 @@ impl Lifecycle {
 }
 
 impl super::SessionProcess {
-    async fn send_bounded(&self, value: &Value) -> Result<(), driver_api::DriverError> {
+    pub(super) async fn send_bounded(&self, value: &Value) -> Result<(), driver_api::DriverError> {
         tokio::time::timeout(Duration::from_millis(300), self.send_line(value))
             .await
             .map_err(|_| {

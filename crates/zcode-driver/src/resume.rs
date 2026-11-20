@@ -5,7 +5,7 @@ use std::path::Path;
 
 pub(super) fn validate(snapshot: &Value, id: &str, workspace: &str) -> Result<(), DriverError> {
     if super::session_id_from_snapshot(snapshot) != Some(id) {
-        return Err(DriverError::Protocol(
+        return Err(DriverError::SessionIncompatible(
             "ZCode resumed a different native session".into(),
         ));
     }
@@ -19,14 +19,12 @@ pub(super) fn validate(snapshot: &Value, id: &str, workspace: &str) -> Result<()
         .zip(Path::new(workspace).canonicalize().ok())
         .is_some_and(|(a, b)| a == b);
     if !same {
-        return Err(DriverError::Protocol(
+        return Err(DriverError::SessionIncompatible(
             "ZCode resumed session belongs to a different workspace".into(),
         ));
     }
     if busy(snapshot) {
-        return Err(DriverError::CapabilityUnavailable(
-            "ZCode session is still executing native work".into(),
-        ));
+        return Err(DriverError::AutonomousTurnBusy);
     }
     Ok(())
 }
@@ -66,7 +64,7 @@ mod tests {
         state["session"]["status"] = json!("running");
         assert!(matches!(
             validate(&state, "s", path),
-            Err(DriverError::CapabilityUnavailable(_))
+            Err(DriverError::AutonomousTurnBusy)
         ));
         state["session"]["status"] = json!("awaiting_permission");
         assert!(validate(&state, "s", path).is_err());

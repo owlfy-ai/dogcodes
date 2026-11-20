@@ -1659,6 +1659,7 @@ async fn service_idle(core: &Core, control: &ServiceControl) -> Result<bool, Str
         && !control.terminals.has_active()
         && !control.project_runs.has_active()
         && !control.remote.has_active_sessions()
+        && !core.has_queued_followups()
         && !core.has_active_auxiliary_operations()
         && !core.has_active_reviews().await
         && !core
@@ -1982,6 +1983,7 @@ async fn run_service(directory: PathBuf, owned: bool) -> Result<(), String> {
     core.recover_interrupted_turns()
         .await
         .map_err(|e| e.to_string())?;
+    core.recover_queued_followups().await.map_err(|e| e.to_string())?;
     drop(recovery);
     core.register_driver(Arc::new(
         FakeDriver::new("fake").map_err(|e| e.to_string())?,

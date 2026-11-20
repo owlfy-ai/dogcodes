@@ -400,6 +400,8 @@ pub enum DriverError {
     Protocol(String),
     #[error("driver capability is unavailable: {0}")]
     CapabilityUnavailable(String),
+    #[error("native runtime does not implement session resume")]
+    ResumeUnsupported,
     #[error("native session is missing: {0}")]
     SessionMissing(String),
     #[error("native session is incompatible: {0}")]
@@ -431,6 +433,18 @@ pub fn explicitly_reports_quota_exhaustion(message: &str) -> bool {
     ]
     .iter()
     .any(|marker| normalized.contains(marker))
+}
+
+/// Captured from one native prompt. A late write must never target a replacement turn.
+#[async_trait]
+pub trait TurnSteering: Send + Sync {
+    async fn send(&self, message_id: &str, text: &str) -> Result<SteerDelivery, DriverError>;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SteerDelivery {
+    Accepted,
+    Rejected,
 }
 
 #[async_trait]
@@ -756,6 +770,12 @@ pub trait AgentDriver: Send + Sync {
         SessionResumeCapability::Unknown
     }
 
+    /// Whether this driver can attempt restoration, including protocols that
+    /// discover the optional method only on the first real restore request.
+    fn can_attempt_cold_resume(&self) -> bool {
+        self.resume_capability() == SessionResumeCapability::Supported
+    }
+
     async fn create_session(&self, request: SessionRequest) -> Result<SessionHandle, DriverError>;
 
     /// Snapshot existing local ownership for explicit management, never restore
@@ -781,6 +801,13 @@ pub trait AgentDriver: Send + Sync {
         handle: &SessionHandle,
         request: PromptRequest,
     ) -> Result<DriverEventStream, DriverError>;
+
+    async fn turn_steering(
+        &self,
+        _handle: &SessionHandle,
+    ) -> Option<std::sync::Arc<dyn TurnSteering>> {
+        None
+    }
 
     async fn interrupt(&self, handle: &SessionHandle) -> Result<(), DriverError>;
 

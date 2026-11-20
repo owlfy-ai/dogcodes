@@ -88,7 +88,7 @@ it("keeps an uncertain stop quiet and lets stop be pressed again with the same r
   await act(async () => stop.click());
   expect(client.cancelTurn).toHaveBeenCalledTimes(2);
   expect(vi.mocked(client.cancelTurn).mock.calls[1][1]).toBe(vi.mocked(client.cancelTurn).mock.calls[0][1]);
-  expect(host.querySelector('[aria-label="发送"]')).toBeNull();
+  expect(host.querySelector<HTMLButtonElement>('.composer [aria-label="发送"]')?.disabled).toBe(true);
 });
 it("uses the latest received version for an approval without refreshing task snapshots", async () => {
   vi.mocked(client.pendingApprovals).mockResolvedValue([{ ...approvalFixture, turnId: "trn_stream" }]);
@@ -182,4 +182,39 @@ it("reconciles turn completion so the stop button and waiting state disappear", 
   expect(host.querySelector('[aria-label="停止"]')).toBeNull();
   expect(host.querySelector('.agent-pending')).toBeNull();
   expect(host.querySelector('.assistant-message')?.textContent).toContain("完成");
+});
+
+it.each([true, false])("accepts a prompt while Stop remains available (native steering: %s)", async (supported) => {
+  const steer = vi.fn<NonNullable<CoreClient["steerTurn"]>>();
+  let acknowledge!: () => void;
+  steer.mockImplementation(() => new Promise<void>(resolve => { acknowledge = resolve; }));
+  Object.assign(client, { steerTurn: steer });
+  expect(host.querySelector('[aria-label="补充到当前轮"]')).toBeNull();
+  snapshot.tasks[0].activePrimaryRun!.supportsSteering = supported;
+  await deliver([event(1, "history.native_prompt_accepted")], 60);
+  const input = host.querySelector("textarea")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "先修复移动端");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => host.querySelector<HTMLButtonElement>(supported ? '[aria-label="补充到当前轮"]' : '.composer [aria-label="发送"]')!.click());
+  expect(steer).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ activePrimaryRun: expect.objectContaining({ runId: "run_stream", turnId: "trn_stream" }) }), "先修复移动端", expect.stringMatching(/^cmd_/));
+  const stop = host.querySelector<HTMLButtonElement>('[aria-label="停止"]')!;
+  expect(stop.disabled).toBe(false);
+  await act(async () => stop.click());
+  expect(client.cancelTurn).toHaveBeenCalledTimes(1);
+  await act(async () => acknowledge());
+  expect(input.value).toBe("");
+});
+
+it.each([
+  ["steer-id", "user_message", "Codex 已成功插话"],
+  ["followup-id", "followup_queued", "Codex 不支持插话，结束本轮后响应"],
+])("renders the originating agent on %s", async (itemId, kind, label) => {
+  history = { lastSequence: snapshot.lastSequence + 1, items: [{
+    itemId, taskId: snapshot.tasks[0].taskId, turnId: "trn_stream", kind, text: "补充内容",
+    providerId: "codex", attachments: [], sequence: snapshot.lastSequence + 1, occurredAt: new Date().toISOString(),
+  }] };
+  await deliver([event(1, kind === "user_message" ? "turn.steer_accepted" : "turn.followup_queued")], 100);
+  expect(host.querySelector(".user-message [role=status]")?.textContent).toBe(label);
 });

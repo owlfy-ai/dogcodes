@@ -29,6 +29,7 @@ mod readiness_tests;
 #[cfg(test)]
 mod retained_readiness_tests;
 mod session_scope;
+mod steering;
 use agent_runtime::ProcessInput;
 use agent_runtime::TargetExecutable;
 use session_scope::{NativeAttempt, stale_scope};
@@ -122,6 +123,7 @@ fn session_args(session_uuid: &str, resume: bool) -> Vec<String> {
         "stream-json",
         "--verbose",
         "--include-partial-messages",
+        "--replay-user-messages",
         // Ask-before-use: `--permission-prompt-tool stdio` (the same hidden
         // flag the official Agent SDK sets) routes tool approvals to the
         // can_use_tool control request; `manual` keeps every tool gated.
@@ -961,6 +963,7 @@ async fn run_session(
 ) {
     let mut lines = reader.lines();
     let mut lifecycle = lifecycle::Lifecycle::default();
+    let mut steering = steering::Pending::default();
     let mut latest_message: Option<Value> = None;
     let mut usage_requests = request_usage::Requests::default();
     let mut first_output_reported = false;
@@ -1017,6 +1020,9 @@ async fn run_session(
                         let current = process.scope.lock().expect("Claude session scope");
                         if current.same_scope(&handle) { lifecycle.begin(); first_output_reported = false; }
                     },
+                    Some(lifecycle::Command::Steer(request)) => {
+                        if steering.dispatch(&process, request, lifecycle.accepts_steering()).await.is_err() { break; }
+                    }
                     Some(lifecycle::Command::Cancel { handle, response }) => {
                         let result = {
                             let current = process.scope.lock().expect("Claude session scope");
@@ -1030,7 +1036,10 @@ async fn run_session(
                             }
                         };
                         if result.is_ok() { process.close_interactions(true).await; }
+                        let retire = result.is_ok() && !steering.is_empty();
                         let _ = response.send(result);
+                        // An unread user record could start after a native interrupt.
+                        if retire { break; }
                     }
                     Some(lifecycle::Command::Close) | None => break,
                 }
@@ -1163,6 +1172,7 @@ async fn run_session(
             {
                 continue;
             }
+            steering.observe(&raw);
         }
         let Some(classified) = classify(line.trim_end()) else {
             continue;
@@ -1235,7 +1245,14 @@ async fn run_session(
                         .insert(process.session_id.clone(), (now, context));
                 }
                 process.close_interactions(false).await;
-                lifecycle.result(driver_event);
+                if steering.is_empty() {
+                    lifecycle.result(driver_event);
+                } else if !matches!(driver_event, DriverEvent::TurnCompleted { .. }) {
+                    process.closing.store(true, Ordering::Release);
+                    process.finish_turn(driver_event);
+                    break;
+                }
+                // Otherwise keep the current stream open for the remaining user UUIDs.
             }
             Classified::CanUseTool {
                 request_id,
@@ -1869,6 +1886,24 @@ impl AgentDriver for ClaudeDriver {
             Box::pin(UnboundedReceiverStream::new(event_rx).map(Ok::<_, DriverError>));
         dispatch.confirm();
         Ok(stream)
+    }
+
+    async fn turn_steering(
+        &self,
+        handle: &SessionHandle,
+    ) -> Option<Arc<dyn driver_api::TurnSteering>> {
+        let process = self.process_for(handle).await.ok()?;
+        let _admission = process.admit(handle).await.ok()?;
+        let turn = process
+            .updates
+            .lock()
+            .expect("updates sink")
+            .as_ref()?
+            .downgrade();
+        Some(Arc::new(steering::Sender {
+            commands: process.commands.clone(),
+            turn,
+        }))
     }
 
     async fn interrupt(&self, handle: &SessionHandle) -> Result<(), DriverError> {

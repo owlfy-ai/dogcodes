@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import type { ExecutorRef, QuotaSnapshot } from "@dogcodes/protocol";
+import type { ExecutorRef, QuotaSnapshot, TimelineItem } from "@dogcodes/protocol";
 import { providerLabel } from "./agentPresentation";
 import { focusComposerInput } from "./composerFocus";
 import { translate as t, type ResolvedLanguage } from "./i18n";
@@ -13,6 +13,23 @@ export function quotaLooksExhausted(quota: QuotaSnapshot | null | undefined, tur
   const reportedSince = Boolean(quota && quota.confidence === "provider_reported" && !quotaIsStale(quota.staleAfterUnixMs)
     && quota.windows.some(window => !window.scope && !quotaWindowHasReset(window) && remainingPercent(window.usedPercent) !== null));
   return quotaIsExhausted(quota) || (turnExhausted && !reportedSince);
+}
+
+/**
+ * Whether the agent's latest turn ended on a quota error. Any later turn by the same agent,
+ * or a reply it gave (ACP agents reply as `activity`, not `assistant_message`), clears it.
+ */
+export function latestTurnQuotaExhausted(timeline: readonly Pick<TimelineItem, "kind" | "providerId" | "turnId">[], providerId: string | undefined): boolean {
+  if (!providerId) return false;
+  const laterTurns = new Set<string>();
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const item = timeline[index];
+    if (item.providerId !== providerId) continue;
+    if (item.kind === "quota.exhausted") return ![...laterTurns].some(turnId => turnId !== item.turnId);
+    if (item.kind === "assistant_message") return false;
+    if (item.turnId) laterTurns.add(item.turnId);
+  }
+  return false;
 }
 
 /** Options already follow the person's own agent order, so the first usable one is theirs. */

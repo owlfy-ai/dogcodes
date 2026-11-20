@@ -24,6 +24,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "url",
+ "uuid",
  "zstd",
 ]
 

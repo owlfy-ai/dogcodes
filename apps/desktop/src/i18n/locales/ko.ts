@@ -301,6 +301,13 @@ export const ko: TranslationDict = {
     selectProject: "프로젝트 선택",
   },
   composer: {
+    steer: "현재 턴에 보내기",
+    steerSuccess: "{name}에서 현재 턴의 추가 메시지를 받았습니다",
+    followupQueued: "{name}은 진행 중인 턴에 메시지를 받을 수 없어 이 턴이 끝나면 응답합니다",
+    followupFailed: "대기 중인 메시지를 {name}에 보낼 수 없습니다",
+    steerAccepted: "추가 메시지 제출됨",
+    steerRejected: "현재 턴에서 메시지 거부됨",
+    steerUnconfirmed: "전달 미확인",
     placeholder: "프롬프트 또는 지시사항을 입력하고 Enter를 누르세요…",
     addAttachment: "첨부파일 추가",
     send: "전송",

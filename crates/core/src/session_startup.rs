@@ -158,12 +158,11 @@ impl Core {
         driver: &dyn AgentDriver,
         mapping: &agent_protocol::AgentSessionMapSummary,
     ) -> Result<(), CoreError> {
-        let (kind, status, at) =
-            if driver.resume_capability() == driver_api::SessionResumeCapability::Supported {
-                ("session.resumable", "resumable", "resumableAt")
-            } else {
-                ("session.detached", "detached", "detachedAt")
-            };
+        let (kind, status, at) = if driver.can_attempt_cold_resume() {
+            ("session.resumable", "resumable", "resumableAt")
+        } else {
+            ("session.detached", "detached", "detachedAt")
+        };
         self.append_session_identity(task,run,driver.executor(),Some(mapping),kind,serde_json::json!({
             "sessionMapId":mapping.session_map_id,"taskId":task,"nativeSessionId":mapping.native_session_id,
             "status":status,(at):chrono::Utc::now(),

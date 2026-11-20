@@ -327,6 +327,18 @@ export class TauriCoreClient implements CoreClient {
     await this.execute(turnSubmissionCommand(task, { prompt, model, thinking, permissionMode, attachments }), task.streamVersion, operationId);
   }
 
+  async steerTurn(task: TaskSummary, text: string, operationId: string): Promise<void> {
+    const run = task.activePrimaryRun;
+    if (!run) throw new Error(t("tauriClient.noRun"));
+    const command = { type: "steer_turn", data: { taskId: task.taskId, turnId: run.turnId, runId: run.runId, text } };
+    try {
+      await this.execute(command, null, operationId);
+    } catch (error) {
+      const receipt = await invoke("core_command_receipt", { envelope: commandEnvelope(command, null, operationId) }).catch(() => null);
+      if (!receipt) throw error;
+    }
+  }
+
   async cancelTurn(task: TaskSummary, operationId?: string): Promise<void> {
     await this.execute(cancelTurnCommand(task), task.streamVersion, operationId);
   }

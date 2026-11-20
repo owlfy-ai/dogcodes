@@ -39,7 +39,13 @@ for line in sys.stdin:
   if request['subtype']=='interrupt': result()
   elif request['subtype']=='stop_task' and mode=='stop': stopped()
  elif r.get('type')=='user':
+  if isinstance(r['message']['content'],str):
+   assert mode=='steer'
+   result()
+   with open('queued','w') as f:f.write(r['uuid'])
+   continue
   mode=r['message']['content'][0]['text']
+  if mode=='steer':continue
   if mode=='simple': result();continue
   if mode=='background':
    emit({'type':'assistant','message':{'content':[{'type':'tool_use','id':'shell','name':'Bash','input':{'command':'background fixture'}}]}})
@@ -818,5 +824,26 @@ async fn native_withdrawal_expires_approval_without_ending_running_workflow() {
         .await
         .unwrap();
     until(&mut stream, terminal).await;
+    driver.shutdown(session).await.unwrap();
+}
+
+#[tokio::test]
+async fn cancelling_with_an_unconsumed_steer_retires_the_native_queue() {
+    let (dir, driver) = setup();
+    let session = driver.create_session(workspace(dir.path())).await.unwrap();
+    let mut stream = driver
+        .prompt(&session, prompt(dir.path(), "steer"))
+        .await
+        .unwrap();
+    let steering = driver.turn_steering(&session).await.unwrap();
+    let receipt = tokio::spawn(async move { steering.send("second", "follow-up").await });
+    await_file(&dir.path().join("queued"), "-").await;
+    driver.interrupt(&session).await.unwrap();
+    assert!(matches!(
+        until(&mut stream, terminal).await,
+        DriverEvent::TurnInterrupted { .. }
+    ));
+    assert!(receipt.await.unwrap().is_err());
+    assert!(stream.next().await.is_none());
     driver.shutdown(session).await.unwrap();
 }

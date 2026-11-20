@@ -301,6 +301,13 @@ export const ja: TranslationDict = {
     selectProject: "プロジェクトを選択",
   },
   composer: {
+    steer: "現在のターンに送信",
+    steerSuccess: "{name} がこのターンで追加メッセージを受け取りました",
+    followupQueued: "{name} は途中入力に対応していないため、このターンの終了後に応答します",
+    followupFailed: "待機中のメッセージを {name} に送信できませんでした",
+    steerAccepted: "追加メッセージを送信済み",
+    steerRejected: "このターンでは受け付けられませんでした",
+    steerUnconfirmed: "配信未確認",
     placeholder: "プロンプトや指示を入力し、Enter で送信…",
     addAttachment: "添付ファイルを追加",
     send: "送信",
