@@ -272,6 +272,8 @@ test('GitHub CLI adapter reads draft assets by release ID and claims locks witho
   assert.equal(calls.at(-1).args.includes('--clobber'), false);
   await client.upload('/private/SHA256SUMS.txt');
   assert.equal(calls.at(-1).args.includes('--clobber'), true);
+  await client.download({ name: 'signing-win32.json' }, '/private/stage/signing-win32.json');
+  assert.equal(calls.at(-1).args.includes('--clobber'), true);
   await client.body({ id: 42, tag_name: tag, target_commitish: commit }, 'Notes\nwith newlines');
   assert.deepEqual(JSON.parse(calls.at(-1).options.input), { body: 'Notes\nwith newlines', tag_name: tag, target_commitish: commit });
   assert.equal(calls.at(-1).args.includes('Notes\nwith newlines'), false);
