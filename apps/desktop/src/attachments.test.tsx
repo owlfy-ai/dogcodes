@@ -4,7 +4,7 @@ import { attachmentUploads } from "./attachmentUploads";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
-import { AttachmentPreviews, useAttachments } from "./attachments";
+import { AttachmentPreviews, pendingAttachment, SentAttachments, useAttachments } from "./attachments";
 
 beforeEach(() => {
   localStorage.clear();
@@ -104,6 +104,43 @@ it("infers clipboard image MIME and sends independent attachment metadata", asyn
 });
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+
+it("keeps both same-name images visible from send through the history remount without rereading them", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("__TAURI_INTERNALS__", {});
+  vi.stubGlobal("crypto", webcrypto);
+  const { invoke } = await import("@tauri-apps/api/core");
+  vi.mocked(invoke).mockClear().mockImplementation(async (command, args) => {
+    if (command === "core_attachment_upload_receipt") return null;
+    const { request } = args as { request: import("@dogcodes/protocol").AttachmentUploadRequest };
+    return { name: request.name, path: "/attachments/" + request.uploadId, mimeType: request.mimeType,
+      integrity: { sha256: request.sha256, byteLength: request.byteLength } };
+  });
+  let state!: ReturnType<typeof useAttachments>;
+  function Draft() { state = useAttachments(); return null; }
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<Draft />));
+    await act(async () => state.add(["one", "two"].map(text => {
+      const file = new File([text], "image.png", { type: "image/png" });
+      Object.defineProperty(file, "arrayBuffer", { value: async () => new TextEncoder().encode(text).buffer });
+      return file;
+    })));
+    const expected = state.items.map(item => item.preview);
+    const sources = () => Array.from(host.querySelectorAll("img"), img => img.src);
+    await act(async () => root.render(<SentAttachments key="pending" items={state.items.map(pendingAttachment)} />));
+    expect(sources()).toEqual(expected);
+    const nodes = Array.from(host.querySelectorAll("img"));
+    const prepared = await state.prepare();
+    await act(async () => root.render(<SentAttachments key="pending" items={prepared} />));
+    expect(sources()).toEqual(expected);
+    expect(host.querySelector("img")).toBe(nodes[0]);
+    await act(async () => root.render(<SentAttachments key="history" items={structuredClone(prepared)} />));
+    expect(sources()).toEqual(expected);
+    expect(invoke).not.toHaveBeenCalledWith("core_read_attachment", expect.anything());
+  } finally { await act(async () => root.unmount()); vi.unstubAllGlobals(); }
+});
 
 it("switches only between images, respects gallery boundaries, and downloads the selected image", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

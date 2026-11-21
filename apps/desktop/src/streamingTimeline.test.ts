@@ -130,3 +130,12 @@ it("keeps tool start summaries and marks failed completion", () => {
   const items = applyTimelineDelta([], event(1, "tool.started", { toolName: "Read", summary: "读取文件" }))!;
   expect(applyTimelineDelta(items, event(2, "tool.completed", { toolName: "Read", success: false, summary: "失败" }))![0]).toMatchObject({ kind: "tool.failed", text: "读取文件", sequence: 1 });
 });
+
+
+it("keeps the timeline identity across thought pulses carrying only native bookkeeping", () => {
+  const pulse = (n: number) => event(n, "activity.updated", { data: {
+    type: "thought", status: "running", sourceEventId: String(n), startedAt: String(n),
+  } });
+  const first = applyTimelineBatch([], [pulse(1)]).items;
+  expect(applyTimelineBatch(first, [pulse(2), pulse(3)]).items).toBe(first);
+});

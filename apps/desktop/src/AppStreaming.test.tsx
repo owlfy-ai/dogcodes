@@ -71,6 +71,42 @@ it("renders hundreds of native text deltas without fetching global state, histor
   await act(async () => { host.querySelector<HTMLButtonElement>('[aria-label="停止"]')!.click(); });
   expect(client.cancelTurn).toHaveBeenCalledWith(expect.objectContaining({ streamVersion: 310 }), expect.stringMatching(/^cmd_/));
 });
+it("updates only the live thought preview while composing a draft", async () => {
+  const preview = vi.fn(async () => "第一段");
+  Object.assign(client, { liveThoughtPreview: preview });
+  const reads = vi.mocked(client.timelineSnapshot!).mock.calls.length;
+  const thought = (sequence: number, status = "running") => {
+    const update = event(sequence, "activity.updated");
+    update.payload = { taskId: snapshot.tasks[0].taskId, turnId: "trn_stream", itemId: "thought-1",
+      data: { type: "thought", status, sourceEventId: String(sequence), startedAt: new Date(sequence).toISOString(),
+        ...(status === "completed" ? { text: "完整思考" } : {}) } };
+    return update;
+  };
+  await deliver([thought(1)]);
+  expect(host.querySelector(".thought-marquee")?.textContent).toBe("第一段");
+  const input = host.querySelector<HTMLTextAreaElement>(".composer textarea")!;
+  input.focus();
+  await act(async () => {
+    input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "正在输入");
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true }));
+  });
+  preview.mockResolvedValue("最新一段");
+  for (let i = 0; i < 10; i++) {
+    await deliver(Array.from({ length: 30 }, (_, j) => thought(2 + i * 30 + j)), 25);
+  }
+  expect(client.timelineSnapshot).toHaveBeenCalledTimes(reads);
+  expect(preview).toHaveBeenCalledTimes(2);
+  expect(host.querySelector(".thought-marquee")?.textContent).toBe("最新一段");
+  expect(document.activeElement).toBe(input);
+  expect(input.value).toBe("正在输入");
+  await deliver([thought(302, "completed")]);
+  await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+  expect(preview).toHaveBeenCalledTimes(2);
+  expect(host.querySelector(".thought-marquee")).toBeNull();
+  expect(host.textContent).toContain("完整思考");
+});
+
 it("uses the latest received version when cancelling before the UI batch flushes", async () => {
   await deliver([event(1)], 0);
   expect(host.querySelector(".assistant-message")?.textContent ?? "").not.toContain("字");
@@ -88,7 +124,7 @@ it("keeps an uncertain stop quiet and lets stop be pressed again with the same r
   await act(async () => stop.click());
   expect(client.cancelTurn).toHaveBeenCalledTimes(2);
   expect(vi.mocked(client.cancelTurn).mock.calls[1][1]).toBe(vi.mocked(client.cancelTurn).mock.calls[0][1]);
-  expect(host.querySelector<HTMLButtonElement>('.composer [aria-label="发送"]')?.disabled).toBe(true);
+  expect(host.querySelector('.composer [aria-label="发送"]')).toBeNull();
 });
 it("uses the latest received version for an approval without refreshing task snapshots", async () => {
   vi.mocked(client.pendingApprovals).mockResolvedValue([{ ...approvalFixture, turnId: "trn_stream" }]);
@@ -193,10 +229,22 @@ it.each([true, false])("accepts a prompt while Stop remains available (native st
   snapshot.tasks[0].activePrimaryRun!.supportsSteering = supported;
   await deliver([event(1, "history.native_prompt_accepted")], 60);
   const input = host.querySelector("textarea")!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "先修复移动端");
+  const action = () => {
+    const buttons = host.querySelectorAll<HTMLButtonElement>(".composer .composer-submit");
+    expect(buttons).toHaveLength(1);
+    return buttons[0];
+  };
+  const typeDraft = (text: string) => act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, text);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  expect(action().type).toBe("button");
+  await typeDraft("补充说明");
+  expect(action().type).toBe("submit");
+  expect(action().disabled).toBe(false);
+  await typeDraft("   ");
+  expect(action().getAttribute("aria-label")).toBe("停止");
+  await typeDraft("先修复移动端");
   await act(async () => host.querySelector<HTMLButtonElement>(supported ? '[aria-label="补充到当前轮"]' : '.composer [aria-label="发送"]')!.click());
   expect(steer).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ activePrimaryRun: expect.objectContaining({ runId: "run_stream", turnId: "trn_stream" }) }), "先修复移动端", expect.stringMatching(/^cmd_/));
   const stop = host.querySelector<HTMLButtonElement>('[aria-label="停止"]')!;

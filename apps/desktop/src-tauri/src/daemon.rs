@@ -550,6 +550,14 @@ impl CoreClient {
         }
         self.call("timeline", json!((task_id,))).await
     }
+    pub async fn live_thought_preview(&self, item_id: &str) -> Result<Option<String>, String> {
+        #[cfg(any(test, feature = "review-acceptance"))]
+        if let Self::Local(core, _) = self {
+            return Ok(core.live_thought_preview(item_id).await);
+        }
+        self.call("live_thought_preview", json!((item_id,))).await
+    }
+
     pub async fn timeline_snapshot(
         &self,
         task_id: &TaskId,
@@ -1160,6 +1168,10 @@ async fn dispatch(core: &Arc<Core>, method: &str, args: Value) -> Result<Value, 
             let (task_id,): (TaskId,) = serde_json::from_value(args).map_err(|e| e.to_string())?;
             let result = core.timeline(&task_id).await.map_err(|e| e.to_string())?;
             serde_json::to_value(result).map_err(|e| e.to_string())
+        }
+        "live_thought_preview" => {
+            let (item_id,): (String,) = serde_json::from_value(args).map_err(|e| e.to_string())?;
+            Ok(json!(core.live_thought_preview(&item_id).await))
         }
         "timeline_snapshot" => {
             let (task_id,): (TaskId,) = serde_json::from_value(args).map_err(|e| e.to_string())?;

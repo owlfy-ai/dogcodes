@@ -13,6 +13,30 @@ export function attachmentMime(file: Pick<File, "type" | "name">): string {
   const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
   return ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", heic: "image/heic", pdf: "application/pdf", txt: "text/plain" } as Record<string, string>)[extension] ?? "application/octet-stream";
 }
+// Display data stays in this window. Only the stored reference goes to the agent.
+const draftImages = new WeakMap<PromptAttachment, { src: string; file?: File }>();
+const sentImages = new Map<string, string>();
+let cachedChars = 0;
+const cacheLimit = 48 * 1024 * 1024; // Fits a full 25 MiB send encoded as a data URL.
+function rememberSentImage(path: string, src: string) {
+  cachedChars -= sentImages.get(path)?.length ?? 0;
+  sentImages.delete(path);
+  sentImages.set(path, src);
+  cachedChars += src.length;
+  for (const [oldPath, value] of sentImages) {
+    if (cachedChars <= cacheLimit) break;
+    sentImages.delete(oldPath);
+    cachedChars -= value.length;
+  }
+}
+
+export function pendingAttachment(item: Attachment): PromptAttachment {
+  const ref = item.stored ?? { name: item.name, path: item.path ?? "",
+    mimeType: item.file ? attachmentMime(item.file) : "application/octet-stream" };
+  if (item.preview) draftImages.set(ref, { src: item.preview, file: item.file });
+  return ref;
+}
+
 function preview(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -56,6 +80,7 @@ export function useAttachments(client?: CoreClient) {
         item.upload = result.request; item.stored = result.reference; item.path = result.reference.path;
       }
       if (!item.stored) throw new Error(t("attachments.unreadable"));
+      if (item.preview) rememberSentImage(item.stored.path, item.preview);
       prepared.push(structuredClone(item.stored));
     }
     return prepared;
@@ -162,7 +187,7 @@ function AttachmentImage({ image, onOpen }: { image: GalleryImage; onOpen: () =>
   const source = useImageSource(image);
   return source?.src ? <button type="button" className="attachment-preview-trigger" aria-label={t("attachments.zoom", { name: image.name })} aria-haspopup="dialog" onClick={onOpen}>
     <img src={source.src} alt={image.name} />
-  </button> : <span>{t(source?.unavailable ? "attachments.imageUnavailable" : "attachments.imageLoading")} · {image.name}</span>;
+  </button> : source?.unavailable ? <span>{t("attachments.imageUnavailable")} · {image.name}</span> : null;
 }
 
 export function AttachmentPreviews({ items, remove, disabled }: { items: Attachment[]; remove: (id: string) => void; disabled: boolean }) {
@@ -184,7 +209,10 @@ export function AttachmentPreviews({ items, remove, disabled }: { items: Attachm
 
 export function SentAttachments({ items }: { items: PromptAttachment[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const entries = items.map((item, index) => ({ ...item, id: `${item.path}:${index}` }));
+  const entries = items.map((item, index) => {
+    const preview = draftImages.get(item);
+    return { ...item, id: String(index), src: preview?.src ?? sentImages.get(item.path), file: preview?.file };
+  });
   const images = entries.filter(item => item.mimeType.startsWith("image/"));
   if (!items.length) return null;
   return <>

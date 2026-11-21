@@ -1,10 +1,12 @@
 use super::*;
 use agent_protocol::{CreateTask, SubmitTurn};
 use driver_api::{AgentDriver, DriverEvent};
+use futures_util::StreamExt;
 
 /// Streams two thinking deltas before its answer.
 struct Thinking {
     fake: FakeDriver,
+    resume: Arc<tokio::sync::Notify>,
 }
 #[async_trait::async_trait]
 impl AgentDriver for Thinking {
@@ -31,7 +33,8 @@ impl AgentDriver for Thinking {
                 data: json!({"type": "thought", "delta": delta}),
             })
         };
-        Ok(Box::pin(futures_util::stream::iter(vec![
+        let resume = self.resume.clone();
+        let events = futures_util::stream::iter(vec![
             Ok(DriverEvent::TurnStarted {
                 native_turn_id: Some("native-turn".into()),
             }),
@@ -44,7 +47,16 @@ impl AgentDriver for Thinking {
             Ok(DriverEvent::TurnCompleted {
                 summary: "done".into(),
             }),
-        ])))
+        ]);
+        Ok(Box::pin(events.then(move |event| {
+            let resume = resume.clone();
+            async move {
+                if matches!(event, Ok(DriverEvent::TextDelta { .. })) {
+                    resume.notified().await;
+                }
+                event
+            }
+        })))
     }
     async fn interrupt(
         &self,
@@ -93,6 +105,7 @@ async fn finished_thinking_is_saved_with_its_text_for_history() {
     let f = fixture().await;
     let driver = Arc::new(Thinking {
         fake: FakeDriver::with_executor(ready(&f, "fake").await),
+        resume: Arc::default(),
     });
     f.core.register_driver(driver.clone()).await;
     let (project_id, task_id) = (ProjectId::new(), TaskId::new());
@@ -131,6 +144,26 @@ async fn finished_thinking_is_saved_with_its_text_for_history() {
     }));
     submit.expected_stream_version = Some(1);
     f.client.execute(submit).await.unwrap();
+    let live_item = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            for item in f.core.timeline(&task_id).await.unwrap() {
+                if item.kind == "activity"
+                    && f.client
+                        .live_thought_preview(&item.item_id)
+                        .await
+                        .unwrap()
+                        .as_deref()
+                        == Some("先分析问题，再修改代码。")
+                {
+                    return item.item_id;
+                }
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    driver.resume.notify_one();
     tokio::time::timeout(Duration::from_secs(5), async {
         while f.core.bootstrap().await.unwrap().tasks[0]
             .active_primary_run
@@ -142,6 +175,13 @@ async fn finished_thinking_is_saved_with_its_text_for_history() {
     .await
     .unwrap();
 
+    assert!(
+        f.client
+            .live_thought_preview(&live_item)
+            .await
+            .unwrap()
+            .is_none()
+    );
     let snapshot = f.core.timeline_snapshot(&task_id).await.unwrap();
     let thought: Value = snapshot
         .items

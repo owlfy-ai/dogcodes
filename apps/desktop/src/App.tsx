@@ -53,7 +53,7 @@ import { FloatingPopover } from "./FloatingPopover";
 import { AgentWelcome } from "./AgentWelcome";
 import { SidebarResizeHandle, useSidebarWidth } from "./SidebarResizeHandle";
 import { ReviewResizeHandle, useReviewWidth } from "./ReviewResizeHandle";
-import { AttachmentPreviews, SentAttachments, useAttachments } from "./attachments";
+import { AttachmentPreviews, pendingAttachment, SentAttachments, useAttachments } from "./attachments";
 import { useModelReadyExecutors } from "./useModelReadyExecutors";
 import { ModelCatalogCache } from "./modelCatalogCache";
 import { useModelCatalog } from "./useModelCatalog";
@@ -823,9 +823,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         if (!applied && cached) cached.dirty = true;
         if (taskId && stream) { pendingStreams.add(taskId); requestFrame(); }
         const data = (event.payload as { data?: { type?: string; status?: string } })?.data;
-        // Live thought text is deliberately kept outside the canonical event
-        // store. Refresh this one timeline, never global state or approvals.
-        if (taskId === selectedTaskIdRef.current && (!applied || (data?.type === "thought" && data.status === "running"))) requestProjection(false);
+        // Clients without a dedicated live preview still read it from the snapshot.
+        if (taskId === selectedTaskIdRef.current && (!applied || (!client.liveThoughtPreview && data?.type === "thought" && data.status === "running"))) requestProjection(false);
       } else {
         if (cached) cached.dirty = true;
         if (!client.timelineSnapshot) for (const entry of conversationCache.current.values()) entry.dirty = true;
@@ -1023,6 +1022,8 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   useEffect(() => {
     if (!sending && submittedMessage) setPendingSubmission(null);
   }, [sending, submittedMessage]);
+  const visibleTimeline = useMemo(() => displayedTimeline.filter(item =>
+    item.kind !== "handoff" && item.kind !== "reconciliation"), [displayedTimeline]);
   const latestUserMessageId = useMemo(() => {
     for (let index = displayedTimeline.length - 1; index >= 0; index -= 1) {
       if (displayedTimeline[index].kind === "user_message") return displayedTimeline[index].itemId;
@@ -1160,7 +1161,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
     setPendingSubmission({ scope, taskId: selectedTask.taskId, providerId: selectedTask.preferredExecutor.providerId,
       message: { itemId: optimisticId, taskId: selectedTask.taskId, turnId: null,
         kind: "user_message", text: prompt, providerId: null, sequence: 0, occurredAt: new Date().toISOString(),
-        attachments: attachments.items.map(item => ({ name: item.name, path: item.path ?? "", mimeType: "application/octet-stream" })) } });
+        attachments: attachments.items.map(pendingAttachment) } });
     if (fixedPrompt === undefined) setDraft("");
     const clearedRevision = draftRevision.current;
     setError(null);
@@ -1447,7 +1448,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
             setReviewFileRequest(previous => ({ taskId: selectedTask.taskId, path, id: (previous?.id ?? 0) + 1 }));
             setSubagentItemId(null); setReviewOpen(true);
             if (reviewWindow.detached) void reviewWindow.dock();
-          }} renderAgent={renderResponseAgent} pendingAgent={pendingAgent} items={displayedTimeline.filter(item => item.kind !== "handoff" && item.kind !== "reconciliation")} client={client} activeTurnId={selectedTask.activePrimaryRun?.state === "disconnected" ? undefined : selectedTask.activePrimaryRun?.turnId} onSubagent={openSubagent} renderEntry={item => <TimelineEntry item={item} active={!!selectedTask.activePrimaryRun && selectedTask.activePrimaryRun.state !== "disconnected" && item.turnId === selectedTask.activePrimaryRun.turnId} key={item.itemId} />} />}
+          }} renderAgent={renderResponseAgent} pendingAgent={pendingAgent} items={visibleTimeline} client={client} activeTurnId={selectedTask.activePrimaryRun?.state === "disconnected" ? undefined : selectedTask.activePrimaryRun?.turnId} onSubagent={openSubagent} renderEntry={item => <TimelineEntry item={item} active={!!selectedTask.activePrimaryRun && selectedTask.activePrimaryRun.state !== "disconnected" && item.turnId === selectedTask.activePrimaryRun.turnId} key={item.itemId} />} />}
           </ConversationPages></AgentQuotaContext.Provider></PendingExecutorContext.Provider></RemoteConversationContext.Provider>
         {!showConversation && selectedTaskId && conversationLoader.pending ? <ConversationLoading visible={conversationLoader.visible} />
         : !showConversation && timelineError ? <div className="conversation-loading"><p role="alert">{timelineError} <button type="button" onClick={() => { setTimelineLoading(true); void loadConversation(selectedTask.taskId); }}>{t("welcome.retry", undefined, resolvedLang)}</button></p></div>
@@ -1818,6 +1819,7 @@ export function ComposerFooter({
   const currentReading = executorOptions.find(option => option.executor.providerId === selectedTask.preferredExecutor.providerId && option.executor.installationId === selectedTask.preferredExecutor.installationId);
   const preferences = useAgentPreferences();
   const agentDisabled = preferences.disabled.includes(selectedTask.preferredExecutor.providerId) || (preferences.disabled.length > 0 && !executorOptions.length);
+  const showRunningSend = runningSendEnabled && !!draft.trim() && !steerHasAttachments && !sending && !cancelling;
   const runningSendLabel = t(selectedTask.activePrimaryRun?.supportsSteering ? "composer.steer" : "composer.send", undefined, lang);
   const footerRef = useComposerLabels();
   return (
@@ -1840,12 +1842,7 @@ export function ComposerFooter({
           turnQuotaExhausted={turnQuotaExhausted}
         />}
       />
-      {runningSendEnabled && <button type="submit" className="send composer-submit"
-        aria-label={runningSendLabel} data-tooltip={runningSendLabel}
-        disabled={sending || cancelling || !draft.trim() || steerHasAttachments}>
-        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4m-5 5 5-5 5 5" /></svg>
-      </button>}
-      {selectedTask.activePrimaryRun ? (
+      {selectedTask.activePrimaryRun && !showRunningSend ? (
         <button
           className="stop composer-submit"
           type="button"
@@ -1858,9 +1855,10 @@ export function ComposerFooter({
       ) : (
         <button
           className="send composer-submit"
-          aria-label={quotaBlocked ? t("composer.quotaExhausted", undefined, lang) : t("composer.send", undefined, lang)}
-          data-tooltip={agentDisabled ? t("composer.enableInManagement", undefined, lang) : quotaBlocked ? t("composer.quotaExhausted", undefined, lang) : t("composer.tooltipShortcuts", undefined, lang)}
-          disabled={!draft.trim() || sending || submissionPending || quotaBlocked || modelSelectionPending || agentDisabled}
+          type="submit"
+          aria-label={showRunningSend ? runningSendLabel : quotaBlocked ? t("composer.quotaExhausted", undefined, lang) : t("composer.send", undefined, lang)}
+          data-tooltip={showRunningSend ? runningSendLabel : agentDisabled ? t("composer.enableInManagement", undefined, lang) : quotaBlocked ? t("composer.quotaExhausted", undefined, lang) : t("composer.tooltipShortcuts", undefined, lang)}
+          disabled={!showRunningSend && (!draft.trim() || sending || submissionPending || quotaBlocked || modelSelectionPending || agentDisabled)}
         >
           {sending ? "…" : <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4m-5 5 5-5 5 5" /></svg>}
         </button>

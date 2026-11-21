@@ -779,6 +779,14 @@ async fn core_timeline(
 }
 
 #[tauri::command]
+async fn core_live_thought_preview(
+    state: tauri::State<'_, DesktopState>,
+    item_id: String,
+) -> Result<Option<String>, String> {
+    state.core.live_thought_preview(&item_id).await
+}
+
+#[tauri::command]
 async fn core_timeline_snapshot(
     state: tauri::State<'_, DesktopState>,
     task_id: String,
@@ -1441,6 +1449,7 @@ pub fn run() {
             core_set_running_permission_mode,
             core_timeline,
             core_timeline_snapshot,
+            core_live_thought_preview,
             core_query_history,
             core_search_conversations,
             core_pending_approvals,

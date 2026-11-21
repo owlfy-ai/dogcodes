@@ -964,6 +964,7 @@ svg.preferences-icon { width: calc(16px * var(--ui-scale)); height: calc(16px * 
 
 .sent-attachments { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
 .sent-attachment { display: flex; align-items: center; gap: 8px; max-width: 100%; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-raised); font-size: .875rem; }
+.sent-attachment:empty { visibility: hidden; }
 .sent-attachment > span { padding: 8px; overflow-wrap: anywhere; }
 .sent-attachment img { display: block; max-width: min(240px, 100%); max-height: 180px; object-fit: contain; }
 .user-message .sent-attachments { justify-content: flex-end; max-width: min(72%, 620px); }

@@ -163,7 +163,7 @@ function useThoughtLabel(a: Activity, running: boolean) {
     ? ` · ${t(running ? "activity.aboutSeconds" : "activity.lastedSeconds", { seconds })}`
     : ` · ${t("activity.timeNotRecorded")}`);
 }
-function Thought({ a, active }: { a: Activity; active: boolean }) {
+function Thought({ a, active, itemId, client }: { a: Activity; active: boolean; itemId: string; client?: CoreClient }) {
   const { t } = useI18n();
   const running = isRunning(a, active);
   const text = useThoughtLabel(a, running);
@@ -188,7 +188,7 @@ function Thought({ a, active }: { a: Activity; active: boolean }) {
   return (
     <div className={`thought-line${running ? " activity-running" : ""}`}>
       {label}
-      {running && a.liveText && <ThinkingTicker text={a.liveText} />}
+      {running && <ThinkingTicker key={itemId} itemId={itemId} client={client} text={a.liveText} />}
     </div>
   );
 }
@@ -280,7 +280,7 @@ export function ActivityRow({
       !a.artifact &&
       a.input == null && a.output == null && a.content == null &&
       !a.text && !a.changes?.length) return null;
-  if (a.type === "thought") return <Thought a={a} active={active} />;
+  if (a.type === "thought") return <Thought a={a} active={active} itemId={item.itemId} client={item.turnId ? client : undefined} />;
   if (a.type === "message")
     return (
       <article className="message assistant-message">
@@ -449,7 +449,7 @@ function ToolRun({ calls, render, keepVisible, active, client }: {
       </span>
       {headline.title && <span className="activity-title activity-text" data-tooltip={headline.title}>{headline.title}</span>}
       <svg className="tool-run-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
-      {!open && liveThought && <ThinkingTicker text={liveThought} embedded />}
+      {!open && liveThought !== undefined && <ThinkingTicker key={latest.itemId} itemId={latest.itemId} client={client} text={liveThought} embedded />}
       {toolCalls > 0 && <small className="tool-run-count" data-tooltip={breakdown}>
         {failed > 0 && <span className="activity-status-failed">{t("activity.toolRun.failed", { count: failed })} · </span>}
         {t("activity.toolRun.calls", { count: toolCalls })}
@@ -470,7 +470,7 @@ function useStepHeadline(latest: TimelineItem, active: boolean) {
   const running = stepRunning(latest, active);
   // Hooks run on every render; only a thought's label is used.
   const thoughtLabel = useThoughtLabel(thought ?? { type: "thought" }, !!thought && running);
-  if (thought) return { headline: { icon: "think", label: thoughtLabel, title: "" }, running, liveThought: running ? thought.liveText : undefined };
+  if (thought) return { headline: { icon: "think", label: thoughtLabel, title: "" }, running, liveThought: running ? thought.liveText ?? "" : undefined };
   if (latest.kind === "computer_use") {
     let tool = "";
     try { tool = String(JSON.parse(latest.text)?.tool ?? ""); } catch { /* Shown without a tool name. */ }

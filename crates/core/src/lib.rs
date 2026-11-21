@@ -1986,6 +1986,10 @@ impl Core {
         Ok(result)
     }
 
+    pub async fn live_thought_preview(&self, item_id: &str) -> Option<String> {
+        self.live_thoughts.read().await.get(item_id).cloned()
+    }
+
     pub async fn timeline(&self, task_id: &TaskId) -> Result<Vec<TimelineItem>, CoreError> {
         self.require_task(task_id).await?;
         let mut items = self.repository.task_timeline(task_id).await?;

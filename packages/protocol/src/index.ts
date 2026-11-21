@@ -662,6 +662,7 @@ export interface CoreClient {
   exportArtifact(request: ArtifactExportRequest): Promise<"saved" | "cancelled">;
   bootstrap(): Promise<BootstrapSnapshot>;
   timeline(taskId: TaskId): Promise<TimelineItem[]>;
+  liveThoughtPreview?(itemId: string): Promise<string | null>;
   timelineSnapshot?(taskId: TaskId): Promise<TimelineSnapshot>;
   workspaceSnapshots(taskId: TaskId, limit?: number): Promise<WorkspaceSnapshotSummary[]>;
   buildContextPreview(request: ContextPreviewRequest): Promise<BuiltContextPackage>;

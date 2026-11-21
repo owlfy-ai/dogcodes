@@ -23,22 +23,46 @@ function delta(event: EventEnvelope) {
  * identity. Activity JSON is decoded/encoded once per changed row. */
 export function applyTimelineBatch(items: TimelineItem[], events: readonly EventEnvelope[]): { items: TimelineItem[]; dirty: boolean } {
   if (!events.length) return { items, dirty: false };
-  const positions = new Map(items.map((item, index) => [item.itemId, index]));
+  let next = items, dirty = false;
+  // Most batches only update the tail. Index older rows only when one is addressed.
+  let positions: Map<string, number> | undefined;
+  const position = (id: string) => {
+    if (next.at(-1)?.itemId === id) return next.length - 1;
+    positions ??= new Map(next.map((item, index) => [item.itemId, index]));
+    return positions.get(id);
+  };
   const changed = new Set<string>();
   const activities = new Map<string, Record<string, unknown>>();
   const messages = new Map<string, string[]>();
-  let next = items, dirty = false;
   for (const event of events) {
     const entry = delta(event);
     if (!entry) { dirty = true; continue; }
     const { payload, message, activity, computer, taskId, turnId, itemId } = entry;
-    const index = positions.get(itemId), previous = index === undefined ? undefined : next[index];
+    const index = position(itemId), previous = index === undefined ? undefined : next[index];
     if (!message && !activity && previous?.kind === "activity") continue;
     let data = activities.get(itemId);
     if (activity && !data) {
       try { data = previous?.kind === "activity" ? JSON.parse(previous.text) : {}; } catch { dirty = true; continue; }
       if (!data || typeof data !== "object" || Array.isArray(data)) { dirty = true; continue; }
       activities.set(itemId, data);
+    }
+    if (activity) {
+      const fields = data!;
+      let modified = false;
+      for (const [key, value] of Object.entries(payload.data as Record<string, unknown>)) {
+        if (value == null) continue;
+        // The core already used the native ID for deduplication. It has no visible content.
+        if (key === "sourceEventId" && (payload.data as Record<string, unknown>).type === "thought") continue;
+        if (key === "type" && fields.type === "subagent" && value === "tool") continue;
+        if (key === "parentId" && value === "" && fields.parentId) continue;
+        if (key === "startedAt" && fields.startedAt != null) continue;
+        if (key === "status" && terminal.has(String(fields.status)) && ["pending", "running", "in_progress"].includes(String(value))) continue;
+        if (key !== "textDelta" && fields[key] === value) continue;
+        modified = true;
+        if (key === "textDelta") fields.text = String(fields.text ?? "") + String(value);
+        else fields[key] = value;
+      }
+      if (!modified && previous?.kind === "activity") continue;
     }
     const item = changed.has(itemId) ? previous! : previous ? { ...previous } : {
       itemId, taskId, turnId, kind: "", text: "", attachments: [],
@@ -47,7 +71,7 @@ export function applyTimelineBatch(items: TimelineItem[], events: readonly Event
     };
     if (!changed.has(itemId)) {
       if (next === items) next = items.slice();
-      if (index === undefined) { positions.set(itemId, next.length); next.push(item); }
+      if (index === undefined) { positions?.set(itemId, next.length); next.push(item); }
       else next[index] = item;
       changed.add(itemId);
     }
@@ -61,16 +85,6 @@ export function applyTimelineBatch(items: TimelineItem[], events: readonly Event
       if (!chunks) { chunks = [item.text]; messages.set(itemId, chunks); }
       chunks.push(payload.text as string);
     } else if (activity) {
-      const fields = data!;
-      for (const [key, value] of Object.entries(payload.data as Record<string, unknown>)) {
-        if (value == null) continue;
-        if (key === "type" && fields.type === "subagent" && value === "tool") continue;
-        if (key === "parentId" && value === "" && fields.parentId) continue;
-        if (key === "startedAt" && fields.startedAt != null) continue;
-        if (key === "status" && terminal.has(String(fields.status)) && ["pending", "running", "in_progress"].includes(String(value))) continue;
-        if (key === "textDelta") fields.text = String(fields.text ?? "") + String(value);
-        else fields[key] = value;
-      }
       item.kind = "activity";
     } else {
       const keepSummary = item.kind === "tool.started" && event.eventType === "tool.completed";
@@ -80,8 +94,10 @@ export function applyTimelineBatch(items: TimelineItem[], events: readonly Event
       item.providerId = event.source.kind === "driver" ? event.source.providerId ?? null : null;
     }
   }
-  for (const [id, chunks] of messages) next[positions.get(id)!].text = chunks.join("");
-  for (const [id, data] of activities) next[positions.get(id)!].text = JSON.stringify(data);
+  for (const [id, chunks] of messages) next[position(id)!].text = chunks.join("");
+  for (const [id, data] of activities) {
+    if (changed.has(id)) next[position(id)!].text = JSON.stringify(data);
+  }
   return { items: next, dirty };
 }
 

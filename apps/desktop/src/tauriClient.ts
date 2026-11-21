@@ -138,6 +138,18 @@ export class TauriCoreClient implements CoreClient {
     return invoke("core_timeline", { taskId });
   }
 
+  liveThoughtPreview: CoreClient["liveThoughtPreview"] = async itemId => {
+    try {
+      return await invoke<string | null>("core_live_thought_preview", { itemId });
+    } catch (error) {
+      // A daemon already serving a turn may still only support timeline snapshots.
+      if (String(error).includes("unknown service method") || /core_live_thought_preview.*not found/i.test(String(error))) {
+        this.liveThoughtPreview = undefined;
+      }
+      throw error;
+    }
+  };
+
   timelineSnapshot(taskId: TaskId): Promise<import("@dogcodes/protocol").TimelineSnapshot> {
     return invoke("core_timeline_snapshot", { taskId });
   }
