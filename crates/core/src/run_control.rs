@@ -34,6 +34,7 @@ pub(super) struct Control {
     cleanup: std::sync::Mutex<Option<std::sync::Arc<crate::run_cleanup::Cleanup>>>,
     native_resource: std::sync::Mutex<Option<crate::run_cleanup::Resource>>,
     workspace: std::sync::Mutex<Option<tokio::sync::OwnedRwLockReadGuard<()>>>,
+    undo_lease: std::sync::Mutex<Option<crate::workspace_occupancy::UndoLease>>,
 }
 pub(super) enum StopTarget {
     Deferred,
@@ -65,6 +66,7 @@ impl Control {
             cleanup: std::sync::Mutex::new(None),
             native_resource: std::sync::Mutex::new(None),
             workspace: std::sync::Mutex::new(None),
+            undo_lease: std::sync::Mutex::new(None),
             state: watch::channel(State {
                 stop: false,
                 phase: Phase::Preparing,
@@ -77,6 +79,9 @@ impl Control {
     }
     pub fn hold_workspace(&self, permit: tokio::sync::OwnedRwLockReadGuard<()>) {
         *self.workspace.lock().expect("run workspace") = Some(permit);
+    }
+    pub fn hold_undo_lease(&self, lease: crate::workspace_occupancy::UndoLease) {
+        *self.undo_lease.lock().expect("run undo lease") = Some(lease);
     }
     pub fn task(&self) -> Option<agent_domain::TaskId> {
         self.task.lock().expect("run task").clone()
@@ -204,6 +209,7 @@ impl Control {
         self.state.borrow().phase == Phase::Running
     }
     pub fn finish(&self) {
+        self.undo_lease.lock().expect("run undo lease").take();
         self.workspace.lock().expect("run workspace").take();
         self.state.send_modify(|s| s.phase = Phase::Finished);
     }

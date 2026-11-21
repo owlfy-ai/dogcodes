@@ -36,7 +36,7 @@ impl ReviewStore {
                 return Err("backendText.recordedChangesTimeout".into());
             }
             validate_relative(path)?;
-            let before = snapshot_version(self, value)?;
+            let before = snapshot_version(Some(self), value)?;
             let after = transaction::current_version(self, root, path)?;
             if before == after {
                 continue;
@@ -81,7 +81,94 @@ impl ReviewStore {
             }))
     }
 
+    fn turn_versions<'a>(
+        store: Option<&ReviewStore>,
+        data: &Value,
+        file: &'a Value,
+        allowed: &[String],
+    ) -> Result<(PathBuf, &'a str, Option<FileVersion>, Option<FileVersion>), String> {
+        let roots = data["workspacePaths"].as_array();
+        let (root, relative) = if data["schemaVersion"] == 2 {
+            (
+                file["workspacePath"].as_str(),
+                file["workspaceRelativePath"]
+                    .as_str()
+                    .or_else(|| file["relativePath"].as_str()),
+            )
+        } else {
+            (
+                roots.and_then(|r| if r.len() == 1 { r[0].as_str() } else { None }),
+                file["workspaceRelativePath"]
+                    .as_str()
+                    .or_else(|| file["path"].as_str()),
+            )
+        };
+        let root = root.ok_or("backendText.undoOriginalRootMissing")?;
+        let relative = relative.ok_or("backendText.snapshotPathMissing")?;
+        validate_relative(relative)?;
+        if !allowed.iter().any(|p| p == root) {
+            return Err("backendText.undoRootRemoved".into());
+        }
+        let canonical = Path::new(root)
+            .canonicalize()
+            .map_err(|_| "backendText.undoOriginalRootUnavailable")?;
+
+        let before = snapshot_version(
+            store,
+            file.get("before")
+                .ok_or("backendText.snapshotBeforeMissing")?,
+        )?;
+        let after = snapshot_version(
+            store,
+            file.get("after")
+                .ok_or("backendText.snapshotAfterMissing")?,
+        )?;
+        Ok((canonical, relative, before, after))
+    }
+
+    /// Compare the same immutable versions and guarded paths used by the transaction.
+    pub fn turn_file_state(
+        data: &Value,
+        file: &Value,
+        roots: &[String],
+    ) -> Result<&'static str, String> {
+        let (root, relative, before, after) = Self::turn_versions(None, data, file, roots)?;
+        let live = transaction::inspect_version(
+            None,
+            root.to_str().ok_or("backendText.workspaceEncoding")?,
+            relative,
+        )?;
+        Ok(if before == after {
+            "unchanged"
+        } else if live == after {
+            "ready"
+        } else if live == before {
+            "restored"
+        } else {
+            "changed"
+        })
+    }
+
     pub fn undo_turn(
+        &self,
+        task: &str,
+        artifact: &str,
+        data: &Value,
+        allowed: &[String],
+    ) -> Result<(), String> {
+        if data["sharedWorkspace"] == true {
+            return Err("backendText.undoSharedWorkspace".into());
+        }
+        if data["attribution"] != "workspace_interval" || data["recoveredAfterInterruption"] == true
+        {
+            return Err("backendText.undoIncompleteTurn".into());
+        }
+        self.undo_verified_files(task, artifact, data, allowed)
+    }
+
+    /// Apply a file selection whose attribution the caller has already verified.
+    /// Recheck versions and journal the complete selection before the first write.
+    pub fn undo_verified_files(
         &self,
         task: &str,
         artifact: &str,
@@ -96,61 +183,21 @@ impl ReviewStore {
                 Err("backendText.undoPreviousIncomplete".into())
             };
         }
-        if data["sharedWorkspace"] == true {
-            return Err("backendText.undoSharedWorkspace".into());
-        }
-        if data["attribution"] != "workspace_interval" || data["recoveredAfterInterruption"] == true
-        {
-            return Err("backendText.undoIncompleteTurn".into());
-        }
         let files = data["files"]
             .as_array()
             .ok_or("backendText.snapshotMissing")?;
         if files.is_empty() {
             return Err("backendText.undoNoChanges".into());
         }
-        let roots = data["workspacePaths"].as_array();
         let mut seen = BTreeSet::new();
         let mut changes = Vec::new();
         // Validate every snapshot and current version before writing any workspace file.
         for file in files {
-            let (root, relative) = if data["schemaVersion"] == 2 {
-                (
-                    file["workspacePath"].as_str(),
-                    file["workspaceRelativePath"]
-                        .as_str()
-                        .or_else(|| file["relativePath"].as_str()),
-                )
-            } else {
-                (
-                    roots.and_then(|r| if r.len() == 1 { r[0].as_str() } else { None }),
-                    file["workspaceRelativePath"]
-                        .as_str()
-                        .or_else(|| file["path"].as_str()),
-                )
-            };
-            let root = root.ok_or("backendText.undoOriginalRootMissing")?;
-            let relative = relative.ok_or("backendText.snapshotPathMissing")?;
-            validate_relative(relative)?;
-            if !allowed.iter().any(|p| p == root) {
-                return Err("backendText.undoRootRemoved".into());
-            }
-            let canonical = Path::new(root)
-                .canonicalize()
-                .map_err(|_| "backendText.undoOriginalRootUnavailable")?;
+            let (canonical, relative, before, after) =
+                Self::turn_versions(Some(self), data, file, allowed)?;
             if !seen.insert(canonical.join(relative)) {
                 return Err("backendText.snapshotDuplicatePath".into());
             }
-            let before = snapshot_version(
-                self,
-                file.get("before")
-                    .ok_or("backendText.snapshotBeforeMissing")?,
-            )?;
-            let after = snapshot_version(
-                self,
-                file.get("after")
-                    .ok_or("backendText.snapshotAfterMissing")?,
-            )?;
             if before == after {
                 continue;
             }
@@ -226,7 +273,10 @@ impl ReviewStore {
     }
 }
 
-fn snapshot_version(store: &ReviewStore, value: &Value) -> Result<Option<FileVersion>, String> {
+fn snapshot_version(
+    store: Option<&ReviewStore>,
+    value: &Value,
+) -> Result<Option<FileVersion>, String> {
     if value.is_null() {
         return Ok(None);
     }
@@ -239,7 +289,10 @@ fn snapshot_version(store: &ReviewStore, value: &Value) -> Result<Option<FileVer
             .ok_or("backendText.snapshotContentMissing")?,
     )
     .map_err(|_| "backendText.snapshotEncoding")?;
-    let hash = store.put_blob(&bytes)?;
+    let hash = match store {
+        Some(store) => store.put_blob(&bytes)?,
+        None => digest(&bytes),
+    };
     if value["sha256"].as_str() != Some(&hash) {
         return Err("backendText.snapshotChecksum".into());
     }

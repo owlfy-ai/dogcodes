@@ -14,17 +14,3 @@ export function turnHasGitRoot(data: CapturedTurn): boolean {
   // Captures without a recorded backend predate it; keep offering Commit.
   return data.backend === undefined || data.backend === "git";
 }
-
-const omitted = (version: unknown) =>
-  typeof version === "object" && version !== null && (version as { contentOmitted?: unknown }).contentOmitted === true;
-
-/** Whether the whole turn can be restored. Mirrors the checks `undo_turn`
- * (crates/workspace/src/review/recovery/turn.rs) makes before touching files,
- * so the button is not offered for a capture it would refuse. */
-export function turnUndoAvailable(data: CapturedTurn): boolean {
-  return data.attribution === "workspace_interval"
-    && data.recoveredAfterInterruption !== true
-    && !turnSharedWithOthers(data)
-    && data.files.length > 0
-    && data.files.every(file => !omitted(file.before) && !omitted(file.after));
-}

@@ -238,6 +238,14 @@ pub(super) fn parent(root: &str, path: &str, create: bool) -> ReviewResult<Optio
 }
 
 fn version(store: &ReviewStore, directory: &Dir, name: &str) -> ReviewResult<Option<FileVersion>> {
+    inspect_entry(Some(store), directory, name)
+}
+
+fn inspect_entry(
+    store: Option<&ReviewStore>,
+    directory: &Dir,
+    name: &str,
+) -> ReviewResult<Option<FileVersion>> {
     let metadata = match directory.symlink_metadata(name) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -279,7 +287,10 @@ fn version(store: &ReviewStore, directory: &Dir, name: &str) -> ReviewResult<Opt
     #[cfg(not(unix))]
     let executable = false;
     Ok(Some(FileVersion {
-        hash: store.put_blob(&bytes)?,
+        hash: match store {
+            Some(store) => store.put_blob(&bytes)?,
+            None => crate::review::digest(&bytes),
+        },
         bytes: bytes.len() as u64,
         kind: if symlink {
             FileKind::Symlink
@@ -296,8 +307,16 @@ pub(super) fn current_version(
     root: &str,
     path: &str,
 ) -> ReviewResult<Option<FileVersion>> {
+    inspect_version(Some(store), root, path)
+}
+
+pub(super) fn inspect_version(
+    store: Option<&ReviewStore>,
+    root: &str,
+    path: &str,
+) -> ReviewResult<Option<FileVersion>> {
     match parent(root, path, false)? {
-        Some((directory, name)) => version(store, &directory, &name),
+        Some((directory, name)) => inspect_entry(store, &directory, &name),
         None => Ok(None),
     }
 }

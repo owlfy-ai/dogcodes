@@ -34,6 +34,7 @@ function decode(file: { hex?: string } | null | undefined): string | null {
 }
 export interface CapturedVersion { hex?: string; sha256?: string; contentOmitted?: boolean; omissionReason?: string; contentArtifact?: import("@dogcodes/protocol").ArtifactMetadata }
 export interface CapturedFile {
+  workspacePath?: string; workspaceRelativePath?: string; relativePath?: string;
   path: string; status?: string; before?: CapturedVersion | null; after?: CapturedVersion | null;
   binary?: boolean; diffUnavailableReason?: string; additions?: number; deletions?: number;
 }
@@ -64,20 +65,26 @@ export function capturedFileDiff(file: CapturedFile): DiffFile {
 }
 export function frozenDiff(data: {
   patch?: string;
-  roots?: { workspacePath: string; changes: { patch?: string } }[];
+  roots?: { workspacePath?: string; changes?: { patch?: string } }[];
   files: CapturedFile[];
-}): DiffParseResult {
+}, selected?: ReadonlySet<string>): DiffParseResult {
   const diff: StructuredDiff = { files: [], additions: 0, deletions: 0, truncated: false, truncationReason: null };
   // Git patches already include rename/mode metadata. Filesystem snapshots are
   // independently parsed, so the global parser budget cannot hide later files.
-  const patches = data.roots?.map(root => ({ path: root.workspacePath, patch: root.changes.patch }))
+  const patches = data.roots?.map(root => ({ path: root.workspacePath ?? "", patch: root.changes?.patch }))
     ?? [{ path: "", patch: data.patch }];
   for (const root of patches) {
     if (!root.patch?.startsWith("diff --git ")) continue;
     const parsed = parseGitDiff(new TextEncoder().encode(root.patch));
     if (parsed.kind !== "structured") continue;
     const full = (path: string) => root.path && path ? `${root.path.replace(/[\\/]+$/, "")}/${path}` : path;
-    diff.files.push(...parsed.diff.files.map(file => ({ ...file, oldPath: full(file.oldPath), newPath: full(file.newPath) })));
+    for (const file of parsed.diff.files) {
+      const oldPath = full(file.oldPath), newPath = full(file.newPath);
+      // For a rename with only one selected side, use that side's captured
+      // version below instead of exposing the unrelated path.
+      if (selected && ((oldPath && !selected.has(oldPath)) || (newPath && !selected.has(newPath)))) continue;
+      diff.files.push({ ...file, oldPath, newPath });
+    }
     if (parsed.diff.truncated) { diff.truncated = true; diff.truncationReason = parsed.diff.truncationReason; }
   }
   const captured = new Set(diff.files.flatMap(file => [file.oldPath, file.newPath]));

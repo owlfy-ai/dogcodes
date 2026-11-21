@@ -66,3 +66,8 @@
 .turn-commit-dialog .turn-commit-root select { font: inherit; color: inherit; background: transparent; border: 1px solid #8884; border-radius: 6px; padding: 3px 6px; }
 .turn-commit-dialog footer .turn-commit-confirm, .turn-commit-dialog footer .turn-commit-confirm:not(:disabled):hover { background: var(--accent, #78a91f); color: white; border-color: transparent; }
 .turn-commit-dialog footer .turn-commit-confirm:not(:disabled):hover { filter: brightness(1.06); }
+
+.turn-summary-heading:has(.turn-summary-notice),
+.turn-summary-file:has(.turn-undo-reason) { flex-wrap: wrap; }
+.turn-summary-heading > .turn-summary-notice { padding: 0; }
+.turn-summary-file .turn-undo-reason { color: var(--summary-muted); overflow-wrap: anywhere; }

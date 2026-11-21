@@ -88,6 +88,14 @@ impl ReviewFacts for TargetFacts {
     async fn try_workspace_mutation(&self) -> Result<MutationGuard, String> {
         ReviewFacts::try_workspace_mutation(&self.core).await
     }
+    async fn try_turn_undo(
+        &self,
+        task: &TaskId,
+        roots: &[String],
+    ) -> Result<MutationGuard, String> {
+        self.require_task(task)?;
+        ReviewFacts::try_turn_undo(&self.core, task, roots).await
+    }
     async fn task_artifacts(
         &self,
         task: &TaskId,
@@ -96,6 +104,10 @@ impl ReviewFacts for TargetFacts {
     ) -> Result<ArtifactPage, String> {
         self.require_task(task)?;
         ReviewFacts::task_artifacts(&self.core, task, before, limit).await
+    }
+    async fn turn_edits(&self, task: &TaskId, artifact: &ArtifactId) -> Result<Vec<Value>, String> {
+        self.require_task(task)?;
+        self.core.turn_edits(task, artifact).await
     }
     async fn verified_artifact(
         &self,

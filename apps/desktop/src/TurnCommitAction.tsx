@@ -19,7 +19,7 @@ type Phase = "staging" | "summarizing" | "ready" | "committing" | "empty" | "com
 /** Commits only this turn's files: stages them, has an Agent write the message
  * from exactly that staged diff, then commits (optionally pushes). Closing
  * without committing restores the index entries this dialog staged. */
-export function TurnCommitAction({ taskId, data, providerId }: { taskId: string; data: TurnArtifact["data"]; providerId?: string }) {
+export function TurnCommitAction({ taskId, data, providerId, hidden = false }: { taskId: string; data: TurnArtifact["data"]; providerId?: string; hidden?: boolean }) {
   const [open, setOpen] = useState(false), [phase, setPhase] = useState<Phase>("staging");
   const [targets, setTargets] = useState<TurnCommitTarget[]>([]), [rootId, setRootId] = useState("");
   const [staged, setStaged] = useState<{ snapshotId: string; files: string[]; extra: number } | null>(null);
@@ -100,7 +100,7 @@ export function TurnCommitAction({ taskId, data, providerId }: { taskId: string;
     if (phase !== "committed") await restore();
   }
   async function commit(push: boolean) {
-    if (!staged || !message.trim() || phase !== "ready") return;
+    if (hidden || !staged || !message.trim() || phase !== "ready") return;
     setPhase("committing"); setError("");
     const operationId = crypto.randomUUID(), nextOperationId = crypto.randomUUID();
     let committed = false;
@@ -133,12 +133,12 @@ export function TurnCommitAction({ taskId, data, providerId }: { taskId: string;
   const busy = phase === "staging" || phase === "summarizing" || phase === "committing";
   const status = phase === "staging" ? t("turnCommit.staging") : phase === "summarizing" ? t("turnCommit.summarizing") : phase === "committing" ? t("turnCommit.committing") : "";
   return <>
-    <button ref={trigger} className="turn-summary-undo turn-summary-commit" type="button" disabled={!!done}
+    {!hidden && <button ref={trigger} className="turn-summary-undo turn-summary-commit" type="button" disabled={!!done}
       aria-label={done || t("turnCommit.actionLabel")}
       onClick={event => { event.preventDefault(); event.stopPropagation(); setOpen(true); void start(); }}>
       {!done && <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3" /><path d="M1.5 8H5m6 0h3.5" /></svg>}
       {done || t("gitCommit.commit")}
-    </button>
+    </button>}
     {open && createPortal(<dialog ref={dialog} className="turn-undo-dialog turn-commit-dialog" aria-labelledby="turn-commit-title" aria-busy={busy}
       onClick={event => event.stopPropagation()} onCancel={event => { event.preventDefault(); if (phase !== "committing") void close(); }}>
       <header className="turn-commit-header">
@@ -168,11 +168,11 @@ export function TurnCommitAction({ taskId, data, providerId }: { taskId: string;
         {phase === "committed"
           ? <button type="button" onClick={() => void close()}>{t("turnCommit.done")}</button>
           : <>
-            <button type="button" disabled={busy || !message.trim()} onClick={() => void commit(false)}>
+            <button type="button" disabled={hidden || busy || !message.trim()} onClick={() => void commit(false)}>
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3" /><path d="M1.5 8H5m6 0h3.5" /></svg>
               <span>{t("gitCommit.commit")}</span>
             </button>
-            <button className="turn-commit-confirm" type="button" disabled={busy || !message.trim()} onClick={() => void commit(true)}>
+            <button className="turn-commit-confirm" type="button" disabled={hidden || busy || !message.trim()} onClick={() => void commit(true)}>
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3V1.5h10V3M8 14V5M4.5 8.5 8 5l3.5 3.5" /></svg>
               <span>{t("gitCommit.commitPush")}</span>
             </button>

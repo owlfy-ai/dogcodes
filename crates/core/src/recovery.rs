@@ -292,7 +292,7 @@ impl Core {
             // The turn is no longer running: recovery checks the history for
             // other conversations in its folders instead of claiming them now.
             let scope = self
-                .turn_workspace_scope(&task.task_id)
+                .turn_workspace_scope(&task.task_id, None)
                 .await
                 .map(|mut scope| {
                     scope.occupancy = None;

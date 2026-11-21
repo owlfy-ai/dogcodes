@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import type { CoreClient } from "@dogcodes/protocol";
 import { TurnFiles } from "./TurnFiles";
-import { turnHasGitRoot, turnUndoAvailable } from "./turnFileActions";
+import { turnHasGitRoot } from "./turnFileActions";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
 
@@ -23,21 +23,15 @@ describe("which turn file actions apply", () => {
     expect(turnHasGitRoot({ files: [], roots: [{ changes: { backend: "filesystem" } }] })).toBe(false);
   });
 
-  it("offers Undo only for a complete capture of this turn alone", () => {
-    const turn = { attribution: "workspace_interval", files: [file(full("new"))] };
-    expect(turnUndoAvailable(turn)).toBe(true);
-    // The same refusals undo_turn makes, decided before the button is shown.
-    expect(turnUndoAvailable({ ...turn, attribution: "workspace_recovery_interval", recoveredAfterInterruption: true })).toBe(false);
-    expect(turnUndoAvailable({ ...turn, files: [file(omitted)] })).toBe(false);
-    expect(turnUndoAvailable({ ...turn, attribution: "shared_workspace_interval", sharedWorkspace: true })).toBe(false);
-    expect(turnUndoAvailable({ ...turn, files: [] })).toBe(false);
-  });
+
 });
 
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("crypto", webcrypto);
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  HTMLDialogElement.prototype.close = function () { this.open = false; };
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   vi.mocked(invoke).mockReset().mockResolvedValue(false);
 });
@@ -63,19 +57,66 @@ it("shows a recovered screenshot capture in a plain folder without Commit or Und
 });
 
 it("warns that a capture shared with another conversation may include its files", async () => {
+  vi.mocked(invoke).mockImplementation(async cmd => cmd === "core_turn_undo_files" ? { "a.txt": "unverified" } : false);
   await render({
     schemaVersion: 1, backend: "git", attribution: "shared_workspace_interval", sharedWorkspace: true,
     files: [{ path: "a.txt", status: "A", before: null, after: full("new") }], patch: "", workspacePaths: ["/repo"],
   });
   expect(host.querySelector(".turn-summary-undo:not(.turn-summary-commit)")).toBeNull();
   expect(host.querySelector(".turn-summary-commit")).not.toBeNull();
-  expect(host.querySelector(".turn-summary-notice")?.textContent).toMatch(/其他对话|Other conversations/);
+  expect(host.querySelector(".turn-summary-notice")?.textContent).toContain("无法确认修改归属");
 });
 
 it("keeps Undo for a complete capture of this turn", async () => {
+  vi.mocked(invoke).mockImplementation(async cmd => cmd === "core_turn_undo_files" ? { "a.txt": "ready" } : false);
   await render({
     schemaVersion: 1, backend: "git", attribution: "workspace_interval",
     files: [{ path: "a.txt", status: "A", before: null, after: full("new") }], patch: "", workspacePaths: ["/repo"],
   });
   expect(host.querySelector(".turn-summary-undo:not(.turn-summary-commit)")).not.toBeNull();
+});
+
+it("offers undo only for the eligible file and explains the changed file", async () => {
+  vi.mocked(invoke).mockImplementation(async cmd => cmd === "core_turn_undo_files" ? { "a.txt": "ready", "b.txt": "changed" } : false);
+  await render({ attribution: "shared_workspace_interval", files: [file(full("a")), { ...file(full("b")), path: "b.txt" }] });
+  expect(host.querySelector("summary .turn-summary-undo:not(.turn-summary-commit)")).toBeNull();
+  expect(host.querySelector('[aria-label="撤销 a.txt 的修改"]')).not.toBeNull();
+  expect(host.querySelector('[aria-label="撤销 b.txt 的修改"]')).toBeNull();
+  expect(host.textContent).toContain("已被外部修改，无法撤销");
+});
+
+it("offers both individual actions and a whole-turn action when every shared file is verified", async () => {
+  vi.mocked(invoke).mockImplementation(async cmd => cmd === "core_turn_undo_files" ? { "a.txt": "ready", "b.txt": "ready" } : false);
+  await render({ attribution: "shared_workspace_interval", sharedWorkspace: true,
+    files: [file(full("a")), { ...file(full("b")), path: "b.txt" }] });
+  expect(host.querySelector('[aria-label="撤销本轮全部文件修改"]')).not.toBeNull();
+  expect(host.querySelectorAll(".turn-summary-file .turn-summary-undo")).toHaveLength(2);
+});
+
+const gitTurn = {
+  backend: "git", attribution: "workspace_interval",
+  files: [file(full("a")), { ...file(full("b")), path: "b.txt" }],
+};
+
+it("replaces Commit with the restored status after undoing the whole turn", async () => {
+  let state = "ready";
+  vi.mocked(invoke).mockImplementation(async cmd => {
+    if (cmd === "core_turn_undo") state = "restored";
+    return cmd === "core_turn_undo_files" ? { "a.txt": state, "b.txt": state } : null;
+  });
+  await render(gitTurn);
+  expect(host.querySelector(".turn-summary-commit")).not.toBeNull();
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="撤销本轮全部文件修改"]')!.click());
+  await act(async () => [...document.querySelectorAll("dialog button")].find(button => button.textContent === "确认撤销")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  expect(host.querySelector(".turn-summary-commit")).toBeNull();
+  expect(host.querySelector("summary .turn-summary-notice")?.textContent).toBe("已恢复到轮前状态");
+});
+
+it.each([
+  { state: "unchanged", showsCommit: false },
+  { state: "ready", showsCommit: true },
+])("shows Commit on a saved turn with a restored file and a $state file only when changes remain", async ({ state, showsCommit }) => {
+  vi.mocked(invoke).mockImplementation(async cmd => cmd === "core_turn_undo_files" ? { "a.txt": "restored", "b.txt": state } : null);
+  await render(gitTurn);
+  expect(!!host.querySelector(".turn-summary-commit")).toBe(showsCommit);
 });

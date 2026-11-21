@@ -428,6 +428,29 @@ pub trait CoreRepository: Send + Sync {
         limit: usize,
     ) -> Result<Vec<EventEnvelope>, RepositoryError>;
     async fn task_timeline(&self, task_id: &TaskId) -> Result<Vec<TimelineItem>, RepositoryError>;
+    /// The projected activities for the verified turn manifest. Implementations
+    /// without a database index can resolve it from their timeline.
+    async fn artifact_turn_activities(
+        &self,
+        task: &TaskId,
+        artifact: &ArtifactId,
+    ) -> Result<Vec<String>, RepositoryError> {
+        let items = self.task_timeline(task).await?;
+        let turn = items
+            .iter()
+            .find(|i| {
+                i.kind == "turn_files"
+                    && serde_json::from_str::<Value>(&i.text)
+                        .is_ok_and(|v| v["artifactId"].as_str() == Some(artifact.as_str()))
+            })
+            .and_then(|i| i.turn_id.clone());
+        Ok(items
+            .into_iter()
+            .filter(|i| turn.is_some() && i.turn_id == turn && i.kind == "activity")
+            .map(|i| i.text)
+            .collect())
+    }
+
     /// The newest matching message of each conversation, newest conversation first.
     async fn search_conversations(
         &self,
@@ -647,6 +670,7 @@ pub struct Core {
     history_endpoints: tokio::sync::Mutex<BTreeMap<String, Arc<history_bridge::HistoryEndpoint>>>,
     computer_use: computer_use::Host,
     workspace_access: Arc<RwLock<()>>,
+    workspace_undo: Arc<workspace_occupancy::UndoGate>,
     workspace_occupancy: Arc<workspace_occupancy::WorkspaceOccupancy>,
     drivers: RwLock<BTreeMap<ExecutorRef, Arc<dyn AgentDriver>>>,
     quota_providers: RwLock<BTreeMap<ExecutorRef, Arc<dyn QuotaProvider>>>,
@@ -684,6 +708,36 @@ impl Core {
             .map_err(|_| {
                 CoreError::Internal("workspace is in use by an Agent or another operation".into())
             })
+    }
+    pub async fn try_turn_undo(
+        &self,
+        task: &TaskId,
+        roots: &[String],
+    ) -> Result<impl Send + Sync + use<>, String> {
+        let global = self
+            .workspace_access
+            .clone()
+            .try_read_owned()
+            .map_err(|_| "backendText.undoAgentBusy")?;
+        let state = self
+            .repository
+            .task_execution_state(task)
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or("backendText.conversationMissing")?;
+        let workspace = state.workspace;
+        let paths = std::iter::once(workspace.path)
+            .chain(workspace.additional_directories)
+            .collect::<Vec<_>>();
+        if paths != roots {
+            return Err("backendText.undoIncompleteTurn".into());
+        }
+        let scope = workspace_occupancy::Workspace::resolve(workspace.target_id.as_ref(), &paths);
+        let scoped = self
+            .workspace_undo
+            .try_undo(scope)
+            .ok_or("backendText.undoAgentBusy")?;
+        Ok((global, scoped))
     }
     pub async fn available_models(&self, executor: &ExecutorRef) -> Result<Vec<String>, CoreError> {
         let driver = self
@@ -845,6 +899,7 @@ impl Core {
             auxiliary_activity: Arc::default(),
             owned_controls: Arc::default(),
             workspace_access: Arc::default(),
+            workspace_undo: Arc::default(),
             workspace_occupancy: Arc::default(),
             repository,
             redactor,
@@ -1984,6 +2039,17 @@ impl Core {
             redact_strings(value, self.redactor.as_ref());
         }
         Ok(result)
+    }
+
+    pub async fn artifact_turn_activities(
+        &self,
+        task: &TaskId,
+        artifact: &ArtifactId,
+    ) -> Result<Vec<String>, CoreError> {
+        Ok(self
+            .repository
+            .artifact_turn_activities(task, artifact)
+            .await?)
     }
 
     pub async fn live_thought_preview(&self, item_id: &str) -> Option<String> {
@@ -3178,7 +3244,7 @@ impl Core {
         control.hold_workspace(self.workspace_access.clone().read_owned().await);
         drop(lock_timing);
         let scope_timing = timing.stage("workspace_scope");
-        let workspace_scope = self.turn_workspace_scope(&task_id).await;
+        let workspace_scope = self.turn_workspace_scope(&task_id, Some(&control)).await;
         drop(scope_timing);
         let capture_timing = timing.stage("workspace_capture_begin");
         let mut capture = if let Some(scope) = &workspace_scope {
@@ -3415,14 +3481,38 @@ impl Core {
         Ok(())
     }
 
-    async fn turn_workspace_scope(&self, task_id: &TaskId) -> Option<TurnWorkspaceScope> {
-        let state = self.repository.task_execution_state(task_id).await.ok()??;
+    async fn turn_workspace_scope(
+        &self,
+        task_id: &TaskId,
+        control: Option<&run_control::Control>,
+    ) -> Option<TurnWorkspaceScope> {
+        let state = self
+            .repository
+            .task_execution_state(task_id)
+            .await
+            .ok()
+            .flatten();
+        let Some(state) = state else {
+            if let Some(control) = control {
+                control.hold_undo_lease(
+                    self.workspace_undo
+                        .enter_turn(workspace_occupancy::Workspace::Unknown)
+                        .await,
+                );
+            }
+            return None;
+        };
         Self::restore_draft_directory(&state.task, state.workspace.target_id.is_none()).await;
-        let active = state.task.active_primary_run?;
         let project = state.workspace;
         let project_paths: Vec<String> = std::iter::once(project.path.clone())
             .chain(project.additional_directories.clone())
             .collect();
+        if let Some(control) = control {
+            let scope =
+                workspace_occupancy::Workspace::resolve(project.target_id.as_ref(), &project_paths);
+            control.hold_undo_lease(self.workspace_undo.enter_turn(scope).await);
+        }
+        let active = state.task.active_primary_run?;
         let presence = self.workspace_occupancy.enter(
             task_id.clone(),
             project.target_id.clone(),

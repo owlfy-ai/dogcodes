@@ -1,17 +1,19 @@
 import type { ArtifactMetadata, CoreClient, TaskId } from "@dogcodes/protocol";
 import { acceptArtifactChunk, verifyArtifactBytes } from "./artifactView";
-import { frozenDiff, capturedFileDiff, type CapturedFile } from "./conversationDiff";
+import { buildTurnArtifact } from "./turnEditPaths";
+import { capturedFileDiff, type CapturedFile } from "./conversationDiff";
 import type { StructuredDiff, DiffFile } from "./diffView";
 import { translate as t } from "./i18n";
 
 export interface TurnArtifact {
   data: {
-    files: CapturedFile[];
+    workspacePaths?: string[]; files: CapturedFile[];
     patch?: string; patchTruncated?: boolean; attribution?: string; recoveredAfterInterruption?: boolean; sharedWorkspace?: boolean;
-    backend?: string; roots?: { workspacePath?: string; changes?: { backend?: string } }[];
+    backend?: string; roots?: { workspacePath?: string; changes?: { backend?: string; patch?: string } }[];
   };
   diff: StructuredDiff | null;
   expanded: boolean;
+  subset?: boolean;
 }
 interface Entry { promise: Promise<TurnArtifact>; value?: TurnArtifact; size: number }
 const caches = new WeakMap<CoreClient, Map<string, Entry>>();
@@ -32,19 +34,19 @@ function scheduleRead<T>(client: CoreClient, read: () => Promise<T>): Promise<T>
     if (state.active < 4) void start(); else state.pending.push(() => { void start(); });
   });
 }
-export const turnArtifactKey = (taskId: TaskId, metadata: ArtifactMetadata) => JSON.stringify([taskId, metadata.artifactId, metadata.payloadSha256, metadata.byteLength]);
+export const turnArtifactKey = (taskId: TaskId, metadata: ArtifactMetadata, paths?: ReadonlySet<string>) => JSON.stringify([taskId, metadata.artifactId, metadata.payloadSha256, metadata.byteLength, paths && [...paths].sort()]);
 function cacheFor(client: CoreClient) {
   let cache = caches.get(client);
   if (!cache) { cache = new Map(); caches.set(client, cache); }
   return cache;
 }
-export function cachedTurnArtifact(client: CoreClient, taskId: TaskId, metadata: ArtifactMetadata) {
-  const cache = cacheFor(client), key = turnArtifactKey(taskId, metadata), entry = cache.get(key);
+export function cachedTurnArtifact(client: CoreClient, taskId: TaskId, metadata: ArtifactMetadata, paths?: ReadonlySet<string>) {
+  const cache = cacheFor(client), key = turnArtifactKey(taskId, metadata, paths), entry = cache.get(key);
   if (entry) { cache.delete(key); cache.set(key, entry); }
   return entry?.value;
 }
-export function loadTurnArtifact(client: CoreClient, taskId: TaskId, metadata: ArtifactMetadata): Promise<TurnArtifact> {
-  const cache = cacheFor(client), key = turnArtifactKey(taskId, metadata);
+export function loadTurnArtifact(client: CoreClient, taskId: TaskId, metadata: ArtifactMetadata, paths?: ReadonlySet<string>): Promise<TurnArtifact> {
+  const cache = cacheFor(client), key = turnArtifactKey(taskId, metadata, paths);
   const existing = cache.get(key);
   if (existing) return existing.promise;
   const promise = scheduleRead(client, async (): Promise<TurnArtifact> => {
@@ -56,8 +58,7 @@ export function loadTurnArtifact(client: CoreClient, taskId: TaskId, metadata: A
     await verifyArtifactBytes(bytes, metadata.payloadSha256);
     const data = JSON.parse(new TextDecoder().decode(bytes));
     if (!Array.isArray(data.files) || !data.files.every((file: { path?: unknown }) => file && typeof file.path === "string")) throw new Error(t("turnArtifacts.badFormat"));
-    const result = frozenDiff(data);
-    return { data, diff: result.kind === "structured" ? result.diff : null, expanded: false };
+    return buildTurnArtifact(data, paths);
   });
   const entry: Entry = { size: metadata.byteLength, promise };
   entry.promise = promise.then(value => {

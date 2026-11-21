@@ -5,6 +5,7 @@ import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { MarkdownMessage, localLinkPath } from "./MarkdownMessage";
 import {
   ActivityRow,
+  ConversationContent,
   SubagentPanel,
   belongsTo,
   type Activity,
@@ -251,7 +252,8 @@ it("loads a collapsed turn summary and opens frozen history instead of the live 
   const { TurnFiles } = await import("./TurnFiles");
   const patch = editPatch("src/example.ts", "before\n", "after\n");
   const bytes = new TextEncoder().encode(
-    JSON.stringify({ files: [{ path: "src/example.ts", status: "M" }], patch }),
+    JSON.stringify({ workspacePaths: ["/project"], files: [{ path: "src/example.ts", status: "M" }, { path: "other.ts", status: "A" }],
+      patch: patch + editPatch("other.ts", "", "unrelated\n") }),
   );
   const hash = Array.from(
     new Uint8Array(await webcrypto.subtle.digest("SHA-256", bytes)),
@@ -277,7 +279,10 @@ it("loads a collapsed turn summary and opens frozen history instead of the live 
   const onReviewFile = vi.fn();
   await act(async () =>
     root.render(
-      <TurnFiles taskId="tsk_a" metadata={metadata} client={client} onReviewFile={onReviewFile} />,
+      <ConversationContent items={[
+        item("edit", { type: "tool", name: "Edit", status: "completed", input: { file_path: "/project/src/example.ts" } }),
+        { ...item("summary", { type: "unused" }), kind: "turn_files", text: JSON.stringify(metadata) },
+      ]} client={client} onSubagent={() => {}} renderEntry={() => null} onReviewFile={onReviewFile} />,
     ),
   );
   await act(async () => {
@@ -292,6 +297,8 @@ it("loads a collapsed turn summary and opens frozen history instead of the live 
   HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="查看 example.ts 的历史 Diff"]')!.click());
   expect(onReviewFile).not.toHaveBeenCalled();
+  expect(container.textContent).not.toContain("other.ts");
+  expect(container.textContent).not.toContain("unrelated");
   expect(container.querySelector(".historical-turn-diff .historical-diff-view")).not.toBeNull();
   expect(container.querySelector(".historical-turn-diff .review-removed code")?.textContent).toBe("before");
   expect(container.querySelector(".historical-turn-diff .review-added code")?.textContent).toBe("after");
@@ -299,6 +306,7 @@ it("loads a collapsed turn summary and opens frozen history instead of the live 
   expect(container.querySelector(".historical-turn-diff .review-split-row")).not.toBeNull();
   expect(client.readArtifact).toHaveBeenCalledTimes(1);
   await act(async () => root.render(<TurnFiles taskId="tsk_a" metadata={metadata} client={client} operation />));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
   expect(container.querySelector(".turn-files")).toBeNull();
   expect(container.querySelector(".historical-diff-view")).toBeNull();
   expect(container.querySelector(".inline-edit-heading")?.textContent).toContain("example.ts");

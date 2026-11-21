@@ -67,10 +67,18 @@ pub enum ContextCall {
 enum Ask {
     Bootstrap,
     TryMutation,
+    TryTurnUndo {
+        task: TaskId,
+        roots: Vec<String>,
+    },
     TaskArtifacts {
         task: TaskId,
         before: Option<ArtifactCursor>,
         limit: usize,
+    },
+    TurnEdits {
+        task: TaskId,
+        artifact: ArtifactId,
     },
     VerifiedArtifact {
         task: TaskId,
@@ -265,6 +273,18 @@ impl ReviewFacts for AskingFacts {
         self.ask::<Value>(Ask::TryMutation).await?;
         Ok(Box::new(()))
     }
+    async fn try_turn_undo(
+        &self,
+        task: &TaskId,
+        roots: &[String],
+    ) -> Result<MutationGuard, String> {
+        self.ask::<Value>(Ask::TryTurnUndo {
+            task: task.clone(),
+            roots: roots.to_vec(),
+        })
+        .await?;
+        Ok(Box::new(()))
+    }
     async fn task_artifacts(
         &self,
         task: &TaskId,
@@ -275,6 +295,13 @@ impl ReviewFacts for AskingFacts {
             task: task.clone(),
             before: before.cloned(),
             limit,
+        })
+        .await
+    }
+    async fn turn_edits(&self, task: &TaskId, artifact: &ArtifactId) -> Result<Vec<Value>, String> {
+        self.ask(Ask::TurnEdits {
+            task: task.clone(),
+            artifact: artifact.clone(),
         })
         .await
     }
@@ -432,11 +459,16 @@ async fn answer(
             guards.push(facts.try_workspace_mutation().await?);
             Ok(Value::Null)
         }
+        Ask::TryTurnUndo { task, roots } => {
+            guards.push(facts.try_turn_undo(&task, &roots).await?);
+            Ok(Value::Null)
+        }
         Ask::TaskArtifacts {
             task,
             before,
             limit,
         } => value(facts.task_artifacts(&task, before.as_ref(), limit).await?),
+        Ask::TurnEdits { task, artifact } => value(facts.turn_edits(&task, &artifact).await?),
         Ask::VerifiedArtifact {
             task,
             artifact,

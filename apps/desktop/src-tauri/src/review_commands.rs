@@ -376,6 +376,16 @@ pub async fn core_review_file_close(
 
 // turn_undo
 #[tauri::command]
+pub async fn core_turn_undo_files(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, DesktopState>,
+    request: UndoRequest,
+) -> Result<serde_json::Value, String> {
+    require_task_window(window.label(), &request.task_id.to_string())?;
+    state.core.review(ReviewCall::UndoFiles(request)).await
+}
+
+#[tauri::command]
 pub async fn core_turn_undo_status(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, DesktopState>,

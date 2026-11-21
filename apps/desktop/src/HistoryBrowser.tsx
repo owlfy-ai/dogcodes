@@ -3,8 +3,9 @@ import { LoadingStatus } from "./LoadingStatus";
 import { ReviewEmptyState } from "./ReviewEmptyState";
 import { userFacingError } from "./userFacingError";
 import { SentAttachments } from "./attachments";
+import { confirmedTurnPaths } from "./turnEditPaths";
 import { TurnFiles } from "./TurnFiles";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ArtifactMetadata, CoreClient, HistoryPage, HistoryQuery, TaskId } from "@dogcodes/protocol";
 import { translate as t } from "./i18n";
 export function HistoryBrowser({client, taskId, onBack}: {client: CoreClient; taskId: TaskId; onBack: () => void}) {
@@ -17,6 +18,15 @@ export function HistoryBrowser({client, taskId, onBack}: {client: CoreClient; ta
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
   const searchInput = useRef<HTMLInputElement>(null);
+  // History pages contain summaries. Resolve edit events once, on the first
+  // expanded turn for this history snapshot.
+  const readTurnPaths = useMemo(() => {
+    let pending: Promise<Map<string, Set<string>>> | undefined;
+    return () => pending ??= client.timeline(taskId).then(confirmedTurnPaths).catch(cause => {
+      pending = undefined;
+      throw cause;
+    });
+  }, [client, taskId, page?.throughSequence]);
   async function load(more = false) {
     const id = ++generation.current;
     setBusy(true); setError("");
@@ -38,7 +48,7 @@ export function HistoryBrowser({client, taskId, onBack}: {client: CoreClient; ta
     </form>
     <TabBar label={t("historyBrowser.kinds")} selected={kind} onSelect={value => { setKind(value as HistoryQuery["kind"]); setQuery(""); setText(""); }} items={(["turns", "decisions", "changes"] as const).map(value => ({ id: value, label: t(`historyBrowser.kind.${value}`) }))} />
     <p>{t("historyBrowser.description")}</p>
-    {items.map(item => <HistoryRecord key={`${taskId}:${item.sequence}`} item={item} client={client} taskId={taskId} />)}
+    {items.map(item => <HistoryRecord key={`${taskId}:${item.sequence}`} item={item} client={client} taskId={taskId} readTurnPaths={readTurnPaths} />)}
     {!busy && !items.length && !error && <ReviewEmptyState kind={query ? "search" : "history"} compact
       title={t(page?.nextCursor != null ? "historyBrowser.emptyPage" : query ? "historyBrowser.noResults" : kind === "decisions" ? "historyBrowser.noDecisions" : kind === "changes" ? "historyBrowser.noChanges" : "historyBrowser.noTurns")}
       description={t(page?.nextCursor != null ? "historyBrowser.moreToSearch" : query ? "historyBrowser.tryOther" : "historyBrowser.emptyHint")}
@@ -49,8 +59,19 @@ export function HistoryBrowser({client, taskId, onBack}: {client: CoreClient; ta
   </section>;
 }
 
-function HistoryRecord({ item, client, taskId }: { item: HistoryPage["items"][number]; client: CoreClient; taskId: TaskId }) {
+function HistoryRecord({ item, client, taskId, readTurnPaths }: { item: HistoryPage["items"][number]; client: CoreClient; taskId: TaskId; readTurnPaths: () => Promise<Map<string, Set<string>>> }) {
   const [expanded, setExpanded] = useState(false);
+  const [paths, setPaths] = useState<Set<string>>();
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    if (!expanded || item.kind === "activity") return;
+    let current = true;
+    setPaths(undefined); setError(false);
+    void readTurnPaths().then(turns => {
+      if (current) setPaths(turns.get(item.turnId ?? "") ?? new Set());
+    }, () => { if (current) setError(true); });
+    return () => { current = false; };
+  }, [expanded, item.kind, item.turnId, readTurnPaths]);
   const labels: Record<string, string> = {user_message: t("activity.you"), assistant_message: "Agent", system: t("historyBrowser.record.system"), activity: t("activity.records"), turn_files: t("historyBrowser.kind.changes"), "decision.recorded": t("historyBrowser.kind.decisions"), "workspace.turn_changes_captured": t("historyBrowser.kind.changes"), "workspace.turn_changes_failed": t("historyBrowser.record.changesFailed")};
   let data: Record<string, unknown> | null = null;
   if (!["user_message", "assistant_message", "system"].includes(item.kind)) {
@@ -63,6 +84,6 @@ function HistoryRecord({ item, client, taskId }: { item: HistoryPage["items"][nu
     <small>{labels[item.kind] ?? t("nav.history")} · {new Date(item.occurredAt).toLocaleString()}</small>
     {summary && <pre>{summary}</pre>}
     {item.kind === "user_message" && <SentAttachments items={item.attachments ?? []} />}
-    {metadata ? <div><button type="button" onClick={() => setExpanded(value => !value)}>{t(expanded ? "historyBrowser.hideChanges" : "historyBrowser.showChanges")}</button>{expanded && <TurnFiles client={client} taskId={taskId} metadata={metadata} operation={item.kind === "activity"} />}</div> : null}
+    {metadata ? <div><button type="button" onClick={() => setExpanded(value => !value)}>{t(expanded ? "historyBrowser.hideChanges" : "historyBrowser.showChanges")}</button>{expanded && error && <p role="alert">{t("turnFiles.loadFailed")}</p>}{expanded && paths?.size === 0 && <p>{t("historicalDiff.empty")}</p>}{expanded && (item.kind === "activity" || !!paths?.size) && <TurnFiles confirmedPaths={paths} client={client} taskId={taskId} metadata={metadata} operation={item.kind === "activity"} />}</div> : null}
   </article>;
 }

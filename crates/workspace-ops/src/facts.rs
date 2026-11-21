@@ -23,12 +23,28 @@ pub trait ReviewFacts: Send + Sync {
     fn on_hub(&self) -> bool;
     async fn bootstrap(&self) -> Result<BootstrapSnapshot, String>;
     async fn try_workspace_mutation(&self) -> Result<MutationGuard, String>;
+    async fn try_turn_undo(
+        &self,
+        _task: &TaskId,
+        _roots: &[String],
+    ) -> Result<MutationGuard, String> {
+        self.try_workspace_mutation()
+            .await
+            .map_err(|_| "backendText.undoAgentBusy".into())
+    }
     async fn task_artifacts(
         &self,
         task: &TaskId,
         before: Option<&ArtifactCursor>,
         limit: usize,
     ) -> Result<ArtifactPage, String>;
+    async fn turn_edits(
+        &self,
+        _task: &TaskId,
+        _artifact: &ArtifactId,
+    ) -> Result<Vec<Value>, String> {
+        Err("backendText.undoIncompleteTurn".into())
+    }
     async fn verified_artifact(
         &self,
         task: &TaskId,

@@ -190,7 +190,7 @@ impl Core {
             crate::run_cleanup::Resource::capture(identity.driver.clone(), identity.handle.clone())
                 .await,
         );
-        let scope = self.turn_workspace_scope(task).await;
+        let scope = self.turn_workspace_scope(task, Some(&control)).await;
         let capture = if let Some(scope) = &scope {
             Some(
                 crate::multi_workspace::begin(scope.workspace.as_ref(), &scope.project_paths).await,

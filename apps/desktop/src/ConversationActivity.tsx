@@ -9,7 +9,7 @@ import { ActivityIcon } from "./ActivityIcon";
 import { ComputerUseActivity } from "./ComputerUseActivity";
 import { ForkOrigin } from "./ForkOrigin";
 import { useI18n } from "./i18n";
-import { Fragment, memo, useContext, useEffect, useState } from "react";
+import { Fragment, memo, useMemo, useContext, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ArtifactMetadata,
@@ -19,6 +19,7 @@ import type {
 } from "@dogcodes/protocol";
 import { editPatch, reportedPatch } from "./conversationDiff";
 import { MarkdownMessage, StreamingMarkdownMessage } from "./MarkdownMessage";
+import { confirmedTurnPaths, isWriteTool } from "./turnEditPaths";
 import { TurnFiles } from "./TurnFiles";
 import { RemoteConversationContext, messageFileMenu } from "./workspaceFileMenu";
 import { parseGitDiff } from "./diffView";
@@ -72,13 +73,7 @@ export type ActivityCategory = "subagent" | "edit" | "webSearch" | "read" | "sea
 export function categoryOf(a: Activity): ActivityCategory {
   if (isSubagent(a)) return "subagent";
   const name = (a.name ?? "").toLowerCase();
-  if (
-    ["edit", "delete", "move"].includes(a.category ?? "") ||
-    /^(edit|write|multiedit|apply_patch|filechange|file_change|replace_in_file|write_file|write_to_file|replace_file_content)$/.test(
-      name,
-    )
-  )
-    return "edit";
+  if (isWriteTool(name, a.category)) return "edit";
   if (/^(websearch|web_search|search_web)$/.test(name)) return "webSearch";
   if (
     a.category === "read" ||
@@ -519,6 +514,7 @@ export function ConversationContent({
   taskTitle?: (taskId: TaskId) => string | undefined;
   onOpenTask?: (taskId: TaskId) => void;
 }) {
+  const turnPaths = useMemo(() => confirmedTurnPaths(items), [items]);
   const parents = items.filter((i) => {
     const a = activityOf(i);
     return a && isSubagent(a);
@@ -565,11 +561,14 @@ export function ConversationContent({
     if (item.kind === "fork_context") return <ForkOrigin key={item.itemId} item={item} alone={items.length === 1} sourceTitle={taskTitle} onOpenTask={onOpenTask} />;
 
     if (item.kind === "turn_files") {
+      const paths = item.turnId && turnPaths.get(item.turnId);
+      if (!paths) return null;
       try {
         return (
           <TurnFiles
             key={item.itemId}
             taskId={item.taskId}
+            confirmedPaths={paths}
             providerId={item.turnId ? turnProviders.get(item.turnId) : undefined}
             onReviewFile={onReviewFile}
             metadata={JSON.parse(item.text)}

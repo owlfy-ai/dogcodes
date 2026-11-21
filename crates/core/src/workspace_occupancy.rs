@@ -23,6 +23,115 @@ pub(crate) struct WorkspaceOccupancy {
     entries: Mutex<Vec<Arc<Entry>>>,
 }
 
+/// Scoped undo and running turns exclude one another only where their
+/// workspaces may overlap. The global lock still coordinates other Review writes.
+#[derive(Default)]
+pub(super) struct UndoGate {
+    leases: Mutex<Vec<Arc<Lease>>>,
+    released: tokio::sync::Notify,
+}
+
+pub(super) enum Workspace {
+    Unknown,
+    Local(Option<Vec<std::path::PathBuf>>),
+    Remote(TargetId),
+}
+
+impl Workspace {
+    pub(super) fn resolve(target: Option<&TargetId>, paths: &[String]) -> Self {
+        if let Some(target) = target {
+            // The hub cannot resolve filesystem aliases on a remote machine.
+            return Self::Remote(target.clone());
+        }
+        Self::Local(
+            paths
+                .iter()
+                .map(|path| {
+                    let path = std::fs::canonicalize(path).ok()?;
+                    if cfg!(any(target_os = "macos", windows)) {
+                        Some(path.to_string_lossy().to_lowercase().into())
+                    } else {
+                        Some(path)
+                    }
+                })
+                .collect(),
+        )
+    }
+
+    fn overlaps(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Unknown, _) | (_, Self::Unknown) => true,
+            (Self::Local(Some(a)), Self::Local(Some(b))) => a
+                .iter()
+                .any(|a| b.iter().any(|b| a.starts_with(b) || b.starts_with(a))),
+            (Self::Local(_), Self::Local(_)) => true,
+            (Self::Remote(a), Self::Remote(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+struct Lease {
+    workspace: Workspace,
+    undo: bool,
+}
+
+pub(super) struct UndoLease {
+    gate: Arc<UndoGate>,
+    lease: Arc<Lease>,
+}
+
+impl UndoGate {
+    fn try_enter(self: &Arc<Self>, lease: &Arc<Lease>) -> Option<UndoLease> {
+        let mut leases = self.leases.lock().expect("workspace undo gate");
+        if leases
+            .iter()
+            .any(|other| (lease.undo || other.undo) && lease.workspace.overlaps(&other.workspace))
+        {
+            return None;
+        }
+        leases.push(lease.clone());
+        Some(UndoLease {
+            gate: self.clone(),
+            lease: lease.clone(),
+        })
+    }
+
+    pub(super) fn try_undo(self: &Arc<Self>, workspace: Workspace) -> Option<UndoLease> {
+        self.try_enter(&Arc::new(Lease {
+            workspace,
+            undo: true,
+        }))
+    }
+
+    pub(super) async fn enter_turn(self: &Arc<Self>, workspace: Workspace) -> UndoLease {
+        let lease = Arc::new(Lease {
+            workspace,
+            undo: false,
+        });
+        loop {
+            let released = self.released.notified();
+            if let Some(guard) = self.try_enter(&lease) {
+                return guard;
+            }
+            released.await;
+        }
+    }
+}
+
+impl Drop for UndoLease {
+    fn drop(&mut self) {
+        self.gate
+            .leases
+            .lock()
+            .expect("workspace undo gate")
+            .retain(|lease| !Arc::ptr_eq(lease, &self.lease));
+        if self.lease.undo {
+            self.gate.released.notify_waiters();
+        }
+    }
+}
+
 struct Entry {
     task: TaskId,
     target: Option<TargetId>,
@@ -183,6 +292,45 @@ mod tests {
     fn folders_overlap_by_whole_path_components() {
         assert!(folders_overlap(&["/a".into()], &["/a/b".into()]));
         assert!(!folders_overlap(&["/a".into()], &["/ab".into()]));
+    }
+
+    #[tokio::test]
+    async fn undo_only_excludes_turns_and_undos_in_overlapping_workspaces() {
+        let gate = Arc::new(UndoGate::default());
+        let workspace = tempfile::tempdir().unwrap();
+        let a = workspace.path().join("a");
+        let nested = a.join("nested");
+        let b = workspace.path().join("b");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::create_dir(&b).unwrap();
+        let scope = |path: &Path| Workspace::resolve(None, &[path.to_str().unwrap().into()]);
+        let run = gate.enter_turn(scope(&nested)).await;
+        assert!(gate.try_undo(scope(&a)).is_none());
+        let undo_b = gate
+            .try_undo(scope(&b))
+            .expect("unrelated run must not block undo");
+        assert!(gate.try_undo(scope(&b)).is_none());
+        let turn_b = gate.enter_turn(scope(&b));
+        tokio::pin!(turn_b);
+        assert!(futures::poll!(&mut turn_b).is_pending());
+        drop(undo_b);
+        let _turn_b = turn_b.await;
+        drop(run);
+        assert!(gate.try_undo(scope(&a)).is_some());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn undo_detects_a_running_workspace_opened_through_a_symlink() {
+        let gate = Arc::new(UndoGate::default());
+        let root = tempfile::tempdir().unwrap();
+        let alias = root.path().join("alias");
+        let actual = root.path().join("actual");
+        std::fs::create_dir(&actual).unwrap();
+        std::os::unix::fs::symlink(&actual, &alias).unwrap();
+        let scope = |path: &Path| Workspace::resolve(None, &[path.to_str().unwrap().into()]);
+        let _turn = gate.enter_turn(scope(&alias)).await;
+        assert!(gate.try_undo(scope(&actual)).is_none());
     }
 
     #[test]

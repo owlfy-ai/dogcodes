@@ -883,6 +883,25 @@ impl CoreRepository for SqliteStore {
         load_timeline(&connection, task_id)
     }
 
+    async fn artifact_turn_activities(
+        &self,
+        task: &TaskId,
+        artifact: &ArtifactId,
+    ) -> Result<Vec<String>, RepositoryError> {
+        let connection = self.connection.lock().map_err(poison_error)?;
+        let mut query = connection.prepare(
+            "SELECT i.text FROM timeline_items i WHERE i.task_id=?1 AND i.kind='activity' AND i.turn_id=(
+                SELECT json_extract(e.payload_json,'$.turnId') FROM task_artifacts a JOIN events e ON e.sequence=a.source_sequence
+                WHERE a.task_id=?1 AND a.artifact_id=?2 AND e.event_type='workspace.turn_changes_captured'
+            ) AND json_extract(i.text,'$.type')='tool' ORDER BY i.sequence"
+        ).map_err(storage_error)?;
+        query
+            .query_map(params![task.as_str(), artifact.as_str()], |r| r.get(0))
+            .map_err(storage_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(storage_error)
+    }
+
     async fn task_timeline_snapshot(
         &self,
         task_id: &TaskId,

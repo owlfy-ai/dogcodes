@@ -94,9 +94,10 @@ export const reviewMutations = {
     for (const item of entries(taskId).filter(item => (item.request.command === "core_turn_undo" ? mutationArguments(item).artifactId : mutationArguments(item).rootId) === rootId)) {
       // An earlier operation on the same files must be over first, so nothing
       // changes them twice. A finished one is ended now, as the person moved on.
+      if (sending.has(item.request.operationId)) throw new MutationResultUnknown();
       const result = await reviewMutations.check(item).catch(() => { throw new MutationResultUnknown(); });
       if (!result) continue;
-      if (sending.has(item.request.operationId) || result.outcome.status === "running") throw new MutationResultUnknown();
+      if (result.outcome.status === "running") throw new MutationResultUnknown();
       await reviewMutations.acknowledge(item).catch(() => { throw new MutationResultUnknown(); });
     }
     const value: PendingMutation = { request: { operationId: crypto.randomUUID(), taskId, command, arguments: JSON.parse(JSON.stringify(arguments_)) } };

@@ -1457,6 +1457,7 @@ pub fn run() {
             core_task_artifacts,
             review_commands::core_turn_undo,
             review_commands::core_turn_undo_status,
+            review_commands::core_turn_undo_files,
             core_read_artifact,
             core_export_artifact,
             core_build_context_preview,

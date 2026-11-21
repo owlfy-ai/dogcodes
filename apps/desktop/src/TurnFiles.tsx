@@ -14,26 +14,30 @@ import type {
 } from "@dogcodes/protocol";
 import "./turnSummary.css";
 import { translate as t } from "./i18n";
-import { turnHasGitRoot, turnSharedWithOthers, turnUndoAvailable } from "./turnFileActions";
+import { turnHasGitRoot, turnSharedWithOthers } from "./turnFileActions";
+
+import { useTurnUndoFiles, undoReason } from "./useTurnUndoFiles";
 
 export function TurnFiles({
   taskId,
   metadata,
   client,
   operation = false,
+  confirmedPaths,
   providerId,
 }: {
   taskId: TaskId;
   metadata: ArtifactMetadata;
   client: CoreClient;
   operation?: boolean;
+  confirmedPaths?: ReadonlySet<string>;
   providerId?: string;
   onReviewFile?: (path: string) => void;
 }) {
   const remote = useContext(RemoteConversationContext);
-  const key = turnArtifactKey(taskId, metadata);
+  const key = turnArtifactKey(taskId, metadata, confirmedPaths);
   const [loaded, setLoaded] = useState<{ key: string; artifact: TurnArtifact } | null>(null);
-  const artifact = cachedTurnArtifact(client, taskId, metadata) ?? (loaded?.key === key ? loaded.artifact : null);
+  const artifact = cachedTurnArtifact(client, taskId, metadata, confirmedPaths) ?? (loaded?.key === key ? loaded.artifact : null);
   const data = artifact?.data ?? null, diff = artifact?.diff ?? null;
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -41,13 +45,19 @@ export function TurnFiles({
   useEffect(() => {
     let active = true;
     setError("");
-    if (!cachedTurnArtifact(client, taskId, metadata)) {
-      void loadTurnArtifact(client, taskId, metadata).then(value => {
+    if (!cachedTurnArtifact(client, taskId, metadata, confirmedPaths)) {
+      void loadTurnArtifact(client, taskId, metadata, confirmedPaths).then(value => {
         if (active) setLoaded({ key, artifact: value });
       }).catch(() => { if (active) setError(t("turnFiles.loadFailed")); });
     }
     return () => { active = false; };
   }, [client, taskId, key, retry]);
+  const paths = data?.files.map(file => file.path);
+  const undo = useTurnUndoFiles(taskId, metadata, operation ? undefined : paths);
+  const allReady = !!paths?.length && paths.every(path => undo.states?.[path] === "ready");
+  const reasons = new Set(paths?.map(path => undo.states?.[path] ?? "unavailable"));
+  const allRestored = reasons.has("restored") && [...reasons].every(reason => reason === "restored" || reason === "unchanged");
+  const blocked = undo.states && !allReady;
   if (error && !data)
     return (
       <p role="alert">
@@ -74,18 +84,19 @@ export function TurnFiles({
   </>;
   return (
     <>
-    {historicalOpen !== null && <HistoricalTurnDiff client={client} taskId={taskId} metadata={metadata} initialPath={historicalOpen} onClose={() => setHistoricalOpen(null)}/>}
-    <details className="turn-files turn-summary" open={artifact?.expanded ?? false} onToggle={event => { if (artifact) artifact.expanded = event.currentTarget.open; }}>
+    {historicalOpen !== null && <HistoricalTurnDiff client={client} taskId={taskId} metadata={metadata} source={artifact!} initialPath={historicalOpen} onClose={() => setHistoricalOpen(null)}/>}
+    <details ref={undo.ref} className="turn-files turn-summary" open={artifact?.expanded ?? false} onToggle={event => { if (artifact) artifact.expanded = event.currentTarget.open; if (event.currentTarget.open) undo.refresh(); }}>
       <summary className="turn-summary-heading">
         <svg className="turn-summary-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m6 4 4 4-4 4" /></svg>
         <strong>{t("turnFiles.changed", { count: data.files.length })}</strong>
         {diff && <span className="turn-summary-counts"><span className="additions">+{diff.additions}</span><span className="deletions">−{diff.deletions}</span></span>}
-        {turnHasGitRoot(data) && <TurnCommitAction key={`commit-${key}`} taskId={taskId} data={data} providerId={providerId} />}
-        <TurnUndoAction key={key} taskId={taskId} metadata={metadata} count={data.files.length} available={turnUndoAvailable(data)} />
+        {turnHasGitRoot(data) && <TurnCommitAction key={`commit-${key}`} taskId={taskId} data={data} providerId={providerId} hidden={allRestored} />}
+        <TurnUndoAction key={key} taskId={taskId} metadata={metadata} count={data.files.length} paths={paths} onSettled={undo.refresh} available={allReady} />
+        {blocked && <small className="turn-summary-notice">{allRestored ? undoReason("restored") : reasons.size === 1 ? undoReason([...reasons][0]) : t("undo.seeFiles")}</small>}
       </summary>
       <div className="turn-summary-list">
         {recovered && <p className="turn-summary-notice">{t("turnFiles.recovered")}</p>}
-        {shared && <p className="turn-summary-notice">{t("turnFiles.shared")}</p>}
+
         {data.files.map(f => {
           const change = diff?.files.find(d => (d.newPath || d.oldPath) === f.path);
           const separator = Math.max(f.path.lastIndexOf("/"), f.path.lastIndexOf("\\"));
@@ -101,7 +112,9 @@ export function TurnFiles({
             <span className="turn-summary-name" data-tooltip={f.path}>{name}</span>
             <span className="turn-summary-directory" data-tooltip={directory}>{directory}</span>
             {change && !change.binary && !change.countsUnavailable && <span className="turn-summary-counts"><span className="additions">+{change.additions}</span><span className="deletions">−{change.deletions}</span></span>}
+            {undo.states && undo.states[f.path] !== "ready" && <small className="turn-undo-reason">{undoReason(undo.states[f.path] ?? "unavailable")}</small>}
             <span className="turn-summary-actions">
+              {undo.states?.[f.path] === "ready" && <TurnUndoAction taskId={taskId} metadata={metadata} count={1} file={f.path} paths={[f.path]} onSettled={undo.refresh} />}
               <button type="button" data-tooltip={t("turnFiles.historicalTooltip")} aria-label={t("turnFiles.historicalLabel", { name })} onClick={() => setHistoricalOpen(f.path)}>{t("turnFiles.historical")}</button>
               {!remote && <OpenFileButton taskId={taskId} path={f.path} disabled={f.status === "D"} />}
             </span>

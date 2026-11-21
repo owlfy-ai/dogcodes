@@ -7,7 +7,7 @@ import { focusDialogTitle } from "./dialogFocus";
 import { translate as t } from "./i18n";
 import "./turnActions.css";
 
-export function HistoricalTurnDiff({ client, taskId, metadata, initialPath, onClose }: { client: CoreClient; taskId: TaskId; metadata: ArtifactMetadata; initialPath?: string; onClose: () => void }) {
+export function HistoricalTurnDiff({ client, taskId, metadata, source, initialPath, onClose }: { client: CoreClient; taskId: TaskId; metadata: ArtifactMetadata; source?: TurnArtifact; initialPath?: string; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const [artifact, setArtifact] = useState<TurnArtifact | null>(null);
@@ -15,10 +15,11 @@ export function HistoricalTurnDiff({ client, taskId, metadata, initialPath, onCl
   const [retry, setRetry] = useState(0);
   useEffect(() => { dialog.current?.showModal(); focusDialogTitle(dialog.current); }, []);
   useEffect(() => {
+    if (source) { setArtifact(source); return; }
     let valid = true; setArtifact(null); setError("");
     void loadTurnArtifact(client, taskId, metadata).then(a => { if (valid) setArtifact(a); }, () => { if (valid) setError(t("historicalDiff.loadFailed")); });
     return () => { valid = false; };
-  }, [client, taskId, metadata.artifactId, metadata.payloadSha256, retry]);
+  }, [client, taskId, metadata.artifactId, metadata.payloadSha256, retry, source]);
   const loadFile = useCallback(async (path: string) => {
     const file = await loadTurnFile(client, taskId, artifact!, path);
     setArtifact(current => current?.data === artifact?.data && current?.diff ? { ...current,

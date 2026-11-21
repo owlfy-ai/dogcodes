@@ -19,6 +19,13 @@ impl ReviewFacts for Arc<Core> {
         let guard = Core::try_workspace_mutation(self).map_err(|e| e.to_string())?;
         Ok(Box::new(guard))
     }
+    async fn try_turn_undo(
+        &self,
+        task: &TaskId,
+        roots: &[String],
+    ) -> Result<MutationGuard, String> {
+        Ok(Box::new(Core::try_turn_undo(self, task, roots).await?))
+    }
     async fn task_artifacts(
         &self,
         task: &TaskId,
@@ -28,6 +35,18 @@ impl ReviewFacts for Arc<Core> {
         Core::task_artifacts(self, &ActorRef::LocalUser, task, before, limit)
             .await
             .map_err(|e| e.to_string())
+    }
+    async fn turn_edits(&self, task: &TaskId, artifact: &ArtifactId) -> Result<Vec<Value>, String> {
+        let activities = self
+            .artifact_turn_activities(task, artifact)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(activities.into_iter().filter_map(|text| serde_json::from_str::<Value>(&text).ok())
+            .filter(|v| v["type"] == "tool" && matches!(v["status"].as_str(),Some("completed"|"success"|"succeeded"))
+                && v["partial"] != true && v["output"]["success"] != false)
+            .filter(|v| v["category"] == "edit" || matches!(v["name"].as_str().unwrap_or("").to_ascii_lowercase().as_str(),
+                "edit"|"write"|"edit_file"|"write_file"|"replace_in_file"|"write_to_file"|"replace_file_content"|"apply_patch"))
+            .map(|v| serde_json::json!({"name":v["name"],"input":v["input"],"content":v["content"],"changes":v["changes"],"display":v["output"]["display"]})).collect())
     }
     async fn verified_artifact(
         &self,

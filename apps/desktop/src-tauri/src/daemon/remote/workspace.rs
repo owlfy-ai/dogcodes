@@ -75,6 +75,7 @@ pub(super) async fn call(
             | R::FileClose { .. }
             | R::Preview { .. }
             | R::Ignore { .. }
+            | R::UndoFiles(_)
             | R::UndoStatus { .. }
             | R::Undo { .. }
             | R::Workspaces { .. }

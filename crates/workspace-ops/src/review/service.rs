@@ -743,6 +743,7 @@ pub enum ReviewCall {
         root_id: String,
         path: String,
     },
+    UndoFiles(crate::turn_undo::UndoRequest),
     UndoStatus {
         task_id: TaskId,
         artifact_id: ArtifactId,
@@ -783,6 +784,7 @@ impl ReviewCall {
             GitAction(request) => Some(request.task_id.clone()),
             BatchFiles { request, .. } => Some(request.task_id.clone()),
             Undo { request, .. } => Some(request.task_id.to_string()),
+            Self::UndoFiles(request) => Some(request.task_id.to_string()),
             UndoStatus { task_id, .. } => Some(task_id.to_string()),
             StartProjectReview(raw) => raw["taskId"].as_str().map(str::to_owned),
             File { task_id, .. }
@@ -1001,6 +1003,9 @@ pub async fn dispatch(
             crate::review_file_actions::reveal_path(state, task_id, snapshot_id, root_id, path)
                 .await?
         ),
+        ReviewCall::UndoFiles(request) => {
+            response!(crate::turn_undo::eligibility(state, request).await?)
+        }
         UndoStatus {
             task_id,
             artifact_id,
@@ -1011,13 +1016,14 @@ pub async fn dispatch(
         } => {
             let task = request.task_id.to_string();
             let arguments = serde_json::json!({"request":request});
+            let scope_id = operation_id.clone();
             mutate(
                 state,
                 operation_id,
                 task,
                 "core_turn_undo",
                 arguments,
-                crate::turn_undo::undo(state, request),
+                crate::turn_undo::undo(state, request, scope_id),
             )
             .await
         }
