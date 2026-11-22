@@ -74,7 +74,7 @@ export function TurnActions({ client, items, turnId, completedAt, startedAt, onR
     if (!client.turnReviews) return;
     let valid = true; let timer: ReturnType<typeof setTimeout>;
     const load = async () => {
-      try { const list = (await reviews(client, taskId)).filter(r => r.request.turnId === turnId); if (!valid) return; setRuns(list); timer = setTimeout(load, list.some(active) ? 1500 : 10000); }
+      try { const list = (await reviews(client, taskId)).filter(r => r.request.turnId === turnId); if (!valid) return; setRuns(list); setError(previous => previous === t("turnActions.statusFailed") ? "" : previous); timer = setTimeout(load, list.some(active) ? 1500 : 10000); }
       catch { if (valid) { setError(t("turnActions.statusFailed")); timer = setTimeout(load, 5000); } }
     };
     void load(); return () => { valid = false; clearTimeout(timer); };

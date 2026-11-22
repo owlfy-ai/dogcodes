@@ -11,6 +11,7 @@ export function ConversationScroll({
   latestUserMessageId?: string;
   active?: boolean;
 }) {
+  const bottomLabel = t("conversationScroll.toBottom");
   const viewport = useRef<HTMLDivElement>(null),
     content = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
@@ -167,8 +168,10 @@ export function ConversationScroll({
     >
       <div className="conversation-flow" ref={content}>{children}</div>
       {away && (
-        <button className="conversation-latest" type="button" onClick={bottom}>
-          ↓ {t("conversationScroll.toBottom")}
+        <button className="conversation-latest" type="button" aria-label={bottomLabel} data-tooltip={bottomLabel} onClick={bottom}>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M8 3v10m-4-4 4 4 4-4" />
+          </svg>
         </button>
       )}
     </div>

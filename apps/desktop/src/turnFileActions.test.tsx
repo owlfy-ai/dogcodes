@@ -46,13 +46,19 @@ async function render(data: object) {
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
 }
 
-it("shows a recovered screenshot capture in a plain folder without Commit or Undo", async () => {
+it("keeps a Diff icon and explains unavailable undo for a recovered image", async () => {
+  vi.mocked(invoke).mockImplementation(async cmd => cmd === "core_turn_undo_files" ? { "jianying_home.png": "incomplete" } : false);
   await render({
     schemaVersion: 1, backend: "filesystem", attribution: "workspace_recovery_interval", recoveredAfterInterruption: true,
     files: [{ path: "jianying_home.png", status: "A", before: null, after: omitted, binary: true }], patch: "", workspacePaths: ["/scratch"],
   });
   expect(host.textContent).toContain("jianying_home.png");
-  expect(host.querySelector(".turn-summary-undo:not(.turn-summary-commit)")).toBeNull();
+  const diff = host.querySelector('button[aria-label="查看 jianying_home.png 的历史 Diff"]');
+  expect(diff?.querySelector("svg")).not.toBeNull();
+  const undo = diff?.nextElementSibling;
+  expect(undo?.getAttribute("aria-disabled")).toBe("true");
+  expect(undo?.getAttribute("data-tooltip")).toBe("快照不完整，无法撤销");
+  expect(host.textContent).not.toContain("快照不完整，无法撤销");
   expect(host.querySelector(".turn-summary-commit")).toBeNull();
 });
 
@@ -62,9 +68,9 @@ it("warns that a capture shared with another conversation may include its files"
     schemaVersion: 1, backend: "git", attribution: "shared_workspace_interval", sharedWorkspace: true,
     files: [{ path: "a.txt", status: "A", before: null, after: full("new") }], patch: "", workspacePaths: ["/repo"],
   });
-  expect(host.querySelector(".turn-summary-undo:not(.turn-summary-commit)")).toBeNull();
+  expect(host.querySelector("summary .turn-summary-undo:not(.turn-summary-commit)")).toBeNull();
   expect(host.querySelector(".turn-summary-commit")).not.toBeNull();
-  expect(host.querySelector(".turn-summary-notice")?.textContent).toContain("无法确认修改归属");
+  expect(host.querySelector('[aria-label="撤销 a.txt 的修改"]')?.getAttribute("data-tooltip")).toContain("无法确认修改归属");
 });
 
 it("keeps Undo for a complete capture of this turn", async () => {
@@ -80,9 +86,15 @@ it("offers undo only for the eligible file and explains the changed file", async
   vi.mocked(invoke).mockImplementation(async cmd => cmd === "core_turn_undo_files" ? { "a.txt": "ready", "b.txt": "changed" } : false);
   await render({ attribution: "shared_workspace_interval", files: [file(full("a")), { ...file(full("b")), path: "b.txt" }] });
   expect(host.querySelector("summary .turn-summary-undo:not(.turn-summary-commit)")).toBeNull();
-  expect(host.querySelector('[aria-label="撤销 a.txt 的修改"]')).not.toBeNull();
-  expect(host.querySelector('[aria-label="撤销 b.txt 的修改"]')).toBeNull();
-  expect(host.textContent).toContain("已被外部修改，无法撤销");
+  const available = host.querySelector('[aria-label="撤销 a.txt 的修改"]');
+  expect(available?.textContent).toBe("");
+  expect(available?.hasAttribute("aria-disabled")).toBe(false);
+  const blocked = host.querySelector<HTMLButtonElement>('[aria-label="撤销 b.txt 的修改"]')!;
+  expect(blocked.getAttribute("aria-disabled")).toBe("true");
+  expect(blocked.getAttribute("data-tooltip")).toBe("已被外部修改，无法撤销");
+  expect(host.textContent).not.toContain("已被外部修改，无法撤销");
+  await act(async () => blocked.click());
+  expect(document.querySelector("dialog")).toBeNull();
 });
 
 it("offers both individual actions and a whole-turn action when every shared file is verified", async () => {

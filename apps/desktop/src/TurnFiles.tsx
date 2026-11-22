@@ -57,7 +57,6 @@ export function TurnFiles({
   const allReady = !!paths?.length && paths.every(path => undo.states?.[path] === "ready");
   const reasons = new Set(paths?.map(path => undo.states?.[path] ?? "unavailable"));
   const allRestored = reasons.has("restored") && [...reasons].every(reason => reason === "restored" || reason === "unchanged");
-  const blocked = undo.states && !allReady;
   if (error && !data)
     return (
       <p role="alert">
@@ -89,16 +88,20 @@ export function TurnFiles({
       <summary className="turn-summary-heading">
         <svg className="turn-summary-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m6 4 4 4-4 4" /></svg>
         <strong>{t("turnFiles.changed", { count: data.files.length })}</strong>
-        {diff && <span className="turn-summary-counts"><span className="additions">+{diff.additions}</span><span className="deletions">−{diff.deletions}</span></span>}
+        {diff && <button type="button" className="turn-summary-counts" aria-label={t("turnFiles.historicalTooltip")} data-tooltip={t("turnFiles.historicalTooltip")}
+          onClick={event => { event.preventDefault(); event.stopPropagation(); setHistoricalOpen(data.files[0].path); }}>
+          <span className="additions">+{diff.additions}</span><span className="deletions">−{diff.deletions}</span>
+        </button>}
         {turnHasGitRoot(data) && <TurnCommitAction key={`commit-${key}`} taskId={taskId} data={data} providerId={providerId} hidden={allRestored} />}
         <TurnUndoAction key={key} taskId={taskId} metadata={metadata} count={data.files.length} paths={paths} onSettled={undo.refresh} available={allReady} />
-        {blocked && <small className="turn-summary-notice">{allRestored ? undoReason("restored") : reasons.size === 1 ? undoReason([...reasons][0]) : t("undo.seeFiles")}</small>}
+        {allRestored && <small className="turn-summary-notice">{undoReason("restored")}</small>}
       </summary>
       <div className="turn-summary-list">
         {recovered && <p className="turn-summary-notice">{t("turnFiles.recovered")}</p>}
 
         {data.files.map(f => {
           const change = diff?.files.find(d => (d.newPath || d.oldPath) === f.path);
+          const state = undo.states?.[f.path];
           const separator = Math.max(f.path.lastIndexOf("/"), f.path.lastIndexOf("\\"));
           const name = f.path.slice(separator + 1), directory = f.path.slice(0, separator + 1);
           const extension = name.split(".").pop()?.toLowerCase() ?? "";
@@ -111,11 +114,17 @@ export function TurnFiles({
             <span className={`turn-summary-icon file-${language.toLowerCase()}`} aria-hidden="true">{language}</span>
             <span className="turn-summary-name" data-tooltip={f.path}>{name}</span>
             <span className="turn-summary-directory" data-tooltip={directory}>{directory}</span>
-            {change && !change.binary && !change.countsUnavailable && <span className="turn-summary-counts"><span className="additions">+{change.additions}</span><span className="deletions">−{change.deletions}</span></span>}
-            {undo.states && undo.states[f.path] !== "ready" && <small className="turn-undo-reason">{undoReason(undo.states[f.path] ?? "unavailable")}</small>}
+            <span className="turn-summary-file-changes">
+              <button type="button" className="turn-summary-counts" data-tooltip={t("turnFiles.historicalTooltip")} aria-label={t("turnFiles.historicalLabel", { name })}
+                onClick={() => setHistoricalOpen(f.path)}>
+                {change && !change.binary && !change.countsUnavailable
+                  ? <><span className="additions">+{change.additions}</span><span className="deletions">−{change.deletions}</span></>
+                  : <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="m5 4-4 4 4 4m6-8 4 4-4 4M9 3 7 13" /></svg>}
+              </button>
+              <TurnUndoAction taskId={taskId} metadata={metadata} count={1} file={f.path} paths={[f.path]} onSettled={undo.refresh}
+                available={state === "ready"} tooltip={undo.states ? undoReason(state ?? "unavailable") : undefined} />
+            </span>
             <span className="turn-summary-actions">
-              {undo.states?.[f.path] === "ready" && <TurnUndoAction taskId={taskId} metadata={metadata} count={1} file={f.path} paths={[f.path]} onSettled={undo.refresh} />}
-              <button type="button" data-tooltip={t("turnFiles.historicalTooltip")} aria-label={t("turnFiles.historicalLabel", { name })} onClick={() => setHistoricalOpen(f.path)}>{t("turnFiles.historical")}</button>
               {!remote && <OpenFileButton taskId={taskId} path={f.path} disabled={f.status === "D"} />}
             </span>
           </div>;

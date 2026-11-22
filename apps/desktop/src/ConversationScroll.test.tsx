@@ -34,7 +34,9 @@ it.each(["wheel", "scrollbar", "native scrollbar", "native scrollbar before resi
       resize();
     });
     expect(node.scrollTop).toBe(860);
-    expect(host.textContent).toContain("回到底部");
+    const jump = host.querySelector<HTMLButtonElement>('button[aria-label="回到底部"]')!;
+    expect(jump.textContent).toBe("");
+    expect(jump.getAttribute("data-tooltip")).toBe("回到底部");
 
     // Moving down within the old 80px threshold still leaves the reader in control.
     await act(async () => {
@@ -57,12 +59,12 @@ it.each(["wheel", "scrollbar", "native scrollbar", "native scrollbar before resi
       node.dispatchEvent(new Event("scroll"));
     });
     await act(async () => {
-      host.querySelector<HTMLButtonElement>(".conversation-latest")!.click();
+      host.querySelector<HTMLButtonElement>('button[aria-label="回到底部"]')!.click();
       height = 1600;
       resize();
     });
     expect(node.scrollTop).toBe(1100);
-    expect(host.textContent).not.toContain("回到底部");
+    expect(host.querySelector('button[aria-label="回到底部"]')).toBeNull();
   } finally {
     await act(async () => root.unmount());
     heights.mockRestore(); sizes.mockRestore(); tops.mockRestore(); writes.mockRestore(); vi.unstubAllGlobals();
@@ -97,13 +99,13 @@ it("positions history before paint, follows resizes, and respects scrolling up",
       node.scrollTop = 600;
       node.dispatchEvent(new Event("scroll", { bubbles: true }));
     });
-    expect(host.textContent).toContain("回到底部");
+    expect(host.querySelector('button[aria-label="回到底部"]')).not.toBeNull();
     height = 1800;
     await act(async () => resize());
     expect(node.scrollTop).toBe(600);
     await act(async () => root.render(<Screen taskId="two" />));
     expect(beforePaint).toEqual([1400, 1800]);
-    expect(host.textContent).not.toContain("回到底部");
+    expect(host.querySelector('button[aria-label="回到底部"]')).toBeNull();
   } finally {
     await act(async () => root.unmount());
     scrollHeight.mockRestore(); clientHeight.mockRestore(); vi.unstubAllGlobals();

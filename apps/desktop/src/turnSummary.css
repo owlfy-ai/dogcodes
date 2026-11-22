@@ -5,6 +5,10 @@
 .turn-summary-chevron { width: calc(14px * var(--ui-scale, 1)); height: calc(14px * var(--ui-scale, 1)); flex-shrink: 0; color: var(--summary-muted); }
 .turn-summary[open] .turn-summary-chevron { transform: rotate(90deg); }
 .turn-summary-counts { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; font-variant-numeric: tabular-nums; font-weight: 500; }
+button.turn-summary-counts { padding: 3px 4px; border: 0; border-radius: 6px; background: transparent; color: inherit; font-family: inherit; font-size: inherit; cursor: pointer; }
+button.turn-summary-counts:hover { background: #8882; }
+button.turn-summary-counts:focus-visible { outline: 2px solid #7e9eca; outline-offset: 2px; }
+.turn-summary-counts svg { width: 1em; height: 1em; }
 .turn-summary-list { border-top: 1px solid var(--summary-border); padding: 4px 0; }
 .turn-summary-file { display: flex; align-items: center; gap: 8px; padding: 10px 16px; min-width: 0; font-size: calc(13px * var(--ui-scale, 1)); }
 .turn-summary-icon { display: grid; place-items: center; width: calc(16px * var(--ui-scale, 1)); height: calc(16px * var(--ui-scale, 1)); flex-shrink: 0; border-radius: 1px; background: #7b8a94; color: white; font: 600 calc(8px * var(--ui-scale, 1))/1 ui-monospace, monospace; }
@@ -24,10 +28,12 @@
 
 .turn-summary-undo { margin-left: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; padding: 3px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .turn-summary-commit + .turn-summary-undo { margin-left: 0; }
-.turn-summary-undo:hover:not(:disabled) { background: #8882; }
-.turn-summary-undo:disabled { color: var(--summary-muted); cursor: default; }
+.turn-summary-undo:hover:not(:disabled, [aria-disabled="true"]) { background: #8882; }
+.turn-summary-undo:is(:disabled, [aria-disabled="true"]) { color: var(--summary-muted); cursor: default; }
 .turn-summary-undo:focus-visible { outline: 2px solid #7e9eca; outline-offset: 2px; }
 .turn-summary-undo svg { display: block; width: 1em; height: 1em; }
+.turn-summary-file-changes { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.turn-summary-file-undo { margin-left: 0; padding: 4px; }
 .turn-undo-dialog { width: min(420px, calc(100vw - 40px)); padding: 22px; border: 1px solid #8884; border-radius: 14px; color: var(--text, #ddd); background: var(--panel, #202120); box-shadow: 0 18px 70px #0003; font-size: calc(14px * var(--ui-scale, 1)); }
 .turn-undo-dialog::backdrop { background: #0005; }
 .turn-undo-dialog h2 { margin: 0 0 12px; font-size: 1.1em; font-weight: 600; }
@@ -67,7 +73,5 @@
 .turn-commit-dialog footer .turn-commit-confirm, .turn-commit-dialog footer .turn-commit-confirm:not(:disabled):hover { background: var(--accent, #78a91f); color: white; border-color: transparent; }
 .turn-commit-dialog footer .turn-commit-confirm:not(:disabled):hover { filter: brightness(1.06); }
 
-.turn-summary-heading:has(.turn-summary-notice),
-.turn-summary-file:has(.turn-undo-reason) { flex-wrap: wrap; }
+.turn-summary-heading:has(.turn-summary-notice) { flex-wrap: wrap; }
 .turn-summary-heading > .turn-summary-notice { padding: 0; }
-.turn-summary-file .turn-undo-reason { color: var(--summary-muted); overflow-wrap: anywhere; }

@@ -53,12 +53,12 @@ it("resumes bottom-follow for a new prompt while preserving manual reading and o
     await render("a", "prompt-1"); // Refresh/assistant events must not force a jump.
     await act(async () => resizes[0]());
     expect(node.scrollTop).toBe(300);
-    expect(host.textContent).toContain("回到底部");
+    expect(host.querySelector('button[aria-label="回到底部"]')).not.toBeNull();
 
     height = 1900;
     await render("a", "prompt-2");
     expect(node.scrollTop).toBe(1900);
-    expect(host.textContent).not.toContain("回到底部");
+    expect(host.querySelector('button[aria-label="回到底部"]')).toBeNull();
     height = 2200;
     await act(async () => resizes[0]()); // Follow the response after sending.
     expect(node.scrollTop).toBe(2200);

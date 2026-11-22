@@ -295,7 +295,9 @@ it("loads a collapsed turn summary and opens frozen history instead of the live 
   await act(async () => container.querySelector<HTMLElement>(".turn-summary-heading")!.click());
   expect(summary.open).toBe(true);
   HTMLDialogElement.prototype.showModal = function () { this.open = true; };
-  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="查看 example.ts 的历史 Diff"]')!.click());
+  const diffCounts = container.querySelector<HTMLButtonElement>('button[aria-label="查看 example.ts 的历史 Diff"]')!;
+  expect(diffCounts.textContent).toBe("+1−1");
+  await act(async () => diffCounts.click());
   expect(onReviewFile).not.toHaveBeenCalled();
   expect(container.textContent).not.toContain("other.ts");
   expect(container.textContent).not.toContain("unrelated");

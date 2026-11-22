@@ -124,7 +124,6 @@ const states: Record<string, string> = {
   in_progress: "running",
   completed: "done",
   succeeded: "done",
-  // Shown quietly on the row; a folded run also counts failures in its header.
   failed: "failed",
   interrupted: "interrupted",
   cancelled: "cancelled",
@@ -398,7 +397,6 @@ const approvalStates = ["awaiting_approval", "waiting_approval", "needs_approval
 export function keepCallVisible(item: TimelineItem) {
   return approvalStates.includes(activityOf(item)?.status ?? "");
 }
-const callFailed = (item: TimelineItem) => item.kind === "tool.failed" || activityOf(item)?.status === "failed";
 function stepRunning(item: TimelineItem, active: boolean) {
   const a = activityOf(item);
   return a ? isRunning(a, active) : active && item.kind === "tool.started";
@@ -432,7 +430,6 @@ function ToolRun({ calls, render, keepVisible, active, client }: {
     return all;
   }, {});
   const toolCalls = Object.values(counts).reduce((sum, count) => sum + count, 0);
-  const failed = calls.filter(callFailed).length;
   const breakdown = Object.entries(counts)
     .map(([category, count]) => t("activity.categoryCount", { category, count }))
     .join(" · ");
@@ -446,7 +443,6 @@ function ToolRun({ calls, render, keepVisible, active, client }: {
       <svg className="tool-run-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
       {!open && liveThought !== undefined && <ThinkingTicker key={latest.itemId} itemId={latest.itemId} client={client} text={liveThought} embedded />}
       {toolCalls > 0 && <small className="tool-run-count" data-tooltip={breakdown}>
-        {failed > 0 && <span className="activity-status-failed">{t("activity.toolRun.failed", { count: failed })} · </span>}
         {t("activity.toolRun.calls", { count: toolCalls })}
         {edits.files > 0 && <span className="tool-run-edits" data-tooltip={edits.partial ? t("turnFiles.partialStats") : undefined}> · {t(edits.files === 1 ? "activity.toolRun.fileEdited" : "activity.toolRun.filesEdited", { count: edits.files })}
           {edits.hasDiff && <span className="turn-summary-counts"><span className="additions">+{edits.additions}</span><span className="deletions">−{edits.deletions}</span></span>}

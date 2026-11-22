@@ -8,9 +8,7 @@ import type { ArtifactMetadata, TaskId } from "@dogcodes/protocol";
 import { translate as t } from "./i18n";
 import { displayBackendText } from "./backendText";
 
-/** `available` is false for a capture that cannot be restored as a whole;
- * the button then only appears to finish an earlier attempt or show it done. */
-export function TurnUndoAction({ taskId, metadata, count, available = true, paths, file, onSettled }: { taskId: TaskId; metadata: ArtifactMetadata; count: number; available?: boolean; paths?: string[]; file?: string; onSettled?: () => void }) {
+export function TurnUndoAction({ taskId, metadata, count, available = true, paths, file, tooltip, onSettled }: { taskId: TaskId; metadata: ArtifactMetadata; count: number; available?: boolean; paths?: string[]; file?: string; tooltip?: string; onSettled?: () => void }) {
   const [undone, setUndone] = useState(false), [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [statusError, setStatusError] = useState("");
@@ -36,7 +34,7 @@ export function TurnUndoAction({ taskId, metadata, count, available = true, path
     return () => { active = false; statusRevision.current++; stop(); };
   }, [taskId, metadata.artifactId]);
   async function undo() {
-    if (guard.current || pending || undone) return;
+    if (!available || guard.current || pending || undone) return;
     guard.current = true; setBusy(true); setError("");
     try {
       await reviewMutations.run("core_turn_undo", { request: { taskId, artifactId: metadata.artifactId, expectedPayloadSha256: metadata.payloadSha256, confirmed: true, ...(paths && { paths }) } }, taskId, metadata.artifactId);
@@ -44,23 +42,26 @@ export function TurnUndoAction({ taskId, metadata, count, available = true, path
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { guard.current = false; setBusy(false); onSettled?.(); }
   }
-  if (!available && !pending && !undone) return null;
+  if (!file && !available && !pending && !undone && !confirming) return null;
+  const unavailable = !available && !pending;
+  const label = file && !pending ? t("undo.file", { path: file }) : t(pending ? "undo.verifyLabel" : undone ? "undo.undoneLabel" : "undo.label");
   return <>
-    <button ref={trigger} className="turn-summary-undo" type="button" disabled={(!pending && undone) || busy}
-      aria-label={file ? t("undo.file", { path: file }) : t(pending ? "undo.verifyLabel" : undone ? "undo.undoneLabel" : "undo.label")}
-      onClick={event => { event.preventDefault(); event.stopPropagation(); setError(""); setConfirming(true); }}>
+    <button ref={trigger} className={file ? "turn-summary-undo turn-summary-file-undo" : "turn-summary-undo"} type="button" disabled={(!pending && undone) || busy}
+      aria-label={label} aria-disabled={unavailable || undefined}
+      data-tooltip={file ? (unavailable ? tooltip : label) : undefined}
+      onClick={event => { event.preventDefault(); event.stopPropagation(); if (!unavailable) { setError(""); setConfirming(true); } }}>
       {!undone && <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="m6 3-4 4 4 4M2 7h7a4 4 0 0 1 0 8" /></svg>}
-      {t(pending ? "undo.verify" : undone ? "undo.undone" : "undo.action")}
+      {!file && t(pending ? "undo.verify" : undone ? "undo.undone" : "undo.action")}
     </button>
     {confirming && <AppDialog returnFocus={trigger} title={file ? t("undo.file", { path: file }) : t("undo.title")} onCancel={() => { if (!guard.current) setConfirming(false); }} actions={<>
       <DialogButton icon="cancel" disabled={busy} onClick={() => setConfirming(false)}>{t("common.cancel")}</DialogButton>
-      {!pending && !undone && <DialogButton tone="danger" icon="undo" disabled={busy} onClick={() => void undo()}>{t(busy ? "undo.undoing" : "undo.confirm")}</DialogButton>}
+      {!pending && !undone && <DialogButton tone="danger" icon="undo" disabled={busy || !available} onClick={() => void undo()}>{t(busy ? "undo.undoing" : "undo.confirm")}</DialogButton>}
     </>}>
       <p>{file ?? t("undo.description", { count })}</p>
       <p>{t("undo.hint")}</p>
       {statusError && <p role="status">{statusError}</p>}
       {error && <p role="alert">{displayBackendText(error)}</p>}
-      <ReviewMutationRecovery taskId={taskId} artifactId={metadata.artifactId} onChanged={() => { setError(""); refreshStatus.current(); }} />
+      <ReviewMutationRecovery taskId={taskId} artifactId={metadata.artifactId} onChanged={() => { setError(""); refreshStatus.current(); onSettled?.(); }} />
     </AppDialog>}
   </>;
 }

@@ -155,3 +155,15 @@ it("restores a pending turn review after remount without generating another run 
   expect(f.client.startTurnReview).toHaveBeenCalledTimes(3);
   expect(f.client.startTurnReview.mock.calls[2][0]).toEqual(original);
 });
+
+it("clears the stale status banner once polling recovers", async () => {
+  vi.useFakeTimers();
+  const f = fixture(); f.client.turnReviews.mockRejectedValueOnce(new Error("backend offline"));
+  await mount(f.core);
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(container.textContent).toContain("无法读取审查状态");
+  f.client.turnReviews.mockResolvedValue([]);
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+  expect(container.textContent).not.toContain("无法读取审查状态");
+  vi.useRealTimers();
+});

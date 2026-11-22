@@ -144,7 +144,7 @@ it("keeps approval-waiting calls on screen and folds running and failed ones", a
   expect(toggle.classList.contains("activity-running")).toBe(true);
   expect(titles()).toEqual(["rm -rf build"]);
   expect(toggle.dataset.hiddenCalls).toBe("3");
-  expect(toggle.querySelector(".activity-status-failed")!.textContent).toContain("1 次失败");
+  expect(toggle.querySelector(".activity-status-failed")).toBeNull();
   await act(async () => toggle.click());
   const failedRow = [...host.querySelectorAll(".activity-line")].find((row) => row.textContent?.includes("npm run build"))!;
   expect(failedRow.querySelector(".activity-status-failed")!.textContent).toBe("失败");
@@ -205,7 +205,7 @@ it("folds a failed call with the rest of its run", async () => {
   await render([tool("a", "cat AGENTS.md", "failed"), tool("b", "cat README.md")], null);
   expect(toggles()).toHaveLength(1);
   expect(titles()).toEqual([]);
-  expect(toggles()[0].querySelector(".tool-run-count")!.textContent).toBe("1 次失败 · 2 次工具调用");
+  expect(toggles()[0].querySelector(".tool-run-count")!.textContent).toBe("2 次工具调用");
 });
 
 it("shows a lone failed call as its own row", async () => {

@@ -103,7 +103,9 @@ it("refreshes undone state from another client's invalidation", async () => {
 it.each([{ paths: ["a.ts"] }, { paths: ["a.ts", "b.ts"] }])("submits the displayed undo scope $paths", async ({ paths }) => {
   await act(async () => root.render(<TurnUndoAction taskId="tsk_one" metadata={metadata} count={paths.length}
     paths={paths} file={paths.length === 1 ? paths[0] : undefined} />));
-  await click("撤销"); await click("确认撤销");
+  const label = paths.length === 1 ? t("undo.file", { path: paths[0] }) : t("undo.label");
+  await act(async () => host.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click());
+  await click("确认撤销");
   expect(invoke).toHaveBeenCalledWith("core_turn_undo", { operationId: expect.any(String), request: {
     taskId: "tsk_one", artifactId: "art_one", expectedPayloadSha256: "sha", confirmed: true, paths,
   } });
