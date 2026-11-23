@@ -46,8 +46,9 @@ function locations(env) {
 }
 
 function credentials(env) {
-  const values = readJson(path.join(locations(env).data, 'credentials.json'));
-  return key => typeof values[key] === 'string' && values[key].trim() ? native.credential(values[key]).trim() : '';
+  const file = path.join(locations(env).data, 'credentials.json');
+  const values = readJson(file);
+  return key => typeof values[key] === 'string' && values[key].trim() ? native.credential(values[key], { file, env }).trim() : '';
 }
 
 function context(env, providerId, mode) {

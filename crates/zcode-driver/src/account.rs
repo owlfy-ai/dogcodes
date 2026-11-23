@@ -39,6 +39,7 @@ fn configure_helper_source(
 
 const ACCOUNT_ENV: &[&str] = &[
     "ZCODE_CREDENTIAL_SECRET",
+    "ZCODE_CREDENTIAL_SECRET_FILE",
     "ZCODE_DATA_BASE_DIR",
     "ZCODE_DESKTOP_HOME_DIR",
     "ZCODE_BASE_URL",
