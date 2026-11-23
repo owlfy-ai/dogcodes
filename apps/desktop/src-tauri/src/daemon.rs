@@ -1995,7 +1995,9 @@ async fn run_service(directory: PathBuf, owned: bool) -> Result<(), String> {
     core.recover_interrupted_turns()
         .await
         .map_err(|e| e.to_string())?;
-    core.recover_queued_followups().await.map_err(|e| e.to_string())?;
+    core.recover_queued_followups()
+        .await
+        .map_err(|e| e.to_string())?;
     drop(recovery);
     core.register_driver(Arc::new(
         FakeDriver::new("fake").map_err(|e| e.to_string())?,

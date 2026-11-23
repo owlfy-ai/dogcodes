@@ -1262,7 +1262,9 @@ pub fn run() {
                 if tauri::async_runtime::block_on(async {
                     core.recover_interrupted_turns().await?;
                     core.recover_queued_followups().await
-                }).is_err() {
+                })
+                .is_err()
+                {
                     app.manage(StartupFailure(Some(
                         StartupFailureCode::HistoryRecoveryFailed,
                     )));

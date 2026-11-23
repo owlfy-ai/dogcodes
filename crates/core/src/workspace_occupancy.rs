@@ -60,11 +60,10 @@ impl Workspace {
 
     fn overlaps(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Unknown, _) | (_, Self::Unknown) => true,
             (Self::Local(Some(a)), Self::Local(Some(b))) => a
                 .iter()
                 .any(|a| b.iter().any(|b| a.starts_with(b) || b.starts_with(a))),
-            (Self::Local(_), Self::Local(_)) => true,
+            (Self::Unknown, _) | (_, Self::Unknown) | (Self::Local(_), Self::Local(_)) => true,
             (Self::Remote(a), Self::Remote(b)) => a == b,
             _ => false,
         }

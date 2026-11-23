@@ -22,6 +22,8 @@ tokio::task_local! {
 }
 
 /// Instruments only operations polled by a traced turn, including its repository calls.
+/// The returned guard records the stage duration when it is dropped.
+#[must_use]
 pub fn startup_stage(name: &'static str) -> Option<impl Drop> {
     STARTUP_TIMING.try_with(|timing| timing.stage(name)).ok()
 }

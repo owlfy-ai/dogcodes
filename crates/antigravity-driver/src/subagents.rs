@@ -61,18 +61,15 @@ pub(super) async fn observe_completion(
         let mut delay = Duration::from_millis(250);
         let mut read_errors = 0;
         loop {
-            match transcript(&target, &id).await {
-                Ok(text) => {
-                    read_errors = 0;
-                    if let Some(status) = status(&text) {
-                        return status;
-                    }
+            if let Ok(text) = transcript(&target, &id).await {
+                read_errors = 0;
+                if let Some(status) = status(&text) {
+                    return status;
                 }
-                Err(_) => {
-                    read_errors += 1;
-                    if read_errors >= 8 {
-                        return "unknown";
-                    }
+            } else {
+                read_errors += 1;
+                if read_errors >= 8 {
+                    return "unknown";
                 }
             }
             tokio::time::sleep(delay).await;

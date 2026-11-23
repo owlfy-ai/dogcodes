@@ -783,8 +783,7 @@ impl ReviewCall {
             Discard { request, .. } => Some(request.task_id.clone()),
             GitAction(request) => Some(request.task_id.clone()),
             BatchFiles { request, .. } => Some(request.task_id.clone()),
-            Undo { request, .. } => Some(request.task_id.to_string()),
-            Self::UndoFiles(request) => Some(request.task_id.to_string()),
+            Undo { request, .. } | Self::UndoFiles(request) => Some(request.task_id.to_string()),
             UndoStatus { task_id, .. } => Some(task_id.to_string()),
             StartProjectReview(raw) => raw["taskId"].as_str().map(str::to_owned),
             File { task_id, .. }

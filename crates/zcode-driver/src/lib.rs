@@ -1150,7 +1150,7 @@ impl ZcodeDriver {
         resume_capability: SessionResumeCapability,
     ) -> Result<Self, agent_domain::DomainError> {
         Ok(Self {
-            startup_models: Default::default(),
+            startup_models: std::sync::Mutex::default(),
             quota_cache: tokio::sync::Mutex::new(quota::Cache::default()),
             catalog_probe: Arc::default(),
             executor: ExecutorRef {
@@ -1198,6 +1198,10 @@ impl ZcodeDriver {
     ///
     /// Returns an error when the installation identity, native protocol, or
     /// configured model fails readiness verification.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the startup catalog lock is poisoned.
     pub async fn connect_ready(
         provider_id: &str,
         installation_id: &str,

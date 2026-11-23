@@ -93,7 +93,7 @@ pub(super) fn explains(primary: &str, file: &Value, edits: &[Value]) -> bool {
             if old != content {
                 return false;
             }
-            content = new.to_owned();
+            new.clone_into(&mut content);
             exists = true;
             applied = true;
             continue;
@@ -142,7 +142,7 @@ pub(super) fn explains(primary: &str, file: &Value, edits: &[Value]) -> bool {
                 "write" | "write_file" | "write_to_file"
             )
         {
-            content = new.to_owned();
+            new.clone_into(&mut content);
             exists = true;
         } else {
             return false;

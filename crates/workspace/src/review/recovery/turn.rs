@@ -9,6 +9,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+type TurnFileVersions<'a> = (PathBuf, &'a str, Option<FileVersion>, Option<FileVersion>);
+
 #[derive(Serialize, Deserialize)]
 struct TurnUndo {
     task: String,
@@ -86,7 +88,7 @@ impl ReviewStore {
         data: &Value,
         file: &'a Value,
         allowed: &[String],
-    ) -> Result<(PathBuf, &'a str, Option<FileVersion>, Option<FileVersion>), String> {
+    ) -> Result<TurnFileVersions<'a>, String> {
         let roots = data["workspacePaths"].as_array();
         let (root, relative) = if data["schemaVersion"] == 2 {
             (
