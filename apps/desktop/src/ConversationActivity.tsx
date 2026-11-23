@@ -557,8 +557,9 @@ export function ConversationContent({
     if (item.kind === "fork_context") return <ForkOrigin key={item.itemId} item={item} alone={items.length === 1} sourceTitle={taskTitle} onOpenTask={onOpenTask} />;
 
     if (item.kind === "turn_files") {
-      const paths = item.turnId && turnPaths.get(item.turnId);
-      if (!paths) return null;
+      // A saved change list is still the turn summary when no write tool reported a path.
+      // Confirmed paths only narrow that list; they do not decide whether it loads.
+      const paths = item.turnId ? turnPaths.get(item.turnId) : undefined;
       try {
         return (
           <TurnFiles

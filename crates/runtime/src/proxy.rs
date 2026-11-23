@@ -80,15 +80,8 @@ pub fn system_proxy() -> SystemProxy {
 
 #[cfg(target_os = "macos")]
 fn system_uses_auto_config() -> bool {
-    let read = || {
-        let store = SCDynamicStoreBuilder::new("dogcodes proxy reader").build()?;
-        let proxies = store.get_proxies()?;
-        let data = create_data(proxies.as_CFTypeRef(), kCFPropertyListXMLFormat_v1_0).ok()?;
-        let value = PlistValue::from_reader_xml(data.bytes()).ok()?;
-        let dictionary = value.as_dictionary()?;
-        Some(macos_integer(dictionary, "ProxyAutoConfigEnable") == Some(1))
-    };
-    read().unwrap_or(false)
+    macos_proxy_dictionary()
+        .is_some_and(|dictionary| macos_integer(&dictionary, "ProxyAutoConfigEnable") == Some(1))
 }
 
 #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -165,13 +158,56 @@ fn system_proxy_settings() -> ProxySettings {
 
 #[cfg(target_os = "macos")]
 fn macos_system_proxy_settings() -> Option<ProxySettings> {
+    macos_proxy_dictionary().map(|dictionary| macos_proxy_settings_from_dictionary(&dictionary))
+}
+
+/// The current proxy dictionary. Opening the system session blocks for about
+/// three seconds when the main thread is parked, which is how the test harness
+/// waits. Spawn does not wait that out; a later spawn reuses the cached result.
+#[cfg(target_os = "macos")]
+fn macos_proxy_dictionary() -> Option<PlistDictionary> {
+    static CACHE: std::sync::OnceLock<Option<PlistDictionary>> = std::sync::OnceLock::new();
+    if let Some(cached) = CACHE.get() {
+        return cached.clone();
+    }
+    let receiver = proxy_dictionary_loader();
+    let receiver = receiver
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let loaded = match receiver.recv_timeout(std::time::Duration::from_millis(100)) {
+        Ok(dictionary) => dictionary,
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => return None,
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            return CACHE.get().cloned().flatten();
+        }
+    };
+    let _ = CACHE.set(loaded.clone());
+    loaded
+}
+
+#[cfg(target_os = "macos")]
+fn proxy_dictionary_loader()
+-> &'static std::sync::Mutex<std::sync::mpsc::Receiver<Option<PlistDictionary>>> {
+    static LOADER: std::sync::OnceLock<
+        std::sync::Mutex<std::sync::mpsc::Receiver<Option<PlistDictionary>>>,
+    > = std::sync::OnceLock::new();
+    LOADER.get_or_init(|| {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(load_macos_proxy_dictionary());
+        });
+        std::sync::Mutex::new(receiver)
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn load_macos_proxy_dictionary() -> Option<PlistDictionary> {
     let store = SCDynamicStoreBuilder::new("dogcodes proxy reader").build()?;
     let proxies = store.get_proxies()?;
     let data = create_data(proxies.as_CFTypeRef(), kCFPropertyListXMLFormat_v1_0).ok()?;
-    let value = PlistValue::from_reader_xml(data.bytes()).ok()?;
-    value
-        .as_dictionary()
-        .map(macos_proxy_settings_from_dictionary)
+    PlistValue::from_reader_xml(data.bytes())
+        .ok()?
+        .into_dictionary()
 }
 
 #[cfg(target_os = "macos")]

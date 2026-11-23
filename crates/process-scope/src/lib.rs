@@ -615,6 +615,23 @@ mod tests {
         unrelated.wait().await.unwrap();
     }
     #[tokio::test]
+    async fn a_raised_file_limit_does_not_delay_the_scope_handshake() {
+        let started = std::time::Instant::now();
+        let mut child = spawn("printf 'ready\\n'");
+        let mut line = String::new();
+        BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut line)
+            .await
+            .unwrap();
+        assert_eq!(line, "ready\n");
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "scope handshake took {:?}",
+            started.elapsed()
+        );
+        child.wait().await.unwrap();
+    }
+    #[tokio::test]
     async fn an_exited_leader_does_not_leave_an_inherited_pipe_process_behind() {
         let mut child = spawn("sleep 60 & echo $!; exit 0");
         let descendant = child_pid(&mut child).await;

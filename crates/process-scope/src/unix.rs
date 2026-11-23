@@ -200,6 +200,83 @@ fn monotonic_ms() -> io::Result<i128> {
     Ok(i128::from(time.tv_sec) * 1_000 + i128::from(time.tv_nsec) / 1_000_000)
 }
 
+/// Closes the open descriptors at and above `first`. A full scan of `limit` is
+/// the fallback when this cannot see the open set.
+fn close_open_fds(first: i32, limit: i32) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = limit;
+        close_listed_fds(first)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        close_range(first, limit)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = (first, limit);
+        false
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn close_listed_fds(first: i32) -> bool {
+    const MAX_FDS: usize = 4096;
+    let mut listed: [std::mem::MaybeUninit<libc::proc_fdinfo>; MAX_FDS] =
+        [std::mem::MaybeUninit::uninit(); MAX_FDS];
+    let capacity = std::mem::size_of_val(&listed) as i32;
+    // SAFETY: proc_pidinfo is the proc_info syscall and does not allocate.
+    // It writes at most `capacity` bytes. A short result is the whole open
+    // set; a full buffer can be a truncated one, so the caller scans instead.
+    let written = unsafe {
+        libc::proc_pidinfo(
+            libc::getpid(),
+            libc::PROC_PIDLISTFDS,
+            0,
+            listed.as_mut_ptr().cast(),
+            capacity,
+        )
+    };
+    let stride = std::mem::size_of::<libc::proc_fdinfo>();
+    if written <= 0 || written >= capacity || !(written as usize).is_multiple_of(stride) {
+        return false;
+    }
+    let count = written as usize / stride;
+    for slot in listed.iter().take(count) {
+        // SAFETY: the kernel wrote `count` complete entries at the front.
+        let fd = unsafe { slot.assume_init_ref() }.proc_fd;
+        if fd >= first {
+            // SAFETY: this descriptor belongs to the forked guard.
+            unsafe { libc::close(fd) };
+        }
+    }
+    true
+}
+
+#[cfg(target_os = "linux")]
+fn close_range(first: i32, limit: i32) -> bool {
+    if limit <= first {
+        return true;
+    }
+    let Some(first) = u32::try_from(first).ok() else {
+        return false;
+    };
+    let Some(last) = u32::try_from(limit - 1).ok() else {
+        return false;
+    };
+    // SAFETY: one close_range syscall, no allocation. A missing syscall leaves
+    // the descriptors open for the caller's scan. The range is inclusive.
+    let closed = unsafe {
+        libc::syscall(
+            libc::SYS_close_range,
+            first as libc::c_long,
+            last as libc::c_long,
+            0 as libc::c_long,
+        )
+    };
+    closed == 0
+}
+
 fn exec_guard(lifetime: i32, ready: i32, limit: i32) -> ! {
     // SAFETY: this grandchild has not returned to Rust after fork. Duplicate
     // above 4 first, avoiding collisions with the fixed interpreter descriptors.
@@ -218,8 +295,12 @@ fn exec_guard(lifetime: i32, ready: i32, limit: i32) -> ! {
         for fd in 0..3 {
             libc::close(fd);
         }
-        for fd in 5..limit {
-            libc::close(fd);
+        // The soft limit is the addressable range, not the open set. Closing
+        // every slot up to a million-wide limit delays this handshake by seconds.
+        if !close_open_fds(5, limit) {
+            for fd in 5..limit {
+                libc::close(fd);
+            }
         }
         let arguments = [c"sh".as_ptr(), c"-c".as_ptr(),
             c"trap '' HUP INT TERM; printf R >&4; exec 4>&-; while IFS= read -r _ <&3; do :; done; kill -KILL 0".as_ptr(),

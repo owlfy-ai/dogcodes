@@ -381,22 +381,30 @@ impl CoreRepository for SqliteStore {
         if let Some(expected) = request.expected_stream_version
             && expected != actual_version
         {
-            // Streaming output advances the task version. A stop stays valid only
-            // while its exact run and turn are still active in this transaction.
+            // Streaming output advances the task version. A stop stays valid when
+            // this exact run was already active at the frozen version and still is.
+            // An older version, from before the run started, remains a conflict.
             let matching_stop = if let [event] = request.events.as_slice()
                 && expected < actual_version
                 && first_stream.stream_type == StreamType::Task
                 && event.event_type == "turn.cancel_requested"
                 && event.payload["taskId"].as_str() == Some(first_stream.stream_id.as_str())
             {
+                let expected_version = to_i64(expected)?;
                 transaction
                     .query_row(
                         "SELECT EXISTS(SELECT 1 FROM tasks WHERE task_id=?1 AND active_turn_id=?2
-                     AND active_run_id=?3 AND active_run_state!='interrupting')",
+                     AND active_run_id=?3 AND active_run_state!='interrupting'
+                     AND EXISTS(SELECT 1 FROM events WHERE stream_type='task' AND stream_id=?1
+                       AND event_type IN ('turn.queued','turn.autonomous.started')
+                       AND json_extract(payload_json,'$.turnId')=?2
+                       AND json_extract(payload_json,'$.runId')=?3
+                       AND stream_version<=?4))",
                         params![
                             &first_stream.stream_id,
                             event.payload["turnId"].as_str(),
-                            event.payload["runId"].as_str()
+                            event.payload["runId"].as_str(),
+                            expected_version,
                         ],
                         |row| row.get::<_, bool>(0),
                     )
