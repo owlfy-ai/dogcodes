@@ -8,6 +8,8 @@ describe("selected agent runtime source", () => {
     ["codex", "C:\\Users\\中文 用户\\AppData\\Local\\OpenAI\\Codex\\bin\\hash\\codex.exe"],
     ["claude-code", "/Users/me/Library/Application Support/Claude/claude-code/2.1.325/hash/claude.app/Contents/MacOS/claude"],
     ["claude-code", "C:/Users/me/AppData/Local/Packages/Claude_x/LocalCache/Roaming/Claude/claude-code/2.1.325/hash/claude.exe"],
+    ["claude-code", "C:\\Users\\me\\AppData\\Local\\Claude-Data\\claude_x\\claude-code\\2.1.330\\hash\\claude.exe"],
+    ["claude-code", "C:\\Users\\me\\AppData\\Local\\Claude-Data\\claude_x\\claude-code\\2.1.330\\hash\\claude.exe"],
     ["zcode", "/Applications/ZCode.app/Contents/MacOS/ZCode"],
     ["zcode", "C:/Users/me/AppData/Local/Programs/ZCode/ZCode.exe"],
     ["deepseek-harness", "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"],

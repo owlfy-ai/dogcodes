@@ -12,9 +12,13 @@ pub fn desktop_cli(provider: &str, executable: &Path) -> bool {
         "codex" => executable
             .ancestors()
             .any(|p| p.ends_with("OpenAI/Codex/bin")),
-        "claude-code" => executable
-            .ancestors()
-            .any(|p| p.ends_with("Claude/claude-code")),
+        "claude-code" => executable.ancestors().any(|p| {
+            p.ends_with("Claude/claude-code")
+                || (p.ends_with("claude-code")
+                    && p.parent()
+                        .and_then(Path::parent)
+                        .is_some_and(|data| data.ends_with("Claude-Data")))
+        }),
         "deepseek-harness" => {
             let windows = executable.ends_with("resources/runtime/cli/bin/dsh.cmd")
                 && executable
@@ -226,6 +230,19 @@ pub mod tests {
                 "2.1.0"
             )),
             Plan::StandaloneCli { .. }
+        ));
+    }
+
+    #[test]
+    fn claude_desktop_data_directory_payload_is_desktop_owned() {
+        let local = Path::new("/Users/me/AppData/Local");
+        assert!(desktop_cli(
+            "claude-code",
+            &local.join("Claude-Data/claude_x/claude-code/2.1.330/hash/claude.exe")
+        ));
+        assert!(!desktop_cli(
+            "claude-code",
+            &local.join("Claude-Data/claude_x/bin/claude.exe")
         ));
     }
 

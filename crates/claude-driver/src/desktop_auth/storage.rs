@@ -51,13 +51,14 @@ pub(super) fn config_paths(target: &SharedTarget) -> Vec<PathBuf> {
             .map_or_else(|| home.join("AppData/Local"), PathBuf::from);
         if let Ok(packages) = std::fs::read_dir(local.join("Packages")) {
             for entry in packages.filter_map(Result::ok).take(256) {
-                if entry
-                    .file_name()
-                    .to_str()
-                    .is_some_and(|s| s.starts_with("Claude_"))
-                {
-                    roots.push(entry.path().join("LocalCache/Roaming/Claude"));
-                }
+                let name = entry.file_name();
+                let Some(name) = name.to_str().filter(|s| s.starts_with("Claude_")) else {
+                    continue;
+                };
+                // Newer MSIX builds moved their profile to `Claude-Data/<family, lowercased>`;
+                // it outlives an uninstall, so only while the package is still present.
+                roots.push(local.join("Claude-Data").join(name.to_lowercase()));
+                roots.push(entry.path().join("LocalCache/Roaming/Claude"));
             }
         }
     } else if cfg!(target_os = "linux") {

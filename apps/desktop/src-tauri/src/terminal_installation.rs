@@ -1247,11 +1247,10 @@ mod tests {
             .await
             .unwrap()
             .expect("Claude runtime");
-        assert!(
-            selected
-                .ancestors()
-                .any(|path| path.ends_with("Claude/claude-code"))
-        );
+        assert!(crate::agent_updates::managed_cli::desktop_cli(
+            "claude-code",
+            &selected
+        ));
         println!("selected desktop Claude runtime: {}", selected.display());
     }
 

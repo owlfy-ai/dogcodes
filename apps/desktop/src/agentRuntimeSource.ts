@@ -14,7 +14,7 @@ export function agentRuntimeSource(installation: Pick<InstallationSummary, "prov
         || /\/openai\/codex\/bin\/[^/]+\/codex\.exe$/.test(path);
       break;
     case "claude-code":
-      desktop = /\/claude\/claude-code\/[^/]+\/[^/]+\/(?:claude\.app\/contents\/macos\/claude|claude\.exe)$/.test(path);
+      desktop = /\/(?:claude|claude-data\/[^/]+)\/claude-code\/[^/]+\/[^/]+\/(?:claude\.app\/contents\/macos\/claude|claude\.exe)$/.test(path);
       break;
     case "zcode":
       desktop = /\/zcode\.app\/contents\/macos\/zcode$/.test(path) || /\/zcode\/zcode\.exe$/.test(path);

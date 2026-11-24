@@ -72,13 +72,22 @@ pub fn windows_desktop_executables(provider: &str, context: &DiscoveryContext) -
             let roaming = data_dir("APPDATA", "AppData/Roaming");
             let mut roots = vec![roaming.join("Claude/claude-code")];
             for package in directories(&local.join("Packages"), 256) {
-                if package
+                let Some(name) = package
                     .file_name()
                     .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.starts_with("Claude_"))
-                {
-                    roots.push(package.join("LocalCache/Roaming/Claude/claude-code"));
-                }
+                    .filter(|name| name.starts_with("Claude_"))
+                else {
+                    continue;
+                };
+                // Newer MSIX builds keep their data under `Claude-Data/<family, lowercased>`,
+                // which outlives an uninstall, so it only counts while the package is present.
+                roots.push(
+                    local
+                        .join("Claude-Data")
+                        .join(name.to_lowercase())
+                        .join("claude-code"),
+                );
+                roots.push(package.join("LocalCache/Roaming/Claude/claude-code"));
             }
             claude_code_payloads(&roots, "claude.exe")
         }
@@ -280,8 +289,21 @@ mod tests {
             home_dir: Some(home.path().into()),
         };
         let paths = windows_desktop_executables("claude-code", &context);
-        assert_eq!(paths, vec![new, old]);
+        assert_eq!(paths, vec![new.clone(), old.clone()]);
         assert!(!paths.contains(&gui));
+        let data = file(
+            home.path(),
+            "AppData/Local/Claude-Data/claude_publisher/claude-code/2.11.0/hash/claude.exe",
+        );
+        assert_eq!(
+            windows_desktop_executables("claude-code", &context),
+            vec![data.clone(), new, old]
+        );
+        // Left behind after an uninstall, it no longer counts as the desktop app.
+        std::fs::remove_dir_all(home.path().join("AppData/Local/Packages")).unwrap();
+        assert!(
+            !windows_desktop_executables("claude-code", &context).contains(&data)
+        );
         assert!(windows_desktop_executables("cursor", &context).is_empty());
         assert!(
             windows_desktop_executables(
