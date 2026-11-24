@@ -115,14 +115,9 @@ async fn access_token() -> Result<String, DriverError> {
             }
             String::from_utf8(output.stdout).map_err(|_| login_required())?
         }
-        CredentialSource::File(path) => {
-            let bytes = tokio::fs::read(path).await.map_err(|_| login_required())?;
-            let auth: Value = serde_json::from_slice(&bytes).map_err(|_| login_required())?;
-            auth["accessToken"]
-                .as_str()
-                .ok_or_else(login_required)?
-                .to_owned()
-        }
+        CredentialSource::File(path) => agent_management::account::cursor_file_token(&path)
+            .await
+            .ok_or_else(login_required)?,
     };
     let token = token.trim();
     if token.is_empty() {

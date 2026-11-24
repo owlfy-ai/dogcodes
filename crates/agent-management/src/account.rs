@@ -5,12 +5,12 @@ use agent_runtime::{Pipe, TargetCommand, local_target};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Output, Stdio},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     process::Command,
 };
 
@@ -43,7 +43,9 @@ async fn keychain(args: &[&str]) -> Option<String> {
 }
 
 fn home() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
 }
 
 /// What Claude's usage endpoint said, or why it wasn't asked.
@@ -225,6 +227,99 @@ pub fn cursor_credential_source(
     Ok(CredentialSource::File(path))
 }
 
+/// The access token behind Cursor's `auth.json`. Newer CLIs leave only
+/// `{"storedIn":"os-secret-store"}` there and keep the credentials in the OS store.
+pub async fn cursor_file_token(auth: &Path) -> Option<String> {
+    let file = read_json(auth.to_path_buf())?;
+    let token = if let Some(token) = file["accessToken"].as_str() {
+        token.to_owned()
+    } else if file["storedIn"] == "os-secret-store" {
+        let stored: Value = serde_json::from_slice(&cursor_secret_store(auth).await?).ok()?;
+        stored["accessToken"].as_str()?.to_owned()
+    } else {
+        return None;
+    };
+    let token = token.trim();
+    (!token.is_empty()).then(|| token.to_owned())
+}
+
+#[cfg(windows)]
+async fn cursor_secret_store(auth: &Path) -> Option<Vec<u8>> {
+    let file = read_json(auth.with_file_name("auth.dpapi"))?;
+    if file["version"] != 1 {
+        return None;
+    }
+    let input = format!("{}\n", file["dpapi"].as_str()?);
+    // The current Windows user's DPAPI, as the CLI writes it. The blob and its plaintext
+    // only pass through pipes, never arguments or a temporary script.
+    let script = "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Security; try { $b=[Convert]::FromBase64String([Console]::In.ReadLine()); $u=[Security.Cryptography.ProtectedData]::Unprotect($b,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser); [Console]::Out.Write([BitConverter]::ToString($u).Replace('-','')) } catch { exit 1 }";
+    let program = PathBuf::from(std::env::var_os("SystemRoot")?)
+        .join("System32/WindowsPowerShell/v1.0/powershell.exe");
+    let hex_text = secret_helper(
+        program,
+        &["-NoProfile", "-NonInteractive", "-Command", script],
+        Some(input.as_bytes()),
+    )
+    .await?;
+    hex::decode(hex_text.trim_ascii()).ok()
+}
+
+#[cfg(target_os = "linux")]
+async fn cursor_secret_store(_auth: &Path) -> Option<Vec<u8>> {
+    secret_helper(
+        "secret-tool",
+        &[
+            "lookup",
+            "service",
+            "cursor-credentials",
+            "account",
+            "cursor-user",
+        ],
+        None,
+    )
+    .await
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+async fn cursor_secret_store(_auth: &Path) -> Option<Vec<u8>> {
+    None
+}
+
+#[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
+async fn secret_helper(
+    program: impl AsRef<std::ffi::OsStr>,
+    args: &[&str],
+    input: Option<&[u8]>,
+) -> Option<Vec<u8>> {
+    const LIMIT: usize = 256 * 1024;
+    let mut command = TargetCommand::new(local_target(), program);
+    command
+        .args(args)
+        .stdio(Pipe::Piped, Pipe::Piped, Pipe::Null);
+    for name in ["HOME", "PATH", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"] {
+        command.inherit(name);
+    }
+    let mut child = command.spawn().ok()?;
+    let mut stdin = child.stdin.take()?;
+    let stdout = child.stdout.take()?;
+    let mut bytes = Vec::new();
+    let result = tokio::time::timeout(Duration::from_secs(15), async {
+        if let Some(input) = input {
+            stdin.write_all(input).await?;
+        }
+        drop(stdin);
+        stdout
+            .take(LIMIT as u64 + 1)
+            .read_to_end(&mut bytes)
+            .await?;
+        child.wait().await
+    })
+    .await;
+    let success = matches!(result, Ok(Ok(status)) if status.success());
+    let _ = child.terminate().await;
+    (success && !bytes.is_empty() && bytes.len() <= LIMIT).then_some(bytes)
+}
+
 async fn cursor_token() -> Result<String, Failure> {
     let login = || Failure::new("login", CURSOR_LOGIN_REQUIRED);
     let source = cursor_credential_source(
@@ -232,7 +327,12 @@ async fn cursor_token() -> Result<String, Failure> {
         std::env::var("CURSOR_API_KEY").ok().as_deref(),
         std::env::var("AGENT_CLI_CREDENTIAL_STORE").ok().as_deref(),
         home(),
-        std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
+        std::env::var_os(if cfg!(windows) {
+            "APPDATA"
+        } else {
+            "XDG_CONFIG_HOME"
+        })
+        .map(PathBuf::from),
     )?;
     let token = match source {
         CredentialSource::Keychain => keychain(&[
@@ -245,9 +345,7 @@ async fn cursor_token() -> Result<String, Failure> {
         ])
         .await
         .ok_or_else(login)?,
-        CredentialSource::File(path) => read_json(path)
-            .and_then(|auth| auth["accessToken"].as_str().map(str::to_owned))
-            .ok_or_else(login)?,
+        CredentialSource::File(path) => cursor_file_token(&path).await.ok_or_else(login)?,
     };
     Ok(token.trim().to_owned()).and_then(|token| {
         if token.is_empty() {
@@ -437,5 +535,15 @@ mod tests {
                 .kind,
             "capability"
         );
+    }
+
+    #[tokio::test]
+    async fn cursor_token_is_read_from_the_file_or_not_guessed() {
+        let directory = tempfile::tempdir().unwrap();
+        let auth = directory.path().join("auth.json");
+        std::fs::write(&auth, r#"{"accessToken":" token "}"#).unwrap();
+        assert_eq!(cursor_file_token(&auth).await.as_deref(), Some("token"));
+        std::fs::write(&auth, r#"{"signedOut":true}"#).unwrap();
+        assert_eq!(cursor_file_token(&auth).await, None);
     }
 }
