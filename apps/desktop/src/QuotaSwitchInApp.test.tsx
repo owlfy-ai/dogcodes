@@ -7,6 +7,15 @@ import { DemoCoreClient } from "./demoClient";
 
 let root: Root, host: HTMLDivElement, client: DemoCoreClient;
 const settle = () => act(async () => { await vi.advanceTimersByTimeAsync(200); });
+// Captured before fake timers replace it. The quota handoff hashes on the real
+// event loop, so a single fake-timer step can return before submitTurn runs.
+const realImmediate = setImmediate;
+async function waitForSubmit(submitted: { mock: { calls: unknown[] } }) {
+  for (let attempt = 0; submitted.mock.calls.length === 0 && attempt < 40; attempt += 1) {
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    await act(async () => { await new Promise(resolve => realImmediate(resolve)); });
+  }
+}
 
 beforeEach(async () => {
   localStorage.clear();
@@ -63,8 +72,8 @@ it("picks up a turn that ran out of quota on the agent the person switches to", 
   const button = host.querySelector<HTMLButtonElement>(".quota-switch-notice button")!;
   expect(button.dataset.tooltip).toContain("未做完的任务");
   await act(async () => button.click());
-  await settle();
-  expect(submitted).toHaveBeenCalledTimes(1);
+  await waitForSubmit(submitted);
+  expect(submitted, host.querySelector(".error")?.textContent ?? undefined).toHaveBeenCalledTimes(1);
   const [sentTask, prompt] = submitted.mock.calls[0];
   expect(prompt).toBe("Continue the task from where it stopped.");
   expect(sentTask.preferredExecutor.providerId).not.toBe("codex");
