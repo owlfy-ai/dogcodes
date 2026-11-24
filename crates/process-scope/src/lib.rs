@@ -124,24 +124,42 @@ struct LocalScope {
     status: Option<ExitStatus>,
     confirmed: bool,
 }
+/// How a local child is started, beyond its own `Command`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SpawnOptions {
+    /// Outside the caller's terminal session (Unix; Windows children never join it).
+    pub without_terminal: bool,
+    /// The child may not start processes of its own. Enforced on Windows by its job;
+    /// elsewhere nothing enforces it, so callers that rely on it need their own means.
+    pub without_children: bool,
+}
+
 impl OwnedChild {
-    pub fn spawn(mut command: Command) -> io::Result<Self> {
+    pub fn spawn(command: Command) -> io::Result<Self> {
+        Self::spawn_with(command, SpawnOptions::default())
+    }
+    pub fn spawn_with(mut command: Command, options: SpawnOptions) -> io::Result<Self> {
         command.kill_on_drop(true);
         #[cfg(unix)]
-        command.process_group(0);
-        Self::spawn_owned(command)
+        if options.without_terminal {
+            unix::detach_terminal(&mut command);
+        } else {
+            command.process_group(0);
+        }
+        Self::spawn_owned(command, options.without_children)
     }
     /// Spawn outside the caller's terminal session. Register this before the
     /// process-group hook so `setsid` still sees a non-leader child.
     /// Spawn outside the caller's terminal session, without first becoming a
     /// process-group leader. `setsid` both creates the session and leads its group.
-    pub fn spawn_without_terminal(
-        #[cfg_attr(windows, allow(unused_mut))] mut command: Command,
-    ) -> io::Result<Self> {
-        command.kill_on_drop(true);
-        #[cfg(unix)]
-        unix::detach_terminal(&mut command);
-        Self::spawn_owned(command)
+    pub fn spawn_without_terminal(command: Command) -> io::Result<Self> {
+        Self::spawn_with(
+            command,
+            SpawnOptions {
+                without_terminal: true,
+                ..SpawnOptions::default()
+            },
+        )
     }
     /// Start the actual CLI as a controlling-terminal session/group leader.
     /// Unlike a `script` wrapper, this preserves its own PID/group reservation
@@ -154,9 +172,12 @@ impl OwnedChild {
     ) -> io::Result<(Self, std::fs::File, std::fs::File)> {
         command.kill_on_drop(true);
         let (input, output) = unix::terminal(&mut command, columns, rows)?;
-        Ok((Self::spawn_owned(command)?, input, output))
+        Ok((Self::spawn_owned(command, false)?, input, output))
     }
-    fn spawn_owned(mut command: Command) -> io::Result<Self> {
+    fn spawn_owned(
+        mut command: Command,
+        #[cfg_attr(unix, allow(unused_variables))] without_children: bool,
+    ) -> io::Result<Self> {
         #[cfg(unix)]
         let (parent_lifetime, _reader) = unix::attach(&mut command)?;
         #[cfg(windows)]
@@ -183,12 +204,16 @@ impl OwnedChild {
             .map_err(io::Error::other)?,
         );
         #[cfg(windows)]
-        let job = windows::Job::assign(&mut child)
+        let job = windows::Job::assign(&mut child, without_children)
             .inspect_err(|error| diagnostic.failed("job_assign_resume", error))?;
         #[cfg(windows)]
         diagnostic.record(
             "process_scope_ready",
-            "job_assigned=true primary_thread_resumed=true",
+            if without_children {
+                "job_assigned=true primary_thread_resumed=true active_process_limit=1"
+            } else {
+                "job_assigned=true primary_thread_resumed=true"
+            },
         );
         Ok(Self {
             stdin: child.stdin.take().map(ProcessInput::from),
@@ -646,5 +671,51 @@ mod tests {
         drop(child);
         gone(leader).await;
         gone(descendant).await;
+    }
+}
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    /// Runs a PowerShell line that starts another process one way or another, and
+    /// reports what happened on stdout.
+    async fn start_another(script: &str, without_children: bool) -> String {
+        let mut command = Command::new("powershell.exe");
+        command
+            .args(["-NoProfile", "-NonInteractive", "-Command", script])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+        let child = OwnedChild::spawn_with(
+            command,
+            SpawnOptions {
+                without_children,
+                ..SpawnOptions::default()
+            },
+        )
+        .unwrap();
+        let output = tokio::time::timeout(Duration::from_secs(30), child.wait_with_output(4096))
+            .await
+            .unwrap()
+            .unwrap();
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    }
+
+    const CREATE: &str = "try { $p = Start-Process -FilePath cmd.exe -ArgumentList '/c','exit' -WindowStyle Hidden -PassThru -Wait; 'started' } catch { 'refused' }";
+    /// `UseShellExecute` is the path a URL takes to the default browser. A `.txt` file
+    /// would open an editor; a missing one fails either way, so this asks the shell for
+    /// a harmless verb on a program that exits at once.
+    const SHELL: &str = "try { $i = New-Object Diagnostics.ProcessStartInfo 'cmd.exe' -Property @{ Arguments = '/c exit'; UseShellExecute = $true; WindowStyle = 'Hidden' }; $p = [Diagnostics.Process]::Start($i); $p.WaitForExit(); 'started' } catch { 'refused' }";
+
+    #[tokio::test]
+    async fn a_child_without_children_cannot_start_another_process_by_any_route() {
+        assert_eq!(start_another(CREATE, true).await, "refused");
+        assert_eq!(start_another(SHELL, true).await, "refused");
+    }
+
+    #[tokio::test]
+    async fn an_ordinary_child_still_starts_others() {
+        assert_eq!(start_another(CREATE, false).await, "started");
+        assert_eq!(start_another(SHELL, false).await, "started");
     }
 }

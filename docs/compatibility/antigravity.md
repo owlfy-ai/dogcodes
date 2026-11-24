@@ -6,6 +6,43 @@
 
 更新日期：2026-09-07
 
+## 2026-11-24 Windows 唤醒后额度查询弹出 Google 登录页
+
+**现象**：电脑从休眠唤醒后弹出 Google 登录页。本机 agy 1.5.16 日志
+`cli-20261124_085228.log` 记录了完整链路：`--print=/usage` 发现 token 已过期 →
+刷新时 `lookup oauth2.googleapis.com: no such host` → `Print mode: silent auth failed` →
+`Print mode: triggering interactive OAuth`。04:21 的一次是 `TLS handshake timeout`，结果相同。
+
+**原因**：print 模式无视 `AGY_CLI_NONINTERACTIVE_HEADLESS=1`。原有防护只在 Unix 上把
+`PATH` 指向空目录，Windows 上没有对应措施。即便 Windows 上也改 `PATH` 仍不够：二进制里同时有
+`rundll32 url.dll,FileProtocolHandler` 和 `ShellExecuteW`，后者打开浏览器不经过 `PATH`。
+
+**排除的替代路径**（均在 1.5.16 实测）：
+- stream-json 会话里发 `/usage`：CLI 直接拒绝，提示
+  "/usage is answered by the CLI itself and is unavailable with --input-format stream-json"。
+- 新增的 `agy acp`：认证由客户端发起（`authMethods`，交互登录要单独运行 `acp --login`），
+  设计上不会自行弹窗；但 `usage_update` 只是上下文窗口，`_meta.antigravity.tier` 只有订阅档位，
+  没有额度窗口。将来若 ACP 提供额度，应改走 ACP。
+- 直接读 token 调额度接口：违反需求文档 Hub 不读取 Agent 凭据的约束。
+
+**修复**：
+1. *Windows 不允许 print 子进程再创建进程*。`process-scope` 的 Job 在
+   `without_children` 时设置 `JOB_OBJECT_LIMIT_ACTIVE_PROCESS` 和 `ActiveProcessLimit = 1`，
+   子进程在挂起状态下就已入 Job，因此不存在竞态。通过 `ProcessRequest::without_child_processes` /
+   `TargetCommand::without_child_processes()` 传递，`prepare_print_command` 对所有 print 命令开启。
+   实测：受限 Job 内 `CreateProcess` 和 `ShellExecute` 都返回 `ERROR_NOT_ENOUGH_QUOTA`；
+   agy `--print=/usage`、`--print=/hooks` 在受限 Job 内照常成功。会话进程不受影响，其工具需要创建子进程。
+   远端 target 忽略此标志，那里是 Unix，由原有的 `PATH` 防护负责。
+2. *网络未恢复时不启动 agy*。本机安装在读取额度前，先用 agy 将得到的同一份代理环境
+   （`agent_runtime::proxy_environment()`，按 Go 语义：https 只用 `HTTPS_PROXY`、遵守
+   `NO_PROXY`、无 scheme 视为 `http://`）对 `https://oauth2.googleapis.com/` 发 HEAD，5 秒内
+   收到任意 HTTP 响应才继续。否则返回与 agy 自身网络失败相同的 `quota_network_error`：
+   保留上次读数，30 秒后的下一次轮询自动重试。这样就无需专门检测唤醒，网络恢复前的每次轮询都会被挡住。
+   远端安装不做此检查。
+
+第 2 条只降低触发概率，检查通过后网络仍可能再次中断；第 1 条才保证 Windows 上不弹窗。
+上游问题（print 模式不遵守 `AGY_CLI_NONINTERACTIVE_HEADLESS`）待报告。
+
 ## 2026-11-07 Windows 欢迎页探测闪出终端
 
 最初仅按窗口标题和时间，将闪窗归因于 `agy models` 身份探测，并补上

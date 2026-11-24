@@ -43,6 +43,13 @@ pub fn apply_proxy_environment(command: &mut Command) {
     }
 }
 
+/// Exactly what [`apply_proxy_environment`] gives a process, for a caller that must
+/// reach the network the way that process will.
+#[must_use]
+pub fn proxy_environment() -> BTreeMap<String, OsString> {
+    resolved_proxy_environment()
+}
+
 /// What the system says about reaching the outside, for tools that take one proxy.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SystemProxy {

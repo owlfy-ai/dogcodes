@@ -9,7 +9,7 @@ mod proxy;
 mod target;
 pub use process_scope::ProcessOutput as ProcessStream;
 pub use process_scope::{
-    OwnedChild, ProcessDiagnostic, ProcessFuture, ProcessInput, RemoteProcess,
+    OwnedChild, ProcessDiagnostic, ProcessFuture, ProcessInput, RemoteProcess, SpawnOptions,
     install_process_diagnostics,
 };
 pub use target::{
@@ -23,9 +23,15 @@ pub use environment::{apply_platform_environment, inherited_variable};
 pub use external_path::{agent_command, background_command, external_path};
 pub use path_environment::{current_path, record_shell_path};
 #[cfg(feature = "system-proxy")]
-pub use proxy::{SystemProxy, apply_proxy_environment, system_proxy};
+pub use proxy::{SystemProxy, apply_proxy_environment, proxy_environment, system_proxy};
 #[cfg(not(feature = "system-proxy"))]
 pub fn apply_proxy_environment(_command: &mut tokio::process::Command) {}
+/// The proxy variables a process started here is given; none without system proxies.
+#[cfg(not(feature = "system-proxy"))]
+#[must_use]
+pub fn proxy_environment() -> std::collections::BTreeMap<String, std::ffi::OsString> {
+    std::collections::BTreeMap::new()
+}
 
 use std::{
     collections::{BTreeMap, BTreeSet},

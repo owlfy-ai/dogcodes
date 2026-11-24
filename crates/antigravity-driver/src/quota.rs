@@ -131,6 +131,15 @@ impl QuotaProvider for AntigravityDriver {
             let slot = self.spawn.clone().try_lock_owned().map_err(|_| {
                 DriverError::Disconnected("agy session is active; quota refresh deferred".into())
             })?;
+            // Started without a network, agy would turn to an interactive sign-in. Reported
+            // like its own network failure: the last reading stays, the next poll retries.
+            if let Some(endpoint) = &self.sign_in_endpoint
+                && !super::network::reachable(endpoint, &agent_runtime::proxy_environment()).await
+            {
+                return Err(DriverError::CapabilityUnavailable(
+                    "quota_network_error".into(),
+                ));
+            }
             let mut command = self.executable.command();
             command
                 .args(["--print=/usage", "--output-format", "stream-json"])

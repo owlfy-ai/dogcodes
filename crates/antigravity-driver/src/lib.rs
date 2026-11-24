@@ -43,6 +43,7 @@ use tokio::{
 use tokio_stream::wrappers::UnboundedReceiverStream;
 pub mod approval_bridge;
 mod catalog;
+mod network;
 mod quota;
 mod scratch;
 mod session_open;
@@ -199,14 +200,20 @@ fn prepare_command(command: &mut agent_runtime::TargetCommand, remote: bool) {
 
 /// Print mode answers a failed silent login with the interactive one, whatever it's told,
 /// and a token refresh failing on a network that's still waking up is enough for that. So a
-/// Google sign-in page would open on its own while nobody is there. It finds the program
-/// that opens one through `PATH`, and nothing a print command does needs anything else there.
+/// Google sign-in page would open on its own while nobody is there. On Unix it finds the
+/// program that opens one through `PATH`, and nothing a print command does needs anything
+/// else there.
 const NOTHING_TO_RUN: &str = "/var/empty";
 
 /// For a command nobody asked to see, like reading quota. Conversations keep their `PATH`,
 /// as their tools need it. A failed login then ends as an error, for signing in by hand.
+///
+/// On Windows `PATH` is no help: agy can open the page through `ShellExecute`. There the
+/// process may start no other at all, which a print command never needs (`/usage` and
+/// `/hooks` verified on agy 1.5.16).
 fn prepare_print_command(command: &mut agent_runtime::TargetCommand, remote: bool) {
     prepare_command(command, remote);
+    command.without_child_processes();
     if cfg!(unix) {
         command.env("PATH", NOTHING_TO_RUN);
     }
@@ -518,6 +525,9 @@ pub struct AntigravityDriver {
     /// can run in parallel without sharing one machine-wide credential chain.
     spawn: SpawnLock,
     backoff: Backoff,
+    /// Checked before a quota read on this machine; see [`network`]. Another machine's
+    /// network can't be judged from here.
+    sign_in_endpoint: Option<String>,
 }
 
 impl Drop for AntigravityDriver {
@@ -557,6 +567,10 @@ impl AntigravityDriver {
     ) -> Result<Self, agent_domain::DomainError> {
         let executable = executable.into();
         let account = account_of(&executable.target);
+        let sign_in_endpoint = executable
+            .target
+            .is_local()
+            .then(|| network::SIGN_IN_ENDPOINT.to_owned());
         Ok(Self {
             admission: tokio::sync::Mutex::new(()),
             stopping: tokio::sync::watch::channel(false).0,
@@ -579,7 +593,14 @@ impl AntigravityDriver {
             processes: tokio::sync::Mutex::new(HashMap::new()),
             spawn: account.spawn.clone(),
             backoff: account.backoff.clone(),
+            sign_in_endpoint,
         })
+    }
+
+    /// Where the network is checked before a quota read; `None` skips the check. By
+    /// default only an installation on this machine is checked, against Google sign-in.
+    pub fn set_sign_in_endpoint(&mut self, endpoint: Option<String>) {
+        self.sign_in_endpoint = endpoint;
     }
 
     /// Spawns `agy` with stream-json args and verifies it emits an `init`
@@ -1804,6 +1825,7 @@ done
         )
         .unwrap();
         driver.spawn = lock;
+        driver.sign_in_endpoint = None;
         driver
     }
 

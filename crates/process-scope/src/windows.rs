@@ -16,12 +16,19 @@ fn owned(handle: HANDLE) -> OwnedHandle {
     unsafe { OwnedHandle::from_raw_handle(handle.0) }
 }
 impl Job {
-    pub fn assign(child: &mut Child) -> io::Result<Self> {
+    /// With `without_children`, the job holds the child alone: any process it starts,
+    /// including a browser opened through `ShellExecute`, fails with
+    /// `ERROR_NOT_ENOUGH_QUOTA`.
+    pub fn assign(child: &mut Child, without_children: bool) -> io::Result<Self> {
         // SAFETY: unnamed private job and default non-inheritable security.
         let handle = unsafe { CreateJobObjectW(None, None) }.map_err(failure)?;
         let job = Self(owned(handle));
         let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if without_children {
+            limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+            limits.BasicLimitInformation.ActiveProcessLimit = 1;
+        }
         let process = HANDLE(
             child
                 .raw_handle()

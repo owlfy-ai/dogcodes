@@ -347,6 +347,7 @@ dependencies = [
  "chrono",
  "driver-api",
  "futures",
+ "reqwest",
  "serde_json",
  "tempfile",
  "tokio",

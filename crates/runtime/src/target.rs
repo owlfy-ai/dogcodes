@@ -2,8 +2,8 @@
 //! decides what that means: environment values and temporary directories belong to
 //! the machine the process runs on, never to whichever machine hosts this app.
 use crate::{
-    OwnedChild, agent_command, apply_platform_environment, apply_proxy_environment, external_path,
-    inherited_variable, installed_node_path,
+    OwnedChild, SpawnOptions, agent_command, apply_platform_environment, apply_proxy_environment,
+    external_path, inherited_variable, installed_node_path,
 };
 use std::{
     collections::BTreeMap,
@@ -44,6 +44,9 @@ pub struct ProcessRequest {
     pub stderr: Pipe,
     /// Run in a new session so an interactive shell cannot stop on this terminal.
     pub without_terminal: bool,
+    /// The process may not start others, such as a browser. Only a local Windows
+    /// process is held to this, by its job; other targets ignore it.
+    pub without_child_processes: bool,
 }
 
 /// A process under a terminal, whose size can change while it runs.
@@ -135,11 +138,13 @@ impl ExecutionTarget for LocalTarget {
         command.envs(&request.env);
         // A proxy set for this machine describes this machine's network.
         apply_proxy_environment(&mut command);
-        if request.without_terminal {
-            OwnedChild::spawn_without_terminal(command)
-        } else {
-            OwnedChild::spawn(command)
-        }
+        OwnedChild::spawn_with(
+            command,
+            SpawnOptions {
+                without_terminal: request.without_terminal,
+                without_children: request.without_child_processes,
+            },
+        )
     }
 }
 
@@ -344,6 +349,11 @@ impl TargetCommand {
     /// The child must not join the caller's terminal session.
     pub fn without_terminal(&mut self) -> &mut Self {
         self.request.without_terminal = true;
+        self
+    }
+    /// See [`ProcessRequest::without_child_processes`].
+    pub fn without_child_processes(&mut self) -> &mut Self {
+        self.request.without_child_processes = true;
         self
     }
     pub fn stdio(&mut self, stdin: Pipe, stdout: Pipe, stderr: Pipe) -> &mut Self {

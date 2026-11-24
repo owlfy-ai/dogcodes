@@ -91,6 +91,7 @@ fn shell_request(target: &SharedTarget, command: Option<&str>, cwd: &Path) -> Pr
         stdout: Pipe::Piped,
         stderr: Pipe::Null,
         without_terminal: false,
+        without_child_processes: false,
     }
 }
 

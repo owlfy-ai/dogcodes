@@ -896,6 +896,7 @@ async fn a_terminal_on_the_target_has_input_output_size_and_ends_when_stopped() 
         stdout: Pipe::Piped,
         stderr: Pipe::Null,
         without_terminal: false,
+        without_child_processes: false,
     };
     let mut terminal = link.target().spawn_terminal(request, 91, 17).unwrap();
     let mut input = terminal.child.stdin.take().unwrap();
