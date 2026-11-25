@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "acp-driver"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-client-protocol",
  "agent-domain",
@@ -30,7 +30,7 @@ dependencies = [
 
 [[package]]
 name = "acp-probe"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-client-protocol",
  "serde_json",
@@ -131,7 +131,7 @@ dependencies = [
 
 [[package]]
 name = "agent-core"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-domain",
  "agent-protocol",
@@ -156,7 +156,7 @@ dependencies = [
 
 [[package]]
 name = "agent-domain"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "regex",
  "serde",
@@ -167,7 +167,7 @@ dependencies = [
 
 [[package]]
 name = "agent-management"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-domain",
  "agent-protocol",
@@ -191,7 +191,7 @@ dependencies = [
 
 [[package]]
 name = "agent-protocol"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-domain",
  "async-trait",
@@ -202,7 +202,7 @@ dependencies = [
 
 [[package]]
 name = "agent-registry"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-domain",
  "agent-runtime",
@@ -216,7 +216,7 @@ dependencies = [
 
 [[package]]
 name = "agent-runtime"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "core-foundation 0.9.4",
  "plist",
@@ -231,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "agent-store"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "acp-driver",
  "agent-core",
@@ -260,7 +260,7 @@ dependencies = [
 
 [[package]]
 name = "agent-workspace"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-domain",
  "agent-protocol",
@@ -339,7 +339,7 @@ checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
 name = "antigravity-driver"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-domain",
  "agent-runtime",
@@ -1163,7 +1163,7 @@ dependencies = [
 
 [[package]]
 name = "claude-driver"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -1207,7 +1207,7 @@ dependencies = [
 
 [[package]]
 name = "codex-app-server-probe"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-runtime",
  "hex",
@@ -1222,7 +1222,7 @@ dependencies = [
 
 [[package]]
 name = "codex-driver"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-domain",
  "agent-runtime",
@@ -1738,7 +1738,7 @@ dependencies = [
 
 [[package]]
 name = "desktop"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "acp-driver",
  "agent-core",
@@ -1807,7 +1807,7 @@ dependencies = [
 
 [[package]]
 name = "desktop-test-manifest"
-version = "0.1.5"
+version = "0.1.6"
 
 [[package]]
 name = "digest"
@@ -1912,7 +1912,7 @@ dependencies = [
 
 [[package]]
 name = "dogcodes-remote-desktop"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "arboard",
  "base64 0.22.1",
@@ -1955,7 +1955,7 @@ dependencies = [
 
 [[package]]
 name = "dogcodes-remote-transport"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2000,7 +2000,7 @@ dependencies = [
 
 [[package]]
 name = "driver-api"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-domain",
  "agent-runtime",
@@ -4245,7 +4245,7 @@ dependencies = [
 
 [[package]]
 name = "native-acl"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "exacl",
  "libc",
@@ -4341,7 +4341,7 @@ dependencies = [
 
 [[package]]
 name = "notification-center"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "block2",
  "objc2",
@@ -4934,7 +4934,7 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "open-with"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "base64 0.22.1",
  "gio 0.18.4",
@@ -5166,7 +5166,7 @@ dependencies = [
 
 [[package]]
 name = "pi-driver"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-domain",
  "agent-runtime",
@@ -5455,7 +5455,7 @@ dependencies = [
 
 [[package]]
 name = "process-scope"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "nix 0.28.0",
  "tokio",
@@ -5464,7 +5464,7 @@ dependencies = [
 
 [[package]]
 name = "provider-quota"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-domain",
  "agent-management",
@@ -5746,7 +5746,7 @@ dependencies = [
 
 [[package]]
 name = "redaction"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "regex",
  "serde",
@@ -7241,7 +7241,7 @@ checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "target-link"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "acp-driver",
  "agent-core",
@@ -7267,7 +7267,7 @@ dependencies = [
 
 [[package]]
 name = "target-shim"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-management",
  "hex",
@@ -7284,7 +7284,7 @@ dependencies = [
 
 [[package]]
 name = "target-wire"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "serde",
  "serde_json",
@@ -9219,7 +9219,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "workspace-ops"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-core",
  "agent-domain",
@@ -9619,7 +9619,7 @@ dependencies = [
 
 [[package]]
 name = "zcode-driver"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "agent-domain",
  "agent-runtime",
