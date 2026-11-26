@@ -28,6 +28,7 @@ const logos: Record<string, string> = {
   opencode: new URL("./assets/opencode.png", import.meta.url).href,
   "deepseek-harness": new URL("./assets/deepseek-harness.png", import.meta.url).href,
   kiro: new URL("./assets/kiro.svg", import.meta.url).href,
+  "qoder-cn": new URL("./assets/qoder-cn.png", import.meta.url).href,
 };
 
 export function providerLabel(providerId: string, lang: ResolvedLanguage = "zh-CN"): string {
@@ -44,6 +45,7 @@ export function providerLabel(providerId: string, lang: ResolvedLanguage = "zh-C
     opencode: "OpenCode",
     "deepseek-harness": "DeepSeek Harness",
     kiro: "Kiro",
+    "qoder-cn": "Qoder CN",
     // Internal provider id for app-authored messages; only the label is user-visible.
     dogcodes: "dog.codes",
     fake: t("agentUi.offline", undefined, lang),

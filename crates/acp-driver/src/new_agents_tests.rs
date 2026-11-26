@@ -14,6 +14,31 @@ fn resume_negotiation_uses_the_advertised_native_method() {
     ));
 }
 #[test]
+fn only_a_script_inside_the_apps_own_resources_selects_electron_node_mode() {
+    let root = tempfile::tempdir().unwrap();
+    let app = root.path().join("Qoder CN");
+    let executable = app.join("Qoder CN.exe");
+    let resources = agent_runtime::electron_resources_directory(&executable).unwrap();
+    let launch = |args: Vec<String>| AcpLaunch {
+        executable: executable.clone().into(),
+        args,
+    };
+    let script = resources
+        .join("app.asar.unpacked/runtime.mjs")
+        .to_string_lossy()
+        .into_owned();
+    assert!(electron_node_script(&launch(vec![script, "--acp".into()])));
+    // A plain CLI keeps its normal launch, even with a script argument elsewhere.
+    assert!(!electron_node_script(&launch(vec!["--acp".into()])));
+    assert!(!electron_node_script(&launch(vec![])));
+    let foreign = root
+        .path()
+        .join("Other/resources/runtime.mjs")
+        .to_string_lossy()
+        .into_owned();
+    assert!(!electron_node_script(&launch(vec![foreign])));
+}
+#[test]
 fn deepseek_grouped_catalog_preserves_opaque_model_identifiers_and_effort() {
     let state = json!({"configOptions":[{"id":"model","category":"model","type":"select","currentValue":"[\"provider\",\"flash\"]","options":[{"group":"provider","options":[{"value":"[\"provider\",\"flash\"]","name":"Flash"}]}]},{"id":"reasoning_effort","category":"thought_level","type":"select","currentValue":"high","options":[{"value":"off","name":"Off"},{"value":"high","name":"High"}]}]});
     let catalog = models::catalog(&state);
@@ -21,20 +46,28 @@ fn deepseek_grouped_catalog_preserves_opaque_model_identifiers_and_effort() {
     assert_eq!(catalog.models[0].id, "[\"provider\",\"flash\"]");
     assert_eq!(catalog.models[0].thinking_options.len(), 2);
 }
+/// Qoder CN runs its bundled CLI script through the desktop app's Electron
+/// binary; the path matches `bundled_script` in drivers/manifests/qoder-cn.toml.
+fn qoder_cn_args(binary: &str) -> Vec<String> {
+    let script = agent_runtime::electron_resources_directory(std::path::Path::new(binary))
+        .unwrap()
+        .join("app.asar.unpacked/node_modules/@qoder-ai/qoder-cn-agent-sdk/dist/_worker/qoder-worker-runtime.obf.mjs");
+    vec![script.to_string_lossy().into_owned(), "--acp".into()]
+}
 #[tokio::test]
 #[ignore = "metadata-only native new/load/resume/config acceptance for one local ACP installation"]
 async fn real_new_agent_metadata() {
     let provider = std::env::var("DOGCODES_ACP_PROVIDER").unwrap();
     let binary = std::env::var("DOGCODES_ACP_BINARY").unwrap();
     let args: Vec<String> = match provider.as_str() {
-        "opencode" => vec!["acp"],
-        "kiro" => vec!["acp", "--agent-engine", "v3", "--auth-method", "cli"],
-        "deepseek-harness" => vec!["--profile", "acp"],
+        "qoder-cn" => qoder_cn_args(&binary),
+        "opencode" => vec!["acp".into()],
+        "kiro" => ["acp", "--agent-engine", "v3", "--auth-method", "cli"]
+            .map(Into::into)
+            .into(),
+        "deepseek-harness" => vec!["--profile".into(), "acp".into()],
         _ => panic!("unsupported acceptance provider"),
-    }
-    .into_iter()
-    .map(Into::into)
-    .collect();
+    };
     let started = std::time::Instant::now();
     let driver = AcpDriver::connect_ready(
         &provider,
@@ -77,7 +110,8 @@ async fn real_new_agent_metadata() {
         .await
         .unwrap();
     let warm = std::time::Instant::now();
-    driver
+    // Every restore returns a newly scoped handle; the earlier one cannot close it.
+    let resumed = driver
         .resume_selected_session(&handle.native_session_id, request.clone(), model, thinking)
         .await
         .unwrap();
@@ -87,12 +121,12 @@ async fn real_new_agent_metadata() {
         permissions.modes.len(),
         warm.elapsed().as_millis()
     );
-    driver.shutdown(handle.clone()).await.unwrap();
-    driver
+    driver.shutdown(resumed).await.unwrap();
+    let restored = driver
         .resume_selected_session(&handle.native_session_id, request, model, thinking)
         .await
         .unwrap();
-    driver.shutdown(handle).await.unwrap();
+    driver.shutdown(restored).await.unwrap();
 }
 
 #[tokio::test]
@@ -100,15 +134,15 @@ async fn real_new_agent_metadata() {
 async fn real_new_agent_turn() {
     let provider = std::env::var("DOGCODES_ACP_PROVIDER").unwrap();
     let binary = std::env::var("DOGCODES_ACP_BINARY").unwrap();
-    let args = match provider.as_str() {
-        "kiro" => vec!["acp", "--agent-engine", "v3", "--auth-method", "cli"],
-        "deepseek-harness" => vec!["--profile", "acp"],
-        "opencode" => vec!["acp"],
+    let args: Vec<String> = match provider.as_str() {
+        "qoder-cn" => qoder_cn_args(&binary),
+        "kiro" => ["acp", "--agent-engine", "v3", "--auth-method", "cli"]
+            .map(Into::into)
+            .into(),
+        "deepseek-harness" => vec!["--profile".into(), "acp".into()],
+        "opencode" => vec!["acp".into()],
         _ => panic!("unknown provider"),
-    }
-    .into_iter()
-    .map(Into::into)
-    .collect();
+    };
     let driver = AcpDriver::connect_ready(
         &provider,
         &agent_domain::InstallationId::new().to_string(),

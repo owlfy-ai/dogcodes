@@ -1829,9 +1829,19 @@ async fn register_ready_acp_drivers(
             && installation.status != InstallationStatus::UnsupportedVersion
     }) {
         register_provider_account_monitor(&core, installation, None).await;
+        let executable = std::path::PathBuf::from(&installation.executable);
+        let mut args = manifest.discovery.launch_args.clone();
+        // An app-bundled CLI script (Qoder CN) runs through the app's own
+        // Electron binary; acp-driver switches to node mode for this shape.
+        if let Some(script) = &manifest.discovery.bundled_script {
+            let Some(resources) = agent_runtime::electron_resources_directory(&executable) else {
+                continue;
+            };
+            args.insert(0, resources.join(script).to_string_lossy().into_owned());
+        }
         let mut launch = acp_driver::AcpLaunch {
-            executable: (std::path::PathBuf::from(&installation.executable)).into(),
-            args: manifest.discovery.launch_args.clone(),
+            executable: executable.into(),
+            args,
         };
         // Trusted adapter option, not a manifest-supplied flag. Probing and
         // sessions must not start background installers alongside manual updates.
@@ -2894,6 +2904,7 @@ esac
             include_str!("../../../../drivers/manifests/opencode.toml"),
             include_str!("../../../../drivers/manifests/deepseek-harness.toml"),
             include_str!("../../../../drivers/manifests/kiro.toml"),
+            include_str!("../../../../drivers/manifests/qoder-cn.toml"),
         ] {
             ProviderManifest::parse_toml(source).unwrap();
         }

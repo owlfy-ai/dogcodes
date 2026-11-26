@@ -19,7 +19,7 @@ let container: HTMLDivElement;
 afterEach(async () => { if (root) await act(async () => root?.unmount()); root = undefined; container?.remove(); vi.useRealTimers(); vi.mocked(isTauri).mockReturnValue(false); vi.mocked(invoke).mockReset(); vi.unstubAllGlobals(); });
 
 describe("welcome account states", () => {
-  it("lists the twelve supported products", () => expect(supportedAgents).toHaveLength(12));
+  it("lists the thirteen supported products", () => expect(supportedAgents).toHaveLength(13));
   it("does not mistake network failure, stale quota or a ready handshake for valid credentials", () => {
     expect(welcomeStatus({ installation, failed: true }).label).toBe("检测失败");
     expect(welcomeStatus({ installation }).label).toBe("授权待确认");
@@ -315,13 +315,13 @@ describe("welcome scan workflow", () => {
     const client = { scanAgent: vi.fn(async (id: string) => { scanned.push(id); return { installations: id === "codex" ? [installation] : [] } as BootstrapSnapshot; }), quotaSnapshots: vi.fn(async () => [view()]) } as unknown as CoreClient;
     await mount(client);
     expect(scanned).toEqual(supportedAgents.map(agent => agent.id));
-    expect(container.querySelectorAll(".welcome-agent-card")).toHaveLength(12);
+    expect(container.querySelectorAll(".welcome-agent-card")).toHaveLength(supportedAgents.length);
     expect(container.querySelectorAll(".welcome-ring-value")).toHaveLength(1);
     expect(container.textContent).toContain("75%"); expect(container.textContent).toContain("重置");
     expect(client.quotaSnapshots).toHaveBeenCalledWith(null, "ins_one");
     const retry = [...container.querySelectorAll("button")].find(b => b.textContent?.includes("重新检测"))!;
     await act(async () => retry.click());
-    expect(client.scanAgent).toHaveBeenCalledTimes(24);
+    expect(client.scanAgent).toHaveBeenCalledTimes(supportedAgents.length * 2);
   });
   it("a failed discovery must not display uninstalled as a verified result", async () => {
     await mount({ scanAgent: async () => { throw new Error("service unavailable"); }, bootstrap: vi.fn(), quotaSnapshots: vi.fn() } as unknown as CoreClient);
@@ -348,7 +348,7 @@ describe("independent native agent detection", () => {
     const scanAgent = vi.fn(async (id: string) => id === "kimi" ? slow : ({ installations: id === "codex" ? [installation] : [] } as unknown as BootstrapSnapshot));
     const quotaSnapshots = vi.fn(async () => [view()]);
     await mount({ scanAgent, quotaSnapshots } as unknown as CoreClient);
-    expect(scanAgent).toHaveBeenCalledTimes(12);
+    expect(scanAgent).toHaveBeenCalledTimes(supportedAgents.length);
     expect(scanAgent.mock.calls).toEqual(supportedAgents.map(agent => [agent.id, false]));
     expect(container.querySelector('[aria-label="Codex"]')?.textContent).toContain("已登录");
     expect(container.querySelector('[aria-label="Codex"]')?.textContent).toContain("75%");
@@ -357,7 +357,7 @@ describe("independent native agent detection", () => {
     await act(async () => release({ installations: [] } as unknown as BootstrapSnapshot));
     expect(container.querySelector('[aria-label="Kimi Code"]')?.textContent).toContain("未检测到 CLI");
   });
-  it("clears all previous readings and performs twelve fresh probes on each retry", async () => {
+  it("clears all previous readings and performs one fresh probe per agent on each retry", async () => {
     let blocked = false;
     let release!: (s: BootstrapSnapshot) => void;
     const slow = new Promise<BootstrapSnapshot>(resolve => { release = resolve; });
@@ -366,12 +366,12 @@ describe("independent native agent detection", () => {
     expect(container.textContent).toContain("75%");
     blocked = true;
     await act(async () => [...container.querySelectorAll("button")].find(b => b.textContent?.includes("重新检测"))!.click());
-    expect(scanAgent).toHaveBeenCalledTimes(24);
-    expect(scanAgent.mock.calls.slice(12)).toEqual(supportedAgents.map(agent => [agent.id, true]));
+    expect(scanAgent).toHaveBeenCalledTimes(supportedAgents.length * 2);
+    expect(scanAgent.mock.calls.slice(supportedAgents.length)).toEqual(supportedAgents.map(agent => [agent.id, true]));
     expect(container.textContent).not.toContain("75%");
-    expect(container.querySelectorAll(".welcome-status").length).toBe(12);
+    expect(container.querySelectorAll(".welcome-status").length).toBe(supportedAgents.length);
     expect([...container.querySelectorAll(".welcome-status")].map(status => status.textContent))
-      .toEqual(Array(12).fill("等待检测"));
+      .toEqual(Array(supportedAgents.length).fill("等待检测"));
     expect(container.querySelectorAll(".welcome-status.warning")).toHaveLength(0);
     await act(async () => release({ installations: [] } as unknown as BootstrapSnapshot));
   });
@@ -417,7 +417,7 @@ describe("detection lifecycle recovery", () => {
     await mount({ scanAgent: async () => old, quotaSnapshots: async () => [view()] } as unknown as CoreClient);
     const fresh = { scanAgent: vi.fn(async () => ({ installations: [] })), quotaSnapshots: vi.fn() } as unknown as CoreClient;
     await act(async () => root!.render(<AgentWelcome client={fresh} onContinue={() => {}} renderIcon={() => null} />));
-    expect(fresh.scanAgent).toHaveBeenCalledTimes(12);
+    expect(fresh.scanAgent).toHaveBeenCalledTimes(supportedAgents.length);
     expect(container.textContent).not.toContain("正在检测…");
     await act(async () => release({ installations: [installation] } as unknown as BootstrapSnapshot));
     expect(container.querySelector('[aria-label="Codex"]')?.textContent).toContain("未安装");
@@ -428,13 +428,13 @@ describe("detection lifecycle recovery", () => {
     const scanAgent = vi.fn(async () => new Promise<BootstrapSnapshot>(() => {}));
     await mount({ scanAgent, quotaSnapshots: vi.fn() } as unknown as CoreClient);
     await act(async () => { vi.advanceTimersByTime(100_001); });
-    expect(container.querySelectorAll(".welcome-status.warning")).toHaveLength(12);
+    expect(container.querySelectorAll(".welcome-status.warning")).toHaveLength(supportedAgents.length);
     const button = [...container.querySelectorAll("button")].find(b => b.textContent?.includes("重新检测"))!;
     expect(button.disabled).toBe(false);
     scanAgent.mockImplementation(async () => ({ installations: [] } as unknown as BootstrapSnapshot));
     await act(async () => button.click());
     expect(container.querySelector('[aria-label="Cursor"]')?.textContent).toContain("未检测到 CLI");
-    expect(scanAgent).toHaveBeenCalledTimes(24);
+    expect(scanAgent).toHaveBeenCalledTimes(supportedAgents.length * 2);
   });
   it("bounds an orphaned quota reply without blocking other cards", async () => {
     vi.useFakeTimers();
@@ -529,7 +529,7 @@ describe("welcome installation and upgrades", () => {
     vi.mocked(invoke).mockResolvedValue(undefined);
     await mount({ scanAgent: async () => ({ installations: [] }) } as unknown as CoreClient);
     const links = [...container.querySelectorAll<HTMLAnchorElement>(".welcome-install-link")];
-    expect(links).toHaveLength(12);
+    expect(links).toHaveLength(supportedAgents.length);
     for (const link of links) {
       expect(link.href).toMatch(/^https:\/\//);
       expect(link.closest('[aria-disabled="true"]')).toBeNull();

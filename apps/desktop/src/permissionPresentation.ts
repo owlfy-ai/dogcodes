@@ -43,7 +43,7 @@ const nativeKinds: Record<string, PermissionKind> = {
   default: "ask", ask: "ask", acceptEdits: "edit", edit: "edit", plan: "plan", "read-only": "read", readOnly: "read",
   auto: "auto", dontAsk: "deny", build: "configured", configured: "configured",
   bypassPermissions: "bypass", "always-approve": "bypass", "auto-approve": "bypass", "allow-all": "bypass",
-  "dangerously-skip-permissions": "bypass", "full-access": "full", fullAccess: "full", "danger-full-access": "full",
+  "dangerously-skip-permissions": "bypass", yolo: "bypass", "full-access": "full", fullAccess: "full", "danger-full-access": "full",
 };
 
 function known(providerId: string, mode?: Mode): Known | undefined {

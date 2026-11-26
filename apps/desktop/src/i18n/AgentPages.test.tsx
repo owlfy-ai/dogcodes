@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import type { BootstrapSnapshot, CoreClient, InstallationSummary, QuotaSnapshotView } from "@dogcodes/protocol";
-import { AgentWelcome } from "../AgentWelcome";
+import { AgentWelcome, supportedAgents } from "../AgentWelcome";
 import { QuotaCenter } from "../App";
 import { AgentLogin } from "../AgentLogin";
 import { AgentUpdateControl, type AgentUpdateActions } from "../agentUpdates";
@@ -45,9 +45,9 @@ it("switches every welcome card and its accessible text across all languages wit
   for (const lang of languages) {
     await act(async () => root!.render(<I18nProvider language={lang}><AgentWelcome client={client} renderIcon={() => null} onContinue={() => {}} /></I18nProvider>));
     expect([...host.querySelectorAll(".welcome-status")].map(status => status.textContent))
-      .toEqual(Array(12).fill(LOCALES[lang].agentUi.waitingDetection));
+      .toEqual(Array(supportedAgents.length).fill(LOCALES[lang].agentUi.waitingDetection));
     expect(host.querySelectorAll(".welcome-status.warning")).toHaveLength(0);
-    expect(host.querySelectorAll('.welcome-status[aria-busy="true"]')).toHaveLength(12);
+    expect(host.querySelectorAll('.welcome-status[aria-busy="true"]')).toHaveLength(supportedAgents.length);
   }
   await act(async () => release({ installations } as BootstrapSnapshot));
   for (const lang of languages) {
@@ -66,7 +66,7 @@ it("switches every welcome card and its accessible text across all languages wit
       for (const item of host.querySelectorAll('[aria-label], [data-tooltip]')) expect(`${item.getAttribute("aria-label")} ${item.getAttribute("data-tooltip")}`).not.toMatch(/\p{Script=Han}/u);
     }
   }
-  expect(scanAgent).toHaveBeenCalledTimes(12);
+  expect(scanAgent).toHaveBeenCalledTimes(supportedAgents.length);
 });
 
 it("localizes management cards, missing agents, native update messages and tooltips", async () => {

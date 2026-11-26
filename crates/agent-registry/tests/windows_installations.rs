@@ -69,6 +69,28 @@ async fn deepseek_harness_desktop_cli_is_discovered_and_identified() {
 }
 
 #[tokio::test]
+#[ignore = "requires the Qoder CN desktop app; no model calls"]
+async fn qoder_cn_desktop_runtime_is_discovered_and_identified() {
+    use agent_registry::{
+        DiscoveryContext, InstallationStatus, ProviderManifest, discover_and_probe,
+    };
+    let manifest =
+        ProviderManifest::parse_toml(include_str!("../../../drivers/manifests/qoder-cn.toml"))
+            .unwrap();
+    let reports = discover_and_probe(&manifest, &DiscoveryContext::from_current_process())
+        .await
+        .unwrap();
+    for report in &reports {
+        eprintln!("{report:?}");
+    }
+    assert!(reports.iter().any(|report| {
+        report.status == InstallationStatus::Installed
+            && report.version.is_some()
+            && format!("{report:?}").contains("Qoder CN.exe")
+    }));
+}
+
+#[tokio::test]
 #[ignore = "reads installed Windows Agent CLI versions; no model calls"]
 async fn local_windows_agents_are_discovered_and_identified() {
     use agent_registry::{

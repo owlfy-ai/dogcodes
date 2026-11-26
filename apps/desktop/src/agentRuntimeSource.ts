@@ -19,6 +19,10 @@ export function agentRuntimeSource(installation: Pick<InstallationSummary, "prov
     case "zcode":
       desktop = /\/zcode\.app\/contents\/macos\/zcode$/.test(path) || /\/zcode\/zcode\.exe$/.test(path);
       break;
+    case "qoder-cn":
+      // Only the desktop app ships this CLI, as a script its Electron binary runs.
+      desktop = /\/qoder cn\.app\/contents\/macos\/qoder cn$/.test(path) || /\/qoder cn\/qoder cn\.exe$/.test(path);
+      break;
     case "deepseek-harness":
       desktop = /\/deepseek harness(?:\.app\/contents)?\/resources\/runtime\/cli\/bin\/dsh(?:\.cmd)?$/.test(path);
       break;

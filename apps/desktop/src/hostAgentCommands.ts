@@ -1,7 +1,7 @@
 /** Which agents a server can run, and what its shell runs to sign in to one. */
 
 /** Packaged as a desktop application, with no CLI of its own to install. */
-const NOT_ON_SERVERS = new Set(["zcode"]);
+const NOT_ON_SERVERS = new Set(["zcode", "qoder-cn"]);
 export const runsOnServers = (providerId: string) => !NOT_ON_SERVERS.has(providerId);
 
 const LOGIN: Record<string, string[]> = {
