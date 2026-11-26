@@ -180,6 +180,15 @@ pub(super) fn parse(usage: &serde_json::Value) -> Result<QuotaSnapshot, DriverEr
         .as_str()
         .filter(|kind| !kind.is_empty() && *kind != "invalid")
         .map(plan_name);
+    // The plan (or trial) ends here: shown as the period's end, never as a reset.
+    let native_reset_on = usage["expiresAt"]
+        .as_i64()
+        .and_then(chrono::DateTime::from_timestamp_millis)
+        .map(|end| {
+            end.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d")
+                .to_string()
+        });
     let now = now_unix_ms();
     Ok(QuotaSnapshot {
         windows: vec![QuotaWindow {
@@ -191,6 +200,7 @@ pub(super) fn parse(usage: &serde_json::Value) -> Result<QuotaSnapshot, DriverEr
             resets_at_unix: None,
         }],
         plan_type,
+        native_reset_on,
         purchased_quota,
         collected_at_unix_ms: now,
         stale_after_unix_ms: now.saturating_add(QUOTA_TTL_MS),
@@ -238,6 +248,12 @@ mod tests {
         );
         assert!(snapshot.purchased_quota);
         assert_eq!(snapshot.confidence, "provider_reported");
+        // 2026-12-10 02:47 UTC is that date in every timezone from UTC-2 to UTC+14.
+        let end = snapshot.native_reset_on.unwrap();
+        assert!(
+            ["2026-12-09", "2026-12-10"].contains(&end.as_str()),
+            "{end}"
+        );
     }
 
     #[test]
@@ -246,7 +262,9 @@ mod tests {
         usage["addOnQuota"]["remaining"] = json!(0);
         usage["userType"] = json!("invalid");
         usage["userQuota"]["used"] = json!(400);
+        usage["expiresAt"] = json!(null);
         let snapshot = parse(&usage).unwrap();
+        assert_eq!(snapshot.native_reset_on, None);
         assert!(!snapshot.purchased_quota);
         assert_eq!(snapshot.plan_type, None);
         assert_eq!(snapshot.windows[0].used_percent, Some(100.0));

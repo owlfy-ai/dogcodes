@@ -62,6 +62,8 @@ export const ja: TranslationDict = {
     "remainingQuota": "残り使用量",
     "resetPending": "リセット時刻に到達。更新してください",
     "resetAt": "リセット：{time}",
+    "periodEndsAt": "期間終了：{time}",
+    "periodEnds": "期間終了",
     "resetMissing": "リセット時刻なし",
     "unknown": "不明",
     "usageUnknown": "不明",

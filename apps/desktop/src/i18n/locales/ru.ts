@@ -62,6 +62,8 @@ export const ru: TranslationDict = {
     "remainingQuota": "Остаток лимита",
     "resetPending": "Время сброса наступило; обновите данные",
     "resetAt": "Сброс: {time}",
+    "periodEndsAt": "Период заканчивается: {time}",
+    "periodEnds": "Конец периода",
     "resetMissing": "Время сброса неизвестно",
     "unknown": "Неизвестно",
     "usageUnknown": "Неизвестно",

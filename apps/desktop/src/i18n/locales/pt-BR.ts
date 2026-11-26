@@ -62,6 +62,8 @@ export const ptBR: TranslationDict = {
     "remainingQuota": "Cota restante",
     "resetPending": "Horário de redefinição atingido; atualize",
     "resetAt": "Redefinição: {time}",
+    "periodEndsAt": "O período termina: {time}",
+    "periodEnds": "Fim do período",
     "resetMissing": "Horário de redefinição indisponível",
     "unknown": "Desconhecido",
     "usageUnknown": "Desconhecido",

@@ -62,6 +62,8 @@ export const ko: TranslationDict = {
     "remainingQuota": "남은 한도",
     "resetPending": "초기화 시간 도달, 새로 고침 필요",
     "resetAt": "초기화: {time}",
+    "periodEndsAt": "기간 종료: {time}",
+    "periodEnds": "기간 종료",
     "resetMissing": "초기화 시간 없음",
     "unknown": "알 수 없음",
     "usageUnknown": "알 수 없음",
