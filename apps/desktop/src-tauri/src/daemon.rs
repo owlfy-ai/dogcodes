@@ -901,15 +901,19 @@ impl CoreClient {
         executor: ExecutorRef,
         changes: String,
         language: Option<String>,
+        model: Option<String>,
     ) -> Result<String, String> {
         #[cfg(any(test, feature = "review-acceptance"))]
         if let Self::Local(core, _) = self {
             return core
-                .summarize_commit(executor, changes, language.as_deref())
+                .summarize_commit(executor, changes, language.as_deref(), model.as_deref())
                 .await;
         }
-        self.call("summarize_commit", json!((executor, changes, language)))
-            .await
+        self.call(
+            "summarize_commit",
+            json!((executor, changes, language, model)),
+        )
+        .await
     }
     pub async fn registered_executors(&self) -> Result<Vec<ExecutorRef>, String> {
         #[cfg(any(test, feature = "review-acceptance"))]
@@ -1387,10 +1391,14 @@ async fn dispatch(core: &Arc<Core>, method: &str, args: Value) -> Result<Value, 
                 .map_err(|e| e.to_string())
         }
         "summarize_commit" => {
-            let (executor, changes, language): (ExecutorRef, String, Option<String>) =
-                serde_json::from_value(args).map_err(|e| e.to_string())?;
+            let (executor, changes, language, model): (
+                ExecutorRef,
+                String,
+                Option<String>,
+                Option<String>,
+            ) = serde_json::from_value(args).map_err(|e| e.to_string())?;
             let result = core
-                .summarize_commit(executor, changes, language.as_deref())
+                .summarize_commit(executor, changes, language.as_deref(), model.as_deref())
                 .await?;
             serde_json::to_value(result).map_err(|e| e.to_string())
         }
@@ -3392,7 +3400,7 @@ mod tests {
             let executor = driver.executor.clone();
             let caller = tokio::spawn(async move {
                 if summary {
-                    core.summarize_commit(executor, "private diff".into(), Some("en"))
+                    core.summarize_commit(executor, "private diff".into(), Some("en"), None)
                         .await
                 } else {
                     core.analyze_project_commands(executor, "private packet".into())

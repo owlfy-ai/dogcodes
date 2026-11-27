@@ -653,6 +653,28 @@ describe("connections page", () => {
         expect(section("Kimi")).not.toBeNull();
       });
 
+      it("rescans the host before refreshing quota and update information for the new installation", async () => {
+        const installation = { installationId: "ins_kimi", providerId: "kimi", executable: "/k", version: "1", status: "ready", diagnostic: null } as const;
+        const list = vi.fn<TargetApi["list"]>(async () => [{ ...entry, status: connected, agents: [installation] }]);
+        const api = fakeApi(connected, { list });
+        await page(api);
+        await act(async () => { manage().click(); });
+        expect(api.quota).toHaveBeenCalledWith("ins_kimi", false);
+        let finish!: () => void;
+        vi.mocked(api.rescan).mockImplementationOnce(async () => {
+          await new Promise<void>(resolve => { finish = resolve; });
+          list.mockResolvedValue([{ ...entry, status: connected, agents: [{ ...installation, installationId: "ins_kimi_new", version: "2" }] }]);
+        });
+        await act(async () => { button("Refresh Status")!.click(); });
+        expect(api.rescan).toHaveBeenCalledExactlyOnceWith("tgt_one");
+        expect(api.quota).not.toHaveBeenCalledWith("ins_kimi", true);
+        await act(async () => { finish(); });
+        expect(api.quota).toHaveBeenCalledWith("ins_kimi_new", true);
+        expect(api.agentUpdate).toHaveBeenCalledWith("tgt_one", "ins_kimi_new", true);
+        expect(section("Kimi").querySelector(".agent-card-version")?.textContent).toContain("2");
+        expect(button("Refresh Status")?.disabled).toBe(false);
+      });
+
       const installButton = (name: string) => container.querySelector<HTMLButtonElement>(`.agent-uninstalled li[aria-label="${name}"] button`)!;
 
       it("offers every agent a server can run, and installs it there without a shell or a website", async () => {

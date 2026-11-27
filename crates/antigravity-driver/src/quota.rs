@@ -68,6 +68,9 @@ impl QuotaProvider for AntigravityDriver {
         &self,
         id: &str,
     ) -> Option<driver_api::usage::SessionUsageSnapshot> {
+        if let Some(acp) = &self.acp {
+            return acp.read_session_usage(id).await;
+        }
         let process = {
             let processes = self.processes.lock().await;
             processes.get(id).cloned().or_else(|| {

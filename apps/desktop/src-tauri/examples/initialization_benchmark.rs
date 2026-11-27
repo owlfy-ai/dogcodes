@@ -123,14 +123,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             )?)
         }
         "antigravity" => {
-            AntigravityDriver::probe_ready(&executable).await?;
-            Box::new(AntigravityDriver::new(
-                &provider,
-                id,
-                executable,
-                version,
-                SessionResumeCapability::Supported,
-            )?)
+            Box::new(
+                AntigravityDriver::connect_ready(&provider, id, executable.into(), version).await?,
+            )
         }
         "zcode" => {
             let launch = ZcodeLaunch {

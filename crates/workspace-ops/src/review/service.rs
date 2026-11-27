@@ -519,6 +519,7 @@ pub(super) async fn commit_summary(
     root_id: String,
     executor: agent_domain::ExecutorRef,
     language: Option<String>,
+    model: Option<String>,
 ) -> Result<String, String> {
     let changes = {
         let _gate = state.review.gate.lock().await;
@@ -638,7 +639,7 @@ pub(super) async fn commit_summary(
     };
     state
         .core
-        .summarize_commit(executor, changes, language)
+        .summarize_commit(executor, changes, language, model)
         .await
 }
 
@@ -710,6 +711,8 @@ pub enum ReviewCall {
         root_id: String,
         executor: agent_domain::ExecutorRef,
         language: Option<String>,
+        #[serde(default)]
+        model: Option<String>,
     },
     BatchFiles {
         operation_id: String,
@@ -941,7 +944,8 @@ pub async fn dispatch(
             root_id,
             executor,
             language,
-        } => response!(commit_summary(state, task_id, root_id, executor, language).await?),
+            model,
+        } => response!(commit_summary(state, task_id, root_id, executor, language, model).await?),
         BatchFiles {
             operation_id,
             request,

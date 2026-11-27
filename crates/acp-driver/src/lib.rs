@@ -431,7 +431,7 @@ impl ConnectionHandle {
         drop(cancel_rx);
         Self {
             codebuddy_cwd: self.codebuddy_cwd.clone(),
-            cursor_force: self.cursor_force,
+            skip_permissions: self.skip_permissions,
             commands,
             cancels,
             finished: Arc::clone(&self.finished),
@@ -510,7 +510,7 @@ enum Command {
 #[derive(Clone)]
 struct ConnectionHandle {
     codebuddy_cwd: Option<PathBuf>,
-    cursor_force: bool,
+    skip_permissions: bool,
     commands: mpsc::UnboundedSender<Command>,
     cancels: mpsc::UnboundedSender<Arc<turn::Turn>>,
     finished: Arc<AtomicBool>,
@@ -1046,21 +1046,49 @@ impl AcpDriver {
     ) -> Result<ConnectionHandle, DriverError> {
         self.ensure_workspace_connection(mode, None).await
     }
+
+    // Cursor and agy use a process flag for explicit bypass. Keep that choice
+    // separate from the session's work mode, including when resuming.
+    fn permission_modes<'a>(&self, mode: Option<&'a str>) -> (Option<&'a str>, Option<&'a str>) {
+        match self.executor.provider_id.as_str() {
+            "cursor" => (Some(mode.unwrap_or("default")), None),
+            "antigravity" => match mode {
+                None | Some("configured" | "desktop-approvals") => {
+                    (Some("desktop-approvals"), Some("default"))
+                }
+                Some("dangerously-skip-permissions") => (mode, Some("default")),
+                _ => (mode, mode),
+            },
+            _ => (None, mode),
+        }
+    }
+
     async fn ensure_workspace_connection(
         &self,
         mode: Option<&str>,
         cwd: Option<&str>,
     ) -> Result<ConnectionHandle, DriverError> {
-        if self.executor.provider_id.as_str() == "cursor" {
-            permissions::cursor_catalog().validate(mode)?;
-            if mode.is_some() && self.shared.turn_active.load(Ordering::Acquire) {
-                return Err(DriverError::CapabilityUnavailable(
-                    "backendText.m4f7d6a04".into(),
-                ));
+        let provider = self.executor.provider_id.as_str();
+        let antigravity = provider == "antigravity";
+        let skip_mode = match provider {
+            "cursor" => {
+                permissions::cursor_catalog().validate(mode)?;
+                Some("full-access")
             }
+            "antigravity" => {
+                driver_api::permissions::antigravity().validate(mode)?;
+                Some("dangerously-skip-permissions")
+            }
+            _ => None,
+        };
+        if skip_mode.is_some() && mode.is_some() && self.shared.turn_active.load(Ordering::Acquire)
+        {
+            return Err(DriverError::CapabilityUnavailable(
+                "backendText.m4f7d6a04".into(),
+            ));
         }
         let mut guard = self.shared.connection.lock().await;
-        let codebuddy_cwd = if self.executor.provider_id.as_str() == "codebuddy" {
+        let codebuddy_cwd = if provider == "codebuddy" {
             cwd.map(PathBuf::from)
                 .or_else(|| guard.as_ref().and_then(|c| c.codebuddy_cwd.clone()))
         } else {
@@ -1077,18 +1105,16 @@ impl AcpDriver {
                 "backendText.m6f5b290b".into(),
             ));
         }
-        let force = if self.executor.provider_id.as_str() == "cursor" {
+        let force = skip_mode.is_some_and(|skip_mode| {
             mode.map_or_else(
-                || guard.as_ref().is_some_and(|c| c.cursor_force),
-                |m| m == "full-access",
+                || guard.as_ref().is_some_and(|c| c.skip_permissions),
+                |mode| mode == skip_mode,
             )
-        } else {
-            false
-        };
+        });
         if self.shared.setup_in_progress.load(Ordering::Acquire)
             && guard.as_ref().is_some_and(|existing| {
                 existing.unavailable()
-                    || existing.cursor_force != force
+                    || existing.skip_permissions != force
                     || existing.codebuddy_cwd != codebuddy_cwd
                     || self.shared.reconnect_required.load(Ordering::Acquire)
             })
@@ -1099,7 +1125,7 @@ impl AcpDriver {
         }
         if let Some(existing) = guard.as_ref()
             && !existing.unavailable()
-            && (existing.cursor_force != force
+            && (existing.skip_permissions != force
                 || existing.codebuddy_cwd != codebuddy_cwd
                 || self.shared.reconnect_required.load(Ordering::Acquire))
             && self
@@ -1121,7 +1147,7 @@ impl AcpDriver {
         }
         if guard.as_ref().is_some_and(|c| {
             c.unavailable()
-                || c.cursor_force != force
+                || c.skip_permissions != force
                 || c.codebuddy_cwd != codebuddy_cwd
                 || self.shared.reconnect_required.load(Ordering::Acquire)
         }) {
@@ -1147,7 +1173,7 @@ impl AcpDriver {
         {
             return Ok(ConnectionHandle {
                 codebuddy_cwd: codebuddy_cwd.clone(),
-                cursor_force: force,
+                skip_permissions: force,
                 commands: existing.commands.clone(),
                 cancels: existing.cancels.clone(),
                 finished: Arc::clone(&existing.finished),
@@ -1159,10 +1185,13 @@ impl AcpDriver {
         let (cancel_tx, cancel_rx) = mpsc::unbounded_channel();
         let finished = Arc::new(AtomicBool::new(false));
         let mut launch = self.shared.launch.clone();
-        if self.executor.provider_id.as_str() == "cursor" {
+        if provider == "cursor" {
             permissions::cursor_launch_args(&mut launch.args, force);
         }
-        if self.executor.provider_id.as_str() == "codebuddy" {
+        if antigravity && force {
+            launch.args.push("--dangerously-skip-permissions".into());
+        }
+        if provider == "codebuddy" {
             // 2.178.1's deferred MCP wrapper can report PERMISSION_DENIED even
             // after both ACP approvals return Allow. Load tools directly to
             // avoid that wrapper; this CLI overlay leaves permission modes and
@@ -1184,6 +1213,7 @@ impl AcpDriver {
             } else {
                 std::time::Duration::from_secs(5)
             },
+            antigravity,
         )?;
         child.control.observe_owner(self.stopping.subscribe());
         let native = child.control.clone();
@@ -1222,7 +1252,7 @@ impl AcpDriver {
         });
         let handle = ConnectionHandle {
             codebuddy_cwd: codebuddy_cwd.clone(),
-            cursor_force: force,
+            skip_permissions: force,
             commands: command_tx,
             cancels: cancel_tx,
             finished: Arc::clone(&finished),
@@ -1230,7 +1260,7 @@ impl AcpDriver {
         };
         *guard = Some(ConnectionHandle {
             codebuddy_cwd,
-            cursor_force: force,
+            skip_permissions: force,
             commands: handle.commands.clone(),
             cancels: handle.cancels.clone(),
             finished: Arc::clone(&finished),
@@ -1267,6 +1297,17 @@ fn supports_native_resume(initial: &serde_json::Value) -> bool {
             .is_some_and(serde_json::Value::is_object)
 }
 fn resume_method(initial: &serde_json::Value) -> &'static str {
+    if initial
+        .pointer("/agentInfo/name")
+        .and_then(serde_json::Value::as_str)
+        == Some("Antigravity ACP Server")
+        && initial
+            .pointer("/agentCapabilities/sessionCapabilities/resume")
+            .is_some_and(serde_json::Value::is_object)
+    {
+        // Resume the conversation without replaying all historical tool events.
+        return "session/resume";
+    }
     if initial["agentCapabilities"]["loadSession"] == true {
         "session/load"
     } else {
@@ -1311,13 +1352,14 @@ fn electron_node_script(launch: &AcpLaunch) -> bool {
 }
 
 fn spawn_agent(launch: &AcpLaunch) -> Result<(lifecycle::Process, AgentTransport), DriverError> {
-    spawn_agent_in(launch, None, None, std::time::Duration::from_secs(5))
+    spawn_agent_in(launch, None, None, std::time::Duration::from_secs(5), false)
 }
 fn spawn_agent_in(
     launch: &AcpLaunch,
     cwd: Option<&std::path::Path>,
     stderr_tail: Option<StderrTail>,
     exit_grace: std::time::Duration,
+    antigravity: bool,
 ) -> Result<(lifecycle::Process, AgentTransport), DriverError> {
     let mut command = if electron_node_script(launch) {
         // On macOS this is the background helper, so no Dock icon appears.
@@ -1332,6 +1374,10 @@ fn spawn_agent_in(
     command.args(&launch.args);
     for variable in ENV_ALLOWLIST {
         command.inherit(variable);
+    }
+    if antigravity {
+        command.env("AGY_CLI_NONINTERACTIVE_HEADLESS", "1");
+        command.env("AGY_CLI_DISABLE_AUTO_UPDATE", "true");
     }
     let temp_directory = launch.executable.target.temp_directory();
     command.current_dir(agent_runtime::external_path(cwd.unwrap_or(&temp_directory)));
@@ -2596,25 +2642,16 @@ impl AgentDriver for AcpDriver {
         let permit = self.shared.setup.clone().lock_owned().await;
         self.no_pending_stop()?;
         self.shared.setup_available()?;
+        let permission_mode = request.permission_mode.as_deref();
+        let (launch_mode, session_mode) = self.permission_modes(permission_mode);
         let connection = self
-            .ensure_workspace_connection(
-                if self.executor.provider_id.as_str() == "cursor" {
-                    Some(request.permission_mode.as_deref().unwrap_or("default"))
-                } else {
-                    None
-                },
-                Some(&request.working_directory),
-            )
+            .ensure_workspace_connection(launch_mode, Some(&request.working_directory))
             .await?;
         let (reply_tx, reply_rx) = oneshot::channel();
         let command = Command::NewSession {
             app_mcps: request.app_mcps.clone(),
             grok: self.executor.provider_id.as_str() == "grok",
-            permission_mode: if self.executor.provider_id.as_str() == "cursor" {
-                None
-            } else {
-                request.permission_mode.clone()
-            },
+            permission_mode: session_mode.map(str::to_owned),
             model: model.map(Into::into),
             thinking: thinking.map(Into::into),
             cwd: PathBuf::from(&request.working_directory),
@@ -2686,26 +2723,17 @@ impl AgentDriver for AcpDriver {
         // Reuse a fully initialized session on the current connection when its
         // workspace/MCP binding matches; otherwise restore with session/load.
         let cwd = PathBuf::from(&workspace.working_directory);
+        let permission_mode = workspace.permission_mode.as_deref();
+        let (launch_mode, session_mode) = self.permission_modes(permission_mode);
         let connection = self
-            .ensure_workspace_connection(
-                if self.executor.provider_id.as_str() == "cursor" {
-                    Some(workspace.permission_mode.as_deref().unwrap_or("default"))
-                } else {
-                    None
-                },
-                Some(&workspace.working_directory),
-            )
+            .ensure_workspace_connection(launch_mode, Some(&workspace.working_directory))
             .await?;
         let (reply_tx, reply_rx) = oneshot::channel();
         let command = Command::LoadSession {
             app_mcps: workspace.app_mcps.clone(),
             grok: self.executor.provider_id.as_str() == "grok",
             codebuddy: self.executor.provider_id.as_str() == "codebuddy",
-            permission_mode: if self.executor.provider_id.as_str() == "cursor" {
-                None
-            } else {
-                workspace.permission_mode.clone()
-            },
+            permission_mode: session_mode.map(str::to_owned),
             model: model.map(Into::into),
             thinking: thinking.map(Into::into),
             session_id: SessionId::new(native_session_id),
@@ -4086,7 +4114,10 @@ mod tests {
             parse_grok_billing_windows(&paid).unwrap()[0].used_percent,
             None
         );
-        paid["config"].as_object_mut().unwrap().remove("creditUsagePercent");
+        paid["config"]
+            .as_object_mut()
+            .unwrap()
+            .remove("creditUsagePercent");
         for tier in ["Free", "", "none"] {
             paid["subscription_tier"] = serde_json::json!(tier);
             assert_eq!(

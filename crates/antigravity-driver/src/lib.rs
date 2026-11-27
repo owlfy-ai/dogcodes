@@ -1,17 +1,8 @@
-//! Antigravity CLI (`agy`) headless stream-json product driver.
-//!
-//! Drives the user-installed `agy` over its documented headless protocol
-//! (`--input-format stream-json --output-format stream-json`), following the
-//! official spec at antigravity.google/docs/cli/headless: one NDJSON line per
-//! message, `{"event":"user"}` prompts on stdin, and `init` / `step_update` /
-//! `result` events on stdout. One process owns one conversation; stdin stays
-//! open so multi-turn runs share a single `conversation_id`.
-//!
-//! Native headless permission prompts are denied by configured rules. The
-//! opt-in desktop policy uses a verified `PreToolUse` Hook and explicit per-call
-//! decisions; it is not native stdin approval support. Resume capability is
-//! recorded separately from permission support.
+//! Antigravity CLI integration. ACP owns conversations on supported releases;
+//! older installations use headless stream-json with the desktop approval Hook.
+//! Both use the CLI's model listing and account quota commands.
 
+use acp_driver::{AcpDriver, AcpLaunch};
 use agent_runtime::{Pipe, ProcessInput, TargetExecutable};
 #[cfg(test)]
 use std::path::PathBuf;
@@ -511,6 +502,7 @@ impl SessionProcess {
 }
 
 pub struct AntigravityDriver {
+    acp: Option<AcpDriver>,
     admission: tokio::sync::Mutex<()>,
     stopping: tokio::sync::watch::Sender<bool>,
     retired: std::sync::Mutex<HashMap<String, sessions::Retired>>,
@@ -572,6 +564,7 @@ impl AntigravityDriver {
             .is_local()
             .then(|| network::SIGN_IN_ENDPOINT.to_owned());
         Ok(Self {
+            acp: None,
             admission: tokio::sync::Mutex::new(()),
             stopping: tokio::sync::watch::channel(false).0,
             retired: std::sync::Mutex::new(HashMap::new()),
@@ -629,8 +622,11 @@ impl AntigravityDriver {
         executable: TargetExecutable,
         native_version: Option<String>,
     ) -> Result<Self, DriverError> {
-        Self::probe_ready(&executable).await?;
-        Self::new(
+        let use_acp = supports_acp(native_version.as_deref());
+        if !use_acp {
+            Self::probe_ready(&executable).await?;
+        }
+        let mut driver = Self::new(
             provider_id,
             installation_id,
             executable,
@@ -638,7 +634,20 @@ impl AntigravityDriver {
             // Cross-process resume via `--conversation` was verified at runtime.
             SessionResumeCapability::Supported,
         )
-        .map_err(|error| DriverError::Protocol(error.to_string()))
+        .map_err(|error| DriverError::Protocol(error.to_string()))?;
+        if use_acp {
+            let acp = AcpDriver::connect_ready(
+                provider_id,
+                installation_id,
+                acp_launch(&driver.executable),
+                driver.native_version.clone(),
+            )
+            .await?;
+            driver.resume_capability = acp.resume_capability();
+            driver.acp = Some(acp);
+            clear_auth_failures(&driver.backoff).await;
+        }
+        Ok(driver)
     }
 
     async fn probe_ready_with(
@@ -752,6 +761,31 @@ impl AntigravityDriver {
             )),
         }
     }
+}
+
+fn supports_acp(version: Option<&str>) -> bool {
+    version
+        .and_then(|version| semver::Version::parse(version).ok())
+        .is_some_and(|version| version >= semver::Version::new(1, 5, 0))
+}
+
+fn acp_launch(executable: &TargetExecutable) -> AcpLaunch {
+    AcpLaunch {
+        executable: executable.clone(),
+        args: vec!["acp".into()],
+    }
+}
+
+fn acp_selection<'a>(
+    model: Option<&'a str>,
+    thinking: Option<&'a str>,
+) -> (Option<&'a str>, Option<&'a str>) {
+    let Some(model) = model else {
+        return (None, thinking);
+    };
+    // Older DogCodes versions persisted the CLI's combined model/effort slug.
+    let (model, effort) = driver_api::models::antigravity_model_parts(model);
+    (Some(model), thinking.or(effort))
 }
 
 fn spawn(
@@ -1218,6 +1252,10 @@ fn user_event(context: &[ContextDelivery], prompt: &str) -> Value {
 
 #[async_trait]
 impl AgentDriver for AntigravityDriver {
+    fn execution_target(&self) -> agent_runtime::SharedTarget {
+        self.executable.target.clone()
+    }
+
     fn runs_on_this_machine(&self) -> bool {
         self.executable.target.is_local()
     }
@@ -1234,7 +1272,7 @@ impl AgentDriver for AntigravityDriver {
         driver_api::attachments::deliver_to_target(&self.executable.target, items).await
     }
     fn independent_session_driver(&self) -> Result<Option<Arc<dyn AgentDriver>>, DriverError> {
-        let driver = Self::new(
+        let mut driver = Self::new(
             self.executor.provider_id.as_str(),
             self.executor.installation_id.as_deref().unwrap_or(""),
             self.executable.clone(),
@@ -1242,6 +1280,18 @@ impl AgentDriver for AntigravityDriver {
             self.resume_capability,
         )
         .map_err(|_| DriverError::Protocol("cannot recreate Antigravity installation".into()))?;
+        if self.acp.is_some() {
+            driver.acp = Some(
+                AcpDriver::new(
+                    self.executor.provider_id.as_str(),
+                    self.executor.installation_id.as_deref().unwrap_or(""),
+                    acp_launch(&self.executable),
+                    self.native_version.clone(),
+                    self.resume_capability,
+                )
+                .map_err(|error| DriverError::Protocol(error.to_string()))?,
+            );
+        }
         Ok(Some(Arc::new(driver)))
     }
     fn session_usage_provider(self: Arc<Self>) -> Option<Arc<dyn driver_api::QuotaProvider>> {
@@ -1251,7 +1301,16 @@ impl AgentDriver for AntigravityDriver {
         &self,
         _workspace: Option<&str>,
     ) -> Result<driver_api::PermissionCatalog, DriverError> {
-        Ok(driver_api::permissions::antigravity())
+        let mut catalog = driver_api::permissions::antigravity();
+        if self.acp.is_some()
+            && let Some(mode) = catalog
+                .modes
+                .iter_mut()
+                .find(|mode| mode.id == "desktop-approvals")
+        {
+            mode.label = "permissionPicker.mode.onRequest".into();
+        }
+        Ok(catalog)
     }
     async fn model_catalog(&self) -> Result<driver_api::ModelCatalog, DriverError> {
         let mut catalog = driver_api::models::antigravity(self.available_models().await?);
@@ -1265,7 +1324,7 @@ impl AgentDriver for AntigravityDriver {
                         .any(|effort| id == &format!("{}-{}", model.id, effort.id))
             }) {
                 model.label = label.clone();
-                for suffix in [" (Low)", " (Medium)", " (High)"] {
+                for suffix in [" (Low)", " (Medium)", " (High)", " (XHigh)"] {
                     if let Some(base) = model.label.strip_suffix(suffix) {
                         model.label = base.into();
                         break;
@@ -1281,6 +1340,10 @@ impl AgentDriver for AntigravityDriver {
         model: Option<&str>,
         thinking: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
+        if let Some(acp) = &self.acp {
+            let (model, thinking) = acp_selection(model, thinking);
+            return acp.create_selected_session(request, model, thinking).await;
+        }
         let native = model.map(|m| thinking.map_or_else(|| m.to_owned(), |e| format!("{m}-{e}")));
         self.create_session_with_model(request, native.as_deref())
             .await
@@ -1292,6 +1355,10 @@ impl AgentDriver for AntigravityDriver {
         model: Option<&str>,
         thinking: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
+        if let Some(acp) = &self.acp {
+            let (model, thinking) = acp_selection(model, thinking);
+            return acp.reconfigure_session(id, request, model, thinking).await;
+        }
         let native = model.map(|m| thinking.map_or_else(|| m.to_owned(), |e| format!("{m}-{e}")));
         self.open(request, Some(id), native.as_deref(), true).await
     }
@@ -1303,6 +1370,12 @@ impl AgentDriver for AntigravityDriver {
         model: Option<&str>,
         thinking: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
+        if let Some(acp) = &self.acp {
+            let (model, thinking) = acp_selection(model, thinking);
+            return acp
+                .resume_selected_session(id, request, model, thinking)
+                .await;
+        }
         let native = model.map(|m| thinking.map_or_else(|| m.to_owned(), |e| format!("{m}-{e}")));
         self.resume_workspace_session(id, request, native.as_deref())
             .await
@@ -1351,7 +1424,9 @@ impl AgentDriver for AntigravityDriver {
     }
 
     fn supports_background_events(&self) -> bool {
-        true
+        self.acp
+            .as_ref()
+            .is_none_or(AgentDriver::supports_background_events)
     }
 
     async fn read_subagent(&self, id: &str) -> Result<Vec<Value>, DriverError> {
@@ -1367,6 +1442,9 @@ impl AgentDriver for AntigravityDriver {
         request: SessionRequest,
         model: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
+        if self.acp.is_some() {
+            return self.create_selected_session(request, model, None).await;
+        }
         self.open(request, None, model, false).await
     }
 
@@ -1397,6 +1475,9 @@ impl AgentDriver for AntigravityDriver {
         request: SessionRequest,
         model: Option<&str>,
     ) -> Result<SessionHandle, DriverError> {
+        if self.acp.is_some() {
+            return self.resume_selected_session(id, request, model, None).await;
+        }
         self.open(request, Some(id), model, false).await
     }
 
@@ -1405,6 +1486,9 @@ impl AgentDriver for AntigravityDriver {
         handle: &SessionHandle,
         request: HubPromptRequest,
     ) -> Result<DriverEventStream, DriverError> {
+        if let Some(acp) = &self.acp {
+            return acp.prompt(handle, request).await;
+        }
         let process = self.process_for(handle).await?;
         let _admission = process.admission.lock().await;
         let (event_tx, event_rx) = mpsc::unbounded_channel();
@@ -1480,6 +1564,9 @@ impl AgentDriver for AntigravityDriver {
         request_id: &str,
         answer: agent_domain::QuestionAnswer,
     ) -> Result<(), DriverError> {
+        if let Some(acp) = &self.acp {
+            return acp.respond_to_question(handle, request_id, answer).await;
+        }
         let process = self.process_for(handle).await?;
         let _gate = process.lifecycle.lock().expect("session lifecycle");
         process.validate_scope(handle)?;
@@ -1508,6 +1595,11 @@ impl AgentDriver for AntigravityDriver {
         native_request_id: &str,
         option_id: &str,
     ) -> Result<(), DriverError> {
+        if let Some(acp) = &self.acp {
+            return acp
+                .respond_to_interaction(handle, native_request_id, option_id)
+                .await;
+        }
         if !["allow_once", "deny"].contains(&option_id) {
             return Err(DriverError::Protocol("backendText.mc3a0e8d8".into()));
         }
@@ -1531,12 +1623,18 @@ impl AgentDriver for AntigravityDriver {
     }
 
     async fn interrupt(&self, handle: &SessionHandle) -> Result<(), DriverError> {
+        if let Some(acp) = &self.acp {
+            return acp.interrupt(handle).await;
+        }
         let process = self.process_for(handle).await?;
         process.request_close(handle, false, true)?;
         process.wait_closed().await
     }
 
     async fn current_session_handle(&self, id: &str) -> Option<SessionHandle> {
+        if let Some(acp) = &self.acp {
+            return acp.current_session_handle(id).await;
+        }
         self.find(id).await.map(|(_, process)| process.handle())
     }
 
@@ -1544,6 +1642,9 @@ impl AgentDriver for AntigravityDriver {
         &self,
         handle: &SessionHandle,
     ) -> Option<driver_api::SessionShutdownProof> {
+        if let Some(acp) = &self.acp {
+            return acp.shutdown_proof(handle).await;
+        }
         if let Some((_, process)) = self.find(&handle.native_session_id).await {
             process.validate_scope(handle).ok()?;
             return Some(Box::pin(async move { process.confirmed().await }));
@@ -1557,6 +1658,9 @@ impl AgentDriver for AntigravityDriver {
     }
 
     async fn shutdown(&self, handle: SessionHandle) -> Result<(), DriverError> {
+        if let Some(acp) = &self.acp {
+            return acp.shutdown(handle).await;
+        }
         let Some((key, process)) = self.find(&handle.native_session_id).await else {
             return if self
                 .retired
@@ -1598,6 +1702,19 @@ mod scope_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selects_acp_from_the_native_cli_release() {
+        for version in [None, Some("1.1.26"), Some("1.5.0-beta.1"), Some("unknown")] {
+            assert!(!supports_acp(version), "{version:?}");
+        }
+        assert!(supports_acp(Some("1.5.0")));
+        assert!(supports_acp(Some("1.5.18")));
+        assert_eq!(
+            acp_selection(Some("gemini-4-neon-xhigh"), None),
+            (Some("gemini-4-neon"), Some("xhigh"))
+        );
+    }
 
     // The fake agy is a shell script.
     #[cfg(unix)]
@@ -1894,20 +2011,28 @@ done
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn explicit_model_reaches_launch_and_live_session_reuses_it() {
+    async fn xhigh_effort_reaches_launch_and_live_session_reuses_it() {
         let directory = tempfile::tempdir().unwrap();
         let executable = write_fake_agy(directory.path());
         let mut driver = test_driver(executable.clone());
         driver.resume_capability = SessionResumeCapability::Supported;
+        *driver.models.lock().await = vec![
+            ("gemini-4-neon-xhigh".into(), "Gemini 4 Neon (XHigh)".into()),
+            ("gemini-4-neon-high".into(), "Gemini 4 Neon (High)".into()),
+        ];
+        let catalog = driver.model_catalog().await.unwrap();
+        assert_eq!(catalog.models.len(), 1);
+        assert_eq!(catalog.models[0].label, "Gemini 4 Neon");
         let session = driver
-            .create_session_with_model(
+            .create_selected_session(
                 SessionRequest {
                     app_mcps: vec![],
                     permission_mode: Some("dangerously-skip-permissions".into()),
                     additional_directories: vec![],
                     working_directory: "/tmp".into(),
                 },
-                Some("gemini-fixture"),
+                Some(&catalog.models[0].id),
+                Some("xhigh"),
             )
             .await
             .unwrap();
@@ -1933,7 +2058,7 @@ done
                 .any(|e| matches!(e, Ok(DriverEvent::TurnCompleted { .. })))
         );
         let args = std::fs::read_to_string(executable.with_extension("args")).unwrap();
-        assert!(args.contains("--model\ngemini-fixture\n"));
+        assert!(args.contains("--model\ngemini-4-neon-xhigh\n"));
         let resumed = tokio::time::timeout(
             std::time::Duration::from_secs(2),
             driver.resume_workspace_session(
@@ -1944,7 +2069,7 @@ done
                     working_directory: "/tmp".into(),
                     additional_directories: vec![],
                 },
-                Some("gemini-fixture"),
+                Some("gemini-4-neon-xhigh"),
             ),
         )
         .await

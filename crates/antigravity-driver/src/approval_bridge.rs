@@ -14,6 +14,17 @@ const LIMIT: u64 = 131_072;
 const HOOK_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
 const TIMEOUT: std::time::Duration = std::time::Duration::from_mins(10);
 const FLAG: &str = "--dogcodes-approval-hook";
+const SKIP_APPROVALS: &str = "dangerously-skip-permissions";
+const QUESTION_TOOL: &str = "ask_question";
+
+fn hook_matcher(permission_mode: Option<&str>) -> &'static str {
+    // Keep the interactive question bridge even when native tool approvals are skipped.
+    if permission_mode == Some(SKIP_APPROVALS) {
+        QUESTION_TOOL
+    } else {
+        ".*"
+    }
+}
 
 /// Called before desktop initialization when this executable is used as a Hook.
 #[must_use]
@@ -115,6 +126,7 @@ fn verification_key(
         .hash(&mut hash);
     workspace.working_directory.hash(&mut hash);
     workspace.additional_directories.hash(&mut hash);
+    hook_matcher(workspace.permission_mode.as_deref()).hash(&mut hash);
     for dir in
         std::iter::once(&workspace.working_directory).chain(&workspace.additional_directories)
     {
@@ -167,6 +179,7 @@ pub(super) struct Bridge {
     address: String,
     token: String,
     command: String,
+    matcher: &'static str,
     listener: tokio::net::TcpListener,
 }
 impl Bridge {
@@ -200,6 +213,7 @@ impl Bridge {
         }
         let fail = || DriverError::CapabilityUnavailable("backendText.agyHookFailed".into());
         let started = std::time::Instant::now();
+        let matcher = hook_matcher(workspace.permission_mode.as_deref());
         // What invalidates a verification is on the machine `agy` runs on. Another
         // machine's files can't be watched from here, so it's verified every time.
         let local = executable.target.is_local();
@@ -256,7 +270,7 @@ impl Bridge {
             format!("{} {FLAG}", quote(&exe.to_string_lossy()))
         };
         if !cache_hit {
-            let hooks = json!({"dogcodes-approvals":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":command,"timeout":615}]}]}});
+            let hooks = json!({"dogcodes-approvals":{"PreToolUse":[{"matcher":matcher,"hooks":[{"type":"command","command":command,"timeout":615}]}]}});
             directory
                 .write(".agents/hooks.json", hooks.to_string().as_bytes())
                 .await
@@ -277,6 +291,7 @@ impl Bridge {
             address,
             token,
             command,
+            matcher,
             listener,
         };
         if cache_hit {
@@ -409,7 +424,7 @@ impl Bridge {
                                     && h["actions"].as_array().is_some_and(|a| {
                                         a.iter().any(|a| {
                                             a["event"] == "PreToolUse"
-                                                && a["matcher"] == ".*"
+                                                && a["matcher"] == self.matcher
                                                 && a["command"] == self.command
                                         })
                                     })
@@ -496,6 +511,7 @@ async fn serve(
     origin: Option<super::sessions::TurnLease>,
 ) -> std::io::Result<()> {
     enum Pending {
+        DelegateToNative,
         Question(String, oneshot::Receiver<agent_domain::QuestionAnswer>),
         Approval(String, oneshot::Receiver<bool>),
     }
@@ -534,61 +550,70 @@ async fn serve(
                     .filter(|s| !s.is_empty() && s.len() <= 256),
                 conversation,
             )
-            && p.seen_hooks
+        {
+            // agy can still call this Hook for ordinary tools in a resumed
+            // conversation. Let its own policy decide for a live skip-mode turn.
+            let skip = p.permission_mode.as_deref() == Some(SKIP_APPROVALS);
+            if skip && name != QUESTION_TOOL {
+                pending = Some(Pending::DelegateToNative);
+            } else if p
+                .seen_hooks
                 .lock()
                 .expect("seen hooks")
                 .insert((conversation.into(), step))
-        {
-            sink.clone_from(&p.updates.lock().expect("updates sink"));
-            // Never reuse the native step as a UI permission identity. Old
-            // handlers must not remove or answer a newer request at that step.
-            let id = format!("hook-{}", uuid::Uuid::new_v4());
-            if name == "ask_question" {
-                if let Ok(form) =
-                    driver_api::questions::native_form("antigravity", &payload["toolCall"]["args"])
-                {
+            {
+                sink.clone_from(&p.updates.lock().expect("updates sink"));
+                // Never reuse the native step as a UI permission identity. Old
+                // handlers must not remove or answer a newer request at that step.
+                let id = format!("hook-{}", uuid::Uuid::new_v4());
+                if name == QUESTION_TOOL {
+                    if let Ok(form) = driver_api::questions::native_form(
+                        "antigravity",
+                        &payload["toolCall"]["args"],
+                    ) {
+                        let (sender, receiver) = oneshot::channel();
+                        p.pending_questions.lock().expect("questions").insert(
+                            id.clone(),
+                            PendingQuestion {
+                                form: form.clone(),
+                                sender,
+                            },
+                        );
+                        if let Some(sink) = &sink {
+                            let _ = sink.send(DriverEvent::QuestionRequested {
+                                native_request_id: id.clone(),
+                                form,
+                            });
+                        }
+                        pending = Some(Pending::Question(id, receiver));
+                    }
+                } else {
                     let (sender, receiver) = oneshot::channel();
-                    p.pending_questions.lock().expect("questions").insert(
-                        id.clone(),
-                        PendingQuestion {
-                            form: form.clone(),
-                            sender,
-                        },
-                    );
+                    p.pending_approvals
+                        .lock()
+                        .expect("approvals")
+                        .insert(id.clone(), sender);
                     if let Some(sink) = &sink {
-                        let _ = sink.send(DriverEvent::QuestionRequested {
+                        let _ = sink.send(DriverEvent::ApprovalRequested {
                             native_request_id: id.clone(),
-                            form,
+                            tool_name: name.into(),
+                            command_summary: payload["toolCall"]["args"].to_string(),
+                            options: vec![
+                                ApprovalOption {
+                                    option_id: "allow_once".into(),
+                                    label: "approvalOptions.approveOnce".into(),
+                                    semantic_role: ApprovalSemanticRole::ApproveOnce,
+                                },
+                                ApprovalOption {
+                                    option_id: "deny".into(),
+                                    label: "approvalOptions.reject".into(),
+                                    semantic_role: ApprovalSemanticRole::Reject,
+                                },
+                            ],
                         });
                     }
-                    pending = Some(Pending::Question(id, receiver));
+                    pending = Some(Pending::Approval(id, receiver));
                 }
-            } else {
-                let (sender, receiver) = oneshot::channel();
-                p.pending_approvals
-                    .lock()
-                    .expect("approvals")
-                    .insert(id.clone(), sender);
-                if let Some(sink) = &sink {
-                    let _ = sink.send(DriverEvent::ApprovalRequested {
-                        native_request_id: id.clone(),
-                        tool_name: name.into(),
-                        command_summary: payload["toolCall"]["args"].to_string(),
-                        options: vec![
-                            ApprovalOption {
-                                option_id: "allow_once".into(),
-                                label: "approvalOptions.approveOnce".into(),
-                                semantic_role: ApprovalSemanticRole::ApproveOnce,
-                            },
-                            ApprovalOption {
-                                option_id: "deny".into(),
-                                label: "approvalOptions.reject".into(),
-                                semantic_role: ApprovalSemanticRole::Reject,
-                            },
-                        ],
-                    });
-                }
-                pending = Some(Pending::Approval(id, receiver));
             }
         }
     }
@@ -596,6 +621,10 @@ async fn serve(
     let mut response = denied();
     let mut requires_live = false;
     match pending {
+        Some(Pending::DelegateToNative) => {
+            requires_live = true;
+            response = json!({"decision":"allow"});
+        }
         Some(Pending::Question(id, receiver)) => {
             let answer = tokio::time::timeout(TIMEOUT, receiver).await;
             if let Some(p) = process.upgrade() {
@@ -815,18 +844,75 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn delayed_hook_payload_cannot_move_from_an_old_socket_into_a_new_turn() {
-        let (p, mut old_events) = process();
-        let mut socket = connected(&p).await;
-        let mut new_events = next_turn(&p);
-        socket
-            .write_all(format!("{}\n", payload(1, false)).as_bytes())
+    async fn skip_mode_delegates_read_callbacks_and_keeps_questions() {
+        let (mut process, mut events) = process();
+        Arc::get_mut(&mut process).unwrap().permission_mode = Some(SKIP_APPROVALS.into());
+        let mut read = payload(1, false);
+        read["payload"]["toolCall"] =
+            json!({"name":"read_file","args":{"Path":"/tmp/fixture.txt"}});
+        for (token, conversation, expected) in [
+            ("wrong", "parent", "deny"),
+            ("secret", "foreign", "deny"),
+            ("secret", "parent", "allow"),
+            ("secret", "parent", "allow"),
+        ] {
+            read["token"] = json!(token);
+            read["payload"]["conversationId"] = json!(conversation);
+            let mut tool = connected(&process).await;
+            tool.write_all(format!("{read}\n").as_bytes())
+                .await
+                .unwrap();
+            assert_eq!(response(tool).await["decision"], expected);
+        }
+        assert!(events.try_recv().is_err());
+        assert!(process.pending_approvals.lock().unwrap().is_empty());
+
+        let mut question = connected(&process).await;
+        question
+            .write_all(format!("{}\n", payload(2, true)).as_bytes())
             .await
             .unwrap();
-        assert_eq!(response(socket).await["decision"], "deny");
-        assert!(old_events.try_recv().is_err());
-        assert!(new_events.try_recv().is_err());
-        assert!(p.pending_approvals.lock().unwrap().is_empty());
+        let Some(DriverEvent::QuestionRequested {
+            native_request_id, ..
+        }) = tokio::time::timeout(std::time::Duration::from_secs(2), events.recv())
+            .await
+            .unwrap()
+        else {
+            panic!("question was not presented");
+        };
+        process
+            .pending_questions
+            .lock()
+            .unwrap()
+            .remove(&native_request_id)
+            .unwrap()
+            .sender
+            .send(agent_domain::QuestionAnswer {
+                cancelled: false,
+                values: json!({"answer":"fixture answer"}),
+            })
+            .unwrap();
+        let reply = response(question).await;
+        assert_eq!(reply["decision"], "deny");
+        assert!(reply["reason"].as_str().unwrap().contains("fixture answer"));
+    }
+
+    #[tokio::test]
+    async fn delayed_hook_payload_cannot_move_from_an_old_socket_into_a_new_turn() {
+        for mode in ["desktop-approvals", SKIP_APPROVALS] {
+            let (mut p, mut old_events) = process();
+            Arc::get_mut(&mut p).unwrap().permission_mode = Some(mode.into());
+            let mut socket = connected(&p).await;
+            let mut new_events = next_turn(&p);
+            socket
+                .write_all(format!("{}\n", payload(1, false)).as_bytes())
+                .await
+                .unwrap();
+            assert_eq!(response(socket).await["decision"], "deny");
+            assert!(old_events.try_recv().is_err());
+            assert!(new_events.try_recv().is_err());
+            assert!(p.pending_approvals.lock().unwrap().is_empty());
+        }
     }
 
     #[tokio::test]
@@ -1057,6 +1143,12 @@ mod tests {
             Some(first),
             verification_key(&exe, &request, private.path())
         );
+        request.permission_mode = Some(SKIP_APPROVALS.into());
+        assert_ne!(
+            Some(first),
+            verification_key(&exe, &request, private.path())
+        );
+        request.permission_mode = Some("desktop-approvals".into());
         std::fs::create_dir(workspace.path().join(".agents")).unwrap();
         std::fs::write(workspace.path().join(".agents/hooks.json"), "{}").unwrap();
         assert_ne!(
@@ -1088,6 +1180,7 @@ mod tests {
             address: listener.local_addr().unwrap().to_string(),
             token: "fixture".into(),
             command: "fixture".into(),
+            matcher: ".*",
             listener,
         };
         let server = bridge.start(&p);
@@ -1210,8 +1303,8 @@ mod tests {
         assert_eq!(reply.await.unwrap()["decision"], "deny");
     }
     #[tokio::test]
-    async fn verifies_exact_enabled_all_tool_hook() {
-        let b = Bridge {
+    async fn verifies_the_configured_hook_matcher() {
+        let mut b = Bridge {
             local: true,
             directory: Arc::new(
                 Scratch::create(&agent_runtime::local_target(), "dogcodes-test-")
@@ -1221,6 +1314,7 @@ mod tests {
             address: "unused".into(),
             token: "secret".into(),
             command: "exact-command".into(),
+            matcher: ".*",
             listener: tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(),
         };
         let mut v = json!({"event":"command_result","command":{"name":"hooks","data":{"hooks":[{"name":"dogcodes-approvals","enabled":true,"source":b.directory.path().join(".agents/hooks.json"),"actions":[{"event":"PreToolUse","matcher":".*","command":"exact-command"}]}]}}});
@@ -1228,7 +1322,39 @@ mod tests {
         v["command"]["data"]["hooks"][0]["enabled"] = json!(false);
         assert!(!b.verified(v.to_string().as_bytes()));
         v["command"]["data"]["hooks"][0]["enabled"] = json!(true);
-        v["command"]["data"]["hooks"][0]["actions"][0]["matcher"] = json!("run_command");
+        b.matcher = QUESTION_TOOL;
         assert!(!b.verified(v.to_string().as_bytes()));
+        v["command"]["data"]["hooks"][0]["actions"][0]["matcher"] = json!(QUESTION_TOOL);
+        assert!(b.verified(v.to_string().as_bytes()));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn changing_permissions_registers_the_matching_native_hook() {
+        let directory = tempfile::tempdir().unwrap();
+        let executable = TargetExecutable::local(crate::tests::write_fake_agy(directory.path()));
+        let lock = crate::SpawnLock::default();
+        for (mode, expected) in [
+            ("desktop-approvals", ".*"),
+            (SKIP_APPROVALS, "ask_question"),
+            ("plan", ".*"),
+        ] {
+            let workspace = SessionRequest {
+                app_mcps: vec![],
+                working_directory: directory.path().to_string_lossy().into_owned(),
+                additional_directories: vec![],
+                permission_mode: Some(mode.into()),
+            };
+            let slot = crate::enter_spawn_slot(&lock).await.unwrap();
+            let (bridge, _) = Bridge::prepare(&executable, &workspace, slot)
+                .await
+                .unwrap();
+            let bytes = std::fs::read(bridge.directory.path().join(".agents/hooks.json")).unwrap();
+            let config: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(
+                config["dogcodes-approvals"]["PreToolUse"][0]["matcher"],
+                expected
+            );
+        }
     }
 }

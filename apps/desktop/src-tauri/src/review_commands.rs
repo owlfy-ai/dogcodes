@@ -278,6 +278,7 @@ pub async fn core_review_commit_summary(
     root_id: String,
     executor: agent_domain::ExecutorRef,
     language: Option<String>,
+    model: Option<String>,
 ) -> Result<String, String> {
     require_task_window(window.label(), &task_id)?;
     state
@@ -287,6 +288,7 @@ pub async fn core_review_commit_summary(
             root_id,
             executor,
             language,
+            model,
         })
         .await
 }

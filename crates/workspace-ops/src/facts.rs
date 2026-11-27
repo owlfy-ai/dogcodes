@@ -56,6 +56,7 @@ pub trait ReviewFacts: Send + Sync {
         executor: ExecutorRef,
         changes: String,
         language: Option<String>,
+        model: Option<String>,
     ) -> Result<String, String>;
     async fn review_run_exists(&self, task: &TaskId, run: &RunId) -> Result<bool, String>;
     /// `request` is the core's own review request, which only it interprets.

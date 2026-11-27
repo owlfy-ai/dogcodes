@@ -6,11 +6,9 @@ import { reviewClient } from "./reviewClient";
 import { gitOperations, GitResultUnknown } from "./gitOperations";
 import { reviewGitFailure } from "./reviewGitError";
 import { userFacingError } from "./userFacingError";
-import { availableAgentExecutors } from "./availableAgentExecutors";
-import { readSummaryAgent, readSummaryLanguage } from "./CommitSummarySettings";
-import { agentChoiceKey } from "./AgentPickerMenu";
+import { readSummaryLanguage } from "./CommitSummarySettings";
+import { CommitSummaryPicker, useCommitSummaryChoice } from "./CommitSummaryPicker";
 import { turnCommitTargets, type TurnCommitTarget } from "./turnCommit";
-import type { ExecutorRef } from "@dogcodes/protocol";
 import type { TurnArtifact } from "./turnArtifactCache";
 import { translate as t } from "./i18n";
 
@@ -32,14 +30,7 @@ export function TurnCommitAction({ taskId, data, providerId, hidden = false }: {
     return () => { dialog.current?.close(); trigger.current?.focus(); };
   }, [open]);
 
-  async function executor(): Promise<ExecutorRef> {
-    const available = await availableAgentExecutors(taskId);
-    const saved = readSummaryAgent();
-    const chosen = (saved && available.find(item => agentChoiceKey(item) === agentChoiceKey(saved)))
-      ?? available.find(item => item.providerId === providerId) ?? available[0];
-    if (!chosen) throw new Error(t("turnCommit.noAgent"));
-    return chosen;
-  }
+  const choice = useCommitSummaryChoice(taskId, { fallbackProviderId: providerId ?? "", enabled: open });
   async function stagedSnapshot(target: TurnCommitTarget) {
     const snapshot = await reviewClient.query({ taskId, rootId: target.rootId, mode: "staged" });
     const files = snapshot.roots.find(r => r.root.id === target.rootId)?.files.map(f => f.path) ?? [];
@@ -58,7 +49,9 @@ export function TurnCommitAction({ taskId, data, providerId, hidden = false }: {
     if (id !== run.current) return;
     setStaged({ ...after, extra: after.files.filter(path => !target.paths.includes(path)).length });
     setPhase("summarizing");
-    const summary = await invoke<string>("core_review_commit_summary", { taskId, rootId: target.rootId, executor: await executor(), language: readSummaryLanguage() });
+    const chosen = await choice.resolve();
+    if (!chosen) throw new Error(t("turnCommit.noAgent"));
+    const summary = await invoke<string>("core_review_commit_summary", { taskId, rootId: target.rootId, executor: chosen.executor, language: readSummaryLanguage(), model: chosen.model });
     if (id !== run.current) return;
     setMessage(summary.replace(/[\r\n]+/g, " ").trim()); setPhase("ready");
   }
@@ -156,6 +149,7 @@ export function TurnCommitAction({ taskId, data, providerId, hidden = false }: {
       {phase !== "empty" && <div className="turn-commit-editor">
         <textarea className="turn-commit-message" aria-label={t("gitCommit.message")} rows={3} value={message} disabled={busy || phase === "committed"} onChange={event => setMessage(event.target.value)} />
         <div className="turn-commit-tools">
+          {phase !== "committed" && <CommitSummaryPicker choice={choice} disabled={busy} />}
           <span className="turn-commit-status" role="status">{status || done}</span>
           {phase !== "committed" && <button className="turn-commit-generate" type="button" disabled={busy || !staged} onClick={() => { const target = targets.find(x => x.rootId === rootId); if (target) { const id = ++run.current; void prepare(target, id).catch(cause => { if (id === run.current) { setError(userFacingError(cause, t("gitCommit.generateFailed"))); setPhase("ready"); } }); } }}>
             <svg className={phase === "summarizing" ? "spinning" : undefined} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true"><path d="m10 3 2.4 6.6L19 12l-6.6 2.4L10 21l-2.4-6.6L1 12l6.6-2.4L10 3Zm10-2 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z" /></svg>

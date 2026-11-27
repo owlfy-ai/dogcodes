@@ -63,7 +63,9 @@ it("stages only this turn's files, generates the message from them and commits",
   await act(async () => view.render(<TurnCommitAction taskId="tsk" data={data} providerId="claude-code" />));
   await act(async () => button("提交").click());
   expect([...index].sort()).toEqual(["a.ts", "already.txt", "b.ts"]);
-  expect(invoke).toHaveBeenCalledWith("core_review_commit_summary", { taskId: "tsk", rootId: "r1", executor: { providerId: "claude-code", installationId: "i-claude" }, language: "zh-CN" });
+  // The dialog shares the review panel's Agent and model picker.
+  expect(document.querySelector(".turn-commit-dialog .commit-summary-picker .commit-summary-agent")?.textContent).toBe("Claude Code");
+  expect(invoke).toHaveBeenCalledWith("core_review_commit_summary", { taskId: "tsk", rootId: "r1", executor: { providerId: "claude-code", installationId: "i-claude" }, language: "zh-CN", model: null });
   expect((document.querySelector("textarea") as HTMLTextAreaElement).value).toBe("feat: update a and b");
   expect(document.querySelector(".turn-commit-dialog")?.textContent).toContain("其中 1 个是此前已暂存的其他更改");
   await act(async () => [...document.querySelectorAll("dialog button")].find(b => b.textContent === "提交")!.dispatchEvent(new MouseEvent("click", { bubbles: true })));

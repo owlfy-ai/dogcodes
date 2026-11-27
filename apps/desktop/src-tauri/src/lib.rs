@@ -1697,7 +1697,7 @@ async fn scan_discovered_agents(
         // the idle time between turns. Re-probing a verified, unchanged driver
         // would wait behind that session and downgrade Ready until scan timeout.
         // Keep the same driver too: replacing it would orphan its live sessions.
-        let reuse_antigravity = manifest.protocol.kind == "antigravity_stream_json"
+        let reuse_antigravity = manifest.protocol.kind == "antigravity"
             && matches!(report.status, ProbeStatus::Installed | ProbeStatus::Ready)
             && snapshot.installations.iter().any(|previous| {
                 previous.provider_id == report.provider_id.as_str()
@@ -1772,7 +1772,7 @@ async fn scan_discovered_agents(
         "claude_stream_json" => {
             register_ready_claude_drivers(core, manifest, &discovered_paths).await;
         }
-        "antigravity_stream_json" => {
+        "antigravity" => {
             register_ready_antigravity_drivers(core, manifest, &readiness_paths).await;
         }
         "zcode_app_server" => {
@@ -2115,29 +2115,21 @@ async fn register_ready_antigravity_drivers(
     }) {
         let started = std::time::Instant::now();
         let executable = std::path::PathBuf::from(&installation.executable);
-        let readiness = antigravity_driver::AntigravityDriver::probe_ready(&executable).await;
+        let readiness = antigravity_driver::AntigravityDriver::connect_ready(
+            manifest.id.as_str(),
+            installation.installation_id.as_str(),
+            executable.into(),
+            installation.version.clone(),
+        )
+        .await;
         record_readiness_error(installation, readiness.as_ref().err());
         let elapsed_millis = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         match readiness {
-            Ok(()) => {
-                let Ok(driver) = antigravity_driver::AntigravityDriver::new(
-                    manifest.id.as_str(),
-                    installation.installation_id.as_str(),
-                    executable,
-                    installation.version.clone(),
-                    // Cross-process resume via `--conversation` was verified at
-                    // runtime on 1.1.26 (real_resume_acceptance).
-                    driver_api::SessionResumeCapability::Supported,
-                ) else {
-                    continue;
-                };
+            Ok(driver) => {
                 let driver = Arc::new(driver);
                 core.register_driver(driver.clone()).await;
                 core.warm_agent_catalogs(driver.executor()).await;
                 core.register_quota_provider(driver).await;
-                // Eligibility/auth failures surface on the first real turn;
-                // the installation stays Ready-but-unverified rather than
-                // being marked Broken by a regional account check.
                 if installation.status != InstallationStatus::Ready {
                     record_readiness(
                         &core,

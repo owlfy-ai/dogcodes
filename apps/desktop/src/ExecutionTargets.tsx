@@ -728,7 +728,9 @@ export function ExecutionTargets({ api = tauriTargetApi, terminals = hostTermina
     </div>
     {agentPages.map(targetId => {
       const entry = entryOf(targetId);
-      return entry && <HostAgentManagement key={targetId} api={api} entry={entry} visible={visible && selected === agentPageId(targetId)} offlineBanner={<TargetOfflineBanner api={api} targetId={targetId} autoConnect />} onRunInShell={command => openTerminal(entry, command)} />;
+      return entry && <HostAgentManagement key={targetId} api={api} entry={entry} visible={visible && selected === agentPageId(targetId)}
+        offlineBanner={<TargetOfflineBanner api={api} targetId={targetId} autoConnect />} onRunInShell={command => openTerminal(entry, command)}
+        onRefreshed={next => setEntries(old => old?.map(entry => entry.target.targetId === targetId ? next : entry) ?? null)} />;
     })}
     {tabs.map(tab => {
       const entry = entryOf(tab.targetId);

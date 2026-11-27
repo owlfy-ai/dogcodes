@@ -317,12 +317,7 @@
 .review-panel .review-commit .review-commit-tools .review-generate-group > button { width: auto; min-width: 0; min-height: 26px; padding: 3px 7px; gap: 5px; border-radius: 6px; color: var(--review-muted); background: transparent; }
 .review-panel .review-commit .review-commit-tools > button:not(:disabled):hover,
 .review-panel .review-commit .review-commit-tools .review-generate-group > button:not(:disabled):hover,
-.review-panel .review-commit .review-commit-agent[aria-expanded="true"],
 .review-panel .review-commit .review-generate-language[aria-expanded="true"] { color: inherit; background: var(--review-hover); }
-.review-panel .review-commit .review-commit-agent { flex: 0 1 auto; }
-.review-commit-agent > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.review-commit-agent .agent-icon.small { width: 16px; height: 16px; margin: 0; }
-.review-commit-agent > svg { width: 12px; height: 12px; opacity: .7; }
 .review-panel .review-commit .review-generate-message { flex: none; color: inherit; border: 0; }
 .review-generate-message > svg { width: 14px; height: 14px; color: var(--commit-accent); }
 .review-generate-message > svg.spinning { animation: review-commit-spark 1.1s ease-in-out infinite; }

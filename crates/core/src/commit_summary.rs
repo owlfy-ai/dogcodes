@@ -6,6 +6,7 @@ impl Core {
         executor: ExecutorRef,
         changes: String,
         language: Option<&str>,
+        model: Option<&str>,
     ) -> Result<String, String> {
         let admitted = self
             .admit_execution(&executor)
@@ -14,7 +15,7 @@ impl Core {
         let execution = admitted.execution();
         drop(admitted);
         let lifetime = execution.auxiliary_activity.lease(None);
-        summarize_with_driver(execution.driver, &changes, language, Some(lifetime)).await
+        summarize_with_driver(execution.driver, &changes, language, model, Some(lifetime)).await
     }
 }
 
@@ -36,8 +37,10 @@ pub(super) async fn summarize_with_driver(
     driver: std::sync::Arc<dyn driver_api::AgentDriver>,
     changes: &str,
     language: Option<&str>,
+    model: Option<&str>,
     lifetime: Option<std::sync::Arc<dyn crate::AnalysisLifetime>>,
 ) -> Result<String, String> {
+    let requested = model.map(str::to_owned);
     let driver = driver
         .independent_session_driver()
         .map_err(|e| e.to_string())?
@@ -54,11 +57,14 @@ pub(super) async fn summarize_with_driver(
                 .await
                 .map_err(|e| e.to_string())?;
             start.check()?;
-            let thinking = catalog
-                .default_model
+            // A chosen model no longer offered falls back to the native default.
+            let model = requested
+                .filter(|id| catalog.models.iter().any(|model| &model.id == id))
+                .or_else(|| catalog.default_model.clone());
+            let thinking = model
                 .as_ref()
-                .and_then(|id| catalog.models.iter().find(|model| &model.id == id))
-                .and_then(|model| lowest_thinking(&model.thinking_options));
+                .and_then(|id| catalog.models.iter().find(|option| &option.id == id))
+                .and_then(|option| lowest_thinking(&option.thinking_options));
             driver
                 .create_selected_session(
                     SessionRequest {
@@ -67,7 +73,7 @@ pub(super) async fn summarize_with_driver(
                         additional_directories: vec![],
                         working_directory: cwd,
                     },
-                    catalog.default_model.as_deref(),
+                    model.as_deref(),
                     thinking,
                 )
                 .await
@@ -294,22 +300,40 @@ mod tests {
         ) -> Result<driver_api::ModelCatalog, super::super::DriverError> {
             Ok(driver_api::ModelCatalog {
                 default_model: Some("native-default".into()),
-                models: vec![driver_api::ModelOption {
-                    id: "native-default".into(),
-                    label: "Default".into(),
-                    default_thinking: Some("high".into()),
-                    unavailable_reason: None,
-                    thinking_options: vec![
-                        ThinkingOption {
-                            id: "high".into(),
-                            label: "High".into(),
-                        },
-                        ThinkingOption {
-                            id: "none".into(),
-                            label: "None".into(),
-                        },
-                    ],
-                }],
+                models: vec![
+                    driver_api::ModelOption {
+                        id: "native-default".into(),
+                        label: "Default".into(),
+                        default_thinking: Some("high".into()),
+                        unavailable_reason: None,
+                        thinking_options: vec![
+                            ThinkingOption {
+                                id: "high".into(),
+                                label: "High".into(),
+                            },
+                            ThinkingOption {
+                                id: "none".into(),
+                                label: "None".into(),
+                            },
+                        ],
+                    },
+                    driver_api::ModelOption {
+                        id: "fast".into(),
+                        label: "Fast".into(),
+                        default_thinking: Some("medium".into()),
+                        unavailable_reason: None,
+                        thinking_options: vec![
+                            ThinkingOption {
+                                id: "medium".into(),
+                                label: "Medium".into(),
+                            },
+                            ThinkingOption {
+                                id: "low".into(),
+                                label: "Low".into(),
+                            },
+                        ],
+                    },
+                ],
             })
         }
         async fn create_session(
@@ -368,7 +392,7 @@ mod tests {
             events: std::sync::Mutex::new(None),
             prompts: std::sync::Mutex::new(vec![]),
         });
-        let summary = summarize_with_driver(driver.clone(), "diff data", None, None)
+        let summary = summarize_with_driver(driver.clone(), "diff data", None, None, None)
             .await
             .unwrap();
         assert!(!summary.is_empty());
@@ -382,6 +406,28 @@ mod tests {
         assert!(driver.stopped.load(std::sync::atomic::Ordering::SeqCst));
     }
     #[tokio::test]
+    async fn chosen_model_uses_its_lowest_thinking_and_unknown_falls_back() {
+        for (requested, expected) in [
+            (Some("fast"), (Some("fast".into()), Some("low".into()))),
+            (
+                Some("gone"),
+                (Some("native-default".into()), Some("none".into())),
+            ),
+        ] {
+            let driver = std::sync::Arc::new(SummaryDriver {
+                inner: driver_api::FakeDriver::new("fake").unwrap(),
+                selection: std::sync::Mutex::new(None),
+                stopped: std::sync::atomic::AtomicBool::new(false),
+                events: std::sync::Mutex::new(None),
+                prompts: std::sync::Mutex::new(vec![]),
+            });
+            summarize_with_driver(driver.clone(), "diff", None, requested, None)
+                .await
+                .unwrap();
+            assert_eq!(*driver.selection.lock().unwrap(), Some(expected));
+        }
+    }
+    #[tokio::test]
     async fn selected_language_shapes_the_commit_note_prompt() {
         async fn prompt_for(language: Option<&str>) -> String {
             let driver = std::sync::Arc::new(SummaryDriver {
@@ -391,7 +437,7 @@ mod tests {
                 events: std::sync::Mutex::new(None),
                 prompts: std::sync::Mutex::new(vec![]),
             });
-            summarize_with_driver(driver.clone(), "diff", language, None)
+            summarize_with_driver(driver.clone(), "diff", language, None, None)
                 .await
                 .unwrap();
             driver
@@ -437,7 +483,7 @@ mod tests {
             prompts: std::sync::Mutex::new(vec![]),
         });
         assert_eq!(
-            summarize_with_driver(driver.clone(), "diff", None, None)
+            summarize_with_driver(driver.clone(), "diff", None, None, None)
                 .await
                 .unwrap(),
             "提高重试次数"
@@ -457,7 +503,7 @@ mod tests {
             prompts: std::sync::Mutex::new(vec![]),
         });
         assert!(
-            summarize_with_driver(driver.clone(), "diff", None, None)
+            summarize_with_driver(driver.clone(), "diff", None, None, None)
                 .await
                 .unwrap_err()
                 .contains("backendText.m8d6fff46")

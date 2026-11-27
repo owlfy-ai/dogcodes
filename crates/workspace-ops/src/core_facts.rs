@@ -67,8 +67,16 @@ impl ReviewFacts for Arc<Core> {
         executor: ExecutorRef,
         changes: String,
         language: Option<String>,
+        model: Option<String>,
     ) -> Result<String, String> {
-        Core::summarize_commit(self, executor, changes, language.as_deref()).await
+        Core::summarize_commit(
+            self,
+            executor,
+            changes,
+            language.as_deref(),
+            model.as_deref(),
+        )
+        .await
     }
     async fn review_run_exists(&self, task: &TaskId, run: &RunId) -> Result<bool, String> {
         let existing = Core::turn_reviews(self, task)

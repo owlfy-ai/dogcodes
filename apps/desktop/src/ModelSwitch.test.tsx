@@ -87,6 +87,36 @@ it("allows selecting next-turn thinking during an active run without dispatching
   expect(client.submitTurn).toHaveBeenLastCalledWith(expect.anything(), "lower effort", "old", "low", null, [], expect.any(String));
 });
 
+it("shows a saved Antigravity XHigh model as an effort and lets the user change it", async () => {
+  const executor = { providerId: "antigravity", installationId: "ins_antigravity" } as const;
+  const task = snapshot.tasks[0];
+  await client.setPreferredExecutor(task, executor);
+  task.preferredExecutor = executor;
+  task.streamVersion++;
+  snapshot.installations = [{ ...snapshot.installations[0], ...executor }];
+  const model = "gemini-4-neon";
+  const legacy = `${model}-xhigh`;
+  snapshot.sessionMaps = [{ ...snapshot.sessionMaps[0], executor, model: legacy, thinking: null }];
+  const availableModels = vi.fn().mockResolvedValue({ defaultModel: null, models: [
+    { id: model, label: "Gemini 4 Neon", thinkingOptions: [
+      { id: "high", label: "High" }, { id: "xhigh", label: "XHigh" },
+    ], defaultThinking: "high" },
+  ] });
+  Object.assign(client, { availableModels });
+  await act(async () => root.render(<App key="antigravity" client={client} />));
+  const modelButton = element.querySelector('[aria-label="选择模型"]')!;
+  const effortButton = element.querySelector('[aria-label="选择思考强度"]')!;
+  expect(modelButton.textContent).toBe("Gemini 4 Neon");
+  expect(effortButton.textContent).toBe("超高");
+  await click(modelButton);
+  expect(element.querySelector(".model-options")?.textContent).toBe("Gemini 4 Neon✓");
+  await click(effortButton);
+  expect(element.querySelector(".model-options .selected")?.textContent).toContain("超高");
+  await click([...element.querySelectorAll(".model-options button")].find(option => option.textContent === "高")!);
+  await typePrompt("change the effort"); await send();
+  expect(client.submitTurn).toHaveBeenLastCalledWith(expect.anything(), "change the effort", model, "high", null, [], expect.any(String));
+});
+
 it.each([false, true])("restores a rejected selection without overwriting a newer draft (new draft: %s)", async newer => {
   await click(element.querySelector('[aria-label="选择模型"]')!);
   await click(button("New model"));

@@ -8,7 +8,7 @@ import { AgentWelcome } from "../AgentWelcome";
 import { AgentIcon } from "../agentPresentation";
 import { I18nProvider, resolveLanguage, SUPPORTED_LANGUAGES } from "../i18n";
 import { Tooltips } from "../Tooltips";
-import type { QuotaRefreshProgress } from "../quotaRefresh";
+import type { AgentRefreshProgress } from "../quotaRefresh";
 import "../styles.css";
 
 const now = Date.now();
@@ -41,7 +41,7 @@ const welcomeClient = { bootstrap: async () => ({ installations }), scanAgent: a
 const update = (id: string, status: AgentUpdate["status"], latestVersion: string, desktopVersion?: string): AgentUpdate => ({ installationId: `ins_${id}`, status, currentVersion: allData.find(agent => agent.providerId === id)!.version, latestVersion, desktopVersion, message: null, source: "fixture", canUpgrade: status === "available", checkedAt: now });
 document.documentElement.dataset.theme = "light";
 function Fixture() {
-  const [progress, setProgress] = useState<QuotaRefreshProgress | null>(null);
+  const [progress, setProgress] = useState<AgentRefreshProgress | null>(null);
   const [notice, setNotice] = useState("");
   const [menu, setMenu] = useState(false);
   const [empty, setEmpty] = useState(false);

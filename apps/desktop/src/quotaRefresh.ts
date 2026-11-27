@@ -1,14 +1,14 @@
-import type { CoreClient, QuotaSnapshotView, TaskId } from "@dogcodes/protocol";
+import type { CoreClient, InstallationSummary, QuotaSnapshotView, TaskId } from "@dogcodes/protocol";
 import { installationsOnTarget, visibleAgentInstallations } from "./agentOptions";
 import { withLastReading } from "./quotaFallback";
 
-export type QuotaRefreshProgress = { running: boolean; completed: number; total: number; unavailable: number; failed: boolean };
+export type AgentRefreshProgress = { running: boolean; completed: number; total: number; unavailable: number; failed: boolean };
 
 export const quotaRequestTimeoutMs = (providerId?: string): number => providerId === "antigravity" ? 55_000 : 35_000;
 
 function bounded<T>(request: Promise<T>, timeoutMs = 35_000): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Quota request timed out")), timeoutMs);
+    const timer = setTimeout(() => reject(new Error("Agent request timed out")), timeoutMs);
     request.then(resolve, reject).finally(() => clearTimeout(timer));
   });
 }
@@ -16,7 +16,8 @@ function bounded<T>(request: Promise<T>, timeoutMs = 35_000): Promise<T> {
 /** Publish each provider immediately; manual refresh waits for every request. */
 export function createQuotaRefresh(
   client: CoreClient, taskId: TaskId | null, update: (view: QuotaSnapshotView) => void,
-  progress: (state: QuotaRefreshProgress) => void = () => {},
+  progress: (state: AgentRefreshProgress) => void = () => {},
+  refreshDetails: (installation: InstallationSummary) => Promise<void> = async () => {},
 ) {
   let active = true;
   let manual: Promise<void> | undefined;
@@ -50,7 +51,7 @@ export function createQuotaRefresh(
     refreshNow(): Promise<void> {
       if (manual) return manual;
       if (!active) return Promise.resolve();
-      const state: QuotaRefreshProgress = { running: true, completed: 0, total: 0, unavailable: 0, failed: false };
+      const state: AgentRefreshProgress = { running: true, completed: 0, total: 0, unavailable: 0, failed: false };
       progress({ ...state });
       manual = (async () => {
         try {
@@ -63,25 +64,31 @@ export function createQuotaRefresh(
           state.total = installations.length;
           progress({ ...state });
           await Promise.all(installations.map(async installation => {
-            let current = installation;
-            if (installation.status === "not_configured" || installation.status === "installed") {
-              try {
-                // External CLI/app login does not register a driver. Refresh readiness first;
-                // the backend scan also refuses replacement while a conversation is running.
-                let scan = scans.get(installation.providerId);
-                if (!scan) {
-                  scan = bounded(client.scanAgent(installation.providerId), 100_000);
-                  scans.set(installation.providerId, scan);
-                }
-                const detected = visibleAgentInstallations((await scan).installations)
-                  .filter(i => i.providerId === installation.providerId);
-                current = detected.find(i => i.installationId === installation.installationId)
-                  ?? (detected.length === 1 ? detected[0] : installation);
-              } catch { /* Other providers still refresh; the existing reading may remain usable. */ }
+            let current: InstallationSummary | undefined = installation;
+            let complete = true;
+            try {
+              let scan = scans.get(installation.providerId);
+              if (!scan) {
+                scan = bounded(client.scanAgent(installation.providerId), 100_000);
+                scans.set(installation.providerId, scan);
+              }
+              const detected = installationsOnTarget((await scan).installations, null)
+                .filter(i => i.providerId === installation.providerId);
+              current = detected.find(i => i.installationId === installation.installationId)
+                ?? (detected.length === 1 ? detected[0] : undefined);
+            } catch {
+              // A running conversation can prevent re-detection; its quota can still refresh.
+              complete = false;
             }
-            const available = active && await read(current.installationId, true, current.providerId);
+            if (active && current) {
+              const [quota, details] = await Promise.all([
+                read(current.installationId, true, current.providerId),
+                complete && bounded(refreshDetails(current), 100_000).then(() => true, () => false),
+              ]);
+              complete = quota && details;
+            }
             state.completed++;
-            if (!available) state.unavailable++;
+            if (!complete) state.unavailable++;
             if (active) progress({ ...state });
           }));
         } catch { state.failed = true; }

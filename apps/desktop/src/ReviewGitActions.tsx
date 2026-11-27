@@ -3,15 +3,13 @@ import { reviewGitError } from "./reviewGitError";
 import { reviewGitFailure, type ReviewGitFailure } from "./reviewGitError";
 import { ReviewGitFailureNotice } from "./ReviewGitMenu";
 import { userFacingError } from "./userFacingError";
-import { availableAgentExecutors } from "./availableAgentExecutors";
-import { enabledAgents, readAgentPreferences, useAgentPreferences } from "./agentPreferences";
-import { readSummaryAgent, readSummaryLanguage, summaryLanguageLabel, COMMIT_AGENT_KEY, COMMIT_LANGUAGE_KEY, SUMMARY_LANGUAGES, type SummaryExecutor, type SummaryLanguage } from "./CommitSummarySettings";
+import { readSummaryLanguage, summaryLanguageLabel, COMMIT_LANGUAGE_KEY, SUMMARY_LANGUAGES, type SummaryLanguage } from "./CommitSummarySettings";
+import { CommitSummaryPicker, useCommitSummaryChoice, type SummaryChoice } from "./CommitSummaryPicker";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AgentPickerMenu, agentChoiceKey } from "./AgentPickerMenu";
 import { FloatingPopover } from "./FloatingPopover";
 import { readSkipStageAllConfirmation, setSkipStageAllConfirmation, useSkipStageAllConfirmation } from "./gitCommitPreferences";
-import { AgentIcon, providerLabel } from "./agentPresentation";
+import { providerLabel } from "./agentPresentation";
 import type { ReviewRoot } from "./reviewClient";
 import { translate as t } from "./i18n";
 
@@ -28,42 +26,28 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
   const [busy, setBusy] = useState(false);
   const [pushPending, setPushPending] = useState(false);
   const [error, setError] = useState<ReviewGitFailure | null>(null);
-  const [menu, setMenu] = useState(false);
-  const [agents, setAgents] = useState<SummaryExecutor[]>([]);
-  const [loadingAgents, setLoadingAgents] = useState(false);
-  const [agentsLoaded, setAgentsLoaded] = useState(false);
-  const [savedSelection, setSelected] = useState(readSummaryAgent);
   const [language, setLanguage] = useState<SummaryLanguage>(readSummaryLanguage);
   const [langMenu, setLangMenu] = useState(false);
-  const preferences = useAgentPreferences();
-  const selected = savedSelection && !preferences.disabled.includes(savedSelection.providerId) && (!agentsLoaded || agents.some(item => agentChoiceKey(item) === agentChoiceKey(savedSelection))) ? savedSelection : null;
+  const choice = useCommitSummaryChoice(taskId, { onError: cause => setError({ message: userFacingError(cause, t("gitCommit.agentsFailed")) }) });
+  const { selected, loadingAgents } = choice;
   useEffect(() => { if (pulledRevision) setError(null); }, [pulledRevision]);
   useEffect(() => { if (syncedRevision) { setPushPending(false); setError(null); } }, [syncedRevision]);
-  const section = useRef<HTMLElement>(null), agentTrigger = useRef<HTMLButtonElement>(null), langTrigger = useRef<HTMLButtonElement>(null);
+  const section = useRef<HTMLElement>(null), langTrigger = useRef<HTMLButtonElement>(null);
   const workflowCommit = useRef<string | null>(null);
-  const mounted = useRef(true), guard = useRef(false), generateOnPick = useRef(false);
+  const mounted = useRef(true), guard = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
-    if (!menu && !langMenu) return;
-    const close = (event: PointerEvent) => { if (!section.current?.contains(event.target as Node)) { setMenu(false); setLangMenu(false); } };
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); setMenu(false); setLangMenu(false); (langMenu ? langTrigger : agentTrigger).current?.focus(); } };
+    if (!langMenu) return;
+    const close = (event: PointerEvent) => { if (!section.current?.contains(event.target as Node)) setLangMenu(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); setLangMenu(false); langTrigger.current?.focus(); } };
     document.addEventListener("pointerdown", close); document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", escape); };
-  }, [menu, langMenu]);
-  useEffect(() => {
-    if (!menu) { generateOnPick.current = false; return; }
-    let active = true;
-    setLoadingAgents(true); setError(null);
-    void availableAgentExecutors(taskId).then(items => { if (active) { setAgents(items); setAgentsLoaded(true); } })
-      .catch(cause => { if (active) { setAgents([]); setError({ message: userFacingError(cause, t("gitCommit.agentsFailed")) }); } })
-      .finally(() => { if (active) setLoadingAgents(false); });
-    return () => { active = false; };
-  }, [menu]);
+  }, [langMenu]);
   const reason = !root?.git ? t("gitCommit.notGit") : disabled ? t("gitCommit.waitOperation") : "";
   const locked = !!reason || busy || summarizing;
   const submit = async (kind: Action, confirmStageAll = false) => {
     if (!root?.git || guard.current || locked || (!pushPending && !message.trim())) return;
-    guard.current = true; setAction(kind); setBusy(true); onBusy?.(true); setError(null); setMenu(false);
+    guard.current = true; setAction(kind); setBusy(true); onBusy?.(true); setError(null); choice.close();
     const pushOperationId = crypto.randomUUID();
     if (!pushPending) workflowCommit.current = crypto.randomUUID();
     let committed = pushPending;
@@ -102,11 +86,11 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
       if (mounted.current) setBusy(false);
     }
   };
-  const summarize = async (executor: SummaryExecutor) => {
+  const summarize = async ({ executor, model }: SummaryChoice) => {
     if (!root?.git || guard.current || locked || pushPending) return;
-    guard.current = true; setSummarizing(true); onBusy?.(true); setMenu(false); setLangMenu(false); setError(null);
+    guard.current = true; setSummarizing(true); onBusy?.(true); choice.close(); setLangMenu(false); setError(null);
     try {
-      const summary = await invoke<string>("core_review_commit_summary", { taskId, rootId: root.id, executor, language });
+      const summary = await invoke<string>("core_review_commit_summary", { taskId, rootId: root.id, executor, language, model });
       if (mounted.current) { setMessage(summary.replace(/[\r\n]+/g, " ").trim()); setStageAll(null); }
     } catch (cause) { if (mounted.current) setError({ message: userFacingError(cause, t("gitCommit.generateFailed")) }); }
     finally { guard.current = false; onBusy?.(false); if (mounted.current) setSummarizing(false); }
@@ -116,30 +100,14 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
     try { localStorage.setItem(COMMIT_LANGUAGE_KEY, id); } catch { /* Selection still works for this panel. */ }
     langTrigger.current?.focus();
   };
-  const choose = (executor: SummaryExecutor) => {
-    const generate = generateOnPick.current;
-    setSelected(executor); setMenu(false);
-    try { localStorage.setItem(COMMIT_AGENT_KEY, JSON.stringify(executor)); } catch { /* Selection still works for this panel. */ }
-    if (generate) void summarize(executor); else agentTrigger.current?.focus();
-  };
   const generate = async () => {
     if (guard.current || locked || loadingAgents) return;
-    setLangMenu(false);
-    if (selected && agentsLoaded) { void summarize(selected); return; }
-    if (selected) {
-      setLoadingAgents(true);
-      try {
-        const items = await availableAgentExecutors(taskId);
-        if (!mounted.current) return;
-        setAgents(items); setAgentsLoaded(true);
-        const available = enabledAgents(items, item => item.providerId, readAgentPreferences());
-        const current = available.find(item => agentChoiceKey(item) === agentChoiceKey(selected));
-        if (current) { void summarize(current); return; }
-      } catch (cause) { if (mounted.current) setError({ message: userFacingError(cause, t("gitCommit.agentsFailed")) }); }
-      finally { if (mounted.current) setLoadingAgents(false); }
-      if (!mounted.current) return;
-    }
-    generateOnPick.current = true; setMenu(true);
+    setLangMenu(false); setError(null);
+    let resolved: SummaryChoice | null;
+    try { resolved = await choice.resolve(); }
+    catch (cause) { if (mounted.current) setError({ message: userFacingError(cause, t("gitCommit.agentsFailed")) }); return; }
+    if (!mounted.current) return;
+    if (resolved) void summarize(resolved); else choice.setAgentMenu(true, true);
   };
   // A successful commit can empty the diff while a push is still pending.
   // Retain its retry controls until that operation finishes.
@@ -152,17 +120,13 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
         onChange={event => { setMessage(event.target.value); setStageAll(null); }}
         onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(event.shiftKey ? "commitPush" : "commit"); } }} />
       <div className="review-commit-tools">
-        <button ref={agentTrigger} type="button" className="review-commit-agent" aria-label={t("review.selectCommitAgent")} data-tooltip={reason || t("gitCommit.agentTooltip", { agent: agentName })} aria-expanded={menu} aria-haspopup="dialog" disabled={locked || pushPending} onClick={() => { generateOnPick.current = false; setLangMenu(false); setMenu(!menu); }}>
-          {selected && <AgentIcon providerId={selected.providerId} size="small"/>}
-          <span>{agentName}</span>
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5" /></svg>
-        </button>
+        <CommitSummaryPicker choice={choice} disabled={locked || pushPending} reason={reason} onGenerate={resolved => void summarize(resolved)} />
         <div className="review-generate-group">
           <button type="button" className="review-generate-message" aria-label={t("review.generateCommit")} data-tooltip={reason || (selected ? t("gitCommit.generateTooltip", { agent: agentName, language: summaryLanguageLabel(language) }) : t("gitCommit.selectAgentFirst"))} disabled={locked || pushPending || loadingAgents} onClick={() => void generate()}>
             <svg className={summarizing ? "spinning" : undefined} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true"><path d="m10 3 2.4 6.6L19 12l-6.6 2.4L10 21l-2.4-6.6L1 12l6.6-2.4L10 3Zm10-2 1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z" /></svg>
             <span>{t(summarizing ? "gitCommit.generating" : "gitCommit.generate")}</span>
           </button>
-          <button ref={langTrigger} type="button" className="review-generate-language" aria-label={t("review.selectCommitLanguage")} data-tooltip={reason || t("gitCommit.languageTooltip", { language: summaryLanguageLabel(language) })} aria-expanded={langMenu} aria-haspopup="dialog" disabled={locked || pushPending || loadingAgents} onClick={() => { setMenu(false); setLangMenu(!langMenu); }}>
+          <button ref={langTrigger} type="button" className="review-generate-language" aria-label={t("review.selectCommitLanguage")} data-tooltip={reason || t("gitCommit.languageTooltip", { language: summaryLanguageLabel(language) })} aria-expanded={langMenu} aria-haspopup="dialog" disabled={locked || pushPending || loadingAgents} onClick={() => { choice.close(); setLangMenu(!langMenu); }}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5" /></svg>
           </button>
           {langMenu && <FloatingPopover className="agent-picker-menu review-language-menu" role="dialog" aria-label={t("review.commitLanguage")} placement="bottom">
@@ -176,9 +140,6 @@ export function ReviewGitActions({ taskId, root, snapshotId, syncedRevision = 0,
           </FloatingPopover>}
         </div>
       </div>
-      {menu && <AgentPickerMenu options={agents.map(executor => ({ key: agentChoiceKey(executor), executor }))}
-        selectedKey={agentChoiceKey(selected)} title={t("gitCommit.chooseAgent")} label={t("gitCommit.agentListLabel")} role="dialog" placement="bottom" loading={loadingAgents}
-        onSelect={option => choose(option.executor)}/>}
     </div>
     <div className="review-commit-buttons">
       {pushPending ? <button type="button" className="review-commit-action review-commit-push" disabled={locked} data-tooltip={reason || t("gitCommit.retryPushTooltip")} onClick={() => void submit("commitPush")}>

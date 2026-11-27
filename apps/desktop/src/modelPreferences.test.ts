@@ -30,6 +30,14 @@ it("falls back to the default when the remembered model or effort is no longer o
   expect(initialModelChoice("codex", [])).toBeNull();
 });
 
+it("restores a remembered Antigravity XHigh model as an effort when still available", () => {
+  const neon = option("gemini-4-neon", ["high", "xhigh"], "high");
+  const hydrogen = option("gemini-4-hydrogen", ["high", "xhigh"], "high");
+  rememberModel("antigravity", "gemini-4-hydrogen-xhigh", null);
+  expect(initialModelChoice("antigravity", [neon, hydrogen])).toEqual({ model: hydrogen.id, thinking: "xhigh" });
+  expect(initialModelChoice("antigravity", [neon])).toEqual({ model: neon.id, thinking: "high" });
+});
+
 it("ignores empty choices and malformed storage", () => {
   rememberModel("codex", null, null);
   expect(localStorage.getItem(MODEL_PREFERENCES_KEY)).toBeNull();

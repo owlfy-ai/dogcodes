@@ -33,6 +33,12 @@ it("shows long structured edits verbatim without masking values", () => {
   expect(view.sections.map(s => s.text)).toEqual(["src/model.ts", old, "deepseek-flash"]);
   expect(view.warning).toBeUndefined();
 });
+it("shows the native Antigravity Path in read-file approvals", () => {
+  const view = approvalPresentation(JSON.stringify({ input: { Path: "/workspace/image.png" }, detailsTruncated: false }), "read_file");
+  expect(view.kind).toBe("readFile");
+  expect(view.sections.map(section => section.text)).toEqual(["/workspace/image.png"]);
+  expect(view.warning).toBeUndefined();
+});
 it("rejects incomplete approval JSON without reconstructing partial fields", () => {
   const view = approvalPresentation('{"file_path":"src/model.ts","old_string":"[REDACTED_TOKEN]","new_string":"unfinished', "Edit");
   expect(view.sections.map(s => s.text)).toEqual(["Edit"]);

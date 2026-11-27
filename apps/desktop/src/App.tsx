@@ -57,7 +57,7 @@ import { AttachmentPreviews, pendingAttachment, SentAttachments, useAttachments 
 import { useModelReadyExecutors } from "./useModelReadyExecutors";
 import { ModelCatalogCache } from "./modelCatalogCache";
 import { useModelCatalog } from "./useModelCatalog";
-import { initialModelChoice, rememberModel } from "./modelPreferences";
+import { initialModelChoice, normalizeLegacyModelChoice, rememberModel } from "./modelPreferences";
 import { useCatalogWarmup } from "./useCatalogWarmup";
 import { PermissionPicker } from "./PermissionPicker";
 import { ModelPicker } from "./ModelPicker";
@@ -107,7 +107,7 @@ import { sendSteering } from "./steering";
 import { timelineItemRole } from "./timelinePresentation";
 import { RequestEpoch, changeSelection } from "./requestEpoch";
 import { formatResetTime, formatProviderBalance, quotaScopeLabel, quotaPlanLabel, quotaNativeResetLabel, nativeResetDisplay, nativeDateEndsPeriod, antigravityQuotaForModel, ringQuotaWindow, quotaColor, quotaIsExhausted, quotaIsStale, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
-import { createQuotaRefresh, type QuotaRefreshProgress } from "./quotaRefresh";
+import { createQuotaRefresh, type AgentRefreshProgress } from "./quotaRefresh";
 import { useLoadingVisibility } from "./useLoadingVisibility";
 import { accountQuotaReading, quotaShowsLastReading } from "./quotaFallback";
 import { currentAgentExecutor, readyAgentInstallations, installationsOnTarget } from "./agentOptions";
@@ -490,9 +490,9 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const quotaEpoch = useRef(new RequestEpoch());
   const refreshQuotas = useRef<() => void>(() => {});
   const refreshModelCatalog = useRef<() => void>(() => {});
-  const refreshQuotasNow = useRef<() => void>(() => {});
+  const refreshAgentStatus = useRef<() => void>(() => {});
   const refreshSessionUsage = useRef<(id: string, provider: string) => void>(() => {});
-  const [quotaRefreshProgress, setQuotaRefreshProgress] = useState<QuotaRefreshProgress | null>(null);
+  const [agentRefreshProgress, setAgentRefreshProgress] = useState<AgentRefreshProgress | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [loadedTaskId, setLoadedTaskId] = useState<TaskId | null>(null);
   const [timelineError, setTimelineError] = useState<string | null>(null);
@@ -688,7 +688,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   // the ring and panel honest without hammering the drivers.
   useEffect(() => {
     let active = true;
-    setQuotaRefreshProgress(null);
+    setAgentRefreshProgress(null);
     const reader = createQuotaRefresh(client, selectedTaskId, view => {
       if (selectedTaskIdRef.current !== selectedTaskId) return;
       setQuotaState(previous => {
@@ -696,8 +696,15 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
         const matches = (old: QuotaSnapshotView) => old.providerId === view.providerId && old.installationId === view.installationId;
         return { taskId: selectedTaskId, views: views.some(matches) ? views.map(old => matches(old) ? view : old) : [...views, view] };
       });
-    }, setQuotaRefreshProgress);
-    refreshQuotasNow.current = () => { void reader.refreshNow().then(() => { if (active) void refresh(); }); };
+    }, setAgentRefreshProgress, async installation => {
+      const { providerId, installationId, version, status } = installation;
+      await Promise.all([
+        agentUpdates.check(installationId, true),
+        status === "ready" && client.availableModels
+          ? modelCache.get({ providerId, installationId }, version ?? null, true) : undefined,
+      ]);
+    });
+    refreshAgentStatus.current = () => { void reader.refreshNow().then(() => { if (active) void refresh(); }); };
     refreshSessionUsage.current = (id, provider) => { void reader.refreshInstallation(id, provider); };
     const load = () => { void reader.refresh().catch(() => {}); };
     refreshQuotas.current = load;
@@ -712,7 +719,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       reader.dispose();
       unlisten?.();
       refreshQuotas.current = () => {};
-      refreshQuotasNow.current = () => {};
+      refreshAgentStatus.current = () => {};
       refreshSessionUsage.current = () => {};
       quotaEpoch.current.invalidate();
       clearInterval(timer);
@@ -971,8 +978,11 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
   const permissionKey = selectedTask ? `${selectedTask.taskId}:${selectedTask.preferredExecutor.providerId}:${selectedTask.preferredExecutor.installationId}` : "";
   const permissionPicker = selectedTask ? <PermissionPicker key={permissionKey} version={modelVersion} client={client} executor={selectedTask.preferredExecutor} taskId={selectedTaskId ?? undefined}
     run={selectedTask.activePrimaryRun} disabled={sending} onChange={mode=>setPermissionSelection({key:permissionKey,mode})} /> : null;
+  // Display legacy XHigh choices in the effort menu while keeping the saved native session selection.
+  const displayedModelChoice = activeModel ? normalizeLegacyModelChoice(selectedTask?.preferredExecutor.providerId, nativeModels.models,
+    { model: activeModel, thinking: activeThinking }) : null;
   const modelPicker = selectedTask && selectedTask.preferredExecutor.providerId !== "fake" ? <ModelPicker key={modelSelectionKey}
-    catalog={nativeModels} model={activeModel} thinking={activeThinking} loading={modelLoading} refreshing={modelCatalog.refreshing} error={modelError}
+    catalog={nativeModels} model={displayedModelChoice?.model ?? activeModel} thinking={displayedModelChoice?.thinking ?? activeThinking} loading={modelLoading} refreshing={modelCatalog.refreshing} error={modelError}
     disabled={sending}
     onChange={(model, thinking) => { rememberModel(selectedTask.preferredExecutor.providerId, model, thinking); setNewSessionModel({ key: modelSelectionKey, model, thinking }); }}
     onRetry={modelCatalog.refresh} onOpen={modelCatalog.check} refreshDisabled={!!selectedTask.activePrimaryRun} /> : null;
@@ -1424,7 +1434,7 @@ export function App({ client = defaultClient }: { client?: CoreClient } = {}) {
       {selectedTaskId && <GitCredentialPrompt taskId={selectedTaskId} />}
       {isTauri() && <AppUpdateNotice running={Boolean(snapshot?.tasks.some(task => task.activePrimaryRun))} />}
       {activeView === "quota" ? (
-        <QuotaCenter views={quotaViews} installations={installationsOnTarget(snapshot.installations, null)} agentUpdates={agentUpdates} refreshProgress={quotaRefreshProgress} onRefresh={() => refreshQuotasNow.current()} onDetect={detectAgents} lang={resolvedLang} />
+        <QuotaCenter views={quotaViews} installations={installationsOnTarget(snapshot.installations, null)} agentUpdates={agentUpdates} refreshProgress={agentRefreshProgress} onRefresh={() => refreshAgentStatus.current()} onDetect={detectAgents} lang={resolvedLang} />
       ) : activeView === "remote" ? <RemoteDevices lang={resolvedLang} /> : activeView === "targets" ? null : <section className={`workspace ${showConversation ? "has-history" : "empty-workspace"}`}
         onDragEnter={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); dragDepth.current++; setDraggingFiles(true); } }}
         onDragOver={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = sending ? "none" : "copy"; } }}
@@ -1739,7 +1749,7 @@ export function QuotaCenter({
   views: QuotaSnapshotView[];
   installations: InstallationSummary[];
   agentUpdates: AgentUpdateActions;
-  refreshProgress: QuotaRefreshProgress | null;
+  refreshProgress: AgentRefreshProgress | null;
   onRefresh: () => void;
   onDetect?: (providerIds: string[]) => Promise<void>;
   lang?: ResolvedLanguage;
@@ -1755,7 +1765,7 @@ export function QuotaCenter({
           <button className="quota-refresh-button" type="button" disabled={refreshProgress?.running}
             onClick={onRefresh} aria-busy={refreshProgress?.running ?? false}>
             {refreshProgress?.running ? <span className="task-running-spinner" aria-hidden="true" /> : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1" /></svg>}
-            {refreshProgress?.running ? t("agentManagement.refreshing", undefined, lang) : t("agentManagement.refreshQuota", undefined, lang)}
+            {refreshProgress?.running ? t("agentManagement.refreshing", undefined, lang) : t("agentManagement.refreshStatus", undefined, lang)}
           </button>
         </div>
         {refreshProgress && <p className="quota-refresh-status" role="status">

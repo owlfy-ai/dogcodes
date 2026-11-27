@@ -8,7 +8,7 @@ fn closed_control_channels_are_unavailable_before_process_cleanup_finishes() {
     let handle = ConnectionHandle {
         native: None,
         codebuddy_cwd: None,
-        cursor_force: false,
+        skip_permissions: false,
         commands,
         cancels,
         finished: Arc::new(AtomicBool::new(false)),
@@ -27,7 +27,7 @@ async fn cleanup_marker_preserves_exit_confirmation_without_retaining_the_old_tr
     let handle = ConnectionHandle {
         native: None,
         codebuddy_cwd: Some("/work".into()),
-        cursor_force: true,
+        skip_permissions: true,
         commands,
         cancels,
         finished: Arc::new(AtomicBool::new(false)),
@@ -35,7 +35,7 @@ async fn cleanup_marker_preserves_exit_confirmation_without_retaining_the_old_tr
     let marker = handle.cleanup_marker();
     assert!(marker.unavailable());
     assert_eq!(marker.codebuddy_cwd, handle.codebuddy_cwd);
-    assert!(marker.cursor_force);
+    assert!(marker.skip_permissions);
     drop(handle);
     assert!(command_rx.recv().await.is_none());
     assert!(cancel_rx.recv().await.is_none());

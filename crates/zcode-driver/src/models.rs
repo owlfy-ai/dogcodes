@@ -111,6 +111,16 @@ fn target(
     let separate = before.pointer("/settings/thoughtLevel/enabled") == Some(&Value::Bool(true));
     if let Some(thinking) = thinking {
         if separate {
+            // ZCode mirrors the thought level into the model's options; a
+            // stale level inside the reference would never match afterwards.
+            if let Some(options) = reference
+                .as_mut()
+                .and_then(|r| r.get_mut("options"))
+                .and_then(Value::as_object_mut)
+                && options.contains_key("reasoningLevel")
+            {
+                options.insert("reasoningLevel".into(), json!(thinking));
+            }
             return Ok(Selection {
                 model: reference,
                 thinking: Some(thinking.into()),
@@ -239,6 +249,25 @@ mod tests {
     use super::*;
     use crate::ZcodeLaunch;
     use driver_api::{AgentDriver, SessionResumeCapability};
+    #[test]
+    fn separate_thought_level_rewrites_the_reference_level() {
+        let before = json!({"settings":{"thoughtLevel":{"enabled":true,"current":"max"}}});
+        let model = r#"{"providerId":"p","modelId":"m","options":{"reasoningLevel":"max"}}"#;
+        let selection = target(&before, Some(model), Some("low")).unwrap();
+        assert_eq!(selection.thinking.as_deref(), Some("low"));
+        let model = selection.model.unwrap();
+        assert_eq!(model["options"]["reasoningLevel"], "low");
+        // What ZCode reports once both requests are applied.
+        let after = json!({"settings":{"model":{"current":{"providerId":"p","modelId":"m","options":{"reasoningLevel":"low"}}},"thoughtLevel":{"current":"low"}}});
+        assert!(matches(
+            &after,
+            &Selection {
+                model: Some(model),
+                thinking: Some("low".into())
+            }
+        ));
+    }
+
     #[test]
     fn registry_catalog_preserves_required_reasoning_selection() {
         let model = json!({"providerId":"test","modelId":"model"});

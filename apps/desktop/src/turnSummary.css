@@ -56,8 +56,9 @@ button.turn-summary-counts:focus-visible { outline: 2px solid #7e9eca; outline-o
 .turn-commit-dialog .turn-commit-editor:has(textarea:focus) { border-color: #8889; box-shadow: 0 0 0 1px #8889; }
 .turn-commit-dialog .turn-commit-message { display: block; box-sizing: border-box; width: 100%; min-height: 76px; padding: 10px 12px 4px; border: 0; outline: 0; font: inherit; line-height: 1.5; color: inherit; background: transparent; resize: none; }
 .turn-commit-dialog .turn-commit-message:disabled { opacity: .7; }
-.turn-commit-dialog .turn-commit-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; padding: 0 5px 5px 12px; }
-.turn-commit-dialog .turn-commit-status { min-width: 0; overflow: hidden; font-size: .88em; text-overflow: ellipsis; white-space: nowrap; opacity: .65; }
+.turn-commit-dialog .turn-commit-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; padding: 0 5px 5px; }
+.turn-commit-dialog .turn-commit-tools > .commit-summary-picker + .turn-commit-status { padding-left: 0; }
+.turn-commit-dialog .turn-commit-status { flex: 1 1 auto; padding-left: 7px; min-width: 0; overflow: hidden; font-size: .88em; text-overflow: ellipsis; white-space: nowrap; opacity: .65; }
 .turn-commit-dialog .turn-commit-generate { display: flex; flex: none; align-items: center; gap: 5px; min-height: 26px; padding: 3px 7px; border: 0; border-radius: 6px; font-size: .92em; }
 .turn-commit-dialog .turn-commit-generate:not(:disabled):hover { background: #8882; }
 .turn-commit-dialog .turn-commit-generate > svg { width: 14px; height: 14px; color: var(--accent, #78a91f); }

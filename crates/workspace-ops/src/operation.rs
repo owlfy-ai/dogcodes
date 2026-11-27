@@ -89,6 +89,8 @@ enum Ask {
         executor: ExecutorRef,
         changes: String,
         language: Option<String>,
+        #[serde(default)]
+        model: Option<String>,
     },
     ReviewRunExists {
         task: TaskId,
@@ -323,11 +325,13 @@ impl ReviewFacts for AskingFacts {
         executor: ExecutorRef,
         changes: String,
         language: Option<String>,
+        model: Option<String>,
     ) -> Result<String, String> {
         self.ask(Ask::SummarizeCommit {
             executor,
             changes,
             language,
+            model,
         })
         .await
     }
@@ -478,7 +482,12 @@ async fn answer(
             executor,
             changes,
             language,
-        } => value(facts.summarize_commit(executor, changes, language).await?),
+            model,
+        } => value(
+            facts
+                .summarize_commit(executor, changes, language, model)
+                .await?,
+        ),
         Ask::ReviewRunExists { task, run } => value(facts.review_run_exists(&task, &run).await?),
         Ask::StartProjectReview { request, input } => {
             facts.start_project_review(request, input).await
@@ -611,6 +620,7 @@ impl ReviewFacts for NoFacts {
         _executor: ExecutorRef,
         _changes: String,
         _language: Option<String>,
+        _model: Option<String>,
     ) -> Result<String, String> {
         Err("not available here".into())
     }

@@ -31,7 +31,7 @@ export function approvalPresentation(summary: string, toolName = ""): ApprovalPr
   }
   const value = input ?? {};
   const command = commandText(value.command) || commandText(value.cmd) || commandText(value.command_line) || commandText(value.commandLine) || commandText(value.argv) || commandText(value.CommandLine);
-  const path = first(value, ["file_path", "filePath", "path", "target_file", "targetFile", "TargetFile", "AbsolutePath"]);
+  const path = first(value, ["file_path", "filePath", "path", "Path", "target_file", "targetFile", "TargetFile", "AbsolutePath"]);
   const url = first(value, ["url", "uri", "website"]);
   const fileLike = !!path || !!value.files || /read|edit|write|patch|filechange|修改|写入|文件/i.test(toolName);
   const terminal = !!command || /command|shell|bash|terminal|终端|命令/i.test(toolName) || (!input && !fileLike && !url);
@@ -52,7 +52,7 @@ export function approvalPresentation(summary: string, toolName = ""): ApprovalPr
     if (!entry) return;
     const kind = typeof entry.kind === "string" ? entry.kind : text(object(entry.kind)?.type);
     const label = t(kind === "delete" ? "approval.section.deleteFile" : kind === "add" ? "approval.section.newFile" : "approval.section.file");
-    add(label, first(entry, ["path", "file_path", "filePath"]) || fallbackPath);
+    add(label, first(entry, ["path", "Path", "file_path", "filePath"]) || fallbackPath);
     const move = first(object(entry.kind) ?? entry, ["movePath", "move_path"]);
     add(t("approval.section.moveTo"), move);
     add(t("approval.section.changes"), first(entry, ["diff", "patch", "content"]), true);

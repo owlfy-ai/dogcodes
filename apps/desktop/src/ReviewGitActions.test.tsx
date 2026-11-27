@@ -5,7 +5,7 @@ import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ReviewGitActions } from "./ReviewGitActions";
 import { setAgentEnabled } from "./agentPreferences";
-import { COMMIT_AGENT_KEY, COMMIT_LANGUAGE_KEY } from "./CommitSummarySettings";
+import { COMMIT_AGENT_KEY, COMMIT_LANGUAGE_KEY, COMMIT_MODEL_KEY } from "./CommitSummarySettings";
 import { SKIP_STAGE_ALL_CONFIRMATION_KEY, setSkipStageAllConfirmation } from "./gitCommitPreferences";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("./gitOperations", async importOriginal => ({ ...await importOriginal<typeof import("./gitOperations")>(), gitOperations: { run: (args: Record<string, unknown>) => invoke("core_review_git_action", args), advance: (taskId: string, operationId: string) => invoke("core_review_git_advance", { taskId, operationId }) } }));
@@ -44,20 +44,38 @@ it("picks an Agent on first generate, then generates directly and preserves the 
   vi.mocked(invoke).mockImplementation(async command => command === "core_bootstrap" ? { installations: [{ ...executor, status: "ready" }] } : command === "core_model_ready_executors" ? [executor] : "修复图片预览");
   await click("生成提交说明");
   await click("Codex");
-  expect(invoke).toHaveBeenLastCalledWith("core_review_commit_summary", { taskId: "task", rootId: "repo", executor, language: "zh-CN" });
+  expect(invoke).toHaveBeenLastCalledWith("core_review_commit_summary", { taskId: "task", rootId: "repo", executor, language: "zh-CN", model: null });
   expect(container.querySelector("input")!.value).toBe("修复图片预览");
   expect(JSON.parse(localStorage.getItem(COMMIT_AGENT_KEY)!)).toEqual(executor);
   vi.mocked(invoke).mockReset().mockRejectedValueOnce("Agent 离线");
   await click("生成提交说明");
-  expect(invoke).toHaveBeenCalledExactlyOnceWith("core_review_commit_summary", { taskId: "task", rootId: "repo", executor, language: "zh-CN" });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("core_review_commit_summary", { taskId: "task", rootId: "repo", executor, language: "zh-CN", model: null });
   expect(container.querySelector("input")!.value).toBe("修复图片预览");
   expect(container.textContent).toContain("Agent 离线"); expect(changed).not.toHaveBeenCalled();
 });
 it("choosing an Agent only changes the selection without generating", async () => {
   await click("选择提交说明 Agent"); await click("Codex");
-  expect(vi.mocked(invoke).mock.calls.map(([name]) => name)).toEqual(["core_bootstrap", "core_model_ready_executors"]);
+  expect(vi.mocked(invoke).mock.calls.map(([name]) => name)).toEqual(["core_bootstrap", "core_model_ready_executors", "core_available_models"]);
   expect(JSON.parse(localStorage.getItem(COMMIT_AGENT_KEY)!)).toEqual(executor);
-  expect(container.querySelector(".review-commit-agent")!.textContent).toContain("Codex");
+  expect(container.querySelector(".commit-summary-agent")!.textContent).toContain("Codex");
+});
+it("defaults to the first model, remembers a chosen one per Agent and generates with it", async () => {
+  localStorage.setItem(COMMIT_AGENT_KEY, JSON.stringify(executor));
+  const catalog = { defaultModel: "fast", models: [{ id: "off", label: "Off", thinkingOptions: [], unavailableReason: "subscription_required" }, { id: "big", label: "Big", thinkingOptions: [] }, { id: "fast", label: "Fast", thinkingOptions: [{ id: "low", label: "Low" }] }] };
+  vi.mocked(invoke).mockImplementation(async command => command === "core_bootstrap" ? { installations: [{ ...executor, status: "ready" }] } : command === "core_model_ready_executors" ? [executor] : command === "core_available_models" ? catalog : "summary");
+  await render(false, true, "model-agent");
+  expect(invoke).toHaveBeenCalledWith("core_available_models", { executor, selectedModel: null, taskId: "task", refresh: false });
+  const picker = container.querySelector(".commit-summary-picker")!;
+  expect([...picker.querySelectorAll(":scope > button")].map(button => button.textContent)).toEqual(["Codex", "Big"]);
+  await click("生成提交说明");
+  expect(invoke).toHaveBeenLastCalledWith("core_review_commit_summary", { taskId: "task", rootId: "model-agent", executor, language: "zh-CN", model: "big" });
+  await click("选择编写提交说明的模型");
+  expect([...container.querySelectorAll(".commit-summary-model-menu button")].map(button => button.textContent)).toEqual(["Big✓", "Fast"]);
+  await click("Fast");
+  expect(JSON.parse(localStorage.getItem(COMMIT_MODEL_KEY)!)).toEqual({ "codex:ins_test": "fast" });
+  expect(container.querySelector(".commit-summary-model")!.textContent).toBe("Fast");
+  await click("生成提交说明");
+  expect(invoke).toHaveBeenLastCalledWith("core_review_commit_summary", { taskId: "task", rootId: "model-agent", executor, language: "zh-CN", model: "fast" });
 });
 it("remembers the chosen summary language and generates with it", async () => {
   await click("选择提交说明语言");
@@ -67,7 +85,7 @@ it("remembers the chosen summary language and generates with it", async () => {
   expect(localStorage.getItem(COMMIT_LANGUAGE_KEY)).toBe("en");
   vi.mocked(invoke).mockImplementation(async command => command === "core_bootstrap" ? { installations: [{ ...executor, status: "ready" }] } : command === "core_model_ready_executors" ? [executor] : "Fix image preview");
   await click("生成提交说明"); await click("Codex");
-  expect(invoke).toHaveBeenLastCalledWith("core_review_commit_summary", { taskId: "task", rootId: "repo", executor, language: "en" });
+  expect(invoke).toHaveBeenLastCalledWith("core_review_commit_summary", { taskId: "task", rootId: "repo", executor, language: "en", model: null });
   expect(container.querySelector("input")!.value).toBe("Fix image preview");
 });
 it("locks language selection while loading a saved Agent and unlocks after generation", async () => {
@@ -82,7 +100,7 @@ it("locks language selection while loading a saved Agent and unlocks after gener
   await click("选择提交说明语言");
   expect(container.querySelector(".review-language-menu")).toBeNull();
   await act(async () => release({ installations: [{ ...executor, status: "ready" }] }));
-  expect(invoke).toHaveBeenLastCalledWith("core_review_commit_summary", { taskId: "task", rootId: "saved-agent", executor, language: "zh-CN" });
+  expect(invoke).toHaveBeenLastCalledWith("core_review_commit_summary", { taskId: "task", rootId: "saved-agent", executor, language: "zh-CN", model: null });
   expect(container.querySelector<HTMLButtonElement>('[aria-label="选择提交说明语言"]')!.disabled).toBe(false);
   await click("选择提交说明语言"); await click("English");
   expect(localStorage.getItem(COMMIT_LANGUAGE_KEY)).toBe("en");

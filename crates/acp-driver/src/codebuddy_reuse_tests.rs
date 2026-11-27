@@ -61,7 +61,7 @@ async fn normal_turns_reuse_but_cancel_and_failure_retire_the_connection() {
             commands,
             cancels,
             finished: finished.clone(),
-            cursor_force: false,
+            skip_permissions: false,
             codebuddy_cwd: Some(root.path().to_owned()),
         });
         let resident = sessions::Resident::new(

@@ -64,6 +64,23 @@ it("keeps successful reads for the session and coalesces explicit refresh while 
  await Promise.resolve();finish(catalog);await pending;
  expect(read).toHaveBeenCalledTimes(2);
 });
+
+it("follows an in-flight startup catalog with a forced read", async () => {
+ const agent = executor("zcode");
+ const freshCatalog = { ...catalog, defaultModel: "glm-5.4" };
+ let finish!: (value: typeof catalog) => void;
+ const read = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })).mockResolvedValue(freshCatalog);
+ const cache = new ModelCatalogCache(read, []);
+ const warm = cache.warm(agent, "1");
+ const forced = cache.get(agent, "1", true);
+ await Promise.resolve();
+ expect(read).toHaveBeenCalledExactlyOnceWith(agent, null, undefined);
+ finish(catalog);
+ await warm;
+ await expect(forced).resolves.toEqual(freshCatalog);
+ expect(read).toHaveBeenLastCalledWith(agent, null, undefined, true);
+ expect(cache.peek(agent, "1")).toEqual(freshCatalog);
+});
 it("shares model efforts across tasks and allows recovery after a cached failure expires",async()=>{
  let now=0; const choices={defaultModel:"a",models:["a","b"].map(id=>({id,label:id,thinkingOptions:[],defaultThinking:null}))};
  const read=vi.fn().mockResolvedValue(choices);

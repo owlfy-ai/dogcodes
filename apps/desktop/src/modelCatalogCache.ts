@@ -7,7 +7,7 @@ export class ModelCatalogCache {
   private sequence = 0;
   private published = new Map<string, number>();
   private values = new Map<string, ModelCatalog>();
-  private entries = new Map<string, { promise: Promise<ModelCatalog>; pending: boolean; retryAfter: number; error?: unknown; priority: Priority; sequence: number }>();
+  private entries = new Map<string, { promise: Promise<ModelCatalog>; pending: boolean; refresh: boolean; retryAfter: number; error?: unknown; priority: Priority; sequence: number }>();
   private dirty = new Set<string>();
   private listeners = new Set<() => void>();
   private queue: Array<{ run: () => void; priority: Priority }> = [];
@@ -47,14 +47,18 @@ export class ModelCatalogCache {
   warm(executor: ExecutorRef, version: string | null) { return this.get(executor, version, false, {}, true); }
   get(executor: ExecutorRef, version: string | null, refresh = false, scope: ModelCatalogScope = {}, background = false): Promise<ModelCatalog> {
     const key = this.key(executor, version, scope), existing = this.entries.get(key);
-    if (existing?.pending) { if (!background) existing.priority.foreground = true; return existing.promise; }
+    if (existing?.pending) {
+      if (!background) existing.priority.foreground = true;
+      if (!refresh || existing.refresh) return existing.promise;
+      return existing.promise.catch(() => {}).then(() => this.get(executor, version, true, scope, background));
+    }
     if (!refresh && existing?.error && this.now() < existing.retryAfter) return existing.promise;
     if (!refresh && !this.isDirty(executor, version, scope)) {
       const cached = this.peek(executor, version, scope);
       if (cached && !existing?.error) return Promise.resolve(cached);
     }
     const priority = { foreground: !background };
-    const entry = { promise: this.readWithRetry(executor, scope, refresh, priority), pending: true, retryAfter: 0, error: undefined as unknown, priority, sequence: ++this.sequence };
+    const entry = { promise: this.readWithRetry(executor, scope, refresh, priority), pending: true, refresh, retryAfter: 0, error: undefined as unknown, priority, sequence: ++this.sequence };
     this.entries.set(key, entry);
     void entry.promise.then(catalog => {
       if (this.entries.get(key) !== entry) return;

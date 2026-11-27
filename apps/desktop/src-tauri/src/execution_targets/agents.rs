@@ -98,7 +98,7 @@ async fn connect_driver(
                 .await?,
             )
         }
-        "antigravity_stream_json" => connected(
+        "antigravity" => connected(
             antigravity_driver::AntigravityDriver::connect_ready(
                 manifest.id.as_str(),
                 id,

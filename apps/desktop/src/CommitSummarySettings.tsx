@@ -25,3 +25,19 @@ export function summaryLanguageLabel(language: SummaryLanguage): string {
 export function readSummaryLanguage(): SummaryLanguage {
   try { const value = localStorage.getItem(COMMIT_LANGUAGE_KEY); return SUMMARY_LANGUAGES.some(option => option.id === value) ? value as SummaryLanguage : "zh-CN"; } catch { return "zh-CN"; }
 }
+export const COMMIT_MODEL_KEY = "dogcodes.git.summaryModels";
+const summaryAgentKey = (executor: SummaryExecutor) => `${executor.providerId}:${executor.installationId ?? ""}`;
+function readSummaryModels(): Record<string, string> {
+  try { const value = JSON.parse(localStorage.getItem(COMMIT_MODEL_KEY) ?? "{}"); return value && typeof value === "object" && !Array.isArray(value) ? value : {}; } catch { return {}; }
+}
+/** The model chosen for one Agent's commit messages; null keeps the Agent's default. */
+export function readSummaryModel(executor: SummaryExecutor | null | undefined): string | null {
+  if (!executor) return null;
+  const value = readSummaryModels()[summaryAgentKey(executor)];
+  return typeof value === "string" && value ? value : null;
+}
+export function saveSummaryModel(executor: SummaryExecutor, model: string | null) {
+  const all = readSummaryModels();
+  if (model) all[summaryAgentKey(executor)] = model; else delete all[summaryAgentKey(executor)];
+  try { localStorage.setItem(COMMIT_MODEL_KEY, JSON.stringify(all)); } catch { /* Selection still works for this panel. */ }
+}

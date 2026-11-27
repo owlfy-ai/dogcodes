@@ -6,6 +6,19 @@
 
 更新日期：2026-09-07
 
+## 原生 ACP 会话
+
+首次接入时验证的是 agy 1.1.26。当时使用 `stream-json`，桌面审批通过
+`PreToolUse` Hook 转接。Google 在 2026-11-04 发布的 agy 1.5.0 中加入
+[`agy acp`](https://antigravity.google/docs/cli/acp)。
+
+DogCodes 对 1.5.0 及以上的安装使用 ACP 会话，包括审批、选项表单和原生续聊。
+「按需确认」使用 Antigravity 原生权限规则，CLI 发来的审批请求由 DogCodes 显示。
+「计划模式」使用原生 plan。「跳过审批」只在选中时向该会话进程传入
+`--dangerously-skip-permissions`。切回其他策略时重新以对应权限连接同一会话。
+早期安装继续使用原有通道。模型目录和订阅额度仍分别读取 `agy models`
+和 `agy --print=/usage`。
+
 ## 2026-11-24 Windows 唤醒后额度查询弹出 Google 登录页
 
 **现象**：电脑从休眠唤醒后弹出 Google 登录页。本机 agy 1.5.16 日志

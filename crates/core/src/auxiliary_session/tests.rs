@@ -346,6 +346,7 @@ async fn cancelling_a_summary_during_catalog_read_finishes_that_read_but_never_c
             source,
             "private diff",
             Some("en"),
+            None,
             Some(lifetime),
         )
         .await
@@ -376,6 +377,7 @@ async fn summary_prompt_abort_or_panic_keeps_its_original_assets_until_cleanup_f
                 source,
                 "private diff",
                 Some("en"),
+                None,
                 Some(lifetime),
             )
             .await
@@ -407,6 +409,7 @@ async fn a_completed_summary_cannot_hide_unconfirmed_cleanup_or_release_its_asse
         driver.clone(),
         "private diff",
         Some("en"),
+        None,
         Some(lifetime),
     )
     .await;

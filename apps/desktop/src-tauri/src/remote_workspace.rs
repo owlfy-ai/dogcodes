@@ -123,9 +123,10 @@ impl ReviewFacts for TargetFacts {
         executor: ExecutorRef,
         changes: String,
         language: Option<String>,
+        model: Option<String>,
     ) -> Result<String, String> {
         self.require_executor(&executor).await?;
-        ReviewFacts::summarize_commit(&self.core, executor, changes, language).await
+        ReviewFacts::summarize_commit(&self.core, executor, changes, language, model).await
     }
     async fn review_run_exists(&self, task: &TaskId, run: &RunId) -> Result<bool, String> {
         self.require_task(task)?;
@@ -375,7 +376,7 @@ mod tests {
         };
         assert!(
             facts
-                .summarize_commit(local, "text from the server".into(), None)
+                .summarize_commit(local, "text from the server".into(), None, None)
                 .await
                 .is_err()
         );

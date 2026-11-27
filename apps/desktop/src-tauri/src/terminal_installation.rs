@@ -1103,7 +1103,14 @@ mod tests {
             );
             eprintln!("{}: installed {:?}", manifest.id, report.version);
             let result = if manifest.id.as_str() == "antigravity" {
-                antigravity_driver::AntigravityDriver::probe_ready(&path).await
+                antigravity_driver::AntigravityDriver::connect_ready(
+                    manifest.id.as_str(),
+                    &agent_domain::InstallationId::new().to_string(),
+                    path.into(),
+                    report.version.map(|version| version.to_string()),
+                )
+                .await
+                .map(drop)
             } else {
                 acp_driver::AcpDriver::connect_ready(
                     manifest.id.as_str(),

@@ -37,10 +37,22 @@ export function rememberModel(providerId: string, model: string | null, thinking
   try { localStorage.setItem(MODEL_PREFERENCES_KEY, JSON.stringify(next)); memoryOnly = false; } catch { memoryOnly = true; }
 }
 
+export function normalizeLegacyModelChoice(providerId: string | undefined, models: readonly ModelOption[], choice: ModelChoice): ModelChoice {
+  const suffix = "-xhigh";
+  if (providerId === "antigravity" && choice.thinking === null && choice.model.endsWith(suffix)) {
+    const base = choice.model.slice(0, -suffix.length);
+    if (models.some(option => option.id === base && option.thinkingOptions.some(effort => effort.id === "xhigh"))) {
+      return { model: base, thinking: "xhigh" };
+    }
+  }
+  return choice;
+}
+
 /** The starting model for a new conversation: the remembered one when the Agent still offers it,
  *  otherwise the catalog's first model (the existing default). */
 export function initialModelChoice(providerId: string, models: readonly ModelOption[]): ModelChoice | null {
-  const saved = readRememberedModel(providerId);
+  const remembered = readRememberedModel(providerId);
+  const saved = remembered && normalizeLegacyModelChoice(providerId, models, remembered);
   const option = saved && models.find(item => item.id === saved.model);
   if (saved && option) {
     const thinking = saved.thinking && option.thinkingOptions.some(item => item.id === saved.thinking) ? saved.thinking : option.defaultThinking ?? null;

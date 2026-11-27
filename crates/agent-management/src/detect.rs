@@ -15,7 +15,7 @@ pub const SUPPORTED_PROTOCOLS: [&str; 5] = [
     "acp",
     "pi_rpc",
     "claude_stream_json",
-    "antigravity_stream_json",
+    "antigravity",
 ];
 /// A slow disk or profile adds to whatever the manifest allows for a local start.
 const EXTRA_TIME: Duration = Duration::from_secs(10);

@@ -8,7 +8,7 @@ describe("independent quota refresh", () => {
       windows: [], balances: [{ label: "DeepSeek API", amount: 0, currency: "CNY" }],
       collectedAtUnixMs: 1000, staleAfterUnixMs: 2000, source: "provider_api", confidence: "provider_reported", parserVersion: "test",
     } };
-    const client = { bootstrap: async () => ({ installations: [{ providerId: "pi", installationId: "ins_pi", status: "ready" }] }), quotaSnapshots: async () => [view] } as unknown as CoreClient;
+    const client = clientWithInstallations([{ providerId: "pi", installationId: "ins_pi" }], async () => [view]);
     const update = vi.fn(), progress = vi.fn();
     const reader = createQuotaRefresh(client, null, update, progress);
     await reader.refreshNow();
@@ -49,35 +49,50 @@ describe("independent quota refresh", () => {
 });
 
 const observed = (id: string) => ({ installationId: id, providerId: id, quota: { windows: [{ id: "5h", windowMinutes: 300, usedPercent: 20 }] } }) as QuotaSnapshotView;
+function clientWithInstallations(
+  entries: { installationId: string; providerId?: string }[],
+  quotaSnapshots: CoreClient["quotaSnapshots"],
+): CoreClient {
+  const installations = entries.map(entry => ({ providerId: entry.installationId, status: "ready", ...entry }));
+  const snapshot = async () => ({ installations });
+  return { bootstrap: snapshot, scanAgent: snapshot, quotaSnapshots } as unknown as CoreClient;
+}
 
-it("detects a newly logged-in agent before querying quota without blocking ready agents", async () => {
+it("rescans ready and unconfigured agents independently and refreshes the new installation", async () => {
   let finishScan!: (snapshot: unknown) => void;
-  const scanAgent = vi.fn(() => new Promise(resolve => { finishScan = resolve; }));
+  const codex = { installationId: "codex", providerId: "codex", status: "ready" };
+  const grok = { installationId: "grok-new", providerId: "grok", status: "ready", version: "2" };
+  const scanAgent = vi.fn((provider: string) => provider === "grok"
+    ? new Promise(resolve => { finishScan = resolve; })
+    : Promise.resolve({ installations: [codex] }));
   const quotaSnapshots = vi.fn(async (_task, id) => [observed(id)]);
   const client = {
     bootstrap: async () => ({ installations: [
       { installationId: "grok-old", providerId: "grok", status: "not_configured" },
-      { installationId: "codex", providerId: "codex", status: "ready" },
+      codex,
+      { installationId: "remote", providerId: "codex", status: "ready", targetId: "tgt_remote" },
     ] }), scanAgent, quotaSnapshots,
   } as unknown as CoreClient;
-  const update = vi.fn(), progress = vi.fn();
-  const reader = createQuotaRefresh(client, null, update, progress);
+  const update = vi.fn(), progress = vi.fn(), refreshDetails = vi.fn(async () => {});
+  const reader = createQuotaRefresh(client, null, update, progress, refreshDetails);
   const completion = reader.refreshNow();
   expect(reader.refreshNow()).toBe(completion);
   await vi.waitFor(() => expect(update).toHaveBeenCalledWith(observed("codex")));
-  expect(scanAgent).toHaveBeenCalledExactlyOnceWith("grok");
+  expect(scanAgent.mock.calls).toEqual([["grok"], ["codex"]]);
+  expect(refreshDetails).toHaveBeenCalledExactlyOnceWith(codex);
   expect(quotaSnapshots).not.toHaveBeenCalledWith(null, "grok-old", true);
-  finishScan({ installations: [{ installationId: "grok-new", providerId: "grok", status: "ready" }] });
+  finishScan({ installations: [grok] });
   await completion;
   expect(quotaSnapshots).toHaveBeenCalledWith(null, "grok-new", true);
   expect(update).toHaveBeenCalledWith(observed("grok-new"));
+  expect(refreshDetails).toHaveBeenLastCalledWith(grok);
   expect(progress.mock.lastCall?.[0]).toMatchObject({ running: false, completed: 2, unavailable: 0 });
   reader.dispose();
 });
 
 it("does not rescan on automatic polling and still completes manual refresh if detection is refused", async () => {
   const scanAgent = vi.fn().mockRejectedValue(new Error("conversation running"));
-  const quotaSnapshots = vi.fn(async () => []);
+  const quotaSnapshots = vi.fn(async () => [observed("grok")]);
   const client = {
     bootstrap: async () => ({ installations: [{ installationId: "grok", providerId: "grok", status: "not_configured" }] }),
     scanAgent, quotaSnapshots,
@@ -116,7 +131,7 @@ it("forces every installation, publishes fast results, and coalesces repeated ma
   let finish!: (views: QuotaSnapshotView[]) => void;
   const slow = new Promise<QuotaSnapshotView[]>(resolve => { finish = resolve; });
   const read = vi.fn((_task, id) => id === "slow" ? slow : Promise.resolve([observed(id)]));
-  const client = { bootstrap: async () => ({ installations: [{ installationId: "slow" }, { installationId: "fast" }] }), quotaSnapshots: read } as unknown as CoreClient;
+  const client = clientWithInstallations([{ installationId: "slow" }, { installationId: "fast" }], read);
   const update = vi.fn(), progress = vi.fn();
   const reader = createQuotaRefresh(client, null, update, progress);
   const completion = reader.refreshNow();
@@ -136,7 +151,7 @@ it("forces every installation, publishes fast results, and coalesces repeated ma
 it("queues a fresh read after an in-flight automatic read instead of treating it as refreshed", async () => {
   let finish!: (views: QuotaSnapshotView[]) => void;
   const read = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })).mockResolvedValue([observed("one")]);
-  const client = { bootstrap: async () => ({ installations: [{ installationId: "one" }] }), quotaSnapshots: read } as unknown as CoreClient;
+  const client = clientWithInstallations([{ installationId: "one" }], read);
   const reader = createQuotaRefresh(client, null, vi.fn());
   await reader.refresh();
   const completion = reader.refreshNow();
@@ -150,10 +165,10 @@ it("queues a fresh read after an in-flight automatic read instead of treating it
 });
 
 it("counts unsupported and failed reads without discarding successful providers", async () => {
-  const client = { bootstrap: async () => ({ installations: ["ok", "unknown", "offline"].map(installationId => ({ installationId })) }), quotaSnapshots: async (_task: unknown, id: string) => {
+  const client = clientWithInstallations(["ok", "unknown", "offline"].map(installationId => ({ installationId })), async (_task, id) => {
     if (id === "offline") throw new Error("private network details");
-    return [id === "ok" ? observed(id) : { installationId: id, providerId: id, quota: null }];
-  } } as unknown as CoreClient;
+    return [id === "ok" ? observed(id) : { installationId: id!, providerId: id!, quota: null }];
+  });
   const update = vi.fn(), progress = vi.fn();
   const reader = createQuotaRefresh(client, null, update, progress);
   await reader.refreshNow();
@@ -167,7 +182,7 @@ it("finishes a hung request, ignores its late response, and allows retry", async
   try {
     let finish!: (views: QuotaSnapshotView[]) => void;
     const read = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })).mockResolvedValue([observed("one")]);
-    const client = { bootstrap: async () => ({ installations: [{ installationId: "one" }] }), quotaSnapshots: read } as unknown as CoreClient;
+    const client = clientWithInstallations([{ installationId: "one" }], read);
     const update = vi.fn(), progress = vi.fn();
     const reader = createQuotaRefresh(client, null, update, progress);
     const completion = reader.refreshNow();
@@ -199,11 +214,9 @@ it("keeps waiting for Antigravity quota without delaying other providers", async
   vi.useFakeTimers();
   try {
     const update = vi.fn();
-    const client = {
-      bootstrap: async () => ({ installations: [{ installationId: "anti", providerId: "antigravity" }, { installationId: "fast", providerId: "codex" }] }),
-      quotaSnapshots: async (_task: unknown, id: string) => id === "anti"
-        ? new Promise(resolve => setTimeout(() => resolve([observed(id)]), 40_000)) : [observed(id)],
-    } as unknown as CoreClient;
+    const client = clientWithInstallations([{ installationId: "anti", providerId: "antigravity" }, { installationId: "fast", providerId: "codex" }],
+      async (_task, id) => id === "anti"
+        ? new Promise(resolve => setTimeout(() => resolve([observed(id)]), 40_000)) : [observed(id!)]);
     const reader = createQuotaRefresh(client, null, update);
     const completion = reader.refreshNow();
     await vi.advanceTimersByTimeAsync(36_000);

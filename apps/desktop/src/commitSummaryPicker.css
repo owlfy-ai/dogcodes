@@ -1,0 +1,18 @@
+/* One look for the commit-message Agent and model choice, in the review panel and the turn dialog. */
+.commit-summary-picker { display: flex; flex: 0 1 auto; align-items: center; gap: 2px; min-width: 0; }
+.commit-summary-picker > button.commit-summary-choice { display: inline-flex; flex: 0 1 auto; align-items: center; justify-content: flex-start; gap: 5px; width: auto; min-width: 0; height: auto; min-height: 26px; margin: 0; padding: 3px 7px; border: 0; border-radius: 6px; color: inherit; background: transparent; font: inherit; opacity: .75; cursor: pointer; }
+.commit-summary-picker > button.commit-summary-model { flex-shrink: 2; }
+.commit-summary-picker > button.commit-summary-choice:not(:disabled):hover,
+.commit-summary-picker > button.commit-summary-choice[aria-expanded="true"] { background: #8882; opacity: 1; }
+.commit-summary-picker > button.commit-summary-choice:disabled { cursor: default; opacity: .45; }
+.commit-summary-picker > button.commit-summary-choice:focus-visible { outline: 2px solid var(--commit-accent, var(--accent, #78a91f)); outline-offset: 1px; }
+.commit-summary-choice > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.commit-summary-choice .agent-icon.small { width: 16px; height: 16px; margin: 0; flex: none; }
+.commit-summary-choice > svg { flex: none; width: 12px; height: 12px; opacity: .7; }
+.agent-picker-menu.commit-summary-model-menu { width: auto; min-width: 160px; max-width: 280px; padding: 5px; }
+.agent-picker-menu.commit-summary-model-menu > button.commit-summary-model-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 30px; padding: 4px 9px; margin: 0; border: 0; border-radius: 7px; color: var(--agent-menu-fg); background: transparent; font: inherit; font-size: calc(12px * var(--ui-scale, 1)); line-height: 1.5; text-align: left; cursor: pointer; }
+.agent-picker-menu.commit-summary-model-menu > button.commit-summary-model-option:hover,
+.agent-picker-menu.commit-summary-model-menu > button.commit-summary-model-option.active { background: var(--agent-menu-hover); }
+.agent-picker-menu.commit-summary-model-menu > button.commit-summary-model-option > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-picker-menu.commit-summary-model-menu > button.commit-summary-model-option.active,
+.agent-picker-menu.commit-summary-model-menu > button.commit-summary-model-option i { color: var(--commit-accent, var(--accent, #78a91f)); font-style: normal; }

@@ -198,7 +198,7 @@ export interface TranslationDict extends UiMessages {
   agentManagement: {
     title: string;
     description: string;
-    refreshQuota: string;
+    refreshStatus: string;
     refreshing: string;
     installedCount: string;
     quotaCalculation: string;

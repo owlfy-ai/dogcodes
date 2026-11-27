@@ -635,18 +635,32 @@ struct TurnInput {
     permission_mode: Option<String>,
 }
 
-/// Whether `catalog` offers the selected (or default) model and thinking level.
-fn selection_in_catalog(
+fn validate_model_selection(
     catalog: &driver_api::ModelCatalog,
-    model: Option<&String>,
-    thinking: Option<&String>,
-) -> bool {
-    model
-        .or(catalog.default_model.as_ref())
-        .and_then(|id| catalog.models.iter().find(|m| &m.id == id))
-        .is_some_and(|selected| {
-            thinking.is_none_or(|id| selected.thinking_options.iter().any(|o| &o.id == id))
-        })
+    provider_id: &str,
+    model: Option<&str>,
+    thinking: Option<&str>,
+) -> Result<(), CoreError> {
+    let model = model.or(catalog.default_model.as_deref());
+    let selected = model.and_then(|id| catalog.models.iter().find(|m| m.id == id));
+    // Older Antigravity selections stored XHigh as part of the native model ID.
+    if selected.is_none()
+        && provider_id == "antigravity"
+        && thinking.is_none()
+        && let Some(base) = model.and_then(|id| id.strip_suffix("-xhigh"))
+        && catalog
+            .models
+            .iter()
+            .any(|m| m.id == base && m.thinking_options.iter().any(|option| option.id == "xhigh"))
+    {
+        return Ok(());
+    }
+    let selected =
+        selected.ok_or_else(|| CoreError::InvalidArgument("backendText.m567f64e3".into()))?;
+    if thinking.is_some_and(|id| !selected.thinking_options.iter().any(|o| o.id == id)) {
+        return Err(CoreError::InvalidArgument("backendText.m3fbb689d".into()));
+    }
+    Ok(())
 }
 
 pub struct Core {
@@ -1412,12 +1426,14 @@ impl Core {
 
                 if command.model.is_some() || command.thinking.is_some() {
                     let _catalog = stage("submit_model_selection");
-                    let model = command.model.as_ref();
+                    let model = command.model.as_deref();
+                    let thinking = command.thinking.as_deref();
                     let executor = command
                         .executor_override
                         .as_ref()
                         .unwrap_or(&task.preferred_executor);
-                    let local_cursor = executor.provider_id.as_str() == "cursor"
+                    let provider_id = executor.provider_id.as_str();
+                    let local_cursor = provider_id == "cursor"
                         && self
                             .drivers
                             .read()
@@ -1430,44 +1446,24 @@ impl Core {
                     // Only a miss asks the agent for its live, project-specific
                     // catalog. The real session still applies the selection.
                     let cached = self
-                        .cached_model_catalog(
-                            executor,
-                            model.map(String::as_str),
-                            Some(&command.task_id),
-                            false,
-                        )
+                        .cached_model_catalog(executor, model, Some(&command.task_id), false)
                         .await;
                     let catalog = match cached {
                         // Creating a temporary native Cursor session is expensive;
                         // its menu inventory already came from Cursor.
                         cached if local_cursor => cached?,
                         Ok(cached)
-                            if selection_in_catalog(&cached, model, command.thinking.as_ref()) =>
+                            if validate_model_selection(&cached, provider_id, model, thinking)
+                                .is_ok() =>
                         {
                             cached
                         }
                         _ => {
-                            self.model_catalog_for_task(
-                                executor,
-                                model.map(String::as_str),
-                                Some(&command.task_id),
-                            )
-                            .await?
+                            self.model_catalog_for_task(executor, model, Some(&command.task_id))
+                                .await?
                         }
                     };
-                    let selected = model
-                        .or(catalog.default_model.as_ref())
-                        .and_then(|id| catalog.models.iter().find(|m| &m.id == id))
-                        .ok_or_else(|| {
-                            CoreError::InvalidArgument("backendText.m567f64e3".into())
-                        })?;
-                    if command
-                        .thinking
-                        .as_ref()
-                        .is_some_and(|id| !selected.thinking_options.iter().any(|o| &o.id == id))
-                    {
-                        return Err(CoreError::InvalidArgument("backendText.m3fbb689d".into()));
-                    }
+                    validate_model_selection(&catalog, provider_id, model, thinking)?;
                 }
             }
             CoreCommand::RespondToApproval(command) => {
@@ -5266,6 +5262,28 @@ mod tests {
         ExecutorRef {
             provider_id: ProviderId::parse(provider_id).unwrap(),
             installation_id: None,
+        }
+    }
+
+    #[test]
+    fn validates_legacy_antigravity_xhigh_selections_against_the_catalog() {
+        let catalog = driver_api::models::antigravity(vec![
+            "gemini-4-neon-high".into(),
+            "gemini-4-neon-xhigh".into(),
+            "gemini-4-carbon-high".into(),
+        ]);
+        for (provider, model, effort, valid) in [
+            ("antigravity", "gemini-4-neon", Some("xhigh"), true),
+            ("antigravity", "gemini-4-neon-xhigh", None, true),
+            ("antigravity", "gemini-4-neon-xhigh", Some("high"), false),
+            ("antigravity", "gemini-4-carbon-xhigh", None, false),
+            ("codex", "gemini-4-neon-xhigh", None, false),
+        ] {
+            assert_eq!(
+                validate_model_selection(&catalog, provider, Some(model), effort).is_ok(),
+                valid,
+                "{provider} {model} {effort:?}"
+            );
         }
     }
 

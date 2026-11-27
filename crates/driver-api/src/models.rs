@@ -120,14 +120,20 @@ pub fn acp(value: &Value) -> ModelCatalog {
     }
     catalog
 }
+const ANTIGRAVITY_EFFORTS: [&str; 4] = ["low", "medium", "high", "xhigh"];
+
+#[must_use]
+pub fn antigravity_model_parts(id: &str) -> (&str, Option<&str>) {
+    id.rsplit_once('-')
+        .filter(|(_, effort)| ANTIGRAVITY_EFFORTS.contains(effort))
+        .map_or((id, None), |(base, effort)| (base, Some(effort)))
+}
+
 #[must_use]
 pub fn antigravity(ids: Vec<String>) -> ModelCatalog {
     let mut catalog = ModelCatalog::default();
     for id in ids {
-        let (base, effort) = id
-            .rsplit_once('-')
-            .filter(|(_, e)| ["low", "medium", "high"].contains(e))
-            .map_or((id.as_str(), None), |(b, e)| (b, Some(e)));
+        let (base, effort) = antigravity_model_parts(&id);
         let index = catalog
             .models
             .iter()
@@ -150,8 +156,14 @@ pub fn antigravity(ids: Vec<String>) -> ModelCatalog {
     for model in &mut catalog.models {
         model
             .thinking_options
-            .sort_by_key(|o| ["low", "medium", "high"].iter().position(|e| *e == o.id));
-        model.default_thinking = model.thinking_options.last().map(|o| o.id.clone());
+            .sort_by_key(|o| ANTIGRAVITY_EFFORTS.iter().position(|e| *e == o.id));
+        // Keep the existing default when the catalog adds an opt-in XHigh tier.
+        model.default_thinking = model
+            .thinking_options
+            .iter()
+            .rfind(|o| o.id != "xhigh")
+            .or_else(|| model.thinking_options.first())
+            .map(|o| o.id.clone());
     }
     catalog
 }
@@ -172,13 +184,36 @@ mod tests {
     #[test]
     fn groups_only_verified_antigravity_effort_suffixes() {
         let c = antigravity(vec![
-            "gemini-high".into(),
-            "gemini-low".into(),
+            "gemini-4-neon-xhigh".into(),
+            "gemini-4-neon-high".into(),
+            "gemini-4-neon-low".into(),
+            "gemini-4-neon-medium".into(),
+            "gemini-4-hydrogen-high".into(),
+            "gemini-4-hydrogen-xhigh".into(),
+            "gemini-4-carbon-high".into(),
             "claude-thinking".into(),
         ]);
-        assert_eq!(c.models.len(), 2);
+        assert_eq!(
+            c.models.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
+            [
+                "gemini-4-neon",
+                "gemini-4-hydrogen",
+                "gemini-4-carbon",
+                "claude-thinking",
+            ]
+        );
+        let efforts = |index: usize| {
+            c.models[index]
+                .thinking_options
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(efforts(0), ["low", "medium", "high", "xhigh"]);
         assert_eq!(c.models[0].default_thinking.as_deref(), Some("high"));
-        assert_eq!(c.models[1].id, "claude-thinking");
-        assert!(c.models[1].thinking_options.is_empty());
+        assert_eq!(efforts(1), ["high", "xhigh"]);
+        assert_eq!(c.models[1].default_thinking.as_deref(), Some("high"));
+        assert_eq!(efforts(2), ["high"]);
+        assert!(efforts(3).is_empty());
     }
 }

@@ -7,7 +7,7 @@ import { App } from "./App";
 import { DemoCoreClient } from "./demoClient";
 import { SCRATCH_PROJECT_NAME, UNTITLED_TASK_TITLE } from "./displayNames";
 import { createHash, webcrypto } from "node:crypto";
-import type { ArtifactChunk, ArtifactMetadata, TimelineItem } from "@dogcodes/protocol";
+import type { ArtifactChunk, ArtifactMetadata, CoreClient, TimelineItem } from "@dogcodes/protocol";
 import { loadTurnArtifact } from "./turnArtifactCache";
 
 let root: Root, element: HTMLDivElement, client: DemoCoreClient;
@@ -239,23 +239,46 @@ it("shows the selected agent even before a new conversation has been created", a
   expect(element.querySelector('.agent-pending')).toBeNull();
 });
 
-it("refreshes all Agent quotas from the quota page and shows progress until completion", async () => {
+it("refreshes installed Agents, their model catalogs, and quotas from Agent management", async () => {
+  const refreshed = new Set<string>();
+  const availableModels = vi.fn<NonNullable<CoreClient["availableModels"]>>(async (executor, _model, _task, force) => {
+    if (force) refreshed.add(executor.providerId);
+    const fresh = refreshed.has(executor.providerId);
+    return { defaultModel: null, models: [
+      { id: fresh ? "new" : "old", label: fresh ? "Refreshed model" : "Previous model", thinkingOptions: [], defaultThinking: null },
+    ] };
+  });
+  const checkAgentUpdate = vi.fn<NonNullable<CoreClient["checkAgentUpdate"]>>(async installationId => ({
+    installationId, status: "up_to_date", currentVersion: "1", latestVersion: "1", source: "", message: null, canUpgrade: false, checkedAt: 1,
+  }));
+  Object.assign(client, { availableModels, checkAgentUpdate });
+  await act(async () => root.render(<App key="agent-refresh" client={client} />));
   await click(button("Agent 管理"));
+  const installations = (await client.bootstrap()).installations.filter(i => i.providerId !== "fake");
+  const scan = vi.spyOn(client, "scanAgent");
   const views = await client.quotaSnapshots();
   let finish!: (value: typeof views) => void;
   const pending = new Promise<typeof views>(resolve => { finish = resolve; });
   const read = vi.spyOn(client, "quotaSnapshots").mockReturnValue(pending);
-  await click(button("刷新额度"));
+  await click(button("刷新状态"));
   expect(button("正在刷新").disabled).toBe(true);
   expect(element.querySelector('[role="status"]')?.textContent).toContain("正在刷新");
-  const count = (await client.bootstrap()).installations.filter(i => i.providerId !== "fake").length;
+  const count = installations.length;
+  expect(scan.mock.calls).toEqual(installations.map(installation => [installation.providerId]));
+  expect(checkAgentUpdate.mock.calls.filter(call => call[1] === true).map(([id]) => id))
+    .toEqual(installations.map(installation => installation.installationId));
+  expect(availableModels.mock.calls.filter(call => call[3] === true).map(([executor]) => executor.installationId))
+    .toEqual(installations.filter(installation => installation.status === "ready").map(installation => installation.installationId));
   expect(read).toHaveBeenCalledTimes(count);
   expect(read.mock.calls.every(call => (call as unknown[])[2] === true)).toBe(true);
   await click(button("正在刷新"));
   expect(read).toHaveBeenCalledTimes(count);
   await act(async () => finish(views));
-  expect(button("刷新额度").disabled).toBe(false);
+  expect(button("刷新状态").disabled).toBe(false);
   expect(element.querySelector('.quota-refresh-status')?.textContent).toMatch(/已刷新|已完成刷新/);
+  await click(button("新建对话"));
+  await click(element.querySelector('[aria-label="选择模型"]')!);
+  expect(element.querySelector(".model-options")?.textContent).toContain("Refreshed model");
 });
 
 const visible = (selector: string) => [...element.querySelectorAll(selector)].filter(node => !node.closest("[hidden]"));

@@ -38,12 +38,12 @@ linux = [".local/bin/agy"]
 denylist = []
 
 [protocol]
-kind = "antigravity_stream_json"
-version = "v1_headless_beta"
+kind = "antigravity"
+version = "acp_v1_or_legacy_headless"
 framing = "ndjson_stdio"
 
 [capability_expectations]
-streaming_text = "native_via_step_update_beta"
-session_resume = "native_verified_via_conversation_flag"
-approvals = "no_interactive_surface_documented"
-cancellation = "stdin_close_interrupt_beta"
+streaming_text = "native"
+session_resume = "native"
+approvals = "native_acp_or_legacy_hook"
+cancellation = "native"
