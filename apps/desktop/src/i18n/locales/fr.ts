@@ -66,6 +66,8 @@ export const fr: TranslationDict = {
     "remainingQuota": "Quota restant",
     "resetPending": "Réinitialisation atteinte ; actualisation requise",
     "resetAt": "Réinitialisation : {time}",
+    "periodEndsAt": "Fin de la période : {time}",
+    "periodEnds": "Fin de la période",
     "resetMissing": "Heure de réinitialisation indisponible",
     "unknown": "Inconnu",
     "usageUnknown": "Inconnu",

@@ -121,6 +121,13 @@ export function quotaIsExhausted(quota: QuotaSnapshot | null | undefined, nowUni
   });
 }
 
+/** Windows whose date-only reading ends the current period instead of restoring credits:
+ *  Qoder's plan (or trial) expiry. It is shown, but never treated as a reset. */
+const PERIOD_END_WINDOWS = new Set(["qoder-included"]);
+export function nativeDateEndsPeriod(id?: string): boolean {
+  return id != null && PERIOD_END_WINDOWS.has(id);
+}
+
 function hasNativeBillingDate(id?: string): boolean {
   return id === "cursor-included" || id === "cursor-models" || id === "cursor-other-models" || id === "kiro-included";
 }
@@ -153,7 +160,7 @@ function nativeResetDisplayText(text: string, lang?: ResolvedLanguage): string {
 
 /** Bare reset date for a window whose adapter stored a date-only reading. */
 export function nativeResetDisplay(quota: QuotaSnapshot, window: QuotaWindow, lang?: ResolvedLanguage): string {
-  if (!hasNativeBillingDate(window.id)) return "";
+  if (!hasNativeBillingDate(window.id) && !nativeDateEndsPeriod(window.id)) return "";
   const text = quota.nativeResetOn?.trim();
   return text ? nativeResetDisplayText(text, lang) : "";
 }
@@ -178,7 +185,8 @@ export function latestQuotaCollection(views: { quota?: { collectedAtUnixMs: numb
 
 export function quotaNativeResetLabel(quota: QuotaSnapshot, window: QuotaWindow, lang: ResolvedLanguage = "zh-CN"): string {
   const display = nativeResetDisplay(quota, window, lang);
-  return display ? t("agentUi.resetAt", { time: display }, lang) : "";
+  if (!display) return "";
+  return t(nativeDateEndsPeriod(window.id) ? "agentUi.periodEndsAt" : "agentUi.resetAt", { time: display }, lang);
 }
 
 export function quotaScopeLabel(scope: string | null | undefined): string {

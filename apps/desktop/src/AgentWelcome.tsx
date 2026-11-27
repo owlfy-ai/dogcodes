@@ -25,6 +25,7 @@ export const supportedAgents = [
   { id: "opencode", installUrl: "https://opencode.ai/docs/", name: "OpenCode" },
   { id: "deepseek-harness", installUrl: "https://github.com/deepseek-ai/deepseek-harness#run", name: "DeepSeek Harness" },
   { id: "kiro", installUrl: "https://kiro.dev/downloads/", name: "Kiro" },
+  { id: "qoder-cn", installUrl: "https://qoder.com.cn/", name: "Qoder CN" },
 ] as const;
 const withoutQuota = new Set(["codebuddy"]);
 const independentAccounts = new Set(["pi", "opencode", "deepseek-harness"]);

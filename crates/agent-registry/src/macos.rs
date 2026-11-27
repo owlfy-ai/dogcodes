@@ -31,6 +31,7 @@ pub fn macos_desktop_executables(provider: &str, context: &DiscoveryContext) -> 
             "Codex.app/Contents/Resources/codex",
         ],
         "zcode" => &["ZCode.app/Contents/MacOS/ZCode"],
+        "qoder-cn" => &["Qoder CN.app/Contents/MacOS/Qoder CN"],
         "deepseek-harness" => &["DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"],
         "opencode" => &["OpenCode.app/Contents/Resources/opencode-cli"],
         _ => &[],

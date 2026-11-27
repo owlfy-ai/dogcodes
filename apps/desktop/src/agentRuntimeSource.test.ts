@@ -12,6 +12,8 @@ describe("selected agent runtime source", () => {
     ["claude-code", "C:\\Users\\me\\AppData\\Local\\Claude-Data\\claude_x\\claude-code\\2.1.330\\hash\\claude.exe"],
     ["zcode", "/Applications/ZCode.app/Contents/MacOS/ZCode"],
     ["zcode", "C:/Users/me/AppData/Local/Programs/ZCode/ZCode.exe"],
+    ["qoder-cn", "/Applications/Qoder CN.app/Contents/MacOS/Qoder CN"],
+    ["qoder-cn", "C:\\Users\\me\\AppData\\Local\\Programs\\Qoder CN\\Qoder CN.exe"],
     ["deepseek-harness", "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"],
     ["deepseek-harness", "C:/Users/me/AppData/Local/Programs/DeepSeek Harness/resources/runtime/cli/bin/dsh.cmd"],
     ["opencode", "/Applications/OpenCode.app/Contents/Resources/opencode-cli"],

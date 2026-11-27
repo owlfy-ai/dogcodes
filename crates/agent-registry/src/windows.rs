@@ -3,6 +3,10 @@ use super::{DiscoveryContext, Platform, home_directory};
 use semver::Version;
 use std::path::{Path, PathBuf};
 
+/// Resource-relative entry point of the CLI runtime bundled with Qoder CN,
+/// matching `bundled_script` in its manifest.
+const QODER_CN_SCRIPT: &str = "app.asar.unpacked/node_modules/@qoder-ai/qoder-cn-agent-sdk/dist/_worker/qoder-worker-runtime.obf.mjs";
+
 /// Candidates are only embedded CLI files, never the desktop GUI executable.
 /// The caller must still run the provider's version and readiness probes.
 #[must_use]
@@ -42,6 +46,17 @@ pub fn windows_desktop_executables(provider: &str, context: &DiscoveryContext) -
                     .join("Programs/ZCode/resources/glm/zcode.cjs")
                     .is_file()
             {
+                vec![binary]
+            } else {
+                vec![]
+            }
+        }
+        "qoder-cn" => {
+            // The desktop app bundles the full qoderclicn runtime as a Node
+            // script, run through the app's own Electron binary in node mode.
+            let app = local.join("Programs/Qoder CN");
+            let binary = app.join("Qoder CN.exe");
+            if binary.is_file() && app.join("resources").join(QODER_CN_SCRIPT).is_file() {
                 vec![binary]
             } else {
                 vec![]
@@ -301,9 +316,7 @@ mod tests {
         );
         // Left behind after an uninstall, it no longer counts as the desktop app.
         std::fs::remove_dir_all(home.path().join("AppData/Local/Packages")).unwrap();
-        assert!(
-            !windows_desktop_executables("claude-code", &context).contains(&data)
-        );
+        assert!(!windows_desktop_executables("claude-code", &context).contains(&data));
         assert!(windows_desktop_executables("cursor", &context).is_empty());
         assert!(
             windows_desktop_executables(
@@ -332,6 +345,24 @@ mod tests {
             "AppData/Local/Programs/ZCode/resources/glm/zcode.cjs",
         );
         assert_eq!(windows_desktop_executables("zcode", &context), vec![binary]);
+        let qoder = file(home.path(), "AppData/Local/Programs/Qoder CN/Qoder CN.exe");
+        assert!(windows_desktop_executables("qoder-cn", &context).is_empty());
+        file(
+            home.path(),
+            &format!("AppData/Local/Programs/Qoder CN/resources/{QODER_CN_SCRIPT}"),
+        );
+        assert_eq!(
+            windows_desktop_executables("qoder-cn", &context),
+            vec![qoder]
+        );
+        let manifest = crate::ProviderManifest::parse_toml(include_str!(
+            "../../../drivers/manifests/qoder-cn.toml"
+        ))
+        .unwrap();
+        assert_eq!(
+            manifest.discovery.bundled_script.as_deref(),
+            Some(Path::new(QODER_CN_SCRIPT))
+        );
         let grok = file(home.path(), ".grok/bin/grok.exe");
         let manifest = crate::ProviderManifest::parse_toml(include_str!(
             "../../../drivers/manifests/grok.toml"

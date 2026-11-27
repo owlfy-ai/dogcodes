@@ -38,6 +38,17 @@ describe("quota presentation", () => {
     expect(quotaNativeResetLabel(q, q.windows[0])).toBe("重置时间：10/1");
     expect(quotaPlanLabel(q)).toBe("KIRO FREE · 按量付费已开启");
   });
+  it("shows Qoder's plan end as the period's end, never as a reset", () => {
+    const year = new Date().getFullYear();
+    const q = { windows: [{ id: "qoder-included", scope: "included", windowMinutes: 0, usedPercent: 3.3, resetsAtUnix: null }],
+      planType: "Personal Professional Trial", nativeResetOn: `${year}-12-10`, purchasedQuota: true, collectedAtUnixMs: 1000, staleAfterUnixMs: 2000,
+      source: "native_pull", confidence: "provider_reported", parserVersion: "qoder-usage-info-v1" };
+    expect(primaryQuotaWindow(q.windows)?.id).toBe("qoder-included");
+    expect(quotaWindowLabel(0, "qoder-included")).toBe("当前账期");
+    expect(quotaNativeResetLabel(q, q.windows[0])).toBe("本期结束：12/10");
+    expect(quotaNativeResetLabel(q, q.windows[0], "en")).toBe("Period ends: 12/10");
+    expect(quotaIsExhausted(q, 1500)).toBe(false);
+  });
   it("keeps a differing native reset year and never invents a time of day", () => {
     const nextYear = new Date().getFullYear() + 1;
     const q = { windows: [{ id: "kiro-included", scope: "included", windowMinutes: 0, usedPercent: 0, resetsAtUnix: null }],

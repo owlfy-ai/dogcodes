@@ -5,6 +5,20 @@ use std::path::{Path, PathBuf};
 enum LoginTarget {
     App(PathBuf),
     Cli(PathBuf, &'static [&'static str]),
+    /// A CLI the desktop app bundles as a Node script, run by the app's own
+    /// Electron binary in node mode: (Electron executable, script, arguments).
+    NodeScript(PathBuf, PathBuf, &'static [&'static str]),
+}
+
+/// The CLI script a desktop app bundles, from the provider's built-in manifest.
+fn bundled_script(provider: &str, executable: &Path) -> Option<PathBuf> {
+    let manifest = crate::BUILTIN_AGENT_MANIFESTS
+        .iter()
+        .filter_map(|source| agent_registry::ProviderManifest::parse_toml(source).ok())
+        .find(|manifest| manifest.id.as_str() == provider)?;
+    let script = agent_runtime::electron_resources_directory(executable)?
+        .join(manifest.discovery.bundled_script?);
+    script.is_file().then_some(script)
 }
 
 fn login_target(
@@ -13,13 +27,19 @@ fn login_target(
     home: Option<&Path>,
 ) -> Result<LoginTarget, String> {
     let args: &[&str] = match provider {
-        "codex" | "cursor" | "grok" | "kimi" | "kiro" => &["login"],
+        "codex" | "cursor" | "grok" | "kimi" | "kiro" | "qoder-cn" => &["login"],
         "claude-code" | "opencode" => &["auth", "login"],
         "antigravity" | "zcode" | "codebuddy" | "pi" | "deepseek-harness" => &[],
         _ => return Err("backendText.mb577082e".into()),
     };
     if !executable.is_absolute() || !executable.is_file() {
         return Err("backendText.m6142282c".into());
+    }
+    // Signing in to the Qoder CN app does not sign in its bundled CLI, so
+    // its own login runs in a terminal like any other CLI.
+    if provider == "qoder-cn" {
+        let script = bundled_script(provider, executable).ok_or("backendText.m6142282c")?;
+        return Ok(LoginTarget::NodeScript(executable.into(), script, args));
     }
     // Only GUI providers should open their app bundle. Codex/OpenCode can ship
     // a CLI inside an app but still need to authenticate that exact CLI.
@@ -66,6 +86,32 @@ fn cli_command(executable: &Path, args: &[&str]) -> Result<String, String> {
         .join(" "))
 }
 
+/// The terminal command line for a CLI login, in POSIX shell syntax.
+#[cfg(unix)]
+fn unix_login_command(target: LoginTarget) -> Result<String, String> {
+    match target {
+        LoginTarget::Cli(executable, args) => cli_command(&executable, args),
+        LoginTarget::NodeScript(executable, script, args) => {
+            // On macOS this is the background helper, so no Dock icon appears.
+            let node = agent_runtime::electron_node_executable(&executable)
+                .map_err(|_| "backendText.m6142282c")?;
+            let script = script.to_str().ok_or("backendText.ma627abbe")?;
+            if script.chars().any(char::is_control) {
+                return Err("backendText.m8a8abc7a".into());
+            }
+            let arguments: Vec<&str> = std::iter::once(script)
+                .chain(args.iter().copied())
+                .collect();
+            // `env` keeps the assignment valid in bash, zsh, sh and fish alike.
+            Ok(format!(
+                "env ELECTRON_RUN_AS_NODE=1 {}",
+                cli_command(&node, &arguments)?
+            ))
+        }
+        LoginTarget::App(_) => Err("backendText.m63ce5eae".into()),
+    }
+}
+
 // Linux spawns its terminal directly and never waits on a launcher.
 #[cfg(any(target_os = "macos", windows))]
 async fn launch(mut command: tokio::process::Command) -> Result<(), String> {
@@ -91,8 +137,8 @@ async fn open_target(target: LoginTarget) -> Result<(), String> {
             open.arg("-a").arg(bundle);
             launch(open).await
         }
-        LoginTarget::Cli(executable, args) => {
-            let command = cli_command(&executable, args)?;
+        target @ (LoginTarget::Cli(..) | LoginTarget::NodeScript(..)) => {
+            let command = unix_login_command(target)?;
             let context = agent_registry::DiscoveryContext::from_current_process();
             let shell = crate::terminal_installation::user_shell(&context)
                 .await
@@ -132,10 +178,7 @@ async fn open_target(target: LoginTarget) -> Result<(), String> {
 // Same async signature as the macOS and Windows variants the caller awaits.
 #[allow(clippy::unused_async)]
 async fn open_target(target: LoginTarget) -> Result<(), String> {
-    let LoginTarget::Cli(executable, args) = target else {
-        return Err("backendText.m63ce5eae".into());
-    };
-    let command = cli_command(&executable, args)?;
+    let command = unix_login_command(target)?;
     let script = format!(
         "cd \"$HOME\" && {command}; printf '\\nLogin finished. Return to dog.codes and detect again. Press Enter to close.'; read reply"
     );
@@ -171,11 +214,21 @@ fn windows_cli_command(executable: &Path, args: &[&str]) -> String {
 #[cfg(windows)]
 async fn open_target(target: LoginTarget) -> Result<(), String> {
     use base64::Engine;
-    let LoginTarget::Cli(executable, args) = target else {
-        return Err("backendText.m63ce5eae".into());
+    let (environment, command) = match target {
+        LoginTarget::Cli(executable, args) => ("", windows_cli_command(&executable, args)),
+        LoginTarget::NodeScript(executable, script, args) => {
+            let script = script.to_string_lossy();
+            let arguments: Vec<&str> = std::iter::once(&*script)
+                .chain(args.iter().copied())
+                .collect();
+            (
+                "$env:ELECTRON_RUN_AS_NODE='1'; ",
+                windows_cli_command(&executable, &arguments),
+            )
+        }
+        LoginTarget::App(_) => return Err("backendText.m63ce5eae".into()),
     };
-    let command = windows_cli_command(&executable, args);
-    let script = format!("Set-Location $HOME; & {command}");
+    let script = format!("Set-Location $HOME; {environment}& {command}");
     let encoded = base64::engine::general_purpose::STANDARD.encode(
         script
             .encode_utf16()
@@ -264,6 +317,35 @@ mod tests {
         assert!(login_target("unknown", file.path(), None).is_err());
         assert!(login_target("grok", Path::new("/missing/grok"), None).is_err());
         assert!(login_target("grok", Path::new("grok"), None).is_err());
+    }
+
+    #[test]
+    fn qoder_cn_signs_in_its_bundled_cli_through_electron_node_mode() {
+        let root = tempfile::tempdir().unwrap();
+        let executable = root.path().join("Qoder CN/Qoder CN.exe");
+        std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        std::fs::write(&executable, "").unwrap();
+        // Without the bundled runtime there is nothing to sign in.
+        assert!(login_target("qoder-cn", &executable, None).is_err());
+        let script = agent_runtime::electron_resources_directory(&executable)
+            .unwrap()
+            .join("app.asar.unpacked/node_modules/@qoder-ai/qoder-cn-agent-sdk/dist/_worker/qoder-worker-runtime.obf.mjs");
+        std::fs::create_dir_all(script.parent().unwrap()).unwrap();
+        std::fs::write(&script, "").unwrap();
+        assert_eq!(
+            login_target("qoder-cn", &executable, None).unwrap(),
+            LoginTarget::NodeScript(executable.clone(), script.clone(), &["login"])
+        );
+        #[cfg(unix)]
+        assert_eq!(
+            unix_login_command(LoginTarget::NodeScript(
+                "/Apps/Qoder CN".into(),
+                "/Apps/resources/cli.mjs".into(),
+                &["login"]
+            ))
+            .unwrap(),
+            "env ELECTRON_RUN_AS_NODE=1 '/Apps/Qoder CN' '/Apps/resources/cli.mjs' 'login'"
+        );
     }
 
     #[test]

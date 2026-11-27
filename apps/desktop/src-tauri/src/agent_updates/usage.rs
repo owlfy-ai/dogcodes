@@ -160,7 +160,35 @@ impl Scope {
     }
 }
 
-fn collect(s: &System, scope: &Scope) -> Vec<Identity> {
+/// Agent processes found for an upgrade. `owned` ones descend from this app (its core
+/// child's ACP connections and short-lived catalog helpers). They are replaced every few
+/// seconds while catalogs load, so binding consent to them could never be satisfied; the
+/// app stops them itself. Consent covers only `external` processes and running tasks.
+#[derive(Default)]
+struct Found {
+    external: Vec<Identity>,
+    owned: Vec<Identity>,
+}
+fn descends_from(s: &System, pid: Pid, root: Pid) -> bool {
+    let mut visited = BTreeSet::new();
+    let mut cursor = s.process(pid).and_then(sysinfo::Process::parent);
+    while let Some(current) = cursor {
+        if current == root {
+            return true;
+        }
+        if !visited.insert(current) {
+            return false;
+        }
+        cursor = s.process(current).and_then(sysinfo::Process::parent);
+    }
+    false
+}
+fn owner_root() -> Option<Pid> {
+    // Test fixtures are children of the test runner; treat them as external processes.
+    (!cfg!(test)).then(|| Pid::from_u32(std::process::id()))
+}
+
+fn collect(s: &System, scope: &Scope, owner: Option<Pid>) -> Found {
     let own = Pid::from_u32(std::process::id());
     let user = s.process(own).and_then(|p| p.user_id());
     let mut ancestors = BTreeSet::new();
@@ -196,11 +224,20 @@ fn collect(s: &System, scope: &Scope) -> Vec<Identity> {
         }
         pids.extend(children);
     }
-    pids.into_iter()
-        .filter_map(|pid| s.process(pid).and_then(identity))
-        .collect()
+    let mut found = Found::default();
+    for pid in pids {
+        let Some(id) = s.process(pid).and_then(identity) else {
+            continue;
+        };
+        if owner.is_some_and(|root| descends_from(s, pid, root)) {
+            found.owned.push(id);
+        } else {
+            found.external.push(id);
+        }
+    }
+    found
 }
-async fn scan(i: &InstallationSummary, p: &Plan) -> Result<Vec<Identity>, String> {
+async fn scan(i: &InstallationSummary, p: &Plan) -> Result<Found, String> {
     let scope = Scope::new(i, p)?;
     tokio::task::spawn_blocking(move || {
         let system = system()?;
@@ -218,7 +255,7 @@ async fn scan(i: &InstallationSummary, p: &Plan) -> Result<Vec<Identity>, String
             }
             cursor = process.parent();
         }
-        Ok(collect(&system, &scope))
+        Ok(collect(&system, &scope, owner_root()))
     })
     .await
     .map_err(|_| "backendText.mf1729c9a")?
@@ -304,13 +341,18 @@ pub(super) async fn prepare(
         .into_iter()
         .filter(|t| target_task(t, i))
         .collect();
-    let processes = scan(i, p).await?;
+    let Found {
+        external: processes,
+        owned,
+    } = scan(i, p).await?;
     let runs = run_ids(&tasks);
     let ticket = match token {
         Some(token) => updates.confirmations.lock().await.remove(token),
         None => None,
     };
     if processes.is_empty() && runs.is_empty() {
+        // Only this app's idle connections/helpers remain: retire them without asking.
+        stop_processes(owned).await?;
         return Ok(None);
     }
     if !ticket
@@ -356,9 +398,10 @@ pub(super) async fn prepare(
     if !tasks.is_empty() {
         tokio::time::sleep(Duration::from_millis(750)).await;
     }
-    // Terminate only the identities explicitly shown in this confirmation. A restarted
-    // process or a newly started task requires fresh consent, even if its PID was reused.
-    stop_processes(processes).await?;
+    // Terminate only the external identities explicitly shown in this confirmation (plus
+    // this app's own helpers). A restarted external process or a newly started task
+    // requires fresh consent, even if its PID was reused.
+    stop_processes(processes.into_iter().chain(owned).collect()).await?;
     for _ in 0..60 {
         if !core
             .bootstrap()
@@ -536,6 +579,57 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn app_spawned_helpers_are_owned_and_need_no_consent() {
+        // CodeBuddy catalog helpers are replaced every few seconds; binding consent to
+        // them made "Stop tasks and upgrade" re-prompt forever.
+        let temp = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let (source, args, name) = (
+            std::path::PathBuf::from(std::env::var("SystemRoot").unwrap() + r"\System32\ping.exe"),
+            vec!["-n", "60", "127.0.0.1"],
+            "agent-worker.exe",
+        );
+        #[cfg(unix)]
+        let (source, args, name) = (
+            std::path::PathBuf::from("/bin/sleep"),
+            vec!["60"],
+            "agent-worker",
+        );
+        let binary = temp.path().join(name);
+        std::fs::copy(source, &binary).unwrap();
+        let mut child = std::process::Command::new(&binary)
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let scope = Scope {
+            executable: binary.canonicalize().unwrap(),
+            directory: None,
+        };
+        let own = Pid::from_u32(std::process::id());
+        let mut owned = collect(&system().unwrap(), &scope, Some(own));
+        for _ in 0..30 {
+            if !owned.owned.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            owned = collect(&system().unwrap(), &scope, Some(own));
+        }
+        assert!(owned.external.is_empty());
+        assert!(owned.owned.iter().any(|p| p.pid.as_u32() == child.id()));
+        let unowned = collect(&system().unwrap(), &scope, None);
+        assert!(unowned.owned.is_empty());
+        assert!(
+            unowned
+                .external
+                .iter()
+                .any(|p| p.pid.as_u32() == child.id())
+        );
+        stop_processes(owned.owned).await.unwrap();
+        assert!(child.try_wait().unwrap().is_some() || child.wait().is_ok());
+    }
+
     #[test]
     fn consent_rejects_reused_pids_new_runs_expiry_and_changed_installations() {
         let mut i = super::super::tests::installation_for("cursor", Path::new("/cursor"), "1.0.0");
@@ -596,7 +690,7 @@ mod tests {
         };
         let mut found = Vec::new();
         for _ in 0..30 {
-            found = collect(&system().unwrap(), &scope);
+            found = collect(&system().unwrap(), &scope, None).external;
             if found.len() >= 2 {
                 break;
             }
@@ -628,7 +722,7 @@ mod tests {
             executable: binary.canonicalize().unwrap(),
             directory: None,
         };
-        let found = collect(&system().unwrap(), &scope);
+        let found = collect(&system().unwrap(), &scope, None).external;
         assert!(found.iter().any(|p| p.pid.as_u32() == target.id()));
         assert!(!found.iter().any(|p| p.pid.as_u32() == unrelated.id()));
         stop_processes(found).await.unwrap();

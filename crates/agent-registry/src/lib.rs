@@ -287,6 +287,7 @@ pub const BUILTIN_MANIFESTS: &[&str] = &[
     include_str!("../../../drivers/manifests/opencode.toml"),
     include_str!("../../../drivers/manifests/deepseek-harness.toml"),
     include_str!("../../../drivers/manifests/kiro.toml"),
+    include_str!("../../../drivers/manifests/qoder-cn.toml"),
 ];
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]

@@ -496,7 +496,7 @@ fn desktop_runtime_candidates(
     let provider = manifest.id.as_str();
     if !matches!(
         provider,
-        "claude-code" | "codex" | "zcode" | "deepseek-harness" | "opencode"
+        "claude-code" | "codex" | "zcode" | "qoder-cn" | "deepseek-harness" | "opencode"
     ) {
         return vec![];
     }

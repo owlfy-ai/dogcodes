@@ -53,6 +53,8 @@ export const zhTW: TranslationDict = {
     "remainingQuota": "剩餘額度",
     "resetPending": "已到重設時間，待重新整理",
     "resetAt": "重設時間：{time}",
+    "periodEndsAt": "本期結束：{time}",
+    "periodEnds": "本期結束",
     "resetMissing": "重設時間未提供",
     "unknown": "未知",
     "remainingPercent": "剩餘 {percent}%",

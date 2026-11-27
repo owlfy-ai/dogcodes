@@ -65,6 +65,7 @@ mod cursor_quota;
 mod kiro_quota;
 mod models;
 mod permissions;
+mod qoder_quota;
 mod session_state;
 use agent_domain::{ExecutorRef, ProviderId};
 use driver_api::{
@@ -86,6 +87,7 @@ const ENV_ALLOWLIST: &[&str] = &[
     "GROK_HOME",
     "CODEBUDDY_CONFIG_DIR",
     "DSH_HOME",
+    "QODER_CONFIG_DIR",
     "OPENCODE_DB",
     "XDG_DATA_HOME",
     "LANG",
@@ -1296,6 +1298,18 @@ async fn initialize(connection: &ConnectionTo<Agent>) -> Result<InitializeRespon
 
 type AgentTransport = ByteStreams<Compat<lifecycle::Input>, Compat<lifecycle::Output>>;
 
+/// A desktop app that bundles its CLI as a Node script (Qoder CN) is launched as
+/// `<app executable> <script inside its resources> ...`, which only works in
+/// Electron's node mode. The script path comes from the manifest's validated
+/// `bundled_script`, resolved against this executable's own resources.
+fn electron_node_script(launch: &AcpLaunch) -> bool {
+    launch.executable.target.is_local()
+        && launch.args.first().is_some_and(|script| {
+            agent_runtime::electron_resources_directory(&launch.executable.path)
+                .is_some_and(|resources| std::path::Path::new(script).starts_with(resources))
+        })
+}
+
 fn spawn_agent(launch: &AcpLaunch) -> Result<(lifecycle::Process, AgentTransport), DriverError> {
     spawn_agent_in(launch, None, None, std::time::Duration::from_secs(5))
 }
@@ -1305,7 +1319,16 @@ fn spawn_agent_in(
     stderr_tail: Option<StderrTail>,
     exit_grace: std::time::Duration,
 ) -> Result<(lifecycle::Process, AgentTransport), DriverError> {
-    let mut command = launch.executable.command();
+    let mut command = if electron_node_script(launch) {
+        // On macOS this is the background helper, so no Dock icon appears.
+        let node = agent_runtime::electron_node_executable(&launch.executable.path)
+            .map_err(|error| DriverError::NotConfigured(error.to_string()))?;
+        let mut command = agent_runtime::TargetCommand::new(launch.executable.target.clone(), node);
+        command.env("ELECTRON_RUN_AS_NODE", "1");
+        command
+    } else {
+        launch.executable.command()
+    };
     command.args(&launch.args);
     for variable in ENV_ALLOWLIST {
         command.inherit(variable);
@@ -3243,9 +3266,25 @@ fn parse_grok_billing_windows(billing: &serde_json::Value) -> Option<Vec<QuotaWi
             let limit = number("monthlyLimit").filter(|value| valid(*value) && *value > 0.0)?;
             Some(used / limit * 100.0).filter(|value| value.is_finite())
         })
-        // A config without a readable usage figure (the current Grok free tier
-        // omits every usage field) must stay unknown: inventing a full balance
-        // masks a quota that the token window may have already exhausted.
+        .or_else(|| {
+            // The billing service drops a zero `creditUsagePercent` (verified
+            // with Grok 1.0.92: a fresh SuperGrok week omits it while `/usage`
+            // shows 0%). Only a paid tier's absent key means zero; an explicit
+            // null or invalid value stays unknown.
+            let paid = billing
+                .get("subscription_tier")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .is_some_and(|tier| {
+                    !tier.is_empty()
+                        && !tier.eq_ignore_ascii_case("free")
+                        && !tier.eq_ignore_ascii_case("none")
+                });
+            (paid && config.get("creditUsagePercent").is_none()).then_some(0.0)
+        })
+        // Otherwise a config without a readable usage figure (the Grok free
+        // tier omits every usage field) must stay unknown: inventing a full
+        // balance masks a quota that the token window may have already exhausted.
         .map(|value| value.clamp(0.0, 100.0));
     Some(vec![QuotaWindow {
         scope: None,
@@ -3548,7 +3587,7 @@ impl QuotaProvider for AcpDriver {
     ) -> Result<QuotaSnapshot, DriverError> {
         if !matches!(
             self.executor.provider_id.as_str(),
-            "kimi" | "grok" | "cursor" | "kiro"
+            "kimi" | "grok" | "cursor" | "kiro" | "qoder-cn"
         ) {
             return self.context_only_quota(native_session_id);
         }
@@ -3582,6 +3621,10 @@ impl QuotaProvider for AcpDriver {
             }
             if self.executor.provider_id.as_str() == "cursor" {
                 return cursor_quota::read(&self.shared.launch.executable.target).await;
+            }
+            if self.executor.provider_id.as_str() == "qoder-cn" {
+                let usage = qoder_quota::read(&self.shared.launch).await?;
+                return qoder_quota::parse(&usage);
             }
             let (windows, plan_type, parser_version) =
                 if self.executor.provider_id.as_str() == "kimi" {
@@ -4029,6 +4072,28 @@ mod tests {
             None
         );
         assert!(parse_grok_billing_windows(&serde_json::json!({})).is_none());
+        // Real Grok 1.0.92 SuperGrok reply at 0% usage: the percent key is omitted.
+        let mut paid = serde_json::json!({"config": {
+            "currentPeriod": {"type":"USAGE_PERIOD_TYPE_WEEKLY", "start":"2026-11-26T03:38:37.888+00:00", "end":"2026-12-03T03:38:37.888+00:00"},
+            "prepaidBalance": {"val": 0}, "isUnifiedBillingUser": true
+        }, "subscription_tier": "SuperGrok"});
+        assert_eq!(
+            parse_grok_billing_windows(&paid).unwrap()[0].used_percent,
+            Some(0.0)
+        );
+        paid["config"]["creditUsagePercent"] = serde_json::Value::Null;
+        assert_eq!(
+            parse_grok_billing_windows(&paid).unwrap()[0].used_percent,
+            None
+        );
+        paid["config"].as_object_mut().unwrap().remove("creditUsagePercent");
+        for tier in ["Free", "", "none"] {
+            paid["subscription_tier"] = serde_json::json!(tier);
+            assert_eq!(
+                parse_grok_billing_windows(&paid).unwrap()[0].used_percent,
+                None
+            );
+        }
         let legacy = serde_json::json!({"config":{
             "billingPeriodStart":"2026-09-01T00:00:00Z", "billingPeriodEnd":"2026-09-08T00:00:00Z",
             "monthlyLimit":{"val":200}, "used":{"val":50}

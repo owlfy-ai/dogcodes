@@ -106,7 +106,7 @@ import { QUOTA_CONTINUE_PROMPT, REVIEW_REPAIR_PROMPT, displayBackendText } from 
 import { sendSteering } from "./steering";
 import { timelineItemRole } from "./timelinePresentation";
 import { RequestEpoch, changeSelection } from "./requestEpoch";
-import { formatResetTime, formatProviderBalance, quotaScopeLabel, quotaPlanLabel, quotaNativeResetLabel, nativeResetDisplay, antigravityQuotaForModel, ringQuotaWindow, quotaColor, quotaIsExhausted, quotaIsStale, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
+import { formatResetTime, formatProviderBalance, quotaScopeLabel, quotaPlanLabel, quotaNativeResetLabel, nativeResetDisplay, nativeDateEndsPeriod, antigravityQuotaForModel, ringQuotaWindow, quotaColor, quotaIsExhausted, quotaIsStale, quotaWindowHasReset, quotaWindowLabel, remainingPercent } from "./quotaPresentation";
 import { createQuotaRefresh, type QuotaRefreshProgress } from "./quotaRefresh";
 import { useLoadingVisibility } from "./useLoadingVisibility";
 import { accountQuotaReading, quotaShowsLastReading } from "./quotaFallback";
@@ -1663,7 +1663,8 @@ export function QuotaRing({ quota, providerId, diagnostic, turnQuotaExhausted = 
       const balance = remainingPercent(window.usedPercent);
       rows.push([label, quotaWindowHasReset(window) ? t("agentUi.resetPending") : balance === null ? t("agentUi.usageUnknown") : balance === 0 ? t("agentUi.usedUp") : `${balance}%`]);
       const reset = window.resetsAtUnix ? formatResetTime(window.resetsAtUnix) : nativeResetDisplay(quota!, window);
-      if (reset) rows.push([t("quota.windowReset", { window: label }), reset]);
+      const ends = !window.resetsAtUnix && nativeDateEndsPeriod(window.id);
+      if (reset) rows.push([ends ? `${label} · ${t("agentUi.periodEnds")}` : t("quota.windowReset", { window: label }), reset]);
     }
     if (quota) rows.push([t("quota.updated"), new Date(quota.collectedAtUnixMs).toLocaleTimeString()]);
     return <span className={`quota-ring${exhausted ? " exhausted" : ""}`} data-tooltip={t("agentUi.remainingQuota")} data-tooltip-rows={JSON.stringify(rows)}>
