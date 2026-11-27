@@ -281,6 +281,7 @@ async fn cursor_secret_store(_auth: &Path) -> Option<Vec<u8>> {
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]
+#[allow(clippy::unused_async)]
 async fn cursor_secret_store(_auth: &Path) -> Option<Vec<u8>> {
     None
 }
@@ -296,7 +297,12 @@ async fn secret_helper(
     command
         .args(args)
         .stdio(Pipe::Piped, Pipe::Piped, Pipe::Null);
-    for name in ["HOME", "PATH", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"] {
+    for name in [
+        "HOME",
+        "PATH",
+        "DBUS_SESSION_BUS_ADDRESS",
+        "XDG_RUNTIME_DIR",
+    ] {
         command.inherit(name);
     }
     let mut child = command.spawn().ok()?;

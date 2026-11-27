@@ -13,11 +13,13 @@ async fn desktop_runtime_conversation_and_quota() {
     );
     let version = std::env::var("DOGCODES_TEST_CLAUDE_VERSION").expect("verified runtime version");
     assert!(
-        executable.ancestors().any(|p| p.ends_with("Claude/claude-code")
-            || (p.ends_with("claude-code")
-                && p.parent()
-                    .and_then(std::path::Path::parent)
-                    .is_some_and(|data| data.ends_with("Claude-Data")))),
+        executable
+            .ancestors()
+            .any(|p| p.ends_with("Claude/claude-code")
+                || (p.ends_with("claude-code")
+                    && p.parent()
+                        .and_then(std::path::Path::parent)
+                        .is_some_and(|data| data.ends_with("Claude-Data")))),
         "must explicitly test the desktop-managed runtime"
     );
     let workspace = tempfile::tempdir().unwrap();

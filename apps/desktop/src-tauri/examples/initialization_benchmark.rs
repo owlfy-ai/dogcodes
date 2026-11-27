@@ -122,11 +122,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 SessionResumeCapability::Supported,
             )?)
         }
-        "antigravity" => {
-            Box::new(
-                AntigravityDriver::connect_ready(&provider, id, executable.into(), version).await?,
-            )
-        }
+        "antigravity" => Box::new(
+            AntigravityDriver::connect_ready(&provider, id, executable.into(), version).await?,
+        ),
         "zcode" => {
             let launch = ZcodeLaunch {
                 cli_script: PathBuf::from(
