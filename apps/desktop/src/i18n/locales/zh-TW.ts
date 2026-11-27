@@ -6,6 +6,10 @@ export const zhTW: TranslationDict = {
   agentUi: {
     "cliSupported": "支援 CLI",
     "cliOnlyHint": "僅支援 CLI 的 Agent 需另行安裝並登入 CLI 後重新偵測；僅安裝桌面用戶端無法使用。",
+    "desktopSupported": "支援桌面端",
+    "desktopCliSupported": "支援桌面端和 CLI",
+    "desktopOnlyHint": "此 Agent 僅隨桌面應用程式提供，需安裝桌面應用程式後重新偵測。",
+    "desktopOrCliHint": "安裝桌面應用程式或 CLI 任一即可，安裝後重新偵測。",
     "cliNotDetected": "未偵測到 CLI",
     "installCli": "安裝 CLI",
     "runtimeCli": "CLI",

@@ -6,6 +6,10 @@ export const es: TranslationDict = {
   agentUi: {
     "cliSupported": "Compatible con CLI",
     "cliOnlyHint": "Para los agentes que solo admiten CLI, instala la CLI por separado, inicia sesión y vuelve a detectar. La aplicación de escritorio por sí sola no basta.",
+    "desktopSupported": "Compatible con la app de escritorio",
+    "desktopCliSupported": "Compatible con app de escritorio y CLI",
+    "desktopOnlyHint": "Este agente solo se incluye en su aplicación de escritorio. Instálala y vuelve a detectar.",
+    "desktopOrCliHint": "Instala la aplicación de escritorio o la CLI y vuelve a detectar.",
     "cliNotDetected": "CLI no detectada",
     "installCli": "Instalar CLI",
     "runtimeCli": "CLI",

@@ -8,7 +8,7 @@ import { quotaRequestTimeoutMs } from "./quotaRefresh";
 import { quotaShowsLastReading, withLastReading } from "./quotaFallback";
 import { AgentLogin, agentAccountIssue, needsAgentLogin } from "./AgentLogin";
 import { WelcomeHerd } from "./WelcomeHerd";
-import { AgentCliSupportBadge, AgentRuntimeBadge } from "./AgentRuntimeBadge";
+import { AgentAccessSupportBadge, AgentRuntimeBadge } from "./AgentRuntimeBadge";
 import { agentRequiresCli } from "./agentRuntimeSource";
 import "./agentWelcome.css";
 
@@ -256,7 +256,7 @@ export function AgentWelcome({ client, onContinue, renderIcon, onDetected }: {
 
   const renderCard = ({ agent, reading, scanning, failed, uninstalled, state }: typeof cards[number], index: number) => {
     if (uninstalled) return <article className="welcome-agent-card uninstalled" key={agent.id} aria-label={agent.name} style={{ "--stagger": index } as CSSProperties}>
-      <header><span className="welcome-agent-icon">{renderIcon(agent.id)}</span><div><h2><span className="agent-runtime-name">{agent.name}</span><AgentCliSupportBadge providerId={agent.id} /></h2><small>{t(agentRequiresCli(agent.id) ? "agentUi.cliNotDetected" : "agentUi.notInstalled", undefined, lang)}</small></div></header>
+      <header><span className="welcome-agent-icon">{renderIcon(agent.id)}</span><div><h2><span className="agent-runtime-name">{agent.name}</span><AgentAccessSupportBadge providerId={agent.id} /></h2><small>{t(agentRequiresCli(agent.id) ? "agentUi.cliNotDetected" : "agentUi.notInstalled", undefined, lang)}</small></div></header>
       <InstallationLink url={agent.installUrl} name={agent.name} cli={agentRequiresCli(agent.id)} />
     </article>;
     const quota = reading?.view?.quota;

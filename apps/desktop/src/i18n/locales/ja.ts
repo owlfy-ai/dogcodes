@@ -6,6 +6,10 @@ export const ja: TranslationDict = {
   agentUi: {
     "cliSupported": "CLI 対応",
     "cliOnlyHint": "CLI のみに対応する Agent は、CLI を別途インストールしてログイン後、再検出してください。デスクトップアプリだけでは利用できません。",
+    "desktopSupported": "デスクトップアプリ対応",
+    "desktopCliSupported": "デスクトップアプリ・CLI 対応",
+    "desktopOnlyHint": "この Agent はデスクトップアプリにのみ同梱されています。デスクトップアプリをインストール後、再検出してください。",
+    "desktopOrCliHint": "デスクトップアプリか CLI のどちらかをインストールし、再検出してください。",
     "cliNotDetected": "CLI が見つかりません",
     "installCli": "CLI をインストール",
     "runtimeCli": "CLI",

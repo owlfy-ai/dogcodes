@@ -30,6 +30,14 @@ describe("quota components", () => {
     }
     const desktopRow = html.slice(html.indexOf('<li aria-label="DeepSeek Harness"')).split("</li>")[0];
     expect(desktopRow).not.toContain('data-runtime-support="cli"');
+    for (const name of ["Claude Code", "Codex", "OpenCode", "DeepSeek Harness"]) {
+      const row = html.slice(html.indexOf(`<li aria-label="${name}"`)).split("</li>")[0];
+      expect(row).toContain('data-runtime-support="desktop-cli"');
+      expect(row).toContain("支持桌面端和 CLI");
+    }
+    const zcodeRow = html.slice(html.indexOf('<li aria-label="ZCode"')).split("</li>")[0];
+    expect(zcodeRow).toContain('data-runtime-support="desktop"');
+    expect(zcodeRow).toContain("支持桌面端");
   });
 
   it("labels desktop and CLI executables in local and host management cards", () => {

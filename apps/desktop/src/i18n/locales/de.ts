@@ -6,6 +6,10 @@ export const de: TranslationDict = {
   agentUi: {
     "cliSupported": "CLI unterstützt",
     "cliOnlyHint": "Für Agents mit reiner CLI-Unterstützung die CLI separat installieren, anmelden und erneut suchen. Die Desktop-App allein reicht nicht aus.",
+    "desktopSupported": "Desktop-App unterstützt",
+    "desktopCliSupported": "Desktop-App & CLI unterstützt",
+    "desktopOnlyHint": "Dieser Agent ist nur in seiner Desktop-App enthalten. Desktop-App installieren und erneut suchen.",
+    "desktopOrCliHint": "Desktop-App oder CLI installieren und erneut suchen.",
     "cliNotDetected": "CLI nicht erkannt",
     "installCli": "CLI installieren",
     "runtimeCli": "CLI",

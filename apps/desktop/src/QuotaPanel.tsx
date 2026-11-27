@@ -8,7 +8,7 @@ import { agentDropSlot, moveAgentToSlot, orderAgents, useAgentPreferences } from
 import { AgentIcon, providerLabel } from "./agentPresentation";
 import { AgentUpdateControl, type AgentUpdateActions } from "./agentUpdates";
 import "./agentManagement.css";
-import { AgentCliSupportBadge, AgentRuntimeBadge } from "./AgentRuntimeBadge";
+import { AgentAccessSupportBadge, AgentRuntimeBadge } from "./AgentRuntimeBadge";
 import { agentRequiresCli } from "./agentRuntimeSource";
 import { quotaShowsLastReading } from "./quotaFallback";
 import { localizedAgentMessage } from "./agentI18n";
@@ -221,7 +221,7 @@ export function QuotaPanel({
       <ul>{uninstalled.map(agent => {
         const install = host?.installs.find(item => item.providerId === agent.id);
         return <li key={agent.id} aria-label={agent.name}>
-        <AgentIcon providerId={agent.id} /><span className="agent-uninstalled-name"><span className="agent-runtime-name">{agent.name}</span><AgentCliSupportBadge providerId={agent.id} /></span>
+        <AgentIcon providerId={agent.id} /><span className="agent-uninstalled-name"><span className="agent-runtime-name">{agent.name}</span><AgentAccessSupportBadge providerId={agent.id} /></span>
         {host
           ? <button type="button" className="agent-install-link" disabled={install?.status === "installing"} aria-busy={install?.status === "installing"} aria-label={t("agentUi.installOnHost", { name: agent.name }, lang)} onClick={() => host.install(agent.id)}>
               {install?.status === "installing" && <span className="task-running-spinner" aria-hidden="true" />}

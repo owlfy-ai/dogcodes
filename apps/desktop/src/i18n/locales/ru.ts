@@ -6,6 +6,10 @@ export const ru: TranslationDict = {
   agentUi: {
     "cliSupported": "Поддержка CLI",
     "cliOnlyHint": "Для агентов, поддерживающих только CLI, отдельно установите CLI, войдите в аккаунт и повторите поиск. Одного настольного приложения недостаточно.",
+    "desktopSupported": "Поддержка настольного приложения",
+    "desktopCliSupported": "Поддержка приложения и CLI",
+    "desktopOnlyHint": "Этот агент поставляется только в составе настольного приложения. Установите приложение и повторите поиск.",
+    "desktopOrCliHint": "Установите настольное приложение или CLI и повторите поиск.",
     "cliNotDetected": "CLI не обнаружен",
     "installCli": "Установить CLI",
     "runtimeCli": "CLI",

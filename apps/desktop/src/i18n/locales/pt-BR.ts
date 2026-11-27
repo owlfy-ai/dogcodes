@@ -6,6 +6,10 @@ export const ptBR: TranslationDict = {
   agentUi: {
     "cliSupported": "Suporte a CLI",
     "cliOnlyHint": "Para agentes com suporte apenas a CLI, instale a CLI separadamente, entre na conta e detecte novamente. Apenas o aplicativo desktop não é suficiente.",
+    "desktopSupported": "Suporte ao app desktop",
+    "desktopCliSupported": "Suporte a app desktop e CLI",
+    "desktopOnlyHint": "Este agente é distribuído apenas com o aplicativo desktop. Instale o aplicativo e detecte novamente.",
+    "desktopOrCliHint": "Instale o aplicativo desktop ou a CLI e detecte novamente.",
     "cliNotDetected": "CLI não detectada",
     "installCli": "Instalar CLI",
     "runtimeCli": "CLI",

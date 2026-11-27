@@ -1,6 +1,10 @@
 export const agentUiEn = {
   "cliSupported": "CLI supported",
   "cliOnlyHint": "For CLI-only agents, install and sign in to the CLI, then scan again. Installing the desktop app alone is not sufficient.",
+  "desktopSupported": "Desktop app supported",
+  "desktopCliSupported": "Desktop app & CLI supported",
+  "desktopOnlyHint": "This agent ships only inside its desktop app. Install the desktop app, then scan again.",
+  "desktopOrCliHint": "Install either the desktop app or the CLI, then scan again.",
   "cliNotDetected": "CLI not detected",
   "installCli": "Install CLI",
   "notInstalled": "Not installed",
@@ -209,6 +213,10 @@ export type AgentUiMessages = { [K in keyof typeof agentUiEn]: string };
 export const agentUiZh: AgentUiMessages = {
   "cliSupported": "支持 CLI",
   "cliOnlyHint": "仅支持 CLI 的 Agent 需单独安装并登录 CLI 后重新检测；仅安装桌面客户端无法使用。",
+  "desktopSupported": "支持桌面端",
+  "desktopCliSupported": "支持桌面端和 CLI",
+  "desktopOnlyHint": "该 Agent 仅随桌面应用提供，需安装桌面应用后重新检测。",
+  "desktopOrCliHint": "安装桌面应用或 CLI 任一即可，安装后重新检测。",
   "cliNotDetected": "未检测到 CLI",
   "installCli": "安装 CLI",
   "notInstalled": "未安装",

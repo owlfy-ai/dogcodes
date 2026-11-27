@@ -79,7 +79,10 @@ describe("welcome scan workflow", () => {
       expect(card.textContent).toContain("未检测到 CLI");
       expect(card.querySelector("a")?.textContent).toContain("安装 CLI");
     }
-    expect(container.querySelector('article[aria-label="DeepSeek Harness"] [data-runtime-support]')).toBeNull();
+    for (const name of ["Claude Code", "Codex", "OpenCode", "DeepSeek Harness"]) {
+      expect(container.querySelector(`article[aria-label="${name}"] [data-runtime-support="desktop-cli"]`)?.textContent).toBe("支持桌面端和 CLI");
+    }
+    expect(container.querySelector('article[aria-label="ZCode"] [data-runtime-support="desktop"]')?.textContent).toBe("支持桌面端");
     expect(container.querySelector('article[aria-label="Antigravity"] a')?.getAttribute("href")).toBe("https://antigravity.google/docs/cli");
   });
 

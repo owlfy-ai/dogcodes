@@ -1,13 +1,22 @@
 import type { InstallationSummary } from "@dogcodes/protocol";
-import { agentRequiresCli, agentRuntimeSource } from "./agentRuntimeSource";
+import { agentAccessSupport, agentRuntimeSource } from "./agentRuntimeSource";
 import { useI18n } from "./i18n";
 import "./agentRuntimeBadge.css";
 
-export function AgentCliSupportBadge({ providerId }: { providerId: string }) {
+const supportCopy = {
+  cli: { label: "agentUi.cliSupported", hint: "agentUi.cliOnlyHint" },
+  desktop: { label: "agentUi.desktopSupported", hint: "agentUi.desktopOnlyHint" },
+  "desktop-cli": { label: "agentUi.desktopCliSupported", hint: "agentUi.desktopOrCliHint" },
+} as const;
+
+/** Shows which install channels (desktop app, CLI, or both) an agent can be connected through. */
+export function AgentAccessSupportBadge({ providerId }: { providerId: string }) {
   const { t } = useI18n();
-  if (!agentRequiresCli(providerId)) return null;
-  return <span className="agent-runtime-badge" data-runtime-support="cli" data-tooltip={t("agentUi.cliOnlyHint")}>
-    {t("agentUi.cliSupported")}
+  const support = agentAccessSupport(providerId);
+  if (!support) return null;
+  const copy = supportCopy[support];
+  return <span className="agent-runtime-badge" data-runtime-support={support} data-tooltip={t(copy.hint)}>
+    {t(copy.label)}
   </span>;
 }
 
