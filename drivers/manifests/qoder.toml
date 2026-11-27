@@ -1,0 +1,33 @@
+schema_version = 1
+id = "qoder"
+display_name = "Qoder"
+homepage = "https://qoder.com/"
+runtime_kind = "external_process"
+
+[discovery]
+candidate_executables = ["qoder", "qodercli"]
+version_args = ["--version"]
+identity_args = ["--help"]
+version_output_markers = ["Qoder CLI -"]
+env_allowlist = ["PATH", "HOME"]
+timeout_millis = 10000
+output_limit_bytes = 65536
+launch_args = ["--acp"]
+
+[discovery.user_paths]
+macos = [".qoder/entry/qoder", ".local/bin/qodercli"]
+linux = [".qoder/entry/qoder", ".local/bin/qodercli"]
+
+[supported_versions]
+denylist = []
+
+[protocol]
+kind = "acp"
+version = "stable_v1"
+framing = "json_rpc_stdio"
+
+[capability_expectations]
+streaming_text = "native"
+session_resume = "runtime_negotiated"
+approvals = "native_request_permission"
+cancellation = "native_cancel"

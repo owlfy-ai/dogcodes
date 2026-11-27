@@ -680,12 +680,15 @@ describe("connections page", () => {
       it("offers every agent a server can run, and installs it there without a shell or a website", async () => {
         const installing = { providerId: "grok", status: "installing" as const, message: null };
         let underWay: typeof installing[] = [];
-        const api = withAgents(connected, { agentInstalls: vi.fn(async () => underWay), installAgent: vi.fn(async () => (underWay = [installing])) });
+        const api = withAgents(connected, {
+          agentInstalls: vi.fn(async () => underWay),
+          installAgent: vi.fn(async (_targetId, providerId) => (underWay = [...underWay, { ...installing, providerId }])),
+        });
         await page(api);
         await act(async () => { manage().click(); });
         await flush();
         const missing = [...container.querySelectorAll(".agent-uninstalled li")].map(item => item.getAttribute("aria-label"));
-        expect(missing).toEqual(expect.arrayContaining(["Antigravity", "Claude Code", "Grok Build", "Kiro"]));
+        expect(missing).toEqual(expect.arrayContaining(["Antigravity", "Claude Code", "Grok Build", "Kiro", "Qoder", "Qoder CN"]));
         expect(missing).not.toContain("ZCode");
         expect(container.querySelector(".agent-uninstalled a")).toBeNull();
         await act(async () => { installButton("Grok Build").click(); });
@@ -695,6 +698,10 @@ describe("connections page", () => {
         expect(installButton("Grok Build").disabled).toBe(true);
         expect(installButton("Grok Build").textContent).toContain("Installing");
         expect(installButton("Kiro").disabled).toBe(false);
+        for (const [name, providerId] of [["Qoder", "qoder"], ["Qoder CN", "qoder-cn"]]) {
+          await act(async () => { installButton(name).click(); });
+          expect(api.installAgent).toHaveBeenCalledWith("tgt_one", providerId);
+        }
       });
 
       it("shows why an install failed in the interface's language", async () => {

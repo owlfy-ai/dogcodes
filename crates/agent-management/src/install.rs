@@ -45,6 +45,12 @@ fn script(provider: &str) -> Option<String> {
         "kiro" => official("bash", "https://cli.kiro.dev/install", "--force"),
         "opencode" => official("bash", "https://opencode.ai/install", ""),
         "pi" => official("sh", "https://pi.dev/install.sh", ""),
+        "qoder" => official("bash", "https://qoder.com/install", ""),
+        "qoder-cn" => official(
+            "bash",
+            "https://static.qoder.com.cn/qoder-cli-cn/install.sh",
+            "",
+        ),
         "codex" => npm_or(
             "@openai/codex",
             &official(
@@ -177,6 +183,28 @@ mod tests {
         }
         assert!(script("zcode").is_none());
         assert!(script("; rm -rf /").is_none());
+    }
+
+    #[test]
+    fn qoder_installers_use_the_official_url_for_each_edition() {
+        assert_eq!(
+            script("qoder").unwrap(),
+            format!(
+                "set -e; {}",
+                official("bash", "https://qoder.com/install", "")
+            )
+        );
+        assert_eq!(
+            script("qoder-cn").unwrap(),
+            format!(
+                "set -e; {}",
+                official(
+                    "bash",
+                    "https://static.qoder.com.cn/qoder-cli-cn/install.sh",
+                    "",
+                )
+            )
+        );
     }
 
     #[test]

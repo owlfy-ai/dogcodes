@@ -1833,11 +1833,8 @@ async fn register_ready_acp_drivers(
         let mut args = manifest.discovery.launch_args.clone();
         // An app-bundled CLI script (Qoder CN) runs through the app's own
         // Electron binary; acp-driver switches to node mode for this shape.
-        if let Some(script) = &manifest.discovery.bundled_script {
-            let Some(resources) = agent_runtime::electron_resources_directory(&executable) else {
-                continue;
-            };
-            args.insert(0, resources.join(script).to_string_lossy().into_owned());
+        if let Some(script) = manifest.bundled_script_for(&executable) {
+            args.insert(0, script.to_string_lossy().into_owned());
         }
         let mut launch = acp_driver::AcpLaunch {
             executable: executable.into(),
@@ -2897,6 +2894,7 @@ esac
             include_str!("../../../../drivers/manifests/deepseek-harness.toml"),
             include_str!("../../../../drivers/manifests/kiro.toml"),
             include_str!("../../../../drivers/manifests/qoder-cn.toml"),
+            include_str!("../../../../drivers/manifests/qoder.toml"),
         ] {
             ProviderManifest::parse_toml(source).unwrap();
         }

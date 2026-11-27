@@ -7,7 +7,7 @@ const changedEvent = "dogcodes:agent-preferences";
 export interface AgentPreferences { order: string[]; disabled: string[] }
 const defaults: AgentPreferences = { order: [], disabled: [] };
 // A common fallback order also covers menus whose native discovery order differs.
-const defaultOrder = ["codex", "claude-code", "grok", "cursor", "antigravity", "zcode", "kimi", "codebuddy", "pi", "opencode", "deepseek-harness", "kiro", "qoder-cn"];
+const defaultOrder = ["codex", "claude-code", "grok", "cursor", "antigravity", "zcode", "kimi", "codebuddy", "pi", "opencode", "deepseek-harness", "kiro", "qoder-cn", "qoder"];
 let cachedRaw: string | null | undefined;
 let cached = defaults;
 let memoryOnly = false;

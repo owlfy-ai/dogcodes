@@ -1,10 +1,10 @@
 import type { InstallationSummary } from "@dogcodes/protocol";
 
-const cliOnlyAgents = new Set(["cursor", "antigravity", "codebuddy", "kimi", "grok", "pi", "kiro"]);
+const cliOnlyAgents = new Set(["cursor", "antigravity", "codebuddy", "kimi", "grok", "pi", "kiro", "qoder"]);
 // Agents whose runtime is only shipped inside their desktop app (no standalone CLI).
 const desktopOnlyAgents = new Set(["zcode"]);
 // Agents usable from either their desktop app's bundled runtime or a standalone CLI.
-const desktopAndCliAgents = new Set(["claude-code", "codex", "opencode", "deepseek-harness"]);
+const desktopAndCliAgents = new Set(["claude-code", "codex", "opencode", "deepseek-harness", "qoder-cn"]);
 export const agentRequiresCli = (providerId: string): boolean => cliOnlyAgents.has(providerId);
 
 export type AgentAccessSupport = "cli" | "desktop" | "desktop-cli";
@@ -33,7 +33,6 @@ export function agentRuntimeSource(installation: Pick<InstallationSummary, "prov
       desktop = /\/zcode\.app\/contents\/macos\/zcode$/.test(path) || /\/zcode\/zcode\.exe$/.test(path);
       break;
     case "qoder-cn":
-      // Only the desktop app ships this CLI, as a script its Electron binary runs.
       desktop = /\/qoder cn\.app\/contents\/macos\/qoder cn$/.test(path) || /\/qoder cn\/qoder cn\.exe$/.test(path);
       break;
     case "deepseek-harness":

@@ -35,6 +35,8 @@ describe("selected agent runtime source", () => {
     ["grok", "/Users/me/.grok/bin/grok"],
     ["deepseek-harness", "/Users/me/.local/share/dogcodes/cli/deepseek-harness/lib/node_modules/@deepseek-ai/dsh/lib/bin.js"],
     ["opencode", "/Users/me/.opencode/bin/opencode"],
+    ["qoder", "/home/me/.qoder/entry/qoder"],
+    ["qoder-cn", "/home/me/.qoder-cn/entry/qodercn"],
   ])("keeps %s's standalone executable classified as CLI", (providerId, executable) => {
     expect(agentRuntimeSource({ providerId, executable })).toBe("cli");
   });

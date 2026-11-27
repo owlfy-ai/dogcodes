@@ -19,6 +19,7 @@ const monochromeLogos: Record<string, { dark: string; light: string }> = Object.
       light: `data:image/svg+xml,${encodeURIComponent(svg.replace(/fill="#[^"]+"/g, 'fill="#000"'))}`,
     }]),
 );
+const qoderLogo = new URL("./assets/qoder-cn.png", import.meta.url).href;
 const logos: Record<string, string> = {
   antigravity: antigravityLogo,
   "claude-code": claudeCodeLogo,
@@ -28,7 +29,8 @@ const logos: Record<string, string> = {
   opencode: new URL("./assets/opencode.png", import.meta.url).href,
   "deepseek-harness": new URL("./assets/deepseek-harness.png", import.meta.url).href,
   kiro: new URL("./assets/kiro.svg", import.meta.url).href,
-  "qoder-cn": new URL("./assets/qoder-cn.png", import.meta.url).href,
+  "qoder-cn": qoderLogo,
+  qoder: qoderLogo,
 };
 
 export function providerLabel(providerId: string, lang: ResolvedLanguage = "zh-CN"): string {
@@ -46,6 +48,7 @@ export function providerLabel(providerId: string, lang: ResolvedLanguage = "zh-C
     "deepseek-harness": "DeepSeek Harness",
     kiro: "Kiro",
     "qoder-cn": "Qoder CN",
+    qoder: "Qoder",
     // Internal provider id for app-authored messages; only the label is user-visible.
     dogcodes: "dog.codes",
     fake: t("agentUi.offline", undefined, lang),

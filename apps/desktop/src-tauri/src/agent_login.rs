@@ -16,9 +16,7 @@ fn bundled_script(provider: &str, executable: &Path) -> Option<PathBuf> {
         .iter()
         .filter_map(|source| agent_registry::ProviderManifest::parse_toml(source).ok())
         .find(|manifest| manifest.id.as_str() == provider)?;
-    let script = agent_runtime::electron_resources_directory(executable)?
-        .join(manifest.discovery.bundled_script?);
-    script.is_file().then_some(script)
+    manifest.bundled_script_for(executable)
 }
 
 fn login_target(
@@ -27,7 +25,7 @@ fn login_target(
     home: Option<&Path>,
 ) -> Result<LoginTarget, String> {
     let args: &[&str] = match provider {
-        "codex" | "cursor" | "grok" | "kimi" | "kiro" | "qoder-cn" => &["login"],
+        "codex" | "cursor" | "grok" | "kimi" | "kiro" | "qoder" | "qoder-cn" => &["login"],
         "claude-code" | "opencode" => &["auth", "login"],
         "antigravity" | "zcode" | "codebuddy" | "pi" | "deepseek-harness" => &[],
         _ => return Err("backendText.mb577082e".into()),
@@ -37,8 +35,12 @@ fn login_target(
     }
     // Signing in to the Qoder CN app does not sign in its bundled CLI, so
     // its own login runs in a terminal like any other CLI.
-    if provider == "qoder-cn" {
-        let script = bundled_script(provider, executable).ok_or("backendText.m6142282c")?;
+    if provider == "qoder-cn"
+        && let Some(script) = bundled_script(provider, executable)
+    {
+        if !script.is_file() {
+            return Err("backendText.m6142282c".into());
+        }
         return Ok(LoginTarget::NodeScript(executable.into(), script, args));
     }
     // Only GUI providers should open their app bundle. Codex/OpenCode can ship
@@ -346,6 +348,19 @@ mod tests {
             .unwrap(),
             "env ELECTRON_RUN_AS_NODE=1 '/Apps/Qoder CN' '/Apps/resources/cli.mjs' 'login'"
         );
+    }
+
+    #[test]
+    fn standalone_qoder_editions_sign_in_through_their_cli() {
+        let root = tempfile::tempdir().unwrap();
+        for (provider, name) in [("qoder", "qoder"), ("qoder-cn", "qodercn")] {
+            let executable = root.path().join(name);
+            std::fs::write(&executable, "").unwrap();
+            assert_eq!(
+                login_target(provider, &executable, None).unwrap(),
+                LoginTarget::Cli(executable, &["login"])
+            );
+        }
     }
 
     #[test]

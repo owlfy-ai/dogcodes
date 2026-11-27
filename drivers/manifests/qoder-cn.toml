@@ -10,14 +10,15 @@ runtime_kind = "external_process"
 # does not sign in the CLI, so readiness reports NotConfigured until
 # `qoderclicn login` has run once.
 [discovery]
-candidate_executables = ["Qoder CN"]
+candidate_executables = ["qodercn", "qoderclicn"]
+bundled_executable = "Qoder CN"
 bundled_script = "app.asar.unpacked/node_modules/@qoder-ai/qoder-cn-agent-sdk/dist/_worker/qoder-worker-runtime.obf.mjs"
 # `--version` prints a bare `1.1.86-hotfix.19`; the help banner names the
 # CN edition, which also tells it apart from the international runtime.
 version_args = ["--version"]
 identity_args = ["--help"]
 version_output_markers = ["Qoder CLI CN"]
-env_allowlist = ["PATH"]
+env_allowlist = ["PATH", "HOME"]
 # A cold start loads a 36 MB script through Electron.
 timeout_millis = 10000
 output_limit_bytes = 65536
@@ -26,15 +27,9 @@ launch_args = ["--acp"]
 [discovery.env_overrides]
 ELECTRON_RUN_AS_NODE = "1"
 
-[discovery.platform_paths]
-# Not yet verified on a real macOS install; Windows is found through the
-# desktop install directory instead (agent-registry windows.rs).
-macos = ["/Applications/Qoder CN.app/Contents/MacOS/Qoder CN"]
-windows = []
-linux = []
-
 [discovery.user_paths]
-macos = ["Applications/Qoder CN.app/Contents/MacOS/Qoder CN"]
+macos = [".qoder-cn/entry/qodercn", ".local/bin/qoderclicn"]
+linux = [".qoder-cn/entry/qodercn", ".local/bin/qoderclicn"]
 
 [supported_versions]
 denylist = []

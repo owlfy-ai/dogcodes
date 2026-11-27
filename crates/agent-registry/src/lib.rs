@@ -114,6 +114,15 @@ impl ProviderManifest {
                     .into(),
             ));
         }
+        if let Some(executable) = &self.discovery.bundled_executable
+            && (self.discovery.bundled_script.is_none()
+                || executable.contains(['/', '\\'])
+                || Path::new(executable).file_stem() != Some(std::ffi::OsStr::new(executable)))
+        {
+            return Err(RegistryError::InvalidManifest(
+                "bundled executable must be a bare filename paired with a bundled script".into(),
+            ));
+        }
         for path in self.discovery.user_paths.values().flatten() {
             if path.is_absolute()
                 || path.components().any(|component| {
@@ -206,6 +215,22 @@ impl ProviderManifest {
         }
         Ok(())
     }
+
+    /// Resolves the Node entry point for a desktop executable, if this runtime is bundled.
+    #[must_use]
+    pub fn bundled_script_for(&self, executable: &Path) -> Option<PathBuf> {
+        let script = self.discovery.bundled_script.as_ref()?;
+        if let Some(name) = &self.discovery.bundled_executable
+            && !executable
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .is_some_and(|stem| stem.eq_ignore_ascii_case(name))
+        {
+            return None;
+        }
+        agent_runtime::electron_resources_directory(executable)
+            .map(|resources| resources.join(script))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -224,6 +249,9 @@ pub struct DiscoverySpec {
     /// Node entry point relative to the discovered Electron resource directory.
     #[serde(default)]
     pub bundled_script: Option<PathBuf>,
+    /// Desktop executable stem when the same manifest also discovers standalone CLIs.
+    #[serde(default)]
+    pub bundled_executable: Option<String>,
     #[serde(default)]
     pub version_args: Vec<String>,
     /// Optional additional structured argv probe whose output must carry the
@@ -288,6 +316,7 @@ pub const BUILTIN_MANIFESTS: &[&str] = &[
     include_str!("../../../drivers/manifests/deepseek-harness.toml"),
     include_str!("../../../drivers/manifests/kiro.toml"),
     include_str!("../../../drivers/manifests/qoder-cn.toml"),
+    include_str!("../../../drivers/manifests/qoder.toml"),
 ];
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -489,16 +518,21 @@ pub async fn probe_installation(
     let metadata = std::fs::metadata(&executable)?;
     let fingerprint = executable_fingerprint(&executable, &metadata);
     let timeout_millis = installation_probe_timeout(manifest.discovery.timeout_millis, &executable);
+    let bundled_script = manifest.bundled_script_for(&executable);
+    let mut env_overrides = manifest
+        .discovery
+        .env_overrides
+        .iter()
+        .map(|(name, value)| (name.clone(), std::ffi::OsString::from(value)))
+        .collect::<BTreeMap<_, _>>();
+    if manifest.discovery.bundled_executable.is_some() && bundled_script.is_none() {
+        env_overrides.remove("ELECTRON_RUN_AS_NODE");
+    }
     let spec = ProcessSpec {
         executable: executable.clone(),
-        args: probe_args(manifest, &executable, &manifest.discovery.version_args)?,
+        args: probe_args(bundled_script.as_deref(), &manifest.discovery.version_args),
         env_allowlist: manifest.discovery.env_allowlist.clone(),
-        env_overrides: manifest
-            .discovery
-            .env_overrides
-            .iter()
-            .map(|(name, value)| (name.clone(), std::ffi::OsString::from(value)))
-            .collect(),
+        env_overrides,
         cwd: None,
         timeout: Duration::from_millis(timeout_millis),
         stdout_limit: manifest.discovery.output_limit_bytes,
@@ -512,7 +546,7 @@ pub async fn probe_installation(
     } else {
         let identity_spec = ProcessSpec {
             executable: executable.clone(),
-            args: probe_args(manifest, &executable, &manifest.discovery.identity_args)?,
+            args: probe_args(bundled_script.as_deref(), &manifest.discovery.identity_args),
             env_allowlist: manifest.discovery.env_allowlist.clone(),
             env_overrides: manifest
                 .discovery
@@ -706,21 +740,12 @@ fn installation_probe_timeout(requested: u64, executable: &Path) -> u64 {
     requested
 }
 
-fn probe_args(
-    manifest: &ProviderManifest,
-    executable: &Path,
-    args: &[String],
-) -> Result<Vec<String>, RegistryError> {
-    let mut resolved = Vec::new();
-    if let Some(script) = &manifest.discovery.bundled_script {
-        let resources =
-            agent_runtime::electron_resources_directory(executable).ok_or_else(|| {
-                RegistryError::InvalidManifest("Electron resource directory unavailable".into())
-            })?;
-        resolved.push(resources.join(script).to_string_lossy().into_owned());
-    }
-    resolved.extend_from_slice(args);
-    Ok(resolved)
+fn probe_args(script: Option<&Path>, args: &[String]) -> Vec<String> {
+    script
+        .into_iter()
+        .map(|script| script.to_string_lossy().into_owned())
+        .chain(args.iter().cloned())
+        .collect()
 }
 
 /// Returns the cache key for an installation's current executable image.
@@ -967,11 +992,11 @@ mod tests {
             ),
         ] {
             let args = probe_args(
-                &manifest,
-                &root.path().join(binary),
+                manifest
+                    .bundled_script_for(&root.path().join(binary))
+                    .as_deref(),
                 &manifest.discovery.version_args,
-            )
-            .unwrap();
+            );
             assert_eq!(Path::new(&args[0]), root.path().join(script));
             assert_eq!(&args[1..], &["--version"]);
         }
@@ -1001,6 +1026,34 @@ mod tests {
         manifest.discovery.bundled_script = Some("glm/zcode.cjs".into());
         manifest.discovery.env_overrides.clear();
         assert!(manifest.validate().is_err());
+    }
+
+    #[test]
+    fn qoder_cn_only_prepends_the_bundled_script_to_its_desktop_executable() {
+        let manifest =
+            ProviderManifest::parse_toml(include_str!("../../../drivers/manifests/qoder-cn.toml"))
+                .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let desktop = root
+            .path()
+            .join("Applications/Qoder CN.app/Contents/MacOS/Qoder CN");
+        let resources = root
+            .path()
+            .join("Applications/Qoder CN.app/Contents/Resources");
+        assert_eq!(
+            manifest.bundled_script_for(&desktop),
+            Some(resources.join(manifest.discovery.bundled_script.as_ref().unwrap()))
+        );
+        for path in [
+            ".qoder-cn/entry/qodercn",
+            ".qoder-cn/bin/qoderclicn/qoderclicn-1.1.99",
+        ] {
+            let script = manifest.bundled_script_for(&root.path().join(path));
+            assert_eq!(
+                probe_args(script.as_deref(), &manifest.discovery.identity_args),
+                ["--help"]
+            );
+        }
     }
 
     #[test]

@@ -328,6 +328,16 @@ mod tests {
             .unwrap();
         assert!(kimi.iter().any(|path| path == "/usr/local/bin/kimi"));
         assert!(kimi.iter().all(|path| path.starts_with('/')));
+        for (provider, entry) in [
+            ("qoder", ".qoder/entry/qoder"),
+            ("qoder-cn", ".qoder-cn/entry/qodercn"),
+        ] {
+            let (_, paths) = found
+                .iter()
+                .find(|(m, _)| m.id.as_str() == provider)
+                .unwrap();
+            assert!(paths.contains(&format!("/home/dev/{entry}")));
+        }
         assert!(
             found
                 .iter()

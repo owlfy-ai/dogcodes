@@ -19,7 +19,7 @@ let container: HTMLDivElement;
 afterEach(async () => { if (root) await act(async () => root?.unmount()); root = undefined; container?.remove(); vi.useRealTimers(); vi.mocked(isTauri).mockReturnValue(false); vi.mocked(invoke).mockReset(); vi.unstubAllGlobals(); });
 
 describe("welcome account states", () => {
-  it("lists the thirteen supported products", () => expect(supportedAgents).toHaveLength(13));
+  it("lists the fourteen supported products", () => expect(supportedAgents).toHaveLength(14));
   it("does not mistake network failure, stale quota or a ready handshake for valid credentials", () => {
     expect(welcomeStatus({ installation, failed: true }).label).toBe("检测失败");
     expect(welcomeStatus({ installation }).label).toBe("授权待确认");
